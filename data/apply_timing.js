@@ -14,7 +14,8 @@
 //
 // Each value is what the firmware's Commit Step leaves behind for that key,
 // not a guess about it:
-//   immediate         the key is read live, so the droid changes as it is saved
+//   immediate         the key is read live, so the droid changes as it is saved;
+//                     it draws no line (operator, 2026-09-19 on #412)
 //   at-reboot         saved at once, read once at start: the droid changes at
 //                     its next start and there is nothing for the builder to do
 //                     (ADR 0027 for the Component Toggles, ADR 0042 for a
@@ -47,9 +48,11 @@
   // Where a builder restarts the droid (data/maintenance.html, #404).
   const RESTART_ROUTE = { href: "#maintenance", label: "Restart it on Maintenance" };
 
-  // Before anything has changed: when an answer here would bite.
+  // Before anything has changed: when an answer here would bite. An immediate
+  // answer says nothing at all (operator, 2026-09-19 on #412): the droid simply
+  // does what was picked, so only a setting that waits for a start or a restart
+  // carries a line.
   const AHEAD = {
-    [IMMEDIATE]: "Used the moment it is saved.",
     [AT_REBOOT]: "Saved at once. The droid uses it from its next start.",
     [RESTART_REQUIRED]: "Saved at once. Restart the droid to use it.",
   };
@@ -99,11 +102,11 @@
    * @param {{pending?: boolean}} [state] - a saved change the droid has not
    *   caught up with yet
    * @returns {{text: string, tone: "info"|"act", route: ({href: string, label: string}|null)}|null}
-   *   null for a step that writes nothing
+   *   null for a step that writes nothing, and for one that bites at once
    */
   const line = (timing, { pending = false } = {}) => {
     assertStated(timing);
-    if (timing === NOTHING) return null;
+    if (timing === NOTHING || timing === IMMEDIATE) return null;
     const waiting = pending && Object.hasOwn(WAITING, timing);
     const mustAct = waiting && timing === RESTART_REQUIRED;
     return {
