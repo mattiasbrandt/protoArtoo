@@ -1611,9 +1611,20 @@
     await loadRcDiagnostics({ handle });
   };
 
+  // Every view that names an action is drawn again once the firmware's list
+  // arrives. The fallback carries no action about one Output - its name is the
+  // running board's (ADR 0033 Amendment 2026-09-19) - so a binding to one read
+  // as its bare token until this redraw, whichever section finished first.
+  const redrawActionNames = () => {
+    renderSummaryTable();
+    renderChannelList();
+    renderLivePreview();
+    if (selectedChannel) renderEditor();
+  };
+
   const loadActionTargetsWithFallback = async ({ handle = null } = {}) => {
     await loadActionTargets({ handle });
-    if (selectedChannel) renderEditor();
+    redrawActionNames();
   };
 
   const SECTIONS = [
@@ -1631,7 +1642,7 @@
         loadMappings();
       });
       loadRcDiagnostics();
-      loadActionTargets().then(() => { if (selectedChannel) renderEditor(); });
+      loadActionTargets().then(redrawActionNames);
       return;
     }
 
