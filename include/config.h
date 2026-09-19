@@ -188,22 +188,23 @@ constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // -----------------------------------------------------------------------------
-// Servo outputs (LEDC PWM)
+// Servo outputs (LEDC PWM), named by what the Artoo PCB prints beside each
+// (include/component_labels.inc; ADR 0033 Amendment 2026-09-19)
 // ARM1 = Utility arm servo #1  --  Top / Left arm (GPIO 23)
 // ARM2 = Utility arm servo #2  --  Bottom / Right arm (GPIO 5)
-// AUX1 = Spare servo output (GPIO 19, also labelled ARM3)
-// AUX2 = Spare servo output (GPIO 18, also labelled ARM4)
-// AUX3 = Spare servo output (GPIO 32, also labelled ARM5)
+// ARM3 = Servo output that can carry the LED strip (GPIO 19)
+// ARM4 = Servo output that can carry the LED strip (GPIO 18)
+// ARM5 = Servo output that can carry the LED strip (GPIO 32)
 // DOME = Dome rotation ESC (GPIO 25)  --  drives brushless motor, not a servo
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_ARM1_SERVO = 23;
 constexpr uint8_t PIN_ARM2_SERVO = 5;
-constexpr uint8_t PIN_ARM3_SERVO = 19;  // AUX1  --  spare servo output
-constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2  --  spare servo output
-constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3  --  spare servo output
+constexpr uint8_t PIN_ARM3_SERVO = 19;  // ARM3  --  can carry the LED strip
+constexpr uint8_t PIN_ARM4_SERVO = 18;  // ARM4  --  can carry the LED strip
+constexpr uint8_t PIN_ARM5_SERVO = 32;  // ARM5  --  can carry the LED strip
 constexpr uint8_t PIN_DOME_ESC = 25;
 
-// AUX LED strip selection values (NVS aux_led_pin)
+// LED strip selection values (NVS aux_led_pin): which Output carries the strip
 constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
 constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
 constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
@@ -312,15 +313,17 @@ constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // Servo outputs (LEDC PWM)
-// Allocation: standard arm servos on LDO-backed pins (49-50 on VDD_IO_6).
-// AUX pins (1-3, which drive the optional WS2812B strip via auxLedSelectionToGpio())
-// use non-LDO main IO to avoid placing a high-frequency timing-critical line on
-// unmeasured LDO rails. AUX1/AUX2 on GPIO4/5 cost JTAG, which is acceptable post-debug.
+// Allocation: the first two Outputs on LDO-backed pins (49-50 on VDD_IO_6). The
+// three that can carry the optional WS2812B strip (aux_led_pin 1-3, via
+// auxLedSelectionToGpio()) use non-LDO main IO where they can, to avoid placing
+// a high-frequency timing-critical line on unmeasured LDO rails. GPIO 4 and 5
+// cost JTAG, which is acceptable post-debug. Each is named by the GPIO number
+// the shield prints (include/component_labels.inc; ADR 0033 Amendment 2026-09-19).
 constexpr uint8_t PIN_ARM1_SERVO = 49;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL0
 constexpr uint8_t PIN_ARM2_SERVO = 50;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL1
-constexpr uint8_t PIN_ARM3_SERVO = 4;   // AUX1, WS2812B strip capable, P3 JTAG MTMS (post-debug)
-constexpr uint8_t PIN_ARM4_SERVO = 5;   // AUX2, WS2812B strip capable, P3 JTAG MTDO (post-debug)
-constexpr uint8_t PIN_ARM5_SERVO = 51;  // AUX3, WS2812B strip capable, LDO caution (VDD_IO_6)
+constexpr uint8_t PIN_ARM3_SERVO = 4;   // GPIO 4, WS2812B strip capable, P3 JTAG MTMS (post-debug)
+constexpr uint8_t PIN_ARM4_SERVO = 5;   // GPIO 5, WS2812B strip capable, P3 JTAG MTDO (post-debug)
+constexpr uint8_t PIN_ARM5_SERVO = 51;  // GPIO 51, WS2812B strip capable, LDO caution (VDD_IO_6)
 constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 
 // I2C
@@ -329,7 +332,7 @@ constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 constexpr uint8_t PIN_I2C_SCL = 8;   // I2C clock, board default
 constexpr uint8_t PIN_I2C_SDA = 7;   // I2C data, board default
 
-// AUX LED strip selection values (NVS aux_led_pin)
+// LED strip selection values (NVS aux_led_pin): which Output carries the strip
 constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
 constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
 constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
