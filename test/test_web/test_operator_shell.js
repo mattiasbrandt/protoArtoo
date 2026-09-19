@@ -393,7 +393,7 @@ const registry = [...shellSrc.matchAll(/\{ page: "([a-z]+)", doc: "\/([a-z]+\.ht
   .map(([, page, file]) => ({ page, file }));
 
 test("the shell knows every surface, and every surface is a file that exists", () => {
-  assert.equal(registry.length, 13, "thirteen surfaces");
+  assert.equal(registry.length, 14, "fourteen surfaces");
   registry.forEach(({ file }) => {
     assert.doesNotThrow(() => readData(file), `${file} is served`);
   });

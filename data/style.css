@@ -8663,3 +8663,89 @@ button.output-setting-head:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Lights (#410): every light on the droid on one page.
+
+   The LED strip is one bay of two plates: which Output carries it, drawn as
+   Wiring draws an Output (data/output_settings.js, the "strip" view), and the
+   strip itself - its count and its live colour. Above 900 px they sit side by
+   side; below it the bay stacks like every other.
+   --------------------------------------------------------------------------- */
+@media (min-width: 901px) {
+  .lights-strip-bay {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.lights-strip-bay > section > .sect {
+  margin-bottom: var(--space-sm);
+}
+
+.strip-route {
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  margin-top: 0;
+}
+
+.strip-route .toggle-label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+.strip-route .toggle-status {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+/* None is not a wire, so it wears no wire's stripe - only the chosen edge
+   when it is the answer. */
+.strip-route > .strip-option:not(.output-wire) {
+  border-style: dashed;
+}
+
+.strip-route > .strip-option.is-on:not(.output-wire) {
+  border-style: solid;
+}
+
+/* A count from 1 to 255 needs no more box than this. */
+.lights-strip-count {
+  max-width: 180px;
+  margin-bottom: var(--space-md);
+}
+
+/* A dome light: its name, what drives it, and where it sits. Not a control -
+   nothing on the plate presses - so it never takes the chosen edge. */
+.lights-dome {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.light-plate .toggle-status {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+.light-where {
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.08em;
+}
+
+/* Room kept for a group with nothing in it yet: a recess, dashed, the size of
+   one row of plates, so the page says there is a place without drawing a
+   control for hardware that is not there. */
+.lights-empty {
+  display: flex;
+  align-items: center;
+  min-height: var(--plate-h);
+  margin-block: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-plate);
+  background: var(--well);
+}
+
+.lights-empty .hint {
+  margin: 0;
+}

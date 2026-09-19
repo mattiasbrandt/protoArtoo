@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/apply_timing.js,/output_settings.js,/lights.js,/footer.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lights - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate: a direct visit is handed to the shell at this route (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#lights");</script>
+  </head>
+  <body data-page="lights">
+
+    <!-- Every light on the droid, on one page (operator, 2026-09-18 on #369;
+         #410): the body's LED strip and the Output that carries it, the dome's
+         lights, and the body lights add-ons bring later. The title is the name
+         in the nav and nothing under it (ADR 0066). -->
+    <div class="title">
+      <div>
+        <h1>Lights</h1>
+      </div>
+    </div>
+
+    <!-- The LED strip. Which Output carries it is the one answer Wiring also
+         sets, drawn by data/output_settings.js (mounted by data/lights.js), so
+         the two pages can never disagree. The count and the live colour are
+         this page's, and moved here from Configuration (#410). The subtitle is
+         written by data/lights.js from that shared answer. -->
+    <div class="card">
+      <div class="sect"><h2>LED strip</h2><span class="sub" id="lights-strip-route" role="status" aria-live="polite">finding out</span></div>
+      <div class="bay lights-strip-bay">
+        <section>
+          <div class="sect"><h3>Output</h3><span class="sub">where it plugs in</span></div>
+          <div id="lights-strip-outputs"></div>
+          <p class="hint">Wiring shows the same answer. Picking an output marks it wired.</p>
+          <div id="lights-strip-outputs-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </section>
+        <section>
+          <div class="sect"><h3>Strip</h3><span class="sub">count and colour</span></div>
+          <label class="field lights-strip-count" for="lights-strip-count">
+            <span>LEDs on the strip</span>
+            <input id="lights-strip-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1">
+          </label>
+          <div class="led-preview" aria-live="polite" aria-atomic="true">
+            <span id="lights-strip-swatch" class="led-swatch"></span>
+            <span id="lights-strip-preview-text" class="hint"></span>
+          </div>
+          <p id="lights-strip-preview-note" class="hint"></p>
+          <p class="note hidden apply-timing" id="lights-strip-count-timing"></p>
+          <div id="lights-strip-count-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- The dome's lights, read from the parts catalog's dome_lights section
+         (docs/droid-parts.yaml) by data/lights.js, so nothing here names one.
+         A light protoArtoo drives nothing of says so, and offers no control. -->
+    <div class="card">
+      <div class="sect"><h2>Dome lights</h2><span class="sub" id="lights-dome-summary">finding out</span></div>
+      <div id="lights-dome"></div>
+    </div>
+
+    <!-- Room for the body lights add-ons bring later (operator, 2026-09-18 on
+         #369: "further future AUX addon body lights"). Nothing is drawn as a
+         control until there is hardware behind it. -->
+    <div class="card">
+      <div class="sect"><h2>Body lights</h2><span class="sub">add-on lights</span></div>
+      <div class="lights-empty">
+        <p class="hint">No add-on body lights yet. They land here once protoArtoo can drive them.</p>
+      </div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

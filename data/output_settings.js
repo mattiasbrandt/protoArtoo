@@ -19,12 +19,15 @@
 // called by what its board prints (CONTEXT.md "Output Address"), never by a
 // name this file could have made up, and never split into kinds.
 //
-// ONE STATE, TWO VIEWS. Both surfaces mount a view of the same answer, read
-// from GET /api/config and written back by one save, so the two can never
-// show different choices - the same rule the Component Picker keeps for its
-// two homes. The save sends each Output's enabled and type fields, as named,
-// and aux_led_pin, derived from which wired Output is set to LED strip. Only
-// one can be (the controller routes the strip to one line).
+// ONE STATE, THREE VIEWS. Wiring, Servos and Lights each mount a view of the
+// same answer, read from GET /api/config and written back by one save, so no
+// two can show different choices - the same rule the Component Picker keeps
+// for its two homes. The save sends each Output's enabled and type fields, as
+// named, and aux_led_pin, derived from which wired Output is set to LED strip.
+// Only one can be (the controller routes the strip to one line). Lights asks
+// that last question on its own - which Output carries the strip - and Wiring
+// asks it per plate; the operator wanted it answerable from both, with one
+// answer (2026-09-19 on #410).
 //
 // Wiring's sheet itself stays a reference: data/wiring.js generates the
 // document and writes nothing. This module is the one thing on that surface
@@ -50,7 +53,7 @@
   const LED_STRIP = "rgb";
 
   const TIMING = window.PAApplyTiming;
-  const VIEW_TIMING = { wired: TIMING.AT_REBOOT, type: TIMING.IMMEDIATE };
+  const VIEW_TIMING = { wired: TIMING.AT_REBOOT, type: TIMING.IMMEDIATE, strip: TIMING.AT_REBOOT };
 
   // The Outputs as the droid reported them, in its order. Each is
   //   id           the components{} key: the stored config key, never shown
@@ -311,6 +314,54 @@
     return plate;
   };
 
+  // Lights' view: which Output carries the LED strip, as one question with one
+  // answer. Only the Outputs the firmware says can carry it are offered, each
+  // as Wiring draws it, plus None. Picking an Output wires it too - a strip on
+  // a line is a lead plugged into it - and change() takes the strip off
+  // whichever Output had it. None puts the carrying Output back to no servo,
+  // exactly as Wiring's "Servo" does; it stays wired.
+  const stripOption = (label, on, status, onPick) => {
+    const plate = element("div", "output-plate output-setting strip-option");
+    if (on) plate.classList.add("is-on");
+    const press = element("button", "output-setting-head");
+    press.type = "button";
+    press.setAttribute("role", "radio");
+    press.setAttribute("aria-checked", on ? "true" : "false");
+    press.appendChild(element("span", "toggle-label", label));
+    press.appendChild(element("span", "toggle-status", status));
+    press.addEventListener("click", () => {
+      if (!on) onPick();
+    });
+    plate.appendChild(press);
+    return plate;
+  };
+
+  const stripPlates = () => {
+    const capable = outputs.filter((output) => output.strip);
+    if (capable.length === 0) {
+      return element("p", "hint", "No output on this board can carry an LED strip.");
+    }
+    const carrying = capable.find((output) => output.strip === ledPin());
+    const group = element("div", "output-plates strip-route");
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", "Output that carries the LED strip");
+    capable.forEach((output) => {
+      const answer = state[output.id];
+      const on = output === carrying;
+      const status = on ? "LED strip" : answer.enabled ? "Servo" : NOT_WIRED;
+      const plate = stripOption(nameOf(output), on, status,
+        () => change(output.id, { enabled: true, type: LED_STRIP }));
+      // The wire's colour, as on Wiring's plate and the sheet's line.
+      plate.classList.add("output-wire");
+      plate.dataset.output = output.id;
+      plate.dataset.wire = wireSlot(output);
+      group.appendChild(plate);
+    });
+    group.appendChild(stripOption("None", !carrying, carrying ? "" : "No strip",
+      () => change(carrying.id, { type: NO_SERVO.id })));
+    return group;
+  };
+
   const render = (view) => {
     if (!state) {
       view.body.replaceChildren(element("p", "hint", "Reading the outputs from the droid…"));
@@ -320,8 +371,13 @@
       view.body.replaceChildren(element("p", "hint", "The droid reports no outputs to wire."));
       return;
     }
-    const plates = element("div", "output-plates");
-    outputs.forEach((output) => plates.appendChild(view.plate(output, view)));
+    let plates;
+    if (view.kind === "strip") {
+      plates = stripPlates();
+    } else {
+      plates = element("div", "output-plates");
+      outputs.forEach((output) => plates.appendChild(view.plate(output, view)));
+    }
     // When this view's answer bites, beside the outputs it asks about.
     const timing = element("p", "apply-timing");
     TIMING.paint(timing, VIEW_TIMING[view.kind], { pending: VIEW_TIMING[view.kind] === TIMING.AT_REBOOT && waitingOnStart() });
@@ -331,10 +387,17 @@
   // A listener is handed the answer and the Outputs it is about - id, label,
   // address, strip - in the firmware's order, so a surface that draws its own
   // rows (Servos' controls) draws them from the same list and names each the
-  // same way, and never keeps a list of its own.
+  // same way, and never keeps a list of its own. `carriesStrip` marks the one
+  // Output the strip is routed to, by the rule the save sends (ledPinOf), so a
+  // surface that names it (Lights) never works it out a second way.
   const renderAll = () => {
     views.forEach(render);
-    const facts = outputs.map((output) => ({ ...output, name: nameOf(output) }));
+    const routed = ledPin();
+    const facts = outputs.map((output) => ({
+      ...output,
+      name: nameOf(output),
+      carriesStrip: routed !== 0 && output.strip === routed,
+    }));
     listeners.forEach((listener) => listener(state, facts));
   };
 
@@ -363,15 +426,18 @@
   /**
    * Draw one view of the outputs into a host.
    *
-   * @param {"wired"|"type"} kind - Wiring's wired ticks, or Servos' servo types
+   * @param {"wired"|"type"|"strip"} kind - Wiring's wired ticks, Servos' servo
+   *   types, or Lights' one question: which Output carries the LED strip
    * @param {object} hosts
    * @param {Element} hosts.body - where the plates go
    * @param {Element} hosts.feedback - the save line under them
    * @param {function} [hosts.describe] - what is on an Output's lead, or ""
    */
+  const PLATES = { wired: wiredPlate, type: typePlate, strip: null };
   const mount = (kind, hosts) => {
     if (!hosts?.body || !hosts?.feedback) return;
-    const view = { ...hosts, kind: kind === "type" ? "type" : "wired", plate: kind === "type" ? typePlate : wiredPlate };
+    const known = Object.hasOwn(PLATES, kind) ? kind : "wired";
+    const view = { ...hosts, kind: known, plate: PLATES[known] };
     views.push(view);
     render(view);
     ensureLoaded();
