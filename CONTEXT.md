@@ -518,8 +518,8 @@ The bounded hold after a **Servo Output** reaches its target, after which its dr
 _Avoid_: sleep-when-idle, sleep (that names a droid-wide mode), detach, park, torque off
 
 **Output Address**:
-Where an **Output**'s lead physically plugs in: `(driver, channel)` — for example LEDC channel 3, or board 1 pin 4 on an expander. It is wiring, not identity; moving a servo to a different address must never change what a sequence means.
-_Avoid_: pin, slot, channel number on its own
+Where an **Output**'s lead physically plugs in: `(driver, channel)` — for example LEDC channel 3, or board 1 pin 4 on an expander. It is wiring, not identity; moving a servo to a different address must never change what a sequence means. **An Output is called by what the running board prints beside its pin** - its **Board Component Label** - on every screen, in the Console's list and completion, and as the word typed in the Console and sent to the API: `ARM1`..`ARM5` on artoo-esp32, `GPIO 49` / `GPIO 50` / `GPIO 4` / `GPIO 5` / `GPIO 51` on firebeetle2, where the IO shield prints only the number. There are no protoArtoo-wide output names and no split into "arm" and "AUX" kinds: all of them are **Output**s, and whether one can carry the LED strip is a fact about that Output on that board. `arm1`..`aux3` survive only as hidden ids in saved settings and config keys. Sequences store **Part**s, so no sequence names an Output. Operator, 2026-09-19: *"the AUX and ARM labeling are pure Artoo PCB specifics and not at all relevant to firebeetle and future boards, hence that should not be hardcoded"*.
+_Avoid_: pin, slot, channel number on its own, "AUX line" / "arm output" as a kind, an Output name shared across boards (ARM1..AUX3 hard-coded), "Utility Arm 1" / "AUX 1" as an Output's name
 
 **Endpoint Pair**:
 A **Servo Output**'s `open` and `close` pulse widths, which are **directional**: a reversed linkage is simply `open > close`. There is no invert flag anywhere and no consumer may add one; every consumer takes the min and max of the pair. `centre` is the third position and is not derived from the other two.
@@ -646,8 +646,8 @@ The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board, inclu
 _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 
 **Board Component Label**:
-A per-Board-Variant display string, declared in `include/component_labels.inc`, naming where a Component Toggle's subsystem is physically connected on that specific board — e.g., artoo_esp32 shows "S1" for Drive. Shown to the operator as supplementary detail (such as a tooltip), never as the toggle's canonical name; a board may omit the label where no established legend exists (ADR 0033).
-_Avoid_: component name, toggle name, PCB silkscreen text as the toggle's identity
+A per-Board-Variant display string, declared in `include/component_labels.inc`, naming where a Component Toggle's subsystem is physically connected on that specific board — e.g., artoo_esp32 shows "S1" for Drive. For a subsystem toggle it is shown as supplementary detail (such as a tooltip), never as the toggle's canonical name (ADR 0033). **For an Output it IS the name**, on screen and as the typed word (ADR 0033 *Amendment 2026-09-19*; **Output Address**). Every board declares one for each of its Outputs, and where the board prints only a GPIO number the label is `GPIO <n>`.
+_Avoid_: component name, toggle name, PCB silkscreen text as a subsystem toggle's identity, a board with an Output that has no label
 
 **Builder Recommendation**:
 The project's purchase advice about a Board Variant: whether the developer docs tell a builder to buy that board. Purely a statement in builder-facing documentation — it changes no code, no Board Capability Gate, and no support level, and a board carries the same support whichever way it reads. It turns on things a Board Capability Gate deliberately cannot attest (ADR 0029): retail unit consistency, whether a defective unit has a realistic recovery path, and what that recovery costs a builder who is not an equipped expert.

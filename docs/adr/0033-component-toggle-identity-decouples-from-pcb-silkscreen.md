@@ -205,3 +205,13 @@ what changes on the droid when it is off**:
 Rejected: the category-and-stop form this amendment replaces
 (*"Use the drive motor controller wired to this board's Drive link"*), which
 restates the toggle's own name back at the reader and states no consequence.
+
+## Amendment 2026-09-19: an Output is called by its board's label
+
+The operator's Wiring design review (#411), 2026-09-19: *"the AUX and ARM labeling are pure Artoo PCB specifics and not at all relevant to firebeetle and future boards, hence that should not be hardcoded"*.
+
+- **This ADR's claim that `pin_map.md` documents `ARM1-5` as protoArtoo's own labels, not artoo.uk's, was wrong.** `ARM1`..`ARM5` are what the Artoo PCB prints (GPIO 23, 5, 19, 18, 32), and the three "AUX" lines are printed `ARM3`/`ARM4`/`ARM5`.
+- **For an Output, the Board Component Label is the name, not a tooltip.** It is the name on every screen, in the Console's list and completion, and the word typed in the Console and sent to `POST /api/servo`. That is `ARM1`..`ARM5` on artoo-esp32 and `GPIO 49`/`GPIO 50`/`GPIO 4`/`GPIO 5`/`GPIO 51` on firebeetle2. Every board declares one per Output. The display copy this ADR introduced ("Utility Arm 1", "AUX 1") and the "Utility Arms" / "AUX Outputs" grouping are withdrawn; they are all **Output**s.
+- **What stays:** `enable_arm1`..`enable_aux3`, `rc_arm1`.., the NVS keys and the `components.*` JSON keys keep their identifiers, as hidden ids. The Component Toggle rule for subsystems (Drive, Audio, protoR2link, Dome ESC, RC channels) is unchanged: generic name, board label as detail.
+- **The old typed words `arm1`..`aux3` stop being accepted** by the Console and the API. There is no alias (operator's pick). Sequences are untouched, because they store Parts.
+
