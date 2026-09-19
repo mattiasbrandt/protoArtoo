@@ -1,9 +1,11 @@
 // =============================================================================
 // test/test_web/helpers/parts_surface.js
 //
-// Boots the shipped Operator Shell with the shipped Parts surface against a
-// fake droid, the way test_outputs_table.js does inside its own file, and
-// adds what a Find by Moving run needs the droid to answer: a nudgesDone count
+// Boots the shipped Operator Shell with the shipped Parts or Servos surface
+// against a fake droid - Parts carries the part-first table and the droid
+// picture, Servos the output-first table, Find by Moving, the calibration dial
+// and back to centre (CONTEXT.md "Parts", "Servos"; #412) - and adds what a
+// Find by Moving run needs the droid to answer: a nudgesDone count
 // on every Output, POST /api/servo, a status stream the test can push an estop
 // onto, and a PAApi.gateControls the shipped one's shape. The droid picture
 // adds POST /api/dome/cmd. Kept beside the
@@ -100,7 +102,30 @@ export const withParts = (assignments, outputs = freshOutputs()) => {
   return outputs;
 };
 
-export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}) => {
+// GET /api/config's Output entries for the fake droid's rows, the way
+// src/web/api_config.cpp reports them: the label is the row's name, and every
+// Output is wired and carries an MG996R, so Servos offers every drive act. The
+// ids and field names follow no pattern on purpose.
+const configOutputs = (outputs) =>
+  Object.fromEntries(
+    outputs
+      .filter((each) => each.name !== "")
+      .map((each, index) => [
+        `out${index}`,
+        {
+          label: each.name,
+          address: each.address,
+          enabledField: `wired${index}`,
+          typeField: `servo${index}`,
+          enabled: true,
+          type: "mg996r",
+        },
+      ])
+  );
+
+// `components` replaces the GET /api/config Output entries configOutputs()
+// would derive, for a test that needs an Output unwired or carrying the strip.
+const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, components = null } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -189,7 +214,12 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
         // The Droid Build the device holds (ADR 0047). data/droid_build.js
         // reads it once per page and the body view's "add it to the build" act
         // writes it back through POST /api/config.
-        if (path === "/api/config") return { ok: true, data: { droidBuild: structuredClone(env.droidBuild) } };
+        if (path === "/api/config") {
+          return {
+            ok: true,
+            data: { droidBuild: structuredClone(env.droidBuild), components: structuredClone(components || configOutputs(env.outputs)) },
+          };
+        }
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
         throw new Error(`unexpected request ${path}`);
       },
@@ -383,10 +413,10 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
   };
   context.globalThis = context;
 
-  // Every script data/parts.html declares, because that is what a browser
-  // loads: a map that left one out would run these suites against a Parts page
-  // the device never serves. #352 added the Droid Build and the body view to
-  // the chain.
+  // Every script data/parts.html and data/servo.html declare, because that is
+  // what a browser loads: a map that left one out would run these suites
+  // against a page the device never serves. #352 added the Droid Build and the
+  // body view to the chain; #412 moved the output-first table to Servos.
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
@@ -396,7 +426,11 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     "/dome_panel_model.js": readData("dome_panel_model.js"),
     "/body_art.js": readData("body_art.js"),
     "/body_view.js": readData("body_view.js"),
+    "/parts_mapping.js": readData("parts_mapping.js"),
     "/parts.js": readData("parts.js"),
+    "/apply_timing.js": readData("apply_timing.js"),
+    "/output_settings.js": readData("output_settings.js"),
+    "/servo.js": readData("servo.js"),
   };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
@@ -413,23 +447,40 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
 
   env.partsRegion = () => document.getElementById("parts-table");
   env.partRow = (id) => env.partsRegion().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
-  env.findButton = (id) => env.partRow(id).querySelector(".parts-find");
+  // Find by moving sits over Servos' rows: one picker of unwired Parts and one
+  // button, so the button a Part is found with is that one.
+  env.findPick = () => document.getElementById("outputs-find-part");
+  env.findButton = () => document.getElementById("outputs-find").querySelector(".parts-find");
   env.runPanel = () => document.querySelector(".parts-find-run");
   env.runText = () => env.runPanel()?.querySelector(".parts-find-text")?.textContent ?? null;
-  env.feedback = () => document.getElementById("parts-feedback").textContent;
+  env.feedback = () => document.getElementById(surface === "servo" ? "outputs-feedback" : "parts-feedback").textContent;
   env.region = () => document.getElementById("outputs-table");
   env.rows = () => env.region().querySelectorAll("[data-output]");
   env.row = (address) => env.rows().find((node) => node.dataset.output === address);
   env.cell = (address, className) => env.row(address).querySelector(`.${className}`);
+  env.byId = (id) => document.getElementById(id);
+  env.tier = (id) => document.querySelectorAll("[data-tier]").find((node) => node.dataset.tier === id).textContent;
+  // What a builder does with an Output row's part picker: choose, and the
+  // change reaches the table's delegated handler.
+  env.pickOnOutput = (address, partId) => {
+    const select = env.row(address).querySelector(".outputs-add");
+    select.value = partId;
+    env.region().fire("change", { target: select });
+    return select;
+  };
+  // The move question's two answers, by what they are rather than by an id.
+  env.answerMove = (confirmed) => env.dialog.querySelector(confirmed ? ".move-confirm" : ".move-cancel").fire("click", {});
   env.text = (address, className) => env.cell(address, className).textContent;
   // Nudges only. POST /api/servo carries four actions since #364, so filtering
   // on the path alone would count a hold or a release as a nudge.
   env.nudges = () =>
     env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "nudge");
   env.moves = () => env.posts.filter((post) => post.path === "/api/config");
-  // The builder presses the row's Find by moving button: the click reaches
-  // the table's delegated handler the way a real one does.
-  env.pressFind = (id) => env.partsRegion().fire("click", { target: env.findButton(id) });
+  // The builder picks the Part and presses Find by moving.
+  env.pressFind = (id) => {
+    env.findPick().value = id;
+    env.findButton().fire("click", {});
+  };
   env.pressThatOne = () => env.runPanel().querySelector(".parts-find-that").fire("click", {});
   env.pressStop = () => env.runPanel().querySelector(".parts-find-stop").fire("click", {});
   // One tick of the page's own bench feed: the poll refreshes when the page
@@ -501,18 +552,22 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
     windowMock.location.hash = to;
   };
 
-  windowMock.location.hash = "#parts";
+  windowMock.location.hash = `#${surface}`;
+  const painted = () =>
+    surface === "servo"
+      ? env.region() && env.rows().length > 0
+      : env.partsRegion()?.querySelector("select")?.disabled === false;
   const deadline = Date.now() + 3000;
-  while (!(env.region() && env.rows().length > 0 && env.partsRegion()?.querySelector("select")?.disabled === false)) {
-    if (Date.now() > deadline) assert.fail("the Parts surface never mounted and painted its rows");
+  while (!painted()) {
+    if (Date.now() > deadline) assert.fail(`the ${surface} surface never mounted and painted its rows`);
     await sleep(5);
   }
   // The shell's own status read has landed and been handed to the stream by
-  // now, so the Find by moving buttons have been gated once.
+  // now, so the acts have been gated once.
   await sleep(30);
 
   // A browser's <dialog>; mini_dom has none.
-  const dialog = document.getElementById("parts-move-dialog");
+  const dialog = document.getElementById(surface === "servo" ? "outputs-move-dialog" : "parts-move-dialog");
   dialog.open = false;
   dialog.showModal = () => {
     dialog.open = true;
@@ -523,3 +578,6 @@ export const bootParts = async ({ outputs = freshOutputs(), estop = false } = {}
   env.dialog = dialog;
   return env;
 };
+
+export const bootParts = (options) => bootSurface("parts", options);
+export const bootServos = (options) => bootSurface("servo", options);

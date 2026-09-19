@@ -240,6 +240,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
     "/status_stream.js": readData("status_stream.js"),
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
+    "/parts_mapping.js": readData("parts_mapping.js"),
     "/parts.js": readData("parts.js"),
   };
   document.onAttach = (node) => {

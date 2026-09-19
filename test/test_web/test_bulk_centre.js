@@ -20,12 +20,12 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { bootParts, output, sleep } from "./helpers/parts_surface.js";
+import { bootServos, output, sleep } from "./helpers/parts_surface.js";
 
 // ---------------------------------------------------------------------------
 
 test("one press sends one request, whatever the droid has on it", async () => {
-  const env = await bootParts();
+  const env = await bootServos();
 
   env.pressCentre();
   await sleep(20);
@@ -43,7 +43,7 @@ test("one press sends one request, whatever the droid has on it", async () => {
 });
 
 test("a request the droid did not take says so, and claims nothing moved", async () => {
-  const env = await bootParts();
+  const env = await bootServos();
   env.centreFails = new Error("Device unavailable");
 
   env.pressCentre();
@@ -54,7 +54,7 @@ test("a request the droid did not take says so, and claims nothing moved", async
 });
 
 test("the act is refused while the estop is latched, and live once it is clear", async () => {
-  const env = await bootParts({ estop: true });
+  const env = await bootServos({ estop: true });
   await sleep(20);
 
   assert.equal(env.centreButton().disabled, true);
@@ -68,7 +68,7 @@ test("the act is refused while the estop is latched, and live once it is clear",
 });
 
 test("a press on the refused button asks the droid for nothing", async () => {
-  const env = await bootParts({ estop: true });
+  const env = await bootServos({ estop: true });
   await sleep(20);
 
   env.pressCentre();
@@ -78,7 +78,7 @@ test("a press on the refused button asks the droid for nothing", async () => {
 });
 
 test("the estop ends the run, and no row goes on showing a commanded position as current", async () => {
-  const env = await bootParts();
+  const env = await bootServos();
   env.pressCentre();
   await sleep(20);
   // The controller got two Outputs to their centres before the estop.
@@ -105,7 +105,7 @@ test("the estop ends the run, and no row goes on showing a commanded position as
 });
 
 test("pressing again sends one more request and never a queue of them", async () => {
-  const env = await bootParts();
+  const env = await bootServos();
 
   env.pressCentre();
   await sleep(20);

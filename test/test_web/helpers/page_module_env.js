@@ -335,3 +335,17 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
 };
 
 export { ApiError };
+
+// The shipped parts catalog and the shared mapping module (data/droid_parts.js,
+// data/droid_part_kind.js, data/parts_mapping.js), evaluated as a browser loads
+// them before a surface that reads them - Servos names each Output's Parts and
+// moves a Part through PAParts. Handed to loadPageModule() as window overrides,
+// so the module under test runs against the real ones rather than a stand-in.
+export const partsGlobals = () => {
+  const context = { window: {}, console };
+  for (const file of ["droid_parts.js", "droid_part_kind.js", "parts_mapping.js"]) {
+    vm.runInNewContext(readFileSync(join(dataDir, file), "utf-8"), context, { filename: file });
+  }
+  const { DroidParts, DroidPartKind, PAParts } = context.window;
+  return { DroidParts, DroidPartKind, PAParts };
+};

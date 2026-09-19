@@ -937,7 +937,6 @@ nav > a {
    tablet size, where the extra height costs most. */
 body[data-page="servo"] .card > * + *,
 body[data-page="parts"] .card > * + *,
-body[data-page="parts"] .outputs-section > * + *,
 body[data-page="drive"] .card > * + *,
 body[data-page="dome"] .card > * + *,
 body[data-page="sound"] .card > * + *,
@@ -6474,10 +6473,6 @@ body[data-page="maintenance"] .status-item .hint {
    bounded by the band they are drawn against, so nothing else can leave the
    bar, and at the ends the tick sits on the border instead of under it.
    --------------------------------------------------------------------------- */
-.outputs-section {
-  margin-top: var(--space-xl);
-}
-
 /* The three honesty tiers (#293) ARE this section's subtitle: a heading carries
    a count, and putting them anywhere else would mean a total above them
    restating what they already add up to. They read as one line and wrap as a
@@ -6968,6 +6963,54 @@ body[data-page="maintenance"] .status-item .hint {
    the three outcome colours every other answer on this page takes, and nothing
    here redefines them.
    --------------------------------------------------------------------------- */
+/* A product shown rather than picked (#412): the RC page's radio and receiver,
+   one picker card each at the width a picker grid gives one. */
+.component-shown {
+  display: grid;
+  grid-template-columns: minmax(0, 220px);
+  margin-block: var(--space-sm);
+}
+
+/* Driving an Output from its row (#412): a typed width and the four drive
+   acts on one line, or the one sentence that says why the row offers none. */
+.outputs-drive {
+  white-space: nowrap;
+}
+
+.outputs-drive-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.outputs-drive-acts[hidden] {
+  display: none;
+}
+
+.outputs-drive-acts .outputs-width {
+  width: 6.5ch;
+}
+
+.outputs-drive-note {
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+/* Find by Moving over the rows (#412): pick the Part, then the run panel takes
+   the button's place on the same line while it lasts. */
+.outputs-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  margin-block: var(--space-sm);
+}
+
+.outputs-find .parts-find-run {
+  flex: 1 1 100%;
+  margin-top: 0;
+}
+
 .outputs-bulk {
   display: flex;
   flex-wrap: wrap;
