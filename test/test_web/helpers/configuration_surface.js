@@ -213,6 +213,9 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
     parsed,
     posts,
     config,
+    // What the surface's modules published on window, for a test that reads
+    // one of them the way another page does (the RC page's shown cards).
+    window: windowMock,
     host,
     plate,
     // The run's rail, read the way a builder reads it.

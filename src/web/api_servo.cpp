@@ -2,7 +2,7 @@
 // src/web/api_servo.cpp
 //
 // Servo control API endpoint
-//   POST /api/servo         - Control arm servos
+//   POST /api/servo         - Move one Output, named by its board's label
 //                             (open/close/position/stop/nudge/travel/hold/release)
 //   POST /api/servo/centre  - Put every Servo Output back to centre, paced by
 //                             the Sequence Coordinator (#318, #365)
@@ -17,12 +17,15 @@
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>  // strcasecmp()
 
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "board_outputs.h"  // boardOutputForWord(), boardOutputWordList()
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "servo_helpers.h"  // servo_ledc_channel_to_arm_id()
 
 extern QueueHandle_t servoCmdQueue;
 
@@ -32,19 +35,18 @@ static const char* TAG = "SERVO_API";
 // Console's servo.action.* executors (include/console_direct_action_servo.h)
 // reuse the same target<->id mapping.
 int16_t parseArmId(const char* arm) {
-    if (strcmp(arm, "arm1") == 0 || strcmp(arm, "ARM1") == 0)
-        return 0;
-    if (strcmp(arm, "arm2") == 0 || strcmp(arm, "ARM2") == 0)
-        return 1;
-    if (strcmp(arm, "aux1") == 0 || strcmp(arm, "AUX1") == 0)
-        return 2;
-    if (strcmp(arm, "aux2") == 0 || strcmp(arm, "AUX2") == 0)
-        return 3;
-    if (strcmp(arm, "aux3") == 0 || strcmp(arm, "AUX3") == 0)
-        return 4;
-    if (strcmp(arm, "both") == 0 || strcmp(arm, "BOTH") == 0)
+    if (arm == nullptr) {
+        return -1;
+    }
+    if (strcasecmp(arm, "both") == 0) {
         return 255;
-    return -1;  // Invalid
+    }
+    const BoardOutput* output = boardOutputForWord(arm);
+    uint8_t armId = 0;
+    if (output == nullptr || !servo_ledc_channel_to_arm_id(output->channel, &armId)) {
+        return -1;
+    }
+    return armId;
 }
 
 // See include/api_servo.h for the full contract. `cmd` is zero-initialised
@@ -72,8 +74,9 @@ namespace {
 //
 // `oneOutputOnly` is the fourth, and it is the reason this is a table. A nudge
 // and a hold are each about ONE Output by definition -- a builder watching
-// which part twitches, and a dial standing on one row -- so the ARM1+ARM2
-// broadcast is refused for both, at the door, where the caller hears why.
+// which part twitches, and a dial standing on one row -- so the `both`
+// broadcast (the first two Outputs, include/robot_state.h ServoCommand::armId)
+// is refused for both, at the door, where the caller hears why.
 struct ServoActionSpec {
     const char* name;
     ServoCommandType type;
@@ -130,9 +133,18 @@ void handleServoPost(WebRequest& req) {
         return;
     }
 
+    // The word is the board's own label for the Output (ADR 0033 Amendment
+    // 2026-09-19), so a refusal names this board's words rather than a list
+    // that is right for one board only.
+    char words[64] = {};
+    boardOutputWordList(", ", words, sizeof(words));
+
     int16_t armId = parseArmId(arm);
     if (armId < 0) {
-        webSendJsonError(req, 400, "Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, or both");
+        char errMsg[128];
+        snprintf(errMsg, sizeof(errMsg), "No output called %s on this board. Use %s, or both", arm,
+                 words);
+        webSendJsonError(req, 400, errMsg);
         return;
     }
 
@@ -147,9 +159,8 @@ void handleServoPost(WebRequest& req) {
     // One output at a time where the action is about one output. Refused here,
     // where the caller hears why, rather than only in ServoTask's log.
     if (spec->oneOutputOnly && armId == 255) {
-        char errMsg[96];
-        snprintf(errMsg, sizeof(errMsg),
-                 "A %s takes one arm. Use: arm1, arm2, aux1, aux2, or aux3", spec->name);
+        char errMsg[112];
+        snprintf(errMsg, sizeof(errMsg), "A %s moves one output. Use %s", spec->name, words);
         webSendJsonError(req, 400, errMsg);
         return;
     }

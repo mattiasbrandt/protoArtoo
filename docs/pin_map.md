@@ -150,14 +150,14 @@ matrix (spec sheet "UART Lane Plan"), so audio uses the two pins it already had.
 | 15   | CH1           | SBUS receiver #1 (drive)              | RMT       |
 | 16   | S1 TX         | Hoverboard TX                         | UART1     |
 | 17   | S1 RX         | Hoverboard RX                         | UART1     |
-| 18   | ARM4          | Spare servo output (AUX2)             | LEDC PWM  |
-| 19   | ARM3          | Spare servo output (AUX1)             | LEDC PWM  |
+| 18   | ARM4          | Servo output; can carry the LED strip | LEDC PWM  |
+| 19   | ARM3          | Servo output; can carry the LED strip | LEDC PWM  |
 | 21   | I2C (D)       | I2C SDA                               | I2C       |
 | 22   | I2C (C)       | I2C SCL                               | I2C       |
 | 23   | ARM1          | Utility arm servo #1 — Top / Left     | LEDC PWM  |
 | 25   | DOME          | Dome rotation ESC                     | LEDC PWM  |
 | 26   | S2 TX         | Audio module TX                       | Soft UART |
-| 32   | ARM5          | Spare servo output (AUX3)             | LEDC PWM  |
+| 32   | ARM5          | Servo output; can carry the LED strip | LEDC PWM  |
 | 33   | S3 TX         | Dome serial TX                        | UART2     |
 | 34   | S3 RX         | Dome serial RX (input-only)           | UART2     |
 | 35   | S2 RX         | Audio module RX (input-only)          | UART2     |
@@ -194,15 +194,15 @@ Factory defaults:
 | `standard_pwm` | Drive steer | `pwm:2:1000:1500:2000:0:0` | CH2 |
 | `standard_pwm` | Drive limit | `none:0:1000:1500:2000:0:0` | Unbound by default |
 | `standard_pwm` | Dome speed | `pwm:3:1000:1500:2000:0:0` | CH3 |
-| `standard_pwm` | ARM1 trigger | `pwm:4:1000:1500:2000:0:0` | CH4 |
-| `standard_pwm` | ARM2 trigger | `pwm:5:1000:1500:2000:0:0` | CH5 |
+| `standard_pwm` | First output's toggle (`arm1_toggle`) | `pwm:4:1000:1500:2000:0:0` | CH4 |
+| `standard_pwm` | Second output's toggle (`arm2_toggle`) | `pwm:5:1000:1500:2000:0:0` | CH5 |
 | `standard_pwm` | Sound trigger | `pwm:6:1000:1500:2000:0:0` | CH6 |
 | `single_sbus` / `dual_sbus` | Drive speed | `sbus1:1:172:992:1811:0:0` | SBUS #1 CH1 |
 | `single_sbus` / `dual_sbus` | Drive steer | `sbus1:2:172:992:1811:0:0` | SBUS #1 CH2 |
 | `single_sbus` / `dual_sbus` | Drive limit | `sbus1:8:172:992:1811:0:0` | SBUS #1 CH8 |
 | `single_sbus` / `dual_sbus` | Dome speed | `sbus2:1:172:992:1811:0:0` | Active in `dual_sbus`; inactive in `single_sbus` until remapped |
-| `single_sbus` / `dual_sbus` | ARM1 trigger | `sbus2:2:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
-| `single_sbus` / `dual_sbus` | ARM2 trigger | `sbus2:3:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
+| `single_sbus` / `dual_sbus` | First output's toggle (`arm1_toggle`) | `sbus2:2:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
+| `single_sbus` / `dual_sbus` | Second output's toggle (`arm2_toggle`) | `sbus2:3:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
 | `single_sbus` / `dual_sbus` | Sound trigger | `none:0:1000:1500:2000:0:0` | Unbound by default |
 
 SBUS channels `17` and `18` are also valid persisted binding channels for digital
@@ -333,11 +333,11 @@ The other connectors, with their silkscreen labels:
 | 33 | main field, row `33` | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 34 | main field, row `34` | Audio module TX (UART3) | UART3 | — | P3 strapping (JTAG source); hardware UART via GPIO matrix (#254) |
 | 36 | main field, row `36` | Audio module RX (UART3) | UART3 | — | P3 strapping (ROM print); audio's own controller, not shared (#254) |
-| 49 | main field, row `49` | Arm servo #1 (left/top) | LEDC PWM | A5 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
-| 50 | main field, row `50` | Arm servo #2 (right/bottom) | LEDC PWM | A6 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
-| 4 | main field, row `4` | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
-| 5 | main field, row `5` | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
-| 51 | main field, row `51` | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
+| 49 | main field, row `49` | Servo output GPIO 49 (left/top arm) | LEDC PWM | A5 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
+| 50 | main field, row `50` | Servo output GPIO 50 (right/bottom arm) | LEDC PWM | A6 (code alias; nothing is printed on the field) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
+| 4 | main field, row `4` | Servo output GPIO 4 (can carry the LED strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
+| 5 | main field, row `5` | Servo output GPIO 5 (can carry the LED strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
+| 51 | main field, row `51` | Servo output GPIO 51 (can carry the LED strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
 | 48 | main field, row `48` | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load** (see Known Issue below); P2 with LDO caution |
 
 6 board bring-up interface lanes:
@@ -396,7 +396,7 @@ has neither (operator decision, 2026-08-31).
 | 48 | `VDD_IO_5` | `PIN_DOME_ESC` — dome rotation ESC |
 | 49 | `VDD_IO_6` | `PIN_ARM1_SERVO` |
 | 50 | `VDD_IO_6` | `PIN_ARM2_SERVO` |
-| 51 | `VDD_IO_6` | `PIN_ARM5_SERVO` (AUX3) |
+| 51 | `VDD_IO_6` | `PIN_ARM5_SERVO` (GPIO 51; can carry the LED strip) |
 | 52 | `VDD_IO_6` | deliberately unassigned — the board's sole free GPIO |
 
 **How it would present.** A servo or ESC decodes *pulse width*. A sagging logic level or a slow

@@ -14,7 +14,7 @@ upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
 - [Error Contract](#error-contract)
 - [Identity](#identity)
 - [Safety and Drive](#safety-and-drive)
-- [Servo and AUX Outputs](#servo-and-aux-outputs)
+- [Outputs](#outputs)
 - [Audio and Mood](#audio-and-mood)
 - [Learned Sequences](#learned-sequences)
 - [Configuration and RC](#configuration-and-rc)
@@ -467,14 +467,23 @@ curl -s http://artoo.local/api/dome/layout
 {"servos":[{"channel":0,"id":"arm1","type":"gripper"}],"geometry":{}}
 ```
 
-## Servo and AUX Outputs
+## Outputs
 
 ### POST /api/servo
 
 Queues servo command.
 
 - Body fields:
-- `arm`: `arm1|arm2|aux1|aux2|aux3|both`
+- `arm`: the Output, named by **what the running board prints beside its pin**
+  (ADR 0033 Amendment 2026-09-19), or `both`. On the Artoo PCB that is `ARM1`
+  .. `ARM5`; on the FireBeetle 2 it is `GPIO 49`, `GPIO 50`, `GPIO 4`, `GPIO 5`
+  and `GPIO 51`. The word is matched without regard to case or spaces, so
+  `arm3`, `ARM 3` and `ARM3` are the same Output, and so are `gpio49` and
+  `GPIO 49`. `GET /api/config` (`components.<id>.label`) and
+  `GET /api/servo/outputs` (`name`) report the running board's words. The old
+  protoArtoo-wide words `aux1`..`aux3` are not taken on any board, and on the
+  FireBeetle 2 neither are `arm1`/`arm2`: there is no alias. `both` is the
+  first two Outputs together (`ARM1` and `ARM2`, or `GPIO 49` and `GPIO 50`).
 - `action`: `open|close|stop|position|nudge|travel|hold|release`
 - `positionUs`: required when `action=position` or `action=hold`; range `500..2500`
 - `action=nudge` (Find by Moving, ADR 0050): a small twitch about wherever
@@ -518,21 +527,32 @@ Queues servo command.
   estop and Sleep Mode now do to every enabled output at once. A released
   output stays limp until something commands it again, and that first move is a
   jump rather than a ramp, because the controller no longer knows where the
-  part is. `arm=both` releases ARM1 and ARM2 only.
+  part is. `arm=both` releases the first two Outputs only.
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` `{"ok":false,"error":"Missing arm or action parameter"}`
-- `400` `{"ok":false,"error":"Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, or both"}`
+- `400` a word that is not one of the running board's labels, naming the words
+  it does take. On the Artoo PCB:
+  `{"ok":false,"error":"No output called aux1 on this board. Use ARM1, ARM2, ARM3, ARM4, ARM5, or both"}`;
+  on the FireBeetle 2:
+  `{"ok":false,"error":"No output called arm1 on this board. Use GPIO 49, GPIO 50, GPIO 4, GPIO 5, GPIO 51, or both"}`
 - `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, nudge, travel, hold, or release"}`
-- `400` `{"ok":false,"error":"A nudge takes one arm. Use: arm1, arm2, aux1, aux2, or aux3"}` (and the same sentence naming `hold` and `travel`)
+- `400` `{"ok":false,"error":"A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"}` (the running board's words; the same sentence names `hold` and `travel`)
 - `400` missing/invalid `positionUs`
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
-#### Example request (open)
+#### Example request (open, Artoo PCB)
 
 ```bash
 curl -s -X POST http://artoo.local/api/servo \
-  -d 'arm=arm1&action=open'
+  -d 'arm=ARM3&action=open'
+```
+
+#### Example request (open, FireBeetle 2 - the label's space is sent encoded)
+
+```bash
+curl -s -X POST http://artoo.local/api/servo \
+  --data-urlencode 'arm=GPIO 49' -d 'action=open'
 ```
 
 #### Example response
@@ -545,7 +565,7 @@ curl -s -X POST http://artoo.local/api/servo \
 
 ```bash
 curl -s -X POST http://artoo.local/api/servo \
-  -d 'arm=aux1&action=position&positionUs=1600'
+  -d 'arm=ARM3&action=position&positionUs=1600'
 ```
 
 #### Example response
@@ -598,14 +618,14 @@ curl -s -X POST http://artoo.local/api/servo/centre
 ### GET /api/servo/outputs
 
 Every live Servo Output row, the Parts each one drives, and where each has been
-told to be (ADR 0041, ADR 0050). Both projections of the Parts destination read
-this one answer — which Output moves a Part, and what an Output moves — so they
-cannot disagree. Read-only: a Part is moved with `movePart` on
+told to be (ADR 0041, ADR 0050). Both projections of the mapping read this one
+answer — which Output moves a Part (Parts), and what an Output moves (Servos) —
+so they cannot disagree. Read-only: a Part is moved with `movePart` on
 `POST /api/config`.
 
-It is also the Parts page's bench feed: the page reads it once a second while
-Parts is on screen and stops when you leave, so a commanded position reaches the
-output-first table without riding `/api/events`, which carries the estop (#318).
+It is also Servos' and Parts' bench feed: each page reads it once a second while
+it is on screen and stops when you leave, so a commanded position reaches the
+Outputs rows without riding `/api/events`, which carries the estop (#318).
 The Controller Console answers the same rows as `servo.api.get-outputs`.
 
 - Success: `200` JSON:
@@ -613,9 +633,12 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   - `address`: the Output Address as one token, `<driver>:<channel>` (`ledc:3`).
     It is the spelling `movePartFrom` and `movePartTo` take, so send back the
     address you read rather than composing one.
-  - `name`: the name a builder already knows the Output by (`ARM1`, `ARM2`,
-    `AUX1`..`AUX3` on the LEDC outputs), or `""` for an address nobody has
-    named, such as an expander's row.
+  - `name`: what the running board prints beside the Output - `ARM1`..`ARM5`
+    on the Artoo PCB, `GPIO 49`/`GPIO 50`/`GPIO 4`/`GPIO 5`/`GPIO 51` on the
+    FireBeetle 2 - which is also the word `POST /api/servo` takes to move it,
+    or `""` for an address no board labels, such as an expander's row (which
+    `POST /api/servo` cannot move). Join a row to anything by its `address`,
+    never by this name.
   - `parts`: the Part ids this Output drives, from `data/droid_parts.js`. Empty
     when it drives nothing. More than one is a ganged lead: every Part listed
     moves when the Output does. A Part appears on at most one Output.
@@ -670,24 +693,24 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
 curl -s http://artoo.local/api/servo/outputs
 ```
 
-#### Example response (a fresh controller with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, AUX1 let go with pulses off after a nudge, and AUX3 released by the estop)
+#### Example response (an Artoo PCB, fresh, with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 let go with pulses off after a nudge, and ARM5 released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"AUX1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"AUX2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"AUX3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
 ```
 
 ### POST /api/aux-led/color
 
-Sets AUX LED color.
+Sets the LED strip's colour.
 
 - Body formats:
 - Form: `r`, `g`, `b` (0..255)
 - JSON: `{"r":<0..255>,"g":<0..255>,"b":<0..255>}`
-- Success: `200` AUX LED state JSON (`pin`, `r`, `g`, `b`, `effect`)
+- Success: `200` LED strip state JSON (`pin`, `r`, `g`, `b`, `effect`)
 - Errors:
 - `400` `{"ok":false,"error":"payload must contain r,g,b integers 0..255"}`
 - `503` `{"ok":false,"error":"aux LED unavailable"}`
@@ -722,12 +745,12 @@ curl -s -X POST http://artoo.local/api/aux-led/color \
 
 ### POST /api/aux-led/effect
 
-Sets AUX LED effect.
+Sets the LED strip's effect.
 
 - Body formats:
 - Form: `effect`
 - JSON: `{"effect":"off|solid|blink|pulse"}`
-- Success: `200` AUX LED state JSON
+- Success: `200` LED strip state JSON
 - Errors:
 - `400` `{"ok":false,"error":"effect must be one of off|solid|blink|pulse"}`
 - `503` `{"ok":false,"error":"aux LED unavailable"}`
@@ -1704,6 +1727,10 @@ Returns all bindable actions.
 
 - Success: `200` array of objects with:
 - `id`, `name`, `display_name`, `domain`, `description`
+- An action about one Output (the `*_toggle` tokens) is named by what the
+  running board prints beside that Output: `servo.action.toggle-aux1` is
+  `"display_name":"ARM3 Toggle"` on the Artoo PCB and `"GPIO 4 Toggle"` on the
+  FireBeetle 2. The `token` (`aux1_toggle`) is an id and is the same on both.
 - `safety_critical`, `testable`, `one_shot`, `token`
 - `board_capability`, `build_flag`: nullable compile-time requirements; `null`
   means the action is universal for that tier
@@ -1884,7 +1911,7 @@ Returns controller status snapshot.
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)
-- Additional component objects are conditionally present when enabled (`arm1`, `arm2`, `aux1..aux3`, `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`)
+- Additional component objects are conditionally present when enabled: each Output under its stored id (`arm1`..`aux3`, the `components{}` keys of `GET /api/config`, never shown - its name is that entry's `label`), and `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`
 - Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
 - Includes `hoverboard` object when feedback is valid
 

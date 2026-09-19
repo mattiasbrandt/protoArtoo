@@ -48,7 +48,7 @@ const measuredArm1 = () =>
       calibrated: true,
     }),
     output("ledc:1", "ARM2", { commandedUs: 1500, targetUs: 1500 }),
-    output("ledc:3", "AUX1", { commandedUs: 1500, targetUs: 1500 }),
+    output("ledc:3", "ARM3", { commandedUs: 1500, targetUs: 1500 }),
   ]);
 
 test("a part nothing drives makes no claim about where it is", async () => {
@@ -85,7 +85,7 @@ test("Open it sends one command naming the output and the end, and no width", as
 
   assert.equal(servoPosts(env).length, 1, "one press, one command");
   // Six tenths of the way to the open end draws Open, so the press closes it.
-  assert.deepEqual(servoPosts(env)[0].form, { arm: "arm1", action: "close" });
+  assert.deepEqual(servoPosts(env)[0].form, { arm: "ARM1", action: "close" });
   assert.equal("positionUs" in servoPosts(env)[0].form, false, "no width travels with it");
 });
 

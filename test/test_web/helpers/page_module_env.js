@@ -272,7 +272,10 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   context.globalThis = context;
   // Page modules read globals both as `window.X` and bare `X`, the way a
   // browser resolves them. Mirror the published objects onto the context.
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream"]) {
+  // A browser resolves every window property as a bare global, so what a test
+  // hands in as an override (a FileReader, a published module) is mirrored the
+  // same way the four built-in objects are.
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream", ...Object.keys(overrides)]) {
     context[key] = windowMock[key];
   }
 
@@ -335,3 +338,17 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
 };
 
 export { ApiError };
+
+// The shipped parts catalog and the shared mapping module (data/droid_parts.js,
+// data/droid_part_kind.js, data/parts_mapping.js), evaluated as a browser loads
+// them before a surface that reads them - Servos names each Output's Parts and
+// moves a Part through PAParts. Handed to loadPageModule() as window overrides,
+// so the module under test runs against the real ones rather than a stand-in.
+export const partsGlobals = () => {
+  const context = { window: {}, console };
+  for (const file of ["droid_parts.js", "droid_part_kind.js", "parts_mapping.js"]) {
+    vm.runInNewContext(readFileSync(join(dataDir, file), "utf-8"), context, { filename: file });
+  }
+  const { DroidParts, DroidPartKind, PAParts } = context.window;
+  return { DroidParts, DroidPartKind, PAParts };
+};

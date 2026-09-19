@@ -1059,8 +1059,12 @@ void test_an_output_address_is_one_token_with_one_spelling() {
         TEST_ASSERT_FALSE_MESSAGE(servoOutputParseAddress(raw, &driver, &channel), raw);
     }
 
+    // An Output's name is what the running board prints beside it: this
+    // image is built for the Artoo PCB, which prints ARM5 on the channel
+    // protoArtoo once called AUX3 (include/component_labels.inc).
     TEST_ASSERT_EQUAL_STRING("ARM1", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
-    TEST_ASSERT_EQUAL_STRING("AUX3", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+    TEST_ASSERT_EQUAL_STRING("ARM5", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_AUX3));
+    TEST_ASSERT_EQUAL_STRING("", servoOutputAddressName(SERVO_DRIVER_LEDC, LEDC_CH_DOME));
     TEST_ASSERT_EQUAL_STRING("", servoOutputAddressName(SERVO_DRIVER_LEDC, SERVO_OUTPUT_CHANNEL_UNSET));
 }
 

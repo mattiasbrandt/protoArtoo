@@ -95,12 +95,15 @@
   // The name, and only the name. Fifteen rows that all wore one of four emoji
   // said nothing the word beside them did not (ADR 0066), and the three that
   // shared an arm glyph were not even the same kind of thing.
-  const COMPONENT_LABELS = [
-    ["arm1", "Utility Arm 1"],
-    ["arm2", "Utility Arm 2"],
-    ["aux1", "AUX 1"],
-    ["aux2", "AUX 2"],
-    ["aux3", "AUX 3"],
+  //
+  // The Outputs are not in this list: which ones the droid has and what each is
+  // called - what its board prints beside the pin, ARM3 on the Artoo PCB, GPIO 4
+  // on the FireBeetle 2 - is the firmware's answer, read from GET /api/config
+  // (every components{} entry carrying an `address`, in its order), and this
+  // page knows no Output of its own (ADR 0033 Amendment 2026-09-19). They lead
+  // the card, as the firmware lists them, once that answer has arrived.
+  let outputLabels = [];
+  const SUBSYSTEM_LABELS = [
     ["domeEsc", "Dome ESC"],
     ["rcCh1", "RC Channel 1"],
     ["rcCh2", "RC Channel 2"],
@@ -235,10 +238,23 @@
 
   let renderedComponentIds = null;
 
+  // An Output the board labels nothing reads as its address, which still says
+  // where it plugs in - never a name this page made up.
+  const adoptOutputLabels = (components) => {
+    const entries = components && typeof components === "object" ? components : {};
+    outputLabels = Object.keys(entries)
+      .filter((id) => typeof entries[id]?.address === "string" && entries[id].address !== "")
+      .map((id) => [id, typeof entries[id].label === "string" && entries[id].label !== "" ? entries[id].label : entries[id].address]);
+    // Whichever arrived first, the card is drawn again from the last status
+    // this page applied, so the names follow on every delivery path - the
+    // stream and the fallback poll alike.
+    if (lastStatus) renderComponentStatus(lastStatus);
+  };
+
   const renderComponentStatus = (payload) => {
     if (!componentStatusCard || !componentStatusGrid) return;
 
-    const active = COMPONENT_LABELS.filter(([key]) => key in payload);
+    const active = [...outputLabels, ...SUBSYSTEM_LABELS].filter(([key]) => key in payload);
     if (active.length === 0) {
       componentStatusCard.classList.add("hidden");
       componentStatusGrid.innerHTML = "";
@@ -256,7 +272,7 @@
       payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
       payload.audio?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
     ].filter(Boolean).join(",");
-    const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
+    const signature = active.map(([key, label]) => `${key}:${label}`).join(",") + "|" + transportFlags;
 
     // Rebuild only if component IDs or transport flags changed
     if (signature !== renderedComponentIds) {
@@ -907,6 +923,8 @@
     // second GET of the same document would cost a client slot to learn what
     // this one already said.
     renderDroidBuild(window.DroidBuild?.adopt(result.data) || null);
+    // The Outputs' names ride the same payload, for the same reason.
+    adoptOutputLabels(result.data?.components);
     const level = Number(result.data?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);

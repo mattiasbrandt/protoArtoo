@@ -186,11 +186,10 @@
         // Identity (#288, #404). Guided Setup is drawn over it while the droid
         // is not set up, and is never in a group of its own (#351).
         "configuration",
-        // Servos stays beside Parts, and stays a page. The question #347 said
-        // to put once the dial landed was put when it did (#364), and the
-        // operator answered it on 2026-09-16: take out its calibration form,
-        // keep the page. It now holds only what it is actually for -- driving
-        // an arm, driving an AUX servo -- and an end is set on Parts (#400).
+        // Servos stays beside Parts, and stays a page. It holds the Outputs:
+        // driving each one, the calibration dial, Find by Moving and back to
+        // centre, all moved there from Parts (operator, 2026-09-19 on #412),
+        // while Parts keeps the part-first side and the droid picture.
         "servo",
         "parts",
         "wiring",

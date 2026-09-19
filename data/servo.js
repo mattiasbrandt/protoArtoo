@@ -1,456 +1,1196 @@
 // =============================================================================
-// servo.js
+// data/servo.js
 //
-// Servos page controller — arm servo controls, AUX output controls, and the
-// per-output test controls (ARM1/ARM2 and AUX servo channels).
-// SSE-first status delivery (consume `status` events from PAStatusStream),
-// with visibility-aware fallback polling when SSE is unavailable.
-// Sends open/close/stop/position commands via POST /api/servo.
-// READS calibration via GET /api/config and never writes it: an end is set on
-// Parts, by driving the part and pressing the button for that end, and this
-// page's Test Open and Test Close drive to the ends the droid recorded there
-// (#400). The `calib` names below are kept because reading the calibration is
-// still exactly what they do.
-// Component types (mg996r/mg90s/rgb/none) are read from /api/config to render
-// type-appropriate controls per AUX channel. Which servo each output carries
-// is set on this page through data/output_settings.js (#369), which tells
-// this file when the answer changes.
+// Servos (CONTEXT.md "Servos"): the body's Outputs as servos. One section of
+// Outputs, one row each, named by what the board prints beside the pin and by
+// the Part(s) on it. On each row a builder drives the servo (open, close, stop,
+// or a typed width sent once), records its ends with the calibration dial, and
+// takes the pulse off; Find by Moving and back to centre sit over the rows. It
+// is the output-first side of the mapping Parts reads from the part's end, and
+// everything here moved from Parts on the operator's word (2026-09-19 on #412:
+// "move bascially all of the "Outputs" section pieces to the "Servos" page.
+// They all seem related to servo calibration"). The behaviour each piece keeps
+// is its ADR's; only the page moved (ADR 0050, ADR 0064, amended 2026-09-19).
+//
+// THIS FILE KNOWS NO OUTPUT. The rows are GET /api/servo/outputs, in its order;
+// what each is called is what its board prints (ADR 0033 Amendment
+// 2026-09-19), and that label is also the word POST /api/servo moves it by,
+// sent exactly as the droid gave it (data/parts_mapping.js servoWord()).
+// Whether an Output is wired and what it carries is data/output_settings.js's
+// answer from GET /api/config, joined to a row by its Output Address.
+//
+// Five rules shape this file.
+//
+// The table is built once per set of Outputs and repainted in place. A row is
+// where live controls open, and a repaint that rebuilt one under the builder's
+// pointer would move a panel, not merely redraw it (r2d2-astromech-simulator
+// v1.79.0, src/js/maestro/hw-table.js:171-173).
+//
+// Both position marks are COMMANDED (#318, #362). The bar is the width the
+// controller has put on the pin and the tick is where the move ends; nothing
+// on this droid reads a servo back.
+//
+// An Output is found by moving it (ADR 0050, #363): pick an unwired Part, and
+// the droid nudges each spare Output a little, one at a time, until the
+// builder presses "That one". The rules of that run are with the code.
+//
+// A Part is calibrated by driving it (#291, #364, ADR 0064), and the part
+// KEEPS being driven while the builder looks and listens. The two bounds that
+// end the hold are the firmware's, not this page's.
+//
+// The whole droid goes back to centre on one press (#318, #365), and THE DROID
+// PACES IT: this page sends one request and holds no pace at all.
 // =============================================================================
 (() => {
-  const armControlsCard      = document.getElementById("arm-controls-card");
-  const armControlsContainer = document.getElementById("arm-controls-container");
-  const armControlsSummary   = document.getElementById("arm-controls-summary");
-  const noArmsCard           = document.getElementById("no-arms-card");
-  const armFeedback          = document.getElementById("arm-feedback");
+  const catalog = window.DroidParts;
+  const P = window.PAParts;
+  if (!P || !catalog) {
+    console.error("[servo] window.PAParts or window.DroidParts is missing; the parts scripts did not load");
+    return;
+  }
+  const {
+    NOT_WIRED,
+    groupParts,
+    partLabel,
+    listParts,
+    outputLabel,
+    servoWord,
+    hasServoWord,
+    outputOf,
+    isLightRow,
+  } = P;
 
-  const auxControlsCard      = document.getElementById("aux-controls-card");
-  const auxControlsContainer = document.getElementById("aux-controls-container");
-  const auxControlsSummary   = document.getElementById("aux-controls-summary");
-  const auxFeedback          = document.getElementById("aux-feedback");
+  // The bench feed (#318): one read of the outputs answer a second while
+  // Servos is on screen, stopped by the shell when the operator leaves (#360).
+  const POLL_MS = 1000;
 
-  const servoTestCard        = document.getElementById("servo-test-card");
-  const arm1TestSection      = document.getElementById("arm1-test-section");
-  const arm2TestSection      = document.getElementById("arm2-test-section");
-  const aux1TestSection      = document.getElementById("aux1-test-section");
-  const aux2TestSection      = document.getElementById("aux2-test-section");
-  const aux3TestSection      = document.getElementById("aux3-test-section");
+  // #293's honesty tiers, as the counts the Outputs section is headed with
+  // (#318). A tier is a count, never a place a row moves to: the rows stay in
+  // the order the leads plug in.
+  const TIERS = [
+    { id: "driving", label: "Driving parts" },
+    { id: "switched-off", label: "Wired but switched off" },
+    { id: "no-part", label: "Output with no part" },
+  ];
+  // A firmware older than this page reports no position at all, and that is
+  // not the same as an Output with no pulse, so it is never counted as off.
+  const tierOf = (output) => {
+    if (output.parts.length === 0) return "no-part";
+    return output.reported && output.commandedUs === null ? "switched-off" : "driving";
+  };
 
-  const arm1TestUs           = document.getElementById("arm1-test-us");
-  const arm2TestUs           = document.getElementById("arm2-test-us");
-  const aux1TestUs           = document.getElementById("aux1-test-us");
-  const aux2TestUs           = document.getElementById("aux2-test-us");
-  const aux3TestUs           = document.getElementById("aux3-test-us");
-  const calibFeedback        = document.getElementById("calib-feedback");
+  const tiersNode = document.getElementById("outputs-tiers");
+  const outputsRegion = document.getElementById("outputs-table");
+  const outputsSection = document.getElementById("outputs-card");
+  const feedback = document.getElementById("outputs-feedback");
+  const dialog = document.getElementById("outputs-move-dialog");
+  const findBar = document.getElementById("outputs-find");
+  const findPick = document.getElementById("outputs-find-part");
+  if (!outputsRegion || !outputsSection || !dialog || !findBar || !findPick) return;
+  const findButton = findBar.querySelector(".parts-find");
+  const centreBulk = outputsSection.querySelector(".outputs-bulk");
+  const centreButton = centreBulk.querySelector(".outputs-centre");
+  // A plain .feedback, found once and held: showFeedback() rewrites its whole
+  // class list, so it cannot be looked up again by the class it was found by.
+  const centreSaid = centreBulk.querySelector(".feedback");
 
-  // Component types loaded from /api/config — determines AUX rendering
-  let auxTypes = { aux1: "none", aux2: "none", aux3: "none" };
-  let auxConfigured = { aux1: false, aux2: false, aux3: false };
+  const esc = (value) => window.PAUtils.escapeHtml(String(value));
+  const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
-  // The recorded ends, read from /api/config and never written from here. Test
-  // Open and Test Close drive to these, so what a builder sees is what the
-  // droid will really do when something says open -- not whatever number a box
-  // on this page happened to be holding.
+  // What data/output_settings.js says about each Output, joined by address:
+  // its stored id, whether it is wired, and what it carries.
+  let settings = new Map(); // address -> { id, enabled, type }
+  const LED_STRIP = "rgb";
+  const SERVO_TYPES = new Set(["mg996r", "mg90s"]);
+
+  let outputs = null; // null until the droid has answered
+  let run = null; // the Find by Moving run in progress, at most one (below)
+  let dial = null; // the Output being calibrated, at most one (below)
+  let estopLatched = null; // null until the droid has said
+
+  // ---------------------------------------------------------------------------
+  // The table: built once per set of Outputs
+  // ---------------------------------------------------------------------------
+  // Every catalog Part, grouped as Parts groups them, so a builder finds a Part
+  // the same way from either end.
+  const addOptions = groupParts(catalog.parts)
+    .map(
+      (group) =>
+        `<optgroup label="${esc(group.label)}">` +
+        group.parts.map((part) => `<option value="${esc(part.id)}">${esc(partLabel(part.id))}</option>`).join("") +
+        `</optgroup>`
+    )
+    .join("");
+
+  // An Output nobody has named - an expander's row - shows its address as its
+  // name, and a named one shows the address beside it. Every act starts
+  // refused: none may run on a guess about the estop, and the droid has not
+  // said yet.
+  const outputRowHtml = (output) => {
+    const label = outputLabel(output);
+    const address = output.name ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
+    return (
+      `<tr class="parts-row outputs-row" data-output="${esc(output.address)}">` +
+      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}</th>` +
+      `<td><span class="outputs-parts"></span><select class="parts-output outputs-add" ` +
+      `aria-label="${esc(`Put a part on ${label}`)}"><option value="">Put a part on ${esc(label)}...</option>` +
+      `${addOptions}</select></td>` +
+      `<td><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
+      `<span class="outputs-us"></span></td>` +
+      // Driving it: the typed width goes out once and is saved nowhere; open
+      // and close go to the ends recorded for it; stop drives it to centre and
+      // does not hold it there.
+      `<td class="outputs-drive"><span class="outputs-drive-note"></span>` +
+      `<span class="outputs-drive-acts">` +
+      `<input class="input-narrow outputs-width" type="number" min="500" max="2500" step="10" value="1500" ` +
+      `aria-label="${esc(`Width to drive ${label} to, in microseconds`)}">` +
+      `<button class="btn btn-sm outputs-go" type="button" data-action="position" disabled aria-disabled="true">drive</button>` +
+      `<button class="btn btn-sm outputs-go" type="button" data-action="open" disabled aria-disabled="true">open</button>` +
+      `<button class="btn btn-sm outputs-go" type="button" data-action="close" disabled aria-disabled="true">close</button>` +
+      `<button class="btn btn-sm outputs-go" type="button" data-action="stop" disabled aria-disabled="true">stop</button>` +
+      `</span></td>` +
+      `<td class="outputs-release"></td>` +
+      `<td class="outputs-acts">` +
+      `<button class="btn btn-sm outputs-calibrate" type="button" ` +
+      `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
+      `<button class="btn btn-sm outputs-off" type="button" ` +
+      `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
+      `</td></tr>`
+    );
+  };
+
+  const outputRows = new Map();
+  let outputAddresses = null;
+
+  // The only rebuild, and only when the set of Outputs itself changes - which a
+  // controller does across a reboot, not while this page is reading it (#318).
+  const buildOutputs = (addresses) => {
+    outputsRegion.innerHTML =
+      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
+      `<th scope="col">Commanded position</th><th scope="col">Drive it</th><th scope="col">Output Release</th>` +
+      `<th scope="col">Calibrate</th></tr></thead><tbody>` +
+      outputs.map(outputRowHtml).join("") +
+      `</tbody></table>`;
+    outputRows.clear();
+    outputsRegion.querySelectorAll("[data-output]").forEach((node) => {
+      outputRows.set(node.dataset.output, {
+        node,
+        parts: node.querySelector(".outputs-parts"),
+        bar: node.querySelector(".outputs-bar"),
+        now: node.querySelector(".outputs-now"),
+        tick: node.querySelector(".outputs-tick"),
+        us: node.querySelector(".outputs-us"),
+        driveNote: node.querySelector(".outputs-drive-note"),
+        driveActs: node.querySelector(".outputs-drive-acts"),
+        width: node.querySelector(".outputs-width"),
+        go: Array.from(node.querySelectorAll(".outputs-go")),
+        release: node.querySelector(".outputs-release"),
+        calibrate: node.querySelector(".outputs-calibrate"),
+        off: node.querySelector(".outputs-off"),
+      });
+    });
+    outputAddresses = addresses;
+    // The buttons are built refused; this is what makes them live again on a
+    // droid whose estop is clear.
+    gateActs();
+  };
+
+  // Both marks against one span, so they cannot disagree about scale and the
+  // gap between them is the move (r2d2-astromech-simulator v1.79.0,
+  // src/js/maestro/hw-table.js:186). The span is the band the Output's widths
+  // are clamped into, so a commanded width never falls off either end.
+  const markAt = (us, output) => {
+    const span = output.bandHiUs - output.bandLoUs;
+    const fraction = span > 0 ? (us - output.bandLoUs) / span : 0;
+    return `${(Math.min(1, Math.max(0, fraction)) * 100).toFixed(1)}%`;
+  };
+
+  // An Output a dial can drive: one with travel, and with a name the servo
+  // route takes as its arm.
+  const isDriveable = (output) => !isLightRow(output) && hasServoWord(output);
+
+  // Why an Output offers no drive, said the way a builder needs it, or "" when
+  // it does. Whether it is wired and what it carries are Wiring's and Servo
+  // assignment's answer; the route is refused for a row no board labels.
+  const driveRefusal = (output) => {
+    if (!hasServoWord(output)) return "No name the servo route takes";
+    if (isLightRow(output)) return "A light has no position";
+    const said = settings.get(output.address);
+    if (!said) return "";
+    if (said.type === LED_STRIP) return "Carries the LED strip";
+    if (!said.enabled) return "Not wired. Mark it on Wiring";
+    if (!SERVO_TYPES.has(said.type)) return "No servo set above";
+    return "";
+  };
+
+  // Why an Output has no pulse, said the way a builder needs it. The two
+  // firmware bounds each get their own sentence.
+  const LIMP_SAID = {
+    "off": "Limp - no pulse",
+    "pulses-off": "Limp - pulses off",
+    "expiry": "Went limp - the dial stopped asking",
+    "ceiling": "Went limp - ten minutes is the most a dial holds",
+    "estop": "Limp - the estop let go",
+    "sleep": "Limp - sleep mode let go",
+  };
+
+  // Only style, textContent and classList, on nodes that already exist: a
+  // repaint never rebuilds a row, so the control under the builder's pointer
+  // stays where it is (hw-table.js:171-174).
+  const paintOutputRow = (output) => {
+    const row = outputRows.get(output.address);
+    if (!row) return;
+    const light = isLightRow(output);
+    const pulsing = output.commandedUs !== null;
+    row.node.classList.toggle("is-wired", output.parts.length > 0);
+    row.node.classList.toggle("partkind-light", light);
+    row.bar.classList.toggle("is-off", !pulsing);
+    // Whatever the droid has just answered is current, including after an
+    // estop cut a nudge short.
+    row.bar.classList.remove("is-stale");
+    row.parts.textContent = output.parts.length ? listParts(output.parts) : NOT_WIRED;
+    row.now.style.width = pulsing ? markAt(output.commandedUs, output) : "0%";
+    row.tick.style.left = pulsing ? markAt(output.targetUs, output) : "0%";
+    const refusal = driveRefusal(output);
+    row.driveNote.textContent = refusal;
+    row.driveActs.hidden = refusal !== "";
+    const driveable = isDriveable(output);
+    row.calibrate.hidden = !driveable;
+    row.off.hidden = !driveable;
+    row.node.classList.toggle("is-held", output.held);
+    if (!output.reported) {
+      row.us.textContent = "Not reported by this firmware";
+      row.release.textContent = "Not reported by this firmware";
+      return;
+    }
+    // An Output with no pulse says so: a blank cell cannot be told from a table
+    // that has stopped updating.
+    if (!pulsing) row.us.textContent = "— off";
+    else if (light) row.us.textContent = "A light has no position";
+    else if (output.targetUs === output.commandedUs) row.us.textContent = `${output.commandedUs} µs`;
+    else row.us.textContent = `${output.commandedUs} → ${output.targetUs} µs`;
+    if (light) row.release.textContent = "None - a light has nothing to let go of";
+    else if (output.held) row.release.textContent = "The dial is holding it";
+    else if (pulsing) row.release.textContent = "Holds where it stops";
+    // An Output that has gone limp says WHICH of the ways it can happen this
+    // was (#364): a bound the dial ran into is not the estop letting go.
+    else row.release.textContent = LIMP_SAID[output.limp] || LIMP_SAID.off;
+  };
+
+  const paintOutputs = (addresses) => {
+    if (outputAddresses !== addresses) buildOutputs(addresses);
+    outputs.forEach(paintOutputRow);
+    const counts = new Map(TIERS.map((tier) => [tier.id, 0]));
+    outputs.forEach((output) => counts.set(tierOf(output), counts.get(tierOf(output)) + 1));
+    if (tiersNode) {
+      if (!tiersNode.querySelector(".outputs-tier")) {
+        tiersNode.innerHTML = TIERS.map((tier) => `<span class="outputs-tier" data-tier="${tier.id}"></span>`).join("");
+      }
+      tiersNode.querySelectorAll("[data-tier]").forEach((node) => {
+        const tier = TIERS.find((each) => each.id === node.dataset.tier);
+        const count = counts.get(tier.id);
+        node.textContent = `${tier.label} — ${count} ${count === 1 ? "output" : "outputs"}`;
+      });
+    }
+  };
+
+  // The Parts Find by Moving can look for: every Part no Output drives, grouped
+  // as Parts groups them. Rebuilt only when that set changes, and never under
+  // the builder's pointer.
+  let findSet = null;
+  const paintFindPick = () => {
+    const unwired = catalog.parts.filter((part) => outputOf(outputs, part.id) === null);
+    const key = unwired.map((part) => part.id).join(",");
+    if (key !== findSet && document.activeElement !== findPick) {
+      const keep = findPick.value;
+      findPick.innerHTML = unwired.length
+        ? `<option value="">Pick a part nothing drives</option>` +
+          groupParts(unwired)
+            .map(
+              (group) =>
+                `<optgroup label="${esc(group.label)}">` +
+                group.parts.map((part) => `<option value="${esc(part.id)}">${esc(partLabel(part.id))}</option>`).join("") +
+                `</optgroup>`
+            )
+            .join("")
+        : `<option value="">Every part is on an output</option>`;
+      findPick.value = unwired.some((part) => part.id === keep) ? keep : "";
+      findSet = key;
+    }
+    findPick.disabled = unwired.length === 0;
+    findButton.hidden = run !== null;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Repainted in place
+  // ---------------------------------------------------------------------------
+  const paint = () => {
+    if (outputs === null) return;
+    const addresses = outputs.map((output) => output.address).join(",");
+    paintOutputs(addresses);
+    paintFindPick();
+    // The droid has answered again, which is the only thing a run steps on.
+    stepRun();
+    paintDial();
+    // What is on each Output's lead, for the Servo assignment plates too.
+    window.PAOutputSettings?.redraw?.();
+  };
+
+  const loadOutputs = async ({ handle = null } = {}) => {
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/servo/outputs");
+    const answer = result?.data?.outputs;
+    if (!Array.isArray(answer)) throw new Error("the droid's outputs answer carries no table");
+    outputs = P.readOutputs(answer);
+    paint();
+  };
+
+  // One read the dial and a capture both wait on, so what the panel shows after
+  // an act is what the droid answered rather than what this page assumed.
+  const refresh = () =>
+    loadOutputs().catch((error) => {
+      console.warn("[servo] reading the outputs failed:", error);
+    });
+
+  // ---------------------------------------------------------------------------
+  // Putting a Part on an Output: the same request Parts makes, asked in the
+  // same words (data/parts_mapping.js).
+  // ---------------------------------------------------------------------------
+  const mover = P.mover({
+    dialog,
+    say: showFeedback,
+    reload: () => loadOutputs(),
+    repaint: () => paint(),
+  });
+
+  outputsRegion.addEventListener("change", (event) => {
+    const select = event.target;
+    if (!select?.classList?.contains("outputs-add")) return;
+    const address = select.closest?.("[data-output]")?.dataset.output;
+    const id = select.value;
+    if (!address || !id || outputs === null) return;
+    // A pick is a request, not a state this control keeps: it goes back to its
+    // prompt, and the row's Drives cell says what the droid answered.
+    select.value = "";
+    mover.request(P.moveFor(outputs, id, address), select);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Driving an Output from its row
+  // ---------------------------------------------------------------------------
+  const drive = async (address, action) => {
+    const output = outputs?.find((each) => each.address === address);
+    const row = outputRows.get(address);
+    if (!output || !row) return;
+    const label = outputLabel(output);
+    const form = { arm: servoWord(output), action };
+    if (action === "position") {
+      const us = Math.round(Number(row.width.value));
+      if (!Number.isFinite(us) || us < 500 || us > 2500) {
+        showFeedback(`Type a width from 500 to 2500 µs for ${label}.`, "warning");
+        return;
+      }
+      form.positionUs = String(us);
+    }
+    const said = action === "position" ? `${label} to ${form.positionUs} µs` : `${label} ${action}`;
+    try {
+      await window.PAApi.postForm("/api/servo", form, { timeoutMs: 4000 });
+      showFeedback(`${said} sent.`, "success");
+    } catch (error) {
+      showFeedback(`${said} failed: ${window.PAApi.messageFor(error)}`, "error");
+      return;
+    }
+    refresh();
+  };
+
+  // ---------------------------------------------------------------------------
+  // Find by Moving (ADR 0050, #363)
   //
-  // The defaults stand in when a field is absent, which is a real answer rather
-  // than a missing one: addServoOutputFields() leaves an Output Address with no
-  // live row OUT of the document instead of inventing a number, and names this
-  // fallback as the reason it may (src/web/api_config.cpp:624).
-  const endpoints = {
-    arm1Open: 2000, arm1Close: 1000,
-    arm2Open: 2000, arm2Close: 1000,
-    aux1Open: 2000, aux1Close: 1000,
-    aux2Open: 2000, aux2Close: 1000,
-    aux3Open: 2000, aux3Close: 1000,
+  // A builder who cannot remember which output the rear-left door is on picks
+  // that door and watches the droid. The page steps through the spare Outputs
+  // -- the ones driving no Part, with a pulse on them -- and asks the droid to
+  // nudge each one a little, one at a time; the builder presses "That one"
+  // when the Part twitches, and that is the same move a row's picker makes.
+  // Nothing here holds an Output: a nudge is one firmware command that goes out
+  // and comes back on its own (POST /api/servo action=nudge), so a browser that
+  // dies mid-run leaves the droid where it was, and Stop sends nothing further
+  // -- the nudge in flight finishes its own return.
+  //
+  // One Output at a time, and the droid says when. The page sends the next
+  // nudge only when the previous one has ended, and it knows that from the
+  // answer's nudgesDone count going up -- never from watching the Output move,
+  // because a whole nudge can fall between two of the bench feed's reads.
+  //
+  // The estop ends a run. The firmware refuses and halts on its own; this side
+  // stops asking and stops showing the nudged Output's last commanded mark as
+  // if it were current, until the droid has answered again (after
+  // r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894). While the
+  // estop is latched the button is refused -- disabled plus aria-disabled --
+  // and the shell's own ignored-input notice names why. No Non-RC Control
+  // consent is asked: that flag has never reached POST /api/servo (ADR 0064).
+  // ---------------------------------------------------------------------------
+  const runPanel = document.createElement("span");
+  runPanel.className = "parts-find-run";
+  runPanel.innerHTML =
+    `<span class="parts-find-text" role="status" aria-live="polite"></span>` +
+    `<button class="btn accent parts-find-that" type="button">That one</button>` +
+    `<button class="btn parts-find-stop" type="button">Stop</button>`;
+  const runText = runPanel.querySelector(".parts-find-text");
+
+  // The Outputs a run steps through: nothing on them, a pulse on them (an
+  // Output with none cannot twitch, and the firmware would refuse it), and a
+  // name the servo route takes as its arm.
+  const spareOutputs = () =>
+    outputs.filter((output) => output.parts.length === 0 && output.commandedUs !== null && hasServoWord(output));
+
+  const endRun = (text, level) => {
+    if (run === null) return;
+    run = null;
+    runPanel.remove();
+    if (outputs !== null) paintFindPick();
+    if (text) showFeedback(text, level);
   };
 
-
-  // -------------------------------------------------------------------------
-  // Servo command helpers
-  // -------------------------------------------------------------------------
-  const setFeedback = (el, text, cls = "") => {
-    if (!el) return;
-    el.textContent = text;
-    el.className = cls ? `feedback ${cls}` : "feedback";
+  // The nudged Output's last commanded mark is not current any more: the
+  // estop ended the nudge somewhere the run never read. Held back, not
+  // guessed at, until the next answer repaints the row.
+  const markNotCurrent = (address) => {
+    const row = outputRows.get(address);
+    if (!row) return;
+    row.bar.classList.add("is-stale");
+    row.us.textContent = "Stopped — finding out where it is";
   };
 
-  const postServoAction = async (arm, action, feedbackEl) => {
-    if (!window.PAApi) return;
-    const fb = feedbackEl || armFeedback;
-    const label = `${arm} ${action}`;
+  // Ask the droid to nudge the next spare Output, or end the run when there
+  // is none left. `before` is the count from the droid's latest answer, and a
+  // later answer with a higher one is the only thing that moves the run on.
+  const nudgeNext = async () => {
+    const current = run;
+    current.at += 1;
+    const label = partLabel(current.partId);
+    const count = current.candidates.length;
+    if (current.at >= count) {
+      endRun(
+        `None of the ${count} spare ${count === 1 ? "output" : "outputs"} moved ${label} in one pass, so it stays ${NOT_WIRED}. ` +
+          `Check the lead, or run it again.`,
+        "warning"
+      );
+      return;
+    }
+    const address = current.candidates[current.at];
+    const output = outputs.find((each) => each.address === address);
+    if (!output || output.nudgesDone === null) {
+      // The droid's answer changed shape under the run: a reboot, or a
+      // different firmware. Nothing is asked of an Output the page cannot
+      // tell has finished.
+      endRun(`${address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+      return;
+    }
+    current.address = address;
+    current.before = output.nudgesDone;
+    current.sending = true;
+    runText.textContent =
+      `Nudging ${outputLabel(output)} (${current.at + 1} of ${count}). Watch the droid, and press That one when ${label} moves.`;
     try {
-      await window.PAApi.postForm("/api/servo", { arm, action }, { timeoutMs: 3000 });
-      setFeedback(fb, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
+      await window.PAApi.postForm("/api/servo", { arm: servoWord(output), action: "nudge" }, { timeoutMs: 4000 });
     } catch (error) {
-      setFeedback(fb, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+      if (run === current) {
+        endRun(`The nudge did not reach the droid: ${window.PAApi.messageFor(error)}. ${label} stays ${NOT_WIRED}.`, "error");
+      }
+      return;
     }
+    if (run === current) current.sending = false;
   };
 
-  const postServoPosition = async (arm, pulseUs, feedbackEl) => {
-    if (!window.PAApi) return;
-    const fb = feedbackEl || armFeedback;
-    const label = `${arm} → ${pulseUs} µs`;
-    try {
-      await window.PAApi.postForm("/api/servo",
-        { arm, action: "position", positionUs: String(pulseUs) },
-        { timeoutMs: 3000 });
-      setFeedback(fb, `Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (error) {
-      setFeedback(fb, `Test ${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+  // Called with every answer from the droid. Steps on only when the Output
+  // the run asked about says its nudge has ended.
+  const stepRun = () => {
+    if (run === null || run.sending || run.address === null) return;
+    const label = partLabel(run.partId);
+    const wiredTo = outputOf(outputs, run.partId);
+    if (wiredTo) {
+      endRun(`${label} is on ${outputLabel(wiredTo)} now, so the run stopped.`);
+      return;
     }
-  };
-
-  // -------------------------------------------------------------------------
-  // renderArmControls() — ARM1/ARM2 open/close/stop buttons
-  // -------------------------------------------------------------------------
-  const ARM_DEFS = [
-    { id: "arm1", name: "Utility Arm 1",  label: "ARM1" },
-    { id: "arm2", name: "Utility Arm 2", label: "ARM2" },
-  ];
-
-  let renderedArmIds = null;
-
-  // The section head's subtitle, which is a count rather than a tagline
-  // (ADR 0066, docs/ui-copy-voice.md rule 8). It counts the arms the droid
-  // answered for, so it cannot disagree with the rows under it.
-  const armSummary = (count) =>
-    count === 0 ? "none switched on" : `${count} of ${ARM_DEFS.length} switched on`;
-
-  const renderArmControls = (payload) => {
-    const enabled = ARM_DEFS.filter((a) => a.id in payload);
-    const ids = enabled.map((a) => a.id).join(",");
-
-    if (noArmsCard)      noArmsCard.classList.toggle("hidden", enabled.length > 0);
-    if (armControlsCard) armControlsCard.classList.toggle("hidden", enabled.length === 0);
-    if (armControlsSummary) armControlsSummary.textContent = armSummary(enabled.length);
-
-    if (enabled.length === 0) return;
-
-    if (armControlsContainer && ids !== renderedArmIds) {
-      renderedArmIds = ids;
-      armControlsContainer.innerHTML = enabled.map((arm) => {
-        const detail = window.PAUtils.escapeHtml(payload[arm.id]?.detail || "");
-        return `
-          <div class="arm-control-row" id="row-${arm.id}">
-            <span class="arm-name">${arm.name}</span>
-            <span class="arm-position" id="pos-${arm.id}">${detail}</span>
-            <span class="arm-acts">
-              <button class="btn" data-arm="${arm.id}" data-action="open"  type="button">Open</button>
-              <button class="btn" data-arm="${arm.id}" data-action="close" type="button">Close</button>
-              <button class="btn" data-arm="${arm.id}" data-action="stop"  type="button">Stop</button>
-            </span>
-          </div>`;
-      }).join("");
-
-      armControlsContainer.querySelectorAll("[data-arm]").forEach((btn) => {
-        btn.addEventListener("click", () =>
-          postServoAction(btn.dataset.arm, btn.dataset.action, armFeedback));
-      });
-    } else if (armControlsContainer) {
-      enabled.forEach((arm) => {
-        const el = document.getElementById(`pos-${arm.id}`);
-        if (el) el.textContent = payload[arm.id]?.detail || "";
-      });
+    const output = outputs.find((each) => each.address === run.address);
+    if (!output || output.nudgesDone === null) {
+      endRun(`${run.address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+      return;
     }
+    // The Output being nudged has gone limp - pulses off from its row, one of
+    // the calibration dial's bounds, or anything else that takes a pulse off a
+    // pin (#364). A limp Output cannot twitch, so the run ENDS here rather than
+    // stepping on: ending a nudge bumps nudgesDone, and without this the count
+    // going up would read as "that one finished, try the next".
+    if (output.commandedUs === null) {
+      endRun(`${outputLabel(output)} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+      return;
+    }
+    if (output.nudgesDone === run.before) return;
+    nudgeNext();
   };
 
-  // -------------------------------------------------------------------------
-  // renderAuxControls() — AUX1/2/3 type-appropriate controls
-  // -------------------------------------------------------------------------
-  const AUX_DEFS = [
-    { id: "aux1", name: "AUX 1", label: "AUX1" },
-    { id: "aux2", name: "AUX 2", label: "AUX2" },
-    { id: "aux3", name: "AUX 3", label: "AUX3" },
-  ];
-
-  // The arm and AUX lines are marked in use, and an AUX line given the LED
-  // strip, on Wiring (data/output_settings.js, #369), so that is where these
-  // sentences send a builder.
-  const setupActionHtml = (action) => `${action} on <a class="setup-link" href="#wiring">Wiring</a>`;
-  // The strip's count and preview stay on Configuration until Lights (#410).
-  const ledCountText = window.PAUi?.setupActionText?.("set its length") || "set its length in Configuration";
-  const isServoType = (type) => type === "mg996r" || type === "mg90s";
-  const auxTypeLabel = (type) => type === "mg90s" ? "MG90S servo" : type === "mg996r" ? "MG996R servo" : "";
-
-  const buildAuxLedRow = (aux) => `
-    <div class="arm-control-row" id="row-${aux.id}">
-      <span class="arm-name">${aux.name}</span>
-      <span class="arm-position">LED strip &middot; ${ledCountText}</span>
-    </div>`;
-
-  const buildAuxServoRow = (aux, detail, typeLabel) => {
-    const descriptor = typeLabel ? `${typeLabel}${detail ? ` · ${detail}` : ""}` : detail;
-    return `
-      <div class="arm-control-row" id="row-${aux.id}">
-        <span class="arm-name">${aux.name}</span>
-        <span class="arm-position" id="pos-${aux.id}">${descriptor}</span>
-        <span class="arm-acts">
-          <button class="btn" data-arm="${aux.id}" data-action="open" type="button">Open</button>
-          <button class="btn" data-arm="${aux.id}" data-action="close" type="button">Close</button>
-          <button class="btn" data-arm="${aux.id}" data-action="stop" type="button">Stop</button>
-        </span>
-      </div>`;
+  const startRun = (partId) => {
+    if (outputs === null || !partId) return;
+    if (run !== null) {
+      showFeedback(`One run at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
+      return;
+    }
+    if (mover.pending() !== null) {
+      showFeedback(`One move at a time: wait for ${partLabel(mover.pending())} to land.`, "warning");
+      return;
+    }
+    if (dial !== null) {
+      showFeedback("One at a time: an output is being calibrated. Press done first.", "warning");
+      return;
+    }
+    const candidates = spareOutputs();
+    if (!candidates.length) {
+      showFeedback("Nothing to nudge. Every output with a pulse already drives a part.", "warning");
+      return;
+    }
+    if (candidates.some((output) => output.nudgesDone === null)) {
+      showFeedback(
+        "This firmware does not say when a nudge has ended, so Find by moving cannot step through the outputs. Update the firmware.",
+        "warning"
+      );
+      return;
+    }
+    run = { partId, candidates: candidates.map((output) => output.address), at: -1, address: null, before: null, sending: false };
+    findBar.appendChild(runPanel);
+    paintFindPick();
+    nudgeNext();
   };
 
-  const bindAuxActionDelegation = () => {
-    if (!auxControlsContainer || auxControlsContainer.dataset.actionsBound === "1") return;
-    auxControlsContainer.dataset.actionsBound = "1";
-    auxControlsContainer.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-arm][data-action]");
-      if (!button || !auxControlsContainer.contains(button)) return;
-      postServoAction(button.dataset.arm, button.dataset.action, auxFeedback);
+  // "That one": the same request a row's picker makes, so a spare Output takes
+  // the Part with no question and an Output somebody wired meanwhile is asked
+  // about in the same words.
+  const pickThatOne = () => {
+    if (run === null) return;
+    const { partId, address } = run;
+    endRun();
+    mover.request(P.moveFor(outputs, partId, address), findPick);
+  };
+
+  const stopRun = () => {
+    if (run === null) return;
+    endRun(`Stopped. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+  };
+
+  runPanel.querySelector(".parts-find-that").addEventListener("click", pickThatOne);
+  runPanel.querySelector(".parts-find-stop").addEventListener("click", stopRun);
+
+  findButton.addEventListener("click", () => {
+    // A browser delivers no click to a disabled button; this is the rule
+    // itself: a refused control asks the droid for nothing, however the click
+    // arrived.
+    if (findButton.disabled) return;
+    if (!findPick.value) {
+      showFeedback("Pick the part to find first.", "warning");
+      return;
+    }
+    startRun(findPick.value);
+  });
+
+  // ---------------------------------------------------------------------------
+  // The calibration dial (#291, #364, ADR 0064)
+  //
+  // A builder drives the part until it looks right, presses a button, and that
+  // becomes the end. No typing microseconds, and no guessing whether the number
+  // they typed is the one the servo is holding -- the dial is already standing
+  // at a width the droid is driving, so a capture is one assignment
+  // (r2d2-astromech-simulator v1.79.0, src/js/maestro/setup-hw-cal.js:610).
+  //
+  // THE PART KEEPS BEING DRIVEN while they look and listen. Output Release cuts
+  // drive when a part arrives, which is exactly when the builder has stopped
+  // moving it in order to look at it, and a servo fighting its linkage is only
+  // audible while it is being driven. So the dial takes the Output and holds
+  // it, and the firmware -- not this page -- bounds that hold two ways: it lets
+  // go a few seconds after these commands stop arriving, and ten minutes after
+  // it took the Output whatever keeps arriving. This page can refresh the
+  // first and can move neither.
+  //
+  // REVERSE IS A SWAP, READ BACK FROM THE NUMBERS. Nothing here stores an
+  // invert flag and nothing may: the droid swaps the two ends on the row and
+  // this page shows what the row then says.
+  // ---------------------------------------------------------------------------
+  // How often the hold is refreshed while the dial is open: comfortably inside
+  // the firmware's few-second expiry, far short of the ten-minute ceiling.
+  const HOLD_KEEPALIVE_MS = 1000;
+  // A drag fires input events far faster than the droid needs to hear about
+  // them; this is short enough to feel immediate and long enough not to queue.
+  const HOLD_CHANGE_MS = 50;
+  // Long enough to watch a part reach an end and settle before it leaves again.
+  const SWEEP_DWELL_MS = 900;
+  // What `safe range` narrows to: the cautious band every component band
+  // contains (SERVO_BAND_STD, include/servo_output_row.h).
+  const SAFE_LO = 1000;
+  const SAFE_HI = 2000;
+  // One press of the fine buttons. A slider cannot be dragged to a single
+  // microsecond at the bench, and a tablet has no arrow keys (ADR 0059).
+  const FINE_US = 5;
+
+  // What the band the dial opens at is, and why it is that one. The component
+  // governs the clamp (ADR 0041), so the dial opens at the widest range the
+  // firmware will actually drive this row -- never wider.
+  const COMPONENT_SAID = {
+    mg996r: "what an MG996R takes",
+    mg90s: "what an MG90S takes, the full servo range",
+    rgb: "the cautious range: this is recorded as an LED strip",
+    none: "the cautious range: nothing is recorded as fitted",
+  };
+
+  const bandSentence = (output) => {
+    const said = COMPONENT_SAID[output.component] || COMPONENT_SAID.none;
+    const unlockable = output.component === "none" || output.component === "mg996r";
+    const unlock = unlockable ? " Record the part as an MG90S for the full 500-2500." : "";
+    return `${output.bandLoUs}-${output.bandHiUs} µs — ${said}.${unlock}`;
+  };
+
+  const dialPanel = document.createElement("section");
+  dialPanel.className = "cal-panel";
+  dialPanel.hidden = true;
+  dialPanel.innerHTML =
+    `<h4 class="cal-title"></h4>` +
+    `<p class="desc">Drive the part until it looks right, then press the end you are setting. The ` +
+    `servo holds while you watch, and goes limp a few seconds after you leave or after ten minutes.</p>` +
+    `<p class="cal-band"></p>` +
+    `<div class="cal-drive">` +
+    `<button class="btn cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
+    `<input class="cal-slider" type="range" step="1" aria-label="Drive this output">` +
+    `<button class="btn cal-fine" type="button" data-step="1" aria-label="Up 5 microseconds">+5 µs</button>` +
+    `<span class="cal-readout"></span>` +
+    `</div>` +
+    `<div class="cal-acts">` +
+    `<button class="btn accent cal-set" type="button" data-end="close">Set MIN</button>` +
+    `<button class="btn accent cal-set" type="button" data-end="centre">Set CENTER</button>` +
+    `<button class="btn accent cal-set" type="button" data-end="open">Set MAX</button>` +
+    `</div>` +
+    `<p class="cal-ends"></p>` +
+    `<div class="cal-acts">` +
+    `<button class="btn cal-reverse" type="button">reverse</button>` +
+    `<span class="cal-hint">it swaps the two ends</span>` +
+    `<button class="btn cal-safe" type="button">safe range</button>` +
+    `<button class="btn cal-useends" type="button">use these ends</button>` +
+    `<button class="btn cal-sweep" type="button">test sweep</button>` +
+    `</div>` +
+    `<div class="cal-acts">` +
+    `<button class="btn cal-off" type="button">pulses off</button>` +
+    `<button class="btn cal-resume" type="button">take it again</button>` +
+    `<button class="btn cal-done" type="button">done</button>` +
+    `</div>` +
+    `<p class="cal-note" role="status" aria-live="polite"></p>`;
+  (document.getElementById("outputs-dial") || outputsSection).appendChild(dialPanel);
+
+  const dialTitle = dialPanel.querySelector(".cal-title");
+  const dialBand = dialPanel.querySelector(".cal-band");
+  const dialSlider = dialPanel.querySelector(".cal-slider");
+  const dialReadout = dialPanel.querySelector(".cal-readout");
+  const dialEnds = dialPanel.querySelector(".cal-ends");
+  const dialNote = dialPanel.querySelector(".cal-note");
+  const dialSafe = dialPanel.querySelector(".cal-safe");
+  const dialUseEnds = dialPanel.querySelector(".cal-useends");
+  const dialSweep = dialPanel.querySelector(".cal-sweep");
+  const dialResume = dialPanel.querySelector(".cal-resume");
+
+  const dialOutput = () =>
+    (dial === null || outputs === null ? null : outputs.find((each) => each.address === dial.address) || null);
+
+  const setNote = (text, level) => {
+    dialNote.textContent = text;
+    dialNote.className = level ? `cal-note ${level}` : "cal-note";
+  };
+
+  // Every act here is started from a click handler and finishes later, so
+  // nothing awaits it. Each act catches its own REQUEST failures and says
+  // which; this catches everything else and refuses to be silent about it.
+  const started = (promise) =>
+    promise?.catch?.((error) => {
+      console.error("[servo] an act failed:", error);
+      setNote(`Something went wrong on this page: ${error && error.message ? error.message : error}`, "error");
     });
-  };
 
-  let renderedAuxIds = null;
-
-  // The AUX section head's subtitle. Two counts, because they are two different
-  // facts a builder needs: how many AUX lines are switched on at all, and how
-  // many of those carry something this page can drive. An LED strip is switched
-  // on and has no position, so the second count is smaller on purpose.
-  const auxSummary = (enabled) => {
-    if (enabled.length === 0) return "none switched on";
-    const drivable = enabled.filter((aux) => isServoType(auxTypes[aux.id])).length;
-    return `${enabled.length} of ${AUX_DEFS.length} switched on · ${drivable} ${
-      drivable === 1 ? "drives a servo" : "drive a servo"
-    }`;
-  };
-
-  const renderAuxControls = (payload) => {
-    const enabled = AUX_DEFS.filter((a) => auxConfigured[a.id] || (a.id in payload));
-    if (auxControlsCard) auxControlsCard.classList.remove("hidden");
-    if (auxControlsSummary) auxControlsSummary.textContent = auxSummary(enabled);
-    if (!auxControlsContainer) return;
-    bindAuxActionDelegation();
-
-    if (enabled.length === 0) {
-      renderedAuxIds = "none";
-      auxControlsContainer.innerHTML =
-        `<p class="note"><b>No AUX output in use.</b> ${setupActionHtml("Mark one in use")}.</p>`;
-      return;
+  // The span the slider covers. The component band by default, narrowed by
+  // `safe range` to the cautious band, or by `use these ends` to the travel the
+  // builder has recorded.
+  const dialRange = (output) => {
+    if (dial !== null && dial.ends && output.calibrated) {
+      return {
+        lo: Math.min(output.openUs, output.closeUs),
+        hi: Math.max(output.openUs, output.closeUs),
+      };
     }
-
-    const ids = enabled.map((a) => `${a.id}:${auxTypes[a.id]}`).join(",");
-    if (ids !== renderedAuxIds) {
-      renderedAuxIds = ids;
-      const rows = enabled.map((aux) => {
-        const type = auxTypes[aux.id] || "none";
-        const detail = window.PAUtils.escapeHtml(payload[aux.id]?.detail || "");
-        const typeLabel = auxTypeLabel(type);
-        if (type === "rgb") return buildAuxLedRow(aux);
-        if (isServoType(type)) return buildAuxServoRow(aux, detail, typeLabel);
-        return "";
-      }).filter(Boolean);
-
-      auxControlsContainer.innerHTML = rows.length > 0
-        ? rows.join("")
-        : "<p class=\"note\"><b>Nothing to drive.</b> The AUX outputs that are on have nothing set on them.</p>";
-      return;
+    if (dial !== null && dial.safe) {
+      return { lo: Math.max(output.bandLoUs, SAFE_LO), hi: Math.min(output.bandHiUs, SAFE_HI) };
     }
-
-    enabled.forEach((aux) => {
-      const el = document.getElementById(`pos-${aux.id}`);
-      if (!el) return;
-      const type = auxTypes[aux.id] || "none";
-      if (!isServoType(type)) return;
-      const typeLabel = auxTypeLabel(type);
-      const detail = payload[aux.id]?.detail || "";
-      el.textContent = typeLabel ? `${typeLabel}${detail ? ` · ${detail}` : ""}` : detail;
-    });
+    return { lo: output.bandLoUs, hi: output.bandHiUs };
   };
 
-  // -------------------------------------------------------------------------
-  // renderTestSections() — show/hide test sections per enabled state + type
-  // -------------------------------------------------------------------------
-  const renderTestSections = (payload) => {
-    const arm1Present = "arm1" in payload;
-    const arm2Present = "arm2" in payload;
-    const aux1Present = auxConfigured.aux1 || ("aux1" in payload);
-    const aux2Present = auxConfigured.aux2 || ("aux2" in payload);
-    const aux3Present = auxConfigured.aux3 || ("aux3" in payload);
-
-
-    const aux1Servo = aux1Present && isServoType(auxTypes.aux1);
-    const aux2Servo = aux2Present && isServoType(auxTypes.aux2);
-    const aux3Servo = aux3Present && isServoType(auxTypes.aux3);
-
-    const anyTestable = arm1Present || arm2Present || aux1Servo || aux2Servo || aux3Servo;
-
-    if (servoTestCard)   servoTestCard.classList.toggle("hidden", !anyTestable);
-    if (arm1TestSection) arm1TestSection.classList.toggle("hidden", !arm1Present);
-    if (arm2TestSection) arm2TestSection.classList.toggle("hidden", !arm2Present);
-    if (aux1TestSection) aux1TestSection.classList.toggle("hidden", !aux1Servo);
-    if (aux2TestSection) aux2TestSection.classList.toggle("hidden", !aux2Servo);
-    if (aux3TestSection) aux3TestSection.classList.toggle("hidden", !aux3Servo);
+  // MIN and MAX name the two ends, not an ordering: after a reverse, MIN can be
+  // the larger number. MIN is the row's `close` and MAX its `open`, and reverse
+  // trades them, so nothing here has to sort a pair.
+  const endsSentence = (output) => {
+    if (!output.calibrated) {
+      return "No ends recorded yet. Drive the part to one and press Set MIN or Set MAX.";
+    }
+    return `MIN ${output.closeUs} µs · CENTER ${output.centreUs} µs · MAX ${output.openUs} µs`;
   };
 
-  // -------------------------------------------------------------------------
-  // Status rendering — shared by SSE and fallback polling paths
-  // -------------------------------------------------------------------------
-  let lastPayload = null;
-
-  const renderStatus = (payload) => {
-    lastPayload = payload;
-    renderArmControls(payload);
-    renderAuxControls(payload);
-    renderTestSections(payload);
-  };
-
-  const refreshStatusOnce = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatus(result.data);
-  };
-
-  // -------------------------------------------------------------------------
-  // Calibration load — read only
-  // -------------------------------------------------------------------------
-  const setCalibFeedback = (text, cls = "") => {
-    if (!calibFeedback) return;
-    calibFeedback.textContent = text;
-    calibFeedback.className = cls ? `feedback ${cls}` : "feedback";
-  };
-
-  const loadCalib = async ({ handle = null } = {}) => {
-    if (!window.PAApi) throw new Error("API helper unavailable");
-    setCalibFeedback("Loading calibration...");
+  const sendServo = async (action, extra = {}) => {
+    const output = dialOutput();
+    if (!output) return false;
     try {
-      const api = handle || window.PAApi;
-      const result = await api.get("/api/config");
-      const cfg = result.data;
-
-      // Arm ends
-      endpoints.arm1Open  = cfg.arm1OpenUs  ?? 2000;
-      endpoints.arm1Close = cfg.arm1CloseUs ?? 1000;
-      endpoints.arm2Open  = cfg.arm2OpenUs  ?? 2000;
-      endpoints.arm2Close = cfg.arm2CloseUs ?? 1000;
-
-      // AUX ends
-      endpoints.aux1Open  = cfg.aux1OpenUs  ?? 2000;
-      endpoints.aux1Close = cfg.aux1CloseUs ?? 1000;
-      endpoints.aux2Open  = cfg.aux2OpenUs  ?? 2000;
-      endpoints.aux2Close = cfg.aux2CloseUs ?? 1000;
-      endpoints.aux3Open  = cfg.aux3OpenUs  ?? 2000;
-      endpoints.aux3Close = cfg.aux3CloseUs ?? 1000;
-
-      // Pre-populate test inputs at neutral
-      if (arm1TestUs) arm1TestUs.value = 1500;
-      if (arm2TestUs) arm2TestUs.value = 1500;
-      if (aux1TestUs) aux1TestUs.value = 1500;
-      if (aux2TestUs) aux2TestUs.value = 1500;
-      if (aux3TestUs) aux3TestUs.value = 1500;
-
-      const components = cfg?.components || {};
-      auxTypes.aux1 = String(components.aux1?.type || "none");
-      auxTypes.aux2 = String(components.aux2?.type || "none");
-      auxTypes.aux3 = String(components.aux3?.type || "none");
-      auxConfigured.aux1 = Boolean(components.aux1?.enabled);
-      auxConfigured.aux2 = Boolean(components.aux2?.enabled);
-      auxConfigured.aux3 = Boolean(components.aux3?.enabled);
-      // Re-render AUX controls now that types are known
-      renderAuxControls(lastPayload || {});
-      renderTestSections(lastPayload || {});
-
-      setCalibFeedback(`Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
+      await window.PAApi.postForm(
+        "/api/servo",
+        { arm: servoWord(output), action, ...extra },
+        { timeoutMs: 4000 }
+      );
+      return true;
     } catch (error) {
-      console.error("[servo] loadCalib failed:", error);
-      setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
-      throw error;
+      setNote(`The droid did not take that: ${window.PAApi.messageFor(error)}`, "error");
+      return false;
     }
   };
 
-  // -------------------------------------------------------------------------
-  // Test buttons — send SERVO_CMD_POSITION immediately. Test Open and Test
-  // Close drive to the ends `endpoints` holds; nothing on this page writes one.
-  // -------------------------------------------------------------------------
-  const wireTestBtn = (btnId, armId, getUs, fb) => {
-    const btn = document.getElementById(btnId);
-    if (btn) btn.addEventListener("click", () =>
-      postServoPosition(armId, Number(getUs()), fb || armFeedback));
+  // Every hold command carries the width the dial is standing at. The first one
+  // takes the Output and starts both bounds; the rest refresh the short expiry.
+  const sendHold = () => sendServo("hold", { positionUs: String(dial === null ? 0 : dial.us) });
+  const sendHoldSoon = window.PAUtils.debounce(() => {
+    if (dial !== null && !dial.sweeping) sendHold();
+  }, HOLD_CHANGE_MS);
+
+  let holdTimer = null;
+  const stopKeepalive = () => {
+    if (holdTimer === null) return;
+    window.clearInterval(holdTimer);
+    holdTimer = null;
+  };
+  // The keepalive refreshes the hold only while the droid still says it HAS the
+  // Output. The moment one of the firmware's two bounds lets go, this stops
+  // asking and waits for the builder to press: a page that kept asking would
+  // take the Output afresh and restart the ceiling, holding a servo for as long
+  // as the tab was open - the one thing ADR 0064 says it must not be able to do.
+  const startKeepalive = () => {
+    stopKeepalive();
+    holdTimer = window.setInterval(() => {
+      if (dial !== null && dial.holding && !dial.sweeping) sendHold();
+    }, HOLD_KEEPALIVE_MS);
   };
 
-  wireTestBtn("arm1-test-btn",       "arm1", () => arm1TestUs?.value || 1500);
-  wireTestBtn("arm1-open-test-btn",  "arm1", () => endpoints.arm1Open);
-  wireTestBtn("arm1-close-test-btn", "arm1", () => endpoints.arm1Close);
-  wireTestBtn("arm2-test-btn",       "arm2", () => arm2TestUs?.value || 1500);
-  wireTestBtn("arm2-open-test-btn",  "arm2", () => endpoints.arm2Open);
-  wireTestBtn("arm2-close-test-btn", "arm2", () => endpoints.arm2Close);
-  wireTestBtn("aux1-test-btn",       "aux1", () => aux1TestUs?.value || 1500, auxFeedback);
-  wireTestBtn("aux1-open-test-btn",  "aux1", () => endpoints.aux1Open,  auxFeedback);
-  wireTestBtn("aux1-close-test-btn", "aux1", () => endpoints.aux1Close, auxFeedback);
-  wireTestBtn("aux2-test-btn",       "aux2", () => aux2TestUs?.value || 1500, auxFeedback);
-  wireTestBtn("aux2-open-test-btn",  "aux2", () => endpoints.aux2Open,  auxFeedback);
-  wireTestBtn("aux2-close-test-btn", "aux2", () => endpoints.aux2Close, auxFeedback);
-  wireTestBtn("aux3-test-btn",       "aux3", () => aux3TestUs?.value || 1500, auxFeedback);
-  wireTestBtn("aux3-open-test-btn",  "aux3", () => endpoints.aux3Open,  auxFeedback);
-  wireTestBtn("aux3-close-test-btn", "aux3", () => endpoints.aux3Close, auxFeedback);
+  const closeDial = ({ release = true } = {}) => {
+    if (dial === null) return;
+    // Closing the dial ends the hold (ADR 0064). Leaving it to the expiry would
+    // drive the part for three more seconds with nobody watching.
+    if (release) sendServo("release");
+    dial = null;
+    stopKeepalive();
+    dialPanel.hidden = true;
+    paint();
+  };
 
-  // -------------------------------------------------------------------------
-  // Boot — load config then start status subscription
-  // -------------------------------------------------------------------------
-
-  // Page Recovery: register startup API load as a section so the bootstrap
-  // can show recovery state if the config fetch fails.
-  // See docs/page-load-recovery-architecture.md and ADR 0019.
-  const SECTIONS = [
-    ["servo-calibration", loadCalib, "servo calibration"],
-  ];
-
-  const startPageLoad = () => {
-    if (!window.PABootstrap) {
-      loadCalib().catch(() => {});
+  const openDial = (address) => {
+    if (outputs === null) return;
+    const output = outputs.find((each) => each.address === address);
+    if (!output) return;
+    if (run !== null) {
+      showFeedback(`One at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
       return;
     }
+    if (dial !== null && dial.address !== address) closeDial();
+    const band = { lo: output.bandLoUs, hi: output.bandHiUs };
+    dial = {
+      address,
+      // Start from where the droid says the Output is standing, so the first
+      // hold does not move the part at all. An Output with no pulse has no
+      // position to start from, so the middle of its band is the honest guess.
+      us: output.commandedUs === null ? Math.round((band.lo + band.hi) / 2) : output.commandedUs,
+      safe: false,
+      ends: false,
+      sweeping: false,
+      // The droid has the Output as far as this page knows. Cleared when an
+      // answer says it let go, so the keepalive stops asking for it.
+      holding: true,
+    };
+    dialPanel.hidden = false;
+    setNote("");
+    sendHold();
+    startKeepalive();
+    paint();
+  };
+
+  // A capture: the width the dial is standing at becomes one of this Output's
+  // three recorded positions. The droid may drag the centre inside the travel
+  // the capture just described; this page reads the centre back and says so.
+  const capture = async (end) => {
+    const output = dialOutput();
+    if (!output) return;
+    const centreBefore = output.centreUs;
+    const label = end === "centre" ? "CENTER" : end === "open" ? "MAX" : "MIN";
+    try {
+      await window.PAApi.postForm(
+        "/api/config",
+        { captureOutput: output.address, captureEnd: end, captureUs: String(dial.us) },
+        { timeoutMs: 4000 }
+      );
+    } catch (error) {
+      setNote(`${label} was not recorded: ${window.PAApi.messageFor(error)}`, "error");
+      return;
+    }
+    await refresh();
+    const after = dialOutput();
+    if (after && after.centreUs !== centreBefore) {
+      setNote(
+        `${label} is ${dial.us} µs. Centre moved to ${after.centreUs} µs — it was outside the travel you just captured.`,
+        "warning"
+      );
+      return;
+    }
+    setNote(`${label} is ${dial.us} µs.`, "success");
+  };
+
+  const reverseEnds = async () => {
+    const output = dialOutput();
+    if (!output) return;
+    try {
+      await window.PAApi.postForm("/api/config", { reverseOutput: output.address }, { timeoutMs: 4000 });
+    } catch (error) {
+      setNote(`The ends were not swapped: ${window.PAApi.messageFor(error)}`, "error");
+      return;
+    }
+    await refresh();
+    const after = dialOutput();
+    if (after) setNote(`Ends swapped — MIN is now ${after.closeUs} µs.`, "success");
+  };
+
+  // test sweep visits the ends the builder recorded and comes back to where the
+  // dial was standing. It refuses on an Output with none (ADR 0052's shape).
+  const testSweep = async () => {
+    const output = dialOutput();
+    if (!output) return;
+    const startedAt = dial.us;
+    dial.sweeping = true;
+    paint();
+    const legs = [output.closeUs, output.openUs, startedAt];
+    for (const target of legs) {
+      if (dial === null || !dial.sweeping) return;
+      dial.us = target;
+      paint();
+      dial.holding = true;
+      if (!(await sendHold())) break;
+      await new Promise((resolve) => window.setTimeout(resolve, SWEEP_DWELL_MS));
+    }
+    if (dial === null) return;
+    dial.sweeping = false;
+    dial.us = startedAt;
+    paint();
+    setNote(`Swept ${output.closeUs} µs to ${output.openUs} µs and back.`, "success");
+  };
+
+  // Repaint in place: never innerHTML, and never the control the builder has
+  // hold of.
+  const paintDial = () => {
+    gateActs();
+    if (dial === null) {
+      dialPanel.hidden = true;
+      return;
+    }
+    const output = dialOutput();
+    if (!output) {
+      // The Output left the droid's answer under the dial - a reboot, or a
+      // different firmware. Say so rather than driving something that is gone.
+      setNote("That output is not in the droid's answer any more, so the dial closed.", "warning");
+      closeDial({ release: false });
+      return;
+    }
+    const range = dialRange(output);
+    if (dial.us < range.lo) dial.us = range.lo;
+    if (dial.us > range.hi) dial.us = range.hi;
+
+    dialTitle.textContent = `Calibrating ${outputLabel(output)}`;
+    dialBand.textContent = bandSentence(output);
+    dialEnds.textContent = endsSentence(output);
+    dialReadout.textContent = `${dial.us} µs`;
+    if (document.activeElement !== dialSlider) {
+      dialSlider.min = String(range.lo);
+      dialSlider.max = String(range.hi);
+      dialSlider.value = String(dial.us);
+    }
+
+    dialSafe.classList.toggle("is-on", dial.safe);
+    dialUseEnds.classList.toggle("is-on", dial.ends);
+    // `safe range` is inert on a row whose band is already the cautious one,
+    // and says so rather than pretending to narrow anything.
+    const alreadySafe = output.bandLoUs >= SAFE_LO && output.bandHiUs <= SAFE_HI;
+    dialSafe.textContent = alreadySafe ? "safe range (already)" : "safe range";
+    dialUseEnds.disabled = !output.calibrated;
+    dialUseEnds.setAttribute("aria-disabled", output.calibrated ? "false" : "true");
+    dialSweep.disabled = !output.calibrated || dial.sweeping;
+    dialSweep.setAttribute("aria-disabled", dialSweep.disabled ? "true" : "false");
+
+    // The Output has gone limp under the dial: one of the firmware's two
+    // bounds, or the estop. The panel says which, and one press takes it back.
+    const limp = output.commandedUs === null;
+    if (limp) dial.holding = false;
+    dialResume.hidden = !limp;
+    if (limp && !dial.sweeping) {
+      setNote(`${LIMP_SAID[output.limp] || LIMP_SAID.off}. Press take it again to hold it once more.`, "warning");
+    }
+  };
+
+  // Every act that asks the droid to move something is refused while the estop
+  // is latched, and until the droid has said it is not; the shell's own notice
+  // names why. The rows are rebuilt whenever the SET of Outputs changes, so
+  // their buttons are re-gated after each build as well as on each frame.
+  function gateActs() {
+    const live = estopLatched === false;
+    outputRows.forEach((row) => {
+      window.PAApi.gateControls([row.calibrate, row.off, ...row.go], live);
+    });
+    window.PAApi.gateControls([centreButton, findButton], live);
+    window.PAApi.gateControls(Array.from(dialPanel.querySelectorAll("button")), live);
+    window.PAApi.gateControls([dialSlider], live);
+  }
+
+  dialSlider.addEventListener("input", () => {
+    if (dial === null) return;
+    dial.us = Number(dialSlider.value);
+    dialReadout.textContent = `${dial.us} µs`;
+    sendHoldSoon();
+  });
+
+  dialPanel.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button");
+    if (!button || button.disabled || dial === null) return;
+    if (button.classList.contains("cal-fine")) {
+      const output = dialOutput();
+      if (!output) return;
+      const range = dialRange(output);
+      const next = dial.us + Number(button.dataset.step) * FINE_US;
+      dial.us = Math.min(range.hi, Math.max(range.lo, next));
+      paintDial();
+      sendHoldSoon();
+      return;
+    }
+    if (button.classList.contains("cal-set")) {
+      started(capture(button.dataset.end));
+      return;
+    }
+    if (button.classList.contains("cal-reverse")) {
+      started(reverseEnds());
+      return;
+    }
+    if (button === dialSafe) {
+      const output = dialOutput();
+      if (output && output.bandLoUs >= SAFE_LO && output.bandHiUs <= SAFE_HI) {
+        setNote("This output is already on the cautious range, so safe range has nothing to narrow.", "warning");
+        return;
+      }
+      dial.safe = !dial.safe;
+      if (dial.safe) dial.ends = false;
+      paintDial();
+      return;
+    }
+    if (button === dialUseEnds) {
+      dial.ends = !dial.ends;
+      if (dial.ends) dial.safe = false;
+      paintDial();
+      return;
+    }
+    if (button === dialSweep) {
+      const output = dialOutput();
+      if (output && !output.calibrated) {
+        setNote("Nothing to sweep between yet: record MIN and MAX first.", "warning");
+        return;
+      }
+      started(testSweep());
+      return;
+    }
+    if (button.classList.contains("cal-off")) {
+      started(pulsesOff(dial.address));
+      return;
+    }
+    if (button === dialResume) {
+      // One press re-takes the Output, which restarts both firmware bounds.
+      dial.holding = true;
+      started(sendHold());
+      setNote("Holding it again.", "success");
+      return;
+    }
+    if (button.classList.contains("cal-done")) closeDial();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Back to centre (#318, #365)
+  //
+  // One press, one request, and the droid paces the sweep itself: the
+  // controller expands the press into one Output at a time and holds the
+  // Cadence Floor between them, because a safe pace this page held is one a
+  // hand-edited or imported client could walk around. No timer here, no queue.
+  // The line counts from the rows: a row whose every Part is a light has no
+  // centre to go back to, and the controller skips it for the same reason.
+  // ---------------------------------------------------------------------------
+  const centreAll = async () => {
+    if (outputs === null) return;
+    const lights = outputs.filter(isLightRow).length;
+    const going = outputs.length - lights;
+    try {
+      await window.PAApi.postForm("/api/servo/centre", {}, { timeoutMs: 4000 });
+    } catch (error) {
+      window.PAUtils.showFeedback(centreSaid, `Nothing is going back to centre: ${window.PAApi.messageFor(error)}`, "error");
+      return;
+    }
+    const said =
+      `${going} ${going === 1 ? "output is" : "outputs are"} going back to centre, one at a time.` +
+      (lights ? ` ${lights} skipped — a light has no centre.` : "");
+    window.PAUtils.showFeedback(centreSaid, said, "success");
+    refresh();
+  };
+
+  centreButton.addEventListener("click", () => {
+    if (centreButton.disabled) return;
+    started(centreAll());
+  });
+
+  // ---------------------------------------------------------------------------
+  // pulses off, from a row or from the dial
+  //
+  // The Output goes limp where it is, at once. Reachable from a row so that it
+  // is reachable DURING a Find by Moving run (#363): the run is nudging that
+  // Output, and taking the pulse off it ends the run's motion. The surface says
+  // which of the two happened, because the builder has just caused both.
+  // ---------------------------------------------------------------------------
+  const pulsesOff = async (address) => {
+    if (outputs === null) return;
+    const output = outputs.find((each) => each.address === address);
+    if (!output) return;
+    const label = outputLabel(output);
+    const findingPart = run !== null && run.address === address ? run.partId : null;
+    if (findingPart !== null) {
+      markNotCurrent(address);
+      endRun();
+    }
+    try {
+      await window.PAApi.postForm(
+        "/api/servo",
+        { arm: servoWord(output), action: "release" },
+        { timeoutMs: 4000 }
+      );
+    } catch (error) {
+      const said = `${label} did not let go: ${window.PAApi.messageFor(error)}`;
+      if (dial !== null && dial.address === address) setNote(said, "error");
+      else showFeedback(said, "error");
+      return;
+    }
+    const said =
+      findingPart !== null
+        ? `${label} is limp, and that stopped the run finding ${partLabel(findingPart)}. ${partLabel(findingPart)} stays ${NOT_WIRED}.`
+        : `${label} is limp — nothing is driving it, so it will sit wherever it is.`;
+    if (dial !== null && dial.address === address) setNote(said, "success");
+    showFeedback(said, findingPart !== null ? "warning" : "success");
+    refresh();
+  };
+
+  outputsRegion.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button");
+    const address = button?.closest?.("[data-output]")?.dataset.output;
+    // A browser delivers no click to a disabled button; this is the rule
+    // itself: a refused control asks the droid for nothing.
+    if (!address || button.disabled) return;
+    if (button.classList.contains("outputs-calibrate")) openDial(address);
+    else if (button.classList.contains("outputs-off")) started(pulsesOff(address));
+    else if (button.classList.contains("outputs-go")) started(drive(address, button.dataset.action));
+  });
+
+  // Leaving Servos ends a run and lets go of the dial: the bench feed stops
+  // with the surface (#360), so nothing could step a run on, and a nudge sent
+  // on the way back would be motion the builder did not press for. ADR 0064
+  // ends a hold when the dial closes, and leaving the page is closing it.
+  // Never a hold -- leaving is always allowed; this only hears it happening.
+  window.PASurface?.holdUnmount(() => {
+    if (run !== null) endRun(`The run stopped when you left Servos. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+    closeDial();
+    return false;
+  });
+
+  // The estop, on the status stream rather than the bench feed. Subscribed
+  // below every definition it calls, because the stream replays its last frame
+  // to a new subscriber synchronously.
+  window.PAStatusStream?.subscribe((eventType, payload) => {
+    if (eventType !== "status" || !payload || typeof payload !== "object") return;
+    estopLatched = payload.estop === true;
+    gateActs();
+    if (estopLatched && run !== null) {
+      const { partId, address } = run;
+      if (address !== null) markNotCurrent(address);
+      endRun(`The estop stopped the run. ${partLabel(partId)} stays ${NOT_WIRED}.`, "error");
+    }
+    // A latched estop has released every enabled Output (ADR 0043), so a dial
+    // that was holding one is no longer holding anything. The panel stays open
+    // and says so.
+    if (payload.estop === true && dial !== null) {
+      dial.sweeping = false;
+      setNote("The estop let go of every output. Clear it, then press take it again.", "error");
+    }
+    // And it ends a back-to-centre sweep wherever it had got to (#365): no
+    // row's commanded mark is current any longer, so each is held back rather
+    // than guessed at until the droid answers again.
+    if (payload.estop === true && outputs !== null) {
+      outputs.forEach((output) => markNotCurrent(output.address));
+      window.PAUtils.showFeedback(
+        centreSaid,
+        "The estop let go of every output. Nothing is being driven, so nothing is going back to centre.",
+        "error"
+      );
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Servo assignment: which servo each Output carries, drawn by
+  // data/output_settings.js and shared with Wiring's wired ticks. Its plates
+  // name the Part(s) on each Output from the same rows the table paints (joined
+  // by address), and its answer - wired, and what each carries - decides what
+  // each row's drive cell offers.
+  // ---------------------------------------------------------------------------
+  const partsOn = (fact) => {
+    const output = outputs?.find((each) => each.address === fact.address);
+    return output ? listParts(output.parts) : "";
+  };
+
+  window.PAOutputSettings?.mount("type", {
+    body: document.getElementById("servo-types-body"),
+    feedback: document.getElementById("servo-types-feedback"),
+    describe: partsOn,
+  });
+  window.PAOutputSettings?.onChange((state, facts) => {
+    if (!state || !Array.isArray(facts)) return;
+    settings = new Map(facts.map((fact) => [fact.address, { id: fact.id, ...state[fact.id] }]));
+    if (outputs !== null) outputs.forEach(paintOutputRow);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Loading
+  // ---------------------------------------------------------------------------
+  if (window.PABootstrap) {
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
-      "/output_settings.js": "arm and AUX outputs",
+      "/droid_parts.js": "the parts catalog",
+      "/droid_part_kind.js": "the parts catalog",
+      "/parts_mapping.js": "the parts on each output",
+      "/output_settings.js": "the outputs",
       "/servo.js": "servo control",
       "/footer.js": "page footer",
     });
-    SECTIONS.forEach(([name, load, label]) =>
-      window.PABootstrap.registerSection(name, load, { label })
-    );
-  };
-
-  startPageLoad();
-
-  // The servo on each output, set here; the in-use ticks and the LED strip
-  // are Wiring's. One answer drawn on both surfaces (data/output_settings.js),
-  // and the test rows below follow it the moment it changes.
-  window.PAOutputSettings?.mount("type", {
-    body: document.getElementById("servo-types-body"),
-    feedback: document.getElementById("servo-types-feedback"),
-  });
-  window.PAOutputSettings?.onChange((outputs) => {
-    if (!outputs) return;
-    ["aux1", "aux2", "aux3"].forEach((id) => {
-      auxTypes[id] = outputs[id].type;
-      auxConfigured[id] = outputs[id].enabled;
-    });
-    renderAuxControls(lastPayload || {});
-    renderTestSections(lastPayload || {});
-  });
-
-  // SSE-first status updates with visibility-aware fallback polling.
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderStatus(payload);
-    });
-    // One-shot fetch if SSE hasn't delivered a status frame yet.
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch(() => {});
-    }
+    window.PABootstrap.registerSection("servo-outputs", loadOutputs, { label: "the outputs and what they drive" });
   } else {
-    // Fallback: poll every 1 s, suspended while the tab is hidden and while the
-    // operator is reading another surface -- the shell stops it on the way out
-    // and starts it again on the way back (ADR 0048, #360). A failed read is
-    // PASurface.poll()'s to report; catching it here would mark the surface
-    // current on a refresh that never landed (#360).
-    window.PASurface.poll(refreshStatusOnce, {
-      cadenceMs: 1000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
+    loadOutputs().catch((error) => console.warn("[servo] outputs unavailable:", error));
   }
+
+  // Owned by this surface, so the shell stops it when the operator leaves
+  // Servos and starts it on the way back (#360). A failed read is
+  // PASurface.poll()'s to report: catching it here would hand the registry a
+  // fulfilled promise and mark the surface current on a read that never landed
+  // (#360).
+  window.PASurface?.poll(() => loadOutputs(), { cadenceMs: POLL_MS, refreshOnReturn: true }).start();
 })();

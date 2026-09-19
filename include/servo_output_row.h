@@ -49,6 +49,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "board_outputs.h"  // boardOutputOnChannel(), boardOutputLabel() - an Output's name
 #include "droid_parts.h"  // droidPartIdIsKnown() - the compiled Part vocabulary
 #include "ledc_pwm.h"     // LedcChannel, SERVO_PULSE_* / ESC_PULSE_* constants
 #include "robot_state.h"  // ServoComponentType (firmware and native alike)
@@ -794,30 +795,24 @@ inline bool servoOutputParseAddress(const char* raw, ServoOutputDriver* driver, 
 
 // -----------------------------------------------------------------------------
 // servoOutputAddressName()
-// The name a builder already knows an Output by, where it has one: the labels
-// docs/pin_map.md carries for the five LEDC outputs this controller drives, and
-// the ones Setup's component toggles and the Servos page already use. "" for an
-// address nobody has named -- an expander's rows -- so a surface shows the
-// address rather than a name that is printed nowhere.
+// What the running board prints beside the Output at this address - ARM3 on
+// the Artoo PCB, GPIO 4 on the FireBeetle 2 - read through the one label
+// lookup GET /api/config, POST /api/servo and the Console share
+// (include/board_outputs.h). It is also the word that moves the Output, typed
+// or sent (ADR 0033 Amendment 2026-09-19). "" for an address no board prints -
+// an expander's rows - so a surface shows the address rather than a name that
+// is printed nowhere.
 // -----------------------------------------------------------------------------
 inline const char* servoOutputAddressName(ServoOutputDriver driver, uint8_t channel) {
     if (driver != SERVO_DRIVER_LEDC) {
         return "";
     }
-    switch (channel) {
-        case LEDC_CH_ARM1:
-            return "ARM1";
-        case LEDC_CH_ARM2:
-            return "ARM2";
-        case LEDC_CH_AUX1:
-            return "AUX1";
-        case LEDC_CH_AUX2:
-            return "AUX2";
-        case LEDC_CH_AUX3:
-            return "AUX3";
-        default:
-            return "";
+    const BoardOutput* output = boardOutputOnChannel(channel);
+    if (output == nullptr) {
+        return "";
     }
+    const char* label = boardOutputLabel(*output);
+    return label != nullptr ? label : "";
 }
 
 // -----------------------------------------------------------------------------

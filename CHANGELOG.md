@@ -95,8 +95,8 @@ the patch releases, whose notes live on their own GitHub Release.
   runs it again for a droid you rebuilt. Nothing you set is cleared. Old links
   to Setup open Configuration.
 
-- **Put the whole droid back to centre with one press.** Parts has a Back to
-  centre button above the outputs table. Every output goes to the centre you
+- **Put the whole droid back to centre with one press.** Servos has a Back to
+  centre button above the outputs. Every output goes to the centre you
   recorded for it — its own centre, not a fixed middle — and the droid does them
   one at a time, leaving at least 450 ms between them, so a whole body moving at
   once cannot brown out the servos. An output that takes longer than that to
@@ -136,9 +136,8 @@ the patch releases, whose notes live on their own GitHub Release.
   is only ever on one output, so picking another moves it, and the page asks
   first: it names the part, the output it leaves and what that output keeps.
   Two parts on one lead, like a pair of doors, both read as driven.
-- **See what every output drives, and where it is told to be.** Parts has a
-  second table with one row for every output on the controller, in the order
-  the leads plug in. Each row names every part on that output, so a lead split
+- **See what every output drives, and where it is told to be.** Servos has
+  one row for every output on the controller, in the order the leads plug in. Each row names every part on that output, so a lead split
   to two doors names both. Above it, a count of how many outputs are driving
   parts, wired but switched off, or driving nothing. A bar shows where the
   controller is driving each servo right now, and a tick shows where the move
@@ -148,11 +147,10 @@ the patch releases, whose notes live on their own GitHub Release.
   that output, and the page asks first if that takes it off another output.
   The same rows, with where each output stands, are on the Controller Console
   as `servo.api.get-outputs`, so a board with no WiFi can read them too.
-- **Find out which output moves a part by making it move.** A part nothing
-  drives yet has a `Find by moving` button on the Parts page. Press it and
-  watch the droid: the controller twitches each spare output a little, one at
-  a time, out one way, across, and back to where it sat, and the row names
-  which one is twitching. Press `That one` when the part moves and it is
+- **Find out which output moves a part by making it move.** On Servos, pick a
+  part nothing drives yet and press `Find by moving`, then watch the droid: the
+  controller twitches each spare output a little, one at a time, out one way,
+  across, and back to where it sat, and the page names which one is twitching. Press `That one` when the part moves and it is
   wired, the same way picking it would have. The twitch is small on purpose,
   stays inside the cautious 1000-2000 µs band, and never goes to a recorded
   end, so it is safe on an output nobody has measured yet. The controller
@@ -162,7 +160,7 @@ the patch releases, whose notes live on their own GitHub Release.
   estop is latched. The same twitch is on the Controller Console as
   `servo.action.nudge`, and `POST /api/servo` takes `action=nudge`.
 - **Calibrate a part by driving it and pressing a button.** Press `calibrate`
-  on an output on the Parts page and you get a dial: drag it, or nudge it 5 µs
+  on an output on Servos and you get a dial: drag it, or nudge it 5 µs
   at a time, until the part looks right, then press `Set MIN`, `Set CENTER` or
   `Set MAX`. Whatever the dial is standing at becomes that end. No typing
   microseconds, and no wondering whether the number you typed is the one the
@@ -204,6 +202,25 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **An output is called what your board prints beside it.** On the Artoo board
+  that is ARM1 to ARM5, and on the FireBeetle 2 it is GPIO 49, GPIO 50, GPIO 4,
+  GPIO 5 and GPIO 51 - on Servos, Parts, Wiring, Configuration, the Dashboard,
+  the RC page and in the Console. There is no more "AUX 1" or "Utility Arm 1".
+  Type the same word in the Console or send it to the API: `arm3` and `ARM 3`
+  both work, and so do `gpio49` and `GPIO 49`. The old words `aux1` to `aux3`
+  are not taken any more; the answer lists the words your board does take.
+  Your saved RC bindings and settings are untouched.
+- **Servos is where you work an output.** Each output has one row: its name,
+  the parts on it, where it is told to be, and on the row you drive it (Open,
+  Close, Stop, or a width you type), calibrate it and take its pulse off. Back
+  to centre and Find by moving sit above the rows. Parts keeps the list of your
+  parts and the picture of your droid. Servo assignment names the part on each
+  output too, like "ARM1 · Left body door". The old Test a servo section is
+  gone: driving an output is how you test it.
+- **A setting that works at once says nothing about when.** Only a setting that
+  waits for the droid's next start or a restart carries a line saying so.
+- **The RC page shows your radio and receiver.** RC input and Receiver type each
+  show the product you picked in Configuration, with its picture.
 - **MP3 Trigger volume uses the range you can actually hear.** The slider used
   to be stretched across the module's whole 0–255 register, most of which is
   silent, and the shipped default sat at the edge of audibility. It now maps

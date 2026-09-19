@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/rc.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/apply_timing.js,/product_art.js,/component_picker.js,/rc.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,6 +15,12 @@
     <script>window.PAShellDelegate = true; location.replace("/#rc");</script>
   </head>
   <body data-page="rc">
+
+    <!-- The asset set's product drawings (ADR 0065), for the radio and receiver
+         cards below: the legacy set inlines a symbol per product here, and the
+         default set's partial is empty, so that build shows the photograph. In
+         the body, because the Operator Shell mounts only a surface's body. -->
+    <!-- PA:INCLUDE _product_art.html -->
 
     <!-- The title is the name in the nav (ADR 0066). Every act here is named
          beside the thing it acts on, so the title carries none. -->
@@ -33,9 +39,15 @@
          receiver", which drops the whole diagnosis - the source is inactive
          FOR THE RECEIVER TYPE AND ROUTING you picked, which is the thing to go
          and change. -->
-    <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <div class="sect"><h2>RC input</h2><span class="sub">no source is live</span></div>
-      <p class="note"><b>No RC source live for this receiver type and routing.</b> Switch the input on, or pick the right receiver, in <a class="setup-link" href="#configuration">Configuration</a> and restart; mappings still edit.</p>
+    <!-- The radio in the builder's hand, as the card Configuration picked it
+         from (data/component_picker.js), shown here and never chosen here
+         (operator, 2026-09-19 on #412). -->
+    <div class="card">
+      <div class="sect"><h2>RC input</h2><span class="sub" id="rc-input-summary">finding out</span></div>
+      <div class="component-shown" id="rc-radio-card"><p class="hint">Reading it from the droid…</p></div>
+      <div id="rc-disabled-card" class="disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+        <p class="note"><b>No RC source live for this receiver type and routing.</b> Switch the input on, or pick the right receiver, in <a class="setup-link" href="#configuration">Configuration</a> and restart; mappings still edit.</p>
+      </div>
     </div>
 
     <!-- The receiver type comes first: it decides what every other card on this
@@ -45,6 +57,7 @@
          (operator, 2026-09-18 on #369). -->
     <div class="card">
       <div class="sect"><h2>Receiver type</h2><span class="sub" id="rc-mode-summary">finding out</span></div>
+      <div class="component-shown" id="rc-receiver-card"><p class="hint">Reading it from the droid…</p></div>
       <!-- Two save moments on one page, told apart where the builder picks
            (docs/ui-copy-voice.md rule 9). -->
       <div class="note note-info" role="note">

@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { loadPageModule } from "./helpers/page_module_env.js";
+import { loadPageModule, partsGlobals } from "./helpers/page_module_env.js";
 
 // Test payloads for each module
 const CONFIG_PAYLOAD = {
@@ -82,23 +82,25 @@ test("drive-configuration loader issues its request through the handle, not PAAp
 // Servo Page Tests
 // =============================================================================
 
-test("servo-calibration loader issues its request through the handle, not PAApi", async () => {
+test("servo-outputs loader issues its request through the handle, not PAApi", async () => {
+  const OUTPUTS_PAYLOAD = { outputs: [] };
   const env = loadPageModule("servo.js", {
-    respond: () => ({ data: CONFIG_PAYLOAD }),
+    respond: () => ({ data: OUTPUTS_PAYLOAD }),
+    overrides: partsGlobals(),
   });
-  const { calls, handle } = makeRecordingHandle(CONFIG_PAYLOAD);
+  const { calls, handle } = makeRecordingHandle(OUTPUTS_PAYLOAD);
 
-  // Loading the module issues its own traffic (a status fetch); only requests
-  // made from this point on belong to the loader under test.
+  // Loading the module issues its own traffic; only requests made from this
+  // point on belong to the loader under test.
   const directBefore = env.pathsRequested().length;
 
-  await env.runSection("servo-calibration", { handle });
+  await env.runSection("servo-outputs", { handle });
 
   // The handle saw the request...
   assert.deepStrictEqual(
     calls.map((c) => c.path),
-    ["/api/config"],
-    "the loader must issue GET /api/config through the handle"
+    ["/api/servo/outputs"],
+    "the loader must issue GET /api/servo/outputs through the handle"
   );
   // ...and nothing went around it. This is the half that catches a loader
   // which ignores the handle and reaches for window.PAApi directly.

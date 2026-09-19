@@ -6,6 +6,9 @@
 //
 // Entry order matches the RobotActionId enum declaration in rc_mapping.h.
 // Names and descriptions must stay consistent with docs/action-registry.yaml.
+// A row about one Output names it `{output}` and carries its stored id last:
+// the name is the running board's, composed when the row is served
+// (boardOutputComposeText(), include/board_outputs.h), never stored here.
 // The current bindable population is universal, so the two nullable requirement
 // fields use their nullptr defaults. Annotated rows must name manifest entries.
 // =============================================================================
@@ -19,11 +22,11 @@ const ActionEntry ACTION_REGISTRY[] = {
     { DRIVE_ACTION_STEER,             "drive.action.steer",               "Steer",               "drive",  "Left and right on the feet. Bind it to a stick.",                    false },
     { DOME_ACTION_SPEED,              "dome.action.set-speed",            "Dome Speed",          "dome",   "Turn the dome. Bind it to a stick.",                    false },
     { SYSTEM_ACTION_OP_MODE,          "system.action.set-mode",           "Set Mode",            "system", "Switch between Stationary and Driving. Stationary locks the feet.",            false },
-    { SERVO_ACTION_ARM1_TOGGLE,       "servo.action.toggle-arm1",         "ARM1 Toggle",         "servo",  "Swing arm 1 open or closed.",           false },
-    { SERVO_ACTION_ARM2_TOGGLE,       "servo.action.toggle-arm2",         "ARM2 Toggle",         "servo",  "Swing arm 2 open or closed.",           false },
-    { SERVO_ACTION_AUX1_TOGGLE,       "servo.action.toggle-aux1",         "AUX1 Toggle",         "servo",  "Swing AUX 1 open or closed.",           false },
-    { SERVO_ACTION_AUX2_TOGGLE,       "servo.action.toggle-aux2",         "AUX2 Toggle",         "servo",  "Swing AUX 2 open or closed.",           false },
-    { SERVO_ACTION_AUX3_TOGGLE,       "servo.action.toggle-aux3",         "AUX3 Toggle",         "servo",  "Swing AUX 3 open or closed.",           false },
+    { SERVO_ACTION_ARM1_TOGGLE,     "servo.action.toggle-arm1",         "{output} Toggle",     "servo",  "Open or close the part on {output}.", false, nullptr, nullptr, "arm1" },
+    { SERVO_ACTION_ARM2_TOGGLE,     "servo.action.toggle-arm2",         "{output} Toggle",     "servo",  "Open or close the part on {output}.", false, nullptr, nullptr, "arm2" },
+    { SERVO_ACTION_AUX1_TOGGLE,     "servo.action.toggle-aux1",         "{output} Toggle",     "servo",  "Open or close the part on {output}.", false, nullptr, nullptr, "aux1" },
+    { SERVO_ACTION_AUX2_TOGGLE,     "servo.action.toggle-aux2",         "{output} Toggle",     "servo",  "Open or close the part on {output}.", false, nullptr, nullptr, "aux2" },
+    { SERVO_ACTION_AUX3_TOGGLE,     "servo.action.toggle-aux3",         "{output} Toggle",     "servo",  "Open or close the part on {output}.", false, nullptr, nullptr, "aux3" },
     { DOME_ACTION_MARCDUINO_SEQ,      "dome.action.marcduino-sequence",   "Marcduino Sequence",  "dome",   "Play a numbered body sequence, usually SE30 to SE36.", false },
     { DOME_ACTION_MARCDUINO_CMD,      "dome.action.marcduino-command",    "Marcduino Command",   "dome",   "Send one Marcduino command to the dome.", false },
     { SOUND_ACTION_RANDOM_GENERAL,    "sound.action.random-general",      "Random General",      "sound",  "Play a random General sound.",  false },
@@ -57,3 +60,4 @@ const ActionEntry ACTION_REGISTRY[] = {
 // clang-format on
 
 const size_t ACTION_REGISTRY_SIZE = sizeof(ACTION_REGISTRY) / sizeof(ACTION_REGISTRY[0]);
+

@@ -306,8 +306,25 @@
     }
   };
 
+  // ---- RESTORE: the Outputs this droid has, as its firmware reports them ----
+  // Which Outputs exist, and which config fields save each, is the running
+  // firmware's answer (GET /api/config: every components{} entry carrying an
+  // `address`, with its enabledField and typeField). A backup is matched to it
+  // by the Output's stored id, so a backup made before the firmware reported
+  // those fields restores the same way, and this page lists no Output of its
+  // own (ADR 0033 Amendment 2026-09-19).
+  const liveOutputs = async () => {
+    const result = await window.PAApi.get('/api/config', { timeoutMs: 5000 });
+    const components = result?.data?.components || {};
+    return Object.keys(components)
+      .filter((id) => typeof components[id]?.address === 'string'
+        && typeof components[id].enabledField === 'string'
+        && typeof components[id].typeField === 'string')
+      .map((id) => ({ id, enabledField: components[id].enabledField, typeField: components[id].typeField }));
+  };
+
   // ---- RESTORE: flatten GET /api/config nested JSON to POST form params ----
-  const configToFormParams = (cfg) => {
+  const configToFormParams = (cfg, outputs) => {
     const p = new URLSearchParams();
     const d = cfg?.drive || {};
     const rc = cfg?.rc || {};
@@ -329,9 +346,16 @@
     if (rc.member !== undefined) p.set('rcMember', rc.member);
     if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
 
+    outputs.forEach(({ id, enabledField, typeField }) => {
+      if (components[id]?.enabled !== undefined) p.set(enabledField, components[id].enabled ? 'true' : 'false');
+      if (components[id]?.type !== undefined) p.set(typeField, components[id].type);
+      // The recorded ends, under the field names /api/config speaks for them.
+      for (const end of ['OpenUs', 'CloseUs']) {
+        if (cfg[`${id}${end}`] !== undefined) p.set(`${id}${end}`, cfg[`${id}${end}`]);
+      }
+    });
+
     [
-      ['arm1', 'enableArm1'], ['arm2', 'enableArm2'],
-      ['aux1', 'enableAux1'], ['aux2', 'enableAux2'], ['aux3', 'enableAux3'],
       ['domeEsc', 'enableDomeEsc'],
       ['rcCh1', 'enableRcCh1'], ['rcCh2', 'enableRcCh2'], ['rcCh3', 'enableRcCh3'],
       ['rcCh4', 'enableRcCh4'], ['rcCh5', 'enableRcCh5'], ['rcCh6', 'enableRcCh6'],
@@ -343,16 +367,6 @@
         p.set(param, components[key].enabled ? 'true' : 'false');
       }
     });
-
-    ['arm1', 'arm2', 'aux1', 'aux2', 'aux3'].forEach((key) => {
-      if (components[key]?.type !== undefined) p.set(`${key}Type`, components[key].type);
-    });
-
-    [
-      'arm1OpenUs', 'arm1CloseUs', 'arm2OpenUs', 'arm2CloseUs',
-      'aux1OpenUs', 'aux1CloseUs', 'aux2OpenUs', 'aux2CloseUs',
-      'aux3OpenUs', 'aux3CloseUs',
-    ].forEach((k) => { if (cfg[k] !== undefined) p.set(k, cfg[k]); });
 
     if (cfg.aux_led_pin !== undefined) p.set('aux_led_pin', cfg.aux_led_pin);
     if (cfg.aux_led_count !== undefined) p.set('aux_led_count', cfg.aux_led_count);
@@ -464,7 +478,8 @@
 
     if (chkConfig?.checked && parsedBackup.config) {
       try {
-        await window.PAApi.postForm('/api/config', configToFormParams(parsedBackup.config),
+        const outputs = await liveOutputs();
+        await window.PAApi.postForm('/api/config', configToFormParams(parsedBackup.config, outputs),
           { timeoutMs: 10000 });
         lines.push('Core config: restored');
       } catch (err) {

@@ -197,8 +197,8 @@
   };
 
   // The Outputs as GET /api/config reports them: every components{} entry
-  // that carries an `address`, in the firmware's order (src/web/api_config.cpp
-  // CONFIG_OUTPUTS, docs/api.md). This file knows no Output of its own - which
+  // that carries an `address`, in the firmware's order (include/board_outputs.h
+  // BOARD_OUTPUTS, docs/api.md). This file knows no Output of its own - which
   // exist, and what each is called, is the running firmware's answer
   // (operator, 2026-09-19 on #411) - so this is the one door an Output's
   // label and its wired flag come in by, keyed by the Output Address that
@@ -555,11 +555,12 @@
 
   // An Output's wire is named first by what the board prints beside its pin,
   // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
-  // Address"), then by its address. The name GET /api/servo/outputs puts on a
-  // row is protoArtoo's word, the same on every board, and never reaches the
-  // sheet. An Output the config reports nothing for - an expander channel -
-  // has no label and no switch anybody could have turned off, so it reads as
-  // its address, and as wired.
+  // Address"), then by its address. The label comes from the config entry the
+  // row joins by address; GET /api/servo/outputs names a row by the same
+  // label, but the sheet joins by address and never by a name. An Output the
+  // config reports nothing for - an expander channel - has no label and no
+  // switch anybody could have turned off, so it reads as its address, and as
+  // wired.
   const outputWire = (address, entry, row, { parts, stripPin, order }) => {
     const live = entry ? entry.enabled === true : true;
     const onIt = row ? partNames(parts, row.parts) : [];

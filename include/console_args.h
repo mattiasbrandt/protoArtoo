@@ -29,6 +29,7 @@
 #include <cstring>
 
 #include "api_param_source.h"
+#include "board_outputs.h"  // boardOutputForWord() - a board_output param's words
 #include "console_catalog.h"
 
 // =============================================================================
@@ -349,6 +350,16 @@ inline bool consoleParamValueInEnum(const ConsoleParamDescriptor& param, const c
     return false;
 }
 
+// A board_output param takes the running board's word for one of its Outputs
+// (include/board_outputs.h: ARM3 on the Artoo PCB, GPIO 49 on the FireBeetle 2,
+// case and spaces set aside) or one of the extra words its enum lists - `both`.
+// The registry is one file for every board, so the labels cannot be in the
+// catalog's enum: they are read from the one label source instead.
+inline bool consoleParamValueNamesOutput(const ConsoleParamDescriptor& param, const char* value) {
+    if (param.enum_values != nullptr && consoleParamValueInEnum(param, value)) return true;
+    return boardOutputForWord(value) != nullptr;
+}
+
 // Sweeps every argument the operator supplied against `params` (unknown-key
 // pass), then every declared param against what was supplied (missing-
 // required, then type/range/enum on whatever is present). `params` may be
@@ -403,6 +414,14 @@ inline ConsoleArgSchemaStatus consoleValidateArgsAgainstSchema(const ConsolePara
         // 11, 13, 14]` are numeric in the registry YAML but rendered as
         // strings by the generator (tools/generate_console_catalog.py), so
         // this is the one comparison every enum param needs.
+        if (p->board_output) {
+            if (!consoleParamValueNamesOutput(*p, value)) {
+                setBadKey(p->name);
+                return CONSOLE_ARG_SCHEMA_OUT_OF_RANGE;
+            }
+            continue;
+        }
+
         if (p->enum_values != nullptr) {
             if (!consoleParamValueInEnum(*p, value)) {
                 setBadKey(p->name);

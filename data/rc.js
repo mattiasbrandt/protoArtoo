@@ -26,6 +26,9 @@
   const rcModeSummary = document.getElementById("rc-mode-summary");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
+  const rcInputSummary = document.getElementById("rc-input-summary");
+  const rcRadioCard = document.getElementById("rc-radio-card");
+  const rcReceiverCard = document.getElementById("rc-receiver-card");
   
   const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
   const sbusRecvSel = document.getElementById("sbus-recv-sel");
@@ -54,16 +57,15 @@
   const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
+  // It carries no action about one Output (the toggles): those are named by
+  // what the running board prints beside the Output, which only the firmware
+  // knows, so they appear when GET /api/actions answers (ADR 0033 Amendment
+  // 2026-09-19; tools/check_action_registry_drift.py holds this file to it).
   const HARDCODED_ACTION_TARGETS = [
     { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward and back on the feet. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
     { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left and right on the feet. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Turn the dome. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
     { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between Stationary and Driving. Stationary locks the feet.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Swing arm 1 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Swing arm 2 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Swing AUX 1 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Swing AUX 2 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Swing AUX 3 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Play a numbered body sequence, usually SE30 to SE36.', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Play a dome show by name, like DM:FLUTTER. The Sequences page lists them all.', disabled: false, testable: false, safetyCritical: false },
     { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send one Marcduino command to the dome.', disabled: false, testable: false, safetyCritical: false },
@@ -133,7 +135,7 @@
 
   const DOMAIN_GROUP = {
     drive: 'Movement',
-    servo: 'Arms',
+    servo: 'Outputs',
     dome: 'Sequences',
     sound: 'Sound',
     system: 'System',
@@ -145,7 +147,7 @@
     'dome.action.marcduino-command': 'Command',
     'dome.action.set-speed': 'Movement',
   };
-  const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Arms', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
+  const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Outputs', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
   const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
   const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
 
@@ -425,6 +427,7 @@
   const setRcInputsEnabled = (enabled) => {
     rcInputsEnabled = enabled;
     rcDisabledCard?.classList.toggle("hidden", enabled);
+    if (rcInputSummary) rcInputSummary.textContent = enabled ? "live" : "no source is live";
 
     if (rcLearnBtn) {
       rcLearnBtn.disabled = !enabled;
@@ -1205,6 +1208,31 @@
     renderEditor();
   };
 
+  // The radio and the receiver the droid holds, each as the card Configuration
+  // shows it - its photo and its name, drawn by data/component_picker.js from
+  // the same lineup, so there is no second product-to-picture map here. Chosen
+  // only on Configuration; a family with nothing picked says where to pick it.
+  // Until the droid has answered both the lineup and the config, a card says it
+  // is finding out: a null then means "not known yet", never "none picked",
+  // and saying the second would be a false state for one load cycle.
+  const paintProductCards = () => {
+    const picker = window.ComponentPicker;
+    if (!picker) return;
+    const show = (host, part, missing) => {
+      if (!host) return;
+      if (!picker.answered()) {
+        host.innerHTML = '<p class="hint">Reading it from the droid…</p>';
+      } else if (part) {
+        host.replaceChildren(picker.shownCard(part));
+      } else {
+        host.innerHTML = `<p class="hint">${missing} Pick it in <a class="setup-link" href="#configuration">Configuration</a>.</p>`;
+      }
+    };
+    show(rcRadioCard, picker.chosenPart("radio_controller"), "No radio picked yet.");
+    show(rcReceiverCard, picker.chosenReceiverPart(), "No receiver picked yet.");
+  };
+  window.ComponentPicker?.onChange(paintProductCards);
+
   const loadRcMode = async ({ handle = null } = {}) => {
     try {
       const api = handle || window.PAApi;
@@ -1218,6 +1246,8 @@
       updateRecvSel(mode);
       setModeFeedback(`Receiver type: ${modeLabel(mode)}`, 'success');
       setRcInputsEnabled(rcComponentsEnabled(data));
+      // The radio and receiver cards read the same config (data/component_picker.js).
+      window.ComponentPicker?.adopt(data);
     } catch (error) {
       const fallbackMode = rcInputModeHidden?.value || 'standard_pwm';
       switchRcMode(fallbackMode);
@@ -1612,9 +1642,20 @@
     await loadRcDiagnostics({ handle });
   };
 
+  // Every view that names an action is drawn again once the firmware's list
+  // arrives. The fallback carries no action about one Output - its name is the
+  // running board's (ADR 0033 Amendment 2026-09-19) - so a binding to one read
+  // as its bare token until this redraw, whichever section finished first.
+  const redrawActionNames = () => {
+    renderSummaryTable();
+    renderChannelList();
+    renderLivePreview();
+    if (selectedChannel) renderEditor();
+  };
+
   const loadActionTargetsWithFallback = async ({ handle = null } = {}) => {
     await loadActionTargets({ handle });
-    if (selectedChannel) renderEditor();
+    redrawActionNames();
   };
 
   const SECTIONS = [
@@ -1632,7 +1673,7 @@
         loadMappings();
       });
       loadRcDiagnostics();
-      loadActionTargets().then(() => { if (selectedChannel) renderEditor(); });
+      loadActionTargets().then(redrawActionNames);
       return;
     }
 

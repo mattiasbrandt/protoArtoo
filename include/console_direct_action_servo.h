@@ -30,11 +30,14 @@
 #include "api_servo.h"                    // parseArmId(), servoSubmitCommand(), ServoSubmitOutcome
 #include "ledc_pwm.h"                     // SERVO_PULSE_MIN_US/MAX_US
 
-// servo.action.open/close/set-position/stop/nudge: target=<arm1|arm2|aux1|
-// aux2|aux3[|both]>, set-position also carries position_us=<500..2500>.
-// parseArmId() and servoSubmitCommand() (include/api_servo.h) are the SAME
-// target<->id mapping and the SAME queue submission handleServoPost() uses,
-// reused verbatim - the ADR 0036 Commit Step beside that handler.
+// servo.action.open/close/set-position/stop/nudge: target=<the running
+// board's label for an Output[|both]> - target=arm3 or target="ARM3" on the
+// Artoo PCB, target=gpio49 or target="GPIO 49" on the FireBeetle 2, case and
+// spaces set aside (include/board_outputs.h, ADR 0033 Amendment 2026-09-19).
+// set-position also carries position_us=<500..2500>. parseArmId() and
+// servoSubmitCommand() (include/api_servo.h) are the SAME target<->id mapping
+// and the SAME queue submission handleServoPost() uses, reused verbatim - the
+// ADR 0036 Commit Step beside that handler.
 //
 // servo.action.nudge (#363, ADR 0050) carries a target and nothing else: the
 // registry's enum for it excludes "both", the same way set-position's does,
@@ -49,9 +52,9 @@
 // consoleExecuteServoStop() below resolves it the same way. Two facts this
 // wiring does NOT change, because they are firmware behaviour on a path the
 // web UI shares (registry/coordinator decision, not this ticket's to make):
-// target=both only broadcasts to ARM1+ARM2, never AUX1..3 (ServoCommand::
-// armId's own field comment, include/robot_state.h; src/tasks/
-// servo_task.cpp:353,367,387); and "stop" does not hold position at all -
+// target=both only broadcasts to the first two Outputs, never the other
+// three (ServoCommand::armId's own field comment, include/robot_state.h;
+// src/tasks/servo_task.cpp:353,367,387); and "stop" does not hold position at all -
 // api_servo.cpp's parseAction() maps it to SERVO_CMD_POSITION at
 // SERVO_PULSE_NEUTRAL_US (there is no SERVO_CMD_STOP in the enum), so it
 // drives the servo to neutral like set-position with a fixed pulse width,
@@ -73,12 +76,12 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
         return;
     }
 
-    // Schema already confirmed "target" is one of the catalog's own enum
-    // values; parseArmId() can only fail here on a disagreement between
-    // that enum and its own accepted set, which never occurs for the
-    // lowercase names the registry declares - defensive, the same
-    // "reparse after schema" precedent drive.action.move set (include/
-    // console_direct_action_drive.h).
+    // Schema already confirmed "target" names one of the running board's
+    // Outputs or `both` (consoleParamValueNamesOutput(), include/
+    // console_args.h), through the same boardOutputForWord() parseArmId()
+    // reads; parseArmId() can only fail here on a disagreement between the
+    // two - defensive, the same "reparse after schema" precedent
+    // drive.action.move set (include/console_direct_action_drive.h).
     int16_t armId = parseArmId(consoleArgsFind(args, "target"));
     if (armId < 0) {
         consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
@@ -180,7 +183,7 @@ static void consoleExecuteServoRelease(uint32_t requestId, const char* operation
     consoleExecuteServoCommand(requestId, operationName, SERVO_CMD_RELEASE, args, source, sink);
 }
 
-// servo.action.stop: target=<arm1|arm2|aux1|aux2|aux3|both> only - no
+// servo.action.stop: target=<an Output's label|both> only - no
 // position_us (the registry declares none, unlike set-position), because the
 // pulse width is not an operator choice here, it is always
 // SERVO_PULSE_NEUTRAL_US (see this file's header comment for why). Shares

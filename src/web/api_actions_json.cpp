@@ -22,9 +22,11 @@
 #include "../../include/api_actions.h"
 
 #include <cstdio>
+#include <cstring>
 
 #include "../../include/action_registry.h"
 #include "../../include/api_json_response.h"
+#include "../../include/board_outputs.h"
 #include "../../include/logging.h"
 #include "../../include/web_json_slice_writer.h"
 
@@ -40,12 +42,24 @@ void appendActionJson(JsonSliceWriter& writer, const ActionEntry& entry) {
     writer.append(id);
     writer.append(",\"name\":");
     writer.appendJsonString(entry.name);
+    // A row about one Output is named by what the running board prints beside
+    // it - "ARM3 Toggle" on the Artoo PCB, "GPIO 4 Toggle" on the FireBeetle 2 -
+    // composed here from the row's `{output}` text (ADR 0033 Amendment
+    // 2026-09-19). The same bytes every call, so the slice writer's offsets
+    // stay true across the chunks of one response.
+    char displayName[48];
+    char description[96];
+    boardOutputComposeText(entry.display_name, strlen(entry.display_name), entry.output,
+                           displayName, sizeof(displayName));
+    boardOutputComposeText(entry.description, strlen(entry.description), entry.output,
+                           description, sizeof(description));
+
     writer.append(",\"display_name\":");
-    writer.appendJsonString(entry.display_name);
+    writer.appendJsonString(displayName);
     writer.append(",\"domain\":");
     writer.appendJsonString(entry.domain);
     writer.append(",\"description\":");
-    writer.appendJsonString(entry.description);
+    writer.appendJsonString(description);
     writer.append(",\"safety_critical\":");
     writer.append(entry.safety_critical ? "true" : "false");
     writer.append(",\"board_capability\":");

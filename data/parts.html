@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_panel_model.js,/body_art.js,/body_view.js,/parts.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_panel_model.js,/body_art.js,/body_view.js,/parts_mapping.js,/parts.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,10 +16,10 @@
     <div class="title">
       <div>
         <h1>Parts</h1>
-        <!-- A moved thing leaves a forwarding address. The typed calibration
-             form left Servos under #400: an end is set by driving the part,
-             which is a thing only this surface knows how to ask for. -->
-        <p class="forward">Typed calibration moved here from <a href="/servo.html">Servos</a>. Press Calibrate on the output that drives the part.</p>
+        <!-- A moved thing leaves a forwarding address. Calibration, Find by
+             moving and back to centre went to Servos with the output table
+             (operator, 2026-09-19 on #412). -->
+        <p class="forward">Calibrate an output and find which one moves a part on <a href="#servo">Servos</a>.</p>
       </div>
     </div>
 
@@ -37,27 +37,25 @@
       </div>
     </div>
 
-    <!-- Both projections of the one mapping, on one plate: they are two ways of
-         reading the same table (CONTEXT.md "Parts"), and two cards would be two
-         surfaces that can disagree. The output-first table, its acts and the
-         calibration dial are written into this card by data/parts.js. -->
+    <!-- The part-first projection of the one mapping (CONTEXT.md "Parts").
+         The output-first one is on Servos and moves a Part through the same
+         request (data/parts_mapping.js), so the two cannot disagree. -->
     <div class="card">
       <div class="sect">
         <h2>Parts</h2>
         <span class="sub" id="parts-summary" role="status" aria-live="polite">Finding out what drives each part...</span>
       </div>
       <p class="note">A part lives on one output; picking a new one <b>moves</b> it. One output can drive several parts, like two doors on one lead.</p>
-      <p class="hint"><b>Find by moving</b> twitches each spare output in turn. Press That one when your part moves; Stop or the estop ends the run.</p>
       <div class="parts-table-wrap" id="parts-table"></div>
       <p class="feedback" id="parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>
 
     <dialog class="parts-move-dialog" id="parts-move-dialog" role="alertdialog" aria-labelledby="parts-move-title" aria-describedby="parts-move-body">
-      <h4 id="parts-move-title"></h4>
-      <p id="parts-move-body"></p>
+      <h4 class="move-title" id="parts-move-title"></h4>
+      <p class="move-body" id="parts-move-body"></p>
       <div class="button-row">
-        <button class="btn" type="button" id="parts-move-cancel">Cancel</button>
-        <button class="btn accent" type="button" id="parts-move-confirm">Move it</button>
+        <button class="btn move-cancel" type="button" id="parts-move-cancel">Cancel</button>
+        <button class="btn accent move-confirm" type="button" id="parts-move-confirm">Move it</button>
       </div>
     </dialog>
 

@@ -17,6 +17,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+import { bootParts as bootPartsSurface, sleep as wait } from "./helpers/parts_surface.js";
 
 // mini_dom has no CSSStyleDeclaration, and since #362 this page's output-first
 // table paints its position marks through element.style. A plain object per
@@ -55,9 +56,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const freshOutputs = () => [
   { address: "ledc:0", name: "ARM1", parts: [] },
   { address: "ledc:1", name: "ARM2", parts: [] },
-  { address: "ledc:3", name: "AUX1", parts: [] },
-  { address: "ledc:4", name: "AUX2", parts: [] },
-  { address: "ledc:5", name: "AUX3", parts: [] },
+  { address: "ledc:3", name: "ARM3", parts: [] },
+  { address: "ledc:4", name: "ARM4", parts: [] },
+  { address: "ledc:5", name: "ARM5", parts: [] },
 ];
 
 const withParts = (assignments) => {
@@ -240,6 +241,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
     "/status_stream.js": readData("status_stream.js"),
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
+    "/parts_mapping.js": readData("parts_mapping.js"),
     "/parts.js": readData("parts.js"),
   };
   document.onAttach = (node) => {
@@ -303,8 +305,8 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.text("parts-move-title"), "Part already wired");
   assert.equal(
     env.text("parts-move-body"),
-    "Left body door is on ARM1. Move it to AUX1 and unwire it from ARM1? " +
-      "ARM1 keeps driving Right body door. Upper utility arm is on AUX1 too — they will move together.",
+    "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
+      "ARM1 keeps driving Right body door. Upper utility arm is on ARM3 too — they will move together.",
   );
   assert.equal(env.text("parts-move-confirm"), "Move it", "the button that agrees is the verb");
 
@@ -316,7 +318,7 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.dialog.open, false);
   assert.equal(env.select("doorFL").value, "ledc:3", "the table repaints from what the droid now says");
   assert.equal(env.select("doorFR").value, "ledc:0", "the Part left behind is still driven");
-  assert.equal(env.text("parts-feedback"), "Left body door is on AUX1.");
+  assert.equal(env.text("parts-feedback"), "Left body door is on ARM3.");
 });
 
 test("cancelling the question sends nothing and puts the control back", async () => {
@@ -325,7 +327,7 @@ test("cancelling the question sends nothing and puts the control back", async ()
   env.pick("doorFL", "ledc:4");
   assert.equal(
     env.text("parts-move-body"),
-    "Left body door is on ARM1. Move it to AUX2 and unwire it from ARM1? ARM1 will drive nothing.",
+    "Left body door is on ARM1. Move it to ARM4 and unwire it from ARM1? ARM1 will drive nothing.",
   );
   env.click("parts-move-cancel");
   await sleep(20);
@@ -362,4 +364,28 @@ test("a move the droid refuses says the droid's reason and shows the table as it
 test("a Part the droid drives and the page does not know is named, never dropped", async () => {
   const env = await bootParts({ outputs: withParts({ "ledc:0": ["domeEye"] }) });
   assert.match(env.text("parts-summary"), /also drives domeEye/);
+});
+
+// The output-first table, back to centre, Find by moving and the calibration
+// dial moved to Servos, and their code was deleted from Parts rather than
+// hidden (operator, 2026-09-19 on #412). A decoy stands where the table used to
+// be drawn: Parts must write nothing into it, build no table of its own, and
+// never ask the droid to move anything while it sits on screen.
+test("Parts carries none of the Output pieces that moved to Servos", async () => {
+  const env = await bootPartsSurface({ decoys: ['<div id="outputs-table" data-decoy="yes"></div>'] });
+  await env.frame();
+  await wait(20);
+
+  const tables = env.document.querySelectorAll("#outputs-table");
+  assert.equal(tables.length, 1, "Parts builds no output table of its own");
+  assert.equal(tables[0].dataset.decoy, "yes");
+  assert.equal(tables[0].children.length, 0, "and writes nothing into the one that stands where it was");
+  for (const moved of [".cal-panel", ".outputs-centre", ".parts-find", ".outputs-row"]) {
+    assert.equal(env.document.querySelectorAll(moved).length, 0, `no ${moved} on Parts`);
+  }
+  assert.deepStrictEqual(
+    env.posts.filter((post) => post.path.startsWith("/api/servo")),
+    [],
+    "and nothing on it asks the droid to move a servo",
+  );
 });

@@ -164,7 +164,9 @@ test("an in-use tick waits for the next start until it is put back; a servo type
   env.inUse("aux1").fire("click", {});
   await env.flush();
   assert.equal(wiringLine().dataset.pending, "true", "the droid still runs the outputs it started with");
-  assert.equal(servosLine().dataset.pending, "false", "Servos' answer is used at once");
+  // Servos' answer is used at once, and an immediate answer says nothing at
+  // all (operator, 2026-09-19 on #412).
+  assert.equal(servosLine().textContent, "", "Servos' answer is used at once, so it carries no line");
 
   env.inUse("aux1").fire("click", {});
   await env.flush();

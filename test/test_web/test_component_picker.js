@@ -16,7 +16,10 @@
 //     one answer after a pick;
 //   - a missing photograph never reads as greyed;
 //   - Configuration never sends the LED strip route it no longer holds, which
-//     would clear the one Wiring set.
+//     would clear the one Wiring set;
+//   - another page shows the product the droid holds, read from the saved
+//     answer - the receiver by the wire its input mode speaks - as a card with
+//     nothing to press: it is chosen only here (#412).
 // =============================================================================
 
 import { test } from "node:test";
@@ -72,4 +75,17 @@ test("a Configuration save never sends the LED strip route it no longer holds", 
   env.press(env.plate("dome_controller", "not-fitted")).fire("click", {});
   assert.equal(env.posts.length, 1);
   assert.equal(env.posts[0].get("aux_led_pin"), null);
+});
+
+test("another page is shown the radio and receiver the droid holds, as cards with nothing to press", async () => {
+  const env = await ready();
+  const picker = env.window.ComponentPicker;
+
+  assert.equal(picker.chosenPart("radio_controller")?.id, "hotrc_ds650");
+  // dual_sbus is two SBUS receivers: the receiver shown is the SBUS product.
+  assert.equal(picker.chosenReceiverPart()?.id, "rc_transmitter_sbus");
+
+  const card = picker.shownCard(picker.chosenReceiverPart());
+  assert.equal(card.dataset.option, "rc_transmitter_sbus");
+  assert.equal(card.querySelectorAll("button").length, 0, "shown here, never chosen here");
 });

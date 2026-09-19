@@ -1,171 +1,96 @@
 // =============================================================================
 // test/test_web/test_servo_calibration_test_card.js
 //
-// C1f (#400): the typed calibration form left Servos, and what only DRIVES a
-// part stayed. Two claims, and they need two different kinds of evidence.
+// Servos' drive controls (data/servo.js; CONTEXT.md "Servos"): on each Output's
+// row, a typed width sent once, and open, close and stop. There is no separate
+// test section any more - testing a servo is driving its Output (operator,
+// 2026-09-19 on #412) - so this file, named for the test card it once covered,
+// now holds what those controls may and may not do. Run as the browser runs
+// it: the shipped shell mounts the shipped Servos surface against a fake droid
+// (helpers/parts_surface.js).
 //
-// The behavioural half runs the shipped data/servo.js: Test Open and Test Close
-// used to send whatever number the box beside them was holding, and now send the
-// end the droid has RECORDED, read from GET /api/config. That is a real change
-// in what the droid does when a builder presses the button, so it is driven
-// through the module and asserted on the request that reached the controller.
-//
-// The markup half asserts on the text of data/servo.html. test_web/README.md
-// warns that asserting source text proves characters rather than behaviour --
-// true, and it is why the tests above exist. But "the ten typed inputs are gone
-// from the page" is a claim ABOUT the shipped markup, the permissive DOM stub
-// answers for any id whether the page carries it or not, and #298 measured what
-// a forwarding address that names a destination which is not there costs. So the
-// file itself is the only witness, and these three tests say so at the site.
+// Four invariants earn their place:
+//   - A press names the Output by the word the firmware gave for it, exactly:
+//     the board's own label, a space included (GPIO 5 on the FireBeetle 2),
+//     which is what POST /api/servo takes (ADR 0033 Amendment 2026-09-19). A
+//     page that derived the word from an id, or folded it, sends a word the
+//     firmware refuses. The typed width goes out as typed.
+//   - Driving writes no configuration: an end is recorded only by the dial.
+//   - The drive acts appear only where the firmware's answer says a servo is
+//     there: an Output carrying the LED strip, or not wired, offers none -
+//     a press there would send a servo command down a strip's data line.
+//   - The rows are the Outputs the firmware reported, and no others.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
 
-import { loadPageModule } from "./helpers/page_module_env.js";
+import { bootServos, output, sleep } from "./helpers/parts_surface.js";
 
-// Ends deliberately unlike the firmware defaults (2000/1000) and unlike each
-// other, so a test cannot pass on a fallback or on the wrong channel's number.
-const CONFIG = {
-  arm1OpenUs: 1850, arm1CloseUs: 1120,
-  arm2OpenUs: 1840, arm2CloseUs: 1130,
-  aux1OpenUs: 1830, aux1CloseUs: 1140,
-  aux2OpenUs: 1820, aux2CloseUs: 1150,
-  aux3OpenUs: 1810, aux3CloseUs: 1160,
-  components: {
-    aux1: { enabled: true, type: "mg996r" },
-    aux2: { enabled: true, type: "mg90s" },
-    aux3: { enabled: true, type: "mg996r" },
-  },
+// A FireBeetle 2: its labels carry a space.
+const FIREBEETLE = () => [
+  output("ledc:0", "GPIO 49", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:1", "GPIO 50", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:3", "GPIO 4", { commandedUs: 1500, targetUs: 1500 }),
+  output("ledc:4", "GPIO 5", { commandedUs: 1500, targetUs: 1500 }),
+];
+
+// GET /api/config's Output entries, as the firmware reports them: GPIO 4
+// carries the LED strip and GPIO 50 is not wired. The ids follow no pattern.
+const COMPONENTS = {
+  q1: { label: "GPIO 49", address: "ledc:0", enabledField: "e1", typeField: "t1", enabled: true, type: "mg996r" },
+  q2: { label: "GPIO 50", address: "ledc:1", enabledField: "e2", typeField: "t2", enabled: false, type: "mg996r" },
+  q3: { label: "GPIO 4", address: "ledc:3", ledStripPin: 1, enabledField: "e3", typeField: "t3", enabled: true, type: "rgb" },
+  q4: { label: "GPIO 5", address: "ledc:4", ledStripPin: 2, enabledField: "e4", typeField: "t4", enabled: true, type: "mg90s" },
 };
 
-// The page loaded and its section run, which is the state a builder presses a
-// test button in.
-const loadedServoPage = async () => {
-  const env = loadPageModule("servo.js", { respond: () => ({ data: CONFIG }) });
-  await env.runSection("servo-calibration");
-  await env.settle();
-  return env;
-};
+const drive = (env, address, action) =>
+  env.row(address).querySelectorAll(".outputs-go").find((node) => node.dataset.action === action);
+const servoPosts = (env) => env.posts.filter((post) => post.path === "/api/servo").map((post) => post.form);
 
-// The module builds its request bodies inside the vm, so they carry the vm
-// realm's Object.prototype and deepStrictEqual would reject them on that alone.
-// Copied into this realm, so an assertion fails for what the droid was told and
-// never for which realm built the object.
-// The ids the removed form's ten boxes had. The permissive DOM stub answers for
-// an id whether the page carries it or not, so writing to one is how a test asks
-// the question that actually separates this slice from what came before: the old
-// page drove Test Open to whatever its box was holding, and this one drives to
-// the end the droid recorded, which nothing on this page can move. A decoy here
-// is therefore not a fixture -- it is the discriminator.
-const typeIntoRemovedBox = (env, id, value) => {
-  env.element(id).value = value;
-};
+test("a typed width and open go out under the board's own word, space and all, and write no config", async () => {
+  const env = await bootServos({ outputs: FIREBEETLE(), components: COMPONENTS });
+  await sleep(20);
 
-const servoPosts = (env) =>
-  env.requests
-    .filter((request) => request.method === "POST" && request.path === "/api/servo")
-    .map((request) => ({ ...request.opts.body }));
+  env.row("ledc:4").querySelector(".outputs-width").value = "1720";
+  env.region().fire("click", { target: drive(env, "ledc:4", "position") });
+  env.region().fire("click", { target: drive(env, "ledc:0", "open") });
+  await sleep(20);
 
-// =============================================================================
-// What the drive-only controls send
-// =============================================================================
-
-test("Test Open drives to the recorded open end, not to a number typed on this page", async () => {
-  const env = await loadedServoPage();
-  typeIntoRemovedBox(env, "arm1-open-us", "2500");
-
-  env.emitOn("arm1-open-test-btn", "click");
-  await env.settle();
-
+  assert.deepStrictEqual(servoPosts(env), [
+    { arm: "GPIO 5", action: "position", positionUs: "1720" },
+    { arm: "GPIO 49", action: "open" },
+  ]);
   assert.deepStrictEqual(
-    servoPosts(env),
-    [{ arm: "arm1", action: "position", positionUs: "1850" }],
-    "Test Open must drive to arm1OpenUs as the droid recorded it"
-  );
-});
-
-test("Test Close drives to the recorded close end", async () => {
-  const env = await loadedServoPage();
-  typeIntoRemovedBox(env, "arm1-close-us", "500");
-
-  env.emitOn("arm1-close-test-btn", "click");
-  await env.settle();
-
-  assert.deepStrictEqual(
-    servoPosts(env),
-    [{ arm: "arm1", action: "position", positionUs: "1120" }],
-    "Test Close must drive to arm1CloseUs as the droid recorded it"
-  );
-});
-
-test("an AUX Test Open drives to that AUX's own recorded end", async () => {
-  const env = await loadedServoPage();
-  typeIntoRemovedBox(env, "aux2-open-us", "2500");
-
-  env.emitOn("aux2-open-test-btn", "click");
-  await env.settle();
-
-  assert.deepStrictEqual(
-    servoPosts(env),
-    [{ arm: "aux2", action: "position", positionUs: "1820" }],
-    "each output's Test Open must read its own end, not another channel's"
-  );
-});
-
-test("pressing every test control writes no configuration at all", async () => {
-  const env = await loadedServoPage();
-
-  for (const output of ["arm1", "arm2", "aux1", "aux2", "aux3"]) {
-    for (const suffix of ["test-btn", "open-test-btn", "close-test-btn"]) {
-      env.emitOn(`${output}-${suffix}`, "click");
-    }
-  }
-  await env.settle();
-
-  assert.strictEqual(servoPosts(env).length, 15, "all fifteen test controls are wired");
-  assert.deepStrictEqual(
-    env.requests.filter((request) => request.method === "POST" && request.path === "/api/config"),
+    env.posts.filter((post) => post.path === "/api/config"),
     [],
-    "the test controls write no configuration -- an end is set on Parts"
+    "driving records nothing: an end is set with the dial",
   );
 });
 
-// =============================================================================
-// The servo on each output, set on this page (#369)
-// =============================================================================
+test("an Output carrying the LED strip, or not wired, offers no drive at all", async () => {
+  const env = await bootServos({ outputs: FIREBEETLE(), components: COMPONENTS });
+  await sleep(20);
+  const offered = (address) => env.cell(address, "outputs-drive-acts").hidden === false;
 
-// The servo type moved here from Configuration, drawn by data/output_settings.js
-// and shared with Wiring's in-use ticks. When that answer changes, this page's
-// own AUX rows follow it at once: a line just given the LED strip has no
-// position, so it must stop offering Open and Close - a press there would send
-// a servo command down an LED strip's data line.
-test("an AUX line given the LED strip stops offering servo moves the moment the answer changes", async () => {
-  let listener = null;
-  const PAOutputSettings = { mount() {}, onChange: (fn) => { listener = fn; } };
-  const env = loadPageModule("servo.js", { respond: () => ({ data: CONFIG }), overrides: { PAOutputSettings } });
-  await env.runSection("servo-calibration");
-  await env.settle();
-  assert.ok(listener, "Servos follows the shared outputs answer");
-  assert.match(env.element("aux-controls-container").innerHTML, /data-arm="aux2"/, "AUX 2 starts as a servo");
-
-  listener({
-    arm1: { enabled: true, type: "mg996r" },
-    arm2: { enabled: false, type: "mg996r" },
-    aux1: { enabled: true, type: "mg996r" },
-    aux2: { enabled: true, type: "rgb" },
-    aux3: { enabled: true, type: "mg996r" },
-  });
-  const rows = env.element("aux-controls-container").innerHTML;
-  assert.doesNotMatch(rows, /data-arm="aux2"/, "no servo control is left on the LED strip line");
-  assert.match(rows, /data-arm="aux1"/, "and the other lines keep theirs");
+  assert.equal(offered("ledc:0"), true, "a wired servo offers its drive acts");
+  assert.equal(offered("ledc:3"), false, "the LED strip's Output offers none");
+  assert.equal(offered("ledc:1"), false, "an Output not wired offers none");
+  assert.match(env.text("ledc:3", "outputs-drive-note"), /LED strip/);
 });
 
-// =============================================================================
-// When the card is there at all
-// =============================================================================
+// The browser knows no Output (operator, 2026-09-19 on #411): a board that
+// reports three draws three rows, in its order, and no fourth from a list of
+// this page's own.
+test("the page draws the Outputs the firmware reported, and only those", async () => {
+  const env = await bootServos({ outputs: FIREBEETLE().slice(0, 3), components: COMPONENTS });
 
-// =============================================================================
-// What the page no longer carries, and where it sends a builder instead
-// =============================================================================
-
+  assert.deepStrictEqual(
+    env.rows().map((node) => node.dataset.output),
+    ["ledc:0", "ledc:1", "ledc:3"],
+  );
+  assert.deepStrictEqual(
+    env.rows().map((node) => node.querySelector(".parts-name").textContent),
+    ["GPIO 49", "GPIO 50", "GPIO 4"],
+  );
+});

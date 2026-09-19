@@ -21,7 +21,7 @@ import { dirname, join } from "path";
 
 import { createRequire } from "node:module";
 
-import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
+import { loadPageModule, ApiError, partsGlobals } from "./helpers/page_module_env.js";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 
 const require = createRequire(import.meta.url);
@@ -332,7 +332,7 @@ test("a hold that throws does not trap the operator on the screen", () => {
 const SURFACE_POLLS = [
   { file: "dome.js", cadenceMs: 5000, what: "the dome's status" },
   { file: "drive.js", cadenceMs: 2000, what: "the drive status" },
-  { file: "servo.js", cadenceMs: 1000, what: "the servo status" },
+  { file: "servo.js", cadenceMs: 1000, what: "the outputs", overrides: partsGlobals },
   { file: "sound.js", cadenceMs: 2000, what: "the sound status" },
   { file: "maintenance.js", cadenceMs: 5000, what: "the serial status", overrides: withAvailability },
   { file: "configuration.js", cadenceMs: 5000, what: "the live status", overrides: withAvailability },
@@ -373,7 +373,8 @@ const STALE_AFTER_A_FAILED_REFRESH = [
   { file: "dome.js", what: "Dome" },
   { file: "drive.js", what: "Drive" },
   { file: "rc.js", what: "RC diagnostics" },
-  { file: "servo.js", what: "Servos" },
+  { file: "servo.js", what: "Servos", overrides: partsGlobals },
+  { file: "parts.js", what: "Parts", overrides: partsGlobals },
   { file: "maintenance.js", what: "Maintenance", overrides: withAvailability },
   { file: "configuration.js", what: "Configuration", overrides: withAvailability },
 ];
