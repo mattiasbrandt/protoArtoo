@@ -267,4 +267,33 @@ test("no token in :root is orphaned", () => {
   assert.deepEqual(orphans, [], "a token nothing reads is a decision nobody can find");
 });
 
+test("the dome picker draws with the stylesheet's palette, not one of its own", () => {
+  // The picker used to ship its own <style> of vendored colour literals, so the
+  // dome on the Dashboard and in Sequences was the one drawing this layer did
+  // not paint (#372). Rendered for real here, from a live layout, because the
+  // markup a browser receives is what has to carry no colour.
+  const vm = require("node:vm");
+  const context = { window: {} };
+  vm.runInNewContext(readFileSync("data/dome_layout_render.js", "utf8"), context);
+  const svg = context.window.DomeLayoutRender.renderPicker({
+    viewBox: "0 0 480 480",
+    elements: [
+      {
+        id: "P7",
+        element_type: "panel",
+        panel_kind: "ring",
+        mapped: true,
+        selectableForNewStep: true,
+        in_layout: true,
+        geometry: { type: "svg_path", d: "M 331,94 A 172,172 0 0 1 392,159 Z" },
+        label: "P7",
+        label_anchor: { x: 395, y: 94 },
+      },
+    ],
+  });
+  assert.match(svg, /data-element-id="P7"/, "the picker rendered");
+  assert.doesNotMatch(svg, /<style/, "the picker carries a stylesheet of its own");
+  assert.equal(COLOUR_LITERAL.test(svg), false, "the picker carries a colour literal");
+});
+
 module.exports = { RULES, ROOT, TOKENS, NON_ROOT, resolve, declarationsOf, stripComments, parseRules };

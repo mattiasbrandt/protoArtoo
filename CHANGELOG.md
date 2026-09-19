@@ -26,6 +26,14 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Your droid, drawn as R2.** The top of Parts is now a line drawing of your
+  droid in one card, with Front, Rear and Dome (Top) you switch between by
+  their names. Every door and panel sits where it really is, and shows what the
+  droid was last told: an open part fills blue, a part whose ends are not
+  measured yet is amber. Pick one, on the drawing or in the list beside it, to
+  see its servo and to open or close it. The arms are off until you add them
+  from that list. The dome on the Dashboard and in Sequences is drawn the same
+  way.
 - **Every answer says when it takes effect.** Each Setup question and each
   Configuration setting carries one line beside it: used at once, used from the
   droid's next start, or saved and needing a restart. Once you change something

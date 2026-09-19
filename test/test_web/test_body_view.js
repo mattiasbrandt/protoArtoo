@@ -2,13 +2,13 @@
 // test/test_web/test_body_view.js
 //
 // The one renderer for a picture of the droid, and the selection panel beside
-// it (data/body_view.js, ADR 0063, #352).
+// it (data/body_view.js, ADR 0063 as amended 2026-09-19, #352, #372).
 //
 // What these hold is the contract the seam exists for, not the shape of the
-// markup: the view never writes, a click only reports a pick, live state and a
-// routine's moment draw identically, a part nothing is driving shows no
-// position at all, a repaint keeps the selection, and one device on the droid
-// is one marker offering its Parts.
+// markup or the words on it: a body Part is on exactly one face, the body and
+// the dome speak one state vocabulary, a holoprojector never draws an open
+// state, the line art carries no colour of its own, a mark the renderer does
+// not know is reported rather than swallowed, and a click only reports a pick.
 //
 // The module is executed as shipped against a mini_dom document, with a PAApi
 // whose every method throws - so "the view never writes" is a fact the test can
@@ -26,15 +26,6 @@ import { MiniDocument } from "./helpers/mini_dom.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
-
-// The real catalog, so the marker rules are checked against the Parts the droid
-// actually has rather than against a fixture that agrees with them.
-const catalogOf = () => {
-  const context = { window: {} };
-  context.globalThis = context;
-  vm.runInNewContext(readData("droid_parts.js"), context, { filename: "droid_parts.js" });
-  return context.window.DroidParts;
-};
 
 const boot = () => {
   const document = new MiniDocument();
@@ -63,95 +54,121 @@ const boot = () => {
     Math,
     JSON,
     Error,
+    Infinity,
   };
   context.globalThis = context;
-  vm.runInNewContext(readData("body_view.js"), context, { filename: "body_view.js" });
+  // The real catalog, art and dome map, so the placement rules are checked
+  // against the droid protoArtoo actually draws rather than a fixture that
+  // agrees with them.
+  ["droid_parts.js", "dome_panel_model.js", "body_art.js", "body_view.js"].forEach((file) => {
+    vm.runInNewContext(readData(file), context, { filename: file });
+  });
   const host = document.createElement("div");
   document.body.appendChild(host);
   const panelHost = document.createElement("div");
   document.body.appendChild(panelHost);
-  return { document, host, panelHost, BodyView: windowMock.BodyView, errors };
+  const mount = (options = {}) =>
+    windowMock.BodyView.mountDrawing(host, {
+      parts: windowMock.DroidParts.parts,
+      art: windowMock.BodyArt,
+      domeSvg: windowMock.DOME_PANEL_MAP_SVG,
+      railHost: panelHost,
+      ...options,
+    });
+  return { document, host, panelHost, window: windowMock, BodyView: windowMock.BodyView, errors, mount };
 };
 
-const bodyParts = (catalog) => catalog.parts.filter((part) => part.half === "body");
 const markerOf = (host, id) =>
   host.querySelectorAll("[data-marker]").find((node) => node.dataset.marker === id);
+const stateOf = (cell) =>
+  (cell.getAttribute("class") || "")
+    .split(" ")
+    .filter((name) => name.startsWith("is-") && name !== "is-selected" && name !== "is-absent");
 
 // ---------------------------------------------------------------------------
-// One device on the droid is one marker
+// Where a Part is
 // ---------------------------------------------------------------------------
 
-test("a Part with no position word is reported unplaced, never dropped and never guessed", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: catalog.parts });
+test("a body Part is drawn on exactly one face", () => {
+  const { host, window, BodyView, errors, mount } = boot();
+  mount();
 
-  const slots = catalog.parts.filter((part) => part.id.startsWith("other")).map((part) => part.id);
-  assert.equal(slots.length, 10, "the catalog's ten escape-hatch slots");
-  slots.forEach((id) => {
-    assert.ok(drawing.unplaced.includes(id), `${id} is reported unplaced`);
-    assert.equal(markerOf(host, id), undefined, `${id} is not placed somewhere plausible`);
+  const bodyIds = window.DroidParts.parts.filter((part) => part.half === "body").map((part) => part.id);
+  bodyIds.forEach((id) => {
+    const inTable = ["front", "rear"].filter((face) => BodyView.GEOMETRY[face][id]);
+    assert.ok(inTable.length <= 1, `${id} has a position on ${inTable.join(" and ")}`);
+    const drawn = host.querySelectorAll(".bv-face").filter((face) => markerOf(face, id) !== undefined);
+    assert.equal(drawn.length, inTable.length, `${id} is drawn on as many faces as it has a place on`);
+  });
+  assert.deepEqual(errors, [], "no Part was refused a second face");
+});
+
+// ---------------------------------------------------------------------------
+// One vocabulary, body and dome alike
+// ---------------------------------------------------------------------------
+
+test("a body Part and a dome piece in the same state draw the same class and say the same word", () => {
+  const { host, BodyView, mount } = boot();
+  const drawing = mount();
+
+  const marks = [
+    { mark: "openable", at: 1 },
+    { mark: "openable", at: 0 },
+    { mark: "unmeasured" },
+    { mark: "limp" },
+    { mark: "unassigned" },
+  ];
+  marks.forEach((mark) => {
+    drawing.update({ kind: "live", marks: { doorFL: mark, "dome-pp1": mark } });
+    const body = markerOf(host, "doorFL");
+    const dome = markerOf(host, "dome-pp1");
+    assert.deepEqual(stateOf(dome), stateOf(body), `${JSON.stringify(mark)} draws one way on both`);
+    const word = (cell) => cell.getAttribute("aria-label").split(" — ").pop();
+    assert.equal(word(dome), word(body), `${JSON.stringify(mark)} is one word on both`);
+    assert.ok(Object.values(BodyView.LEGEND_TEXT).includes(word(body)), "and it is a legend word");
+  });
+});
+
+test("a holoprojector never draws an open or closed state, whatever it is handed", () => {
+  const { host, mount } = boot();
+  const drawing = mount();
+
+  ["dome-hp1", "dome-hp2", "dome-hp3"].forEach((id) => {
+    assert.equal(drawing.markerOf(id).panTilt, true, `${id} is a pan and tilt device`);
+    drawing.update({ kind: "live", marks: { [id]: { mark: "openable", at: 1 } } });
+    assert.deepEqual(stateOf(markerOf(host, id)), [], `${id} draws no state`);
+  });
+  // A pie beside them is an ordinary openable piece.
+  assert.equal(drawing.markerOf("dome-pp3").panTilt, false);
+});
+
+// ---------------------------------------------------------------------------
+// Colour lives in the stylesheet's palette
+// ---------------------------------------------------------------------------
+
+test("the droid's line art carries no colour, stroke or fill of its own", () => {
+  const { window } = boot();
+
+  ["front", "rear"].forEach((face) => {
+    const art = window.BodyArt[face];
+    assert.ok(art.includes("<path"), `the ${face} art is there`);
+    assert.doesNotMatch(art, /#[0-9a-f]{3,8}\b|rgba?\(/i, `the ${face} art spends a colour literal`);
+    assert.doesNotMatch(art, /\s(stroke|fill|style|class)=/, `the ${face} art paints itself`);
   });
 });
 
 // ---------------------------------------------------------------------------
-// It shows one kind of state at a time, and says which
+// A mark it does not know is a caller's defect
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Nothing is presented as read back from a servo
-// ---------------------------------------------------------------------------
-
-test("a Part nothing is driving shows no position at all - absent, not dimmed", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: bodyParts(catalog) });
-
-  ["undriven", "limp", "unmeasured", "unknown"].forEach((mark) => {
-    drawing.update({ kind: "live", marks: { doorFL: { mark } } });
-    const cell = markerOf(host, "doorFL");
-    assert.ok(cell.classList.contains(`is-${mark}`), `${mark} takes its own treatment`);
-    assert.equal(
-      cell.classList.contains("has-position"),
-      false,
-      `${mark} makes no claim about where the part is`
-    );
-  });
-
-  drawing.update({ kind: "live", marks: { doorFL: { mark: "driven", at: 0.5 } } });
-  assert.ok(markerOf(host, "doorFL").classList.contains("has-position"));
-});
-
-test("how far open is drawn, and a fraction outside the travel cannot swing past the end", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: bodyParts(catalog) });
-  const swing = () => {
-    const transform = markerOf(host, "doorFL").querySelector(".bodyview-leaf").getAttribute("transform");
-    return Number(/rotate\(([-\d.]+)/.exec(transform)[1]);
-  };
-
-  drawing.update({ kind: "live", marks: { doorFL: { mark: "driven", at: 0 } } });
-  assert.equal(swing(), 0, "the close end does not swing");
-  drawing.update({ kind: "live", marks: { doorFL: { mark: "driven", at: 1 } } });
-  const wideOpen = swing();
-  assert.ok(wideOpen > 0, "the open end swings");
-  drawing.update({ kind: "live", marks: { doorFL: { mark: "driven", at: 0.5 } } });
-  assert.ok(swing() > 0 && swing() < wideOpen, "half way through the travel swings half way");
-  drawing.update({ kind: "live", marks: { doorFL: { mark: "driven", at: 9 } } });
-  assert.equal(swing(), wideOpen, "nothing swings past the recorded end");
-});
 
 test("a mark the renderer does not draw is reported, never swallowed into 'not said yet'", () => {
-  const catalog = catalogOf();
-  const { host, BodyView, errors } = boot();
-  const drawing = BodyView.mountDrawing(host, { parts: bodyParts(catalog) });
+  const { host, errors, mount } = boot();
+  const drawing = mount();
 
   drawing.update({ kind: "live", marks: { doorFL: { mark: "planned" } } });
   assert.equal(errors.length, 1, "the caller's defect reaches the console");
   assert.match(errors[0], /doorFL/);
   assert.match(errors[0], /planned/);
-  // And nothing on the surface draws it: there is no `planned` state here.
   assert.equal(markerOf(host, "doorFL").classList.contains("is-planned"), false);
 });
 
@@ -160,20 +177,27 @@ test("a mark the renderer does not draw is reported, never swallowed into 'not s
 // ---------------------------------------------------------------------------
 
 test("a click reports the pick and asks the droid for nothing", () => {
-  const catalog = catalogOf();
-  const { host, BodyView } = boot();
+  const { host, mount } = boot();
   const picks = [];
-  const drawing = BodyView.mountDrawing(host, {
-    parts: bodyParts(catalog),
-    onPick: (id) => picks.push(id),
-  });
+  const drawing = mount({ onPick: (id) => picks.push(id) });
 
-  const svg = host.querySelector(".bodyview-svg");
-  svg.fire("click", { target: markerOf(host, "chargebay") });
-  assert.deepEqual(picks, ["chargebay"]);
+  const svgOf = (id) => host.querySelectorAll(".bv-svg").find((svg) => markerOf(svg, id) !== undefined);
+  svgOf("chargebay").fire("click", { target: markerOf(host, "chargebay") });
+  svgOf("dome-pp4").fire("click", { target: markerOf(host, "dome-pp4") });
+  assert.deepEqual(picks, ["chargebay", "dome-pp4"]);
   // Nothing was selected by the click itself: selecting is the caller's, which
   // is what makes a pick a report rather than a state the drawing keeps.
   assert.equal(drawing.selected(), null);
+});
+
+test("a repaint keeps the pick a builder is holding", () => {
+  const { host, mount } = boot();
+  const drawing = mount();
+
+  drawing.select("doorFR");
+  drawing.update({ kind: "live", marks: { doorFR: { mark: "openable", at: 1 } } });
+  assert.equal(drawing.selected(), "doorFR");
+  assert.ok(markerOf(host, "doorFR").classList.contains("is-selected"));
 });
 
 // ---------------------------------------------------------------------------
@@ -181,9 +205,8 @@ test("a click reports the pick and asks the droid for nothing", () => {
 // ---------------------------------------------------------------------------
 
 const ACTS = [
-  { id: "fit", label: "add it to the build" },
-  { id: "wire", label: "give it an Output" },
-  { id: "move", label: "move it" },
+  { id: "toggle", label: "Open it" },
+  { id: "wire", label: "Give it an output" },
 ];
 
 test("an act that cannot run is refused and says why, rather than vanishing", () => {
@@ -192,22 +215,19 @@ test("an act that cannot run is refused and says why, rather than vanishing", ()
   const panel = BodyView.mountPanel(panelHost, { acts: ACTS, onAct: (id) => pressed.push(id) });
 
   panel.show({
-    title: "Left body door",
-    facts: [{ term: "Driven by", value: "- not wired -" }],
-    acts: { fit: { enabled: false }, wire: { enabled: true }, move: { enabled: false } },
-    why: "Nothing drives it yet - give it an output first.",
+    title: "Small long door",
+    facts: [{ term: "Servo", value: "No output mapped" }],
+    acts: { toggle: { enabled: false }, wire: { enabled: true } },
+    why: "No output mapped. Give it one first.",
   });
 
   const button = (id) => panelHost.querySelectorAll("[data-act]").find((node) => node.dataset.act === id);
-  assert.equal(button("move").disabled, true);
-  assert.equal(button("move").getAttribute("aria-disabled"), "true");
-  assert.equal(button("wire").disabled, false);
-  assert.equal(button("wire").getAttribute("aria-disabled"), "false");
-  assert.match(panelHost.querySelector(".bodyview-panel-why").textContent, /give it an output first/i);
+  assert.equal(button("toggle").disabled, true);
+  assert.equal(button("toggle").hidden, false, "a refused act stays on the surface");
+  assert.equal(button("toggle").getAttribute("aria-disabled"), "true");
+  assert.match(panelHost.querySelector(".bodyview-panel-why").textContent, /Give it one first/);
 
-  // A refused button is still on the surface, so the next move is still named -
-  // and pressing it does nothing, which is the rule rather than a repeat of it.
-  panelHost.querySelector(".bodyview-panel-acts").fire("click", { target: button("move") });
+  panelHost.querySelector(".bodyview-panel-acts").fire("click", { target: button("toggle") });
   assert.deepEqual(pressed, []);
   panelHost.querySelector(".bodyview-panel-acts").fire("click", { target: button("wire") });
   assert.deepEqual(pressed, ["wire"]);
@@ -217,12 +237,11 @@ test("clearing the panel refuses every act, so nothing is offered with nothing p
   const { panelHost, BodyView } = boot();
   const panel = BodyView.mountPanel(panelHost, { acts: ACTS });
 
-  panel.show({ title: "Small long door", facts: [], acts: { move: { enabled: true } }, why: "" });
-  panel.clear("Pick a part on the drawing.");
+  panel.show({ title: "Left body door", facts: [], acts: { toggle: { enabled: true } }, why: "" });
+  panel.clear();
 
   panelHost.querySelectorAll("[data-act]").forEach((node) => {
     assert.equal(node.disabled, true, `${node.dataset.act} is refused with nothing picked`);
   });
   assert.equal(panelHost.querySelector(".bodyview-panel-title").textContent, "");
-  assert.match(panelHost.querySelector(".bodyview-panel-why").textContent, /Pick a part/);
 });

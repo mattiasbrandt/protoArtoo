@@ -219,7 +219,28 @@
       });
     }
 
+    // The estop holds every servo move a picture of the droid can start
+    // (operator, 2026-09-19, #372): a panel press is refused while the estop is
+    // latched, and while the droid has not yet said whether it is, the same
+    // hold the Parts picture keeps. The answer is the session's last status,
+    // which the Operator Shell seeds from its boot read and the stream keeps
+    // current (data/status_stream.js); this page keeps no copy of its own.
+    // Returns the sentence to say instead, or null when the press may go.
+    function estopHold() {
+      const status = window.PAStatusStream?.getLastStatus?.();
+      if (!status || typeof status !== 'object') {
+        return 'Finding out if the droid is stopped. The dome waits for the answer.';
+      }
+      if (status.estop === true) return 'Estop latched. Nothing moves until it is cleared.';
+      return null;
+    }
+
     async function togglePanel(elementId, svgElement) {
+      const held = estopHold();
+      if (held) {
+        showFeedback(held, 'error');
+        return;
+      }
       try {
         // Resolve the open command first to get the canonical key for openPanels
         const openCmd = window.DomeCommandMap?.resolvePanelCommand?.(elementId, 'open');
@@ -256,6 +277,11 @@
     }
 
     async function togglePanelVendored(target, svgElement) {
+      const held = estopHold();
+      if (held) {
+        showFeedback(held, 'error');
+        return;
+      }
       try {
         // Canonical key for openPanels is the open command
         const openCmd = `:OP${target}`;

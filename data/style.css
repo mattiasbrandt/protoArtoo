@@ -5979,8 +5979,8 @@ body[data-page="maintenance"] .status-item .hint {
   display: block;
 }
 
-/* Dome SVG styles (scoped within SVG via <style> tag) */
-/* These are reference/backup; actual styles are in SVG <style> */
+/* The dome drawing's own look - its lines, open and picked panels - is the
+   "dome picker, redrawn" block beside the droid picture's, further down. */
 
 .dome-picker-legend {
   display: flex;
@@ -7336,159 +7336,14 @@ body[data-page="wiring"] .wiring-tier > * + * {
 }
 
 /* ---------------------------------------------------------------------------
-   The body view: a picture of the droid, and the panel beside it (#352,
-   ADR 0063)
-
-   COLOUR IS NOT SPENT HERE. #327 reserves colour for two meanings - amber for
-   "you can act on this", red for "stopped or refused" - and where a door is, is
-   neither. So a part that is open is drawn OPEN: the leaf swings, and the
-   picture carries the position in shape. Blue appears for exactly one job,
-   which is the job it has everywhere else on the surface - selection, the thing
-   shown, the focus ring (CONTEXT.md "Status Colour", amended 2026-09-16).
-
-   A TREATMENT REMOVES WHAT ITS STATE CANNOT PROMISE. The leaf is the part's
-   position, and it is drawn only where there is a recorded travel for it to be
-   a position within: `has-position` is the whole of that rule here. An
-   undriven, limp or unmeasured part does not get a dimmed leaf, a zero-swing
-   leaf or an em dash - it gets no leaf, because every one of those still reads
-   as a claim about where the part is, and nothing on this droid reads a servo
-   back (data/droid_part_kind.js has the same rule for a light's travel).
-
-   The three dimmed states use the ladder --avail-dim-* declares, and hover and
-   focus-within lift them back up: a builder still has to be able to inspect a
-   thing they cannot act on.
+   The selection panel beside the droid picture (#352, #372, ADR 0063): the
+   one writer on the Parts surface, with the acts named beside the thing they
+   act on. data/body_view.js builds it; the picture itself is the "droid
+   picture" block below.
 
    Everything here is its own block on the token layer #341 landed. No shared
    rule is edited and no colour literal appears outside :root.
    --------------------------------------------------------------------------- */
-.bodyview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-lg);
-}
-
-.bodyview-drawing {
-  flex: 1 1 26rem;
-  min-width: 0;
-}
-
-.bodyview-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.bodyview-face-plate {
-  fill: var(--well);
-  stroke: var(--border);
-  stroke-width: 1;
-}
-
-.bodyview-face-label,
-.bodyview-said {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sect);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  fill: var(--text-faint);
-}
-
-.bodyview-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  fill: var(--text-dim);
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-}
-
-/* The footprint: where the part is. Always drawn, because a part on the droid
-   is on the picture whatever drives it or does not. */
-.bodyview-footprint {
-  fill: var(--surface-alt);
-  stroke: var(--border-strong);
-  stroke-width: 1;
-}
-
-/* The leaf: how far open the controller has told the part to be. Hidden until
-   the marker has a position at all - see the rule above. */
-/* No `transform-box` here, deliberately. An SVG transform attribute is the CSS
-   transform property in SVG2, so `transform-box: fill-box` would re-read the
-   rotation origin this renderer passes - the leaf's own corner, in user space -
-   as an offset from the leaf's bounding box, and every swung leaf would draw
-   detached from the marker it belongs to. Measured in a browser 2026-09-17; it
-   is invisible to a DOM test, which has no CSS engine. */
-.bodyview-leaf {
-  fill: none;
-  stroke: var(--text-dim);
-  stroke-width: 2;
-  display: none;
-  pointer-events: none;
-}
-
-.bodyview-marker.has-position .bodyview-leaf {
-  display: block;
-}
-
-.bodyview-marker {
-  cursor: pointer;
-}
-
-.bodyview-marker.is-undriven .bodyview-footprint,
-.bodyview-marker.is-unmeasured .bodyview-footprint {
-  fill: none;
-  stroke-dasharray: 4 3;
-}
-
-.bodyview-marker.is-undriven,
-.bodyview-marker.is-unmeasured {
-  opacity: var(--avail-dim-elsewhere);
-}
-
-.bodyview-marker.is-unknown {
-  opacity: var(--avail-dim-finding);
-}
-
-.bodyview-marker.is-limp .bodyview-footprint {
-  stroke-dasharray: 1 3;
-}
-
-/* A dimmed thing still has to be readable: hover and focus lift it back. */
-.bodyview-marker:hover,
-.bodyview-marker:focus-within,
-.bodyview-marker:focus-visible {
-  opacity: 1;
-}
-
-.bodyview-marker:focus-visible .bodyview-footprint {
-  stroke: var(--accent-bright);
-  stroke-width: 2;
-}
-
-/* Part Kind is a treatment, never a hue (ADR 0063's correction to CONTEXT.md).
-   A light has no travel, so its marker is drawn as a fixture rather than as
-   something that swings, and it never carries a leaf. */
-.bodyview-marker.partkind-light .bodyview-footprint {
-  stroke-dasharray: 2 2;
-  rx: 8;
-}
-
-.bodyview-marker.partkind-light .bodyview-leaf {
-  display: none;
-}
-
-/* Selection. Blue and only blue, doing the one job it has on every surface. */
-.bodyview-marker.is-selected .bodyview-footprint {
-  fill: var(--accent-dim);
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-
-.bodyview-marker.is-selected .bodyview-label {
-  fill: var(--text);
-}
-
 /* The panel: the acts, named beside the thing they act on. */
 .bodyview-panel {
   flex: 0 1 20rem;
@@ -7535,6 +7390,476 @@ body[data-page="wiring"] .wiring-tier > * + * {
   margin-top: var(--space-sm);
   font-size: var(--fs-hint);
   color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------------------
+   The droid picture (#372, ADR 0063 as amended 2026-09-19): the operator's
+   pick on #408, drawn by data/body_view.js.
+
+   ONE CARD, THREE FACES - Front, Rear and Dome (Top) - switched by the tab
+   text at every width, with the selection panel, the legend and the Parts list
+   in a rail beside it on a desk and under it on a tablet or a phone.
+
+   A TECHNICAL LINE DRAWING. The art is stroke only, in one ink, and every
+   Part's footprint is one shape over it. A state is one class on the Part, and
+   colour is spent on exactly two of them: the interaction accent FILLS an open
+   Part, the way the interactive dome always drew an open panel, and amber
+   marks ends not measured. Closed spends no colour - the plain footprint IS
+   closed. Unfitted is the only dashed line; limp is present but dim; picked
+   is the brighter accent with a glow, declared last so it wins over the rest.
+   Hover is the plain ink, not a colour, because it is not a state.
+
+   Everything here is its own block on the token layer #341 landed. No shared
+   rule is edited and no colour literal appears outside :root.
+   --------------------------------------------------------------------------- */
+.bv-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--space-xl);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .bv-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.bv-drawing,
+.bv-rail {
+  min-width: 0;
+}
+
+.bv-rail {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+/* The panels in the rail are the renderer's .bodyview-panel plates; in a grid
+   cell they take the rail's width rather than a basis of their own. */
+.bv-rail .bodyview-panel {
+  min-width: 0;
+}
+
+/* .btn's display beats the browser's [hidden] default. */
+.bodyview-panel-acts .btn[hidden] {
+  display: none;
+}
+
+.bodyview-panel-kind {
+  margin-top: calc(-1 * var(--space-2xs));
+  margin-bottom: var(--space-sm);
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+/* Which design and variant the picture is of, printed over it. */
+.bv-stamp {
+  display: inline-block;
+  margin-bottom: var(--space-md);
+  padding: var(--space-2xs) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.bv-stamp[hidden] {
+  display: none;
+}
+
+.bv-stamp.is-pending {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.bv-card {
+  padding: var(--space-sm);
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+}
+
+.bv-tabs {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: var(--space-2xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.bv-tab {
+  padding: var(--space-2xs) 0;
+  background: none;
+  border: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.bv-tab:hover {
+  color: var(--text-dim);
+}
+
+.bv-tab.is-current {
+  color: var(--accent-bright);
+}
+
+.bv-tab:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.bv-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.bv-svg-dome {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* A Part, a surface detail or a stamp this droid's picture does not carry is
+   built and switched off rather than left out, so adding an arm never rebuilds
+   the picture. */
+.bv-svg .is-absent {
+  display: none;
+}
+
+/* The line art itself: background, never a Part, never clickable. */
+.bv-art path {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.bv-guide {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 0.8;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.bv-guide.is-dashed {
+  stroke-dasharray: 3 2;
+}
+
+.bv-guide.is-hub {
+  stroke-width: 1.2;
+  opacity: 1;
+}
+
+/* A footprint. `pointer-events: all` because an unfilled shape is otherwise
+   clickable only on its line, and a click inside a door would fall through. */
+.bv-part {
+  cursor: pointer;
+  outline: none;
+}
+
+.bv-footprint {
+  fill: transparent;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+}
+
+/* On the dome the pieces ARE the drawing, so they take the line ink. */
+.bv-svg-dome .bv-footprint {
+  stroke: var(--text-faint);
+  stroke-width: 1.2;
+}
+
+.bv-part:hover .bv-footprint,
+.bv-part:focus-visible .bv-footprint {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+
+.bv-part.is-unfitted .bv-footprint {
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 2;
+  opacity: 0.55;
+}
+
+.bv-part.is-limp .bv-footprint {
+  stroke: var(--text-faint);
+  opacity: 0.6;
+}
+
+.bv-part.is-unmeasured .bv-footprint {
+  stroke: var(--warning);
+  stroke-width: 2;
+}
+
+.bv-part.is-open .bv-footprint {
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.bv-part.is-selected .bv-footprint {
+  stroke: var(--accent-bright);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px var(--accent-bright));
+}
+
+/* Surface details: drawing only - dashed and dim so a real footprint always
+   reads as the stronger mark. The box is hit-testable only so its name shows
+   on hover; nothing ever listens for a click on it. */
+.bv-decor {
+  cursor: default;
+}
+
+.bv-decor-box {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+}
+
+.bv-dome-pending {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--warning);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.bv-dome-note,
+.bv-said {
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.bv-dome-note {
+  color: var(--warning);
+}
+
+.bv-said {
+  color: var(--text-faint);
+}
+
+/* The legend: the same seven words on every face, and a swatch drawn the way
+   the picture draws that state. */
+.bv-legend-row,
+.bv-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--fs-cell);
+}
+
+.bv-legend {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.bv-legend-word {
+  color: var(--text-dim);
+}
+
+.bv-swatch {
+  flex: none;
+  width: 22px;
+  height: 14px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+}
+
+.bv-swatch.is-closed {
+  background: var(--surface);
+}
+
+.bv-swatch.is-open {
+  background: color-mix(in srgb, var(--accent) 28%, var(--surface));
+  border-color: var(--accent);
+}
+
+.bv-swatch.is-unmeasured {
+  border-color: var(--warning);
+  border-width: 2px;
+}
+
+.bv-swatch.is-limp {
+  border-color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.bv-swatch.is-unfitted {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.bv-swatch.is-selected {
+  border-color: var(--accent-bright);
+  border-width: 2px;
+  filter: drop-shadow(0 0 2px var(--accent-bright));
+}
+
+/* The Parts list: every Part on the shown half of the picture, a second way
+   to pick one, and an Add for each Common Addition the droid does not carry. */
+.bv-list {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.bv-list-row {
+  justify-content: space-between;
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: var(--radius-xs);
+}
+
+.bv-list-row[hidden] {
+  display: none;
+}
+
+.bv-list-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.bv-list-pick {
+  flex: 1;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bv-list-name {
+  color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------------------
+   The dome picker, redrawn in the droid picture's line language (#372, ADR 0063
+   as amended 2026-09-19), wherever it is shown - the Dashboard's dome card and
+   the Sequences step editor. Both draw the dome as svg.dome-svg-picker: the
+   live layout through data/dome_layout_render.js, and the built-in MK4 map
+   (data/dome_panel_model.js) when the dome has not answered. The built-in map
+   still carries the vendored drawing's own <style>, which is its old palette;
+   every rule here is scoped to svg.dome-svg-picker so it outranks those single
+   class rules without that vendored copy being edited.
+
+   The same recipe as the picture above: stroke only, one ink, no text on the
+   drawing (a piece's name is its hover), the accent FILLS an open panel, and
+   picked is the brighter accent with a glow. What a panel IS - a ring servo, a
+   pie servo, a fixed wedge - is no longer a colour; a fixed wedge simply takes
+   no pointer.
+   --------------------------------------------------------------------------- */
+svg.dome-svg-picker .dbg,
+svg.dome-svg-picker .pbg,
+svg.dome-svg-picker .rl {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 0.8;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg.dome-svg-picker .pr,
+svg.dome-svg-picker .pp,
+svg.dome-svg-picker .pu {
+  fill: transparent;
+  stroke: var(--text-faint);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+svg.dome-svg-picker .pf,
+svg.dome-svg-picker .hp {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* No text on the drawing: the labels, the callout bubbles and their leaders,
+   and the built-in map's own colour key, which named the colours this redraw
+   retires. */
+svg.dome-svg-picker text,
+svg.dome-svg-picker .cr,
+svg.dome-svg-picker .cf,
+svg.dome-svg-picker .conn-r,
+svg.dome-svg-picker .conn-f,
+svg.dome-svg-picker > g[transform] {
+  display: none;
+}
+
+/* A pressed panel takes focus, and the browser's own focus box would draw a
+   square around a wedge; the keyboard's focus is the stroke below instead. */
+svg.dome-svg-picker [tabindex]:focus {
+  outline: none;
+}
+
+svg.dome-svg-picker .pr:hover,
+svg.dome-svg-picker .pp:hover,
+svg.dome-svg-picker .pu:hover,
+svg.dome-svg-picker .pr:focus-visible,
+svg.dome-svg-picker .pp:focus-visible,
+svg.dome-svg-picker .pu:focus-visible {
+  stroke: var(--text);
+  stroke-width: 1.5;
+  outline: none;
+}
+
+svg.dome-svg-picker .pr.open,
+svg.dome-svg-picker .pp.open,
+svg.dome-svg-picker .pu.open {
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+svg.dome-svg-picker .pr.selected,
+svg.dome-svg-picker .pp.selected,
+svg.dome-svg-picker .pu.selected {
+  stroke: var(--accent-bright);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px var(--accent-bright));
+}
+
+/* What the dome says about a panel it may ignore: dimmed, never hidden, so
+   the builder can still pick it and read why (data/dome_control.js). */
+svg.dome-svg-picker .is-inactive {
+  opacity: 0.6;
+}
+
+svg.dome-svg-picker .is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+svg.dome-svg-picker .is-unmapped,
+svg.dome-svg-picker .is-unverified {
+  opacity: 0.4;
 }
 
 
