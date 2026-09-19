@@ -284,6 +284,23 @@ never type an ID.
   `executor-not-ready` (an operation whose executor is not yet wired; the
   count must be zero when the feature is complete).
 
+- An Output is named by what the running board prints beside it (ADR 0033
+  Amendment 2026-09-19), so a servo `target=` takes that word - `arm3` or
+  `"ARM 3"` on the Artoo PCB, `gpio49` or `"GPIO 49"` on the FireBeetle 2, case
+  and spaces set aside - or `both`. A word the board does not print is refused
+  `out-of-range` with an `accepts` field listing the words it does take, and
+  `help` lists them as `target_accepts`; Tab completes `target=` to them:
+
+  ```text
+  > servo.action.open target=aux1
+  < id=1 type=begin operation=servo.action.open
+  < id=1 type=field name=argument value=target
+  < id=1 type=field name=accepts value=ARM1,ARM2,ARM3,ARM4,ARM5,both
+  < id=1 type=end status=err outcome=invalid reason=out-of-range
+  ```
+
+  On the FireBeetle 2 the value is quoted, because its words carry a space:
+  `accepts="GPIO 49,GPIO 50,GPIO 4,GPIO 5,GPIO 51,both"`.
 - `not-in-this-build` and `not-on-this-board` are the same tokens the browser
   already uses for Feature Availability; the Console never invents a synonym.
 - Availability is **re-checked at execution**, not cached from discovery.

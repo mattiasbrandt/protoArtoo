@@ -212,6 +212,9 @@ the patch releases, whose notes live on their own GitHub Release.
   both work, and so do `gpio49` and `GPIO 49`. The old words `aux1` to `aux3`
   are not taken any more; the answer lists the words your board does take.
   Your saved RC bindings and settings are untouched.
+- **Servos says what is on each output.** Wherever Servos names an output it
+  also names the part you put on it in Parts, like "ARM1 · Left body door", or
+  every part on a shared lead. An output with nothing on it shows just its name.
 - **MP3 Trigger volume uses the range you can actually hear.** The slider used
   to be stretched across the module's whole 0–255 register, most of which is
   silent, and the shipped default sat at the edge of audibility. It now maps

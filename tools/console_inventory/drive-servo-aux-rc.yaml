@@ -543,7 +543,8 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'', ''both'']'
+    board_output: true
+    values: '[''both'']'
     required: true
   registry_requires_web_control: false
   registry_sources:
@@ -569,7 +570,8 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'', ''both'']'
+    board_output: true
+    values: '[''both'']'
     required: true
   registry_requires_web_control: false
   registry_sources:
@@ -595,7 +597,7 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    board_output: true
     required: true
   - name: position_us
     type: uint16
@@ -624,7 +626,7 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    board_output: true
     required: true
   registry_requires_web_control: false
   registry_sources:
@@ -650,7 +652,7 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    board_output: true
     required: true
   registry_requires_web_control: false
   registry_sources:
@@ -676,7 +678,7 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'']'
+    board_output: true
     required: true
   - name: position_us
     type: uint16
@@ -707,7 +709,8 @@ rows:
   registry_params:
   - name: target
     type: string
-    range: '[''arm1'', ''arm2'', ''aux1'', ''aux2'', ''aux3'', ''both'']'
+    board_output: true
+    values: '[''both'']'
     required: true
   registry_requires_web_control: false
   registry_sources:
@@ -723,7 +726,7 @@ rows:
   - src/drivers/ledc_pwm.cpp:187 - ledcPwmRelease() writes duty 0, the one place a pulse comes off a pin
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: Web-API (#364, ADR 0043). No width - a release commands no position, so the part ends wherever gravity and friction leave it. releaseArm() is also what the estop and Sleep Mode edge calls for every enabled output (releaseAllOutputs() at servo_task.cpp:534), replacing the park D4 built. target=both releases ARM1+ARM2 only, like the other broadcasts. Queue guarded.
+  notes: Web-API (#364, ADR 0043). No width - a release commands no position, so the part ends wherever gravity and friction leave it. releaseArm() is also what the estop and Sleep Mode edge calls for every enabled output (releaseAllOutputs() at servo_task.cpp:534), replacing the park D4 built. target=both releases the first two Outputs only, like the other broadcasts. Queue guarded.
 - name: servo.action.centre-all
   type: action
   registry_api_path: /api/servo/centre
@@ -787,7 +790,7 @@ rows:
   - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: SBUS button. Toggles ARM1. Queue guarded at rc_dispatcher_helpers.cpp:101.
+  notes: SBUS button. Toggles the first Output (ARM1 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
 - name: servo.action.toggle-arm2
   type: action
   registry_api_path: null
@@ -807,7 +810,7 @@ rows:
   - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: SBUS button. Toggles ARM2. Queue guarded at rc_dispatcher_helpers.cpp:101.
+  notes: SBUS button. Toggles the second Output (ARM2 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
 - name: servo.action.toggle-aux1
   type: action
   registry_api_path: null
@@ -827,7 +830,7 @@ rows:
   - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: SBUS button. Toggles AUX1. Queue guarded at rc_dispatcher_helpers.cpp:101.
+  notes: SBUS button. Toggles the third Output (ARM3 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
 - name: servo.action.toggle-aux2
   type: action
   registry_api_path: null
@@ -847,7 +850,7 @@ rows:
   - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: SBUS button. Toggles AUX2. Queue guarded at rc_dispatcher_helpers.cpp:101.
+  notes: SBUS button. Toggles the fourth Output (ARM4 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
 - name: servo.action.toggle-aux3
   type: action
   registry_api_path: null
@@ -867,7 +870,7 @@ rows:
   - src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch
   executor_or_core: servoCmdQueue
   missing_metadata: []
-  notes: SBUS button. Toggles AUX3. Queue guarded at rc_dispatcher_helpers.cpp:101.
+  notes: SBUS button. Toggles the fifth Output (ARM5 on the Artoo PCB). Queue guarded at rc_dispatcher_helpers.cpp:101.
 - name: servo.status.current
   type: status
   registry_api_path: /api/status

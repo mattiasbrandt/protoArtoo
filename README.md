@@ -28,8 +28,9 @@ tested, and designed to be understood and extended by the wider droid-building c
   SparkFun MP3 Trigger. Set the one that is fitted; the change takes effect at reboot.
   Abstract `AudioDriver` interface for future modules.
 - **Moods** — 15 presets coordinating body sounds and dome lighting; per-mood random chatter rate
-- **Servo arms** — 2× MG996R utility arm servos via LEDC PWM
-- **AUX outputs** — 3× configurable outputs (AUX1-3 on ARM3/ARM4/ARM5): MG996R, MG90S, RGB LED, or disabled
+- **Outputs** — five LEDC PWM outputs, each named by what the board prints beside it
+  (ARM1-ARM5 on the Artoo board, GPIO 49 / 50 / 4 / 5 / 51 on the FireBeetle 2):
+  an MG996R or MG90S servo on each, and one of three can carry the RGB LED strip instead
 - **Dome motor** — ESC signal via LEDC PWM (tested: ISDT ESC70)
 - **Dome link** — bidirectional Marcduino serial to AstroPixelsPlus over slip ring
 
@@ -75,7 +76,7 @@ For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminol
 **Tested / Supported:**
 - **RC receivers:** Dual SBUS, Single SBUS, or 6-channel PWM (tested: HOTRC 650)
 - **Audio:** DY-SV5W (confirmed on hardware), CHIRP Audio Trigger, SparkFun MP3 Trigger
-- **Servos:** MG996R/MG90S utility arms + 3× configurable AUX outputs
+- **Servos:** MG996R/MG90S on the board's outputs; one output can carry an RGB LED strip
 - **Dome motor:** Standard 50 Hz RC ESC (tested: ISDT ESC70)
 - **Dome controller:** [AstroPixelsPlus fork](https://github.com/mattiasbrandt/AstroPixelsPlus) with bidirectional body link
 
@@ -346,7 +347,7 @@ The dome has no local sound module. The body is the sole audio authority.
 
 **Hardware Flexibility**
 - Audio module is swappable — pick the one that is fitted; it takes effect at reboot, no rewiring
-- AUX outputs configurable per-channel: servo (MG996R or MG90S), RGB LED strip, or disabled
+- Each output configurable: servo (MG996R or MG90S), the RGB LED strip on the outputs that can carry it, or not wired
 - Runtime WiFi provisioning: a newly flashed controller hosts its own setup
   network at first boot, then the operator picks WiFi Client Mode or
   Standalone AP Mode from the browser — no source edits or build-time

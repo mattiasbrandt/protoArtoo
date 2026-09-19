@@ -66,7 +66,7 @@ Body Controller (protoArtoo on Artoo PCB)
 - Motion peripherals:
 	- Hoverboard motor controller on body-side UART link.
 	- Dome motor ESC on PWM output.
-	- Utility arms and AUX channels on PWM outputs.
+	- Servos (utility arms, doors) and the LED strip on the board's PWM outputs, each named by what the board prints beside it.
 
 ## Body Controller Port Topology
 
