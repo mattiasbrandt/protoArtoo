@@ -1512,6 +1512,8 @@
   //                       Part off, and whether the lead came off too is theirs
   //                       to say, so the panel says the Output is still mapped
   //                       and routes to its picker rather than unmapping it.
+  //                       A Common Addition comes off as the group the Parts
+  //                       list fits it as: an arm takes its claw or tool.
   //   Give it an output   routes to this Part's row in the part-first table
   //                       and puts the cursor in its picker. Deliberately NOT a
   //                       third picker of its own: the mapping has two

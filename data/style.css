@@ -7604,8 +7604,9 @@ body[data-page="wiring"] .wiring-tier > * + * {
    it can be inspected, the way r2d2-astromech-simulator's `na` rows lift on
    hover (src/css/07-startup.css:612). Part-way, not to full strength: an
    inspected Part must still read as dimmed (operator, 2026-09-19 on #373).
-   Opacity and ink only, no colour, and an Unfitted Part keeps its dash. `:not(.is-selected)` because the pick's ink must still win under
-   the pointer, the way it does on every other state. */
+   Opacity and ink only, no colour, and an Unfitted Part keeps its dash.
+   `:not(.is-selected)` because the pick's ink must still win under the
+   pointer, the way it does on every other state. */
 .bv-part.is-unfitted:not(.is-selected):hover .bv-footprint,
 .bv-part.is-unfitted:not(.is-selected):focus-visible .bv-footprint,
 .bv-part.is-limp:not(.is-selected):hover .bv-footprint,
