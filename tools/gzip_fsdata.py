@@ -106,7 +106,25 @@ def _should_gzip(filename):
 
 # Partials are sources for inlining, not servable assets.
 PARTIAL_PREFIX = "_"
-INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
+# The name may carry one fragment, `_product_art.html#board`, which inlines a
+# selection from the partial rather than all of it (see BOARD_FRAGMENT).
+INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+(?:#[a-z]+)?)\s*-->[ \t]*\n?")
+
+# `#board` on a product-drawing sprite: inline only the running board's own
+# drawing (#411). Wiring pictures the Body Controller this image runs on, and
+# inlining the whole sprite to show one board cost 11.5 KB of gzipped image on
+# the 4 MB board, against about 1 KB for its one symbol. Which product that is
+# comes from the Component Registry's own gate - the Body Controller row whose
+# `included` test is `(PA_BOARD == <this env's PA_BOARD>)` - so there is no
+# second board-to-product map here. A set whose sprite has no symbol for that
+# product (the default set carries photographs, not drawings) inlines nothing,
+# and the page's frame falls back to the photograph or stays empty.
+BOARD_FRAGMENT = "board"
+REGISTRY_BODY_CONTROLLER_RE = re.compile(
+    r'PA_COMPONENT_PART\(\s*\d+,\s*"([A-Za-z0-9_]+)",[^\n]*COMPONENT_CATEGORY_BODY_CONTROLLER,'
+    r"[^\n]*\(PA_BOARD == ([A-Z0-9_]+)\)\)"
+)
+PA_BOARD_FLAG_RE = re.compile(r"-DPA_BOARD=([A-Z0-9_]+)")
 HTML_EXTS = {".html", ".htm"}
 
 # The one partial every rendered page is required to inline. It is checked by
@@ -160,7 +178,42 @@ def _is_partial(filename):
     return filename.startswith(PARTIAL_PREFIX)
 
 
-def _expand_includes(path, include_roots):
+def _running_body_controller(env):
+    """The Component Registry id of the Body Controller this env builds for, or
+    a hard failure naming why it could not be found."""
+    flags = env.GetProjectOption("build_flags", "")
+    flags = " ".join(flags) if isinstance(flags, (list, tuple)) else str(flags or "")
+    board = PA_BOARD_FLAG_RE.search(flags)
+    if board is None:
+        raise SystemExit(
+            "[gzip_fsdata] a page includes the board's drawing (#%s), but this env's "
+            "build_flags carry no -DPA_BOARD=, so there is no board to draw." % BOARD_FRAGMENT
+        )
+    registry = os.path.join(env.subst("$PROJECT_DIR"), "include", "component_registry.inc")
+    with open(registry, "r", encoding="utf-8") as fh:
+        rows = REGISTRY_BODY_CONTROLLER_RE.findall(fh.read())
+    matches = [product for product, gate in rows if gate == board.group(1)]
+    if len(matches) != 1:
+        raise SystemExit(
+            "[gzip_fsdata] %s has %d Body Controller rows gated on %s; the board's "
+            "drawing needs exactly one." % (registry, len(matches), board.group(1))
+        )
+    return matches[0]
+
+
+def _board_symbol(partial, product):
+    """The sprite's own <svg> wrapper around the one <symbol> for `product`, or
+    "" where the sprite carries none (the default set, or a product nobody drew)."""
+    symbol = re.search(
+        r'<symbol id="art-%s"[\s\S]*?</symbol>' % re.escape(product), partial
+    )
+    wrapper = re.search(r"<svg\b[^>]*>", partial)
+    if symbol is None or wrapper is None:
+        return ""
+    return "%s%s</svg>" % (wrapper.group(0), symbol.group(0))
+
+
+def _expand_includes(path, include_roots, board_product=None):
     """Return the file's bytes with any PA:INCLUDE directives replaced.
 
     include_roots is searched in order. Callers pass the active asset set
@@ -173,6 +226,9 @@ def _expand_includes(path, include_roots):
     Deliberately single-pass and non-recursive: a partial that itself contains a
     directive is rejected rather than quietly half-expanded, because a partially
     expanded recovery kernel is worse than an obvious build failure.
+
+    board_product is a callable returning the running board's product id, asked
+    only when a directive carries the #board fragment.
     """
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
@@ -196,7 +252,7 @@ def _expand_includes(path, include_roots):
         )
 
     def _replace(match):
-        name = match.group(1)
+        name, _, fragment = match.group(1).partition("#")
         target = None
         for root in include_roots:
             candidate = os.path.join(root, name)
@@ -215,7 +271,14 @@ def _expand_includes(path, include_roots):
             raise SystemExit(
                 "[gzip_fsdata] nested PA:INCLUDE in '%s' is not supported." % target
             )
-        return partial
+        if not fragment:
+            return partial
+        if fragment != BOARD_FRAGMENT or board_product is None:
+            raise SystemExit(
+                "[gzip_fsdata] %s includes '%s': '#%s' is not a fragment this build "
+                "can select." % (path, match.group(1), fragment)
+            )
+        return _board_symbol(partial, board_product())
 
     expanded = INCLUDE_RE.sub(_replace, text)
     if INCLUDE_RE.search(expanded):
@@ -295,7 +358,9 @@ def main():
                     dp = os.path.join(dst_root, name + ".gz")
                     ext = os.path.splitext(name)[1].lower()
                     if ext in HTML_EXTS:
-                        payload = _expand_includes(sp, include_roots)
+                        payload = _expand_includes(
+                            sp, include_roots, board_product=lambda: _running_body_controller(env)
+                        )
                         with gzip.open(dp, "wb", compresslevel=9) as fo:
                             fo.write(payload)
                     elif ext in MINIFY_LOADERS:
