@@ -1749,18 +1749,37 @@
     paintPanel();
   };
 
+  // The one way this surface changes the Fitted Parts: the Droid Build seam,
+  // for Add and Drop alike. applyDroidBuild() publishes before it persists, so
+  // a write the droid did not confirm is already on the picture by the time it
+  // answers. Ask the droid what it holds instead - the seam's own re-read - and
+  // only if it cannot say either, put the picture back to the build it last
+  // confirmed. The caller then reads fittedNow() for what actually happened,
+  // which also covers a write that timed out after the droid took it.
+  const writeFitted = (nextFitted) => {
+    const before = fittedNow();
+    return window.DroidBuild.applyDroidBuild({ fitted: nextFitted }).then((result) => {
+      if (result.persisted) return;
+      return window.DroidBuild.load({ refresh: true }).then((held) => {
+        if (held === null) window.DroidBuild.applyDroidBuild({ fitted: before }, { persist: false });
+      });
+    });
+  };
+
   const addToBuild = (ids, names) => {
     const fitted = fittedNow();
     if (fitted === null) return;
     const missing = ids.filter((id) => fitted.indexOf(id) === -1);
     if (missing.length === 0) return;
-    window.DroidBuild.applyDroidBuild({ fitted: fitted.concat(missing) })
-      .then((result) => {
+    writeFitted(fitted.concat(missing))
+      .then(() => {
+        const now = fittedNow() || [];
+        const took = missing.every((id) => now.indexOf(id) !== -1);
         showFeedback(
-          result.persisted
+          took
             ? `${names} ${missing.length === 1 ? "is" : "are"} on your droid now.`
             : `${names} did not reach the droid, so nothing was added.`,
-          result.persisted ? "success" : "error"
+          took ? "success" : "error"
         );
         paintBody();
       })
