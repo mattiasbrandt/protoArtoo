@@ -7128,6 +7128,53 @@ body[data-page="maintenance"] .status-item .hint {
   margin-block-end: var(--space-lg);
 }
 
+/* What the run leaves behind (#371): one row per step, the rail's mark and the
+   step's name in a fixed column, what is said about it beside that, and - on a
+   question never asked - the act that answers it at the end of the row. */
+/* The run ends by scrolling here, and the sticky topbar would cover the
+   head of the card it scrolled to. */
+#setup-summary {
+  scroll-margin-top: calc(var(--topbar-h) + var(--space-lg));
+}
+
+.setup-summary-section + .setup-summary-section {
+  margin-block-start: var(--space-lg);
+}
+
+.setup-summary-list {
+  padding: 0;
+  list-style: none;
+}
+
+.setup-summary-row {
+  display: grid;
+  grid-template-columns: 22ch 1fr auto;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: var(--row);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-cell);
+}
+
+.setup-summary-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  color: var(--text);
+}
+
+.setup-summary-said {
+  color: var(--text-dim);
+}
+
+.setup-summary-said.note {
+  margin-block: var(--space-2xs);
+}
+
+.setup-summary-section > .hint {
+  margin-block-start: var(--space-xs);
+}
+
 
 /* ---------------------------------------------------------------------------
    Wiring (#350): the bench sheet on a screen
