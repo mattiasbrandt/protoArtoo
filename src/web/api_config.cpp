@@ -642,9 +642,9 @@ void addAudioMemberFields(JsonDocument& doc) {
 // Both come from the boot projections setup() already publishes
 // (configCacheSetActiveComponentToggles(), configCacheSetActiveRcInput()), so
 // this costs no resident byte. The toggles go out as the list of ids switched
-// on at start, not as a flag on every entry: the response buffer below is a
-// fixed 3072 B, and fifteen "activeEnabled" fields would not fit its worst
-// case where one list of the ones that are on does.
+// on at start, not as a flag on every entry: one list of the ones that are on
+// is about half the bytes of fifteen "activeEnabled" fields, on a payload every
+// page load reads.
 //
 // The id is the payload's own component key: the param name without its
 // "enable" and with the first letter lowered (enableDomeEsc -> domeEsc,
@@ -854,27 +854,22 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
     doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
 
-    // Static, not stack: the payload measures ~1.3 KB on a provisioned device,
-    // and even that is more than the psychic server task's 8 KB stack should
-    // carry next to ArduinoJson's serializer frames. Handlers serialize on one
-    // task under both backends, so a shared buffer is race-free - the same
-    // argument /api/status and /api/logs already make.
+    // Serialized into a buffer allocated at the measured size and freed before
+    // this returns (include/api_json_response.h), not into a fixed static one.
+    // The payload measures ~1.3 KB on a provisioned device, but its reachable
+    // worst case - every Part fitted, every string at its longest, the guided
+    // run's record full - outgrew the 3,072 B static buffer this route used to
+    // own, and a config read that 500s is a Configuration, Setup and Backup that
+    // will not load. A static buffer sized to that worst case spends permanent
+    // BSS, the scarcest budget on this target, on a case almost no droid is in
+    // (operator decision, 2026-09-19 on #371). Too big for the stack either way:
+    // the psychic server task has 8 KB, beside ArduinoJson's serializer frames.
     //
-    // Sized to kConfigJsonBudget, the worst-case bound test_api_config_json
-    // holds populateConfigJson() to; the overflow branch below is what makes a
-    // future field that breaks that bound a visible 500 rather than a silently
-    // truncated config.
-    //
-    // Serializing into a bounded buffer instead of a response stream also
-    // means no heap response object per request, which is the point of the
-    // migration for a route the dashboard hits on every page load.
-    static char body[3072];
-    if (measureJson(doc) >= sizeof(body)) {
-        webSendJsonError(req, 500, "config response overflow");
-        return;
-    }
-    serializeJson(doc, body, sizeof(body));
-    req.send(200, "application/json", body);
+    // kConfigResponseCeiling is a sanity ceiling, not a size: the measured worst
+    // case (test_api_config_get) is about 3.4 KB, and a payload at or past the
+    // ceiling is a 500 rather than a runaway allocation.
+    static constexpr size_t kConfigResponseCeiling = 6144;
+    webSendJsonDocument(req, doc, kConfigResponseCeiling, TAG);
 }
 
 // WebRequest-free per ADR 0036's Consequences ("persistSystemConfig(WebRequest&,
@@ -1252,8 +1247,8 @@ void handleConfigPost(WebRequest& req) {
 // that carries the estop (#318, #362).
 //
 // Its own route rather than more keys on /api/config, for three reasons: that
-// response is a fixed 3072 B static buffer already sized to its own worst case,
-// and a table of twenty-four rows does not fit beside it; the Parts surface asks
+// response already runs to about 3.4 KB at its worst, and a table of
+// twenty-four rows beside it would double every page load's read; the Parts surface asks
 // for this far more often than a page asks for the whole config; and the
 // output-first table adds columns to every row. A per-request document spends
 // no BSS, which is the scarcest budget on this target

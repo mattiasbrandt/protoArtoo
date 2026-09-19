@@ -12,7 +12,9 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstdint>
 #include <cstring>
+#include <string>
 
 #include "api_config.h"
 #include "config_cache.h"
@@ -242,21 +244,74 @@ void test_the_droid_build_reaches_the_config_payload() {
     TEST_ASSERT_TRUE(sawGripArm);
 }
 
-// The worst case this payload can reach: a maximal config AND a droid with
-// every Part in the catalog fitted. The response buffer is a fixed 3072 B and
-// an overflow is a 500, so the bound is measured here rather than reasoned
-// about - the Fitted Parts are the one field in this payload that grows every
-// time the catalog does.
-void test_a_fully_fitted_droid_build_still_fits_the_response_buffer() {
+// The worst case this payload can reach, measured rather than reasoned about.
+// It outgrew the fixed 3072 B static buffer this route used to serialize into
+// (3,448 B here), and an overflow is a 500, which a builder meets as a
+// Configuration, Setup and Backup that will not load (#371). The route now
+// allocates per request under a 6,144 B sanity ceiling (sendConfigSnapshot()),
+// so this holds it to answering at all, with every field at its widest - wider
+// than the firmware accepts, so the bound is a storage bound, not a hope:
+//   - every string at its stored limit: the network names and passwords, the
+//     dome peer, a Droid Build id in each half, the longest token for every
+//     enumerated field (wifi mode, receiver mode, speed preset, run state);
+//   - every number at its widest spelling for its type, and every flag the
+//     payload carries as "false" (one byte longer than "true") where the state
+//     can be false - including summaryDone, whose false is the longer word;
+//   - every Servo Output row addressed and answered with the longest type;
+//   - every Part fitted - the one field that grows whenever the catalog does;
+//   - the guided run's visited record at its declared maximum;
+//   - every Component Toggle on at boot, the longest the booted list can be,
+//     and the longest radio and sound member ids.
+void test_the_worst_case_config_still_fits_the_response_buffer() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    ServoOutputRepairReport repair = {};
+    configLoadServoOutputs(prefs, &repair);
+    prefs.end();
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        ServoOutputEdit edit = {};
+        edit.driver = SERVO_DRIVER_LEDC;
+        edit.channel = SERVO_LEGACY_FIELD_SETS[i].channel;
+        edit.fields = SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE | SERVO_FIELD_COMPONENT;
+        edit.open_us = 2500;
+        edit.close_us = 2500;
+        edit.component = SERVO_COMP_MG996R;
+        configCacheApplyServoOutputEdits(&edit, 1);
+    }
+
     ConfigSnapshot snap = {};
+    snap.wifi.mode = WifiMode::STANDALONE_AP;
     memset(snap.wifi.sta_ssid, 'S', sizeof(snap.wifi.sta_ssid) - 1);
     memset(snap.wifi.ap_ssid, 'A', sizeof(snap.wifi.ap_ssid) - 1);
     memset(snap.wifi.sta_password, 'P', sizeof(snap.wifi.sta_password) - 1);
     memset(snap.wifi.ap_password, 'Q', sizeof(snap.wifi.ap_password) - 1);
     memset(snap.dome.dome_wifi_peer_ip, '9', sizeof(snap.dome.dome_wifi_peer_ip) - 1);
+    snap.drive.speedLimitMax = INT16_MIN;
+    snap.drive.speedPresetSlow = INT16_MIN;
+    snap.drive.speedPresetNormal = INT16_MIN;
+    snap.drive.speedPresetTurbo = INT16_MIN;
+    snap.drive.speedPresetActive = SpeedPresetId::Normal;
+    snap.drive.sbusTimeoutMs = UINT32_MAX;
+    snap.drive.webDriveTimeoutMs = UINT32_MAX;
+    snap.dome.dome_neutral_us = UINT16_MAX;
+    snap.dome.dome_min_pulse_us = UINT16_MAX;
+    snap.dome.dome_max_pulse_us = UINT16_MAX;
+    snap.dome.dome_speed_limit_pct = UINT8_MAX;
+    snap.dome.dome_rnd_speed_pct = UINT8_MAX;
+    snap.dome.dome_rnd_pause_min = UINT8_MAX;
+    snap.dome.dome_rnd_pause_max = UINT8_MAX;
+    snap.dome.dome_rnd_move_ms = UINT16_MAX;
+    snap.system.logLevel = UINT8_MAX;
+    snap.servo.aux_led_pin = UINT8_MAX;
+    snap.servo.aux_led_count = UINT8_MAX;
+    snap.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
+    snap.system.rc_member = 6;      // rc_transmitter_elrs, the longest radio id
+    snap.system.sound_member = 21;  // dfplayer_mini, the longest sound id
     configCacheApply(snap);
-    // Every Component Toggle on at boot: the longest the booted-toggle list
-    // can be (#371).
+    configCacheSetActiveWifi(snap.wifi);
+    configCacheSetActiveSoundMember(21);
+    configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(snap.system));
     SystemConfig allOn = snap.system;
     for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
         allOn.*(kComponentToggleFields[i].field) = true;
@@ -265,10 +320,27 @@ void test_a_fully_fitted_droid_build_still_fits_the_response_buffer() {
 
     DroidBuildConfig build = {};
     droidBuildDefaults(&build);
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&build.dome, "dddddddddddd", "vvvvvvvvvvvv"));
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&build.body, "bbbbbbbbbbbb", "wwwwwwwwwwww"));
     for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
         TEST_ASSERT_TRUE(droidFittedPartsFit(&build.fitted, droidPartIdAt(i)));
     }
     configCacheApplyDroidBuild(build);
+
+    GuidedSetupConfig guided = {};
+    guidedSetupDefaults(&guided);
+    std::string visited;
+    for (size_t i = 0; i < GUIDED_SETUP_STEP_MAX; ++i) {
+        char key[GUIDED_SETUP_STEP_KEY_MAX + 1] = {};
+        snprintf(key, sizeof(key), "step%08u", (unsigned)i);
+        if (!visited.empty()) visited += ",";
+        visited += key;
+    }
+    TEST_ASSERT_EQUAL_UINT32(0, (uint32_t)guidedSetupVisitedSet(&guided, visited.c_str()));
+    guided.recorded = true;
+    guided.run = GUIDED_SETUP_COMPLETED;
+    guided.summaryDone = false;
+    configCacheApplyGuidedSetup(guided);
 
     WebRequestTestBackend backend;
     WebRequest req(&backend);
@@ -277,11 +349,18 @@ void test_a_fully_fitted_droid_build_still_fits_the_response_buffer() {
     // A 500 here is the overflow branch, which is what this test exists to
     // catch before a builder meets it as a blank config page.
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    TEST_ASSERT_LESS_THAN_UINT32(3072u, (uint32_t)strlen(backend.sentBody));
+    // Past 3072 on purpose: the payload the old static buffer could not carry.
+    TEST_ASSERT_GREATER_THAN_UINT32(3072u, (uint32_t)strlen(backend.sentBody));
+    TEST_ASSERT_LESS_THAN_UINT32(6144u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
     TEST_ASSERT_EQUAL_UINT32((uint32_t)DROID_PART_COUNT,
                              (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)GUIDED_SETUP_STEP_MAX,
+                             (uint32_t)doc["guidedSetup"]["visited"].as<JsonArray>().size());
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)kComponentToggleFieldCount,
+                             (uint32_t)doc["activeToggles"].as<JsonArray>().size());
+    TEST_ASSERT_EQUAL_STRING("mg996r", doc["components"]["aux3"]["type"] | "");
 }
 
 // --- GET /api/servo/outputs (ADR 0050, #347) --------------------------------
@@ -557,6 +636,6 @@ int main() {
     RUN_TEST(test_pending_apply_is_true_when_staged_differs_from_active);
     RUN_TEST(test_worst_case_config_fits_the_response_buffer);
     RUN_TEST(test_the_droid_build_reaches_the_config_payload);
-    RUN_TEST(test_a_fully_fitted_droid_build_still_fits_the_response_buffer);
+    RUN_TEST(test_the_worst_case_config_still_fits_the_response_buffer);
     return UNITY_END();
 }
