@@ -471,6 +471,26 @@ void test_status_query_allocates_nothing() {
         "the status query path allocated -- forbidden in the Console task loop");
 }
 
+// -----------------------------------------------------------------------------
+// 5. An Output is named by the running board
+// -----------------------------------------------------------------------------
+// The registry is one file for every board, so a row about one Output says
+// `{output}` and help composes the board's word into it (ADR 0033 Amendment
+// 2026-09-19). This image is the Artoo PCB's, which prints ARM3 beside the
+// Output stored as aux1 - and a target parameter's words are listed from the
+// board too, never from the registry.
+void test_help_names_an_output_by_what_the_board_prints() {
+    useRealHelpFile();
+    runHelp("help servo.action.toggle-aux1");
+
+    TEST_ASSERT_EQUAL_STRING("ARM3 Toggle", fieldNamed("display_name"));
+    TEST_ASSERT_EQUAL_STRING("Open or close the part on ARM3.", fieldNamed("description"));
+    TEST_ASSERT_NULL(fieldNamed("display_name_truncated"));
+
+    runHelp("help servo.action.open");
+    TEST_ASSERT_EQUAL_STRING("ARM1,ARM2,ARM3,ARM4,ARM5,both", fieldNamed("target_accepts"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_help_read_is_addressed_to_the_entry_offset);
@@ -489,5 +509,6 @@ int main(int, char**) {
     RUN_TEST(test_row_cut_before_its_executor_degrades_explicitly);
     RUN_TEST(test_help_request_allocates_nothing);
     RUN_TEST(test_status_query_allocates_nothing);
+    RUN_TEST(test_help_names_an_output_by_what_the_board_prints);
     return UNITY_END();
 }

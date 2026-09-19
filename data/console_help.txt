@@ -110,17 +110,17 @@ servo.action.hold|Hold|Drive one output to a width and keep it there while you w
 servo.action.release|Pulses Off|Take the pulse off. The part goes limp where it is, and its next move is a jump.|servoCmdQueue|target:string:1
 servo.action.centre-all|Back To Centre|Send every output to its own centre, one at a time, so the servos do not brown out. LED strips are skipped; the estop ends it.|robotState.bulkCentreRequest|
 servo.action.stop|Stop|Drive the servo to centre. It does not hold where it is.|servoCmdQueue|target:string:1
-servo.action.toggle-arm1|ARM1 Toggle|Swing arm 1 open or closed.|servoCmdQueue|
-servo.action.toggle-arm2|ARM2 Toggle|Swing arm 2 open or closed.|servoCmdQueue|
-servo.action.toggle-aux1|AUX1 Toggle|Swing AUX 1 open or closed.|servoCmdQueue|
-servo.action.toggle-aux2|AUX2 Toggle|Swing AUX 2 open or closed.|servoCmdQueue|
-servo.action.toggle-aux3|AUX3 Toggle|Swing AUX 3 open or closed.|servoCmdQueue|
+servo.action.toggle-arm1|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
+servo.action.toggle-arm2|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
+servo.action.toggle-aux1|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
+servo.action.toggle-aux2|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
+servo.action.toggle-aux3|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
 servo.status.current|Servo Status|Where each servo was last told to be.|buildStatusJson|
 servo.api.get-outputs|Get Servo Outputs|Every servo output, the parts on it, and where it was told to be. Nothing reads a servo back.|configCacheReadServoOutput|
-aux.action.led-color|LED Color|Set the AUX LED strip colour.|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
-aux.action.led-effect|LED Effect|Set the AUX LED strip effect.|auxLedQueue|effect:string:1
-aux.status.led-state|AUX LED State|Which AUX header the strip is on, and its colour and effect.|buildStatusJson|
-aux.config.led-pin|LED Header Selection|Which AUX header drives the LED strip: 0 for none, or 1 to 3.|configApply|aux_led_pin:uint8:1
+aux.action.led-color|LED Color|Set the LED strip colour.|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
+aux.action.led-effect|LED Effect|Set the LED strip effect.|auxLedQueue|effect:string:1
+aux.status.led-state|LED Strip State|Which output carries the LED strip, and its colour and effect.|buildStatusJson|
+aux.config.led-pin|LED Strip Output|Which output carries the LED strip: 0 for none, or 1 to 3 for the outputs that can, in the order Wiring lists them.|configApply|aux_led_pin:uint8:1
 aux.config.led-count|LED Count|How many LEDs are on the strip.|configApply|aux_led_count:uint8:1
 system.action.set-mode|Set Mode|Switch between Stationary and Driving. Stationary locks the feet.|commandedSetStationary|
 system.action.estop|Emergency Stop|Stop the feet now and latch the estop.|failsafeTrigger|
@@ -139,11 +139,11 @@ system.event.boot-complete|Boot Complete|The controller is up. The Boot Complete
 system.status.sleep-mode|Sleep Mode|Whether the droid is asleep. It always wakes at boot.|buildStatusJson|
 system.status.mood|Mood|The mood now: Quiet 10, Full-Awake 11, Mid-Awake 13, Awake+ 14.|buildStatusJson|
 system.config.mood|Active Mood|The mood the droid starts in.|configApply|
-system.config.enable_arm1|ARM1|Use the utility arm connected to the ARM1 output|configApply|
-system.config.enable_arm2|ARM2|Use the utility arm connected to the ARM2 output|configApply|
-system.config.enable_aux1|AUX1|Use the component connected to the AUX1 output|configApply|
-system.config.enable_aux2|AUX2|Use the component connected to the AUX2 output|configApply|
-system.config.enable_aux3|AUX3|Use the component connected to the AUX3 output|configApply|
+system.config.enable_arm1|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_arm2|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_aux1|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_aux2|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_aux3|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
 system.config.enable_dome_esc|Dome Motor|Use the dome rotation motor connected to the DOME output|configApply|
 system.config.enable_rc_ch1|RC CH1|Use the receiver signal connected to RC channel 1|configApply|
 system.config.enable_rc_ch2|RC CH2|Use the receiver signal connected to RC channel 2|configApply|

@@ -77,250 +77,246 @@ static const char* const g_enum_drive_action_speed_preset_turbo_preset[] = { "tu
 static const char* const g_enum_sound_api_play_banked_page[] = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", NULL };
 static const char* const g_enum_sound_config_track_assignments_key[] = { "scream", "faint", "leia", "cantina_s", "sw_theme", "imp_march", "cantina_l", "startup", "doodoo", "failure", "disco", "mahna", "inlove", "macho", "gangnam", "uptown", "celebr", "stayin", "harlem", "pbjtime", NULL };
 static const char* const g_enum_sound_config_system_track_assignments_key[] = { "sys_boot", "sys_mode_n", "sys_mode_s", "sys_mode_t", "sys_drv_on", "sys_dome_on", "sys_net_down", NULL };
-static const char* const g_enum_servo_action_open_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", "both", NULL };
-static const char* const g_enum_servo_action_close_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", "both", NULL };
-static const char* const g_enum_servo_action_set_position_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", NULL };
-static const char* const g_enum_servo_action_nudge_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", NULL };
-static const char* const g_enum_servo_action_travel_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", NULL };
-static const char* const g_enum_servo_action_hold_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", NULL };
-static const char* const g_enum_servo_action_release_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", "both", NULL };
-static const char* const g_enum_servo_action_stop_target[] = { "arm1", "arm2", "aux1", "aux2", "aux3", "both", NULL };
+static const char* const g_enum_servo_action_open_target[] = { "both", NULL };
+static const char* const g_enum_servo_action_close_target[] = { "both", NULL };
+static const char* const g_enum_servo_action_release_target[] = { "both", NULL };
+static const char* const g_enum_servo_action_stop_target[] = { "both", NULL };
 static const char* const g_enum_aux_action_led_effect_effect[] = { "solid", "blink", "pulse", "off", NULL };
 static const char* const g_enum_aux_config_led_pin_aux_led_pin[] = { "0", "1", "2", "3", NULL };
 static const char* const g_enum_system_action_set_mood_mood[] = { "10", "11", "13", "14", NULL };
 static const char* const g_enum_wifi_config_settings_mode[] = { "client", "standalone_ap", NULL };
 
-// Total enum-value arrays: 18
+// Total enum-value arrays: 14
 
 static const ConsoleParamDescriptor g_params_drive_action_move[] = {
-    {"speed", "int16", true, true, -1000.0, 1000.0, NULL, false},
-    {"steer", "int16", true, true, -1000.0, 1000.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"speed", "int16", true, true, -1000.0, 1000.0, NULL, false, false},
+    {"steer", "int16", true, true, -1000.0, 1000.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed[] = {
-    {"value", "float", true, true, -1.0, 1.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"value", "float", true, true, -1.0, 1.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_steer[] = {
-    {"value", "float", true, true, -1.0, 1.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"value", "float", true, true, -1.0, 1.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_slow[] = {
-    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_slow_preset, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_slow_preset, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_normal[] = {
-    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_normal_preset, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_normal_preset, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_drive_action_speed_preset_turbo[] = {
-    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_turbo_preset, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"preset", "string", true, false, 0.0, 0.0, g_enum_drive_action_speed_preset_turbo_preset, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_move[] = {
-    {"speed", "float", true, true, -1.0, 1.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"speed", "float", true, true, -1.0, 1.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_api_get_sequence[] = {
-    {"name", "string", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_delete_sequence[] = {
-    {"name", "string", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_dome_action_test_sequence[] = {
-    {"name", "string", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"name", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_play_track[] = {
-    {"track", "uint16", true, true, 1.0, 999.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"track", "uint16", true, true, 1.0, 999.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_api_play_banked[] = {
-    {"bank", "uint8", true, true, 1.0, 6.0, NULL, false},
-    {"page", "string", true, false, 0.0, 0.0, g_enum_sound_api_play_banked_page, false},
-    {"index", "uint16", true, true, 1.0, 65535.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"bank", "uint8", true, true, 1.0, 6.0, NULL, false, false},
+    {"page", "string", true, false, 0.0, 0.0, g_enum_sound_api_play_banked_page, false, false},
+    {"index", "uint16", true, true, 1.0, 65535.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_mood_map[] = {
-    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_category_range[] = {
-    {"lo_key", "string", true, false, 0.0, 0.0, NULL, false},
-    {"hi_key", "string", true, false, 0.0, 0.0, NULL, false},
-    {"lo", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {"hi", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"lo_key", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {"hi_key", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {"lo", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"hi", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_volume[] = {
-    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_volume[] = {
-    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_random_min[] = {
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_random_max[] = {
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_startup_track[] = {
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_boot_complete_track[] = {
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_network_down_track[] = {
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_track_assignments[] = {
-    {"key", "string", true, false, 0.0, 0.0, g_enum_sound_config_track_assignments_key, false},
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"key", "string", true, false, 0.0, 0.0, g_enum_sound_config_track_assignments_key, false, false},
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_system_track_assignments[] = {
-    {"key", "string", true, false, 0.0, 0.0, g_enum_sound_config_system_track_assignments_key, false},
-    {"track", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"key", "string", true, false, 0.0, 0.0, g_enum_sound_config_system_track_assignments_key, false, false},
+    {"track", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_category_ranges[] = {
-    {"lo_key", "string", true, false, 0.0, 0.0, NULL, false},
-    {"hi_key", "string", true, false, 0.0, 0.0, NULL, false},
-    {"lo", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {"hi", "uint16", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"lo_key", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {"hi_key", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {"lo", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"hi", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_mood_category_map[] = {
-    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_open[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_open_target, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_open_target, false, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_close[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_close_target, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_close_target, false, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_set_position[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_set_position_target, false},
-    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, NULL, false, true},
+    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_nudge[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_nudge_target, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, NULL, false, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_travel[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_travel_target, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, NULL, false, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_hold[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_hold_target, false},
-    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, NULL, false, true},
+    {"position_us", "uint16", true, true, 500.0, 2500.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_release[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_release_target, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_release_target, false, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_servo_action_stop[] = {
-    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_stop_target, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"target", "string", true, false, 0.0, 0.0, g_enum_servo_action_stop_target, false, true},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_color[] = {
-    {"r", "uint8", true, true, 0.0, 255.0, NULL, false},
-    {"g", "uint8", true, true, 0.0, 255.0, NULL, false},
-    {"b", "uint8", true, true, 0.0, 255.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"r", "uint8", true, true, 0.0, 255.0, NULL, false, false},
+    {"g", "uint8", true, true, 0.0, 255.0, NULL, false, false},
+    {"b", "uint8", true, true, 0.0, 255.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_action_led_effect[] = {
-    {"effect", "string", true, false, 0.0, 0.0, g_enum_aux_action_led_effect_effect, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"effect", "string", true, false, 0.0, 0.0, g_enum_aux_action_led_effect_effect, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_pin[] = {
-    {"aux_led_pin", "uint8", true, false, 0.0, 0.0, g_enum_aux_config_led_pin_aux_led_pin, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"aux_led_pin", "uint8", true, false, 0.0, 0.0, g_enum_aux_config_led_pin_aux_led_pin, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_aux_config_led_count[] = {
-    {"aux_led_count", "uint8", true, true, 1.0, 255.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"aux_led_count", "uint8", true, true, 1.0, 255.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_mood[] = {
-    {"mood", "uint8", true, false, 0.0, 0.0, g_enum_system_action_set_mood_mood, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"mood", "uint8", true, false, 0.0, 0.0, g_enum_system_action_set_mood_mood, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_wifi_config_settings[] = {
-    {"mode", "string", false, false, 0.0, 0.0, g_enum_wifi_config_settings_mode, false},
-    {"sta-ssid", "string", false, false, 0.0, 0.0, NULL, false},
-    {"ap-ssid", "string", false, false, 0.0, 0.0, NULL, false},
-    {"sta-password", "string", false, false, 0.0, 0.0, NULL, true},
-    {"ap-password", "string", false, false, 0.0, 0.0, NULL, true},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"mode", "string", false, false, 0.0, 0.0, g_enum_wifi_config_settings_mode, false, false},
+    {"sta-ssid", "string", false, false, 0.0, 0.0, NULL, false, false},
+    {"ap-ssid", "string", false, false, 0.0, 0.0, NULL, false, false},
+    {"sta-password", "string", false, false, 0.0, 0.0, NULL, true, false},
+    {"ap-password", "string", false, false, 0.0, 0.0, NULL, true, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_system_action_set_identity[] = {
-    {"droidName", "string", true, false, 0.0, 0.0, NULL, false},
-    {"mdnsUseName", "bool", false, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"droidName", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {"mdnsUseName", "bool", false, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_rc_action_test_bindable[] = {
-    {"token", "string", true, false, 0.0, 0.0, NULL, false},
-    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator
+    {"token", "string", true, false, 0.0, 0.0, NULL, false, false},
+    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 // =============================================================================
@@ -360,6 +356,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.action.speed",
@@ -375,6 +372,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.action.steer",
@@ -390,6 +388,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.action.speed-preset-slow",
@@ -405,6 +404,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.action.speed-preset-normal",
@@ -420,6 +420,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.action.speed-preset-turbo",
@@ -435,6 +436,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.action.speed-preset-cycle",
@@ -450,6 +452,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.status.current",
@@ -465,6 +468,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.event.failsafe-triggered",
@@ -480,6 +484,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "drive.config.speed-limit",
@@ -495,6 +500,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.set-speed",
@@ -510,6 +516,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.send-command",
@@ -525,6 +532,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.marcduino-sequence",
@@ -540,6 +548,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.marcduino-command",
@@ -555,6 +564,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.dome-sequence",
@@ -570,6 +580,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-scream",
@@ -585,6 +596,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-wave",
@@ -600,6 +612,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-fast-wave",
@@ -615,6 +628,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-open-wave",
@@ -630,6 +644,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-beep-cantina",
@@ -645,6 +660,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-faint",
@@ -660,6 +676,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-cantina",
@@ -675,6 +692,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-leia",
@@ -690,6 +708,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-disco",
@@ -705,6 +724,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-screams",
@@ -720,6 +740,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.droid-sequence-wiggle",
@@ -735,6 +756,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.api.get-layout",
@@ -750,6 +772,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.sequence-stop",
@@ -765,6 +788,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-scream",
@@ -780,6 +804,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-happy",
@@ -795,6 +820,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-overload",
@@ -810,6 +836,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-alarm",
@@ -825,6 +852,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-vader",
@@ -840,6 +868,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-rockmarch",
@@ -855,6 +884,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-leia",
@@ -870,6 +900,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-cantina",
@@ -885,6 +916,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-heart",
@@ -900,6 +932,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-hello",
@@ -915,6 +948,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.event.cue-reset",
@@ -930,6 +964,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.status.current",
@@ -945,6 +980,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_dome_status_current,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.move",
@@ -960,6 +996,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.api.list-sequences",
@@ -975,6 +1012,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.api.list-builtin-sequences",
@@ -990,6 +1028,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.api.get-sequence",
@@ -1005,6 +1044,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.save-sequence",
@@ -1020,6 +1060,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.delete-sequence",
@@ -1035,6 +1076,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.action.test-sequence",
@@ -1050,6 +1092,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.api.get-sequence-last-run",
@@ -1065,6 +1108,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_dome_api_get_sequence_last_run,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track",
@@ -1080,6 +1124,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-scream",
@@ -1095,6 +1140,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-faint",
@@ -1110,6 +1156,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-leia",
@@ -1125,6 +1172,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-cantina-short",
@@ -1140,6 +1188,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-cantina-long",
@@ -1155,6 +1204,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-sw-theme",
@@ -1170,6 +1220,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-imperial-march",
@@ -1185,6 +1236,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-startup",
@@ -1200,6 +1252,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.play-track-disco",
@@ -1215,6 +1268,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.api.get-catalog",
@@ -1230,6 +1284,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_sound_api_get_catalog,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.api.refresh-catalog",
@@ -1245,6 +1300,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.api.play-banked",
@@ -1260,6 +1316,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.api.get-mood-map",
@@ -1275,6 +1332,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_sound_api_get_mood_map,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.set-mood-map",
@@ -1290,6 +1348,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.set-category-range",
@@ -1305,6 +1364,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.query-status",
@@ -1320,6 +1380,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.track-stop",
@@ -1335,6 +1396,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.quiet",
@@ -1350,6 +1412,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.set-volume",
@@ -1365,6 +1428,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.volume-up",
@@ -1380,6 +1444,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.volume-down",
@@ -1395,6 +1460,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.volume-preset-mid",
@@ -1410,6 +1476,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.volume-preset-max",
@@ -1425,6 +1492,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.volume-preset-min",
@@ -1440,6 +1508,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.dollar-command",
@@ -1455,6 +1524,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-on",
@@ -1470,6 +1540,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-off",
@@ -1485,6 +1556,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-general",
@@ -1500,6 +1572,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-chatty",
@@ -1515,6 +1588,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-happy",
@@ -1530,6 +1604,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-processing",
@@ -1545,6 +1620,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-sad",
@@ -1560,6 +1636,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-sentimental",
@@ -1575,6 +1652,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-humming",
@@ -1590,6 +1668,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-scream",
@@ -1605,6 +1684,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-surprised",
@@ -1620,6 +1700,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-alert",
@@ -1635,6 +1716,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-snarky",
@@ -1650,6 +1732,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.action.random-whistle",
@@ -1665,6 +1748,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.status.current",
@@ -1680,6 +1764,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         g_fields_sound_status_current,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.volume",
@@ -1695,6 +1780,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.random-min",
@@ -1710,6 +1796,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.random-max",
@@ -1725,6 +1812,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.mood-interval-quiet",
@@ -1740,6 +1828,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.mood-interval-mid",
@@ -1755,6 +1844,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.mood-interval-full",
@@ -1770,6 +1860,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.mood-interval-awake-plus",
@@ -1785,6 +1876,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         true,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.startup-track",
@@ -1800,6 +1892,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.boot-complete-track",
@@ -1815,6 +1908,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.network-down-track",
@@ -1830,6 +1924,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.track-assignments",
@@ -1845,6 +1940,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.system-track-assignments",
@@ -1860,6 +1956,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.category-ranges",
@@ -1875,6 +1972,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "sound.config.mood-category-map",
@@ -1890,6 +1988,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.open",
@@ -1905,6 +2004,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.close",
@@ -1920,6 +2020,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.set-position",
@@ -1935,6 +2036,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.nudge",
@@ -1950,6 +2052,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.travel",
@@ -1965,6 +2068,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.hold",
@@ -1980,6 +2084,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.release",
@@ -1995,6 +2100,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.centre-all",
@@ -2010,6 +2116,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.stop",
@@ -2025,6 +2132,7 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.action.toggle-arm1",
@@ -2036,10 +2144,11 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         false,  // requires_web_control
         false,  // safety_critical
         13283,  // help_offset
-        79,  // help_length
+        91,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "arm1",  // output
     },
     {
         "servo.action.toggle-arm2",
@@ -2050,11 +2159,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13363,  // help_offset
-        79,  // help_length
+        13375,  // help_offset
+        91,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "arm2",  // output
     },
     {
         "servo.action.toggle-aux1",
@@ -2065,11 +2175,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13443,  // help_offset
-        79,  // help_length
+        13467,  // help_offset
+        91,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "aux1",  // output
     },
     {
         "servo.action.toggle-aux2",
@@ -2080,11 +2191,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13523,  // help_offset
-        79,  // help_length
+        13559,  // help_offset
+        91,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "aux2",  // output
     },
     {
         "servo.action.toggle-aux3",
@@ -2095,11 +2207,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13603,  // help_offset
-        79,  // help_length
+        13651,  // help_offset
+        91,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "aux3",  // output
     },
     {
         "servo.status.current",
@@ -2110,11 +2223,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13683,  // help_offset
+        13743,  // help_offset
         88,  // help_length
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "servo.api.get-outputs",
@@ -2125,11 +2239,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13772,  // help_offset
+        13832,  // help_offset
         161,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "aux.action.led-color",
@@ -2140,11 +2255,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        13934,  // help_offset
-        102,  // help_length
+        13994,  // help_offset
+        98,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "aux.action.led-effect",
@@ -2155,11 +2271,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14037,  // help_offset
-        90,  // help_length
+        14093,  // help_offset
+        86,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "aux.status.led-state",
@@ -2170,11 +2287,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14128,  // help_offset
-        112,  // help_length
+        14180,  // help_offset
+        116,  // help_length
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "aux.config.led-pin",
@@ -2185,11 +2303,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14241,  // help_offset
-        133,  // help_length
+        14297,  // help_offset
+        183,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "aux.config.led-count",
@@ -2200,11 +2319,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14375,  // help_offset
+        14481,  // help_offset
         96,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.set-mode",
@@ -2215,11 +2335,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14472,  // help_offset
+        14578,  // help_offset
         121,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.estop",
@@ -2230,11 +2351,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
-        14594,  // help_offset
+        14700,  // help_offset
         90,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.estop-clear",
@@ -2245,11 +2367,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         true,  // safety_critical
-        14685,  // help_offset
+        14791,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.enable-web-control",
@@ -2260,11 +2383,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14796,  // help_offset
+        14902,  // help_offset
         107,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.disable-web-control",
@@ -2275,11 +2399,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        14904,  // help_offset
+        15010,  // help_offset
         125,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.reboot",
@@ -2290,11 +2415,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15030,  // help_offset
+        15136,  // help_offset
         73,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.reboot-wifi-module",
@@ -2305,11 +2431,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15104,  // help_offset
+        15210,  // help_offset
         209,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.set-mood",
@@ -2320,11 +2447,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15314,  // help_offset
+        15420,  // help_offset
         127,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.sleep",
@@ -2335,11 +2463,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
-        15442,  // help_offset
+        15548,  // help_offset
         134,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.wake",
@@ -2350,11 +2479,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
-        15577,  // help_offset
+        15683,  // help_offset
         104,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.sleep-toggle",
@@ -2365,11 +2495,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15682,  // help_offset
+        15788,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.event.drives-engaged",
@@ -2380,11 +2511,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15793,  // help_offset
+        15899,  // help_offset
         79,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.event.dome-enabled",
@@ -2395,11 +2527,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15873,  // help_offset
+        15979,  // help_offset
         68,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.event.boot-complete",
@@ -2410,11 +2543,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        15942,  // help_offset
+        16048,  // help_offset
         102,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.status.sleep-mode",
@@ -2425,11 +2559,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16045,  // help_offset
+        16151,  // help_offset
         106,  // help_length
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.status.mood",
@@ -2440,11 +2575,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16152,  // help_offset
+        16258,  // help_offset
         104,  // help_length
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.mood",
@@ -2455,11 +2591,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16257,  // help_offset
+        16363,  // help_offset
         73,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_arm1",
@@ -2470,11 +2607,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16331,  // help_offset
-        92,  // help_length
+        16437,  // help_offset
+        114,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "arm1",  // output
     },
     {
         "system.config.enable_arm2",
@@ -2485,11 +2623,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16424,  // help_offset
-        92,  // help_length
+        16552,  // help_offset
+        114,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "arm2",  // output
     },
     {
         "system.config.enable_aux1",
@@ -2500,11 +2639,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16517,  // help_offset
-        90,  // help_length
+        16667,  // help_offset
+        114,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "aux1",  // output
     },
     {
         "system.config.enable_aux2",
@@ -2515,11 +2655,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16608,  // help_offset
-        90,  // help_length
+        16782,  // help_offset
+        114,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "aux2",  // output
     },
     {
         "system.config.enable_aux3",
@@ -2530,11 +2671,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16699,  // help_offset
-        90,  // help_length
+        16897,  // help_offset
+        114,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        "aux3",  // output
     },
     {
         "system.config.enable_dome_esc",
@@ -2545,11 +2687,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16790,  // help_offset
+        17012,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_rc_ch1",
@@ -2560,11 +2703,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16901,  // help_offset
+        17123,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_rc_ch2",
@@ -2575,11 +2719,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        16999,  // help_offset
+        17221,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_rc_ch3",
@@ -2590,11 +2735,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17097,  // help_offset
+        17319,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_rc_ch4",
@@ -2605,11 +2751,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17195,  // help_offset
+        17417,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_rc_ch5",
@@ -2620,11 +2767,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17293,  // help_offset
+        17515,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_rc_ch6",
@@ -2635,11 +2783,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17391,  // help_offset
+        17613,  // help_offset
         97,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_drive",
@@ -2650,11 +2799,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17489,  // help_offset
+        17711,  // help_offset
         109,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_audio",
@@ -2665,11 +2815,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17599,  // help_offset
+        17821,  // help_offset
         89,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.enable_protor2link",
@@ -2680,11 +2831,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17689,  // help_offset
+        17911,  // help_offset
         105,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.config.log-level",
@@ -2695,11 +2847,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17795,  // help_offset
+        18017,  // help_offset
         106,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.status.health",
@@ -2710,11 +2863,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        17902,  // help_offset
+        18124,  // help_offset
         130,  // help_length
         g_fields_system_status_health,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.status.dashboard-health",
@@ -2725,11 +2879,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18033,  // help_offset
+        18255,  // help_offset
         130,  // help_length
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.status.logs",
@@ -2740,11 +2895,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18164,  // help_offset
+        18386,  // help_offset
         56,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.status.wifi",
@@ -2755,11 +2911,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18221,  // help_offset
+        18443,  // help_offset
         88,  // help_length
         g_fields_system_status_wifi,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "wifi.config.settings",
@@ -2770,11 +2927,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18310,  // help_offset
+        18532,  // help_offset
         281,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.status.serial-link",
@@ -2785,11 +2943,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18592,  // help_offset
+        18814,  // help_offset
         129,  // help_length
         g_fields_dome_status_serial_link,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-identity",
@@ -2800,11 +2959,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18722,  // help_offset
+        18944,  // help_offset
         127,  // help_length
         g_fields_system_api_get_identity,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-components",
@@ -2815,11 +2975,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        18850,  // help_offset
+        19072,  // help_offset
         158,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.set-identity",
@@ -2830,11 +2991,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19009,  // help_offset
+        19231,  // help_offset
         216,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-profiler",
@@ -2845,11 +3007,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_HEAP_PROFILE,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19226,  // help_offset
+        19448,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.profiler-trace-start",
@@ -2860,11 +3023,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_HEAP_TRACING,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19345,  // help_offset
+        19567,  // help_offset
         158,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.profiler-trace-stop",
@@ -2875,11 +3039,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_HEAP_TRACING,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19504,  // help_offset
+        19726,  // help_offset
         120,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-coredump-status",
@@ -2890,11 +3055,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19625,  // help_offset
+        19847,  // help_offset
         102,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-coredump",
@@ -2905,11 +3071,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19728,  // help_offset
+        19950,  // help_offset
         79,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.erase-coredump",
@@ -2920,11 +3087,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19808,  // help_offset
+        20030,  // help_offset
         99,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-admission-trace",
@@ -2935,11 +3103,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         PA_ADMISSION_TRACE,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        19908,  // help_offset
+        20130,  // help_offset
         151,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.get-validation",
@@ -2950,11 +3119,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20060,  // help_offset
+        20282,  // help_offset
         110,  // help_length
         g_fields_system_api_get_validation,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.upload-firmware",
@@ -2965,11 +3135,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20171,  // help_offset
+        20393,  // help_offset
         101,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.action.upload-filesystem",
@@ -2980,11 +3151,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20273,  // help_offset
+        20495,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.api.event-stream",
@@ -2995,11 +3167,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20392,  // help_offset
+        20614,  // help_offset
         79,  // help_length
         NULL,  // fields
         false,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.status.snapshot",
@@ -3010,11 +3183,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20472,  // help_offset
+        20694,  // help_offset
         109,  // help_length
         g_fields_rc_status_snapshot,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.action.toggle-debug",
@@ -3025,11 +3199,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20582,  // help_offset
+        20804,  // help_offset
         90,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.api.get-bindable-actions",
@@ -3040,11 +3215,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20673,  // help_offset
+        20895,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.api.get-map",
@@ -3055,11 +3231,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20784,  // help_offset
+        21006,  // help_offset
         69,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.action.set-map",
@@ -3070,11 +3247,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        20854,  // help_offset
+        21076,  // help_offset
         102,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.action.test-bindable",
@@ -3085,11 +3263,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         true,  // requires_web_control
         false,  // safety_critical
-        20957,  // help_offset
+        21179,  // help_offset
         141,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "rc.config.mode",
@@ -3100,11 +3279,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21099,  // help_offset
+        21321,  // help_offset
         94,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.vader",
@@ -3115,11 +3295,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21194,  // help_offset
+        21416,  // help_offset
         112,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.hello",
@@ -3130,11 +3311,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21307,  // help_offset
+        21529,  // help_offset
         110,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.nod",
@@ -3145,11 +3327,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21418,  // help_offset
+        21640,  // help_offset
         117,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.flutter",
@@ -3160,11 +3343,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21536,  // help_offset
+        21758,  // help_offset
         122,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.bloom",
@@ -3175,11 +3359,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21659,  // help_offset
+        21881,  // help_offset
         118,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.leia",
@@ -3190,11 +3375,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21778,  // help_offset
+        22000,  // help_offset
         128,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.alarm",
@@ -3205,11 +3391,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        21907,  // help_offset
+        22129,  // help_offset
         112,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.heart",
@@ -3220,11 +3407,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22020,  // help_offset
+        22242,  // help_offset
         117,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.reset",
@@ -3235,11 +3423,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22138,  // help_offset
+        22360,  // help_offset
         134,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.pies",
@@ -3250,11 +3439,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22273,  // help_offset
+        22495,  // help_offset
         127,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.low",
@@ -3265,11 +3455,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22401,  // help_offset
+        22623,  // help_offset
         132,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.openall",
@@ -3280,11 +3471,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22534,  // help_offset
+        22756,  // help_offset
         149,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.cantina",
@@ -3295,11 +3487,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22684,  // help_offset
+        22906,  // help_offset
         140,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.rockmarch",
@@ -3310,11 +3503,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22825,  // help_offset
+        23047,  // help_offset
         134,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.scream",
@@ -3325,11 +3519,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        22960,  // help_offset
+        23182,  // help_offset
         114,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "dome.seq.overload",
@@ -3340,11 +3535,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23075,  // help_offset
+        23297,  // help_offset
         123,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
     {
         "system.console",
@@ -3355,11 +3551,12 @@ static const ConsoleCatalogEntry g_catalogEntries[] = {
         1,  // available_in_build
         false,  // requires_web_control
         false,  // safety_critical
-        23199,  // help_offset
+        23421,  // help_offset
         133,  // help_length
         NULL,  // fields
         true,  // is_query
         false,  // read_only
+        NULL,  // output
     },
 };
 

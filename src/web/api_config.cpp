@@ -33,6 +33,7 @@
 #include "api_rc_map_apply.h"
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
+#include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
 #include "web_param_source.h"
 #include "drive_speed_preset.h"
 #include "audio_task.h"
@@ -415,48 +416,13 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     return false;
 }
 
-// Component label lookup table, built via X-macro expansion from component_labels.inc.
-// Maps component names (e.g., "enable_drive") to board-specific physical labels (e.g., "S1").
-
-struct ComponentLabelEntry {
-    const char* component;
-    const char* label;
-};
-
-// Helper macro to stringify board identifiers so they can be compared as strings.
-#define BOARD_NAME_STR(board) #board
-
-// Expand component_labels.inc to build the lookup table for the current board.
-// The macro expands entries and filters them by comparing stringified board names.
-
-#if PA_BOARD == PA_BOARD_ARTOO_ESP32
-#define CURRENT_BOARD_NAME BOARD_NAME_STR(artoo_esp32)
-#elif PA_BOARD == PA_BOARD_FIREBEETLE2
-#define CURRENT_BOARD_NAME BOARD_NAME_STR(firebeetle2)
-#else
-#define CURRENT_BOARD_NAME ""
-#endif
-
-namespace {
-    const ComponentLabelEntry COMPONENT_LABELS[] = {
-#define PA_COMPONENT_LABEL(board, component, label)                           \
-        (strcmp(BOARD_NAME_STR(board), CURRENT_BOARD_NAME) == 0)              \
-            ? ComponentLabelEntry{#component, label}                          \
-            : ComponentLabelEntry{"", nullptr},
-#include "component_labels.inc"
-#undef PA_COMPONENT_LABEL
-    };
-}
-
-// Helper function to get board component label for a given component name.
-// Returns the label string if found and applicable to the current board, nullptr otherwise.
+// A component's Board Component Label on the running board (ADR 0033), or
+// nullptr where this board declares none. The lookup is boardComponentLabel()
+// (include/board_outputs.h), over include/component_labels.inc - the same one
+// every Output's name is read through, so a label this answer reports and the
+// word POST /api/servo and the Console take for it cannot disagree.
 const char* getComponentLabel(const char* componentName) {
-    for (size_t i = 0; i < sizeof(COMPONENT_LABELS) / sizeof(COMPONENT_LABELS[0]); ++i) {
-        if (COMPONENT_LABELS[i].component[0] != '\0' && strcmp(COMPONENT_LABELS[i].component, componentName) == 0) {
-            return COMPONENT_LABELS[i].label;
-        }
-    }
-    return nullptr;
+    return boardComponentLabel(runningBoardName(), componentName);
 }
 
 // -----------------------------------------------------------------------------
@@ -466,41 +432,44 @@ const char* getComponentLabel(const char* componentName) {
 // supposed to be dynamic, thats the whole point of the wiring and mapping we
 // have"). Which Outputs this board has, what the board prints beside each,
 // where each is addressed, which one can carry the LED strip and which config
-// fields save it all arrive in this answer, and Wiring and Servos draw one
-// plate per entry, in this order, saved under the field names given here. A
+// fields save it all arrive in this answer, and every page draws one plate or
+// row per entry, in this order, saved under the field names given here. A
 // board that grows an Output grows a row, and no page changes.
 //
-// This is the one place those facts sit side by side. What differs between
-// boards is what they print, and that stays in include/component_labels.inc
-// (`component` below is its key); the channel is the LEDC channel this image
-// drives the Output on (include/ledc_pwm.h), and `ledStripPin` is the
-// aux_led_pin selection that routes the strip there (include/config.h
-// AUX_LED_PIN_*), 0 where the strip cannot go. `id` is the stored config key -
-// the components{} key - and never a name a builder reads.
+// Those facts are BOARD_OUTPUTS (include/board_outputs.h), the table the
+// Console and POST /api/servo read too. What differs between boards is what
+// they print, and that stays in include/component_labels.inc. The one fact a
+// config answer adds beside them is which SystemConfig field holds each
+// Output's wired tick, which is this table - kept in BOARD_OUTPUTS' order and
+// checked against its ids, so the two cannot pair a tick with the wrong Output.
 // -----------------------------------------------------------------------------
 namespace {
-    struct ConfigOutputEntry {
+    struct ConfigOutputEnabled {
         const char* id;
-        const char* component;
-        uint8_t channel;
-        uint8_t ledStripPin;
         bool SystemConfig::*enabled;
-        const char* enabledField;
-        const char* typeField;
     };
 
-    constexpr ConfigOutputEntry CONFIG_OUTPUTS[] = {
-        {"arm1", "enable_arm1", LEDC_CH_ARM1, AUX_LED_PIN_DISABLED, &SystemConfig::enable_arm1,
-         "enableArm1", "arm1Type"},
-        {"arm2", "enable_arm2", LEDC_CH_ARM2, AUX_LED_PIN_DISABLED, &SystemConfig::enable_arm2,
-         "enableArm2", "arm2Type"},
-        {"aux1", "enable_aux1", LEDC_CH_AUX1, AUX_LED_PIN_AUX1, &SystemConfig::enable_aux1,
-         "enableAux1", "aux1Type"},
-        {"aux2", "enable_aux2", LEDC_CH_AUX2, AUX_LED_PIN_AUX2, &SystemConfig::enable_aux2,
-         "enableAux2", "aux2Type"},
-        {"aux3", "enable_aux3", LEDC_CH_AUX3, AUX_LED_PIN_AUX3, &SystemConfig::enable_aux3,
-         "enableAux3", "aux3Type"},
+    constexpr ConfigOutputEnabled CONFIG_OUTPUT_ENABLED[] = {
+        {"arm1", &SystemConfig::enable_arm1},
+        {"arm2", &SystemConfig::enable_arm2},
+        {"aux1", &SystemConfig::enable_aux1},
+        {"aux2", &SystemConfig::enable_aux2},
+        {"aux3", &SystemConfig::enable_aux3},
     };
+
+    constexpr bool configOutputsAlign() {
+        if (sizeof(CONFIG_OUTPUT_ENABLED) / sizeof(CONFIG_OUTPUT_ENABLED[0]) != BOARD_OUTPUT_COUNT) {
+            return false;
+        }
+        for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+            if (!board_outputs_detail::equals(CONFIG_OUTPUT_ENABLED[i].id, BOARD_OUTPUTS[i].id)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    static_assert(configOutputsAlign(),
+                  "CONFIG_OUTPUT_ENABLED must list BOARD_OUTPUTS' ids, in its order");
 }
 
 // -----------------------------------------------------------------------------
@@ -540,10 +509,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject components = doc["components"].to<JsonObject>();
     // The Outputs first and in table order: an entry carrying an `address` IS
     // an Output, and that order is the order every page draws them in.
-    for (const ConfigOutputEntry& entry : CONFIG_OUTPUTS) {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        const BoardOutput& entry = BOARD_OUTPUTS[i];
         JsonObject output = components[entry.id].to<JsonObject>();
-        output["enabled"] = snap.system.*entry.enabled;
-        if (const char* label = getComponentLabel(entry.component)) output["label"] = label;
+        output["enabled"] = snap.system.*CONFIG_OUTPUT_ENABLED[i].enabled;
+        if (const char* label = boardOutputLabel(entry)) output["label"] = label;
         char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
         if (servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, entry.channel)) {
             output["address"] = address;

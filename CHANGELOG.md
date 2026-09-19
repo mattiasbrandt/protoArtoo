@@ -204,6 +204,14 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **An output is called what your board prints beside it.** On the Artoo board
+  that is ARM1 to ARM5, and on the FireBeetle 2 it is GPIO 49, GPIO 50, GPIO 4,
+  GPIO 5 and GPIO 51 - on Servos, Parts, Wiring, Configuration, the Dashboard,
+  the RC page and in the Console. There is no more "AUX 1" or "Utility Arm 1".
+  Type the same word in the Console or send it to the API: `arm3` and `ARM 3`
+  both work, and so do `gpio49` and `GPIO 49`. The old words `aux1` to `aux3`
+  are not taken any more; the answer lists the words your board does take.
+  Your saved RC bindings and settings are untouched.
 - **MP3 Trigger volume uses the range you can actually hear.** The slider used
   to be stretched across the module's whole 0–255 register, most of which is
   silent, and the shipped default sat at the edge of audibility. It now maps

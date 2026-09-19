@@ -39,6 +39,19 @@
 # include/board_capabilities.inc and include/build_flags.inc. An absent field
 # means the entry is universal for that compile-time tier (ADR 0029).
 #
+# Outputs are named by the running board, never here (CONTEXT.md "Output Address",
+# ADR 0033 Amendment 2026-09-19). The registry is one file for every board, so:
+#   board_output: true   on a param means its value is one of the running board's
+#                        Output labels (ARM1..ARM5 on artoo_esp32, GPIO 49 .. GPIO 51
+#                        on firebeetle2; include/component_labels.inc), matched
+#                        without regard to case or spaces. `values:` beside it lists
+#                        the extra words it also takes (`both`).
+#   output: <id>         on an entry means it is about one Output, by its stored id
+#                        (arm1..aux3). `{output}` in its display_name and description
+#                        is replaced at runtime by that Output's label on the running
+#                        board: GET /api/actions and Console help say "ARM3 Toggle"
+#                        on the Artoo and "GPIO 4 Toggle" on the FireBeetle 2.
+#
 ## Runtime action registry API notes:
 ## - GET /api/actions returns bindable actions with token + testability metadata.
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
@@ -2213,12 +2226,8 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
+    values:
     - both
     required: true
   nvs_key: null
@@ -2241,12 +2250,8 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
+    values:
     - both
     required: true
   nvs_key: null
@@ -2268,12 +2273,7 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
     required: true
   - name: position_us
     type: uint16
@@ -2300,12 +2300,7 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
     required: true
   nvs_key: null
   executor: servoCmdQueue
@@ -2326,12 +2321,7 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
     required: true
   nvs_key: null
   executor: servoCmdQueue
@@ -2352,12 +2342,7 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
     required: true
   - name: position_us
     type: uint16
@@ -2384,12 +2369,8 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
+    values:
     - both
     required: true
   nvs_key: null
@@ -2436,19 +2417,16 @@ entries:
   params:
   - name: target
     type: string
-    range:
-    - arm1
-    - arm2
-    - aux1
-    - aux2
-    - aux3
+    board_output: true
+    values:
     - both
     required: true
   nvs_key: null
   executor: servoCmdQueue
 - name: servo.action.toggle-arm1
-  display_name: ARM1 Toggle
-  description: Swing arm 1 open or closed.
+  display_name: '{output} Toggle'
+  description: Open or close the part on {output}.
+  output: arm1
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2464,8 +2442,9 @@ entries:
   nvs_key: null
   executor: servoCmdQueue
 - name: servo.action.toggle-arm2
-  display_name: ARM2 Toggle
-  description: Swing arm 2 open or closed.
+  display_name: '{output} Toggle'
+  description: Open or close the part on {output}.
+  output: arm2
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2481,8 +2460,9 @@ entries:
   nvs_key: null
   executor: servoCmdQueue
 - name: servo.action.toggle-aux1
-  display_name: AUX1 Toggle
-  description: Swing AUX 1 open or closed.
+  display_name: '{output} Toggle'
+  description: Open or close the part on {output}.
+  output: aux1
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2498,8 +2478,9 @@ entries:
   nvs_key: null
   executor: servoCmdQueue
 - name: servo.action.toggle-aux2
-  display_name: AUX2 Toggle
-  description: Swing AUX 2 open or closed.
+  display_name: '{output} Toggle'
+  description: Open or close the part on {output}.
+  output: aux2
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2515,8 +2496,9 @@ entries:
   nvs_key: null
   executor: servoCmdQueue
 - name: servo.action.toggle-aux3
-  display_name: AUX3 Toggle
-  description: Swing AUX 3 open or closed.
+  display_name: '{output} Toggle'
+  description: Open or close the part on {output}.
+  output: aux3
   domain: servo
   type: action
   marcduino_cmd: null
@@ -2578,7 +2560,7 @@ entries:
   is_query: true
 - name: aux.action.led-color
   display_name: LED Color
-  description: Set the AUX LED strip colour.
+  description: Set the LED strip colour.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2613,7 +2595,7 @@ entries:
   executor: auxLedQueue
 - name: aux.action.led-effect
   display_name: LED Effect
-  description: Set the AUX LED strip effect.
+  description: Set the LED strip effect.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2640,8 +2622,8 @@ entries:
   nvs_key: null
   executor: auxLedQueue
 - name: aux.status.led-state
-  display_name: AUX LED State
-  description: Which AUX header the strip is on, and its colour and effect.
+  display_name: LED Strip State
+  description: Which output carries the LED strip, and its colour and effect.
   domain: aux
   type: status
   marcduino_cmd: null
@@ -2657,8 +2639,8 @@ entries:
   executor: buildStatusJson
   is_query: false
 - name: aux.config.led-pin
-  display_name: LED Header Selection
-  description: 'Which AUX header drives the LED strip: 0 for none, or 1 to 3.'
+  display_name: LED Strip Output
+  description: 'Which output carries the LED strip: 0 for none, or 1 to 3 for the outputs that can, in the order Wiring lists them.'
   domain: aux
   type: config
   marcduino_cmd: null
@@ -3014,8 +2996,9 @@ entries:
   nvs_key: last_mood
   executor: configApply
 - name: system.config.enable_arm1
-  display_name: ARM1
-  description: Use the utility arm connected to the ARM1 output
+  display_name: '{output}'
+  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  output: arm1
   domain: system
   type: config
   marcduino_cmd: null
@@ -3030,8 +3013,9 @@ entries:
   nvs_key: en_arm1
   executor: configApply
 - name: system.config.enable_arm2
-  display_name: ARM2
-  description: Use the utility arm connected to the ARM2 output
+  display_name: '{output}'
+  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  output: arm2
   domain: system
   type: config
   marcduino_cmd: null
@@ -3046,8 +3030,9 @@ entries:
   nvs_key: en_arm2
   executor: configApply
 - name: system.config.enable_aux1
-  display_name: AUX1
-  description: Use the component connected to the AUX1 output
+  display_name: '{output}'
+  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  output: aux1
   domain: system
   type: config
   marcduino_cmd: null
@@ -3062,8 +3047,9 @@ entries:
   nvs_key: en_aux1
   executor: configApply
 - name: system.config.enable_aux2
-  display_name: AUX2
-  description: Use the component connected to the AUX2 output
+  display_name: '{output}'
+  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  output: aux2
   domain: system
   type: config
   marcduino_cmd: null
@@ -3078,8 +3064,9 @@ entries:
   nvs_key: en_aux2
   executor: configApply
 - name: system.config.enable_aux3
-  display_name: AUX3
-  description: Use the component connected to the AUX3 output
+  display_name: '{output}'
+  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  output: aux3
   domain: system
   type: config
   marcduino_cmd: null

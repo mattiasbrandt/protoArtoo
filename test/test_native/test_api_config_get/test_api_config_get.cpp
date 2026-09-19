@@ -285,7 +285,7 @@ void test_the_servo_outputs_answer_lists_every_row_and_all_its_parts() {
     TEST_ASSERT_EQUAL_STRING("doorFL", outputs[0]["parts"][1] | "");
 
     TEST_ASSERT_EQUAL_STRING("ledc:3", outputs[2]["address"] | "");
-    TEST_ASSERT_EQUAL_STRING("AUX1", outputs[2]["name"] | "");
+    TEST_ASSERT_EQUAL_STRING("ARM3", outputs[2]["name"] | "");
     TEST_ASSERT_TRUE(outputs[2]["parts"].is<JsonArray>());
     TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)outputs[2]["parts"].as<JsonArray>().size());
 }
@@ -349,13 +349,13 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
     // driven, which is not the same answer as a dial having let go of them.
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
-        "{\"address\":\"ledc:3\",\"name\":\"AUX1\",\"parts\":[],\"bandLoUs\":1000,"
+        "{\"address\":\"ledc:3\",\"name\":\"ARM3\",\"parts\":[],\"bandLoUs\":1000,"
         "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
         "\"closeUs\":1000,\"calibrated\":false,\"commandedUs\":null,\"targetUs\":null,"
         "\"held\":false,\"limp\":\"off\",\"nudgesDone\":1}"));
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
-        "{\"address\":\"ledc:5\",\"name\":\"AUX3\",\"parts\":[],\"bandLoUs\":1000,"
+        "{\"address\":\"ledc:5\",\"name\":\"ARM5\",\"parts\":[],\"bandLoUs\":1000,"
         "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
         "\"closeUs\":1000,\"calibrated\":false,\"commandedUs\":null,\"targetUs\":null,"
         "\"held\":false,\"limp\":\"off\",\"nudgesDone\":0}"));

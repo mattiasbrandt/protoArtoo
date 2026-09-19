@@ -30,6 +30,7 @@ extern "C" {
 #include "embedded_cli.h"
 }
 
+#include "board_outputs.h"  // BOARD_OUTPUTS, boardOutputLabel() - a board_output value's words
 #include "console_catalog.h"
 #include "console_write_exclusion.h"
 
@@ -80,6 +81,10 @@ inline char g_argCandidatePool[kArgPoolSize][kArgCandidateMax];
 //    operation is resolved from the line's FIRST token only, regardless of
 //    how many argument tokens already follow it - later tokens never change
 //    which operation is being completed.
+//  - The current token already carries `key=` for a board_output parameter:
+//    candidates are that key with each of the running board's Output words
+//    (and the extras its enum lists), so `target=` completes to this board's
+//    labels. No other value is completed.
 //
 // Availability (available_on_board / available_in_build) is NOT filtered
 // here: "known-but-unavailable operations remain completable" is a named
@@ -141,6 +146,57 @@ inline const char *consoleCompletionCandidate(EmbeddedCli *cli, uint16_t index) 
     if (index >= kArgPoolSize) {
         return nullptr;
     }
+
+    // Value position: the current token (after the last space) already carries
+    // `key=`. A board_output parameter completes to the running board's words
+    // for its Outputs, then the extra words its enum lists - `target=ARM3`,
+    // `target=GPIO49` - so completion lists what this board prints rather than
+    // a registry list that is right for one board only (ADR 0033 Amendment
+    // 2026-09-19). A label's space is dropped, because a completed token cannot
+    // carry one unquoted and the Console matches the word without regard to
+    // spaces (include/board_outputs.h). Any other parameter's value is not
+    // completed, as before.
+    const char *token = cmdBuffer + firstSpace + 1;
+    for (const char *c = token; *c != '\0'; ++c) {
+        if (*c == ' ') token = c + 1;
+    }
+    const char *equals = strchr(token, '=');
+    if (equals != nullptr) {
+        const size_t keyLen = (size_t)(equals - token);
+        const ConsoleParamDescriptor *valueParam = nullptr;
+        for (const ConsoleParamDescriptor *p = entry->params; p->name != nullptr; ++p) {
+            if (strlen(p->name) == keyLen && strncmp(p->name, token, keyLen) == 0) {
+                valueParam = p;
+                break;
+            }
+        }
+        if (valueParam == nullptr || !valueParam->board_output) {
+            return nullptr;
+        }
+        const char *word = nullptr;
+        if (index < BOARD_OUTPUT_COUNT) {
+            word = boardOutputLabel(BOARD_OUTPUTS[index]);
+        } else if (valueParam->enum_values != nullptr) {
+            size_t extra = index - BOARD_OUTPUT_COUNT;
+            const char *const *v = valueParam->enum_values;
+            while (*v != nullptr && extra > 0) {
+                ++v;
+                --extra;
+            }
+            word = *v;
+        }
+        if (word == nullptr) {
+            return nullptr;
+        }
+        char *slot = g_argCandidatePool[index];
+        size_t used = (size_t)snprintf(slot, kArgCandidateMax, "%s=", valueParam->name);
+        for (const char *w = word; *w != '\0' && used + 1 < kArgCandidateMax; ++w) {
+            if (*w != ' ') slot[used++] = *w;
+        }
+        slot[used < kArgCandidateMax ? used : kArgCandidateMax - 1] = '\0';
+        return slot;
+    }
+
     // Dense over the OFFERED parameters, not a subscript into the descriptor
     // array: a write-excluded parameter is skipped without leaving a hole in
     // the index sequence, so the keys after it are still enumerated. NULL

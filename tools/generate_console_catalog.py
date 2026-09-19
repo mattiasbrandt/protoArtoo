@@ -122,6 +122,12 @@ typedef struct {
                            // secret (docs/console-protocol.md s.4.1). `help` renders it as
                            // write-excluded rather than required/optional, and the operation's
                            // executor refuses it before its Apply Core sees it.
+    bool board_output;     // registry `board_output: true`: the value names one of the
+                           // running board's Outputs by its Board Component Label, matched
+                           // without regard to case or spaces (include/board_outputs.h).
+                           // enum_values then lists only the extra words it also takes
+                           // (`both`). The registry is one file for every board, so the
+                           // labels themselves are never in this table.
 } ConsoleParamDescriptor;
 
 // Operation descriptor
@@ -158,6 +164,10 @@ typedef struct {
                                           // and the same rule: the fact lives in the registry, so
                                           // the dispatcher never carries a list of names and a row
                                           // marked tomorrow is refused with no code change.
+    const char* output;                  // registry `output:`: the stored id (arm1..aux3) of
+                                          // the one Output this operation is about, or NULL.
+                                          // `{output}` in its help prose is that Output's
+                                          // label on the running board (include/board_outputs.h).
 } ConsoleCatalogEntry;
 
 // Get the complete catalog
@@ -372,6 +382,7 @@ def generate_catalog_source(entries, offsets, output_path):
                     param_type = param.get('type', 'string')
                     required = param.get('required', False)
                     write_excluded = param.get('write_excluded', False)
+                    board_output = param.get('board_output', False)
                     bounds = numeric_range(param)
                     if bounds is not None:
                         has_range = 'true'
@@ -388,8 +399,9 @@ def generate_catalog_source(entries, offsets, output_path):
                     source += (f"    {{\"{param_name}\", \"{param_type}\", "
                                f"{'true' if required else 'false'}, {has_range}, "
                                f"{range_min}, {range_max}, {enum_expr}, "
-                               f"{'true' if write_excluded else 'false'}}},\n")
-                source += "    {NULL, NULL, false, false, 0.0, 0.0, NULL, false}  // terminator\n"
+                               f"{'true' if write_excluded else 'false'}, "
+                               f"{'true' if board_output else 'false'}}},\n")
+                source += "    {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator\n"
                 source += "};\n\n"
 
     # Generate field-name tables for type=status entries that carry fields:
@@ -506,6 +518,8 @@ def generate_catalog_source(entries, offsets, output_path):
         source += f"        {fields_expr},  // fields\n"
         source += f"        {'true' if is_query else 'false'},  // is_query\n"
         source += f"        {'true' if read_only else 'false'},  // read_only\n"
+        output_id = entry.get('output')
+        source += f"        {chr(34) + output_id + chr(34) if output_id else 'NULL'},  // output\n"
         source += f"    }},\n"
 
     source += "};\n\n"

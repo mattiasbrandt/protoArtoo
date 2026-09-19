@@ -846,11 +846,11 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
         g_seqItemCap.values[0]);
     // The nudge count travels whether or not there is a pulse (#363).
     TEST_ASSERT_EQUAL_STRING(
-        "address:ledc:3 name:AUX1 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:- "
+        "address:ledc:3 name:ARM3 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:- "
         "nudgesDone:1",
         g_seqItemCap.values[2]);
     TEST_ASSERT_EQUAL_STRING(
-        "address:ledc:4 name:AUX2 parts:- bandLoUs:500 bandHiUs:2500 "
+        "address:ledc:4 name:ARM4 parts:- bandLoUs:500 bandHiUs:2500 "
         "commandedUs:2400 targetUs:2400 nudgesDone:3",
         g_seqItemCap.values[3]);
 
@@ -4075,10 +4075,39 @@ void test_aux_led_effect_rejects_an_unknown_argument() {
 // =============================================================================
 
 void test_servo_open_queues_with_the_resolved_arm_id() {
-    runQuery("servo.action.open target=aux2");
+    runQuery("servo.action.open target=arm4");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// The target is the running board's word for the Output (ADR 0033 Amendment
+// 2026-09-19), typed as the board prints it or not: case and spaces are set
+// aside, and a quoted label with a space arrives as one value. This image is
+// the Artoo PCB's, which prints ARM1..ARM5.
+void test_servo_open_takes_the_board_label_typed_with_a_space() {
+    runQuery("servo.action.open target=\"Arm 3\"");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// protoArtoo's old word for the Artoo's third Output is not an alias: it is
+// refused, and the refusal names the words this board takes - `both` among
+// them where the operation takes the broadcast, and not where it does not.
+void test_servo_refuses_a_word_the_board_does_not_print_and_names_its_words() {
+    runQuery("servo.action.open target=aux1");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("target", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("ARM1,ARM2,ARM3,ARM4,ARM5,both", capturedValue("accepts"));
+
+    runQuery("servo.action.nudge target=aux3");
+
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("ARM1,ARM2,ARM3,ARM4,ARM5", capturedValue("accepts"));
 }
 
 void test_servo_open_accepts_both_as_the_broadcast_target() {
@@ -4179,7 +4208,7 @@ void test_servo_stop_rejects_position_us_as_an_unknown_argument() {
 // because ServoTask computes the pair from the pin, and no "both", because a
 // nudge is one output at a time by definition.
 void test_servo_nudge_queues_with_the_resolved_arm_id() {
-    runQuery("servo.action.nudge target=aux1");
+    runQuery("servo.action.nudge target=ARM3");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
@@ -5552,6 +5581,8 @@ int main(int, char**) {
     RUN_TEST(test_aux_led_effect_rejects_an_unknown_argument);
 
     RUN_TEST(test_servo_open_queues_with_the_resolved_arm_id);
+    RUN_TEST(test_servo_open_takes_the_board_label_typed_with_a_space);
+    RUN_TEST(test_servo_refuses_a_word_the_board_does_not_print_and_names_its_words);
     RUN_TEST(test_servo_open_accepts_both_as_the_broadcast_target);
     RUN_TEST(test_servo_close_rejects_an_unknown_target);
     RUN_TEST(test_servo_set_position_rejects_both_though_open_close_accept_it);

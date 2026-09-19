@@ -54,16 +54,15 @@
   const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
+  // It carries no action about one Output (the toggles): those are named by
+  // what the running board prints beside the Output, which only the firmware
+  // knows, so they appear when GET /api/actions answers (ADR 0033 Amendment
+  // 2026-09-19; tools/check_action_registry_drift.py holds this file to it).
   const HARDCODED_ACTION_TARGETS = [
     { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward and back on the feet. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
     { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left and right on the feet. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Turn the dome. Bind it to a stick.', disabled: false, testable: false, safetyCritical: false },
     { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between Stationary and Driving. Stationary locks the feet.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Swing arm 1 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Swing arm 2 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Swing AUX 1 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Swing AUX 2 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
-    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Swing AUX 3 open or closed.', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Play a numbered body sequence, usually SE30 to SE36.', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Play a dome show by name, like DM:FLUTTER. The Sequences page lists them all.', disabled: false, testable: false, safetyCritical: false },
     { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send one Marcduino command to the dome.', disabled: false, testable: false, safetyCritical: false },
@@ -133,7 +132,7 @@
 
   const DOMAIN_GROUP = {
     drive: 'Movement',
-    servo: 'Arms',
+    servo: 'Outputs',
     dome: 'Sequences',
     sound: 'Sound',
     system: 'System',
@@ -145,7 +144,7 @@
     'dome.action.marcduino-command': 'Command',
     'dome.action.set-speed': 'Movement',
   };
-  const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Arms', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
+  const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Outputs', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
   const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
   const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
 

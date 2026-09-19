@@ -11,6 +11,7 @@
 #include "console_module.h"
 #include "console_record.h"
 #include "console_catalog.h"
+#include "board_outputs.h"  // BOARD_OUTPUTS, boardOutputLabel() - an Output's name here
 #include "console_args.h"  // ConsoleArgs, consoleSplitCommandLine(), consoleParseArgs(),
                            // consoleValidateArgsAgainstSchema() - the shared argument
                            // contract (#221, ADR 0036, docs/console-protocol.md s.1.2)
@@ -261,6 +262,34 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
     return true;
 }
 
+// The words a board_output parameter takes on the running board - its Output
+// labels in table order, then the extra words the registry lists beside them
+// (`both`) - comma-joined into one field value, and quoted when a label carries
+// a space (GPIO 49), so the value stays one token on the wire (console_record.h
+// consoleQuoteValue()). A refusal and `help` both answer with this, so a builder
+// who typed a word the board does not print is shown the ones it does
+// (ADR 0033 Amendment 2026-09-19). `joined` holds the unquoted list and
+// `quoted` the quoted copy; the return points at whichever is the value.
+static const char* consoleOutputWords(const ConsoleParamDescriptor& param, char* joined,
+                                      size_t joinedSize, char* quoted, size_t quotedSize) {
+    boardOutputWordList(",", joined, joinedSize);
+    size_t used = strlen(joined);
+    if (param.enum_values != nullptr) {
+        for (const char* const* extra = param.enum_values; *extra != nullptr; ++extra) {
+            const int wrote = snprintf(joined + used, joinedSize - used, ",%s", *extra);
+            if (wrote < 0 || (size_t)wrote >= joinedSize - used) {
+                break;
+            }
+            used += (size_t)wrote;
+        }
+    }
+    return consoleQuoteValue(joined, quoted, quotedSize);
+}
+
+// Sized for the longest list a board declares: firebeetle2's
+// "GPIO 49,GPIO 50,GPIO 4,GPIO 5,GPIO 51,both" is 41 bytes, and quoting adds two.
+static const size_t CONSOLE_OUTPUT_WORDS_MAX = 64;
+
 // Emit one prose field of a help row, clamped to the buffer it is given, and
 // say so on the wire when the clamp actually cut bytes.
 //
@@ -284,20 +313,23 @@ static bool consoleGetHelpText(const char* canonicalName, uint16_t help_offset,
 // the prose is present and shorter than the row's
 // (docs/console-protocol.md s.3.4). The "status instead of a half-answer,
 // never both" rule below is about the first case and is untouched by this.
+//
+// A row about one Output (`outputId`, the catalog's `output`) names it with the
+// `{output}` placeholder, which is composed here into the running board's label
+// before the clamp, so the marker still means "shorter than the row said".
 static void consoleEmitProseField(uint32_t requestId, const ConsoleRecordSink* sink,
                                   const char* name, const char* truncatedName,
-                                  const char* fieldStart, size_t fieldLen, char* buffer,
-                                  size_t bufferSize) {
+                                  const char* fieldStart, size_t fieldLen, const char* outputId,
+                                  char* buffer, size_t bufferSize) {
     if (sink->onRecordField == nullptr) {
         return;
     }
 
-    size_t cpyLen = (fieldLen < bufferSize - 1) ? fieldLen : bufferSize - 1;
-    memcpy(buffer, fieldStart, cpyLen);
-    buffer[cpyLen] = '\0';
+    const size_t fullLen =
+        boardOutputComposeText(fieldStart, fieldLen, outputId, buffer, bufferSize);
     sink->onRecordField(requestId, name, buffer);
 
-    if (cpyLen < fieldLen) {
+    if (fullLen > bufferSize - 1) {
         sink->onRecordField(requestId, truncatedName, "true");
     }
 }
@@ -407,6 +439,22 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
         if (sink->onRecordField) {
             sink->onRecordField(requestId, "params", paramsBuf);
         }
+
+        // A board_output parameter's words are the running board's, so help
+        // lists them rather than the registry, which cannot: `target_accepts`
+        // is ARM1..ARM5 and `both` on the Artoo PCB, GPIO 49 .. GPIO 51 and
+        // `both` on the FireBeetle 2 (ADR 0033 Amendment 2026-09-19).
+        for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
+            if (!p->board_output || sink->onRecordField == nullptr) {
+                continue;
+            }
+            char fieldName[40];
+            snprintf(fieldName, sizeof(fieldName), "%s_accepts", p->name);
+            char joined[CONSOLE_OUTPUT_WORDS_MAX];
+            char quoted[CONSOLE_OUTPUT_WORDS_MAX];
+            sink->onRecordField(requestId, fieldName,
+                                consoleOutputWords(*p, joined, sizeof(joined), quoted, sizeof(quoted)));
+        }
     }
 
     // Help text from file - addressed by offset+length
@@ -436,15 +484,17 @@ static void consoleEmitHelpForOperation(uint32_t requestId, const char* operatio
                     char displayName[64] = {};
                     consoleEmitProseField(requestId, sink, "display_name",
                                           "display_name_truncated", fieldStart, fieldLen,
-                                          displayName, sizeof(displayName));
+                                          entry->output, displayName, sizeof(displayName));
                 } else if (field == 2 && fieldLen > 0) {
                     char description[256] = {};
                     consoleEmitProseField(requestId, sink, "description", "description_truncated",
-                                          fieldStart, fieldLen, description, sizeof(description));
+                                          fieldStart, fieldLen, entry->output, description,
+                                          sizeof(description));
                 } else if (field == 3 && fieldLen > 0) {
                     char executor[64] = {};
                     consoleEmitProseField(requestId, sink, "executor", "executor_truncated",
-                                          fieldStart, fieldLen, executor, sizeof(executor));
+                                          fieldStart, fieldLen, nullptr, executor,
+                                          sizeof(executor));
                 }
 
                 field++;
@@ -1312,9 +1362,16 @@ static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRe
             ServoOutputCommandedSnapshot commanded = {};
             captureServoOutputCommanded(row.driver, row.channel, &commanded);
 
+            // The name is what the board prints, and a FireBeetle 2 prints a
+            // space in it (GPIO 49): quoted, so the item stays one token per
+            // value on the wire, the way a record's human text is.
+            char nameQuoted[24];  // the longest label, "GPIO 51", quoted, with room
             const int head = snprintf(itemBuf, sizeof(itemBuf),
                                       "address:%s name:%s parts:%s bandLoUs:%u bandHiUs:%u ",
-                                      address, name[0] != '\0' ? name : "-",
+                                      address,
+                                      name[0] != '\0'
+                                          ? consoleQuoteValue(name, nameQuoted, sizeof(nameQuoted))
+                                          : "-",
                                       used > 0 ? parts : "-", (unsigned)band.lo,
                                       (unsigned)band.hi);
             if (head > 0 && (size_t)head < sizeof(itemBuf)) {
@@ -1423,6 +1480,25 @@ static void consoleEmitArgFailure(uint32_t requestId, const char* operationName,
     }
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "argument", badKey != nullptr ? badKey : "");
+    }
+    // A word that names none of the running board's Outputs is refused with the
+    // words that do (ADR 0033 Amendment 2026-09-19): `accepts=` is this board's
+    // labels and the extras, so `target=aux1` on the Artoo answers
+    // accepts=ARM1,ARM2,ARM3,ARM4,ARM5,both rather than leaving the builder to
+    // guess what the board prints.
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    if (reason == CONSOLE_REASON_OUT_OF_RANGE && badKey != nullptr && entry != nullptr &&
+        entry->params != nullptr && sink->onRecordField) {
+        for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
+            if (p->board_output && strcmp(p->name, badKey) == 0) {
+                char joined[CONSOLE_OUTPUT_WORDS_MAX];
+                char quoted[CONSOLE_OUTPUT_WORDS_MAX];
+                sink->onRecordField(requestId, "accepts",
+                                    consoleOutputWords(*p, joined, sizeof(joined), quoted,
+                                                       sizeof(quoted)));
+                break;
+            }
+        }
     }
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, reason);

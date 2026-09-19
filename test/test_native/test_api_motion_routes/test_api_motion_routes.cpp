@@ -816,7 +816,7 @@ void test_dome_layout_streams_the_cache_with_its_age_header() {
 // -----------------------------------------------------------------------------
 
 void test_servo_accepts_a_named_arm_action() {
-    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "open"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM1"}, {"action", "open"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -842,8 +842,12 @@ void test_servo_accepts_the_broadcast_arm() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 }
 
-void test_servo_rejects_an_unknown_arm() {
-    const WebRequestTestParam params[] = {{"arm", "arm9"}, {"action", "open"}};
+// The word is the running board's label for the Output (ADR 0033 Amendment
+// 2026-09-19). This image is built for the Artoo PCB, which prints ARM1..ARM5,
+// so protoArtoo's old word for its third Output is not an alias of anything:
+// it is refused, and the refusal names the words this board does take.
+void test_servo_refuses_a_word_the_board_does_not_print() {
+    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "open"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -852,12 +856,38 @@ void test_servo_rejects_an_unknown_arm() {
     handleServoPost(req);
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Invalid arm"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
+                                "No output called aux1 on this board. Use ARM1, ARM2, ARM3, ARM4, "
+                                "ARM5, or both"));
+}
+
+// The board's word is matched without regard to case or spaces, and names the
+// Output ServoTask knows by its armId - the third Output is armId 2 whatever
+// the board calls it. A label with a space is sent as the board prints it.
+void test_servo_takes_the_board_label_in_any_case_and_spacing() {
+    TEST_ASSERT_EQUAL_INT16(2, parseArmId("ARM3"));
+    TEST_ASSERT_EQUAL_INT16(2, parseArmId("arm3"));
+    TEST_ASSERT_EQUAL_INT16(2, parseArmId("Arm 3"));
+    TEST_ASSERT_EQUAL_INT16(4, parseArmId("ARM5"));
+    TEST_ASSERT_EQUAL_INT16(255, parseArmId("both"));
+    TEST_ASSERT_EQUAL_INT16(-1, parseArmId("aux1"));
+    TEST_ASSERT_EQUAL_INT16(-1, parseArmId("aux3"));
+    TEST_ASSERT_EQUAL_INT16(-1, parseArmId(""));
+
+    const WebRequestTestParam params[] = {{"arm", "arm 4"}, {"action", "open"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleServoPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 }
 
 void test_servo_rejects_an_out_of_range_position() {
     const WebRequestTestParam params[] = {
-        {"arm", "arm1"}, {"action", "position"}, {"positionUs", "4000"}};
+        {"arm", "ARM1"}, {"action", "position"}, {"positionUs", "4000"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 3;
@@ -870,7 +900,7 @@ void test_servo_rejects_an_out_of_range_position() {
 }
 
 void test_servo_position_without_a_value_is_rejected() {
-    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "position"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM1"}, {"action", "position"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -885,7 +915,7 @@ void test_servo_position_without_a_value_is_rejected() {
 // Find by Moving (#363): a nudge names an arm and nothing else. No width is
 // taken from the request, so none is required, and none can make it big.
 void test_servo_nudge_takes_an_arm_and_no_width() {
-    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "nudge"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "nudge"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -897,7 +927,7 @@ void test_servo_nudge_takes_an_arm_and_no_width() {
     TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
 }
 
-// One output per nudge, so a builder can say which one moved: the ARM1+ARM2
+// One output per nudge, so a builder can say which one moved: the `both`
 // broadcast is refused at the door with a reason, not swallowed in a log.
 void test_servo_nudge_refuses_the_broadcast_arm() {
     const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "nudge"}};
@@ -909,7 +939,7 @@ void test_servo_nudge_refuses_the_broadcast_arm() {
     handleServoPost(req);
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A nudge takes one arm"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"));
 }
 
 // A body view's press (#352, ADR 0063): a travel names an arm and nothing else.
@@ -917,7 +947,7 @@ void test_servo_nudge_refuses_the_broadcast_arm() {
 // request and none can be smuggled in to make the move something other than the
 // travel the builder recorded.
 void test_servo_travel_takes_an_arm_and_no_width() {
-    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "travel"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "travel"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -929,7 +959,7 @@ void test_servo_travel_takes_an_arm_and_no_width() {
     TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
 }
 
-// A press on a body view is about ONE Part, so the ARM1+ARM2 broadcast is
+// A press on a body view is about ONE Part, so the `both` broadcast is
 // refused at the door with a reason naming the action - running two parts
 // through their travel on one press is the thing this refusal prevents.
 void test_servo_travel_refuses_the_broadcast_arm() {
@@ -942,13 +972,13 @@ void test_servo_travel_refuses_the_broadcast_arm() {
     handleServoPost(req);
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A travel takes one arm"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A travel moves one output"));
 }
 
 // The refusal an unknown action gets names travel among the actions there are,
 // so a caller that mistyped it is told what this endpoint actually takes.
 void test_servo_unknown_action_names_travel() {
-    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "sweep"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "sweep"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -965,7 +995,7 @@ void test_servo_unknown_action_names_travel() {
 // is open, which is what keeps the short expiry from firing.
 void test_servo_hold_takes_an_arm_and_a_width() {
     const WebRequestTestParam params[] = {
-        {"arm", "aux1"}, {"action", "hold"}, {"positionUs", "1750"}};
+        {"arm", "ARM3"}, {"action", "hold"}, {"positionUs", "1750"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 3;
@@ -979,7 +1009,7 @@ void test_servo_hold_takes_an_arm_and_a_width() {
 
 // A hold with no width is not a hold: there is nowhere to hold the Output.
 void test_servo_hold_without_a_width_is_rejected() {
-    const WebRequestTestParam params[] = {{"arm", "aux1"}, {"action", "hold"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM3"}, {"action", "hold"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -991,7 +1021,7 @@ void test_servo_hold_without_a_width_is_rejected() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Missing positionUs parameter for hold"));
 }
 
-// A dial stands on one row, so the ARM1+ARM2 broadcast is refused the same way
+// A dial stands on one row, so the `both` broadcast is refused the same way
 // a nudge's is - and the refusal names the action the caller asked for.
 void test_servo_hold_refuses_the_broadcast_arm() {
     const WebRequestTestParam params[] = {
@@ -1004,14 +1034,14 @@ void test_servo_hold_refuses_the_broadcast_arm() {
     handleServoPost(req);
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A hold takes one arm"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "A hold moves one output"));
 }
 
 // A hold outside what a servo takes is refused at the door, exactly as a
 // position is: the component band then bounds it again on the way to the pin.
 void test_servo_hold_out_of_range_is_rejected() {
     const WebRequestTestParam params[] = {
-        {"arm", "arm1"}, {"action", "hold"}, {"positionUs", "2600"}};
+        {"arm", "ARM1"}, {"action", "hold"}, {"positionUs", "2600"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 3;
@@ -1026,7 +1056,7 @@ void test_servo_hold_out_of_range_is_rejected() {
 // Pulses off (#364, ADR 0043): no width travels with it, because a release
 // commands no position at all - the Output goes limp where it is.
 void test_servo_release_takes_an_arm_and_no_width() {
-    const WebRequestTestParam params[] = {{"arm", "aux3"}, {"action", "release"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM5"}, {"action", "release"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -1055,7 +1085,7 @@ void test_servo_release_accepts_the_broadcast_arm() {
 // The refusal lists what this route actually accepts, so a caller that spelled
 // one wrong is told the set rather than left guessing.
 void test_an_unknown_servo_action_names_every_action_there_is() {
-    const WebRequestTestParam params[] = {{"arm", "arm1"}, {"action", "letgo"}};
+    const WebRequestTestParam params[] = {{"arm", "ARM1"}, {"action", "letgo"}};
     WebRequestTestBackend backend;
     backend.params = params;
     backend.paramCount = 2;
@@ -1238,7 +1268,8 @@ int main(int, char**) {
 
     RUN_TEST(test_servo_accepts_a_named_arm_action);
     RUN_TEST(test_servo_accepts_the_broadcast_arm);
-    RUN_TEST(test_servo_rejects_an_unknown_arm);
+    RUN_TEST(test_servo_refuses_a_word_the_board_does_not_print);
+    RUN_TEST(test_servo_takes_the_board_label_in_any_case_and_spacing);
     RUN_TEST(test_servo_rejects_an_out_of_range_position);
     RUN_TEST(test_servo_position_without_a_value_is_rejected);
     RUN_TEST(test_servo_nudge_takes_an_arm_and_no_width);

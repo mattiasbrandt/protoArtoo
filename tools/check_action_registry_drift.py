@@ -27,11 +27,15 @@ RC_JS_PATH = ROOT / "data" / "rc.js"
 WEB_DIR = ROOT / "src" / "web"
 DOME_CUE_HANDLER_PATH = ROOT / "src" / "drivers" / "dome_cue_handler.cpp"
 AUDIO_DOLLAR_PARSER_PATH = ROOT / "src" / "tasks" / "audio_dollar_parser.cpp"
+BOARD_OUTPUTS_PATH = ROOT / "include" / "board_outputs.h"
+# An entry about one Output names it with this placeholder, composed at runtime
+# from the running board's label (docs/action-registry.yaml header, `output:`).
+OUTPUT_PLACEHOLDER = "{output}"
 BINDABLE_CPP_FILE = "include/rc_mapping.h"
 
 DOMAIN_GROUP = {
     "drive": "Movement",
-    "servo": "Arms",
+    "servo": "Outputs",
     "dome": "Sequences",
     "sound": "Sound",
     "system": "System",
@@ -140,6 +144,7 @@ class ExpectedAction:
     build_flag: str | None
     group: str
     testable: bool
+    output: str | None
 
 
 def normalize(text: object) -> str:
@@ -229,6 +234,7 @@ def load_expected_actions(doc: dict) -> list[ExpectedAction]:
                 build_flag=entry.get("build_flag"),
                 group=action_group(entry),
                 testable=action_testable(token),
+                output=entry.get("output"),
             )
         )
 
@@ -291,11 +297,12 @@ def parse_from_string_tokens() -> dict[str, str]:
 
 def parse_action_registry(
     path: Path = ACTION_REGISTRY_PATH,
-) -> dict[str, tuple[str, str, str, str, bool, str | None, str | None]]:
+) -> dict[str, tuple[str, str, str, str, bool, str | None, str | None, str | None]]:
     text = path.read_text(encoding="utf-8")
     rows = re.findall(
         r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\","
         r"\s*\"([^\"]+)\",\s*(true|false)"
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?"
         r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?"
         r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?\s*}",
         text,
@@ -310,9 +317,47 @@ def parse_action_registry(
         enum: (
             normalize(name), normalize(display), normalize(domain), normalize(desc),
             safety == "true", nullable(board_capability), nullable(build_flag),
+            nullable(output),
         )
-        for enum, name, display, domain, desc, safety, board_capability, build_flag in rows
+        for enum, name, display, domain, desc, safety, board_capability, build_flag, output in rows
     }
+
+
+def board_output_ids() -> set[str]:
+    """The stored Output ids BOARD_OUTPUTS declares (include/board_outputs.h)."""
+    text = BOARD_OUTPUTS_PATH.read_text(encoding="utf-8")
+    body = re.search(r"BOARD_OUTPUTS\[\]\s*=\s*{(?P<body>.*?)\n};", text, re.S)
+    if not body:
+        raise ValueError("could not find BOARD_OUTPUTS in include/board_outputs.h")
+    return set(re.findall(r'{\s*"([a-z0-9]+)",\s*"enable_', body.group("body")))
+
+
+def check_output_placeholders(doc: dict, errors: list[str]) -> None:
+    """An entry about one Output names it `{output}` and carries `output:`.
+
+    The placeholder is composed at runtime from the running board's label for
+    the Output `output:` names, so a placeholder with no `output:` would be
+    served as an empty name, and an `output:` naming an id BOARD_OUTPUTS does
+    not declare would too. And no display text may name an Output by a word
+    that is one board's alone (ADR 0033 Amendment 2026-09-19).
+    """
+    ids = board_output_ids()
+    stale_words = re.compile(r"\b(ARM[1-5]|AUX ?[1-3])\b")
+    for entry in doc.get("entries", []):
+        name = entry.get("name", "<unnamed>")
+        output = entry.get("output")
+        texts = [str(entry.get(field) or "") for field in ("display_name", "description")]
+        if output is not None and output not in ids:
+            errors.append(f"{name} output {output!r} is not a BOARD_OUTPUTS id {sorted(ids)!r}")
+        if any(OUTPUT_PLACEHOLDER in text for text in texts) and output is None:
+            errors.append(f"{name} names {OUTPUT_PLACEHOLDER} but carries no output:")
+        for text in texts:
+            match = stale_words.search(text)
+            if match:
+                errors.append(
+                    f"{name} names an Output {match.group(0)!r}, which is one board's word; "
+                    f"use {OUTPUT_PLACEHOLDER} with output:"
+                )
 
 
 def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool]]:
@@ -886,9 +931,21 @@ def main() -> int:
             add_mismatch(errors, f"{action.enum} registry safety_critical", action.safety_critical, row[4])
             add_mismatch(errors, f"{action.enum} registry board_capability", action.board_capability, row[5])
             add_mismatch(errors, f"{action.enum} registry build_flag", action.build_flag, row[6])
+            add_mismatch(errors, f"{action.enum} registry output", action.output, row[7])
 
+        # An action about one Output is named by the running board, so the
+        # browser's fallback - drawn before GET /api/actions answers - cannot
+        # carry it: it would have to name the Output itself (the browser knows
+        # no Output, operator 2026-09-19 on #411). It appears once the
+        # firmware's answer arrives.
         js = js_fallback.get(action.token)
-        if js is None:
+        if action.output is not None:
+            if js is not None:
+                errors.append(
+                    f"{action.token} is about one Output, so HARDCODED_ACTION_TARGETS must not "
+                    f"carry it: its name is the running board's"
+                )
+        elif js is None:
             errors.append(f"{action.token} missing from HARDCODED_ACTION_TARGETS")
         else:
             add_mismatch(errors, f"{action.token} JS label", action.display_name, js[0])
@@ -920,6 +977,7 @@ def main() -> int:
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)
     check_console_help_file(doc, errors)
+    check_output_placeholders(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
