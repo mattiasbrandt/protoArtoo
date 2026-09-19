@@ -51,7 +51,7 @@ const CONFIG = () => ({
   aux_led_pin: 2,
 });
 
-const boot = () => {
+const boot = (config = CONFIG()) => {
   const document = new MiniDocument();
   for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-feedback"]) {
     const node = document.createElement("div");
@@ -60,7 +60,6 @@ const boot = () => {
   }
   const posts = [];
   const timers = [];
-  const config = CONFIG();
   const window = {
     document,
     PAApi: {
@@ -71,8 +70,12 @@ const boot = () => {
       },
       postForm: async (path, form) => {
         posts.push({ path, form: { ...form } });
-        for (const [id, facts] of Object.entries(OUTPUT_FACTS)) {
-          config.components[id] = { ...facts, enabled: form[facts.enabledField] === "true", type: form[facts.typeField] };
+        // Answer the way the firmware does: every Output it reports, as the
+        // form just set it.
+        for (const entry of Object.values(config.components)) {
+          if (!entry.enabledField) continue;
+          entry.enabled = form[entry.enabledField] === "true";
+          entry.type = form[entry.typeField];
         }
         config.aux_led_pin = Number(form.aux_led_pin);
         return { ok: true, data: config };
@@ -107,6 +110,7 @@ const boot = () => {
       for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
     },
     wiring: (output) => plate("wiring-outputs-body", output),
+    wiringPlates: () => document.getElementById("wiring-outputs-body").querySelectorAll("[data-output]"),
     servos: (output) => plate("servo-types-body", output),
     // Wiring's in-use press is the plate's head button.
     inUse: (output) => plate("wiring-outputs-body", output).querySelector("[aria-pressed]"),
@@ -165,4 +169,41 @@ test("an in-use tick waits for the next start until it is put back; a servo type
   env.inUse("aux1").fire("click", {});
   await env.flush();
   assert.equal(wiringLine().dataset.pending, "false", "put back, nothing is waiting");
+});
+
+// The browser knows no Output (operator, 2026-09-19 on #411: "the outputs is
+// supposed to be dynamic"). Which Outputs exist, what each is called, which
+// can carry the LED strip and which fields save it are the firmware's answer,
+// so a board with a different set - other names, other addresses, other
+// fields, fewer of them - is drawn and saved exactly as it reports itself, and
+// a save never writes a field the firmware did not name.
+test("the plates are the Outputs the firmware reports, and a save writes only the fields it names", async () => {
+  const env = boot({
+    components: {
+      out7: { label: "GPIO 49", address: "ledc:7", enabledField: "enableOut7", typeField: "out7Type", enabled: false, type: "mg996r" },
+      out9: { label: "GPIO 4", address: "ledc:9", ledStripPin: 2, enabledField: "enableOut9", typeField: "out9Type", enabled: true, type: "none" },
+      domeEsc: { enabled: true, label: "GPIO 48" },
+    },
+    aux_led_pin: 0,
+  });
+  await env.settle();
+  assert.deepEqual(
+    env.wiringPlates().map((plate) => [
+      plate.getAttribute("data-output"),
+      plate.querySelector(".toggle-label").textContent,
+      plate.getAttribute("data-wire"),
+    ]),
+    [["out7", "GPIO 49", "1"], ["out9", "GPIO 4", "2"]],
+    "one plate per reported Output, named as the board prints it, coloured by its place",
+  );
+  assert.equal(env.option(env.wiring("out7"), "rgb"), undefined, "an Output that cannot carry the strip is not offered it");
+
+  env.inUse("out7").fire("click", {});
+  env.option(env.wiring("out9"), "rgb").fire("click", {});
+  await env.flush();
+  const form = env.posts.at(-1).form;
+  assert.deepEqual(Object.keys(form).sort(), ["aux_led_pin", "enableOut7", "enableOut9", "out7Type", "out9Type"]);
+  assert.equal(form.enableOut7, "true");
+  assert.equal(form.out9Type, "rgb");
+  assert.equal(form.aux_led_pin, "2", "the strip is routed by the line the firmware gave that Output");
 });

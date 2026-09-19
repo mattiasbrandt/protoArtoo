@@ -103,10 +103,23 @@ const freshComponents = () => ({
   domeEsc: { enabled: false, label: "DOME" },
 });
 
+// GET /api/identity/components, cut to the rows the board's picture and name
+// are found from (docs/api.md): the Body Controller family and the board GPIO
+// product that borrows its picture. `running` is the one this image includes.
+const lineup = (running = "artoo_pcb") => ({
+  categories: [],
+  parts: [
+    { id: "artoo_pcb", name: "Artoo PCB (artoo.uk)", category: "body_controller", status: "supported", included: running === "artoo_pcb" },
+    { id: "firebeetle2", name: "FireBeetle 2 (ESP32-P4)", category: "body_controller", status: "supported", included: running === "firebeetle2" },
+    { id: "esp32_gpio_ledc", name: "Body controller board GPIO", category: "body_servo_controller", status: "supported", included: true },
+  ],
+});
+
 const boot = async ({
   outputs = freshOutputs(),
   components = freshComponents(),
   manifest = identity(),
+  running = "artoo_pcb",
 } = {}) => {
   const { MiniDocument, MiniDOMParser } = await import("./helpers/mini_dom.js");
 
@@ -177,6 +190,7 @@ const boot = async ({
         if (path === "/api/config") {
           return { data: { components: structuredClone(env.components) } };
         }
+        if (path === "/api/identity/components") return { data: lineup(running) };
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
         throw new Error(`unexpected request ${path}`);
       },
@@ -285,6 +299,10 @@ const boot = async ({
     "/status_stream.js": readData("status_stream.js"),
     "/droid_parts.js": readData("droid_parts.js"),
     "/wiring.js": readData("wiring.js"),
+    // The picker's lookup and frame, which name and picture the board.
+    "/apply_timing.js": readData("apply_timing.js"),
+    "/product_art.js": readData("product_art.js"),
+    "/component_picker.js": readData("component_picker.js"),
   };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
@@ -457,6 +475,72 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
   for (const [, href] of file.matchAll(/<link\b[^>]*\bhref="([^"]*)"/gi)) {
     assert.match(href, /^data:/, `a <link> that opens ${href} fetches it`);
   }
+});
+
+// The browser knows no Output (operator, 2026-09-19 on #411): which Outputs
+// a board has, and what the board prints beside each, are the firmware's
+// answer. A board reporting a different set - two Outputs, printed GPIO 49
+// and GPIO 4 - is drawn as exactly that, in its order, named by what it
+// prints and never by the servo table's own ARM1..AUX3 words; an Output only
+// the servo table knows comes after the serial links. Each wire takes the
+// palette colour at its place (--wire-n), from the stylesheet and never a
+// literal, and a wire to something not wired takes --wire-off.
+test("the wires are the Outputs the firmware reports, named as the board prints them, coloured by place", async () => {
+  const env = await boot({
+    outputs: [
+      output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+      output("ledc:1", "ARM2"),
+      output("ledc:3", "AUX1"),
+    ],
+    components: {
+      out49: configOutput("ledc:0", "GPIO 49", "out49", true),
+      out4: configOutput("ledc:3", "GPIO 4", "out4", false, 1),
+      drive: { enabled: true, label: "GPIO 20/21" },
+      audio: { enabled: false, label: "GPIO 34/36" },
+      protoR2link: { enabled: true, label: "GPIO 22/23" },
+    },
+  });
+  assert.deepEqual(
+    env.wires().map((wire) => wire.dataset.wire),
+    ["ledc:0", "ledc:3", "drive", "audio", "protor2link", "ledc:1"],
+  );
+  const silk = (key) => env.wire(key).querySelector(".wd-silk")?.textContent ?? "";
+  assert.equal(silk("ledc:0"), "GPIO 49");
+  assert.equal(silk("ledc:3"), "GPIO 4");
+  assert.doesNotMatch(env.wire("ledc:0").textContent, /ARM1/, "the servo table's word never names a wire");
+  const ink = (key) => env.wire(key).querySelector(".wd-line").getAttribute("style");
+  assert.equal(ink("ledc:0"), "stroke:var(--wire-1)");
+  assert.equal(ink("ledc:3"), "stroke:var(--wire-off)", "not marked wired");
+  assert.equal(ink("drive"), "stroke:var(--wire-3)");
+  assert.equal(ink("protor2link"), "stroke:var(--wire-5)");
+  assert.equal(ink("ledc:1"), "stroke:var(--wire-6)");
+});
+
+// The diagram pictures and names the Body Controller this image runs on, from
+// the lineup row the picker pictures it by (#411). The lineup lists every
+// peer board, so taking the family's first row rather than the included one
+// would name - and draw - a board that is not in the droid.
+test("the diagram is titled and pictured with the board this image runs on, not a peer", async () => {
+  const env = await boot({ running: "firebeetle2" });
+  const deadline = Date.now() + 2000;
+  const title = () => env.document.querySelector(".wd-title")?.textContent ?? "";
+  while (title() === "" && Date.now() < deadline) await sleep(10);
+  assert.equal(title(), "FireBeetle 2 (ESP32-P4)");
+  const photo = env.document.querySelector(".wd-board-slot").querySelector("img");
+  // Set now or on the deferred-asset sweep, whichever the page is past.
+  const source = photo?.getAttribute("src") || photo?.dataset.deferredSrc;
+  assert.equal(source, "/firebeetle2.webp", "the picture is the same board's");
+});
+
+// The print act has no word "Printable" left on it - the icon carries it - so
+// an icon that resolves to nothing would leave a builder a blank square and
+// "wiring sheet". The shell's sprite is the one place an icon is drawn from.
+test("the print act's icon is one the shell's sprite draws", async () => {
+  const env = await boot();
+  const link = env.document.getElementById("wiring-save");
+  const href = link.querySelector("use").getAttribute("href");
+  assert.ok(env.document.getElementById(href.slice(1)), `${href} resolves to no symbol`);
+  assert.equal(link.getAttribute("aria-label"), "Printable wiring sheet");
 });
 
 test("the sheet writes nothing to the droid", async () => {
