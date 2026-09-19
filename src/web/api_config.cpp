@@ -460,6 +460,50 @@ const char* getComponentLabel(const char* componentName) {
 }
 
 // -----------------------------------------------------------------------------
+// The body controller's Outputs, as GET /api/config reports them.
+//
+// The browser knows no Output (operator, 2026-09-19 on #411: "the outputs is
+// supposed to be dynamic, thats the whole point of the wiring and mapping we
+// have"). Which Outputs this board has, what the board prints beside each,
+// where each is addressed, which one can carry the LED strip and which config
+// fields save it all arrive in this answer, and Wiring and Servos draw one
+// plate per entry, in this order, saved under the field names given here. A
+// board that grows an Output grows a row, and no page changes.
+//
+// This is the one place those facts sit side by side. What differs between
+// boards is what they print, and that stays in include/component_labels.inc
+// (`component` below is its key); the channel is the LEDC channel this image
+// drives the Output on (include/ledc_pwm.h), and `ledStripPin` is the
+// aux_led_pin selection that routes the strip there (include/config.h
+// AUX_LED_PIN_*), 0 where the strip cannot go. `id` is the stored config key -
+// the components{} key - and never a name a builder reads.
+// -----------------------------------------------------------------------------
+namespace {
+    struct ConfigOutputEntry {
+        const char* id;
+        const char* component;
+        uint8_t channel;
+        uint8_t ledStripPin;
+        bool SystemConfig::*enabled;
+        const char* enabledField;
+        const char* typeField;
+    };
+
+    constexpr ConfigOutputEntry CONFIG_OUTPUTS[] = {
+        {"arm1", "enable_arm1", LEDC_CH_ARM1, AUX_LED_PIN_DISABLED, &SystemConfig::enable_arm1,
+         "enableArm1", "arm1Type"},
+        {"arm2", "enable_arm2", LEDC_CH_ARM2, AUX_LED_PIN_DISABLED, &SystemConfig::enable_arm2,
+         "enableArm2", "arm2Type"},
+        {"aux1", "enable_aux1", LEDC_CH_AUX1, AUX_LED_PIN_AUX1, &SystemConfig::enable_aux1,
+         "enableAux1", "aux1Type"},
+        {"aux2", "enable_aux2", LEDC_CH_AUX2, AUX_LED_PIN_AUX2, &SystemConfig::enable_aux2,
+         "enableAux2", "aux2Type"},
+        {"aux3", "enable_aux3", LEDC_CH_AUX3, AUX_LED_PIN_AUX3, &SystemConfig::enable_aux3,
+         "enableAux3", "aux3Type"},
+    };
+}
+
+// -----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 // populateConfigJson()
 //
@@ -494,20 +538,20 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     rcSbus["recvCh2"] = snap.system.single_sbus_use_ch2;
 
     JsonObject components = doc["components"].to<JsonObject>();
-    components["arm1"]["enabled"] = snap.system.enable_arm1;
-    if (const char* label = getComponentLabel("enable_arm1")) components["arm1"]["label"] = label;
-
-    components["arm2"]["enabled"] = snap.system.enable_arm2;
-    if (const char* label = getComponentLabel("enable_arm2")) components["arm2"]["label"] = label;
-
-    components["aux1"]["enabled"] = snap.system.enable_aux1;
-    if (const char* label = getComponentLabel("enable_aux1")) components["aux1"]["label"] = label;
-
-    components["aux2"]["enabled"] = snap.system.enable_aux2;
-    if (const char* label = getComponentLabel("enable_aux2")) components["aux2"]["label"] = label;
-
-    components["aux3"]["enabled"] = snap.system.enable_aux3;
-    if (const char* label = getComponentLabel("enable_aux3")) components["aux3"]["label"] = label;
+    // The Outputs first and in table order: an entry carrying an `address` IS
+    // an Output, and that order is the order every page draws them in.
+    for (const ConfigOutputEntry& entry : CONFIG_OUTPUTS) {
+        JsonObject output = components[entry.id].to<JsonObject>();
+        output["enabled"] = snap.system.*entry.enabled;
+        if (const char* label = getComponentLabel(entry.component)) output["label"] = label;
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        if (servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, entry.channel)) {
+            output["address"] = address;
+        }
+        if (entry.ledStripPin != AUX_LED_PIN_DISABLED) output["ledStripPin"] = entry.ledStripPin;
+        output["enabledField"] = entry.enabledField;
+        output["typeField"] = entry.typeField;
+    }
 
     components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
     if (const char* label = getComponentLabel("enable_dome_esc")) components["domeEsc"]["label"] = label;

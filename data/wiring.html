@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/wiring.js,/apply_timing.js,/output_settings.js,/wiring_outputs.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/apply_timing.js,/product_art.js,/component_picker.js,/wiring.js,/output_settings.js,/wiring_outputs.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,19 +11,23 @@
   </head>
   <body data-page="wiring">
 
-    <!-- The title is the name in the nav, and under it the promise the whole
-         sheet rests on (ADR 0066, CONTEXT.md "Wiring"). The promise and the
-         scope statement are on the face rather than only in a section, because
-         a builder decides whether to trust a bench sheet before they read a
-         row of it - and both sentences are repeated on every picture below,
+    <!-- The running board's own drawing (ADR 0065), for the board picture the
+         diagram draws in place of the words "Body Controller" (#411). #board
+         inlines only that one symbol of the set's sprite (tools/gzip_fsdata.py
+         BOARD_FRAGMENT); the default set's sprite is empty and the picture is
+         the photograph. In the body, because the Operator Shell mounts only a
+         surface's body. -->
+    <!-- PA:INCLUDE _product_art.html#board -->
+
+    <!-- The title is the name in the nav, and under it one plain line saying
+         what the page covers (ADR 0066; operator, 2026-09-19 on #411). The
+         bounded promise and the scope statement ride on the picture instead,
          since a picture is the part of a page that gets cropped and pasted
          somewhere else (#293).
 
-         The promise line is EMPTY here and written by data/wiring.js. Both
-         sentences have exactly one home, so this screen's header and the
-         printable bench copy's header (#366) cannot come to say different
-         things - which is the same defect, one level up, as a page keeping its
-         own copy of a pin number.
+         The subtitle is EMPTY here and written by data/wiring.js, its one
+         home, so this screen's header and the printable bench copy's header
+         (#366) cannot come to say different things.
 
          The one act saves that bench copy to this computer, and it writes
          nothing to the droid: Wiring is still a reference. It is a link, not
@@ -31,8 +35,8 @@
          it stays unavailable until the droid has answered, since there is no
          sheet to save before then.
 
-         The three plate headings below are EMPTY here too, for the same
-         reason as the promise: data/wiring.js (PLATES) is their one home, and
+         The plate headings below are EMPTY here too, for the same
+         reason as the subtitle: data/wiring.js (PLATES) is their one home, and
          it writes them here and into the saved file, so the two copies cannot
          come to name a plate differently. -->
     <div class="title">
@@ -41,62 +45,61 @@
         <p class="wiring-promise" id="wiring-promise"></p>
       </div>
       <div class="acts wiring-acts">
-        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true">Save sheet to print</a>
+        <!-- The printer icon stands for the word "Printable" (operator,
+             2026-09-19 on #411), so the whole name rides in aria-label. -->
+        <a class="btn" id="wiring-save" href="#wiring" aria-disabled="true" aria-label="Printable wiring sheet"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-printer-outline"/></svg>wiring sheet</a>
         <p class="feedback" id="wiring-save-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
 
-    <!-- The loom: which wire leaves the Body Controller for each thing on the
-         end of it, and which pin it leaves from. Written by data/wiring.js from
-         the Board Lanes the running firmware reports on GET /api/identity, so
-         this markup carries no pin number - which is the whole reason a Board
-         Lane exists (include/board_lanes.inc). -->
+    <!-- The wires: one picture of the board and every wire that leaves it -
+         its Outputs and its serial links, each in its own colour, named first
+         by what the board prints (operator, 2026-09-19 on #411: "One diagram,
+         every wire"). Written by data/wiring.js from what the running firmware
+         reports (GET /api/config, GET /api/identity, GET /api/servo/outputs),
+         so this markup carries no pin number and names no Output. -->
     <div class="card">
       <div class="sect">
-        <h2 id="wiring-loom-heading"></h2>
-        <span class="sub" id="wiring-loom-summary" role="status" aria-live="polite">Finding out what this image routes...</span>
+        <h2 id="wiring-wires-heading"></h2>
+        <span class="sub" id="wiring-wires-summary" role="status" aria-live="polite">Finding out what this image wires...</span>
       </div>
-      <p class="hint">One wire per lane, and the port it leaves from. A dashed lane is switched off: run the wire anyway.</p>
-      <div id="wiring-loom"></div>
+      <div id="wiring-wires"></div>
       <p class="hint">The dome ESC and the RC receiver have no lane yet, so this sheet gives them no pin.</p>
     </div>
 
-    <!-- The four honesty tiers, the footnote, and the bound. Every section in
-         here is generated: a tier with nothing in it has no section at all,
-         rather than a heading over an empty table, and the footnote is built
-         from the tiers that are actually on the sheet. -->
+    <!-- Which Outputs are wired, and which one carries the LED strip: the one
+         control on this surface (operator, 2026-09-18 on #369), drawn by
+         data/output_settings.js and mounted by data/wiring_outputs.js. Each
+         Output is named by what the board prints beside it, and there is no
+         split into kinds (operator, 2026-09-19 on #411). The sheet above and
+         the bench copy it saves are generated by data/wiring.js, which still
+         writes nothing. -->
     <div class="card">
-      <div class="sect">
-        <h2 id="wiring-tiers-heading"></h2>
-        <span class="sub" id="wiring-summary" role="status" aria-live="polite">Finding out what drives each part...</span>
-      </div>
-      <p class="hint">Every part and every spare output, each in one group. One lead ganged to two parts shows on both rows.</p>
-      <div id="wiring-tiers"></div>
-      <div id="wiring-footnote"></div>
-    </div>
-
-    <!-- Which arm and AUX outputs are in use, and what each AUX line carries:
-         the one control on this surface (operator, 2026-09-18 on #369), drawn
-         by data/output_settings.js and mounted by data/wiring_outputs.js. The
-         sheet above and the bench copy it saves are generated by
-         data/wiring.js, which still writes nothing. -->
-    <div class="card">
-      <div class="sect"><h2>Outputs in use</h2><span class="sub">arms and AUX lines</span></div>
-      <p class="hint">Mark each arm and AUX line you wired. Only one AUX line can carry the LED strip.</p>
+      <div class="sect"><h2>Outputs</h2></div>
       <div id="wiring-outputs-body"></div>
       <div id="wiring-outputs-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- The shared rail: described, never drawn (CONTEXT.md "Wiring"). Its
-         prose is the generator's for the same reason the promise is - the
-         cadence is stated once, in one file, and the bench copy states the same
-         one. -->
+    <!-- Power wiring: described, never drawn (CONTEXT.md "Wiring"). Its prose
+         is the generator's for the same reason the promise is - the cadence is
+         stated once, in one file, and the bench copy states the same one. -->
     <div class="card">
       <div class="sect">
         <h2 id="wiring-rail-heading"></h2>
-        <span class="sub">described, never drawn</span>
       </div>
       <div id="wiring-rail"></div>
+    </div>
+
+    <!-- Unused: the parts no Output claims, and the last section on the page
+         (operator, 2026-09-19 on #411). The one list left from the sheet's old
+         sections: which part an Output moves is the Parts mapping's job. -->
+    <div class="card">
+      <div class="sect">
+        <h2 id="wiring-unused-heading"></h2>
+        <span class="sub" id="wiring-unused-summary" role="status" aria-live="polite">Finding out which parts no output claims...</span>
+      </div>
+      <div id="wiring-unused"></div>
+      <div id="wiring-footnote"></div>
     </div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>

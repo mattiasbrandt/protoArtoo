@@ -29,18 +29,29 @@ import { MiniDocument } from "./helpers/mini_dom.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 
+// The Outputs as GET /api/config reports them (src/web/api_config.cpp
+// CONFIG_OUTPUTS): the page draws one plate per entry that carries an address
+// and saves it under the fields the entry names.
+const OUTPUT_FACTS = {
+  arm1: { label: "ARM1", address: "ledc:0", enabledField: "enableArm1", typeField: "arm1Type" },
+  arm2: { label: "ARM2", address: "ledc:1", enabledField: "enableArm2", typeField: "arm2Type" },
+  aux1: { label: "ARM3", address: "ledc:3", ledStripPin: 1, enabledField: "enableAux1", typeField: "aux1Type" },
+  aux2: { label: "ARM4", address: "ledc:4", ledStripPin: 2, enabledField: "enableAux2", typeField: "aux2Type" },
+  aux3: { label: "ARM5", address: "ledc:5", ledStripPin: 3, enabledField: "enableAux3", typeField: "aux3Type" },
+};
+
 const CONFIG = () => ({
   components: {
-    arm1: { enabled: true, type: "mg996r" },
-    arm2: { enabled: false, type: "mg90s" },
-    aux1: { enabled: false, type: "none" },
-    aux2: { enabled: true, type: "rgb" },
-    aux3: { enabled: true, type: "mg996r" },
+    arm1: { ...OUTPUT_FACTS.arm1, enabled: true, type: "mg996r" },
+    arm2: { ...OUTPUT_FACTS.arm2, enabled: false, type: "mg90s" },
+    aux1: { ...OUTPUT_FACTS.aux1, enabled: false, type: "none" },
+    aux2: { ...OUTPUT_FACTS.aux2, enabled: true, type: "rgb" },
+    aux3: { ...OUTPUT_FACTS.aux3, enabled: true, type: "mg996r" },
   },
   aux_led_pin: 2,
 });
 
-const boot = () => {
+const boot = (config = CONFIG()) => {
   const document = new MiniDocument();
   for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-feedback"]) {
     const node = document.createElement("div");
@@ -49,7 +60,6 @@ const boot = () => {
   }
   const posts = [];
   const timers = [];
-  const config = CONFIG();
   const window = {
     document,
     PAApi: {
@@ -60,9 +70,12 @@ const boot = () => {
       },
       postForm: async (path, form) => {
         posts.push({ path, form: { ...form } });
-        for (const id of ["arm1", "arm2", "aux1", "aux2", "aux3"]) {
-          const upper = id.charAt(0).toUpperCase() + id.slice(1);
-          config.components[id] = { enabled: form[`enable${upper}`] === "true", type: form[`${id}Type`] };
+        // Answer the way the firmware does: every Output it reports, as the
+        // form just set it.
+        for (const entry of Object.values(config.components)) {
+          if (!entry.enabledField) continue;
+          entry.enabled = form[entry.enabledField] === "true";
+          entry.type = form[entry.typeField];
         }
         config.aux_led_pin = Number(form.aux_led_pin);
         return { ok: true, data: config };
@@ -97,6 +110,7 @@ const boot = () => {
       for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
     },
     wiring: (output) => plate("wiring-outputs-body", output),
+    wiringPlates: () => document.getElementById("wiring-outputs-body").querySelectorAll("[data-output]"),
     servos: (output) => plate("servo-types-body", output),
     // Wiring's in-use press is the plate's head button.
     inUse: (output) => plate("wiring-outputs-body", output).querySelector("[aria-pressed]"),
@@ -155,4 +169,43 @@ test("an in-use tick waits for the next start until it is put back; a servo type
   env.inUse("aux1").fire("click", {});
   await env.flush();
   assert.equal(wiringLine().dataset.pending, "false", "put back, nothing is waiting");
+});
+
+// The browser knows no Output (operator, 2026-09-19 on #411: "the outputs is
+// supposed to be dynamic"). Which Outputs exist, what each is called, which
+// can carry the LED strip and which fields save it are the firmware's answer,
+// so a board with a different set - other names, other addresses, other
+// fields, fewer of them - is drawn and saved exactly as it reports itself, and
+// a save never writes a field the firmware did not name. The field names here
+// follow no pattern on purpose: a page that derived them from the id would
+// pass with the real firmware's names and still be wrong.
+test("the plates are the Outputs the firmware reports, and a save writes only the fields it names", async () => {
+  const env = boot({
+    components: {
+      out7: { label: "GPIO 49", address: "ledc:7", enabledField: "wiredO7", typeField: "servoO7", enabled: false, type: "mg996r" },
+      out9: { label: "GPIO 4", address: "ledc:9", ledStripPin: 2, enabledField: "wiredO9", typeField: "servoO9", enabled: true, type: "none" },
+      domeEsc: { enabled: true, label: "GPIO 48" },
+    },
+    aux_led_pin: 0,
+  });
+  await env.settle();
+  assert.deepEqual(
+    env.wiringPlates().map((plate) => [
+      plate.getAttribute("data-output"),
+      plate.querySelector(".toggle-label").textContent,
+      plate.getAttribute("data-wire"),
+    ]),
+    [["out7", "GPIO 49", "1"], ["out9", "GPIO 4", "2"]],
+    "one plate per reported Output, named as the board prints it, coloured by its place",
+  );
+  assert.equal(env.option(env.wiring("out7"), "rgb"), undefined, "an Output that cannot carry the strip is not offered it");
+
+  env.inUse("out7").fire("click", {});
+  env.option(env.wiring("out9"), "rgb").fire("click", {});
+  await env.flush();
+  const form = env.posts.at(-1).form;
+  assert.deepEqual(Object.keys(form).sort(), ["aux_led_pin", "servoO7", "servoO9", "wiredO7", "wiredO9"]);
+  assert.equal(form.wiredO7, "true");
+  assert.equal(form.servoO9, "rgb");
+  assert.equal(form.aux_led_pin, "2", "the strip is routed by the line the firmware gave that Output");
 });

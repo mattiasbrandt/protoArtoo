@@ -45,23 +45,21 @@ the patch releases, whose notes live on their own GitHub Release.
   off, instead of naming a module nobody is using. Playing a track or sending a
   sound command is refused with where to switch sound on, instead of answering
   "queued" to a module that never hears it.
-- **A Wiring screen that says what this droid will actually drive.** A new
-  destination beside Parts, and it is a reference: it writes nothing and no
-  button on it reaches the droid. It reads the loom off the Body Controller that
-  answered it - one wire per thing that board talks to, with the port it leaves
-  from - and then every part in one of four groups: driven, wired but switched
-  off, nothing drives it, and outputs with nothing on the end. Each group says
-  how many are in it, a group with nothing in it is not there at all, and every
-  row that is not driven says why on the row and where to go and fix it. A fresh
-  droid reads honestly empty: nothing driven, 42 parts waiting for an output,
-  five spare outputs. It draws signal and ground and never power distribution,
-  it says so on the page and on every picture, and the shared rail is explained
-  rather than drawn. Nothing on it is kept by hand, so it cannot go stale
-  against the firmware the way a wiring document does.
-- **Take the wiring sheet to the bench on paper.** Wiring saves one file you
-  can print anywhere, no droid needed. Same groups, same counts as the screen.
-  Every picture carries the droid, the minute, a BETA mark, the promise and
-  the scope, so a cropped picture still says what it is.
+- **A Wiring screen: where each wire goes on this board.** A new destination
+  beside Parts. It draws your Body Controller, by its own picture and name, and
+  every wire that leaves it: each output and each serial link, in its own
+  colour, named first by what is printed on the board (ARM1-ARM5 and S1-S3 on
+  the Artoo PCB, GPIO 49 and the like on the FireBeetle 2), then by its pins.
+  A wire you have not marked wired, or a link that is switched off, is drawn
+  dashed grey and says why. Each wire's box names the part on the end of it.
+  Under the drawing you mark which outputs are wired and which one carries the
+  LED strip, Power wiring explains the shared supply rather than drawing it,
+  and Unused lists the parts no output claims yet. The outputs are whatever the
+  board reports, so a board with other outputs shows its own. Nothing on the
+  page is kept by hand, so it cannot go stale against the firmware.
+- **A printable wiring sheet.** Wiring saves one file you can print anywhere,
+  no droid needed: the same drawing, with the board's picture and each wire's
+  colour, and the Power wiring notes.
 - **Set the droid up in one guided pass.** A freshly flashed controller now
   walks you through what your droid is made of, one question at a time, starting
   from the WiFi you already gave it. A rail along the top shows the questions,
