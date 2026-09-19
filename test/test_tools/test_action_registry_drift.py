@@ -18,6 +18,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { ACTION_BOARD, "board", "Board", "system", "Board row", false, "PA_CAP_NATIVE_WIFI" },
     { ACTION_BUILD, "build", "Build", "system", "Build row", false, nullptr, "PA_HEAP_PROFILE" },
     { ACTION_BOTH, "both", "Both", "system", "Both row", true, "PA_CAP_NATIVE_WIFI", "PA_HEAP_PROFILE" },
+    { ACTION_OUTPUT, "output", "{output} Toggle", "servo", "On {output}.", false, nullptr, nullptr, "aux1" },
 };
 """
         with tempfile.TemporaryDirectory() as tmp:
@@ -25,12 +26,14 @@ const ActionEntry ACTION_REGISTRY[] = {
             registry.write_text(source, encoding="utf-8")
             parsed = check_action_registry_drift.parse_action_registry(registry)
 
-        self.assertEqual(parsed["ACTION_UNIVERSAL"][5:], (None, None))
-        self.assertEqual(parsed["ACTION_BOARD"][5:], ("PA_CAP_NATIVE_WIFI", None))
-        self.assertEqual(parsed["ACTION_BUILD"][5:], (None, "PA_HEAP_PROFILE"))
+        # board_capability, build_flag, and the Output an action is about (#412).
+        self.assertEqual(parsed["ACTION_UNIVERSAL"][5:], (None, None, None))
+        self.assertEqual(parsed["ACTION_BOARD"][5:], ("PA_CAP_NATIVE_WIFI", None, None))
+        self.assertEqual(parsed["ACTION_BUILD"][5:], (None, "PA_HEAP_PROFILE", None))
         self.assertEqual(
-            parsed["ACTION_BOTH"][5:], ("PA_CAP_NATIVE_WIFI", "PA_HEAP_PROFILE")
+            parsed["ACTION_BOTH"][5:], ("PA_CAP_NATIVE_WIFI", "PA_HEAP_PROFILE", None)
         )
+        self.assertEqual(parsed["ACTION_OUTPUT"][5:], (None, None, "aux1"))
 
 
 if __name__ == "__main__":
