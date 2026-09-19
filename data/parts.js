@@ -1615,7 +1615,7 @@
     if (domePending) domeNote = "Dome parts pending. This build does not record which panels that dome carries.";
     else if (!drawingIsTheirs) domeNote = "No drawing of that dome design yet.";
     else if (!markerIds.some((id) => drawing.markerOf(id).half === "dome")) {
-      domeNote = "No dome drawing on this controller.";
+      domeNote = "No dome drawing in this firmware.";
     }
     return { shown, domePending, domeNote };
   };
