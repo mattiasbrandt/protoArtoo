@@ -8099,6 +8099,13 @@ button.droid-build-card:disabled {
   line-height: 1.5;
 }
 
+/* A card's way out, under its words: today only a Body Controller this image
+   was not built for, which is switched by uploading its build (#371). */
+.component-route {
+  padding: 0 var(--space-md) var(--space-md);
+  font-size: var(--fs-cell);
+}
+
 /* The chosen design's Design Variants: part of its plate, under its words,
    behind a seam - the next choice, visibly belonging to the design above. */
 .droid-build-variant-block {

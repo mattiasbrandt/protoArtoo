@@ -255,7 +255,7 @@
   // classes are the Droid Build's (#368), which the operator approved as the
   // look of a picker card.
   const optionPlate = (entry, option, chosen, interactive) => {
-    const { kind, id, name, blurb, state } = option;
+    const { kind, id, name, blurb, route, state } = option;
     // A press exists only where a pick writes something; a roadmap card and a
     // card in a family that is shown rather than asked are words and a picture.
     const asButton = kind !== KIND_ROADMAP && isChoosable(entry);
@@ -295,6 +295,13 @@
     face.appendChild(element("span", "droid-build-card-label", name));
     if (blurb) face.appendChild(element("span", "droid-build-card-blurb", blurb));
     plate.appendChild(face);
+    // Outside the face, which may be a button: a link inside a button is not
+    // a link anybody can press.
+    if (route) {
+      const link = element("a", "setup-link component-route", route.label);
+      link.setAttribute("href", route.href);
+      plate.appendChild(link);
+    }
 
     const sub = PRODUCT_SUB_SELECTIONS[id];
     if (sub?.receivers && chosen === id) plate.appendChild(receiverBlock(entry, sub, interactive));
@@ -417,12 +424,30 @@
     return block;
   };
 
+  // A Body Controller this image was not built for. Choosing one is not a
+  // setting at all: every board runs its own build, so the move is an upload,
+  // and the card says so with the route to it (operator, 2026-09-19 on #371).
+  // Only this family - a product "not in this build" anywhere else is a driver
+  // this image left out, and keeps that meaning. It is a fact about which image
+  // is running, never a capability the board lacks (ADR 0065).
+  const OTHER_BOARD = {
+    family: "body_controller",
+    blurb: (name) => `Needs its own firmware. Upload the ${name} build to switch.`,
+    route: { href: "#firmware", label: "Open Firmware" },
+  };
+  const isOtherBoard = (entry, part) =>
+    entry.family === OTHER_BOARD.family && part.status !== KIND_ROADMAP && part.included !== true;
+
   const optionsFor = (entry, chosen) => {
     const options = cardPartsOf(entry.family).map((part) => {
       const state = stateOf(entry, part, chosen);
       let blurb = "";
+      let route = null;
       if (state === "planned") blurb = ROADMAP_SENTENCE;
-      else if (state === "not-included") {
+      else if (isOtherBoard(entry, part)) {
+        blurb = OTHER_BOARD.blurb(part.name);
+        route = OTHER_BOARD.route;
+      } else if (state === "not-included") {
         blurb = window.PAFeatureAvailability?.reasonFor("not-in-this-build", part.name) || "";
       }
       return {
@@ -430,6 +455,7 @@
         id: part.id,
         name: part.name,
         blurb,
+        route,
         state,
       };
     });
