@@ -76,3 +76,27 @@ test("a status frame does not take a half-made pick out of a builder's hand", as
   await env.settle();
   assert.equal(picked(), "Alarm", "a redraw reset a pick the builder had already made");
 });
+
+// A dome light is commandable only where the dome answers to its name. The two
+// halves of that sentence live in two files that drift independently - the
+// catalog's aliases (docs/droid-parts.yaml) and the dome's own target list
+// (data/seq_protocol_check.js, mirroring src/protocol_check.cpp) - so a light
+// can gain a control the dome would refuse, or lose one it would take, without
+// either file looking wrong on its own. The Magic Panel is the case that keeps
+// it honest: it is a dome light the dome has no DL: target for.
+test("a dome light takes a command only where the dome answers to its name", async () => {
+  const env = await ready();
+  const chips = (partId) => env.plateFor(partId).querySelectorAll(".light-mode");
+
+  assert.ok(chips("psiFront").length > 0, "the Front PSI is a DL: target, so it takes a command");
+  assert.equal(chips("magicPanel").length, 0, "the dome answers to no name for the Magic Panel");
+
+  // And the command carries the name the dome knows it by, not the Part id.
+  chips("psiFront").find((node) => node.textContent === "Alarm").fire("click", {});
+  env.flushTimers();
+  await env.settle();
+
+  const sent = env.posts.find((post) => post.path === "/api/dome/cmd");
+  assert.ok(sent, "picking asks the dome, with no button to press after it");
+  assert.match(sent.body.cmd, /^DL:FPSI:ALARM:/);
+});
