@@ -97,6 +97,30 @@ proves the guard; that harness is epic-closing work. If the ticket's acceptance
 criteria are test-shaped and the epic is at PoC stage, say so on the issue
 rather than building the harness silently.
 
+SURFACE WORK - IF YOUR SLICE TOUCHES `data/`
+Load the project's `frontend-designer` skill BEFORE you write any markup, copy
+or CSS, and follow it. It carries the operator's standing review rules, and
+this project keeps paying for them in rejected iterations rather than reading
+them once:
+
+- **Control scale.** `.btn` and `.field` are page- and form-scale. On a card
+  they are always too big. Use `.btn-sm` / `.btn-quiet` / `.link-btn`, and
+  constrain a numeric input to its content. Walk every control on the surface
+  before you hand it over.
+- **Copy length.** A subtitle is a count, a state or a provenance, or a 2-4
+  word label. A third sentence is too long. **Never a sentence under a section
+  heading explaining what the section is for** - the most common rejection here.
+- **Pickers.** Segmented bar up to about five choices, wrapping pills beyond
+  that, swatches for a colour. Not a dropdown.
+- **No emoji on an operator surface** - ADR 0066, and
+  `tools/check_surface_anatomy.py` fails the build on one.
+- **Desktop width only.** Phone and tablet are out of scope; never put those
+  widths in a test, a note or a screenshot.
+
+Stop after the first working iteration and hand it to the operator for a LIVE
+look on the staged image. Do not write tests, mutations or run the gate until
+they have approved the design and the look.
+
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
   clean anything outside it. Out-of-tree touches are an automatic reject.
