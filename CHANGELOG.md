@@ -223,6 +223,28 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **Every "no" tells you what to do about it.** When something on your droid
+  will not run, the screen says which of four things is true and, where there is
+  something to do, takes you there. Switched off names the switch and links to
+  Configuration. Not in this build links to Firmware. Still checking says so and
+  asks nothing. A no with nothing to do about it says that and stops, without a
+  date, a version or a product to go and buy. The droid's own words for a
+  refusal - the ones that read `web_control_disabled` - never reach the screen
+  again.
+- **The screen names your board, not somebody else's.** Serial links, the
+  refusals on Sound and Foot Drive, and `GET /api/serial` no longer say "S1",
+  "S2" or "S3" unless that is what your board actually prints. The Artoo board
+  prints those; a FireBeetle 2 prints GPIO numbers, and now says so. Which lead
+  a signal is on stays Wiring's answer, drawn from the board you are running.
+- **"Controller" is the Body Controller.** Once a droid has a dome controller,
+  a radio receiver and a wheel controller, a bare "controller" named four
+  things. Everywhere the word meant the board this firmware runs on, it says
+  Body Controller.
+- **Sound says Named Tracks and Sound module**, and the switch on Configuration
+  is Sound. Foot Drive's wheel telemetry card is Wheel controller.
+- **Fewer notes.** Seventeen notes that only repeated the heading, the subtitle
+  or the label beside them are gone, and thirty-three more lost the half that
+  did. Nothing was shortened at the cost of something you needed to know.
 - **An output is called what your board prints beside it.** On the Artoo board
   that is ARM1 to ARM5, and on the FireBeetle 2 it is GPIO 49, GPIO 50, GPIO 4,
   GPIO 5 and GPIO 51 - on Servos, Parts, Wiring, Configuration, the Dashboard,
