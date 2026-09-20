@@ -128,13 +128,13 @@ void test_wifiStatusApSsid_falls_back_to_default_when_active_empty() {
 
 void test_formatSerialJson_dome_active_true() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 10, 20);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 10, 20);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"active\":true"));
 }
 
 void test_formatSerialJson_dome_active_false() {
     char out[768];
-    formatSerialJson(out, sizeof(out), false, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", false, 0, 0);
     const char* dome = strstr(out, "\"dome\"");
     TEST_ASSERT_NOT_NULL(dome);
     TEST_ASSERT_NOT_NULL(strstr(dome, "\"active\":false"));
@@ -142,19 +142,19 @@ void test_formatSerialJson_dome_active_false() {
 
 void test_formatSerialJson_heartbeatRx() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 42, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 42, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heartbeatRx\":42"));
 }
 
 void test_formatSerialJson_heartbeatTx() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 0, 99);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 0, 99);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heartbeatTx\":99"));
 }
 
 void test_formatSerialJson_debug_always_active() {
     char out[768];
-    formatSerialJson(out, sizeof(out), false, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", false, 0, 0);
     const char* debug = strstr(out, "\"debug\"");
     TEST_ASSERT_NOT_NULL(debug);
     TEST_ASSERT_NOT_NULL(strstr(debug, "\"active\":true"));
@@ -162,7 +162,7 @@ void test_formatSerialJson_debug_always_active() {
 
 void test_formatSerialJson_sound_always_inactive() {
     char out[768];
-    formatSerialJson(out, sizeof(out), true, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", true, 0, 0);
     const char* sound = strstr(out, "\"sound\"");
     TEST_ASSERT_NOT_NULL(sound);
     TEST_ASSERT_NOT_NULL(strstr(sound, "\"active\":false"));
@@ -170,9 +170,49 @@ void test_formatSerialJson_sound_always_inactive() {
 
 void test_formatSerialJson_is_valid_json_object() {
     char out[768];
-    formatSerialJson(out, sizeof(out), false, 0, 0);
+    formatSerialJson(out, sizeof(out), "S1", "S2", "S3", false, 0, 0);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
+}
+
+// A surface that states one board's wiring as fact is a defect this repo has
+// shipped: GET /api/serial told every builder to look for "S1", "S2" and "S3",
+// which is the Artoo PCB's silkscreen and nothing a FireBeetle 2 has (#339
+// left these as copy for #348). The response carries whatever legend the
+// caller read off the running board, and a board declaring none carries "" -
+// never a fallback to another board's.
+void test_formatSerialJson_carries_the_boards_own_legend() {
+    char out[768];
+    formatSerialJson(out, sizeof(out), "GPIO 20/21", "GPIO 34/36", "GPIO 22/23", true, 0, 0);
+
+    const char* hoverboard = strstr(out, "\"hoverboard\"");
+    TEST_ASSERT_NOT_NULL(hoverboard);
+    TEST_ASSERT_NOT_NULL(strstr(hoverboard, "\"label\":\"GPIO 20/21\""));
+    const char* sound = strstr(out, "\"sound\"");
+    TEST_ASSERT_NOT_NULL(sound);
+    TEST_ASSERT_NOT_NULL(strstr(sound, "\"label\":\"GPIO 34/36\""));
+    const char* dome = strstr(out, "\"dome\"");
+    TEST_ASSERT_NOT_NULL(dome);
+    TEST_ASSERT_NOT_NULL(strstr(dome, "\"label\":\"GPIO 22/23\""));
+
+    // No S-legend survives anywhere in a response from a board that prints
+    // none - the one exception is S0, USB debug serial, which no board
+    // declares a Component Label for.
+    TEST_ASSERT_NULL(strstr(out, "\"S1\""));
+    TEST_ASSERT_NULL(strstr(out, "\"S2\""));
+    TEST_ASSERT_NULL(strstr(out, "\"S3\""));
+    TEST_ASSERT_NULL(strstr(out, "Artoo"));
+}
+
+void test_formatSerialJson_undeclared_label_is_empty_never_another_boards() {
+    char out[768];
+    formatSerialJson(out, sizeof(out), nullptr, "", nullptr, false, 0, 0);
+    const char* hoverboard = strstr(out, "\"hoverboard\"");
+    TEST_ASSERT_NOT_NULL(hoverboard);
+    TEST_ASSERT_NOT_NULL(strstr(hoverboard, "\"label\":\"\""));
+    const char* sound = strstr(out, "\"sound\"");
+    TEST_ASSERT_NOT_NULL(sound);
+    TEST_ASSERT_NOT_NULL(strstr(sound, "\"label\":\"\""));
 }
 
 // --- formatHealthJson() tests ---
@@ -372,6 +412,8 @@ int main() {
     RUN_TEST(test_formatSerialJson_debug_always_active);
     RUN_TEST(test_formatSerialJson_sound_always_inactive);
     RUN_TEST(test_formatSerialJson_is_valid_json_object);
+    RUN_TEST(test_formatSerialJson_carries_the_boards_own_legend);
+    RUN_TEST(test_formatSerialJson_undeclared_label_is_empty_never_another_boards);
 
     RUN_TEST(test_deriveWiFiConnectivityFields_ap_only_no_clients);
     RUN_TEST(test_deriveWiFiConnectivityFields_ap_only_with_client);

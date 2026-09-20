@@ -25,27 +25,30 @@
       </div>
     </div>
 
-    <!-- Serial Connection Status -->
+    <!-- Serial Connection Status. The rows name the LANE, never the
+         connector: "S1" and friends are the Artoo PCB's silkscreen and a
+         FireBeetle 2 prints GPIO numbers there. Which pins a lane is on, and
+         at what baud, is Wiring's answer, drawn from the running board
+         (#348). -->
     <div class="card">
-      <div class="sect"><h2>Serial links</h2><span class="sub">S1, S2, S3</span></div>
+      <div class="sect"><h2>Serial links</h2></div>
       <div class="health-grid">
         <div class="health-item">
           <div class="indicator" id="serial-s1-light"></div>
-          <span>S1 &middot; Foot Drive</span>
+          <span>Foot Drive</span>
           <span class="indicator-text" id="serial-s1-state">...</span>
         </div>
         <div class="health-item">
           <div class="indicator" id="serial-s2-light"></div>
-          <span>S2 &middot; Audio</span>
+          <span>Sound</span>
           <span class="indicator-text" id="serial-s2-state">...</span>
         </div>
         <div class="health-item">
           <div class="indicator" id="serial-s3-light"></div>
-          <span>S3 &middot; protoR2link</span>
+          <span>protoR2link</span>
           <span class="indicator-text" id="serial-s3-state">...</span>
         </div>
       </div>
-      <p class="hint">S1 at 115200 baud, S2 at 9600 on the sound module's pins, S3 at 9600.</p>
       <div id="serial-status-line" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
