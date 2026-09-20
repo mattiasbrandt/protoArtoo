@@ -79,10 +79,11 @@ void test_the_escape_hatch_is_nameable_in_firmware() {
 }
 
 void test_the_vocabulary_is_the_whole_catalog_and_fits_a_row() {
-    // 55 declared Parts plus the ten escape-hatch slots. This number moves when
+    // 57 declared Parts plus the ten escape-hatch slots. This number moves when
     // ANY Part is declared, not only one the body drives - which is the whole
-    // change #358 made (#409: drawer out, eight body panels in).
-    TEST_ASSERT_EQUAL_size_t(65, DROID_PART_COUNT);
+    // change #358 made (#409: drawer out, eight body panels in; #410: the
+    // Charge Bay Indicator and the Data Panel in, as body light Parts).
+    TEST_ASSERT_EQUAL_size_t(67, DROID_PART_COUNT);
 
     // Every id in it is storable on a Servo Output row's Part field. The
     // static_assert in droid_part_availability.h is the compile-time half; this

@@ -245,7 +245,7 @@ class GeneratorRefusals(unittest.TestCase):
             text.replace("control: body-ledc", "control: dome-link"), encoding="utf-8"
         )
         after, _ = self.scratch.generate()
-        self.assertIn("DROID_PART_COUNT = 65", after)
+        self.assertIn("DROID_PART_COUNT = 67", after)
         self.assertEqual(
             [line for line in after.splitlines() if "Source digest" not in line],
             [line for line in before.splitlines() if "Source digest" not in line],
@@ -380,7 +380,8 @@ class GeneratorPromises(unittest.TestCase):
         ]
         self.assertEqual(
             [part["id"] for part in lights],
-            ["logicFront", "logicRear", "magicPanel", "psiFront", "psiRear", "upperPanel"],
+            ["logicFront", "logicRear", "magicPanel", "psiFront", "psiRear", "upperPanel",
+             "cbi", "dataPanel"],
         )
         for part in lights:
             self.assertEqual(part["control"], "none")
