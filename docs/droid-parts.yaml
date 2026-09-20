@@ -454,6 +454,20 @@ body_lights:              # what the body carries that lights up — parts, not 
   # on rather than getting them with a design (ADR 0047, CONTEXT.md "Common
   # Addition"). No design seeds one.
   #
+  # THE LED STRIP IS DELIBERATELY NOT A ROW HERE, and the next person to ask
+  # "why is the strip not a Part like the rest of the lights?" is owed this
+  # answer. The strip is routed by `aux_led_pin`, a stored config key naming
+  # one Output on the running board - not by the Part-to-Output mapping every
+  # row here would join. Declaring it would give it a "Driven by" picker on
+  # Parts (data/parts.js: every catalog Part gets one, and nothing there reads
+  # `control:`) that records a mapping no code reads, beside the routing that
+  # actually drives the strip. Two ways to say where the strip is, one of them
+  # dead - which is the thing this project does not ship. Lights shows the
+  # strip from the controller's own report instead (data/lights.js, #410).
+  # ADR 0045 left body-light outputs to #319, and #319 is closed, so no ticket
+  # carries this: it lives here. The day the strip IS routed by an Output
+  # mapping, it becomes a row like any other and this paragraph goes.
+  #
   # The ids are short on purpose. A Servo Output row stores a part id in
   # SERVO_OUTPUT_PART_ID_MAX = 12 characters (include/servo_output_row.h), so
   # `chargeBayIndicator` could never be stored against an output; and every id
