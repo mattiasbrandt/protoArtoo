@@ -274,7 +274,7 @@ The file a builder saves to their computer holding what they made on the control
 _Avoid_: partial restore, merge, a part per endpoint, a name the restore panel does not already use
 
 **Wiring**:
-The destination that answers *"I am holding a lead: where on this board does it go?"* - one diagram of the running **Body Controller**, every wire leaving it (its **Output**s and its **Board Lane**s), and the printable wiring sheet, which is the same document from one generator so the bench copy and the screen copy cannot disagree; the sheet leaves out the *Unused* list the screen ends on. *Which Part an Output moves* is **Parts**' question, not this one: the per-Part lists left Wiring on the operator's review (2026-09-19, #411). The Outputs it draws are whatever the running firmware reports (operator: *"the outputs is supposed to be dynamic, thats the whole point of the wiring and "mapping" we have"*). It is a reference first: the sheet and its generator write nothing. The one thing a builder sets here is which **Output**s are wired - the ARM and AUX lines, and which AUX line carries the LED strip - because that is a fact about what is plugged in where (operator, 2026-09-18, #369); what each Output's servo is stays on Servos. It is rendered from the **Board Lane**s the running firmware reports, and **each wire is named first by what is printed on the board** - the PCB silkscreen, as `docs/pin_map.md` records it (on artoo-esp32 the AUX lines are printed ARM3-ARM5) - and then by what protoArtoo calls it. The board is shown as the builder's chosen **Body Controller** product picture, not as a word. Each wire takes **its own colour and line type**, the way a real loom is told apart; that colour names a wire and carries no state (**Status Colour**). It draws **control signals only**; power wiring is up to the builder, and is described, never drawn (#293). Operator, 2026-09-19 (the Wiring design review): *"the wire lines in the drawing should initally say what pcb silkscreen label and then what we have now"*, and *"Do NOT use the term 'in use' that sounds weird for droid wiring"*.
+The destination that answers *"I am holding a lead: where on this board does it go?"* - one diagram of the running **Body Controller**, every wire leaving it (its **Output**s and its **Board Lane**s), and the printable wiring sheet, which is the same document from one generator so the bench copy and the screen copy cannot disagree; the sheet leaves out the *Unused* list the screen ends on. *Which Part an Output moves* is **Parts**' question, not this one: the per-Part lists left Wiring on the operator's review (2026-09-19, #411). The Outputs it draws are whatever the running firmware reports (operator: *"the outputs is supposed to be dynamic, thats the whole point of the wiring and "mapping" we have"*). It is a reference first: the sheet and its generator write nothing. The one thing a builder sets here is which **Output**s are wired, and which **Output** carries the LED strip - because that is a fact about what is plugged in where (operator, 2026-09-18, #369); what each Output's servo is stays on Servos. It is rendered from the **Board Lane**s the running firmware reports, and **each wire is named first by what is printed on the board** - the PCB silkscreen, as `docs/pin_map.md` records it (on artoo-esp32 every one of them is printed ARM1-ARM5) - and then by what protoArtoo calls it. The board is shown as the builder's chosen **Body Controller** product picture, not as a word. Each wire takes **its own colour and line type**, the way a real loom is told apart; that colour names a wire and carries no state (**Status Colour**). It draws **control signals only**; power wiring is up to the builder, and is described, never drawn (#293). Operator, 2026-09-19 (the Wiring design review): *"the wire lines in the drawing should initally say what pcb silkscreen label and then what we have now"*, and *"Do NOT use the term 'in use' that sounds weird for droid wiring"*.
 _Avoid_: a hand-drawn diagram, a static image anywhere in the pipeline, drawing power distribution, a fallback board that is not in the droid, "in use" for an **Output** (say *wired*), "driven"/"drives", "loom" as a heading (say *the wires*), a wire named only by protoArtoo's word when the board prints another
 
 
@@ -966,7 +966,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate, a fa
 
 ## Example Dialogue
 
-> **Dev:** "Can we mark the AUX LED feature as bench verified after `pio test` and `pio check` pass?"
+> **Dev:** "Can we mark the LED strip feature as bench verified after `pio test` and `pio check` pass?"
 > **Domain expert:** "No — that is **Software Verified**. It becomes **Controller Upload Verified** after an ESP32 bench upload and smoke check, and **Full Hardware Verified** only after the LED strip is tested on the integrated droid hardware."
 >
 > **Dev:** "Should `docs/status.md` say `software-verified`?"
@@ -990,8 +990,8 @@ _Avoid_: web control, network authentication, console unlock, blanket gate, a fa
 > **Dev:** "Should dome be one row in the matrix?"
 > **Domain expert:** "No — serial control, motion control, and body-link integration are separate verification surfaces."
 >
-> **Dev:** "Should servos and AUX share a row?"
-> **Domain expert:** "No — treat servo control and actuation as the primary surface, and keep AUX as secondary capability."
+> **Dev:** "Should servos and the lights share a row?"
+> **Domain expert:** "No — treat servo control and actuation as the primary surface, and keep lighting as secondary capability."
 >
 > **Dev:** "Should WiFi, web UI, and OTA be one row?"
 > **Domain expert:** "No — connectivity, interface behavior, and update/recovery flow need separate evidence."
