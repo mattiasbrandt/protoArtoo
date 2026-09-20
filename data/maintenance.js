@@ -33,7 +33,7 @@
       setFeedbackState(rebootFeedback, "Still saving a component change. Press again in a moment.", "warning");
       return;
     }
-    if (!confirm("Restart the controller? This page drops for about 10 seconds.")) {
+    if (!confirm("Restart the Body Controller? This page drops for about 10 seconds.")) {
       return;
     }
     if (!window.PAApi) return;
@@ -50,7 +50,7 @@
         } else {
           clearInterval(countdown);
           if (rebootFeedback) {
-            rebootFeedback.textContent = "Controller should be back. Refresh the page.";
+            rebootFeedback.textContent = "The Body Controller should be back. Refresh the page.";
           }
         }
       }, 1000);
@@ -79,7 +79,6 @@
   const diagHeapFreeLight = document.getElementById("diag-heap-free-light");
   const diagHeapMinLight = document.getElementById("diag-heap-min-light");
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
-  const diagMemoryNote = document.getElementById("diag-memory-note");
 
   // A health signal reads as a droid LED and the COLOUR IS THE READING: the
   // light carries it and the value beside it stays ink (CONTEXT.md "Health
@@ -169,9 +168,6 @@
         diagHeapLargest.textContent = `${heapLargestKb} KB ${word}`;
       }
       setLight(diagHeapLargestLight, lampForState(heapLargestState));
-    }
-    if (diagMemoryNote) {
-      diagMemoryNote.textContent = `Lowest free memory since boot: ${heapMinKb} KB.`;
     }
     setFeedbackState(serialStatusLine, `Updated ${new Date().toLocaleTimeString()}`, "success");
   };
@@ -520,7 +516,7 @@
 
     const anyRestored = lines.some((l) => l.includes(': restored'));
     const anyIssue = lines.some((l) => l.includes('FAILED') || l.includes('partial'));
-    if (anyRestored) lines.push('Restart the controller to apply everything restored.');
+    if (anyRestored) lines.push('Restart the Body Controller to apply everything restored.');
     setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
     restoreBtn.disabled = false;
   };
@@ -750,10 +746,13 @@
     // the manifest is ready and the feature is not gated
     const available = window.PAFeatureAvailability.isFeatureAvailable(result);
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
-    const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
+    // The reason's own copy, and where the builder goes about it. Both come
+    // from the Availability seam (data/feature_availability.js) so the route is
+    // painted as a link rather than named in a sentence nobody can click.
+    const stateReasonOptions = {
       on: "Live memory readings refresh while this page is open.",
       notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.", // PROVISIONAL: when a second Build Feature Flag needs a bespoke reason, promote this to a registry field + drift-checker coverage
-    });
+    };
     card.hidden = false;
     card.classList.remove(
       "feature-state-on",
@@ -774,7 +773,21 @@
       availabilityStatus.textContent = stateLabel;
       availabilityStatus.className = `feature-availability-status feature-state feature-state-${result.state}`;
     }
-    if (availabilityReason) availabilityReason.textContent = stateReason;
+    if (availabilityReason) {
+      // The sentence, then the route to the next move as a link where this
+      // state's family has one (#348).
+      availabilityReason.textContent =
+        window.PAFeatureAvailability.reasonFor(result.state, featureName, stateReasonOptions);
+      const route = window.PAFeatureAvailability.routeFor(result.state);
+      if (route) {
+        availabilityReason.textContent = `${availabilityReason.textContent} `;
+        const link = document.createElement("a");
+        link.className = "setup-link";
+        link.setAttribute("href", route.href);
+        link.textContent = `${route.label}.`;
+        availabilityReason.appendChild(link);
+      }
+    }
     if (availabilityLamp) {
       availabilityLamp.className = `feature-availability-lamp-indicator feature-state-${result.state}`;
     }

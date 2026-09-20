@@ -43,7 +43,10 @@ const BOARD_LABELS = {
     rcCh5:       featureToggle("rc-ch5", "RC Channel 5"),
     rcCh6:       featureToggle("rc-ch6", "RC Channel 6"),
     drive:       featureToggle("drive", "Foot Drive"),
-    audio:       featureToggle("audio", "Audio"),
+    // "Sound" on screen, `audio` in the key and the C++ symbol: display
+    // labels and web UI are on the sound side of the boundary
+    // (docs/action-registry.yaml).
+    audio:       featureToggle("audio", "Sound"),
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
@@ -110,6 +113,19 @@ const BOARD_LABELS = {
     setupSaveSummary.dataset.state = state;
     setupSaveSummary.className = `status-pill ${classMap[state] ?? ""}`.trim();
     setupSaveSummary.textContent = message;
+  };
+
+  // A "no" that names the builder's next move takes them to it (#348): the
+  // route the Availability seam gives for this state, appended to the sentence
+  // as a link. A null route appends nothing - a settled no has none.
+  const appendRoute = (element, route) => {
+    if (!element || !route) return;
+    element.textContent = `${element.textContent} `;
+    const link = document.createElement("a");
+    link.className = "setup-link";
+    link.setAttribute("href", route.href);
+    link.textContent = `${route.label}.`;
+    element.appendChild(link);
   };
 
   const setFeedbackState = (element, message, variant = "") => {
@@ -222,13 +238,13 @@ const BOARD_LABELS = {
       }
 
       // Determine diagnosis based on version comparison
-      let diagMessage = "The controller could not report which features are available.";
+      let diagMessage = "The Body Controller could not report which features are available.";
       if (expectedFwVersion !== "unknown" && runningFwVersion !== "unknown") {
         if (expectedFwVersion !== runningFwVersion) {
           diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
         } else {
           // Versions match but identity is invalid (invalid feature list)
-          diagMessage = "This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
+          diagMessage = "This firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
         }
       }
 
@@ -236,7 +252,7 @@ const BOARD_LABELS = {
     } catch (error) {
       console.warn("[configuration] diagnosis failed:", error);
       // Show the no-version-evidence sentence when diagnosis cannot fetch versions
-      setIdentityDiagnosis("The controller could not report which features are available.");
+      setIdentityDiagnosis("The Body Controller could not report which features are available.");
     }
   };
 
@@ -255,8 +271,8 @@ const BOARD_LABELS = {
     // Different message based on reason: transport failure promises reconnection;
     // validation failure is terminal and Retry button says what to do
     const message = reason === "incompatible"
-      ? "Could not load controller identity."
-      : "Could not load controller identity. Reconnecting…";
+      ? "Could not load the Body Controller's identity."
+      : "Could not load the Body Controller's identity. Reconnecting…";
     setIdentityFeedback(message, "error");
     // Add persistent Retry button outside the live region
     if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
@@ -405,7 +421,13 @@ const BOARD_LABELS = {
       setRowControlsAvailable(row, toggle.available, toggle.input);
       const reason = ensureFeatureReason(toggle, row);
       if (reason) {
+        // The sentence, then the route to the next move where this state's
+        // family has one (data/feature_availability.js). Still hidden while the
+        // component is available: "off" is the one no whose control is on this
+        // very row, so its sentence would explain a tick box the builder is
+        // already looking at.
         reason.textContent = window.PAFeatureAvailability.reasonFor(result.state, toggle.name);
+        appendRoute(reason, window.PAFeatureAvailability.routeFor(result.state));
         reason.hidden = toggle.available;
       }
     }
@@ -780,7 +802,7 @@ const BOARD_LABELS = {
   updateEnabledSummary();
   setSaveSummary("Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
-  setIdentityFeedback("Loading controller identity…");
+  setIdentityFeedback("Loading the Body Controller's identity…");
   if (window.PAIdentity) receiveIdentity(window.PAIdentity);
   loadFeatures();
 

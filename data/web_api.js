@@ -246,12 +246,72 @@
     503: "Device unavailable",
   };
 
+  // ---------------------------------------------------------------------------
+  // The words a refusal is shown in (#348)
+  //
+  // The droid names a refusal in its own vocabulary - `web_control_disabled`,
+  // and three more it emits from src/web/api_actions.cpp. Those tokens are the
+  // wire format and stay exactly as they are; what may never happen is one of
+  // them reaching a screen, which is what every caller of messageFor() did
+  // until this map existed, because an HTTP error carries the droid's `error`
+  // field as its message.
+  //
+  // So this is the door: one map from token to sentence, read rather than
+  // typed, so a surface CANNOT say the internal word. That is the shape
+  // r2d2-astromech-simulator v1.79.0 uses for the same problem
+  // (src/js/maestro/setup-hw.js:999, `PW_END_WORD`): storage keeps `min`/`max`,
+  // every message reads the word out of the map.
+  //
+  // `route` is the builder's next move where there is one, and null where there
+  // is not. A refusal by a safety rule is a settled no: nothing to do about it,
+  // so no destination, no link, and no suggestion to buy or fit anything
+  // (CONTEXT.md "Availability Family").
+  const DEVICE_REFUSALS = Object.freeze({
+    invalid_action_token: Object.freeze({
+      text: "Unknown action. Reload the page.",
+      route: null,
+    }),
+    // Only the estop reaches this guard (evaluateActionTestGuard,
+    // include/api_actions.h). Stopping the droid is not something a test press
+    // does, and there is nothing for the builder to change about that.
+    safety_critical_blocked: Object.freeze({
+      text: "The estop is never sent as a test.",
+      route: null,
+    }),
+    web_control_disabled: Object.freeze({
+      text: "Web control is off.",
+      route: Object.freeze({ href: "#drive", label: "Turn it on in Foot Drive" }),
+    }),
+    // An analog action, or one that needs a payload: the test button sends
+    // neither, so this control cannot drive it however the droid is set up.
+    action_not_testable: Object.freeze({
+      text: "Needs a value the test button cannot send.",
+      route: null,
+    }),
+  });
+
+  /**
+   * The refusal behind an error, where the droid named one this map knows.
+   *
+   * @returns {{text: string, route: ({href: string, label: string}|null)}|null}
+   *   null when the error is not one of the droid's own refusal tokens, which
+   *   is every transport failure and every message already written for people.
+   */
+  const refusalFor = (error) => {
+    if (!(error instanceof ApiError) || error.kind !== "http") return null;
+    return DEVICE_REFUSALS[error.message] || null;
+  };
+
   const messageFor = (error) => {
     if (!(error instanceof ApiError)) return "Request failed";
     if (error.kind === "timeout") return "Request timed out";
     if (error.kind === "cancelled") return "Request cancelled";
     if (error.kind === "network") return "Network error";
     if (error.kind === "http") {
+      // Before the raw message: a token the droid refused in its own
+      // vocabulary is translated here or it is shown verbatim.
+      const refusal = refusalFor(error);
+      if (refusal) return refusal.route ? `${refusal.text} ${refusal.route.label}.` : refusal.text;
       if (error.message && !error.message.startsWith("HTTP ")) return error.message;
       return HTTP_STATUS_MESSAGES[error.status]
         || (error.status >= 500 ? "Device error" : "Device rejected the request");
@@ -313,6 +373,7 @@
     postJson,
     estopPostForm,
     messageFor,
+    refusalFor,
     gateControls,
   };
 

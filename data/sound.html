@@ -36,7 +36,7 @@
 
     <!-- The module itself: what is fitted, and whether it is answering. -->
     <div class="card">
-      <div class="sect"><h2>Audio module</h2><span class="sub">from the module</span></div>
+      <div class="sect"><h2>Sound module</h2></div>
       <p class="hint" id="mod-query-note"></p>
       <p class="hint hidden" id="mp3-wire-note"></p>
       <p class="hint hidden" id="mp3-missing-track" role="status" aria-live="polite"></p>
@@ -54,7 +54,6 @@
         <summary>
           <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
           <h3>More detail</h3>
-          <span class="sub">the module's own report</span>
         </summary>
         <div class="disclose-body">
           <div class="sound-details">
@@ -83,11 +82,11 @@
       <div id="mod-status-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Audio switched off in Configuration. An Availability Family "change it here"
-         (CONTEXT.md): the card names the move and routes to it. -->
+    <!-- Sound switched off in Configuration. An Availability Family "change it
+         here" (CONTEXT.md): the card names the move and routes to it. -->
     <div id="sound-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Sound</h2><span class="sub">switched off in Configuration</span></div>
-      <p class="note"><b>Off:</b> the droid is mute. Sequences still run, in silence. <a class="setup-link" href="/setup.html">Switch Audio on in Configuration</a></p>
+      <p class="note"><b>Off:</b> the droid is mute. Sequences still run, in silence. <a class="setup-link" href="/configuration.html">Switch Sound on in Configuration</a></p>
     </div>
 
     <div class="card sound-global-controls">
@@ -106,19 +105,19 @@
         <button class="btn" id="btn-random-on" type="button">Random on</button>
         <button class="btn" id="btn-random-off" type="button">Random off</button>
       </div>
-      <p class="hint">Stop ends this track only. Chatter comes back until <b>Random off</b> or the Quiet mood.</p>
+      <p class="hint">Stop ends this track only.</p>
 
       <div id="global-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
 
     <div class="sound-section-label">Core playback</div>
-    <!-- Named sounds -->
+    <!-- Named Tracks -->
     <div class="card">
-      <div class="sect"><h2>Named sounds</h2><span class="sub" id="named-sound-filter-count" role="status" aria-live="polite" aria-atomic="true">finding out</span></div>
+      <div class="sect"><h2>Named Tracks</h2><span class="sub" id="named-sound-filter-count" role="status" aria-live="polite" aria-atomic="true">finding out</span></div>
       <div class="sound-toolbar">
         <label class="field sound-search-field" for="named-sound-filter">
-          <span>Filter named sounds</span>
+          <span>Filter named tracks</span>
           <input type="text" id="named-sound-filter" placeholder="Search by name or command" autocomplete="off">
         </label>
       </div>
@@ -139,14 +138,12 @@
           </tbody>
         </table>
       </div>
-      <p class="hint">Boot Sound (<b>$B</b>) is the startup track you name here. Boot Complete is its own system sound, played once the controller is up.</p>
     </div>
 
 
     <!-- CHIRP catalog (visible only when the fitted module can be asked for one) -->
     <div id="chirp-catalog-card" class="card hidden">
       <div class="sect"><h2>CHIRP catalog</h2><span class="sub">from the module's card</span></div>
-      <p class="hint">Every clip on the CHIRP, by bank. Map one to a named slot, a system event or a category range.</p>
       <div class="button-row button-row-compact">
         <button id="btn-catalog-refresh" class="btn" type="button">Refresh catalog</button>
         <button id="btn-catalog-apply-suggestions" class="btn" type="button">Apply suggestions</button>
@@ -193,7 +190,7 @@
     <!-- Sound categories -->
     <div class="card sound-advanced-card">
       <div class="sect"><h2>Sound categories</h2><span class="sub">a track range each</span></div>
-      <p class="hint">Chatter picks at random from a category's range. Min and Max both 0, and it never plays.</p>
+      <p class="hint">Min and Max both 0, and the category never plays.</p>
       <p class="hint hidden" id="mp3-range-warning" role="status"></p>
       <div class="sound-table-wrap">
         <table class="sound-table">
@@ -216,7 +213,6 @@
     <!-- Mood mapping -->
     <div class="card sound-advanced-card">
       <div class="sect"><h2>Mood mapping</h2><span class="sub">categories per mood</span></div>
-      <p class="hint">Tick a category under a mood, and that mood may chatter from it.</p>
       <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
@@ -241,7 +237,7 @@
     <!-- System sounds -->
     <div class="card sound-advanced-card">
       <div class="sect"><h2>System sounds</h2><span class="sub">automatic sounds</span></div>
-      <p class="hint">Played at boot and when the drive state changes. Track 0 keeps the event silent.</p>
+      <p class="hint">Track 0 keeps the event silent.</p>
       <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
@@ -262,7 +258,7 @@
     <!-- Direct track -->
     <div class="card">
       <div class="sect"><h2>Direct track</h2><span class="sub">find a clip</span></div>
-      <p class="hint">Plays any track number straight off the card. Nothing is saved.</p>
+      <p class="hint">Nothing is saved.</p>
       <div class="sound-inline-row tight">
         <input type="number" id="direct-track" min="1" max="65535" value="1"
                class="sound-track-input-lg" placeholder="Track #" aria-label="Direct track number">
@@ -276,7 +272,7 @@
     <!-- Random playback range -->
     <div class="card sound-advanced-card">
       <div class="sect"><h2>Random range</h2><span class="sub">random pool</span></div>
-      <p class="hint">Random playback picks from this range. Saved, it takes effect at the next random sound.</p>
+      <p class="hint">Takes effect at the next random sound.</p>
       <div class="sound-inline-row wrap">
         <div>
           <label class="form-label" for="rand-min">Min track</label>
@@ -296,7 +292,7 @@
     <!-- Mood sound intervals -->
     <div class="card sound-advanced-card">
       <div class="sect"><h2>Chatter intervals</h2><span class="sub">seconds per mood</span></div>
-      <p class="hint">Seconds between random sounds. Set 0 and that mood never chatters.</p>
+      <p class="hint">Set 0 and that mood never chatters.</p>
       <div class="sound-table-wrap">
         <table class="sound-table">
           <thead>
@@ -312,7 +308,6 @@
               <td class="sound-mono">:SE10</td>
               <td>
                 <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
-                <span class="sound-note-inline">0 = silent</span>
               </td>
             </tr>
             <tr class="sound-row-divider">

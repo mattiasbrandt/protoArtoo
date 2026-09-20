@@ -449,6 +449,11 @@
         route = OTHER_BOARD.route;
       } else if (state === "not-included") {
         blurb = window.PAFeatureAvailability?.reasonFor("not-in-this-build", part.name) || "";
+        // The same next move the seam gives every other surface for this
+        // family: a driver this image left out arrives with a different image
+        // (data/feature_availability.js). OTHER_BOARD above routes there too,
+        // with its own sentence, because a board is not a driver.
+        route = window.PAFeatureAvailability?.routeFor("not-in-this-build") || null;
       }
       return {
         kind: part.status === KIND_ROADMAP ? KIND_ROADMAP : KIND_SUPPORTED,

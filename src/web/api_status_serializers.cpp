@@ -83,28 +83,31 @@ const char* wifiStatusApSsid(const char* activeApSsid) {
     return WIFI_AP_SSID;
 }
 
-void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
+void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const char* soundLabel,
+                      const char* domeLabel, bool domeLinkActive, unsigned long domeHbRx,
                       unsigned long bodyHbTx) {
-    // The dome port's label/name/note literals are shared with
-    // captureDomeSerialLinkSnapshot's caller in console_module.cpp via the
-    // DOME_SERIAL_LINK_* constants (api_status.h) instead of being hand-typed
-    // twice - dome.status.serial-link's Console executor cites the same
-    // literals rather than a second copy that could drift from this one.
+    // The labels arrive from the caller, read off the running board - see the
+    // declaration in api_status.h for why they are not literals here. S0 keeps
+    // one: USB debug serial is not a Component, include/component_labels.inc
+    // declares no label for it on any board, so there is nothing to read. That
+    // gap is the remaining one in this response.
     snprintf(buf, bufSize,
              "{"
              "\"debug\":{\"label\":\"S0\",\"name\":\"ESP debug\",\"active\":true,\"note\":\"USB "
              "debug serial\"},"
-             "\"hoverboard\":{\"label\":\"S1\",\"name\":\"Hoverboard\",\"active\":true,"
-             "\"hardwareRequired\":true,\"note\":\"Firmware path active; full behavior needs Artoo "
-             "PCB + hoverboard chain\"},"
-             "\"sound\":{\"label\":\"S2\",\"name\":\"Sound\",\"active\":false,\"hardwareRequired\":"
-             "true,\"note\":\"Requires S2 wiring and a supported sound module\"},"
-             "\"dome\":{\"label\":\"" DOME_SERIAL_LINK_LABEL "\",\"name\":\"" DOME_SERIAL_LINK_NAME
+             "\"hoverboard\":{\"label\":\"%s\",\"name\":\"Hoverboard\",\"active\":true,"
+             "\"hardwareRequired\":true,\"note\":\"Firmware path active; full behaviour needs the "
+             "hoverboard chain wired\"},"
+             "\"sound\":{\"label\":\"%s\",\"name\":\"Sound\",\"active\":false,\"hardwareRequired\":"
+             "true,\"note\":\"Needs a supported sound module wired and switched on\"},"
+             "\"dome\":{\"label\":\"%s\",\"name\":\"" DOME_SERIAL_LINK_NAME
              "\",\"active\":%s,\"heartbeatRx\":%"
              "lu,\"heartbeatTx\":%lu,\"hardwareRequired\":"
              "true,\"note\":\"" DOME_SERIAL_LINK_NOTE "\"}"
              "}",
-             domeLinkActive ? "true" : "false", domeHbRx, bodyHbTx);
+             driveLabel != nullptr ? driveLabel : "", soundLabel != nullptr ? soundLabel : "",
+             domeLabel != nullptr ? domeLabel : "", domeLinkActive ? "true" : "false", domeHbRx,
+             bodyHbTx);
 }
 
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,

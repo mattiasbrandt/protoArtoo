@@ -139,9 +139,9 @@ void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
 // The dynamic fields of the "dome" port object inside formatSerialJson()'s
 // GET /api/serial response (below): "active", "heartbeatRx", "heartbeatTx".
 // The other keys in that sub-object (label, name, hardwareRequired, note) are
-// compile-time string literals, not state, and are emitted by the Console
-// executor directly from the named constants formatSerialJson() uses (below)
-// rather than through this struct.
+// not state: name and note are the constants below, and label is read from the
+// running board. The Console executor for dome.status.serial-link emits the
+// three dynamic fields and none of the rest.
 struct DomeSerialLinkSnapshot {
     bool active;
     unsigned long heartbeatRx;
@@ -154,13 +154,18 @@ struct DomeSerialLinkSnapshot {
 // thread-safe: yes (owns its own short critical section)
 void captureDomeSerialLinkSnapshot(DomeSerialLinkSnapshot* out);
 
-// The dome port's compile-time metadata, factored out of formatSerialJson()'s
-// format string so the Console executor for dome.status.serial-link can cite
-// the identical literals instead of a second hand-typed copy. Not part of
-// dome.status.serial-link's registry fields (they are not state).
-#define DOME_SERIAL_LINK_LABEL "S3"
+// The dome port's compile-time metadata, named here rather than buried in
+// formatSerialJson()'s format string. Not part of dome.status.serial-link's
+// registry fields (they are not state), and its Console executor emits only
+// the dynamic ones.
+//
+// THE LABEL IS GONE ON PURPOSE (#348). It was "S3", which is the Artoo PCB's
+// silkscreen and not a thing a FireBeetle 2 has; formatSerialJson() now reads
+// what the running board prints from include/component_labels.inc. The note
+// named that board's GPIO 33/34 as fact for the same reason and no longer
+// does - where the signal is routed is the Board Lane, on GET /api/identity.
 #define DOME_SERIAL_LINK_NAME "protoR2link"
-#define DOME_SERIAL_LINK_NOTE "Body-dome serial transport over S3 (GPIO 33/34)"
+#define DOME_SERIAL_LINK_NOTE "Body-dome serial transport"
 
 // Compute canonical WiFi status booleans used in JSON status/health payloads.
 // Pure function - no globals, no Arduino, no FreeRTOS.
@@ -197,13 +202,26 @@ const char* wifiStatusApSsid(const char* activeApSsid);
 
 // Write a JSON serial-port status object into a caller-supplied buffer.
 // Pure function - no globals, no Arduino, no FreeRTOS.
+//
+// The three labels are the BOARD COMPONENT LABELS the running board prints
+// beside those connectors, and they are parameters rather than literals
+// because they differ per board: "S1"/"S2"/"S3" is the Artoo PCB's silkscreen
+// and a FireBeetle 2 prints GPIO numbers there (ADR 0033, #339, #348). The
+// caller reads them through boardComponentLabel() (include/board_outputs.h),
+// which is the one place a board's printed legend lives; passing them in is
+// what lets a host test ask for one board's legend from an image built for
+// another. A board that declares none passes "" - never another board's.
 // params: buf            - output buffer (must not be null)
 //         bufSize        - size of buf in bytes
+//         driveLabel     - what this board prints at the drive connector
+//         soundLabel     - what this board prints at the sound connector
+//         domeLabel      - what this board prints at the dome-link connector
 //         domeLinkActive - true if dome heartbeat link is active
 //         domeHbRx       - dome heartbeat receive counter
 //         bodyHbTx       - body heartbeat transmit counter
 // thread-safe: yes (pure function, no globals)
-void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
+void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const char* soundLabel,
+                      const char* domeLabel, bool domeLinkActive, unsigned long domeHbRx,
                       unsigned long bodyHbTx);
 
 // Write a JSON health/diagnostics object into a caller-supplied buffer.

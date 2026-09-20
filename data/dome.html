@@ -29,7 +29,7 @@
          told apart by treatment and never by hue. -->
     <div id="dome-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Dome rotation</h2><span class="sub">switched off in Configuration</span></div>
-      <p class="note"><b>Off:</b> the dome stays put, even through a sequence. <a class="setup-link" href="/setup.html">Switch Dome ESC on in Configuration</a></p>
+      <p class="note"><b>Off:</b> the dome stays put, even through a sequence. <a class="setup-link" href="/configuration.html">Switch Dome ESC on in Configuration</a></p>
     </div>
 
     <!-- What the dome is being told to do, right now. A readout and nothing
@@ -54,7 +54,6 @@
              builder something to do about turning left. -->
         <span id="dome-rotation-state" class="dome-rotation-state">Idle</span>
       </div>
-      <p class="hint" id="dome-web-note">Finding out whether this browser may command the droid.</p>
       <div id="dome-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
 
@@ -62,28 +61,28 @@
     <div class="card">
       <div class="sect"><h2>Dome ESC</h2><span class="sub">saved as you change</span></div>
       <div class="note note-info" role="note">
-        The ESC's calibration, PWM frequency and voltage cutoff live in the <b>ISD Go</b> app, over Bluetooth. These four numbers only set the pulse the controller sends.
+        Calibration, PWM frequency and voltage cutoff live in the <b>ISD Go</b> app, over Bluetooth.
       </div>
       <form id="esc-form" class="form-grid settings-grid">
         <label class="field">
           <span>Neutral pulse (µs)</span>
           <input id="dome-neutral" class="compact-number" name="domeEscNeutralUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">The width that means stop. Wrong, and the dome creeps on its own.</span>
+          <span class="hint">Wrong, and the dome creeps on its own.</span>
         </label>
         <label class="field">
           <span>Minimum pulse (µs)</span>
           <input id="dome-min-pulse" class="compact-number" name="domeEscMinPulseUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">Full reverse. Narrower than neutral.</span>
+          <span class="hint">Narrower than neutral.</span>
         </label>
         <label class="field">
           <span>Maximum pulse (µs)</span>
           <input id="dome-max-pulse" class="compact-number" name="domeEscMaxPulseUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">Full forward. Wider than neutral.</span>
+          <span class="hint">Wider than neutral.</span>
         </label>
         <label class="field">
           <span>Speed limit (%)</span>
           <input id="dome-speed-limit" class="compact-number" name="domeEscSpeedLimitPct" type="number" min="0" max="100" step="1">
-          <span class="hint">A share of the range above. 20 is a slow scan, 100 is as fast as the dome turns.</span>
+          <span class="hint">20 is a slow scan, 100 is as fast as the dome turns.</span>
         </label>
         <div class="button-row">
           <button id="reload-esc-button" class="btn" type="button">Reload</button>
@@ -115,19 +114,17 @@
           <span>Move duration (ms)</span>
           <input id="dome-rnd-move-ms" class="compact-number" name="domeEscRndMoveMs"
             type="number" min="500" max="10000" step="100">
-          <span class="hint">How long one turn lasts. Long enough and the dome comes most of the way round.</span>
+          <span class="hint">How long one turn lasts.</span>
         </label>
         <label class="field">
           <span>Shortest pause (s)</span>
           <input id="dome-rnd-pause-min" class="compact-number" name="domeEscRndPauseMin"
             type="number" min="1" max="120" step="1">
-          <span class="hint">The least time the dome ever waits between turns.</span>
         </label>
         <label class="field">
           <span>Longest pause (s)</span>
           <input id="dome-rnd-pause-max" class="compact-number" name="domeEscRndPauseMax"
             type="number" min="1" max="120" step="1">
-          <span class="hint">The most. Set it close to the shortest and the dome ticks like a clock.</span>
         </label>
         <div class="button-row">
           <button id="reload-rnd-button" class="btn" type="button">Reload</button>

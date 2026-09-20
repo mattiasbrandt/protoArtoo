@@ -10,6 +10,7 @@
 
 #include "api_status.h"
 
+#include "board_outputs.h"  // boardComponentLabel, runningBoardName
 #include "config.h"
 #include "dome_task.h"
 #include "log_buffer.h"
@@ -29,10 +30,19 @@ static void buildWifiJson(char* buffer, size_t bufferSize) {
                    snap.staIp, snap.staSsid, snap.wifiRssi, snap.networkRecovery);
 }
 
+// What this board prints beside a connector, or "" where it declares none -
+// never another board's legend (ADR 0033, #348).
+static const char* printedLabel(const char* component) {
+    const char* label = boardComponentLabel(runningBoardName(), component);
+    return label != nullptr ? label : "";
+}
+
 static void buildSerialJson(char* buffer, size_t bufferSize) {
     DomeSerialLinkSnapshot snap = {};
     captureDomeSerialLinkSnapshot(&snap);
-    formatSerialJson(buffer, bufferSize, snap.active, snap.heartbeatRx, snap.heartbeatTx);
+    formatSerialJson(buffer, bufferSize, printedLabel("enable_drive"), printedLabel("enable_audio"),
+                     printedLabel("enable_protor2link"), snap.active, snap.heartbeatRx,
+                     snap.heartbeatTx);
 }
 
 static void buildHealthJson(char* buffer, size_t bufferSize) {

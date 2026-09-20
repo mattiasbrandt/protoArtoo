@@ -61,8 +61,12 @@
   let saveQueued = false;
   let currentSpeedLimitMax = null;
   let currentSpeedPreset = null;
+  // Where a builder switches the feet on. The act names the component and not
+  // the connector it lands on: S1 is the Artoo PCB's silkscreen, and a
+  // FireBeetle 2 prints GPIO numbers there instead (#348). Which pins the lane
+  // uses is Wiring's answer, read from the running board.
   const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Configuration`);
-  const s1EnableInConfiguration = setupActionText("Enable S1 — Drive");
+  const FEET_OFF_LINE = `Foot Drive is switched off. ${setupActionText("Switch it on")}.`;
 
   const FAILSAFE_SOURCE_LABELS = {
     0: "None",
@@ -191,7 +195,7 @@
   const postCommand = async (path, label) => {
     if (!window.PAApi) return;
     if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
-      window.PAUtils.showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInConfiguration}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, FEET_OFF_LINE, "warning");
       return;
     }
     window.PAUtils.showFeedback(controlFeedback, `${label}...`);
@@ -212,11 +216,11 @@
   const postDriveCommand = async (speed, steer) => {
     if (!window.PAApi) return;
     if (!webControlEnabled) {
-      window.PAUtils.showFeedback(controlFeedback, "Drive unavailable: web control is disabled.", "warning");
+      window.PAUtils.showFeedback(controlFeedback, "Web control is off. Turn it on above.", "warning");
       return;
     }
     if (!driveHardwareEnabled) {
-      window.PAUtils.showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInConfiguration}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, FEET_OFF_LINE, "warning");
       return;
     }
     try {
@@ -229,11 +233,11 @@
   const postSpeedPreset = async (preset) => {
     if (!window.PAApi) return;
     if (!webControlEnabled) {
-      window.PAUtils.showFeedback(presetFeedback, "Preset switch unavailable: web control is disabled.", "warning");
+      window.PAUtils.showFeedback(presetFeedback, "Web control is off. Turn it on above.", "warning");
       return;
     }
     if (!driveHardwareEnabled) {
-      window.PAUtils.showFeedback(presetFeedback, `Preset switch unavailable: ${s1EnableInConfiguration}.`, "warning");
+      window.PAUtils.showFeedback(presetFeedback, FEET_OFF_LINE, "warning");
       return;
     }
     if (estopLatched) {
@@ -344,8 +348,8 @@
         // not spoken yet, the other is a droid whose feet were never switched
         // on, and only the second has anything for the builder to do.
         hbNoData.textContent = driveHardwareEnabled
-          ? "Nothing from the wheel controller yet. It reports once powered and wired."
-          : `Feet off, so no wheel controller to hear. ${s1EnableInConfiguration}.`;
+          ? "Nothing from the wheel controller yet."
+          : FEET_OFF_LINE;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";
@@ -541,7 +545,7 @@
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/drive.js": "drive control",

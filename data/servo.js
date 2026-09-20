@@ -1172,7 +1172,7 @@
   // ---------------------------------------------------------------------------
   if (window.PABootstrap) {
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/droid_parts.js": "the parts catalog",

@@ -536,7 +536,7 @@ void test_sound_carries_real_state_and_labels() {
 // set - documented explicitly rather than silently narrowed.
 void test_dome_serial_link_fields_are_real_dome_subobject_keys() {
     char json[768];
-    formatSerialJson(json, sizeof(json), true, 5, 7);
+    formatSerialJson(json, sizeof(json), "S1", "S2", "S3", true, 5, 7);
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
     TEST_ASSERT_FALSE(err);

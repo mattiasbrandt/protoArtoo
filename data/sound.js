@@ -1,7 +1,7 @@
 // =============================================================================
 // data/sound.js
 //
-// Sound page controller — named sound commands, volume, direct play,
+// Sound page controller — Named Track commands, volume, direct play,
 // random range configuration. All audio commands go through /api/audio.
 // Named track assignments are loaded from and saved to /api/audio/tracks.
 // =============================================================================
@@ -155,7 +155,7 @@
   const mp3RangeWarning = document.getElementById("mp3-range-warning");
   const MP3_DRIVER_NAME = "MP3Trigger";
   const MP3_WIRE_NOTE =
-    "Power this board from the 3.3 V jumper — a 5 V rail can kill the controller's receive pin. Put a file named MP3TRIGR.INI on the card with the line #BAUD 9600, or the board will not answer.";
+    "Power this board from the 3.3 V jumper: 5 V can kill the Body Controller's receive pin. It answers only with MP3TRIGR.INI on the card, holding #BAUD 9600.";
   const MP3_RANGE_WARNING =
     "This module stops at 255. 254 is Stop's silent file and 255 is the boot clip — they will not play as random chatter.";
   // The module checksums its own file names, so it notices a sound being added,
@@ -646,10 +646,19 @@
     syncCatalogBulkUi();
   };
 
+  // What a sound control says when Sound is switched off. Eight controls said
+  // eight versions of this before #348, every one of them naming an S2 header
+  // - the Artoo PCB's silkscreen, which is not a thing every board has. The
+  // words match the Availability seam's own "off" reason and its route
+  // (data/feature_availability.js); they are stated here rather than read from
+  // it because this surface does not otherwise load that file, and a script
+  // fetch for one sentence costs the page more than it is worth.
+  const SOUND_OFF_LINE = "Sound is switched off. Switch it on in Configuration.";
+
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Audio in Configuration.", false);
+      showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       return false;
     }
     try {
@@ -666,7 +675,7 @@
   const postTrack = async (key, track, feedbackEl, binding = null) => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Audio in Configuration.", false);
+      showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       return false;
     }
     try {
@@ -699,7 +708,7 @@
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       if (!quiet) {
-        showFeedback(feedbackEl || globalFb, "Category updates unavailable: enable S2 — Audio in Configuration.", false);
+        showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       }
       return false;
     }
@@ -728,7 +737,7 @@
   const postPlayBanked = async (bank, page, index, feedbackEl, label = "Catalog") => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
-      showFeedback(feedbackEl || globalFb, "Playback unavailable: enable S2 — Audio in Configuration.", false);
+      showFeedback(feedbackEl || globalFb, SOUND_OFF_LINE, false);
       return false;
     }
     try {
@@ -1128,7 +1137,7 @@
         sentences.push(`${catalogMissingNames} sounds came back without a name and are listed by their index.`);
       }
       if (catalogEntryCapReached) {
-        sentences.push("The listing stopped at the controller's entry limit, so the end of the card is missing.");
+        sentences.push("The listing stopped at the Body Controller's entry limit, so the end of the card is missing.");
       }
     }
     if (catalogStale) {
@@ -1660,7 +1669,7 @@
       // refresh and reading an older catalog that happens to still be ready.
       const requestId = Number.parseInt(String(result.data.request ?? "0"), 10);
       if (!Number.isFinite(requestId) || requestId < 1) {
-        showFeedback(catalogFeedback, "The controller did not say which refresh it accepted.", false);
+        showFeedback(catalogFeedback, "The Body Controller did not say which refresh it accepted.", false);
         return false;
       }
 
@@ -2458,7 +2467,7 @@
   document.getElementById("btn-direct-play")?.addEventListener("click", () => {
     const value = Number.parseInt(document.getElementById("direct-track")?.value, 10);
     if (!soundHardwareEnabled) {
-      showFeedback(directFb, "Direct play unavailable: enable S2 — Audio in Configuration.", false);
+      showFeedback(directFb, SOUND_OFF_LINE, false);
       return;
     }
     if (!value || value < 1 || value > 65535) {
@@ -2472,7 +2481,7 @@
   document.getElementById("btn-rand-save")?.addEventListener("click", async () => {
     const minVal = Number.parseInt(document.getElementById("rand-min")?.value, 10);
     if (!soundHardwareEnabled) {
-      showFeedback(randFb, "Random range unavailable: enable S2 — Audio in Configuration.", false);
+      showFeedback(randFb, SOUND_OFF_LINE, false);
       return;
     }
     const maxVal = Number.parseInt(document.getElementById("rand-max")?.value, 10);
@@ -2509,7 +2518,7 @@
 
   document.getElementById("btn-int-save")?.addEventListener("click", async () => {
     if (!soundHardwareEnabled) {
-      showFeedback(intFb, "Interval updates unavailable: enable S2 — Audio in Configuration.", false);
+      showFeedback(intFb, SOUND_OFF_LINE, false);
       return;
     }
     for (const field of INT_FIELDS) {
@@ -2535,7 +2544,7 @@
 
   moodMapSaveBtn?.addEventListener("click", async () => {
     if (!soundHardwareEnabled) {
-      setMoodMapStatus("Mood mapping unavailable: enable S2 — Audio in Configuration.", false);
+      setMoodMapStatus(SOUND_OFF_LINE, false);
       return;
     }
     if (!moodMapApiAvailable) {
@@ -2604,7 +2613,7 @@
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/sound.js": "audio control",

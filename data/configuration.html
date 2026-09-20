@@ -149,7 +149,7 @@
          the control, and "Not fitted" is one of them rather than a checkbox. -->
     <div class="card">
       <div class="sect"><h2>Hardware components</h2><span class="sub" id="setup-enabled-summary">finding out</span></div>
-      <p class="hint">Pick what is bolted to this droid. Not fitted, the controller never talks to it.</p>
+      <p class="hint">Not fitted, the Body Controller never talks to it.</p>
       <form id="feature-form">
 
         <div data-setup-step="drive">
@@ -209,7 +209,6 @@
         <div data-setup-step="sound">
         <div class="sect"><h3>Sound</h3><span class="sub">the droid's voice</span></div>
         <p class="note hidden apply-timing" data-apply-timing></p>
-        <p class="hint">Say which sound module the droid is built with. The sounds themselves live on the module; this only decides how the controller asks for them.</p>
         <div class="component-picker" data-component-family="sound" data-component-toggle="enable-audio"
              data-component-not-fitted="Sequences still run start to finish, in silence."></div>
         <div class="note note-info" role="note">
@@ -219,7 +218,7 @@
           <label class="toggle-switch">
             <input type="checkbox" id="enable-audio" name="enableAudio">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Audio <span class="component-badge" id="badge-enable_audio"></span></span>
+            <span class="toggle-label">Sound <span class="component-badge" id="badge-enable_audio"></span></span>
             <span id="s2-driver-label" class="s2-driver-label"></span>
             <span class="toggle-status" id="status-audio">Off</span>
           </label>
@@ -300,7 +299,6 @@
 
     <div class="card">
       <div class="sect"><h2>Droid identity</h2><span class="sub">name and hostname</span></div>
-      <p class="hint">The name lives on the droid, so any computer meets the same droid.</p>
       <div data-setup-step="name">
       <p class="note hidden apply-timing" data-apply-timing></p>
       <div class="identity-grid">

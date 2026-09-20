@@ -97,7 +97,7 @@ sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between chatter in
 sound.config.startup-track|Startup Boot Sound Track ($B)|The track $B plays at startup. Not the same as Boot Complete.|audioTracksApply|track:uint16:1
 sound.config.boot-complete-track|Boot Complete System Track|The track played once the controller is up. Not the same as $B.|audioTracksApply|track:uint16:1
 sound.config.network-down-track|Network Link Lost System Track|The track played once when the WiFi module's link is lost for good.|audioTracksApply|track:uint16:1
-sound.config.track-assignments|Track Assignments|Which track each named sound plays, $B included.|audioTracksApply|key:string:1|track:uint16:1
+sound.config.track-assignments|Track Assignments|Which track each Named Track plays, $B included.|audioTracksApply|key:string:1|track:uint16:1
 sound.config.system-track-assignments|System Sound Assignments|Which track each system event plays, Boot Complete included.|audioTracksApply|key:string:1|track:uint16:1
 sound.config.category-ranges|Category Ranges|The track range each sound category picks from.|audioCategoryRangeApply|lo_key:string:1|hi_key:string:1|lo:uint16:1|hi:uint16:1
 sound.config.mood-category-map|Mood Category Map|Which categories each mood chatters from. A mood with none picks from the random range.|audioMoodMapApply|quiet:uint16:1|mid:uint16:1|full:uint16:1|awakeplus:uint16:1

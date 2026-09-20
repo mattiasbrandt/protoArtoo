@@ -1010,8 +1010,19 @@
         const feedback = token && actionPickerFeedback && actionPickerFeedback.token === token
           ? actionPickerFeedback
           : null;
+        // The refusal's route, where the droid's answer carried one (#348): a
+        // "no" that names the builder's next move takes them to it, so the
+        // destination is a link rather than a sentence they have to go and find.
         node.textContent = feedback ? feedback.text : '';
         node.className = `rc-action-test-feedback${feedback ? ` ${feedback.kind || ''}` : ''}`;
+        if (feedback?.route) {
+          node.textContent = `${node.textContent} `;
+          const link = document.createElement('a');
+          link.className = 'setup-link';
+          link.setAttribute('href', feedback.route.href);
+          link.textContent = `${feedback.route.label}.`;
+          node.appendChild(link);
+        }
       });
     };
 
@@ -1054,7 +1065,13 @@
         actionPickerFeedback = { token, ...actionTestFeedbackForOutcome(result?.data?.outcome) };
       } catch (error) {
         if (selectedChannel !== channelAtStart) return;
-        actionPickerFeedback = { token, kind: 'error', text: window.PAApi.messageFor(error) };
+        // A refusal the droid named in its own vocabulary comes back as a
+        // sentence and, where there is one, the route to the next move
+        // (data/web_api.js). Everything else is the ordinary transport message.
+        const refusal = window.PAApi.refusalFor(error);
+        actionPickerFeedback = refusal
+          ? { token, kind: 'error', text: refusal.text, route: refusal.route }
+          : { token, kind: 'error', text: window.PAApi.messageFor(error) };
       } finally {
         if (actionPickerInFlightToken === token) actionPickerInFlightToken = null;
         if (selectedChannel === channelAtStart) syncActionTestUi();
@@ -1598,7 +1615,7 @@
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
-        setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
+        setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the Body Controller to apply.`, "success");
         confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
         sbusRecvSel.value = confirmedSbusRecvValue;
@@ -1678,7 +1695,7 @@
     }
 
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/rc.js": "RC control",

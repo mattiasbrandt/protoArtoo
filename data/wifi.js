@@ -362,15 +362,15 @@
     const posture = currentPosture(wifi, diag);
     const apAddress = apUrl(diag);
     const pendingApAddress = apUrl(diag, true);
-    const apName = wifi.apSsid || diag.apSsid || "the controller AP";
+    const apName = wifi.apSsid || diag.apSsid || "the Body Controller AP";
     // WiFi Provisioning and Network Recovery Mode both broadcast the
     // documented Default AP Credential (WIFI_AP_SSID), never the operator's
     // saved Standalone AP Mode SSID — diag.apSsid reflects what is actually
     // running, so it (not wifi.apSsid) is the right name to point at here.
-    const provisioningApName = diag.apSsid || "the controller AP";
+    const provisioningApName = diag.apSsid || "the Body Controller AP";
     const activeOtaApTarget = apAddress.replace(/^http:\/\//, "");
     const pendingOtaApTarget = pendingApAddress.replace(/^http:\/\//, "");
-    const staAddress = diag.staIp ? `http://${diag.staIp}` : "the controller IP from your router";
+    const staAddress = diag.staIp ? `http://${diag.staIp}` : "the Body Controller IP from your router";
     const hostAddress = `http://${mdnsHost()}`;
 
     if (posture.networkRecovery) {
@@ -509,7 +509,7 @@
     // Nothing here is safe to operate until its data lands.
     gateOnSectionState([{ name: "wifi-config", status: "pending" }]);
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/wifi.js": "WiFi settings",
@@ -555,7 +555,7 @@
       renderSettings(result.data?.wifi || null);
       renderPosture();
       setApplyFeedback("");
-      setFeedback("WiFi settings saved. Reboot the controller to apply the staged network switch.", "success");
+      setFeedback("WiFi settings saved. Reboot the Body Controller to apply the staged network switch.", "success");
     } catch (error) {
       const message = error?.message || window.PAApi.messageFor(error);
       const fieldName = fieldForMessage(message);

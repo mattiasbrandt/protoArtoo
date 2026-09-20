@@ -314,27 +314,19 @@
       const elem = model.elements?.find((e) => e.id === elementId);
       if (!elem) return null;
 
-      const severity = elem.severity;
-      if (!severity) return null; // Element is available
-
+      // The state clause is data/dome_layout.js's, where severity is computed
+      // and where the sequence editor reads it too (#348). What this surface
+      // adds is its own consequence: the button still sends, so a builder
+      // pressing it is owed the fact that the dome may do nothing.
+      //
       // No warning glyph in front of the sentence: an operator surface carries
       // no pictograph (ADR 0066), and the amber the feedback line takes is the
       // second reading the sentence already gives on its own.
-      let message = '';
-      if (severity === 'disabled') {
-        const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : '';
-        message = `${elementId} is off${reason}. The dome may ignore it.`;
-      } else if (severity === 'inactive') {
-        message = `${elementId} is not active. The dome may ignore it.`;
-      } else if (severity === 'unverified') {
-        message = `${elementId} unconfirmed. The dome has not said.`;
-      } else if (severity === 'unmapped') {
-        message = `${elementId} is not mapped. Nothing to move.`;
-      } else {
-        message = `${elementId} is not available`;
-      }
+      const clause = window.DomeLayout?.severityClause?.(elem);
+      if (!clause) return null; // Element is available
 
-      return message;
+      const stillSends = elem.severity === 'disabled' || elem.severity === 'inactive';
+      return stillSends ? `${clause} The dome may ignore it.` : clause;
     }
 
     async function renderSequenceControls(container) {

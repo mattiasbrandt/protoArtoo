@@ -2037,6 +2037,11 @@ curl -s -X POST http://artoo.local/api/wifi \
 Returns serial/transport status JSON.
 
 - Success: `200` JSON
+- Each port's `label` is the Board Component Label the **running board** prints
+  beside that connector, read from `include/component_labels.inc` (ADR 0033) -
+  `S1`/`S2`/`S3` on the Artoo PCB, GPIO numbers on a FireBeetle 2. A board that
+  declares none answers `""`. Where a signal is routed is the Board Lane, on
+  GET /api/identity.
 
 #### Example request
 
@@ -2044,7 +2049,7 @@ Returns serial/transport status JSON.
 curl -s http://artoo.local/api/serial
 ```
 
-#### Example response (abridged)
+#### Example response (abridged, from an `artoo_esp32` image)
 
 ```json
 {"debug":{"label":"S0","name":"ESP debug","active":true},"hoverboard":{"label":"S1","name":"Hoverboard","active":true},"sound":{"label":"S2","name":"Sound","active":false},"dome":{"label":"S3","name":"protoR2link","active":true,"heartbeatRx":49,"heartbeatTx":52}}
