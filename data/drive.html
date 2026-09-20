@@ -30,7 +30,7 @@
          treatment comes from .disabled-card rather than from a hue. -->
     <div id="drive-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
       <div class="sect"><h2>Foot Drive</h2><span class="sub">switched off in Configuration</span></div>
-      <p class="note"><b>Off:</b> the droid is a statue. Sticks move, wheels don't. <a class="setup-link" href="/setup.html">Switch Foot Drive on in Configuration</a></p>
+      <p class="note"><b>Off:</b> the droid is a statue. <a class="setup-link" href="/configuration.html">Switch Foot Drive on in Configuration</a></p>
     </div>
 
     <!-- Safety, first on the page. Stopping the droid is the Operator Shell's
@@ -40,7 +40,6 @@
          than appearing bare (docs/ui-copy-voice.md rule 8). -->
     <div class="card danger">
       <div class="sect"><h2>Safety</h2><span class="sub">Failsafe &middot; <span id="status-failsafe-label">finding out</span></span></div>
-      <p class="hint">Stop is on the top bar, on every screen. Clearing it is here.</p>
       <div class="button-row drive-safety-actions">
         <button id="enable-web-control-button" class="btn accent" type="button">Enable web control</button>
         <button id="disable-web-control-button" class="btn" type="button">Disable web control</button>
@@ -48,7 +47,6 @@
       <p class="hint">Off, the pad below sends nothing. The radio drives either way.</p>
       <div class="recovery-row">
         <button id="clear-estop-button" class="btn" type="button">Clear estop</button>
-        <span class="why">Refused unless the estop is actually latched.</span>
       </div>
       <div id="control-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
@@ -97,12 +95,13 @@
           <div class="drive-vslider-value" id="throttle-value">0</div>
         </div>
       </div>
-      <p class="hint">What the controller <b>told</b> the wheels. A jammed wheel reads the same as a free one.</p>
+      <p class="hint">A jammed wheel reads the same as a free one.</p>
     </div>
 
-    <!-- Drive controller -->
+    <!-- The wheel controller's own telemetry: the hoverboard board, not this
+         droid's Body Controller. -->
     <div class="card" id="hoverboard-card">
-      <div class="sect"><h2>Drive controller</h2><span class="sub">wheel controller's last reply</span></div>
+      <div class="sect"><h2>Wheel controller</h2><span class="sub">last reply</span></div>
       <p class="note" id="hb-no-data">Nothing from the wheel controller yet.</p>
       <!-- The readouts ARE the grid. A .status-grid wrapping an unclassed
            <dl> makes the list the one grid item and every reading stacks at
@@ -140,7 +139,7 @@
          read as a safety control it is not. -->
     <div class="card">
       <div class="sect"><h2>Drive controls</h2><span class="sub">hold to drive</span></div>
-      <p class="hint">Let go and it stops. A frozen browser stops the feet after the <b>web control timeout</b> below.</p>
+      <p class="hint">A frozen browser stops the feet after the <b>web control timeout</b> below.</p>
       <div class="dpad-grid">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button"><svg class="i dpad-icon dpad-up" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg>Forward</button>
@@ -165,12 +164,12 @@
             <input id="speed-limit-max" name="speedLimitMax" type="range" min="0" max="600" step="5">
           </div>
           <span class="drive-readout" id="speed-limit-max-readout">—</span>
-          <span class="hint">The most the controller ever sends the wheels, 0 to 600. Lower is kinder to walls.</span>
+          <span class="hint">The most the Body Controller ever sends the wheels.</span>
         </label>
         <label class="field">
           <span>Web control timeout (ms)</span>
           <input id="web-drive-timeout" name="webDriveTimeoutMs" class="compact-number" type="number" min="100" max="5000" step="50">
-          <span class="hint">How long the feet run on the last command heard. Then they stop.</span>
+          <span class="hint">How long the feet run on the last command heard.</span>
         </label>
         <label class="field">
           <span>Slow preset limit</span>
@@ -193,8 +192,8 @@
           </div>
           <span class="drive-readout" id="speed-preset-turbo-readout">—</span>
         </label>
-        <p class="hint preset-hint">The caps the preset buttons jump to. Use three different numbers, or two presets look the same.</p>
-        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Two presets share a number. Once applied, you cannot tell them apart.</div>
+        <p class="hint preset-hint">Use three different numbers, or two presets look the same.</p>
+        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Two presets share a number.</div>
       </form>
       <div id="config-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>

@@ -43,7 +43,10 @@ const BOARD_LABELS = {
     rcCh5:       featureToggle("rc-ch5", "RC Channel 5"),
     rcCh6:       featureToggle("rc-ch6", "RC Channel 6"),
     drive:       featureToggle("drive", "Foot Drive"),
-    audio:       featureToggle("audio", "Audio"),
+    // "Sound" on screen, `audio` in the key and the C++ symbol: display
+    // labels and web UI are on the sound side of the boundary
+    // (docs/action-registry.yaml).
+    audio:       featureToggle("audio", "Sound"),
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 

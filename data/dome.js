@@ -10,7 +10,6 @@
   const domeFeedback = document.getElementById("dome-feedback");
   const domeDisabledCard = document.getElementById("dome-disabled-card");
   const domeHardwareState = document.getElementById("dome-hardware-state");
-  const domeWebNote = document.getElementById("dome-web-note");
   const domeSpeedDisplay = document.getElementById("dome-speed-display");
   const domeRotationState = document.getElementById("dome-rotation-state");
   const domeLiveFill = document.getElementById("dome-live-fill");
@@ -31,7 +30,9 @@
   const rndFeedback = document.getElementById("rnd-feedback");
 
   let domeHardwareEnabled = true;
-  let webControlEnabled = false;
+  // Only WHETHER a status frame has arrived, not what it said about web
+  // control: this surface has no control web control gates, so the value
+  // itself is the topbar's to report (#348).
   let webControlStatusKnown = false;
 
   const FEEDBACK_BASE_CLASS = "feedback";
@@ -124,18 +125,8 @@
       domeHardwareEnabled ? "switched on" : "switched off in Configuration",
     );
 
-    if (!webControlStatusKnown) {
-      setText(domeWebNote, "Finding out whether this browser may command the droid.");
-    } else {
-      setText(
-        domeWebNote,
-        `Web control is ${webControlEnabled ? "on" : "off"}. It only gates the feet; ` +
-          "the dome still turns on the radio and in a sequence.",
-      );
-    }
-
     if (!domeHardwareEnabled) {
-      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME — Dome ESC in Configuration.", "warning");
+      showFeedback(domeFeedback, "Dome ESC is switched off. Switch it on in Configuration.", "warning");
     } else if (!webControlStatusKnown) {
       showFeedback(domeFeedback, "Waiting for live status frame...");
     } else {
@@ -169,9 +160,6 @@
 
   const renderStatusFrame = (payload) => {
     webControlStatusKnown = typeof payload?.webControlEnabled === "boolean";
-    if (webControlStatusKnown) {
-      webControlEnabled = payload.webControlEnabled;
-    }
 
     const statusDomeEnabled = resolveDomeEnabledFromStatus(payload);
     if (typeof statusDomeEnabled === "boolean") {
@@ -417,7 +405,7 @@
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/dome.js": "dome control",
