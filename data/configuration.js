@@ -112,6 +112,19 @@ const BOARD_LABELS = {
     setupSaveSummary.textContent = message;
   };
 
+  // A "no" that names the builder's next move takes them to it (#348): the
+  // route the Availability seam gives for this state, appended to the sentence
+  // as a link. A null route appends nothing - a settled no has none.
+  const appendRoute = (element, route) => {
+    if (!element || !route) return;
+    element.textContent = `${element.textContent} `;
+    const link = document.createElement("a");
+    link.className = "setup-link";
+    link.setAttribute("href", route.href);
+    link.textContent = `${route.label}.`;
+    element.appendChild(link);
+  };
+
   const setFeedbackState = (element, message, variant = "") => {
     if (!element) return;
     element.textContent = message;
@@ -405,7 +418,13 @@ const BOARD_LABELS = {
       setRowControlsAvailable(row, toggle.available, toggle.input);
       const reason = ensureFeatureReason(toggle, row);
       if (reason) {
+        // The sentence, then the route to the next move where this state's
+        // family has one (data/feature_availability.js). Still hidden while the
+        // component is available: "off" is the one no whose control is on this
+        // very row, so its sentence would explain a tick box the builder is
+        // already looking at.
         reason.textContent = window.PAFeatureAvailability.reasonFor(result.state, toggle.name);
+        appendRoute(reason, window.PAFeatureAvailability.routeFor(result.state));
         reason.hidden = toggle.available;
       }
     }

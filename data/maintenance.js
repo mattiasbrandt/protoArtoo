@@ -750,10 +750,13 @@
     // the manifest is ready and the feature is not gated
     const available = window.PAFeatureAvailability.isFeatureAvailable(result);
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
-    const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
+    // The reason's own copy, and where the builder goes about it. Both come
+    // from the Availability seam (data/feature_availability.js) so the route is
+    // painted as a link rather than named in a sentence nobody can click.
+    const stateReasonOptions = {
       on: "Live memory readings refresh while this page is open.",
       notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.", // PROVISIONAL: when a second Build Feature Flag needs a bespoke reason, promote this to a registry field + drift-checker coverage
-    });
+    };
     card.hidden = false;
     card.classList.remove(
       "feature-state-on",
@@ -774,7 +777,21 @@
       availabilityStatus.textContent = stateLabel;
       availabilityStatus.className = `feature-availability-status feature-state feature-state-${result.state}`;
     }
-    if (availabilityReason) availabilityReason.textContent = stateReason;
+    if (availabilityReason) {
+      // The sentence, then the route to the next move as a link where this
+      // state's family has one (#348).
+      availabilityReason.textContent =
+        window.PAFeatureAvailability.reasonFor(result.state, featureName, stateReasonOptions);
+      const route = window.PAFeatureAvailability.routeFor(result.state);
+      if (route) {
+        availabilityReason.textContent = `${availabilityReason.textContent} `;
+        const link = document.createElement("a");
+        link.className = "setup-link";
+        link.setAttribute("href", route.href);
+        link.textContent = `${route.label}.`;
+        availabilityReason.appendChild(link);
+      }
+    }
     if (availabilityLamp) {
       availabilityLamp.className = `feature-availability-lamp-indicator feature-state-${result.state}`;
     }

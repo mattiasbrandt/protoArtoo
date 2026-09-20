@@ -1012,11 +1012,11 @@
           : null;
         // The refusal's route, where the droid's answer carried one (#348): a
         // "no" that names the builder's next move takes them to it, so the
-        // destination is a link rather than a sentence they have to go and
-        // find. The trailing space separates it without a text node of its own.
-        node.textContent = feedback ? (feedback.route ? `${feedback.text} ` : feedback.text) : '';
+        // destination is a link rather than a sentence they have to go and find.
+        node.textContent = feedback ? feedback.text : '';
         node.className = `rc-action-test-feedback${feedback ? ` ${feedback.kind || ''}` : ''}`;
         if (feedback?.route) {
+          node.textContent = `${node.textContent} `;
           const link = document.createElement('a');
           link.className = 'setup-link';
           link.setAttribute('href', feedback.route.href);

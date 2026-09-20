@@ -110,9 +110,17 @@ test("the profiler stays visible and says Not included without probing its endpo
   assert.equal(env.element("profiler-card").hidden, false);
   assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
   assert.equal(env.element("profiler-availability-status").textContent, "Not included");
+  // The sentence, then a space the route's link sits after (#348): a "no"
+  // names the builder's next move and takes them to it. The stub element does
+  // not keep appended children, so the destination itself is asserted on the
+  // seam that supplies it.
   assert.equal(
     env.element("profiler-availability-reason").textContent,
-    "Memory Profiler is included only in troubleshooting firmware.",
+    "Memory Profiler is included only in troubleshooting firmware. ",
+  );
+  assert.deepEqual(
+    env.window.PAFeatureAvailability.routeFor("not-in-this-build"),
+    { href: "#firmware", label: "Open Firmware" },
   );
   // Status lamp renders as indicator, not switch affordance
   assert.ok(env.element("profiler-availability-lamp"), "lamp indicator should exist");

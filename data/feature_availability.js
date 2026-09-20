@@ -93,23 +93,80 @@
 
     const labelFor = (state) => STATE_LABELS[state] || "Availability unknown";
 
+    // Where a builder goes about a "no" (#348). One entry per state that HAS a
+    // next move, and nothing for the states that do not: an Availability Family
+    // decides whether there is a destination at all, so the absence here is the
+    // answer rather than a gap (CONTEXT.md "Availability Family").
+    //
+    //   off                 change it here - the Component Toggle is a control
+    //                       the builder owns, on Configuration
+    //   not-in-this-build   change it elsewhere - a different image carries it,
+    //                       and Firmware is where one is uploaded
+    //
+    // A SETTLED NO HAS NO ROW. `not-on-this-board` is the board the builder
+    // already owns and this image already runs on; a manifest this page cannot
+    // read will not read differently on a retry. Neither carries a date, a
+    // version or another product to go and buy - pointing a builder at hardware
+    // is a Builder Recommendation, and a card reporting this droid's state does
+    // not make one. `checking` has no row either: it is still finding out, and
+    // asks nothing of anybody.
+    const ROUTES = Object.freeze({
+      off: Object.freeze({ href: "#configuration", label: "Switch it on in Configuration" }),
+      // The same words the Component Picker's own other-board card already
+      // uses for this destination (data/component_picker.js OTHER_BOARD), so
+      // one place to go is named one way wherever a surface points at it.
+      "not-in-this-build": Object.freeze({ href: "#firmware", label: "Open Firmware" }),
+    });
+
+    /**
+     * The route a resolved state offers, or null where the family has none.
+     *
+     * @returns {{href: string, label: string}|null}
+     */
+    const routeFor = (state) => ROUTES[state] || null;
+
     // Turn a resolved state into the maker-facing explanation shown below a
     // feature. Component and profiler renderers share this copy policy.
+    //
+    // EVERY "NO" HERE NAMES AN ACT or says plainly that there is nothing to do.
+    // The sentence and the route are separate, and this seam composes no
+    // markup: it answers with vocabulary, and the surface that owns the element
+    // appends the link (PAUtils.appendRoute, data/web_api.js). That split is
+    // what lets a reason be read by a page, a pill or a test without any of
+    // them needing a document - and it is the shape the reference uses for its
+    // own findings, which carry fields and compose their sentence at render
+    // (r2d2-astromech-simulator v1.79.0, lint.js:116).
     const reasonFor = (state, featureName, { on = "", notInThisBuild = "" } = {}) => {
       if (state === "on" || state === "included") return on;
-      if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
-      if (state === "not-in-this-build") return notInThisBuild || `This controller was loaded without ${featureName}.`;
-      if (state === "checking") return `Checking whether this controller can run ${featureName}…`;
+      // The one state the builder chose and can unchoose. It had no branch at
+      // all until #348, so a component switched off explained itself with
+      // silence wherever a surface did not hand-write its own sentence.
+      if (state === "off") return `${featureName} is switched off.`;
+      if (state === "not-on-this-board") return `This Body Controller cannot run ${featureName}.`;
+      if (state === "not-in-this-build") return notInThisBuild || `This firmware was loaded without ${featureName}.`;
+      if (state === "checking") return `Checking ${featureName}…`;
       if (state === "identity-unavailable") {
         // Two different failures read as identity-unavailable; differ by reason:
         // - "no-response": transport failure, retryable, genuinely reconnecting
         // - "incompatible": validation failure, terminal, no reconnection coming
         if (identityErrorReason === "incompatible") {
-          return `Could not check ${featureName}. The controller did not report its features.`;
+          return `Could not check ${featureName}.`;
         }
-        return `Could not check ${featureName}. Reconnecting to the controller…`;
+        return `Could not check ${featureName}. Reconnecting…`;
       }
       return "";
+    };
+
+    /**
+     * The same explanation as one line of plain text, with the route named in
+     * words. For a sink that can only hold text - a feedback pill, a title
+     * attribute - where a link cannot be appended. Where the destination can
+     * actually be clicked, take reasonFor() and routeFor() and append a link.
+     */
+    const reasonLine = (state, featureName, options) => {
+      const text = reasonFor(state, featureName, options);
+      const route = text ? routeFor(state) : null;
+      return route ? `${text} ${route.label}.` : text;
     };
 
     // The Availability Family a resolved state is painted in (CONTEXT.md
@@ -158,6 +215,8 @@
       isFeatureAvailable,
       labelFor,
       reasonFor,
+      routeFor,
+      reasonLine,
       familyClassFor,
       FAMILY_CLASSES,
       setIdentity,

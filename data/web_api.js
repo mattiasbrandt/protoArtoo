@@ -268,7 +268,7 @@
   // (CONTEXT.md "Availability Family").
   const DEVICE_REFUSALS = Object.freeze({
     invalid_action_token: Object.freeze({
-      text: "This droid does not know that action. Reload the page for its current list.",
+      text: "Unknown action. Reload the page.",
       route: null,
     }),
     // Only the estop reaches this guard (evaluateActionTestGuard,
@@ -280,12 +280,12 @@
     }),
     web_control_disabled: Object.freeze({
       text: "Web control is off.",
-      route: Object.freeze({ href: "#drive", label: "Turn it on on Foot Drive" }),
+      route: Object.freeze({ href: "#drive", label: "Turn it on in Foot Drive" }),
     }),
     // An analog action, or one that needs a payload: the test button sends
     // neither, so this control cannot drive it however the droid is set up.
     action_not_testable: Object.freeze({
-      text: "This action needs a value, which the test button does not send.",
+      text: "Needs a value the test button cannot send.",
       route: null,
     }),
   });
