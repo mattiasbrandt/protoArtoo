@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 425d0f7581e46842744b8ce1160039b3b74a2c6214cd6656711ffcece4a51479
+ * Source digest: sha256 c4eb0dcfa1dbbb3ec0e7509e2968f55843ec8e4b1595ee50391fada62cd39104
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -54,7 +54,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "425d0f7581e46842744b8ce1160039b3b74a2c6214cd6656711ffcece4a51479",
+    "sourceSha256": "c4eb0dcfa1dbbb3ec0e7509e2968f55843ec8e4b1595ee50391fada62cd39104",
     "designs": [
       {
         "id": "mk4",
@@ -999,6 +999,36 @@
       },
       {
         "index": 55,
+        "id": "cbi",
+        "section": "body_lights",
+        "name": "Charge Bay Indicator",
+        "half": "body",
+        "aliases": [
+          "CBI"
+        ],
+        "position": "front-left",
+        "control": "none",
+        "cadName": null,
+        "kind": "light",
+        "sitsOn": "chargebay"
+      },
+      {
+        "index": 56,
+        "id": "dataPanel",
+        "section": "body_lights",
+        "name": "Data Panel",
+        "half": "body",
+        "aliases": [
+          "Data panel"
+        ],
+        "position": "front-right",
+        "control": "none",
+        "cadName": null,
+        "kind": "light",
+        "sitsOn": "dataport"
+      },
+      {
+        "index": 57,
         "id": "other1",
         "section": "other_slots",
         "name": "Other part 1",
@@ -1006,7 +1036,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 56,
+        "index": 58,
         "id": "other2",
         "section": "other_slots",
         "name": "Other part 2",
@@ -1014,7 +1044,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 57,
+        "index": 59,
         "id": "other3",
         "section": "other_slots",
         "name": "Other part 3",
@@ -1022,7 +1052,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 58,
+        "index": 60,
         "id": "other4",
         "section": "other_slots",
         "name": "Other part 4",
@@ -1030,7 +1060,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 59,
+        "index": 61,
         "id": "other5",
         "section": "other_slots",
         "name": "Other part 5",
@@ -1038,7 +1068,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 60,
+        "index": 62,
         "id": "other6",
         "section": "other_slots",
         "name": "Other part 6",
@@ -1046,7 +1076,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 61,
+        "index": 63,
         "id": "other7",
         "section": "other_slots",
         "name": "Other part 7",
@@ -1054,7 +1084,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 62,
+        "index": 64,
         "id": "other8",
         "section": "other_slots",
         "name": "Other part 8",
@@ -1062,7 +1092,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 63,
+        "index": 65,
         "id": "other9",
         "section": "other_slots",
         "name": "Other part 9",
@@ -1070,7 +1100,7 @@
         "control": "body-ledc"
       },
       {
-        "index": 64,
+        "index": 66,
         "id": "other10",
         "section": "other_slots",
         "name": "Other part 10",
