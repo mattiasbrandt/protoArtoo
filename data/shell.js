@@ -52,6 +52,9 @@
     // question - where does this lead go (CONTEXT.md "Wiring"). The member row
     // in the Configure group below has been waiting for this one since #288.
     { page: "wiring", doc: "/wiring.html", icon: "connection", name: "Wiring", aliases: [] },
+    // Every light on the droid: the LED strip, the dome's lights and the body
+    // lights add-ons bring later (operator, 2026-09-18 on #369; #410).
+    { page: "lights", doc: "/lights.html", icon: "lightbulb-outline", name: "Lights", aliases: [] },
     { page: "seq", doc: "/seq.html", icon: "timeline-outline", name: "Sequences", aliases: ["sequences"] },
     { page: "rc", doc: "/rc.html", icon: "controller-classic-outline", name: "RC Control", aliases: [] },
     // What the droid is made of, and the other half of what used to be one
@@ -123,6 +126,9 @@
     // Wiring's printable sheet (#411): not among the #398 twenty-two, so read
     // from @mdi/svg 7.4.47 svg/printer-outline.svg, the -outline style the
     // chrome's other icons keep.
+    // Lights' (#410): not among the #398 twenty-two, so read from @mdi/svg
+    // 7.4.47 svg/lightbulb-outline.svg, the -outline style the chrome keeps.
+    "lightbulb-outline": "M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21V20H15V21A1,1 0 0,1 14,22H10A1,1 0 0,1 9,21M12,4A5,5 0 0,0 7,9C7,11.05 8.23,12.81 10,13.58V16H14V13.58C15.77,12.81 17,11.05 17,9A5,5 0 0,0 12,4Z",
     "printer-outline": "M19 8C20.66 8 22 9.34 22 11V17H18V21H6V17H2V11C2 9.34 3.34 8 5 8H6V3H18V8H19M8 5V8H16V5H8M16 19V15H8V19H16M18 15H20V11C20 10.45 19.55 10 19 10H5C4.45 10 4 10.45 4 11V15H6V13H18V15M19 11.5C19 12.05 18.55 12.5 18 12.5C17.45 12.5 17 12.05 17 11.5C17 10.95 17.45 10.5 18 10.5C18.55 10.5 19 10.95 19 11.5Z",
   };
 
@@ -182,9 +188,10 @@
         // is shaped by. Dormant until the C3 group (#351 and its siblings)
         // lands it as a destination (#288).
         "droidbuild",
-        // What the droid is made of -- Hardware Components, LED Strip, Droid
-        // Identity (#288, #404). Guided Setup is drawn over it while the droid
-        // is not set up, and is never in a group of its own (#351).
+        // What the droid is made of -- Hardware Components and Droid Identity
+        // (#288, #404); the LED Strip moved to Lights (#410). Guided Setup is
+        // drawn over it while the droid is not set up, and is never in a group
+        // of its own (#351).
         "configuration",
         // Servos stays beside Parts, and stays a page. It holds the Outputs:
         // driving each one, the calibration dial, Find by Moving and back to
@@ -193,6 +200,7 @@
         "servo",
         "parts",
         "wiring",
+        "lights",
       ],
     },
     {

@@ -3,9 +3,9 @@
 //
 // Configuration: what this droid is made of (CONTEXT.md "Configuration", #288).
 // The Droid Build, the Component Picker's families and the toggles behind
-// them, the LED strip's count and route, and the droid's name. The Outputs
-// moved to Wiring and Servos (data/output_settings.js, #369).
-// Auto-saves on every change.
+// them, and the droid's name. The Outputs moved to Wiring and Servos
+// (data/output_settings.js, #369), and the LED strip to Lights
+// (data/lights.js, #410). Auto-saves on every change.
 //
 // Guided Setup takes this surface over while the droid is not set up, and its
 // questions are these same controls (data/setup.js, which this surface also
@@ -47,24 +47,7 @@ const BOARD_LABELS = {
     protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
-  // The Outputs - wired, servo type, which one carries the LED strip - are set
-  // on Wiring and Servos now (data/output_settings.js, #369). This surface
-  // keeps the LED strip's count and preview, and reads where the strip is
-  // routed from the saved config rather than deriving it, and never sends
-  // aux_led_pin. The Output carrying it is named by what its board prints -
-  // the config entry whose ledStripPin is the routed pin, and its label (ADR
-  // 0033 Amendment 2026-09-19) - never by a list this page keeps.
-  let routedAuxPin = 0;
-  let stripOutputNames = {};  // { [aux_led_pin value]: the Output's name }
-  const stripOutputName = (pin) => stripOutputNames[pin] || "";
-
   const featureFeedback = document.getElementById("feature-feedback");
-  const auxLedCountInput = document.getElementById("aux-led-count");
-  const auxLedRouteStatus = document.getElementById("aux-led-route-status");
-  const auxLedRouteBadge = document.getElementById("aux-led-route-badge");
-  const auxLedSwatch = document.getElementById("aux-led-swatch");
-  const auxLedPreviewText = document.getElementById("aux-led-preview-text");
-  const auxLedPreviewNote = document.getElementById("aux-led-preview-note");
   const setupEnabledSummary = document.getElementById("setup-enabled-summary");
   const setupSaveSummary = document.getElementById("setup-save-summary");
   const identityNameInput = document.getElementById("droid-name-input");
@@ -73,7 +56,6 @@ const BOARD_LABELS = {
   const identityFeedback = document.getElementById("identity-feedback");
   const identityActions = document.getElementById("identity-actions");
   const identityDiagnosis = document.getElementById("identity-diagnosis");
-  const auxLedApplyTiming = document.getElementById("aux-led-apply-timing");
   const mdnsApplyTiming = document.getElementById("mdns-apply-timing");
 
   // Map from API payload key to featureToggles key
@@ -107,10 +89,6 @@ const BOARD_LABELS = {
   // is what "restart required" is computed from.
   let bootActiveToggles = {};
   let bootActiveRcMode = null;
-  // The LED strip's count as this page first read it. The droid does not report
-  // the count it started with, so this one comparison still resets on a reload;
-  // the strip is not a guided step and the summary does not read it.
-  let bootActiveLedCount = null;
   let savedRcMode = null;
   // The config the droid last answered with, which is what "saved" means below.
   let lastSaved = null;
@@ -357,36 +335,6 @@ const BOARD_LABELS = {
     }
   };
 
-  const sanitizeAuxLedCount = () => {
-    if (!auxLedCountInput) return 1;
-    const parsed = Number(auxLedCountInput.value);
-    const normalized = Number.isFinite(parsed)
-      ? Math.max(1, Math.min(255, Math.round(parsed)))
-      : 1;
-    auxLedCountInput.value = String(normalized);
-    return normalized;
-  };
-
-  const updateAuxLedConfigVisibility = () => {
-    const line = stripOutputName(routedAuxPin);
-    const hasRgb = Boolean(line);
-
-    if (auxLedCountInput) {
-      auxLedCountInput.disabled = !hasRgb;
-    }
-    // Where the strip is routed is a CHOSEN POSTURE, not a health signal, so it
-    // takes no colour at all: colouring an answer the builder gave would make a
-    // setting read as a symptom (CONTEXT.md "Status Colour", amended by the
-    // operator 2026-09-16). The two readouts say the same fact at two lengths -
-    // the section head says where, the pill beside the count says which line.
-    if (auxLedRouteStatus) {
-      auxLedRouteStatus.textContent = hasRgb ? `On ${line}` : "Not routed";
-    }
-    if (auxLedRouteBadge) {
-      auxLedRouteBadge.textContent = hasRgb ? line : "Not routed";
-    }
-  };
-
   const featureRow = (toggle) =>
     toggle.input?.closest(".component-row") || toggle.input?.closest(".toggle-switch");
 
@@ -484,7 +432,7 @@ const BOARD_LABELS = {
     const components = payload?.components || {};
 
     const isInitialLoad = lastSaved === null;
-    readBootActiveState(payload, isInitialLoad);
+    readBootActiveState(payload);
     lastSaved = payload || null;
     if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
@@ -577,20 +525,6 @@ const BOARD_LABELS = {
       }
     });
 
-    routedAuxPin = Number(payload?.aux_led_pin || 0);
-    stripOutputNames = {};
-    Object.values(payload?.components || {}).forEach((entry) => {
-      const pin = Number(entry?.ledStripPin) || 0;
-      if (pin > 0 && typeof entry.address === "string") {
-        stripOutputNames[pin] = typeof entry.label === "string" && entry.label !== "" ? entry.label : entry.address;
-      }
-    });
-
-    if (auxLedCountInput && payload?.aux_led_count !== undefined) {
-      auxLedCountInput.value = String(payload.aux_led_count);
-    }
-    sanitizeAuxLedCount();
-    updateAuxLedConfigVisibility();
     updateEnabledSummary();
     setFeatureFeedback(`Components loaded at ${new Date().toLocaleTimeString()}`, "success");
     paintRowTimings();
@@ -601,7 +535,7 @@ const BOARD_LABELS = {
   // change until the droid restarts, and a restart is a new page. A firmware
   // that predates the report sends neither field, and then nothing is read as
   // waiting rather than guessed at.
-  const readBootActiveState = (config, isInitialLoad) => {
+  const readBootActiveState = (config) => {
     if (typeof config?.rc?.activeInputMode === "string") bootActiveRcMode = config.rc.activeInputMode;
     if (Array.isArray(config?.activeToggles)) {
       const on = new Set(config.activeToggles);
@@ -610,7 +544,6 @@ const BOARD_LABELS = {
         bootActiveToggles[key] = on.has(key);
       });
     }
-    if (isInitialLoad && config?.aux_led_count !== undefined) bootActiveLedCount = Number(config.aux_led_count);
   };
 
   const checkIfRcRestartNeeded = () => {
@@ -656,26 +589,21 @@ const BOARD_LABELS = {
   };
   const isPending = (stepKey) => Boolean(WAITING[stepKey]?.());
 
-  const ledCountWaiting = () =>
-    bootActiveLedCount !== null && Number(lastSaved?.aux_led_count) !== bootActiveLedCount;
-
   // The latest timing any waiting change on this page is held to: what a save
   // line and the save pill say.
   const waitingTiming = () => {
     if (rcRestartPending) return TIMING.RESTART_REQUIRED;
     const stagedWaiting = Object.keys(WAITING).some((stepKey) => stepKey !== "rc" && isPending(stepKey));
-    return stagedWaiting || ledCountWaiting() ? TIMING.AT_REBOOT : TIMING.IMMEDIATE;
+    return stagedWaiting ? TIMING.AT_REBOOT : TIMING.IMMEDIATE;
   };
 
   const timingListeners = new Set();
   const notifyTimingChange = () => timingListeners.forEach((listener) => listener());
 
-  // The rows on this surface that are not a guided step: the LED strip's count
-  // is read once when the strip starts (src/tasks/aux_led.cpp), and the
-  // hostname once when mDNS starts with the network (src/web/web_server.cpp),
+  // The one row on this surface that is not a guided step: the hostname is
+  // read once when mDNS starts with the network (src/web/web_server.cpp),
   // where the name beside it is read live.
   const paintRowTimings = () => {
-    TIMING.paint(auxLedApplyTiming, TIMING.AT_REBOOT, { pending: ledCountWaiting() });
     TIMING.paint(mdnsApplyTiming, TIMING.AT_REBOOT, {
       pending: bootActiveMdnsUseName !== null && savedMdnsUseName !== bootActiveMdnsUseName,
     });
@@ -718,9 +646,6 @@ const BOARD_LABELS = {
           body.set(paramKey, toggle.input.checked ? "true" : "false");
         }
       });
-      if (auxLedCountInput) {
-        body.set("aux_led_count", String(sanitizeAuxLedCount()));
-      }
       Object.entries(pendingPickParams).forEach(([field, value]) => body.set(field, value));
       carriedPick = Object.keys(pendingPickParams).length > 0;
       pendingPickParams = {};
@@ -824,14 +749,6 @@ const BOARD_LABELS = {
     }
   });
 
-  if (auxLedCountInput) {
-    auxLedCountInput.addEventListener("change", () => {
-      featureEditGeneration += 1;
-      sanitizeAuxLedCount();
-      debouncedSave();
-    });
-  }
-
   if (identityNameInput) {
     identityNameInput.addEventListener("input", () => {
       const normalized = normalizeIdentityInput(identityNameInput.value);
@@ -861,7 +778,6 @@ const BOARD_LABELS = {
     updateEnabledSummary();
   });
   updateEnabledSummary();
-  updateAuxLedConfigVisibility();
   setSaveSummary("Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
   setIdentityFeedback("Loading controller identity…");
@@ -870,51 +786,18 @@ const BOARD_LABELS = {
 
   // ---- What the droid is doing right now ----
   //
-  // Two things on this surface read the live status rather than the saved
-  // configuration: the LED strip preview, which shows the colour the strip is
-  // actually showing, and the sound module named beside Audio. The serial
-  // lanes and the memory readings that used to share this read are
-  // Maintenance's now (data/maintenance.js), so this surface asks for the
-  // status on its own account while it is the one on screen (#404).
+  // One thing on this surface reads the live status rather than the saved
+  // configuration: the sound module named beside Audio. The serial lanes and
+  // the memory readings that used to share this read are Maintenance's now
+  // (data/maintenance.js), and the LED strip's live colour is Lights' (#410),
+  // so this surface asks for the status on its own account while it is the
+  // one on screen (#404).
   const s2DriverLabel = document.getElementById("s2-driver-label");
-
-  const renderAuxLedPreview = (status) => {
-    if (!auxLedSwatch || !auxLedPreviewText || !auxLedPreviewNote) return;
-    const aux = status?.auxLed;
-    const pin = Number(aux?.pin || 0);
-    const available = aux?.available !== false;
-    const effect = String(aux?.effect || "off");
-    const r = Math.max(0, Math.min(255, Number(aux?.r || 0)));
-    const g = Math.max(0, Math.min(255, Number(aux?.g || 0)));
-    const b = Math.max(0, Math.min(255, Number(aux?.b || 0)));
-
-    auxLedSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-    auxLedSwatch.style.opacity = pin > 0 && available && effect !== "off" ? "1" : "0.35";
-
-    if (pin === 0) {
-      auxLedPreviewText.textContent = "";
-      auxLedPreviewNote.textContent = "";
-      return;
-    }
-
-    // The words carry both readings. Neither sentence is coloured: the swatch
-    // beside them already shows the one thing on this row that is a colour, and
-    // it is the strip's own live colour rather than a state.
-    if (!available) {
-      auxLedPreviewText.textContent = `LED strip on ${stripOutputName(pin) || "its output"} unavailable`;
-      auxLedPreviewNote.textContent = "The strip is recorded, but the controller could not start it.";
-      return;
-    }
-
-    auxLedPreviewText.textContent = `${stripOutputName(pin) || "LED strip"} - ${effect}`;
-    auxLedPreviewNote.textContent = `Live colour ${r},${g},${b} with the ${effect} effect.`;
-  };
 
   const renderLiveStatus = (d) => {
     if (s2DriverLabel) {
       s2DriverLabel.textContent = d.audio?.driver || "";
     }
-    renderAuxLedPreview(d);
   };
 
   // Rethrows, so the surface poll below can tell a read that landed from one

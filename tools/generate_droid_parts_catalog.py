@@ -125,6 +125,7 @@ PART_SECTIONS = (
     "dome_fixtures",
     "body_doors",
     "body_arms",
+    "body_lights",
 )
 
 # Which half of the droid each part section belongs to. One seed list serves
@@ -143,6 +144,7 @@ SECTION_HALVES = {
     "dome_fixtures": "dome",
     "body_doors": "body",
     "body_arms": "body",
+    "body_lights": "body",
 }
 
 # A section that declares parts and no half would silently drop those parts out

@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 425d0f7581e46842744b8ce1160039b3b74a2c6214cd6656711ffcece4a51479
+// Source digest: sha256 5849680e6b37e19b657cdb778d5afa55e47ce9896d3b7234fd64d7d4e0f40bd7
 //
 // The Droid Parts Catalog's id vocabulary, and only that. A Part is
 // identity; an Output Address is only wiring, so there is no parts table
@@ -46,7 +46,7 @@
 #include <stddef.h>
 #include <string.h>
 
-constexpr size_t DROID_PART_COUNT = 65;
+constexpr size_t DROID_PART_COUNT = 67;
 
 // The longest id here, so a consumer sizing a buffer against the vocabulary
 // reads the number rather than counting the table.
@@ -108,6 +108,8 @@ inline constexpr const char* const DROID_PART_IDS[DROID_PART_COUNT] = {
     "interTool",  // body_arms
     "utilLo",  // body_arms
     "utilUp",  // body_arms
+    "cbi",  // body_lights
+    "dataPanel",  // body_lights
     "other1",  // other_slots
     "other2",  // other_slots
     "other3",  // other_slots

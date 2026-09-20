@@ -69,6 +69,22 @@ void test_a_light_is_a_part_here_exactly_as_a_panel_is() {
     TEST_ASSERT_TRUE(droidPartIdIsKnown("upperPanel"));
 }
 
+void test_a_body_light_is_named_here_and_fitted_by_no_design() {
+    // The body's lights are Parts exactly as the dome's are (#410, ADR 0045),
+    // so firmware names them. What a builder does NOT get is one they never
+    // bolted on: a body light is a Common Addition, seeded by no design, so a
+    // controller nobody has opened a browser at must not come up claiming a
+    // Charge Bay Indicator this droid may not have (CONTEXT.md "Common
+    // Addition"). Both halves are one sentence, and this is the end of it that
+    // a stray seeds: entry in the catalog would break silently.
+    TEST_ASSERT_TRUE(droidPartIdIsKnown("cbi"));
+    TEST_ASSERT_TRUE(droidPartIdIsKnown("dataPanel"));
+    for (size_t i = 0; i < DROID_BUILD_DEFAULT_FITTED_COUNT; ++i) {
+        TEST_ASSERT_TRUE(strcmp(DROID_BUILD_DEFAULT_FITTED_IDS[i], "cbi") != 0);
+        TEST_ASSERT_TRUE(strcmp(DROID_BUILD_DEFAULT_FITTED_IDS[i], "dataPanel") != 0);
+    }
+}
+
 void test_the_escape_hatch_is_nameable_in_firmware() {
     // A spare output is a body output. If these ids did not reach firmware, a
     // real output a builder wired their own hardware to would be unnameable
@@ -79,10 +95,11 @@ void test_the_escape_hatch_is_nameable_in_firmware() {
 }
 
 void test_the_vocabulary_is_the_whole_catalog_and_fits_a_row() {
-    // 55 declared Parts plus the ten escape-hatch slots. This number moves when
+    // 57 declared Parts plus the ten escape-hatch slots. This number moves when
     // ANY Part is declared, not only one the body drives - which is the whole
-    // change #358 made (#409: drawer out, eight body panels in).
-    TEST_ASSERT_EQUAL_size_t(65, DROID_PART_COUNT);
+    // change #358 made (#409: drawer out, eight body panels in; #410: the
+    // Charge Bay Indicator and the Data Panel in, as body light Parts).
+    TEST_ASSERT_EQUAL_size_t(67, DROID_PART_COUNT);
 
     // Every id in it is storable on a Servo Output row's Part field. The
     // static_assert in droid_part_availability.h is the compile-time half; this
@@ -220,6 +237,7 @@ int main(int, char**) {
 
     RUN_TEST(test_every_declared_part_is_one_firmware_names);
     RUN_TEST(test_a_light_is_a_part_here_exactly_as_a_panel_is);
+    RUN_TEST(test_a_body_light_is_named_here_and_fitted_by_no_design);
     RUN_TEST(test_the_escape_hatch_is_nameable_in_firmware);
     RUN_TEST(test_the_vocabulary_is_the_whole_catalog_and_fits_a_row);
     RUN_TEST(test_the_vocabulary_refuses_what_is_not_an_id);

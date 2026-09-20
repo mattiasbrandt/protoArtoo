@@ -162,7 +162,7 @@ class DroidPartsDesigns(unittest.TestCase):
 
     def test_common_additions_are_claimed_by_no_design(self):
         common = common_addition_ids(self.doc)
-        self.assertEqual(sorted(common), ["gripArm", "gripClaw", "interArm", "interTool"])
+        self.assertEqual(sorted(common), ["cbi", "dataPanel", "gripArm", "gripClaw", "interArm", "interTool"])
         for design in self.designs:
             for variant_id, seeds in seed_groups(design):
                 if seeds == "TBD":

@@ -190,14 +190,14 @@ class DriftIsReported(unittest.TestCase):
     def test_a_table_that_outran_its_own_count(self):
         """The one shape of hand damage that still compiles: an id appended past
         the count a consumer sizes its buffer against."""
-        self.scratch.edit(self.scratch.firmware, "DROID_PART_COUNT = 65;",
+        self.scratch.edit(self.scratch.firmware, "DROID_PART_COUNT = 67;",
                           "DROID_PART_COUNT = 64;")
-        self.assertFails("DROID_PART_COUNT is 64 and the table holds 65 ids")
+        self.assertFails("DROID_PART_COUNT is 64 and the table holds 67 ids")
 
     def test_a_part_kind_no_browser_module_reads(self):
-        """`light` with nothing consulting it gives six Parts the treatment of
-        something that moves - travel and throw offered for a device with
-        neither (#357)."""
+        """`light` with nothing consulting it gives every light Part the
+        treatment of something that moves - travel and throw offered for a
+        device with neither (#357)."""
         self.scratch.consumer.unlink()
         self.assertFails("Part Kind 'light' reaches data/droid_parts.js and no "
                          "browser module reads it")

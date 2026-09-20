@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/seq_protocol_check.js,/apply_timing.js,/output_settings.js,/lights.js,/footer.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lights - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- Thin delegate: a direct visit is handed to the shell at this route (ADR 0048). -->
+    <script>window.PAShellDelegate = true; location.replace("/#lights");</script>
+  </head>
+  <body data-page="lights">
+
+    <!-- What lights this droid has, how each one is lit, and what it can be
+         told to do (CONTEXT.md "Lights", ADR 0067). Every Part whose Part Kind
+         is a light, grouped by where it sits.
+
+         The lists are written by data/lights.js from data/droid_parts.js, so
+         no light is named in this file: a row added to docs/droid-parts.yaml
+         lands here with no code change. Nothing on this page names an Output,
+         a pin or a board label - what is on a lead is Wiring's answer, and is
+         reached from here rather than repeated. -->
+    <div class="title">
+      <div>
+        <h1>Lights</h1>
+      </div>
+    </div>
+
+    <!-- The dome's lights. The dome controller owns that hardware, so none of
+         them has a Light Type; protoArtoo reaches them by forwarding the dome's
+         own documented commands, which is what a sequence step already sends.
+         What the dome then does is the dome's to know, so this page reports
+         what was asked for and never what the lights are (ADR 0045).
+
+         The heading carries a count and nothing else. What the section is for
+         is visible in it (docs/ui-copy-voice.md rules 8 and 15); the sentence
+         that used to sit here explained the section to a builder already
+         looking at it, and the operator cut it on 2026-09-20. -->
+    <div class="card">
+      <div class="sect"><h2>Dome</h2><span class="sub" id="lights-dome-count">finding out</span></div>
+      <div id="lights-dome"></div>
+    </div>
+
+    <!-- The body's lights. Each is lit by the lead it is on and takes that
+         lead's Light Type; one on no lit lead reads NOT LIT and offers the way
+         to Wiring. The note is drawn only when a lit lead is lighting nothing
+         declared, which is a state worth saying rather than an explanation. -->
+    <div class="card">
+      <div class="sect"><h2>Body</h2><span class="sub" id="lights-body-count">finding out</span></div>
+      <p class="note note-info hidden" id="lights-body-spare" role="status"></p>
+      <div id="lights-body"></div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

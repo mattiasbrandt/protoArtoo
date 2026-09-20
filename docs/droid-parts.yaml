@@ -430,6 +430,50 @@ body_doors:
   - { id: bodyPanel7, cad_name: TBD, aliases: ["Body panel 7"], control: none }
   - { id: bodyPanel8, cad_name: TBD, aliases: ["Body panel 8"], control: none }
 
+body_lights:              # what the body carries that lights up — parts, not settings
+  # A body light is a Part for the reason a dome light is (ADR 0045): a light
+  # is one thing an Output drives, so it is named, choreographed and wired like
+  # any other part rather than living as a setting on some page. The section
+  # exists because the body had no light Parts at all, which left the LED strip
+  # with no vocabulary but the stored config key it is routed by (#410).
+  #
+  # ReelTwo puts the Charge Bay Indicator and the Data Panel under `body/`,
+  # they sit on the front of the body, and driving them from the dome would
+  # send MAX7219 clock and data through a rotating slip-ring contact, so the
+  # body owns them (ADR 0045). BadMotivator and FireStrip stay dome-side, where
+  # the fork already wires them, and are not declared here.
+  #
+  # `control: none` on the two indicators is measured, not assumed: the
+  # AstroPixelsPlus image protoArtoo talks to compiles both out
+  # (`AP_ENABLE_CBI=0`, `AP_ENABLE_DATAPANEL=0`, docs/spec-sheets/
+  # astropixels-dome-controller.md:440-443), and nothing on the body drives
+  # them yet either. It says what is DRIVABLE and never what is NAMEABLE.
+  #
+  # `cad_name: null` on every row: a body light is a Common Addition, offered
+  # to every droid and fitted by default on none, because a builder bolts these
+  # on rather than getting them with a design (ADR 0047, CONTEXT.md "Common
+  # Addition"). No design seeds one.
+  #
+  # AN LED STRIP IS NOT A ROW HERE, AND NEVER WAS ONE TO WRITE. It is a Light
+  # Type - what protoArtoo puts on the end of one of its own leads to light a
+  # Part, the light half of the answer a servo gives as its model (ADR 0067,
+  # CONTEXT.md "Light Type"). The thing on the droid is the Data Panel or the
+  # Charge Bay Indicator; what lights it belongs to the lead it is on, and the
+  # Part inherits it. A row here for the strip would put a technology beside
+  # two things, which is the defect that cost this ticket three iterations -
+  # the operator, 2026-09-20: "LED strip is simply one of the differed light
+  # types we can assign to a droid part". The Light Types live where the leads
+  # are answered for (data/output_settings.js); Lights reads them from there.
+  #
+  # The ids are short on purpose. A Servo Output row stores a part id in
+  # SERVO_OUTPUT_PART_ID_MAX = 12 characters (include/servo_output_row.h), so
+  # `chargeBayIndicator` could never be stored against an output; and every id
+  # here stays inside the DROID_PART_ID_MAX_LEN the catalog already generates,
+  # so no firmware buffer widens to carry them. `cbi` is the community
+  # shorthand, and the label spells it out.
+  - { id: cbi,       cad_name: null, label: Charge Bay Indicator, aliases: ["CBI"], kind: light, control: none, sits_on: chargebay }
+  - { id: dataPanel, cad_name: null, label: Data Panel,           aliases: ["Data panel"], kind: light, control: none, sits_on: dataport }
+
 body_arms:
   # Every arm is a Common Addition: optional, never fitted by default, and
   # offered to every droid (operator's verified mapping, 2026-09-18, #409).
