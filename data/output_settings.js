@@ -78,7 +78,7 @@
   //   strip        the aux_led_pin value that routes the LED strip to it, 0 if
   //                it cannot carry the strip
   //   enabledField, typeField   the POST /api/config fields that save it
-  //   wire         its place in that order, which picks its wire's colour
+  //   wire         its place in that order, which picks its wire's color
   let outputs = [];
   let state = null;  // { [id]: { enabled, type } }
   // What the droid started with, as first read: the wired ticks and the
@@ -252,11 +252,11 @@
   // says where it plugs in - never a name this file made up.
   const nameOf = (output) => output.label || output.address;
 
-  // The wire's colour is picked by its place in the firmware's order, from the
+  // The wire's color is picked by its place in the firmware's order, from the
   // numbered --wire-* palette in data/style.css, the same way data/wiring.js
-  // picks it for the line on the sheet (CONTEXT.md "Status Colour": it names
+  // picks it for the line on the sheet (CONTEXT.md "Status Color": it names
   // a wire, never a state). The plate carries only that place, as data-wire;
-  // the stylesheet maps it to the colour, so this file holds none.
+  // the stylesheet maps it to the color, so this file holds none.
   const WIRE_PALETTE = 8;
   const wireSlot = (output) => String(((output.wire - 1) % WIRE_PALETTE) + 1);
 
@@ -266,8 +266,8 @@
   // Wiring's plate: the Output as it sits on the board - its printed name, the
   // three-pin header its lead plugs onto, whether it is wired - and, on an
   // Output that can carry the LED strip, whether it carries a servo or the
-  // strip. The whole head is the press. The plate wears its wire's colour
-  // (its data-wire, from wireSlot()), the same colour that wire is drawn in on
+  // strip. The whole head is the press. The plate wears its wire's color
+  // (its data-wire, from wireSlot()), the same color that wire is drawn in on
   // the sheet above, so a plate and its line on the diagram are found by eye (operator, 2026-09-19 on #411: the Outputs
   // section "looks to basic and boring").
   const wiredPlate = (output) => {

@@ -358,8 +358,8 @@
 
   // The Controls section head's subtitle, and the same three words beside the
   // control each of them belongs to. Three postures the operator chose, so
-  // none of them takes a colour: a chosen posture is a readout, not a symptom
-  // (#327 "Status Colour", as amended 2026-09-16).
+  // none of them takes a color: a chosen posture is a readout, not a symptom
+  // (#327 "Status Color", as amended 2026-09-16).
   //
   // Web control and the estop used to be here as two more pills. Both are
   // Status Plate cells (CONTROL, ESTOP), the plate is on every surface, and

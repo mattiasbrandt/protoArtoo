@@ -319,7 +319,7 @@ rather than a half-written file. A checkpoint is labelled
 `IN PROGRESS / INCOMPLETE` — a verdict no finished run can carry, so you can
 never mistake one for a conclusion.
 
-**The transcript** — every line `stderr` showed, with no colour and no cursor
+**The transcript** — every line `stderr` showed, with no color and no cursor
 control, plus the per-event detail that was too noisy for the terminal. Appended,
 never truncated, so pointing two runs at one path keeps both. Its path is in the
 report as `logPath`, so the next tool does not have to parse a terminal to find

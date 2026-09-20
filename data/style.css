@@ -1,8 +1,8 @@
 /* ---------------------------------------------------------------------------
-   The palette - and the only place in this file a colour literal may appear.
+   The palette - and the only place in this file a color literal may appear.
 
    Dark only, by decision (#327): one palette means there is no second one to
-   keep in step and no alias to restate. A colour literal below this block is a
+   keep in step and no alias to restate. A color literal below this block is a
    defect. That rule is mechanical rather than aspirational because the project
    this UI learns from shipped two such literals - a modal backdrop and a button
    ground, both hard-coded dark - and neither was caught until a second theme
@@ -10,15 +10,15 @@
    the parsed stylesheet, which is why the tools/ checker beside it does not.
 
    The identity is the INSIDE of the droid, an instrument panel (ADR 0066,
-   CONTEXT.md "Surface Anatomy"). Colour does two jobs here and they never mix:
+   CONTEXT.md "Surface Anatomy"). Color does two jobs here and they never mix:
 
      INTERACTION is the droid's blue, and only the blue - selection, the row
      shown, the primary act, the focus ring.
 
-     A SIGNAL LIGHT is a droid LED and takes a real LED colour. Green nominal,
+     A SIGNAL LIGHT is a droid LED and takes a real LED color. Green nominal,
      amber degraded and you can do something about it, red stopped or refused,
      and the dim ink for a thing that is not reporting (operator, 2026-09-16,
-     which amends CONTEXT.md "Status Colour" as it was written). Nothing that
+     which amends CONTEXT.md "Status Color" as it was written). Nothing that
      reports a state is blue, and nothing you can press is green.
 
      --success   clear, armed, linked, mounted, reporting
@@ -27,7 +27,7 @@
      --text-dim  never asked, not fitted, switched off
 
    A chosen posture - a speed preset, a sleep state, a control mode - takes no
-   colour at all: it is a readout, not a symptom. And none of this reaches
+   color at all: it is a readout, not a symptom. And none of this reaches
    CONTEXT.md "Availability Family": WHY a thing is unusable is still told by
    treatment and never by hue, which is a different axis from how it is doing.
 
@@ -114,21 +114,21 @@
   --paper-ink: #111111;
   --paper-line: #999999;
 
-  /* Promoted literals. Each of these was a hard-coded colour inside a rule
+  /* Promoted literals. Each of these was a hard-coded color inside a rule
      until this block claimed it, and is named here for the job it does. */
   --scrim: #040a14;         /* full-viewport wash behind the sleep overlay */
   /* The dome drawing's open-panel fill and edge. This is a position readout on
      a picture of the droid - where a panel physically is - and not a Status
-     Colour, so it is deliberately its own hue and never --warning. */
+     Color, so it is deliberately its own hue and never --warning. */
   --panel-open: #ff9f43;
   --panel-open-edge: #ff7f00;
 
   /* The Wiring diagram's wires (operator, 2026-09-19 on #411, CONTEXT.md
-     "Status Colour"). Each wire takes its own colour, the way a real loom is
-     told apart, and the colour NAMES the wire: it carries no state, so none of
+     "Status Color"). Each wire takes its own color, the way a real loom is
+     told apart, and the color NAMES the wire: it carries no state, so none of
      these sits on the green / amber / red / grey of a health signal or on the
-     interaction blue. A numbered palette, not a colour per wire: which wires
-     a board has is the firmware's answer, and a wire takes the colour at its
+     interaction blue. A numbered palette, not a color per wire: which wires
+     a board has is the firmware's answer, and a wire takes the color at its
      place in that answer (data/wiring.js wireOrder(), data/output_settings.js
      wireStyle()), round again past eight. --wire-off is a wire to something
      not wired, drawn dashed. Mid tones on purpose: the same value reads on the
@@ -223,7 +223,7 @@
 
   /* Elevation: three heights and one recess. A box-shadow that is a focus ring
      or a glow is not elevation - it is written at its own site as a share of
-     the colour it glows, so it moves when that token moves. */
+     the color it glows, so it moves when that token moves. */
   --elev-1: 0 2px 6px color-mix(in srgb, var(--shade) 25%, transparent);
   --elev-2: 0 4px 12px color-mix(in srgb, var(--shade) 30%, transparent);
   --elev-3: 0 12px 36px color-mix(in srgb, var(--shade) 45%, transparent);
@@ -391,7 +391,7 @@ svg.sprite {
   overflow: hidden;
 }
 
-/* An icon from that sprite. It inherits the text colour it sits in and always
+/* An icon from that sprite. It inherits the text color it sits in and always
    keeps its label beside it: an operator surface carries no emoji and no
    unlabelled glyph (ADR 0066, docs/ui-copy-voice.md). */
 svg.i {
@@ -526,7 +526,7 @@ code {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 /* pill-info is not a state. It is the neutral pill - the log level, a kind of
-   thing - and it takes no colour at all, because blue reports nothing
+   thing - and it takes no color at all, because blue reports nothing
    (ADR 0066) and a plain label has nothing to report. */
 .status-pill.pill-info {
   border-color: var(--border-strong);
@@ -764,9 +764,9 @@ nav > a {
   border-left: 1px solid var(--border);
 }
 
-/* Three voices, and emphasis is weight rather than colour (#327).
+/* Three voices, and emphasis is weight rather than color (#327).
    .hint is the cue under a control, .prose is the why, and a .note is the
-   consequence beside a choice. Exactly two note colours: amber says act on
+   consequence beside a choice. Exactly two note colors: amber says act on
    this, blue says here is information. */
 .hint {
   color: var(--text-faint);
@@ -930,8 +930,8 @@ nav > a {
 }
 
 /* A plate carrying one of the reserved meanings wears it as a signal band down
-   its left edge - the only edge the anatomy colours. The band is written here
-   rather than left as a recolour of the seam, because the seam is one pixel
+   its left edge - the only edge the anatomy colors. The band is written here
+   rather than left as a recolor of the seam, because the seam is one pixel
    and a one-pixel red is not a warning anybody sees. */
 .card.danger {
   border-left: 2px solid var(--danger);
@@ -1110,8 +1110,8 @@ body[data-page="firmware"] .card > * + * {
 
 
 /* A signal light is a droid LED (operator, 2026-09-16, amending CONTEXT.md
-   "Status Colour"): 7 px, and a lit one glows, which is what makes it read as
-   an LED rather than as a coloured pixel.
+   "Status Color"): 7 px, and a lit one glows, which is what makes it read as
+   an LED rather than as a colored pixel.
 
    A lamp with no state class yet: the dashboard renders these before the first
    status frame arrives, and page_bootstrap.js lights one "info" while a page
@@ -1232,7 +1232,7 @@ body[data-page="firmware"] .card > * + * {
 
 /* The chosen preset is lit by the interaction blue and by nothing else: it is
    what the builder picked, so it takes the "you chose this" treatment and not
-   a signal colour (CONTEXT.md "Status Colour"). */
+   a signal color (CONTEXT.md "Status Color"). */
 .drive-preset-card.preset-active,
 .drive-preset-card.selected {
   border-color: var(--accent-bright);
@@ -1560,7 +1560,7 @@ input.input-narrow {
 
 /* What is recorded as fitted to this component - a product name off the
    Component Registry. It is a KIND of thing, not a state, so it is the
-   anatomy's engraved label rather than a coloured badge. */
+   anatomy's engraved label rather than a colored badge. */
 .component-badge {
   display: inline-block;
   background: transparent;
@@ -1617,7 +1617,7 @@ input.input-narrow {
    which told a builder that a board which will never run a feature and a
    controller still fetching its manifest were the same kind of answer.
 
-   Amber cannot come back here. CONTEXT.md "Status Colour" reserves it for
+   Amber cannot come back here. CONTEXT.md "Status Color" reserves it for
    "you can do something about this, and should", and two of these families -
    change it elsewhere, settled no - are things the builder cannot change from
    any screen protoArtoo has, while a third is a transient unknown.
@@ -1625,7 +1625,7 @@ input.input-narrow {
    The treatments are read from r2d2-astromech-simulator v1.79.0 (175ad1b),
    which answers the same question twice. .blkbrick.unwired
    (src/css/09-sequencer.css:245) carries "nothing drives this" with a dashed
-   border, a dimmer text tier and reduced opacity and no accent colour at all,
+   border, a dimmer text tier and reduced opacity and no accent color at all,
    and it deletes the ramp wedges because they are a promise about movement
    that brick cannot keep. .raildot.na and .optgrid.na
    (src/css/07-startup.css:612) dress "not used by this model" in opacity
@@ -1660,12 +1660,12 @@ input.input-narrow {
 
 /* Switched on, and this image can offer it. It is the brightest of the four
    rails and nothing else: a component the builder ticked is a CHOSEN POSTURE
-   and takes no colour at all, and an Availability Family is told apart by
-   treatment, never by hue (CONTEXT.md "Status Colour", "Availability Family").
+   and takes no color at all, and an Availability Family is told apart by
+   treatment, never by hue (CONTEXT.md "Status Color", "Availability Family").
 
    This rail was --success until #399 slice 2. Green was defensible while #327
    reserved only amber and red; the operator's 2026-09-16 amendment made green
-   a Status Colour meaning "nominal - clear, armed, linked, reporting", which is
+   a Status Color meaning "nominal - clear, armed, linked, reporting", which is
    a reading of how a thing is DOING, and a switch nobody has asked the droid
    about is not that. */
 .feature-availability-row.feature-state-on {
@@ -1684,7 +1684,7 @@ input.input-narrow {
 }
 
 /* change it elsewhere — reflash, or a different controller board. Nothing on
-   this screen moves it, so it spends no colour at all: a dashed rail and a
+   this screen moves it, so it spends no color at all: a dashed rail and a
    drop in brightness, lifted back by hover and focus-within so a dimmed row is
    still readable and its controls still reachable by keyboard. */
 .availability-change-elsewhere,
@@ -1776,7 +1776,7 @@ input.input-narrow {
 
 /* A switch the builder is not allowed to move. Hatched so it reads as barred
    rather than merely inert, and hatched in the neutral lift rather than in a
-   colour, because which family barred it is already said by the row. */
+   color, because which family barred it is already said by the row. */
 .feature-availability-row input:disabled + .toggle-slider {
   cursor: not-allowed;
   border-color: var(--border);
@@ -1870,7 +1870,7 @@ input.input-narrow {
 }
 
 /* The default lamp is unlit: a quiet bulb in its socket, no glow and no
-   colour. Each family lights it, dims it or removes it below. */
+   color. Each family lights it, dims it or removes it below. */
 .feature-availability-lamp-indicator .feature-availability-lamp {
   position: static;
   width: 14px;
@@ -2165,7 +2165,7 @@ body[data-page="firmware"] .form-grid {
   background: color-mix(in srgb, var(--accent-bright) 75%, var(--border));
 }
 
-/* One colour for the bar whichever way the dome is going, and the same one
+/* One color for the bar whichever way the dome is going, and the same one
    Foot Drive's live output bars take, so the two live readouts in this product
    read alike. The renderer used to mix it towards green going forward and
    towards amber going back, which made one of two directions look like a
@@ -2378,7 +2378,7 @@ body[data-page="wifi"] .wifi-mode-options {
 
 /* A choice card: the plate's chamfer, the seam all round, and the interaction
    blue on the one the builder picked. Nothing here reports a state, so nothing
-   here takes a signal colour. */
+   here takes a signal color. */
 body[data-page="wifi"] .wifi-mode-option {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -2409,16 +2409,16 @@ body[data-page="wifi"] .wifi-mode-title {
   font-weight: 600;
 }
 
-/* The posture plate's own signal band, and the one place this surface colours
-   for state. Two pixels rather than a recoloured one-pixel seam, for the
+/* The posture plate's own signal band, and the one place this surface colors
+   for state. Two pixels rather than a recolored one-pixel seam, for the
    reason .card.danger gives: a one-pixel red is not a warning anybody sees.
 
    Standalone AP Mode gets no band at all - CONTEXT.md calls it a valid
-   operator-selected posture beyond onboarding, and a colour on a chosen
+   operator-selected posture beyond onboarding, and a color on a chosen
    posture would read it as a symptom.
 
    Amber and red are told apart by what the builder does next (CONTEXT.md
-   "Status Colour"). A controller in WiFi Provisioning or Network Recovery Mode
+   "Status Color"). A controller in WiFi Provisioning or Network Recovery Mode
    has not failed at anything: it is waiting for the builder to save settings,
    which is exactly "you can do something about this". A client that was given
    a network and could not join it HAS failed, and that is red. */
@@ -2484,7 +2484,7 @@ body[data-page="wifi"] .wifi-summary-list dd {
    and no lift or drop shadow - a raised pill reads as a web button, which is
    the look ADR 0066 leaves. The 36 px floor is the bench's density (#398); the
    one control that keeps a 44 px floor is the estop, whose own rule says so.
-   Nothing you can press is green: the signal colours belong to readouts. */
+   Nothing you can press is green: the signal colors belong to readouts. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -2598,8 +2598,8 @@ textarea:disabled {
 
    The button's face is red at all times. That is the control's identity, not
    a state readout: what the droid is actually doing is .shell-estop-state's
-   job, and a button that changed colour to say "not stopping anything" would
-   be colouring for state, which #327 reserves for a latch that is set. */
+   job, and a button that changed color to say "not stopping anything" would
+   be coloring for state, which #327 reserves for a latch that is set. */
 .topbar-right {
   display: flex;
   align-items: center;
@@ -2693,9 +2693,9 @@ textarea:disabled {
    until that surface has answered again - a live-looking value is worse than
    one you can see is old.
 
-   Uncoloured on purpose. Red is stopped or refused and amber is something the
+   Uncolored on purpose. Red is stopped or refused and amber is something the
    builder can act on (#327); this is neither, so it spends the dim text and a
-   quiet edge and no status colour at all. */
+   quiet edge and no status color at all. */
 .surface-resumed {
   border-left: 3px solid var(--border);
   background: color-mix(in srgb, var(--lift) 3%, transparent);
@@ -2807,9 +2807,9 @@ body.sleep-mode-active {
 
    The three outcomes used to be told apart by an emoji in ::before and by
    nothing else - and an operator surface carries no emoji (ADR 0066), so they
-   now take the signal colour whose meaning they already have: green it worked,
+   now take the signal color whose meaning they already have: green it worked,
    amber you can do something about it, red it stopped or was refused. The
-   sentence still says which on its own; the colour is the second reading, not
+   sentence still says which on its own; the color is the second reading, not
    the only one. */
 .feedback,
 .sys-status,
@@ -3134,8 +3134,8 @@ p.output-parts {
    the first cuts drive -- so they carry a pointer and a hover lift, and
    nothing else.
 
-   Colour on the plate reports the droid's own health and never a posture the
-   operator chose (#327 "Status Colour", as the operator amended it on
+   Color on the plate reports the droid's own health and never a posture the
+   operator chose (#327 "Status Color", as the operator amended it on
    2026-09-16): --success for a thing doing its job, --danger for something
    stopped or refused, and the unlit dot for a chosen mode, a switched-off
    component or a value the droid has not sent yet. Amber is spent nowhere
@@ -3255,7 +3255,7 @@ p.output-parts {
 }
 
 /* Doing its job. The green is on the light; the value stays ink, because the
-   plate's job is to be read at a glance and eight coloured words is not a
+   plate's job is to be read at a glance and eight colored words is not a
    glance. */
 .status-chip-live .status-chip-dot {
   background: var(--success);
@@ -3266,7 +3266,7 @@ p.output-parts {
 /* Stopped or refused -- the one thing --danger says (#327). On this plate
    that is a latched estop, feet a failsafe is holding at zero, and a link
    that was up and is gone. A component nobody fitted and a mode the operator
-   chose are neither, and take no colour. This is the one state that colours
+   chose are neither, and take no color. This is the one state that colors
    the word as well as the light: it is the one an operator must not miss. */
 .status-chip-stopped {
   color: var(--danger);
@@ -3317,9 +3317,9 @@ p.output-parts {
 
 /* The Ignored Input Notice (CONTEXT.md, #324, #346).
 
-   Uncoloured on purpose. Nothing failed and nothing is refusing the operator
+   Uncolored on purpose. Nothing failed and nothing is refusing the operator
    personally: a control is switched off and the notice says which droid state
-   is off, so it is a Note, and colour is reserved for refusals and for what
+   is off, so it is a Note, and color is reserved for refusals and for what
    the builder can act on (#327, docs/ui-copy-voice.md rule 11). The route is
    the only thing that looks like a link, because the route is the point.
 
@@ -3686,7 +3686,7 @@ label.sound-search-field {
 /* Green says NOMINAL, and a module sitting idle is exactly as nominal as one
    playing a clip - so only the link state takes it. "Playing" is what the
    module is doing, which is a value and reads in the ink tier beside "Idle"
-   (CONTEXT.md "Status Colour"). */
+   (CONTEXT.md "Status Color"). */
 .sound-state-badge[data-state="disabled"] { color: var(--text-dim); }
 .sound-state-badge[data-state="playing"]  { color: var(--text); }
 .sound-state-badge[data-state="idle"]     { color: var(--text); }
@@ -3694,7 +3694,7 @@ label.sound-search-field {
 .sound-state-badge[data-state="warn"]     { color: var(--warning); }
 .sound-state-badge[data-state="error"]    { color: var(--danger); }
 
-/* What a track is bound to. A pill names a KIND OF THING and takes no colour:
+/* What a track is bound to. A pill names a KIND OF THING and takes no color:
    this one was blue, which is the interaction accent and reports nothing. */
 .chirp-binding-badge {
   display: inline-block;
@@ -3931,8 +3931,8 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* Where an LED strip is routed, and what it is showing. The swatch is the one
-   thing on this surface that paints a colour from data: it is the strip's own
-   live colour, not a state, so it is set from the frame rather than tokened. */
+   thing on this surface that paints a color from data: it is the strip's own
+   live color, not a state, so it is set from the frame rather than tokened. */
 .led-route {
   display: flex;
   align-items: flex-end;
@@ -3968,7 +3968,7 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* The Memory Profiler's own tables and its fragmentation bar. Both carried
-   hard-coded colours until this slice: Material's green, amber and red on the
+   hard-coded colors until this slice: Material's green, amber and red on the
    bar and on a status cell, and a #444 rule under every heading. */
 .prof-bar-wrap {
   height: 16px;
@@ -4852,7 +4852,7 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* The four Moods used to wear four hues when selected, which put amber on
-   Mid-Awake and green on Awake+ - colour spent on a choice the builder made,
+   Mid-Awake and green on Awake+ - color spent on a choice the builder made,
    not on a state they can act on. Selection is one thing and looks like one
    thing. Which Mood is which is the word. */
 .mood-btn.active {
@@ -4983,7 +4983,7 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* The sequence's own name, in ink. It was the interaction blue, which is
    selection, the row shown, the primary act and the focus ring - never a name
-   on a list (CONTEXT.md "Status Colour"). */
+   on a list (CONTEXT.md "Status Color"). */
 .seq-card-header h4 {
   margin: 0;
   font-size: var(--fs-h2);
@@ -4999,7 +4999,7 @@ body[data-page="maintenance"] .status-item .hint {
   justify-content: flex-end;
 }
 
-/* A badge names a KIND OF THING - retrained, factory - and takes no colour at
+/* A badge names a KIND OF THING - retrained, factory - and takes no color at
    all. "Retrained" wore the accent, which reports nothing; the only one left
    with a hue is "invalid", and that is a refusal. */
 .seq-badge {
@@ -5603,7 +5603,7 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* What kind of step this is, in ink. It was the interaction blue on every row
    of the table, which makes a value look like a link (CONTEXT.md "Status
-   Colour"); what the anatomy lights blue here is the row you are on. */
+   Color"); what the anatomy lights blue here is the row you are on. */
 .step-card-type {
   flex-shrink: 0;
   color: var(--text);
@@ -6115,7 +6115,7 @@ body[data-page="maintenance"] .status-item .hint {
 /* Where the dome drawing came from, when it did not come from the dome. It is
    a .note now and carries nothing of its own but the gap under it: the two
    treatments it used to declare are the anatomy's two note voices, and one of
-   them was blue, which reports no state at all (CONTEXT.md "Status Colour"). */
+   them was blue, which reports no state at all (CONTEXT.md "Status Color"). */
 .dome-source-banner {
   margin-bottom: var(--space-md);
 }
@@ -6211,7 +6211,7 @@ body[data-page="maintenance"] .status-item .hint {
    Sequence editor: the Rehearsal (#354)
    Its counts under Protocol Check's verdict, the full list at save and at a
    clone, and a folded badge beside a run. Amber marks a Rehearsal Warning and a
-   note stays uncoloured; nothing here is red, because nothing here refuses
+   note stays uncolored; nothing here is red, because nothing here refuses
    (ADR 0044, #327).
    ======================================================================== */
 
@@ -6306,10 +6306,10 @@ body[data-page="maintenance"] .status-item .hint {
    Its own block, added whole, so no shared rule above changes. Every value is a
    token from the palette at the top of this file.
 
-   A Part's Kind is carried by treatment and never by colour (#327,
+   A Part's Kind is carried by treatment and never by color (#327,
    data/droid_part_kind.js): a light row wears a dashed rule down its edge and a
-   "light" tag, and nothing on the table colours for state. A Part with no
-   Output is dimmed rather than coloured, because a build in progress is not a
+   "light" tag, and nothing on the table colors for state. A Part with no
+   Output is dimmed rather than colored, because a build in progress is not a
    fault.
    --------------------------------------------------------------------------- */
 .parts-table-wrap {
@@ -6394,7 +6394,7 @@ body[data-page="maintenance"] .status-item .hint {
   font-family: var(--font-mono);
 }
 
-/* A Part Kind is carried by treatment and never by colour: a dashed engraving
+/* A Part Kind is carried by treatment and never by color: a dashed engraving
    round the word, chamfered like every other plate on the surface. */
 .parts-kind {
   border: 1px dashed var(--border-strong);
@@ -6484,7 +6484,7 @@ body[data-page="maintenance"] .status-item .hint {
    Two marks on one bar, against one span. The fill is where the controller is
    driving the Output now and the tick is where the move ends, so they part
    while it travels and meet when it arrives (after r2d2-astromech-simulator
-   v1.79.0, src/css/11-hw.css:37-39). Neither is a reading, and neither colours
+   v1.79.0, src/css/11-hw.css:37-39). Neither is a reading, and neither colors
    for state. An Output with no pulse keeps the bar's frame and loses both
    marks; a light row carries no bar at all, because a light has no travel.
 
@@ -6727,7 +6727,7 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-dim);
 }
 
-/* A narrowing that is on. Not a Status Colour -- #327 reserves those for state
+/* A narrowing that is on. Not a Status Color -- #327 reserves those for state
    -- so it reads as a pressed control rather than as a warning. */
 .cal-acts .btn.is-on {
   border-color: var(--accent);
@@ -6982,7 +6982,7 @@ body[data-page="maintenance"] .status-item .hint {
    The act sits above the rows it acts on, with its one line of answer beside
    it: a button and a sentence on one line, wrapping to two on a narrow bench
    tablet rather than squeezing either. The sentence is a .feedback, so it takes
-   the three outcome colours every other answer on this page takes, and nothing
+   the three outcome colors every other answer on this page takes, and nothing
    here redefines them.
    --------------------------------------------------------------------------- */
 /* A product shown rather than picked (#412): the RC page's radio and receiver,
@@ -7063,9 +7063,9 @@ body[data-page="maintenance"] .status-item .hint {
    something to put in it or not.
 
    A QUESTION NOT YET ASKED IS TOLD BY ITS GLYPH AND ITS WEIGHT, NEVER BY
-   COLOUR. The circle is hollow and the mark is lighter; the answer under it
+   COLOR. The circle is hollow and the mark is lighter; the answer under it
    still shows, because the default is a real value that has simply not been
-   looked at. Colour is spent on state and on interaction alone (#327), and a
+   looked at. Color is spent on state and on interaction alone (#327), and a
    value the builder has never set is neither.
    --------------------------------------------------------------------------- */
 .wizard-rail {
@@ -7210,7 +7210,7 @@ body[data-page="maintenance"] .status-item .hint {
    carried none of its app's tokens (r2d2-astromech-simulator v1.79.0,
    src/js/app/wiring.js:49).
 
-   NOTHING HERE COLOURS FOR A TIER. Which honesty tier a row is in is told by
+   NOTHING HERE COLORS FOR A TIER. Which honesty tier a row is in is told by
    which section it is under, and a dimmed cell says "nobody has set this"
    (docs/ui-copy-voice.md rules 13 and 20). A tier is an Availability Family
    question and a family is told apart by treatment, never by hue.
@@ -7282,7 +7282,7 @@ body[data-page="wiring"] .card > * + * {
   color: var(--text-dim);
 }
 
-/* A Part Kind is carried by treatment and never by colour, the same dashed
+/* A Part Kind is carried by treatment and never by color, the same dashed
    engraving the part-first table gives it. */
 .wiring-kind {
   margin-left: var(--space-xs);
@@ -7364,7 +7364,7 @@ body[data-page="wiring"] .card > * + * {
 }
 
 /* The words over a wire: the board's printed label first, in the wire's own
-   colour (painted on the element by data/wiring.js), then the rest in the
+   color (painted on the element by data/wiring.js), then the rest in the
    dim ink. */
 .wd-bus {
   fill: var(--text-dim);
@@ -7403,7 +7403,7 @@ body[data-page="wiring"] .card > * + * {
   font-weight: 600;
 }
 
-/* A wire's colour, weight and dash are its own and are painted on the element
+/* A wire's color, weight and dash are its own and are painted on the element
    by data/wiring.js (each wire's --wire-* token, and --wire-off dashed for a
    wire to something not wired), so no rule here restates them: a rule would
    beat the presentation attribute and paint every wire one ink. */
@@ -7411,7 +7411,7 @@ body[data-page="wiring"] .card > * + * {
   fill: none;
 }
 
-/* The box a live wire runs into wears the wire's colour on its edge, painted
+/* The box a live wire runs into wears the wire's color on its edge, painted
    with the wire; one that is not wired keeps the plain seam. */
 .wd-box {
   stroke-width: 1.2;
@@ -7464,7 +7464,7 @@ body[data-page="wiring"] .card > * + * {
    picture" block below.
 
    Everything here is its own block on the token layer #341 landed. No shared
-   rule is edited and no colour literal appears outside :root.
+   rule is edited and no color literal appears outside :root.
    --------------------------------------------------------------------------- */
 /* The panel: the acts, named beside the thing they act on. */
 .bodyview-panel {
@@ -7524,15 +7524,15 @@ body[data-page="wiring"] .card > * + * {
 
    A TECHNICAL LINE DRAWING. The art is stroke only, in one ink, and every
    Part's footprint is one shape over it. A state is one class on the Part, and
-   colour is spent on exactly two of them: the interaction accent FILLS an open
+   color is spent on exactly two of them: the interaction accent FILLS an open
    Part, the way the interactive dome always drew an open panel, and amber
-   marks ends not measured. Closed spends no colour - the plain footprint IS
+   marks ends not measured. Closed spends no color - the plain footprint IS
    closed. Unfitted is the only dashed line; limp is present but dim; picked
    is the brighter accent with a glow, declared last so it wins over the rest.
-   Hover is the plain ink, not a colour, because it is not a state.
+   Hover is the plain ink, not a color, because it is not a state.
 
    Everything here is its own block on the token layer #341 landed. No shared
-   rule is edited and no colour literal appears outside :root.
+   rule is edited and no color literal appears outside :root.
    --------------------------------------------------------------------------- */
 .bv-layout {
   display: grid;
@@ -7726,7 +7726,7 @@ body[data-page="wiring"] .card > * + * {
    it can be inspected, the way r2d2-astromech-simulator's `na` rows lift on
    hover (src/css/07-startup.css:612). Part-way, not to full strength: an
    inspected Part must still read as dimmed (operator, 2026-09-19 on #373).
-   Opacity and ink only, no colour, and an Unfitted Part keeps its dash.
+   Opacity and ink only, no color, and an Unfitted Part keeps its dash.
    `:not(.is-selected)` because the pick's ink must still win under the
    pointer, the way it does on every other state. */
 .bv-part.is-unfitted:not(.is-selected):hover .bv-footprint,
@@ -7910,7 +7910,7 @@ body[data-page="wiring"] .card > * + * {
    The same recipe as the picture above: stroke only, one ink, no text on the
    drawing (a piece's name is its hover), the accent FILLS an open panel, and
    picked is the brighter accent with a glow. What a panel IS - a ring servo, a
-   pie servo, a fixed wedge - is no longer a colour; a fixed wedge simply takes
+   pie servo, a fixed wedge - is no longer a color; a fixed wedge simply takes
    no pointer.
    --------------------------------------------------------------------------- */
 svg.dome-svg-picker .dbg,
@@ -7945,7 +7945,7 @@ svg.dome-svg-picker .hp {
 }
 
 /* No text on the drawing: the labels, the callout bubbles and their leaders,
-   and the built-in map's own colour key, which named the colours this redraw
+   and the built-in map's own color key, which named the colors this redraw
    retires. */
 svg.dome-svg-picker text,
 svg.dome-svg-picker .cr,
@@ -8507,10 +8507,10 @@ button.output-setting-head:focus-visible {
    #411: the section "looks to basic and boring"). Each plate is one Output:
    the name the board prints beside it in the mono of a silkscreen, the
    three-pin header its lead plugs onto, and a stripe along its top in the
-   colour its wire is drawn in on the sheet above - the same --wire-* token,
+   color its wire is drawn in on the sheet above - the same --wire-* token,
    picked by the Output's place in the firmware's answer (data-wire, set by
    data/output_settings.js), so a plate and its line are found by eye. The stripe names the wire and is
-   never a state (CONTEXT.md "Status Colour"): a wire not wired is the one grey
+   never a state (CONTEXT.md "Status Color"): a wire not wired is the one grey
    and dashed, as on the diagram, and "wired" itself is the builder's pick, so
    it keeps the chosen blue on the plate's edge like every other pick.
    --------------------------------------------------------------------------- */
@@ -8518,7 +8518,7 @@ button.output-setting-head:focus-visible {
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
 }
 
-/* A plate's wire colour, by its place in the firmware's answer. It is the
+/* A plate's wire color, by its place in the firmware's answer. It is the
    plate's `color`, so the stripe and the lit signal pin read it as
    currentColor; every word on the plate names its own ink below. */
 .output-wire[data-wire="1"] { color: var(--wire-1); }
@@ -8536,7 +8536,7 @@ button.output-setting-head:focus-visible {
 }
 
 /* A wired plate takes the chosen blue on its edge (.output-setting.is-on),
-   and keeps its wire's colour on top: the stripe names the wire, the edge
+   and keeps its wire's color on top: the stripe names the wire, the edge
    says it was picked. */
 .output-plates > .output-wire.is-on {
   border-top-color: currentColor;
@@ -8547,7 +8547,7 @@ button.output-setting-head:focus-visible {
   border-top-color: var(--wire-off);
 }
 
-/* The head passes the plate's wire colour down to the pin header; the name
+/* The head passes the plate's wire color down to the pin header; the name
    takes the text ink back. */
 .output-wire-head {
   gap: var(--space-md);
@@ -8559,7 +8559,7 @@ button.output-setting-head:focus-visible {
 }
 
 /* A servo header seen from above: signal, power, ground. The signal pin lights
-   in the wire's colour once the Output is wired; power and ground stay plain,
+   in the wire's color once the Output is wired; power and ground stay plain,
    since power is the builder's and never this sheet's (CONTEXT.md "Wiring"). */
 .output-wire-header {
   display: inline-flex;
@@ -8691,7 +8691,7 @@ button.output-setting-head:focus-visible {
    where they sit. The plate language of #368/#369/#411 - a plate per light,
    carrying how it is lit and what it can be told. A light we drive reads
    on/off/flash with brightness; a dome light offers the dome controller's own
-   modes and colours. A plate is not a press, so none takes the chosen edge:
+   modes and colors. A plate is not a press, so none takes the chosen edge:
    the controls inside it are what a builder acts on.
    --------------------------------------------------------------------------- */
 .light-plates {
@@ -8734,8 +8734,8 @@ button.output-setting-head:focus-visible {
 }
 
 /* How the light is lit: its Light Type, or the controller that owns it. A
-   path is not a state, so it takes no signal colour (CONTEXT.md "Status
-   Colour") - it is the dim readout voice, like an address. */
+   path is not a state, so it takes no signal color (CONTEXT.md "Status
+   Color") - it is the dim readout voice, like an address. */
 .light-lit {
   margin-left: auto;
   color: var(--text-faint);
@@ -8772,7 +8772,7 @@ button.output-setting-head:focus-visible {
 }
 
 /* A Part the builder has not fitted still shows, and says so. Dimmed rather
-   than coloured: not being fitted is a fact about the droid, not a fault. */
+   than colored: not being fitted is a fact about the droid, not a fault. */
 .light-fitted {
   margin: 0;
   color: var(--text-faint);

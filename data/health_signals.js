@@ -2,7 +2,7 @@
 // data/health_signals.js
 //
 // Shared health indicator derivation for the dashboard traffic-light grid.
-// - Explicit state semantics (CONTEXT.md "Status Colour"): ok=nominal,
+// - Explicit state semantics (CONTEXT.md "Status Color"): ok=nominal,
 //   warn=degraded and the builder can do something about it, fail=hard fault,
 //   off=not reporting, never asked, not fitted
 // - A reading we do not have is off, never warn: amber promises a next move,

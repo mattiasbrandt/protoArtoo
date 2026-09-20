@@ -105,7 +105,7 @@ const BOARD_LABELS = {
 
   // The save state, as a pill beside the feedback line it belongs to. The four
   // outcome classes are the anatomy's own: green it saved, amber there is
-  // something left to do about it, red it was refused, and no colour at all
+  // something left to do about it, red it was refused, and no color at all
   // while nothing has happened yet (ADR 0066).
   const setSaveSummary = (message, state = "info") => {
     if (!setupSaveSummary) return;
@@ -438,9 +438,9 @@ const BOARD_LABELS = {
   };
 
   // The section head's subtitle: how many of the components this image can
-  // offer are switched on. It is a count and takes no colour - what a builder
+  // offer are switched on. It is a count and takes no color - what a builder
   // ticked is a chosen posture, and a green count would read as a verdict on
-  // their droid (CONTEXT.md "Status Colour").
+  // their droid (CONTEXT.md "Status Color").
   const updateEnabledSummary = () => {
     if (!setupEnabledSummary) return;
     const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input) && toggle.available);
@@ -811,7 +811,7 @@ const BOARD_LABELS = {
   // One thing on this surface reads the live status rather than the saved
   // configuration: the sound module named beside Audio. The serial lanes and
   // the memory readings that used to share this read are Maintenance's now
-  // (data/maintenance.js), and the LED strip's live colour is Lights' (#410),
+  // (data/maintenance.js), and the LED strip's live color is Lights' (#410),
   // so this surface asks for the status on its own account while it is the
   // one on screen (#404).
   const s2DriverLabel = document.getElementById("s2-driver-label");

@@ -32,7 +32,7 @@
   // ---------------------------------------------------------------------------
   // `icon` names a symbol in the sprite below, never a character: an operator
   // surface carries no emoji, and a glyph that is an icon inherits the text
-  // colour and keeps its label beside it (ADR 0066, docs/ui-copy-voice.md).
+  // color and keeps its label beside it (ADR 0066, docs/ui-copy-voice.md).
   const SURFACES = [
     { page: "home", doc: "/dashboard.html", icon: "view-dashboard-outline", name: "Dashboard", aliases: ["dashboard"] },
     // Foot Drive in full on every operator surface, because once a body servo
@@ -597,8 +597,8 @@
   // A chip's state class: "" is the quiet default, "live" is the thing doing
   // its job, "stopped" is something stopped or refused. A posture the
   // operator chose -- Non-RC Control, Sleep Mode -- and a component nobody
-  // fitted take no class at all, because colour on this plate reports the
-  // droid's health and never a choice (#327 "Status Colour").
+  // fitted take no class at all, because color on this plate reports the
+  // droid's health and never a choice (#327 "Status Color").
   const chipState = (state, value) => ({ state, value });
 
   const PLATE_CHIPS = [
@@ -654,7 +654,7 @@
         // it is not measuring, because a chip may only print what something
         // measured. It said "PWM" until the operator settled the wording on
         // 2026-09-17: that named a mode, and a mode reads like a thing that is
-        // fine. Uncoloured either way -- nothing is wrong, we just do not know.
+        // fine. Uncolored either way -- nothing is wrong, we just do not know.
         if (states.includes("ready")) return chipState("", "UNMEASURED");
         return chipState("", states.length > 0 ? "STANDBY" : "OFF");
       },
@@ -667,7 +667,7 @@
       // Console or a sequence may command the droid. It is not persisted and
       // boots off, so "OFF" is the ordinary posture of a controller that has
       // just restarted rather than a fault -- and a chosen posture takes no
-      // colour.
+      // color.
       read: (status) =>
         status.webControlEnabled === true ? chipState("", "ON") : chipState("", "OFF"),
     },
@@ -1043,7 +1043,7 @@
     if (!estopStateLine) return;
     const key = estopLatched === null ? "unknown" : estopLatched ? "latched" : "clear";
     estopStateLine.textContent = ESTOP_STATE_TEXT[key];
-    // Red is "something is stopped or refused" and nothing else colours for
+    // Red is "something is stopped or refused" and nothing else colors for
     // state (#327), so the state line takes it only while the latch is set.
     // The button's own face is red at all times: that is the control's
     // identity, not a readout.
@@ -1511,8 +1511,8 @@
   // A surface whose polling stopped while the operator was elsewhere comes
   // back showing what it last read. One node, shown above whichever surface
   // that is, until that surface has answered again -- so a glance cannot take
-  // those values for live ones. Uncoloured on purpose: this is a Note, and
-  // colour is reserved for refusals and for what the builder can act on
+  // those values for live ones. Uncolored on purpose: this is a Note, and
+  // color is reserved for refusals and for what the builder can act on
   // (#327, docs/ui-copy-voice.md rule 11).
   const resumedNote = document.createElement("div");
   resumedNote.className = "surface-resumed";

@@ -136,7 +136,7 @@
   // The dome controller's own light vocabulary, with the words a builder reads.
   // The tokens are the ones src/protocol_check.cpp validates, above; the labels
   // are the ones data/seq.js shows when a builder authors a step. Published
-  // because Lights offers the same modes and colours as a live control (#410,
+  // because Lights offers the same modes and colors as a live control (#410,
   // ADR 0067), and two surfaces naming one mode two things is the drift ADR
   // 0045 exists to stop. data/seq.js still carries its own copy of these
   // labels: it is the next reader to point here.
@@ -160,7 +160,7 @@
   const SeqProtocolCheck = {
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
-     * colours each takes, and the label to show for every token. Frozen, so a
+     * colors each takes, and the label to show for every token. Frozen, so a
      * caller cannot edit the vocabulary it was handed.
      */
     domeLights: Object.freeze({

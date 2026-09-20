@@ -58,7 +58,7 @@ the patch releases, whose notes live on their own GitHub Release.
 - **A Wiring screen: where each wire goes on this board.** A new destination
   beside Parts. It draws your Body Controller, by its own picture and name, and
   every wire that leaves it: each output and each serial link, in its own
-  colour, named first by what is printed on the board (ARM1-ARM5 and S1-S3 on
+  color, named first by what is printed on the board (ARM1-ARM5 and S1-S3 on
   the Artoo PCB, GPIO 49 and the like on the FireBeetle 2), then by its pins.
   A wire you have not marked wired, or a link that is switched off, is drawn
   dashed grey and says why. Each wire's box names the part on the end of it.
@@ -69,7 +69,7 @@ the patch releases, whose notes live on their own GitHub Release.
   page is kept by hand, so it cannot go stale against the firmware.
 - **A printable wiring sheet.** Wiring saves one file you can print anywhere,
   no droid needed: the same drawing, with the board's picture and each wire's
-  colour, and the Power wiring notes.
+  color, and the Power wiring notes.
 - **Set the droid up in one guided pass.** A freshly flashed controller now
   walks you through what your droid is made of, one question at a time, starting
   from the WiFi you already gave it. A rail along the top shows the questions,

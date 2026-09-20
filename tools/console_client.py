@@ -192,7 +192,7 @@ def run_interactive(serial_fd: int, stdin_fd: int, stdout_fd: int,
                     color: bool = False) -> int:
     """Full-duplex copy between stdin_fd and serial_fd until Ctrl-C (0x03).
 
-    `color` colours Console Record lines on their way to the screen, through
+    `color` colors Console Record lines on their way to the screen, through
     InteractiveRecordColorizer -- the same two-state rule scripted mode uses,
     applied to a byte stream that also carries embedded-cli's editor redraw.
     That class's docstring is the contract; the two properties that matter
@@ -479,7 +479,7 @@ DEFAULT_SETTLE_SECONDS = 0.3  # acceptance criterion's stated default
 
 
 # =============================================================================
-# Provenance header and colour (#264)
+# Provenance header and color (#264)
 # =============================================================================
 
 def git_head_and_dirty(repo_root: str) -> tuple[str, bool] | None:
@@ -532,11 +532,11 @@ def fetch_json_status(base_url: str, timeout: float = 5.0) -> dict | None:
 
 def resolve_color(args) -> bool:
     """--color / --no-color / default-to-isatty, decided in one place for
-    every mode that colours (scripted and interactive alike).
+    every mode that colors (scripted and interactive alike).
 
     The default is stdout's own tty-ness, never stdin's: interactive mode
     needs a terminal on stdin for raw mode either way, but its output can
-    still be redirected to a transcript, and "colour never reaches a
+    still be redirected to a transcript, and "color never reaches a
     redirected transcript" is the rule that has to hold there too."""
     if args.no_color:
         return False
@@ -605,7 +605,7 @@ SGR_RESET = "\x1b[0m"
 
 
 def record_color_code(line: str) -> str | None:
-    """The SGR colour `line` gets as a Console Record, or None if it is not
+    """The SGR color `line` gets as a Console Record, or None if it is not
     one.
 
     Two states, matching the browser's two CSS classes (data/app.js's
@@ -626,8 +626,8 @@ def record_color_code(line: str) -> str | None:
 
 
 def colorize_record_line(line: str, enabled: bool) -> str:
-    """Scripted mode's colouring: one already-split, already-stripped line in,
-    the same line (coloured or not) out.
+    """Scripted mode's coloring: one already-split, already-stripped line in,
+    the same line (colored or not) out.
 
     `enabled` is the caller's own --color/--no-color/isatty() decision, not
     decided here, so ANSI can never reach a redirected transcript by
@@ -641,7 +641,7 @@ def colorize_record_line(line: str, enabled: bool) -> str:
 
 
 class InteractiveRecordColorizer:
-    """Colours Console Record lines inside interactive mode's device->screen
+    """Colors Console Record lines inside interactive mode's device->screen
     byte stream (#267), without ever altering a byte the firmware sent.
 
     Why this cannot just reuse colorize_record_line(): run_interactive() is a
@@ -671,7 +671,7 @@ class InteractiveRecordColorizer:
     3. **Bounded hold.** At most one candidate record line is held back
        (HOLD_LIMIT bytes), and only until its terminator arrives, the limit
        is hit, or the caller flushes on a quiet stream (HOLD_TIMEOUT_S).
-       Whatever is held is released verbatim, uncoloured, rather than lost.
+       Whatever is held is released verbatim, uncolored, rather than lost.
     4. **Disabled means untouched.** With `enabled` false, feed() returns its
        input unchanged and nothing is ever held -- the pump behaves exactly
        as it did before this class existed, which is what keeps ANSI out of a
@@ -679,7 +679,7 @@ class InteractiveRecordColorizer:
 
     Input (keystrokes -> firmware) never passes through here at all.
 
-    A record that arrives while the operator is mid-entry is NOT coloured: it
+    A record that arrives while the operator is mid-entry is NOT colored: it
     is written by the framed emitter without clearing the input line
     (include/console_serial_output.h), so it does not start at column 0 and
     this class does not pretend it does. The answer to a submitted command --
@@ -695,7 +695,7 @@ class InteractiveRecordColorizer:
     HOLD_LIMIT = 512
 
     # How long the caller waits for the rest of a held candidate before
-    # giving up and releasing it uncoloured. A record is one Serial.write()
+    # giving up and releasing it uncolored. A record is one Serial.write()
     # (ADR 0038), so a split mid-record is host-side fragmentation and
     # resolves within a USB frame / a UART character time; 50 ms is far above
     # both and still imperceptible.
@@ -751,7 +751,7 @@ class InteractiveRecordColorizer:
         return bytes(out)
 
     def flush(self) -> bytes:
-        """Release whatever is held, verbatim and uncoloured. Called by the
+        """Release whatever is held, verbatim and uncolored. Called by the
         caller when the stream goes quiet, and internally whenever a
         candidate turns out not to be a record."""
         data = bytes(self._held)
@@ -1622,12 +1622,12 @@ def main() -> int:
     color_group = parser.add_mutually_exclusive_group()
     color_group.add_argument(
         "--color", action="store_true",
-        help="Force colour on Console Record lines, in scripted and interactive mode "
+        help="Force color on Console Record lines, in scripted and interactive mode "
              "(default: on only when stdout is a TTY)."
     )
     color_group.add_argument(
         "--no-color", action="store_true",
-        help="Force colour off, even on a TTY. ANSI never reaches a redirected transcript either way."
+        help="Force color off, even on a TTY. ANSI never reaches a redirected transcript either way."
     )
     parser.add_argument(
         "--rows", default=None, metavar="NAME[,NAME...]",

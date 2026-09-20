@@ -43,10 +43,10 @@
     el.className = level ? `${FEEDBACK_BASE_CLASS} ${level}` : FEEDBACK_BASE_CLASS;
   };
 
-  // The three readouts this surface used to paint as coloured pills are now
+  // The three readouts this surface used to paint as colored pills are now
   // words, and the setPillState that painted them is gone with them. None of
   // the three was a health signal, which is the only thing that may take a
-  // signal colour (CONTEXT.md "Status Colour"):
+  // signal color (CONTEXT.md "Status Color"):
   //
   //   the dome motor switched on or off in Configuration is an AVAILABILITY FAMILY,
   //   "change it here", and those are told apart by treatment and never by hue
@@ -57,7 +57,7 @@
   //     and amber reverse, so turning left looked like a symptom;
   //
   //   whether this browser may command the droid is a CHOSEN POSTURE and
-  //     takes no colour at all. It is also the Status Plate's CONTROL chip, so
+  //     takes no color at all. It is also the Status Plate's CONTROL chip, so
   //     what is left here is the half the plate cannot carry: that the consent
   //     is the feet's and the dome turns either way.
   const setText = (el, text) => {
@@ -80,7 +80,7 @@
     if (domeSpeedDisplay) domeSpeedDisplay.textContent = `${percent}%`;
 
     // Which side of centre the bar fills is what says the direction; the bar's
-    // own colour is one colour, declared in the stylesheet, the same one Foot
+    // own color is one color, declared in the stylesheet, the same one Foot
     // Drive's live output bars take. It used to be mixed towards green going
     // forward and towards amber going back, which made one of the two
     // directions look like a fault.

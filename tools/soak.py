@@ -2475,7 +2475,7 @@ DEFAULT_PROGRESS_INTERVAL_S = 30.0
 # how long for, which after two hours is the same as saying nothing.
 STATUS_LINE_REFRESH_S = 1.0
 
-# Semantic tokens, ASCII in every environment. Colour is the only thing that
+# Semantic tokens, ASCII in every environment. Color is the only thing that
 # varies with the terminal, and rich decides that (see RunConsole): these
 # never become glyphs or emoji, so a redirected stderr and the transcript log
 # read identically to a terminal minus the escape codes.
@@ -2721,9 +2721,9 @@ class RunConsole:
                       line that updates in place.
       no spinner      the status line carries clocks. An animation says
                       "something is happening" without saying for how long.
-      semantic only   colour and the [OK]/[FAIL]/[WARN] tokens mark meaning,
+      semantic only   color and the [OK]/[FAIL]/[WARN] tokens mark meaning,
                       never decoration, and the tokens are ASCII everywhere so
-                      only the colour varies with the terminal.
+                      only the color varies with the terminal.
       log always      every line an operator would have seen is also written
                       to a plain transcript, with no ANSI and no emoji, whose
                       path the JSON report carries so the next tool can find
@@ -2731,12 +2731,12 @@ class RunConsole:
 
     rich owns the degradation and is not second-guessed here: Console(file=
     sys.stderr) reports is_terminal False for a redirected stream and drops
-    colour, and it honours NO_COLOR and TERM=dumb on its own. Measured against
+    color, and it honours NO_COLOR and TERM=dumb on its own. Measured against
     a real pty rather than assumed, because the two are not the same:
     TERM=dumb makes rich report is_terminal False, so nothing is emitted but
-    plain text; NO_COLOR removes the COLOUR codes and deliberately keeps bold
+    plain text; NO_COLOR removes the COLOR codes and deliberately keeps bold
     and dim and keeps the status line, which is what NO_COLOR asks for -- it
-    is a colour switch, not a cursor-control switch. Neither is worth
+    is a color switch, not a cursor-control switch. Neither is worth
     overriding, and a "fix" that stripped bold under NO_COLOR would be going
     beyond the standard.
 
@@ -2813,7 +2813,7 @@ class RunConsole:
     # -- output ----------------------------------------------------------
 
     def line(self, text: str, kind: Optional[str] = None) -> None:
-        """One appended line. `kind` selects a semantic token and colour; None
+        """One appended line. `kind` selects a semantic token and color; None
         is a plain data line (a heartbeat), which is what keeps the transcript
         greppable."""
         token, style = CONSOLE_KINDS.get(kind or "", ("", ""))
@@ -6806,7 +6806,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--log", default=None,
         help="path for the plain transcript of this run -- every line stderr showed, with "
-             "no colour and no cursor control, so it can be read, grepped and archived. "
+             "no color and no cursor control, so it can be read, grepped and archived. "
              "Always written: defaults to the --json path with '.log' appended, or to "
              "./soak-<timestamp>.log when there is no --json. Appended to, never "
              "truncated, so pointing two runs at one path keeps both transcripts. The "

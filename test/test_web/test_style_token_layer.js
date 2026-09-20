@@ -60,7 +60,7 @@ const TOKENS = new Map(ROOT.declarations.map((d) => [d.property, d.value]));
 const NON_ROOT = RULES.filter((r) => r !== ROOT);
 
 // Substitute var(--x) until nothing is left to substitute, so a rule that
-// points at a token through another token is still resolved to a colour.
+// points at a token through another token is still resolved to a color.
 const resolve = (value, depth = 0) => {
   if (depth > 10) return value;
   const next = value.replace(/var\(\s*(--[\w-]+)\s*(?:,([^()]*(?:\([^()]*\)[^()]*)*))?\)/g, (whole, name, fallback) =>
@@ -69,7 +69,7 @@ const resolve = (value, depth = 0) => {
   return next === value ? next : resolve(next, depth + 1);
 };
 
-const COLOUR_LITERAL =
+const COLOR_LITERAL =
   /#[0-9a-fA-F]{3,8}\b|\brgba?\([^)]*\)|\bhsla?\([^)]*\)|(?<![-\w])(?:white|black|red|green|blue|yellow|orange|gold|silver|gray|grey)(?![-\w])/;
 
 const declarationsOf = (predicate) =>
@@ -151,8 +151,8 @@ const AVAILABILITY_RULES = NON_ROOT.filter((rule) =>
   /(availability-|feature-state|feature-availability)/.test(rule.selector),
 );
 
-test("no Availability Family spends a reserved colour", () => {
-  // CONTEXT.md "Status Colour": amber is "you can do something about this, and
+test("no Availability Family spends a reserved color", () => {
+  // CONTEXT.md "Status Color": amber is "you can do something about this, and
   // should", red is "something is stopped or refused". A way of saying no is
   // neither, and before #341 four of these states shared one amber hatch.
   const amber = TOKENS.get("--warning");
@@ -218,8 +218,8 @@ test("a dimmed Availability Family lifts on hover and on focus-within", () => {
   }
 });
 
-test("neither reserved colour is spent on a choice or on an answer that has not arrived", () => {
-  // CONTEXT.md "Status Colour" avoid-list: amber for "not normal", amber on a
+test("neither reserved color is spent on a choice or on an answer that has not arrived", () => {
+  // CONTEXT.md "Status Color" avoid-list: amber for "not normal", amber on a
   // transient unknown. Every rule below carried one of those before #341.
   //
   // Matched by selector shape rather than by a fixed list, so re-adding a rule
@@ -248,17 +248,17 @@ test("neither reserved colour is spent on a choice or on an answer that has not 
     }
   }
   assert.ok(scanned >= 4, `expected to scan the mood, opmode, indicator and posture rules, saw ${scanned}`);
-  assert.deepEqual(spends, [], "a reserved colour on something that is not a call to act");
+  assert.deepEqual(spends, [], "a reserved color on something that is not a call to act");
 });
 
-test("no colour literal exists outside :root", () => {
+test("no color literal exists outside :root", () => {
   // The rule that makes "amber means one thing" true rather than aspirational.
   // The reference project shipped two literals - a modal backdrop and a button
   // ground - that only showed up once a second theme put them on a light card.
-  const offenders = declarationsOf(({ value }) => COLOUR_LITERAL.test(value)).map(
+  const offenders = declarationsOf(({ value }) => COLOR_LITERAL.test(value)).map(
     ({ rule, property, value }) => `${rule.selector} { ${property}: ${value} }`,
   );
-  assert.deepEqual(offenders, [], "a colour literal belongs in :root, not in a rule");
+  assert.deepEqual(offenders, [], "a color literal belongs in :root, not in a rule");
 });
 
 test("no token in :root is orphaned", () => {
@@ -268,10 +268,10 @@ test("no token in :root is orphaned", () => {
 });
 
 test("the dome picker draws with the stylesheet's palette, not one of its own", () => {
-  // The picker used to ship its own <style> of vendored colour literals, so the
+  // The picker used to ship its own <style> of vendored color literals, so the
   // dome on the Dashboard and in Sequences was the one drawing this layer did
   // not paint (#372). Rendered for real here, from a live layout, because the
-  // markup a browser receives is what has to carry no colour.
+  // markup a browser receives is what has to carry no color.
   const vm = require("node:vm");
   const context = { window: {} };
   vm.runInNewContext(readFileSync("data/dome_layout_render.js", "utf8"), context);
@@ -293,7 +293,7 @@ test("the dome picker draws with the stylesheet's palette, not one of its own", 
   });
   assert.match(svg, /data-element-id="P7"/, "the picker rendered");
   assert.doesNotMatch(svg, /<style/, "the picker carries a stylesheet of its own");
-  assert.equal(COLOUR_LITERAL.test(svg), false, "the picker carries a colour literal");
+  assert.equal(COLOR_LITERAL.test(svg), false, "the picker carries a color literal");
 });
 
 module.exports = { RULES, ROOT, TOKENS, NON_ROOT, resolve, declarationsOf, stripComments, parseRules };

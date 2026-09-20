@@ -14,7 +14,7 @@
 //     restart warning's own shipped rule (test_staged_rc_settings.js, WARNING
 //     #3), now carried by the line beside the question;
 //   - amber means the builder must restart. A change that only waits for the
-//     next start is never amber (#327's Status Colour rule);
+//     next start is never amber (#327's Status Color rule);
 //   - a Radio Controller member pick changes nothing on the controller, so its
 //     card never reads as waiting on a restart, while a Sound member does;
 //   - an answer the droid uses at once says nothing about when: only one that

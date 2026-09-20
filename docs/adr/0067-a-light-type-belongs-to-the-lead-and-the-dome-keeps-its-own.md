@@ -42,7 +42,7 @@ protoArtoo reaches it by forwarding documented commands - `*`, `@`, `%`, `&` and
 **So the two halves of Lights read differently, on purpose.** A light we drive
 names its type and reads *on* / *off* / *flash* with brightness for *how far*,
 the words ADR 0049 gives every Part. A dome light offers the dome controller's
-own modes and colours, under the labels a **Sequence** already shows.
+own modes and colors, under the labels a **Sequence** already shows.
 
 **A droid may have several lit body Parts, each on its own lead.** Today's
 single `aux_led_pin` becomes one answer per Output. That firmware change is

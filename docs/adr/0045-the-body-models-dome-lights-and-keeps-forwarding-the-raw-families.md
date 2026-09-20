@@ -12,8 +12,8 @@ four places at once:
 | Where | What it already knows |
 |---|---|
 | `data/dome_layout_render.js:115-127` | The **Dome Layout View Model** carries `element_type` of `panel` / `holo` / `psi` / `logic`, and the renderer draws all four |
-| `data/seq.js:111-160` | Operator-labelled authoring — `FLD` -> "Front display", `F`/`R`/`T`/`A` -> "Front holo" / "Rear holo" / "Top holo" / "All holos", eleven named holo effects, a colour set |
-| `src/protocol_check.cpp:302-620` | `DL:` / `DT:` / `DH:` validated with per-effect colour **and** duration matrices |
+| `data/seq.js:111-160` | Operator-labelled authoring — `FLD` -> "Front display", `F`/`R`/`T`/`A` -> "Front holo" / "Rear holo" / "Top holo" / "All holos", eleven named holo effects, a color set |
+| `src/protocol_check.cpp:302-620` | `DL:` / `DT:` / `DH:` validated with per-effect color **and** duration matrices |
 | `docs/droid-parts.yaml` | `lit:` on six panels — Magic Panel, both PSIs, both Logic Displays |
 
 Alongside that, `docs/commands.md:59-64` forwards `*`, `@`, `%`, `&` and `!` to

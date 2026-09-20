@@ -22,7 +22,7 @@ rules laid out in 2026-06.
 The gap was decided into existence rather than drifted into. #325 settled the
 frame (pages under a persistent shell, Activity Groups, the estop everywhere)
 and recorded, verbatim, *"layout stays with the frontend work"*. #327 settled
-the state system (four Availability Families, two Status Colours, dark only,
+the state system (four Availability Families, two Status Colors, dark only,
 computer resolution) and folded *"which four treatments carry the families -
 pixels, for the frontend work"*. No ticket owned where things sit on a page,
 and "the frontend work" was each slice's worker under the fence above.
@@ -51,7 +51,7 @@ is the reference project's, adapted to a live controller and to the shell
 the dome's panel lines as structure, the droid's blue as the single accent, mono
 readouts, bezelled plates, restrained and modern; not a generic web application.
 Amber and red stay reserved for state. **No emoji on surfaces**: icons come from
-one small drawn SVG set that inherits text colour and keeps its label. The
+one small drawn SVG set that inherits text color and keeps its label. The
 AGENTS.md rule that preferred emoji over verbose labels is retired.
 
 **The shell chrome is in scope** with all thirteen page bodies: the topbar, nav
@@ -74,7 +74,7 @@ rules and runs alone among UI slices in the files it holds.
 
 The Decision above says *"the droid's blue as the single accent"* and *"amber
 and red stay reserved for state"*, and states that it does not reopen #327. On
-seeing the mockups the operator reversed the colour half of that, on the Status
+seeing the mockups the operator reversed the color half of that, on the Status
 Plate first and then for health generally:
 
 > "I dont like the blue color choise of the footer signal lights [...] for the
@@ -84,10 +84,10 @@ Plate first and then for health generally:
 > correct" - and, confirming the reading: *"green representing good and working
 > makes much more sense than the blue color"*.
 
-So **#327's two-colour rule is superseded for health**, and `CONTEXT.md` gains
-**Health Signal** beside a rewritten **Status Colour**: green nominal, amber
+So **#327's two-color rule is superseded for health**, and `CONTEXT.md` gains
+**Health Signal** beside a rewritten **Status Color**: green nominal, amber
 degraded and actionable, red stopped or refused, grey not reporting. A chosen
-posture - a speed preset, a sleep state, a control mode - still takes no colour,
+posture - a speed preset, a sleep state, a control mode - still takes no color,
 which is the Status Plate's existing *values, not exceptions*.
 
 **Blue stops carrying state entirely** and returns to interaction alone:
@@ -99,7 +99,7 @@ this* and *this is alive* - one hue with two meanings, which is the overload
 
 What the amendment does **not** touch: **Availability Family** is still told
 apart by treatment and never by hue, so a roadmap card, a `checking` state and
-a refusal take no colour; the palette is still dark only; a colour literal
+a refusal take no color; the palette is still dark only; a color literal
 outside `:root` is still a defect. The instrument-panel identity is unchanged -
 an instrument panel is exactly where lit indicators belong, and a droid's own
 LEDs are the least generic thing on it.
@@ -110,7 +110,7 @@ already doing this and the written decision had drifted away from it.**
 `#e85454` and a dim `--text-dim`, wired to `.indicator.ok` / `.warn` / `.fail` /
 `.off` as a glowing traffic-light grid, with a comment already arguing amber's
 place on a health signal; `data/health_signals.js` derives exactly those four
-states. So #327's *"colour carries exactly two meanings"* described neither the
+states. So #327's *"color carries exactly two meanings"* described neither the
 operator's intent nor the code, and the mockups' blue indicator dots were a
 regression against what ships rather than a proposal. This amendment brings the
 written model back to the stylesheet, and the sweep reuses those tokens and
@@ -182,7 +182,7 @@ the words, not the routing of a no.
 
 - `CONTEXT.md` gains **Surface Anatomy**; `AGENTS.md`'s emoji rule is retired.
 - Per the 2026-09-16 amendment, `CONTEXT.md` also gains **Health Signal** and a
-  rewritten **Status Colour**; the sweep ticket (#399) owns landing the tokens
+  rewritten **Status Color**; the sweep ticket (#399) owns landing the tokens
   in `data/style.css`, and every brief that describes a status indicator in
   blue is repaired at its next refresh.
 - Per the 2026-09-18 amendment, `CONTEXT.md` **Surface Anatomy** drops the

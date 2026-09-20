@@ -614,7 +614,7 @@
       const linked = Boolean(src.linked);
       const age = Number(src.ageMs || 0);
       // A receiver being heard or not is a Health Signal, so it reads as a
-      // droid LED and the colour IS the reading (CONTEXT.md "Health Signal"):
+      // droid LED and the color IS the reading (CONTEXT.md "Health Signal"):
       // linked is nominal, waiting is degraded and something the builder can
       // act on, and a source nobody switched on is unlit rather than green.
       // These three rows used to be three words on three plain plates, with

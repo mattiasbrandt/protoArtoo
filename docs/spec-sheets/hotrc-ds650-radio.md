@@ -158,7 +158,7 @@ bithead942's side-by-side of a personally owned collection of every version
 | Released | late 2021 | late 2021 | early 2023 | **mid-2025** | late 2025 |
 | Channels | 4 | 6 | 6 | **6** | 8 |
 | Antenna | external | external | internal | **internal** | internal |
-| Screen | 3 LEDs | 3 LEDs | mono LCD 21.0x9.3 mm | **colour LCD 22.5x12.0 mm** | colour touch 40x30 mm |
+| Screen | 3 LEDs | 3 LEDs | mono LCD 21.0x9.3 mm | **color LCD 22.5x12.0 mm** | color touch 40x30 mm |
 | Size W x L x H (mm) | 38.5 x 125.6 x 52.8 | same | 38.5 x 134.0 x 51.4 | **38.8 x 137.6 x 51.4** | 39.5 x 141.3 x 42.5 |
 | Weight | 72 g | 72 g | 81 g | **81 g** | 97 g |
 | Battery | 1S Li 1200 mAh | 1200 mAh | 1200 mAh | **1S Li 1500 mAh** | 1500 mAh |
@@ -295,7 +295,7 @@ no switch bank. Everything an operator can do is one of six things:
 | CH1 trim rocker | -- | shifts CH1's transmitted centre |
 | CH2 trim rocker | -- | shifts CH2's transmitted centre |
 | Power switch | -- | see 5.3 |
-| Colour LCD, 0.96 in | -- | battery, signal, receiver voltage, channel states, menu |
+| Color LCD, 0.96 in | -- | battery, signal, receiver voltage, channel states, menu |
 
 That is the whole instrument. **Six channels, two of them proportional.** Every
 design decision in Section 9 follows from that number.
@@ -311,7 +311,7 @@ The vendor's specification table:
 | Reaction speed (PWM) | <= 20 ms |
 | Transmitter voltage | DC 3.7-9 V |
 | Receiver voltage | DC 3.7-9 V |
-| Colour screen | 0.96 inch |
+| Color screen | 0.96 inch |
 | Net weight | 80 g |
 | Battery | built-in 1500 mAh rechargeable lithium |
 | Charging | USB Type-C |
@@ -340,7 +340,7 @@ sticks, and a 15-minute idle auto-shutdown.
 
 ### 5.2 The menu, and the settings that change the wire
 
-The DS-650's colour screen carries a real menu. Its entries are:
+The DS-650's color screen carries a real menu. Its entries are:
 
 `REV`, `EPA`, `SUB TR`, `Button Type`, `MIXES`, `CCS`, `RX Info`, `Fail Safe`,
 `Servos`, `Gyro`, `Joystick`, `Reset`, and `System` (Language, Sound, Auto-off,

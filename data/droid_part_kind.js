@@ -11,7 +11,7 @@
 //
 // Two rules shape everything below.
 //
-// A Kind is carried by TREATMENT, never by colour. #327 reserves colour for two
+// A Kind is carried by TREATMENT, never by color. #327 reserves color for two
 // meanings - red is stopped or refused, amber is you can do something about
 // this - and a Part being a light is neither (ADR 0063; docs/ui-copy-voice.md
 // rule 11). So the Kind earns a state class and nothing else, the way the
@@ -86,7 +86,7 @@
   /** Whether a surface may show one named affordance for this Part. */
   const shows = (part, affordance) => affordances(part).indexOf(affordance) !== -1;
 
-  /** The state class for this Part's Kind - never a colour, and "" for no Kind. */
+  /** The state class for this Part's Kind - never a color, and "" for no Kind. */
   const treatmentClass = (part) => (isLight(part) ? LIGHT_CLASS : "");
 
   /**

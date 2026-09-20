@@ -7,7 +7,7 @@
 // What these hold is the contract the seam exists for, not the shape of the
 // markup or the words on it: a body Part is on exactly one face, the body and
 // the dome speak one state vocabulary, a holoprojector never draws an open
-// state, the line art carries no colour of its own, a mark the renderer does
+// state, the line art carries no color of its own, a mark the renderer does
 // not know is reported rather than swallowed, and a click only reports a pick.
 //
 // The module is executed as shipped against a mini_dom document, with a PAApi
@@ -143,16 +143,16 @@ test("a holoprojector never draws an open or closed state, whatever it is handed
 });
 
 // ---------------------------------------------------------------------------
-// Colour lives in the stylesheet's palette
+// Color lives in the stylesheet's palette
 // ---------------------------------------------------------------------------
 
-test("the droid's line art carries no colour, stroke or fill of its own", () => {
+test("the droid's line art carries no color, stroke or fill of its own", () => {
   const { window } = boot();
 
   ["front", "rear"].forEach((face) => {
     const art = window.BodyArt[face];
     assert.ok(art.includes("<path"), `the ${face} art is there`);
-    assert.doesNotMatch(art, /#[0-9a-f]{3,8}\b|rgba?\(/i, `the ${face} art spends a colour literal`);
+    assert.doesNotMatch(art, /#[0-9a-f]{3,8}\b|rgba?\(/i, `the ${face} art spends a color literal`);
     assert.doesNotMatch(art, /\s(stroke|fill|style|class)=/, `the ${face} art paints itself`);
   });
 });

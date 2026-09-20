@@ -483,9 +483,9 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
 // and GPIO 4 - is drawn as exactly that, in its order, named by what it
 // prints and never by the servo table's own ARM1..AUX3 words; an Output only
 // the servo table knows comes after the serial links. Each wire takes the
-// palette colour at its place (--wire-n), from the stylesheet and never a
+// palette color at its place (--wire-n), from the stylesheet and never a
 // literal, and a wire to something not wired takes --wire-off.
-test("the wires are the Outputs the firmware reports, named as the board prints them, coloured by place", async () => {
+test("the wires are the Outputs the firmware reports, named as the board prints them, colored by place", async () => {
   const env = await boot({
     outputs: [
       output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),

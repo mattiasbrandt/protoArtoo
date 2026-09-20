@@ -102,9 +102,9 @@ A third sentence is two notes, or it is too long.
     - Flat: `Warning: acceleration limit may be unsafe`
     - Maker: `0 means unlimited. On a panel, it slams.`
 
-11. **Only a refusal names a severity.** Colour carries the rest: red is
+11. **Only a refusal names a severity.** Color carries the rest: red is
     stopped or refused, amber is you can do something about this, a Note is
-    uncoloured (#327). *Error* stays Protocol Check's word alone (ADR 0044).
+    uncolored (#327). *Error* stays Protocol Check's word alone (ADR 0044).
     Log-level names — Error, Warning, Info, Debug — are names, not
     severities: the picker matches what the serial log prints.
 
@@ -115,7 +115,7 @@ A third sentence is two notes, or it is too long.
     The field is still required. The sentence is still short.
 
 13. **A value the builder has never set says so**, and is visually distinct
-    from one they set. Not by colour — #327 reserves those. Where the value
+    from one they set. Not by color — #327 reserves those. Where the value
     has a richer provenance, that detail goes in its explanation.
 
 ## Do not write
@@ -201,26 +201,26 @@ review that reads the words and not the layout has read half the page.
 19. **Three voices, and each has one job.** `.hint` is the cue directly under a
     control, in the mono voice, one or two sentences. A `.note` is the
     consequence beside a choice, one or two sentences, and takes exactly two
-    colours: `.note-act` amber says act on this, `.note-info` blue says here
-    is information. Emphasis is weight, never colour.
+    colors: `.note-act` amber says act on this, `.note-info` blue says here
+    is information. Emphasis is weight, never color.
     `.prose` is not the why of every card. It is the one or two sentences on
     an irreversible or stranding act — flash, restore, wipe — at the one
     reading measure (`--measure`, 70 ch). Anywhere else, a why-paragraph is a
     defect: cut it, or fold the fact into the note.
 
-20. **Colour reports how a thing is doing, and nothing else.** Four signal
-    colours, from `CONTEXT.md` **Status Colour**: `--success` nominal,
+20. **Color reports how a thing is doing, and nothing else.** Four signal
+    colors, from `CONTEXT.md` **Status Color**: `--success` nominal,
     `--warning` degraded and you can do something about it, `--danger` stopped
     or refused, and the dim ink unlit for never asked, not fitted, switched
     off. **Blue is interaction alone** — selection, the row shown, the primary
     act, the focus ring — so nothing that reports a state is blue. A **chosen
-    posture takes no colour at all**: a speed preset, a sleep state, a control
-    mode is a value the builder set, and colouring it makes a setting read as a
+    posture takes no color at all**: a speed preset, a sleep state, a control
+    mode is a value the builder set, and coloring it makes a setting read as a
     symptom. An **Availability Family** is told apart by treatment, never by
     hue.
 
 21. **The numbers are tokens, and there is no second spelling.** A rule that
-    wants a size, a step or a colour picks one of these rather than writing a
+    wants a size, a step or a color picks one of these rather than writing a
     number:
 
     | What | Token | Value |
@@ -242,7 +242,7 @@ review that reads the words and not the layout has read half the page.
     fourth: **1100 px** the rail becomes a strip, **900 px** bays and grids
     stack and the Status Plate folds, **600 px** two-column forms go to one.
 
-    **A colour literal outside `:root` is a defect**, and
+    **A color literal outside `:root` is a defect**, and
     `test/test_web/test_style_token_layer.js` turns the web suite red over one.
     The single exception is `data/_recovery_kernel.html`, which has to render
     when the stylesheet is what failed; its literals are copied by hand and
@@ -258,7 +258,7 @@ review that reads the words and not the layout has read half the page.
 23. **An icon stands beside a word, never instead of one.** Icons come from
     the inline sprite `data/shell.js` injects, inherit `currentColor`, and keep
     their label alongside. **No emoji on any operator surface** (operator
-    decision 2026-09-13 on #395, ADR 0066): an emoji is a coloured picture the
+    decision 2026-09-13 on #395, ADR 0066): an emoji is a colored picture the
     operator cannot restyle, it renders differently on every machine, and it
     carries nothing the word beside it did not. `make check-surface-anatomy`
     fails on a pictograph in `data/` and on a `<use>` that names no symbol.
@@ -312,8 +312,8 @@ enumerated.
 
 The layout half is enforced the same way, and the split is the same. Two things
 are checked rather than reviewed — `make check-surface-anatomy` on pictographs
-and unresolved icons, and `test_style_token_layer.js` on colour literals
+and unresolved icons, and `test_style_token_layer.js` on color literals
 outside `:root`. What is left for the gate is what no parser can judge: whether
 a subtitle is a count the droid actually answered with, whether an act sits
-beside the thing it acts on, and whether a colour is reporting a state or a
+beside the thing it acts on, and whether a color is reporting a state or a
 choice.

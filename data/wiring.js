@@ -23,7 +23,7 @@
 // document from one generator". A second generator is the one thing this group
 // can get wrong that cannot be fixed cheaply later.
 //
-// COLOUR AND SIZE ARE THE STYLESHEET'S, AND THE PICTURES CARRY PAPER BENEATH IT.
+// COLOR AND SIZE ARE THE STYLESHEET'S, AND THE PICTURES CARRY PAPER BENEATH IT.
 // Every element this file emits carries a class, so on screen the tokens in
 // data/style.css decide what it looks like -- and @media print re-points those
 // tokens at paper (data/style.css ":root" and its print block). The saved bench
@@ -31,13 +31,13 @@
 // that gets cropped out and pasted somewhere else, so each picture also carries
 // its own paint as SVG presentation attributes. Those are the lowest-priority
 // paint there is -- any stylesheet rule beats them -- so on screen they change
-// nothing, and in the saved file they are all there is. Every colour among them
+// nothing, and in the saved file they are all there is. Every color among them
 // is a `var(--token,#fallback)` pair naming the token the stylesheet paints the
 // same element with, and the fallback is the paper value @media print gives
 // that token: the saved file and a printed screen are the same ink on the same
 // paper. This is the form the project this view learns from shipped for the
 // same reason (r2d2-astromech-simulator v1.79.0, src/js/app/wiring.js:50), and
-// the one colour literal a standalone export is allowed (#366).
+// the one color literal a standalone export is allowed (#366).
 // =============================================================================
 (() => {
   "use strict";
@@ -294,7 +294,7 @@
   // no stylesheet to read. If --paper-ink or --paper-line ever moves, these
   // move with it.
   //
-  // These are the only colour literals this surface ships, and they appear
+  // These are the only color literals this surface ships, and they appear
   // nowhere but inside a var() pair (#366; D2's checker, #353, accepts exactly
   // this form and nothing looser).
   // ---------------------------------------------------------------------------
@@ -307,22 +307,22 @@
   const PLATE_RAISED = "var(--surface-alt,#ffffff)";
 
   // ---------------------------------------------------------------------------
-  // Each wire's own colour
+  // Each wire's own color
   //
   // A wire is told apart from its neighbours the way a real loom's are: by its
-  // own colour (CONTEXT.md "Status Colour", the Wiring exception, operator
-  // 2026-09-19 on #411). The colour NAMES a wire and carries no state; a wire
+  // own color (CONTEXT.md "Status Color", the Wiring exception, operator
+  // 2026-09-19 on #411). The color NAMES a wire and carries no state; a wire
   // to something not wired takes the one grey instead, and is dashed.
   //
-  // Which colour is picked by the wire's place in one order - the Outputs as
+  // Which color is picked by the wire's place in one order - the Outputs as
   // GET /api/config lists them, then the Board Lanes as the identity lists
   // them, then any Output only the servo table knows (an expander's) - from
   // the numbered palette --wire-1..--wire-8 in data/style.css, round again
   // past eight. Nothing here knows which wires a board has: the order is the
   // firmware's answer, and data/output_settings.js picks an Output plate's
-  // colour from the same answer the same way, so a plate and its line match.
+  // color from the same answer the same way, so a plate and its line match.
   //
-  // The colours live in the stylesheet only. This file writes a token's name
+  // The colors live in the stylesheet only. This file writes a token's name
   // and never a value, painted as an inline style so it beats nothing and
   // nothing beats it; the bench copy, which has no stylesheet, has each token
   // resolved into it as it is saved (inkedForFile()).
@@ -422,7 +422,7 @@
   };
 
   // The words over a wire. What the board prints beside the pin comes first,
-  // in the wire's own colour, and what this sheet has always said about the
+  // in the wire's own color, and what this sheet has always said about the
   // wire follows it (operator, 2026-09-19 on #411: "the wire lines in the
   // drawing should initally say what pcb silkscreen label and then what we
   // have now"). A wire the board prints nothing beside has only the second.
@@ -442,7 +442,7 @@
   };
 
   // One wire: out of the board's edge to the thing on the end of it, in its
-  // own colour. A wire that is not wired is grey and dashed AND says why on
+  // own color. A wire that is not wired is grey and dashed AND says why on
   // its row, because a dashed line on its own is a convention a builder has to
   // be taught.
   //
@@ -531,7 +531,7 @@
   // a loom (2026-09-19 on #411: "One diagram, every wire"): the firmware's
   // Outputs in the order GET /api/config lists them, then its Board Lanes,
   // then any Output only the servo table knows (an expander's) - the same
-  // order the colours are picked in (wireOrder()). What a lane table used to
+  // order the colors are picked in (wireOrder()). What a lane table used to
   // say beside the picture - which UART, which TX and RX pin - is on the
   // lane's own wire now, after the board's label.
   //
@@ -970,10 +970,10 @@
     );
   };
 
-  // The wire colours as the bench copy needs them. The file carries no
+  // The wire colors as the bench copy needs them. The file carries no
   // stylesheet, so each --wire-* token the pictures name is resolved to the
   // value the stylesheet gives it right now, and the file is inked with that.
-  // The stylesheet stays the one place a wire colour is written down.
+  // The stylesheet stays the one place a wire color is written down.
   const inkedForFile = (file) => {
     const style = window.getComputedStyle?.(document.documentElement);
     if (!style) return file;

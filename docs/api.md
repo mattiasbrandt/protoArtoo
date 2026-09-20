@@ -705,7 +705,7 @@ curl -s http://artoo.local/api/servo/outputs
 
 ### POST /api/aux-led/color
 
-Sets the LED strip's colour.
+Sets the LED strip's color.
 
 - Body formats:
 - Form: `r`, `g`, `b` (0..255)

@@ -39,7 +39,7 @@ WIDTH, HEIGHT = 400, 300
 MARGIN = 16
 CAP_BYTES = 8192
 # A studio ground is light, not always 255: the AstroPixels table is 246.
-# Flood relative to the corner colour so an off-white table is removed
+# Flood relative to the corner color so an off-white table is removed
 # without eating a white Xbox controller whose body sits well below 255.
 GROUND_MIN = 220
 GROUND_TOL = 14

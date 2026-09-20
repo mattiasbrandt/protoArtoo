@@ -74,7 +74,7 @@ class Pictographs(unittest.TestCase):
             self.assertEqual((swept, pending), (1, 0))
 
     def test_a_bare_variation_selector_is_a_pictograph(self):
-        # U+FE0F is what turns an otherwise textual glyph into a coloured
+        # U+FE0F is what turns an otherwise textual glyph into a colored
         # picture, and it is invisible in a diff. A check that only looked at
         # the emoji blocks would pass "warning sign + VS16" and ship it.
         with tempfile.TemporaryDirectory() as tmp:

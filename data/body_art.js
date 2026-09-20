@@ -10,8 +10,8 @@
 // were traced from the reference R2-D2 drawing the operator supplied. Every
 // path's geometry is copied verbatim - the `d` and the one `transform`. What
 // was stripped is presentation only: the editor's `id="svg_*"` names and each
-// path's own stroke colour, width and fill, which the stylesheet now paints
-// from the palette tokens (.bv-art in data/style.css), so no colour literal
+// path's own stroke color, width and fill, which the stylesheet now paints
+// from the palette tokens (.bv-art in data/style.css), so no color literal
 // ships here (#327).
 //
 // DATA, AND ONLY DATA. Nothing here is a Part, nothing here is clickable, and

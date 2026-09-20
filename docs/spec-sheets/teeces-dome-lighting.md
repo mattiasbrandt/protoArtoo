@@ -87,7 +87,7 @@ PSI V1, PSI v3.2, PSI v3.4.
 > **"Teeces V4" names two unrelated products. Never use it unqualified.**
 >
 > - **Printed Droid Teeces V4** -- a re-layout of the classic MAX7219 board set:
->   better tracing, 3.5 mm screw terminals, SMD passives, colour-labelled boards.
+>   better tracing, 3.5 mm screw terminals, SMD passives, color-labelled boards.
 >   Still the same architecture this sheet describes.
 > - **JoyMonkey Teeces V4** -- a completely different RGB and fibre-optic design
 >   that was **renamed to the RSeries Logic Engine**. The originator's own words,
@@ -121,7 +121,7 @@ references:
 
 | Source | URL | Extraction notes |
 | --- | --- | --- |
-| V3.2 Kit Sheet, 17 Sept 2012 | http://joymonkey.com/run/files/V3.2%20Kit%20Sheet%20Sept%202012.pdf | **The authoritative product document.** Designer credit, full BOM, LED colour counts, Iset resistors, power options, chain wiring, PVC coupling fit |
+| V3.2 Kit Sheet, 17 Sept 2012 | http://joymonkey.com/run/files/V3.2%20Kit%20Sheet%20Sept%202012.pdf | **The authoritative product document.** Designer credit, full BOM, LED color counts, Iset resistors, power options, chain wiring, PVC coupling fit |
 | CuriousMarc Teeces sketch v1.2/1.3/1.4 | vendored in Reeltwo `src/dome/TeecesLogics.h` lines 758-3247 | **The authoritative protocol document.** Parser, command table, address map, baud, buffer sizes |
 | MarcDuino command reference | https://www.curiousmarc.com/r2-d2/marcduino-system/marcduino-software-reference/marcduino-command-reference | Prefix routing; the `@`-stripping statement |
 | Original JEDI JawaLite reference | https://www.curiousmarc.com/r2-d2/marcduino-system/marcduino-software-reference/marcduino-command-reference/original-jedi-jawalite-reference | Upstream grammar; credits Scott Gray |
@@ -197,13 +197,13 @@ Reeltwo's own example instantiates the same shape (`LedControlMAX7221<4>` rear,
 | --- | --- | --- |
 | FLD (each) | 5 x 9 | 45 |
 | RLD | 5 x 27 | 135 |
-| PSI (each) | 13 + 13, two colours | 26 |
+| PSI (each) | 13 + 13, two colors | 26 |
 
 Cross-check: logic LEDs total 45 + 45 + 135 = **225**. The BOM's 3 mm LED counts
 minus its stated spares are 60 red + 62 green + 13 yellow + 54 white + 36 blue =
 **225** exactly. Two independent primary sources agree.
 
-**LED colour is a build-time choice made by the builder, hole by hole.** The kit
+**LED color is a build-time choice made by the builder, hole by hole.** The kit
 sheet: *"There are no 'correct' color patterns to use."* Logic boards take 3 mm
 flangeless LEDs in red, green, yellow, white or blue; PSIs take 5 mm, 14 each of
 red/blue/green/yellow supplied. This is the single most consequential fact for
@@ -558,7 +558,7 @@ Effect durations are compile-time, not protocol: `LEIAduration 34000`,
 | `W` | `0W<seconds>` | effect duration | **JEDI only -- rejected by Teeces** |
 | `P91` | `<a>P91` | select digital output | **JEDI only -- ignored by Teeces** |
 
-`S` values: `S0` all-on test, `S1` normal random, `S2` colour 1, `S3` colour 2,
+`S` values: `S0` all-on test, `S1` normal random, `S2` color 1, `S3` color 2,
 `S4` off.
 
 > [!CAUTION]
@@ -707,7 +707,7 @@ differences in kind, not a ranking.
 | | Teeces | AstroPixels Plus |
 | --- | --- | --- |
 | Light source | Discrete 3 mm / 5 mm LEDs | WS2812B addressable RGB |
-| Colour | **Fixed at build time**, chosen per hole by the builder | Per-pixel, changeable at runtime |
+| Color | **Fixed at build time**, chosen per hole by the builder | Per-pixel, changeable at runtime |
 | Driver | 7 x MAX7219, two chains | One data line per display |
 | MCU | Arduino Pro Mini / Pro Micro / Micro (5 V), or ESP32 on Teeces32 | ESP32 |
 | Logic geometry | FLD 5 x 9 each, RLD 5 x 27 | FLD 9 x 10, RLD 27 x 4 (fork-dependent) |
@@ -754,9 +754,9 @@ and it has no `@3T` at all. `@2T1` means "rear logic to normal" on one dome and
 > AstroPixels Plus and **a silent no-op on a Teeces** -- `doPcommand` handles only
 > 60 and 61 and falls through `default: break;`. The Teeces equivalent is `0S1`.
 
-**Colour is the deepest difference.** protoArtoo's `DL:` grammar carries a colour
-argument with eight values and two modes whose entire content is colour
-(`RAINBOW`, `FLASHCOLOR`). On a Teeces, colour is soldered in and cannot change.
+**Color is the deepest difference.** protoArtoo's `DL:` grammar carries a color
+argument with eight values and two modes whose entire content is color
+(`RAINBOW`, `FLASHCOLOR`). On a Teeces, color is soldered in and cannot change.
 Note this is already a partial problem on the supported member: our own fork maps
 `WHITE` to `kDefault` with the comment *"ReelTwo logics have no white ColorVal."*
 Teeces widens that from one value to the whole axis.
@@ -791,10 +791,10 @@ Already matching, verified in our own source this session:
    Teeces; the equivalent is `0S1`. `src/tasks/sequence_engine.cpp:230-231,246-248`
    and `src/tasks/sequence_dispatcher.cpp:323-324,371-372` emit the pair, and
    `src/tasks/sequence_catalog.cpp:226-228` carries it as catalog steps.
-4. **Decide what `DL:` means on a monochrome dome.** The colour argument and the
+4. **Decide what `DL:` means on a monochrome dome.** The color argument and the
    `RAINBOW` and `FLASHCOLOR` modes have no Teeces meaning. ADR 0045's
    intent-not-truth rule already gives the answer shape -- the model records what
-   protoArtoo commanded, never what the device is -- so a colour can be accepted
+   protoArtoo commanded, never what the device is -- so a color can be accepted
    and reported while the device ignores it. That is a decision, not a derivation,
    and it belongs on #313.
 5. **Map `DL:` targets onto the real address map.** `DL:`'s `FLD` is singular;
@@ -953,7 +953,7 @@ Use this table first when implementing or reviewing Teeces behaviour.
 - Field: Command link. Required value: one wire, master TX to Teeces RX, plus
   common ground.
 - Field: Supply. Required value: 5 V.
-- Field: LED colour. Required value: **fixed at build time**, per hole.
+- Field: LED color. Required value: **fixed at build time**, per hole.
 - Field: Component Protocol. Required value: **JawaLite**.
 
 If a required value above cannot be proven for the unit in hand, status is

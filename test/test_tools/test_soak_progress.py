@@ -195,12 +195,12 @@ class TheConsoleDegradesAndKeepsTheTranscriptPlain(unittest.TestCase):
         self.assertIn("[OK] everything fine", stream.getvalue())
         self.assertIn("[FAIL] something is wrong", stream.getvalue())
 
-    def test_a_terminal_gets_colour_and_the_same_ascii_tokens(self):
+    def test_a_terminal_gets_color_and_the_same_ascii_tokens(self):
         stream = io.StringIO()
         console = soak.RunConsole(stream=stream, log_path=None, force_terminal=True)
         console.line("everything fine", kind="ok")
         console.close()
-        self.assertIn("\x1b[", stream.getvalue(), "a terminal should get colour")
+        self.assertIn("\x1b[", stream.getvalue(), "a terminal should get color")
         self.assertIn("[OK]", stream.getvalue(), "the token stays ASCII everywhere")
 
     def test_the_transcript_has_no_ansi_even_when_the_terminal_does(self):

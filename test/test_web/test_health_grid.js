@@ -114,7 +114,7 @@ test("a stream that drops leaves every row on the state the controller reported"
 
   // The stream breaking is the Status Plate's one freshness line to report, and
   // this surface adds nothing to it. The rows keep the state the controller
-  // last sent, say nothing about age, and change no colour.
+  // last sent, say nothing about age, and change no color.
   assert.ok(
     dash.decoyIntact(),
     "this surface wrote its own freshness claim; the plate already carries the one for the screen",

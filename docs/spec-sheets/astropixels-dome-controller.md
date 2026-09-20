@@ -109,7 +109,7 @@ Agent requirements when using this document:
 - MUST NOT assume a command that works on an AstroPixels dome running
   AstroPixelsPlus works on the same hardware running the vendor's stock
   firmware. Section 6.3 is the difference list and it is not short.
-- MUST NOT confuse the three colour number spaces this one board carries
+- MUST NOT confuse the three color number spaces this one board carries
   (Section 8.7). They genuinely disagree.
 - MUST label anything about measured current as unmeasured on our own droid; the
   vendor states a figure, we have never checked it.
@@ -340,7 +340,7 @@ Implementation, as it actually is on disk today:
 | Vendor store listing | https://we-make-things.co.uk/product/astropixels/ | Price, stock state, kit contents, per-customer limit, shipping |
 | **Vendor firmware** | https://github.com/dpoulson/Astropixels | **The stock image.** Five build environments; `src/standard/main.cpp` is what ships on every board; `src/standard-md/` is the JawaLite build. **No LICENSE file** |
 | Vendor's Reeltwo fork | https://github.com/dpoulson/Reeltwo | The library the vendor's own instructions tell you to install, *"a fork of the original repository due to a long standing bug that meant it would not compile"* |
-| **Reeltwo library @ 23.5.3** | https://github.com/reeltwo/Reeltwo, cloned at the tag the dome pins | LED geometry, the `LogicEngineRenderer` effect and colour enums, the sequence packing formula, `HoloLights` defaults. LGPL-2.1 |
+| **Reeltwo library @ 23.5.3** | https://github.com/reeltwo/Reeltwo, cloned at the tag the dome pins | LED geometry, the `LogicEngineRenderer` effect and color enums, the sequence packing formula, `HoloLights` defaults. LGPL-2.1 |
 | **The operator's dome firmware** | `~/Documents/GitHub/AstroPixelsPlus` (`mattiasbrandt/AstroPixelsPlus`) | **The authority for protoR2link.** 314 `MARCDUINO_ACTION`s, the body-link handler, the panel map, the `DV:`/`DL:`/`DT:`/`DH:` implementation. LGPL-2.1 |
 | Upstream AstroPixelsPlus | https://github.com/reeltwo/AstroPixelsPlus | The base the fork diverges from; its README carries the `#AP*` config commands and the *"prefix @ is optional and is ignored"* rule |
 | AstroPixels web installer | https://dpoulson.github.io/Astropixels/ | How a builder actually changes firmware family; Chrome or Edge only |
@@ -387,7 +387,7 @@ too high."*
 
 This matters for protoArtoo in one specific way: **nothing protoArtoo sends can
 change it.** Brightness is not a field in `DL:`, in `@nT`, or in the sequence
-packing formula -- the four packed fields are effect, colour, speed scale and
+packing formula -- the four packed fields are effect, color, speed scale and
 duration (5.3). A builder who wants a dimmer dome reflashes the dome; the body
 cannot ask.
 
@@ -408,7 +408,7 @@ static long sequence(byte seq, ColorVal colorVal = kDefault,
 }
 ```
 
-That is the whole expressive budget of a logic command: **effect, colour, speed
+That is the whole expressive budget of a logic command: **effect, color, speed
 scale, duration in seconds.** Every higher-level grammar in this document --
 `LE`, `@nT`, `DL:` -- is a different spelling of those four numbers.
 
@@ -470,7 +470,7 @@ fault:
 
 | Symptom | Vendor's diagnosis |
 | --- | --- |
-| Wrong colours, or not all boards lit | *"you have the wrong board connected to the wrong header"* |
+| Wrong colors, or not all boards lit | *"you have the wrong board connected to the wrong header"* |
 | One board dark | Cable reversed -- S to S. Try the board on the RLD header to prove the board rather than the pin: *"it may be a dead pin on the ESP32"* |
 | Nothing lit at all | Wiring and power. *"There should at least be a red light on the ESP32"* |
 | Lit up to a point, then dark | A dead pixel. *"If a single pixel goes, then 99% of the time nothing after it will work either"* -- WS2812B chains are serial, so the first failure truncates everything downstream. Vendor replaces the board |
@@ -509,7 +509,7 @@ parser at all, and no panel servos.
 | Family | Where from | Serial grammar | Baud | Panels | protoArtoo works? |
 | --- | --- | --- | --: | --- | --- |
 | **`standard`** (shipped) | vendor repo / [web installer](https://dpoulson.github.io/Astropixels/) | `LE` / `HP` ReelTwo commands, plus I2C slave `0x0A` | 9600 | none | **No** |
-| `imperial`, `r2kt`, `special` | same | as `standard`, different colour defaults | 9600 | none | **No** |
+| `imperial`, `r2kt`, `special` | same | as `standard`, different color defaults | 9600 | none | **No** |
 | **`standard-md`** | same | JawaLite / Marcduino, 117 actions, plus `*RT` and `@AP` raw escapes | 9600 | 5, direct ESP32 pins | Partly -- see 6.4 |
 | **AstroPixelsPlus (upstream)** | `reeltwo/AstroPixelsPlus` | Marcduino, plus `#AP*` config, `~RT` / `@AP` escapes, WiFi and a web UI | **2400** default | 13 + 6 over two PCA9685s | Partly -- no protoR2link |
 | **AstroPixelsPlus (operator's fork)** | `mattiasbrandt/AstroPixelsPlus` | as upstream, **plus protoR2link, `DV:`/`DL:`/`DT:`/`DH:`, panel calibration, `/api/dome/layout`** | 9600 by its own setup profile | 13 + 6 | **Yes. This is the one.** |
@@ -525,7 +525,7 @@ Worth recording, because a builder debugging a silent dome will want to know wha
 the board answers to *before* they reflash it, and because `@AP` / `~RT` / `*RT`
 let you reach this grammar from inside a Marcduino build.
 
-`LE<designation><effect><colour><speed><time>`, leading zeros dropped:
+`LE<designation><effect><color><speed><time>`, leading zeros dropped:
 
 | Designation | Device |
 | --: | --- |
@@ -539,7 +539,7 @@ The effect numbers here **are** the `LogicEngineRenderer` enum values -- `00`
 Normal, `01` Alarm, `02` Failure, `03` Leia, `04` March, `05` Single Color, `06`
 Flashing Color, `07`/`08` Flip Flop, `09` Color Swap, `10` Rainbow, `14` Lights
 Out, `15`-`18` text, `19` Roaming Pixel, `20`/`21` Scanline, `22` Fire, `23` PSI
-Swipe, `24` Pulse, `99` Random (vendor, Interfacing). Colour is `ColorVal`
+Swipe, `24` Pulse, `99` Random (vendor, Interfacing). Color is `ColorVal`
 (Section 8.7). Speed is 0-9 with 0 fastest, and the vendor documents its units
 per effect: *"Flip Flop and Rainbow - 200ms x speed; Flash - 250ms x speed; March
 - 150ms x speed; Color Swap - 350ms x speed"*. Time is two digits of seconds,
@@ -753,7 +753,7 @@ Two consequences protoArtoo already lives with:
 
 1. **Validation must happen on the body.** That is exactly why
    `src/protocol_check.cpp` and its browser mirror exist, and why the `DH:`
-   effect/colour matrix is enforced before send rather than relying on the dome
+   effect/color matrix is enforced before send rather than relying on the dome
    to refuse.
 2. **Health is inferred, not reported.** `domeConnected()` is "a heartbeat
    arrived inside 5 s", nothing more. The richer picture -- `body_link.enabled`,
@@ -883,9 +883,9 @@ Text, from `MarcduinoLogics.h:243-265`:
 | `@3M<text>` | RLD |
 
 `@1M` and `@2M` are **not independent**: both write into static buffers and then
-re-render the whole front display as `"<top>\n<bottom>"`. Colour is
+re-render the whole front display as `"<top>\n<bottom>"`. Color is
 `FLD.randomColor()` -- which, because `randomColor()` is `ColorVal(random(10))`,
-can return `kDefault`. There is no way to set the colour of `@nM` text; `DT:`
+can return `kDefault`. There is no way to set the color of `@nM` text; `DT:`
 exists for exactly that reason (Section 9).
 
 ### 8.3 `@` -- PSI
@@ -910,19 +910,19 @@ MARCDUINO_ACTION(FrontHoloPosDown, *HP001, ({
 }))
 ```
 
-The underlying grammar is `HP<designator><type><function><colour><...>` with an
+The underlying grammar is `HP<designator><type><function><color><...>` with an
 optional `|<seconds>` runtime suffix:
 
 | Field | Values |
 | --- | --- |
 | designator | `F` front, `R` rear, `T` top, `D` radar eye, `O` other, `A` all three, `X` front+rear, `Y` front+top, `Z` rear+top, `S` sequences |
 | type | `0` LED functions, `1` servo functions |
-| LED function | `01` Leia (forced blue), `02` colour projector, `03` dim pulse, `04` cycle, `05` solid colour, `06` rainbow, `07` short circuit, `96`-`99` twitch/override control, `00` off |
+| LED function | `01` Leia (forced blue), `02` color projector, `03` dim pulse, `04` cycle, `05` solid color, `06` rainbow, `07` short circuit, `96`-`99` twitch/override control, `00` off |
 | servo function | `01` go to preset position, `04` random position, `05` wag L/R, `06` wag U/D, `98`/`99` disable/enable auto twitch |
 | position | `0` down, `1` centre, `2` up, `3` left, `4` upper left, `5` lower left, `6` right, `7` upper right, `8` lower right |
 | runtime | `|<seconds>`, after which the holo returns to its last auto-twitch mode |
 
-So `HPF0040` is front / LED / cycle / random colour, and `HPF1010` is front /
+So `HPF0040` is front / LED / cycle / random color, and `HPF1010` is front /
 servo / preset position / down. The vendor documents the same scheme on its
 HoloProjectors and Interfacing pages, and confirms `HPA0025|20` *"will turn all
 HPs twinkling blue for 20 seconds"*.
@@ -984,9 +984,9 @@ higher-level `BD:<CUE>` vocabulary the fork invented for the purpose.
 > or a shared command log, and it is why ADR 0055 routes by ownership rather
 > than by prefix.
 
-### 8.7 Three colour number spaces on one board
+### 8.7 Three color number spaces on one board
 
-This is the most reliable way to get a wrong-coloured dome, and all three are
+This is the most reliable way to get a wrong-colored dome, and all three are
 primary-sourced.
 
 | Code | `ColorVal` (logics and PSI) | `HP` (holoprojectors) | `DL:` token | `DH:` token |
@@ -1017,9 +1017,9 @@ page and `Reeltwo src/dome/HoloLights.h`; the fork's `parseVisualLogicColor` and
 > Holos *do* have white (index 9), so `DH:A:FLASH:WHITE` is white while
 > `DL:LOGIC:FLASHCOLOR:WHITE` is the palette default. Worse for a debugging
 > operator: the authoring contract specifies that telemetry reports the
-> **requested** colour, so `/api/health` will say `"color": "WHITE"` for a
+> **requested** color, so `/api/health` will say `"color": "WHITE"` for a
 > display that is not showing white. There is no defect to fix in our code --
-> the hardware palette does not contain the colour -- but the asymmetry must not
+> the hardware palette does not contain the color -- but the asymmetry must not
 > be discovered on a bench at midnight.
 
 `randomColor()` is `ColorVal(random(10))`, so it can return `kDefault`.
@@ -1051,7 +1051,7 @@ Three registrations let a Marcduino-era sender reach the raw ReelTwo
 | `~RT<cmd>` | upstream | same |
 | `*RT<cmd>` | vendor `standard-md` | same |
 
-These are the only way to set a logic colour and duration together from a
+These are the only way to set a logic color and duration together from a
 Marcduino-shaped link -- and they are also why `DL:` was worth building instead:
 `@APLE1060015` is unreadable, unvalidated and 13 of your 63 characters.
 
@@ -1085,9 +1085,9 @@ actually sustains is `UNKNOWN`; settled by streaming alternating `@0T1`/`@0T2` a
 ### 9.1 Why it exists
 
 The raw families of Section 8 cannot express what a sequence editor needs. A
-logic command carries effect, colour, speed and duration (5.3), but `@0T5` only
-carries the effect -- colour and duration are not in the wire form at all, and
-`@nM` text takes a random colour. The escape hatches (`@AP`, `~RT`) can reach the
+logic command carries effect, color, speed and duration (5.3), but `@0T5` only
+carries the effect -- color and duration are not in the wire form at all, and
+`@nM` text takes a random color. The escape hatches (`@AP`, `~RT`) can reach the
 full grammar but are unvalidated and spend a third of the 63-character budget on
 ceremony.
 
@@ -1115,8 +1115,8 @@ is how this layer avoids the `@7`/`@8` swap. `DT:` targets: `FLD`, `RLD`,
 
 Validation is mirrored byte-for-byte between `src/protocol_check.cpp` and
 `data/seq_protocol_check.js`: uppercase only, full-string match, total length
-`<= 63`, unknown enum rejected, unsupported target/effect/colour combination
-rejected. The `DH:` effect/colour/duration matrix is strict -- `DH:A:RAINBOW:RED`
+`<= 63`, unknown enum rejected, unsupported target/effect/color combination
+rejected. The `DH:` effect/color/duration matrix is strict -- `DH:A:RAINBOW:RED`
 and `DH:A:WAG:RED:5` are refused **before send** rather than being left to the
 dome, which would refuse them silently or not at all.
 
@@ -1150,7 +1150,7 @@ static void domeApplyMarchVisuals()
 }
 ```
 
-Five devices, two colour spaces, one duration, in one body-side token. `DV:VADER`
+Five devices, two color spaces, one duration, in one body-side token. `DV:VADER`
 and `DV:ROCKMARCH` share this renderer; `ALARM`, `LEIA`, `HEART`, `CANTINA`,
 `SCREAM`, `OVERLOAD`, `HELLO` and `RESET` have their own.
 
@@ -1338,7 +1338,7 @@ one-registration gap rather than a pattern. Verified this session.
   droid (8.2, 9.4).
 - **Logic display settings do not survive a dome reboot.**
   `Reeltwo LogicEngine.h:958-961` is literally `void restoreSettings() {
-  defaultSettings(); }`, and no NVS-backed controller is instantiated. Colour,
+  defaultSettings(); }`, and no NVS-backed controller is instantiated. Color,
   brightness and palette are compiled-in defaults on every boot. Anything the
   body set is gone. This is why `DV:`/`DL:` re-assert visual state at the start
   of a sequence rather than assuming it.
@@ -1442,7 +1442,7 @@ divider, or by asking the vendor.
 | | **AstroPixels** | **Teeces** |
 | --- | --- | --- |
 | Lighting | WS2812B addressable RGB | MAX7219-driven discrete LEDs |
-| Colour | any, per pixel | fixed by the LED fitted |
+| Color | any, per pixel | fixed by the LED fitted |
 | Controller | ESP32, socketed 30-pin devkit | Arduino Pro Micro on the RLD |
 | WiFi / web UI / OTA | yes, with AstroPixelsPlus | none |
 | LED count | 269 | 7 MAX7219s driving 296 |
@@ -1492,7 +1492,7 @@ Section 10 is the difference list from the other side and it is not short.
 | `@1P60` is | **front PSI Leia, not the Latin font** | 8.1 |
 | `@7` / `@8` are | **top / rear** -- reversed vs JawaLite | 8.4 |
 | `DL:...:WHITE` is | not white; logics have no white ColorVal | 8.7 |
-| Colour spaces | three, mutually incompatible | 8.7 |
+| Color spaces | three, mutually incompatible | 8.7 |
 | Panel `:OP01` is | dome ring panel P1 outbound, body ARM1 inbound | 8.6 |
 | Panel map | 13 panel slots + 6 holo axes, two PCA9685s | 11 |
 | Does the dome persist logic settings? | **No. Every reboot is compiled-in defaults** | 12.4 |

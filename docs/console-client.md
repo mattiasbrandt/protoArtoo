@@ -37,7 +37,7 @@ other halves and are not repeated here:
 
 The mode also decides how much the program tells you about itself: only
 **scripted** mode prints the [provenance header](#the-provenance-header) and
-only scripted mode [colours](#colour) record lines.
+only scripted mode [colors](#color) record lines.
 
 ---
 
@@ -344,18 +344,18 @@ read from the board rather than typed by a human.
 
 ---
 
-## Colour
+## Color
 
 Scripted mode tints Console Record lines: red when the record carries
 `status=err`, cyan otherwise. Nothing else is touched - log lines, the send
 markers and the verdict markers stay plain.
 
-Colour is **on only when stdout is a terminal**. Redirect the output and the
+Color is **on only when stdout is a terminal**. Redirect the output and the
 transcript is clean text with no escape sequences in it, which is the point:
 a transcript pasted into a ticket should not carry ANSI. `--color` forces it on
 anyway and `--no-color` forces it off on a terminal.
 
-Capture and interactive modes never colour anything.
+Capture and interactive modes never color anything.
 
 ---
 

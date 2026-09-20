@@ -66,9 +66,9 @@
     rebootRequestPending: false,
   };
 
-  // Signal strength is a measurement, not a Health Signal: it takes no colour
+  // Signal strength is a measurement, not a Health Signal: it takes no color
   // and the word is the whole of what the four glyphs here used to say
-  // (CONTEXT.md "Status Colour"). The dBm reading rides in the same plate
+  // (CONTEXT.md "Status Color"). The dBm reading rides in the same plate
   // rather than in a second line under it, which is where this surface printed
   // the same number twice. The thresholds are unchanged.
   const signalLabel = (rssi) => {
@@ -118,9 +118,9 @@
   };
 
   // The Network posture head's subtitle. It is a word for the posture the
-  // controller answered with and takes no colour of its own: the plate's left
-  // edge carries the signal, and a coloured subtitle would be the same fact
-  // twice (ADR 0066, CONTEXT.md "Status Colour").
+  // controller answered with and takes no color of its own: the plate's left
+  // edge carries the signal, and a colored subtitle would be the same fact
+  // twice (ADR 0066, CONTEXT.md "Status Color").
   const setPendingSummary = (text) => {
     if (!pendingSummary) return;
     pendingSummary.textContent = text;
@@ -288,7 +288,7 @@
 
     // Three readouts that carried a glyph apiece. The word is the whole of
     // what each one said, and the plate's left edge is where this surface
-    // reports how it is doing (ADR 0066, CONTEXT.md "Status Colour").
+    // reports how it is doing (ADR 0066, CONTEXT.md "Status Color").
     if (provisioningState) {
       provisioningState.textContent = posture.networkRecovery
         ? "Network Recovery Mode"

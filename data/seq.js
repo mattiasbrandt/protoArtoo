@@ -1444,9 +1444,9 @@
     if (!summaryEl) return;
 
     // No glyph in front of the verdict. Protocol Check's two outcomes take the
-    // signal colours their own meanings already have - green for a sequence the
+    // signal colors their own meanings already have - green for a sequence the
     // droid will accept, red for one it would refuse - and the sentence says
-    // which on its own (CONTEXT.md "Status Colour", ADR 0044).
+    // which on its own (CONTEXT.md "Status Color", ADR 0044).
     const status = validation.ok ? "valid" : "error";
     summaryEl.innerHTML = `
       <div class="seq-validation-status seq-validation-${status}">

@@ -198,7 +198,7 @@ test("the plates are the Outputs the firmware reports, and a save writes only th
       plate.getAttribute("data-wire"),
     ]),
     [["out7", "GPIO 49", "1"], ["out9", "GPIO 4", "2"]],
-    "one plate per reported Output, named as the board prints it, coloured by its place",
+    "one plate per reported Output, named as the board prints it, colored by its place",
   );
   assert.equal(env.option(env.wiring("out7"), "rgb"), undefined, "an Output that cannot carry the strip is not offered it");
 

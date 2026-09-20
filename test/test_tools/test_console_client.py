@@ -227,7 +227,7 @@ class RunInteractiveDuplex(unittest.TestCase):
 # return. The composites below are the sequences the library writes for the
 # three edits #267 names -- Tab completion, history Up/Down, mid-line
 # Backspace -- assembled from those primitives. Their exact composition is not
-# what the assertions turn on: the colouriser's contract is that ANY byte
+# what the assertions turn on: the colorizer's contract is that ANY byte
 # stream comes out unchanged except for SGR at record line boundaries, so
 # these exist to make that claim concrete against realistic traffic.
 # ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ BACKSPACE_STREAM = (
 
 
 def strip_sgr(data: bytes) -> bytes:
-    """Remove exactly the three SGR sequences the colouriser may insert."""
+    """Remove exactly the three SGR sequences the colorizer may insert."""
     for code in (console_client.SGR_RECORD, console_client.SGR_RECORD_ERR,
                  console_client.SGR_RESET):
         data = data.replace(code.encode("ascii"), b"")
@@ -291,8 +291,8 @@ def feed_in_chunks(colorizer, data: bytes, splits) -> bytes:
     return bytes(out)
 
 
-class InteractiveRecordColour(unittest.TestCase):
-    """#267 defect 2: colour in interactive mode.
+class InteractiveRecordColor(unittest.TestCase):
+    """#267 defect 2: color in interactive mode.
 
     run_interactive() is a byte pump whose device->screen direction also
     carries embedded-cli's redraw sequences, so the risk the ticket names is
@@ -309,9 +309,9 @@ class InteractiveRecordColour(unittest.TestCase):
                   + TAB_COMPLETION_STREAM)
 
         self.assertEqual(c.feed(stream), stream)
-        self.assertEqual(c.flush(), b"", "a disabled colouriser must never hold a byte")
+        self.assertEqual(c.flush(), b"", "a disabled colorizer must never hold a byte")
         self.assertIsNone(c.select_timeout(),
-                          "a disabled colouriser must never make the caller poll")
+                          "a disabled colorizer must never make the caller poll")
 
     def test_record_line_is_wrapped_in_cyan_inside_its_terminator(self):
         c = console_client.InteractiveRecordColorizer(enabled=True)
@@ -324,7 +324,7 @@ class InteractiveRecordColour(unittest.TestCase):
             console_client.SGR_RECORD.encode() + line
             + console_client.SGR_RESET.encode() + b"\r\n",
             "the reset must close the record BEFORE its terminator, so the "
-            "colour never spills onto the next line")
+            "color never spills onto the next line")
 
     def test_status_err_record_is_red(self):
         c = console_client.InteractiveRecordColorizer(enabled=True)
@@ -335,7 +335,7 @@ class InteractiveRecordColour(unittest.TestCase):
         self.assertTrue(out.startswith(console_client.SGR_RECORD_ERR.encode()))
         self.assertEqual(strip_sgr(out), line + b"\r\n")
 
-    def test_log_lines_prompt_and_redraw_are_never_coloured(self):
+    def test_log_lines_prompt_and_redraw_are_never_colored(self):
         c = console_client.InteractiveRecordColorizer(enabled=True)
         stream = (b"[INFO][SafetyMonitor] estop clear\r\n"
                   + CLI_PROMPT + b"system.stat"
@@ -373,7 +373,7 @@ class InteractiveRecordColour(unittest.TestCase):
         """The fixtures above are assembled by hand from embedded_cli.c, so
         the invariant should not depend on how faithful they are. This feeds
         pseudo-random streams built from the bytes that actually decide the
-        colouriser's state -- the record prefix's own characters, the two
+        colorizer's state -- the record prefix's own characters, the two
         terminators, ESC and the bracket that starts every cursor sequence --
         at random chunk boundaries, and asserts the same property: strip the
         SGR and the input comes back byte for byte.
@@ -406,9 +406,9 @@ class InteractiveRecordColour(unittest.TestCase):
             colored_any = colored_any or console_client.SGR_RESET.encode() in out
 
         self.assertTrue(colored_any,
-                        "no record was ever coloured -- the invariant held vacuously")
+                        "no record was ever colored -- the invariant held vacuously")
 
-    def test_records_are_coloured_whatever_the_chunk_boundary(self):
+    def test_records_are_colored_whatever_the_chunk_boundary(self):
         stream = (b"< id=7 type=begin operation=system.status.health\r\n"
                   b"< id=7 type=end status=err outcome=failed\r\n")
 
@@ -416,11 +416,11 @@ class InteractiveRecordColour(unittest.TestCase):
             c = console_client.InteractiveRecordColorizer(enabled=True)
             out = feed_in_chunks(c, stream, [split])
             self.assertEqual(out.count(console_client.SGR_RECORD.encode()), 1,
-                             f"split at {split} lost the ordinary record's colour")
+                             f"split at {split} lost the ordinary record's color")
             self.assertEqual(out.count(console_client.SGR_RECORD_ERR.encode()), 1,
-                             f"split at {split} lost the error record's colour")
+                             f"split at {split} lost the error record's color")
             self.assertEqual(out.count(console_client.SGR_RESET.encode()), 2,
-                             f"split at {split} left a colour unclosed")
+                             f"split at {split} left a color unclosed")
 
     def test_sgr_is_inserted_only_at_a_line_boundary(self):
         """An SGR opener may only appear at the very start of the stream or
@@ -442,7 +442,7 @@ class InteractiveRecordColour(unittest.TestCase):
                 if at == -1:
                     break
                 self.assertTrue(at == 0 or out[at - 1:at] in (b"\r", b"\n"),
-                                f"colour opened mid-line at offset {at}")
+                                f"color opened mid-line at offset {at}")
                 start = at + len(code)
 
     def test_a_candidate_that_is_not_a_record_is_released_verbatim(self):
@@ -458,13 +458,13 @@ class InteractiveRecordColour(unittest.TestCase):
 
         held = c.feed(b"< id")
 
-        self.assertEqual(held, b"", "a candidate prefix must be held, not printed half-coloured")
+        self.assertEqual(held, b"", "a candidate prefix must be held, not printed half-colored")
         self.assertEqual(c.select_timeout(), c.HOLD_TIMEOUT_S,
-                         "a holding colouriser must make the caller time its select() out")
+                         "a holding colorizer must make the caller time its select() out")
         self.assertEqual(c.flush(), b"< id", "held bytes must be released verbatim, never dropped")
         self.assertIsNone(c.select_timeout())
 
-    def test_a_record_line_over_the_hold_limit_is_released_uncoloured(self):
+    def test_a_record_line_over_the_hold_limit_is_released_uncolored(self):
         c = console_client.InteractiveRecordColorizer(enabled=True)
         prefix = b"< id=1 "
         # One byte short of the limit: still a candidate, still held whole.
@@ -472,8 +472,8 @@ class InteractiveRecordColour(unittest.TestCase):
         self.assertEqual(c.feed(almost), b"", "a candidate under the limit must stay held")
         self.assertEqual(c.select_timeout(), c.HOLD_TIMEOUT_S)
 
-        # The byte that reaches the limit releases the whole hold, uncoloured,
-        # and the colouriser stops holding rather than growing without bound.
+        # The byte that reaches the limit releases the whole hold, uncolored,
+        # and the colorizer stops holding rather than growing without bound.
         out = c.feed(b"x")
 
         self.assertEqual(out, almost + b"x")
@@ -489,7 +489,7 @@ class InteractiveRecordColour(unittest.TestCase):
     def test_a_record_mid_entry_is_left_alone(self):
         """A record written while the operator is mid-entry does not clear the
         input line (include/console_serial_output.h), so it does not start at
-        column 0 and must not be coloured as though it did."""
+        column 0 and must not be colored as though it did."""
         c = console_client.InteractiveRecordColorizer(enabled=True)
         stream = CLI_PROMPT + b"system.stat" + b"< id=4 type=result status=ok\r\n"
 
@@ -498,7 +498,7 @@ class InteractiveRecordColour(unittest.TestCase):
         self.assertEqual(out, stream)
 
 
-class InteractiveColourEndToEnd(unittest.TestCase):
+class InteractiveColorEndToEnd(unittest.TestCase):
     """The same thing through run_interactive() itself, over real fds."""
 
     def setUp(self):
@@ -539,21 +539,21 @@ class InteractiveColourEndToEnd(unittest.TestCase):
                 got += os.read(self.stdout_r, 4096)
         return bytes(got)
 
-    def test_colour_on_records_reach_the_screen_wrapped(self):
+    def test_color_on_records_reach_the_screen_wrapped(self):
         t, result = self.run_in_thread(color=True)
         line = b"< id=1 type=result status=ok outcome=queued"
         os.write(self.serial_master, line + b"\r\n")
 
         expected = (console_client.SGR_RECORD.encode() + line
                     + console_client.SGR_RESET.encode() + b"\r\n")
-        with watchdog(10, "run_interactive never wrote the coloured record"):
+        with watchdog(10, "run_interactive never wrote the colored record"):
             self.assertEqual(self._read_stdout(len(expected)), expected)
 
         os.write(self.stdin_w, b"\x03")
         t.join(timeout=5)
         self.assertEqual(result["rc"], 0)
 
-    def test_colour_off_is_byte_identical_to_the_wire(self):
+    def test_color_off_is_byte_identical_to_the_wire(self):
         t, result = self.run_in_thread(color=False)
         wire = b"< id=1 type=result status=err outcome=invalid\r\n"
         os.write(self.serial_master, wire)
@@ -565,8 +565,8 @@ class InteractiveColourEndToEnd(unittest.TestCase):
         t.join(timeout=5)
         self.assertEqual(result["rc"], 0)
 
-    def test_input_stays_byte_exact_with_colour_on(self):
-        """Non-negotiable: keystrokes reach the firmware unchanged. Colour is
+    def test_input_stays_byte_exact_with_color_on(self):
+        """Non-negotiable: keystrokes reach the firmware unchanged. Color is
         a device->screen concern and must never touch this direction."""
         t, result = self.run_in_thread(color=True)
         typed = b"system.status.health\t\x1b[A\x7f\r"
@@ -587,7 +587,7 @@ class InteractiveColourEndToEnd(unittest.TestCase):
 
     def test_a_half_arrived_record_still_reaches_the_screen(self):
         """The hold expires on a quiet port: a partial line is printed
-        uncoloured rather than sitting invisible until the next byte."""
+        uncolored rather than sitting invisible until the next byte."""
         t, result = self.run_in_thread(color=True)
         os.write(self.serial_master, b"< id")
 
@@ -1616,7 +1616,7 @@ class HttpTransportAgainstAStub(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 transport.send_line("system.status.health", timeout=1.0)
 
-    def test_colour_defaults_off_when_stdout_is_piped(self):
+    def test_color_defaults_off_when_stdout_is_piped(self):
         # A real end-to-end process, not colorize_record_line() in
         # isolation: subprocess.run(capture_output=True) makes stdout a
         # pipe, which is exactly the case main()'s own
@@ -1651,7 +1651,7 @@ def _fake_args(**overrides):
 
 class ProvenanceAndColor(unittest.TestCase):
     """#264: the provenance header's mandatory-image-identity cascade,
-    by-id lookup, and the two-state colour rule."""
+    by-id lookup, and the two-state color rule."""
 
     def test_colorize_leaves_non_record_lines_untouched(self):
         for line in ("[TIMEOUT] send did not close", "--- send b'x' ---",
@@ -1662,15 +1662,15 @@ class ProvenanceAndColor(unittest.TestCase):
         line = "< id=1 type=end status=err outcome=invalid"
         self.assertEqual(console_client.colorize_record_line(line, False), line)
 
-    def test_colorize_marks_an_ok_record_and_an_error_record_with_different_colours(self):
+    def test_colorize_marks_an_ok_record_and_an_error_record_with_different_colors(self):
         ok = console_client.colorize_record_line(
             "< id=1 type=end status=ok outcome=completed", True)
         err = console_client.colorize_record_line(
             "< id=1 type=end status=err outcome=invalid", True)
         ok_code = ok.split("< id=", 1)[0]
         err_code = err.split("< id=", 1)[0]
-        self.assertTrue(ok_code, "an ok record must still be coloured (state 1 of the two)")
-        self.assertTrue(err_code, "an error record must still be coloured (state 2 of the two)")
+        self.assertTrue(ok_code, "an ok record must still be colored (state 1 of the two)")
+        self.assertTrue(err_code, "an error record must still be colored (state 2 of the two)")
         self.assertNotEqual(ok_code, err_code,
                              "ok and error records must use different ANSI codes")
 

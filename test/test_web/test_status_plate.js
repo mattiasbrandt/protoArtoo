@@ -308,14 +308,14 @@ test("DRIVE reads every input that can hold the feet, not one of them", async ()
       "STOPPED",
       `the feet are held by ${Object.keys(patch)[0]} and the chip must say so`,
     );
-    assert.match(env.chipClass("drive"), /status-chip-stopped/, "and it is the one colour for stopped");
+    assert.match(env.chipClass("drive"), /status-chip-stopped/, "and it is the one color for stopped");
   }
 
-  // A Foot Drive nobody fitted is not a droid that stopped: no colour.
+  // A Foot Drive nobody fitted is not a droid that stopped: no color.
   env.pushStatus({ drive: undefined });
   await sleep(5);
   assert.equal(env.chipValue("drive"), "OFF");
-  assert.equal(env.chipClass("drive"), "status-chip", "a component nobody fitted takes no colour");
+  assert.equal(env.chipClass("drive"), "status-chip", "a component nobody fitted takes no color");
 });
 
 test("RC LINK reads the hardware failsafe bit as well as the frames", async () => {
@@ -632,7 +632,7 @@ test("a frame missing the fields a safety reading is made from is not read as sa
 
 test("a missing safety field reads as unknown, and never as clear", async () => {
   // With no earlier frame to keep, an unverifiable one leaves the plate saying
-  // it has not heard -- grey, per CONTEXT.md "Status Colour", where grey is
+  // it has not heard -- grey, per CONTEXT.md "Status Color", where grey is
   // "not reporting, never asked". Green here would be a droid reporting itself
   // healthy on a frame that never mentioned its estop.
   const withoutEstop = { ...HEALTHY };
@@ -641,7 +641,7 @@ test("a missing safety field reads as unknown, and never as clear", async () => 
 
   assert.equal(env.chipValue("estop"), "FINDING OUT");
   assert.notEqual(env.chipValue("estop"), "CLEAR");
-  assert.equal(env.chipClass("estop"), "status-chip", "and it takes no colour at all");
+  assert.equal(env.chipClass("estop"), "status-chip", "and it takes no color at all");
   assert.notEqual(env.freshnessState(), "live");
 });
 

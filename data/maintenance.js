@@ -80,11 +80,11 @@
   const diagHeapMinLight = document.getElementById("diag-heap-min-light");
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
 
-  // A health signal reads as a droid LED and the COLOUR IS THE READING: the
+  // A health signal reads as a droid LED and the COLOR IS THE READING: the
   // light carries it and the value beside it stays ink (CONTEXT.md "Health
-  // Signal", "Status Colour"). Before this the state was painted onto the text
+  // Signal", "Status Color"). Before this the state was painted onto the text
   // with element.style.color and spelled with an emoji beside it, which put a
-  // colour on a number and a picture in a readout.
+  // color on a number and a picture in a readout.
   const setLight = (light, state) => {
     if (light) light.className = `indicator ${state}`;
   };
@@ -99,7 +99,7 @@
 
   const renderSerialStatus = (d) => {
     // The same four readings as before, on the same four states: what changed
-    // is that the light carries the colour and the words carry the reading.
+    // is that the light carries the color and the words carry the reading.
     // "off" for a lane that is switched off is the grey CONTEXT.md "Health
     // Signal" asks for - a thing never asked reads grey, never green.
     if (serialS1) {
@@ -604,9 +604,9 @@
     return (bytes / 1024).toFixed(1) + " KB";
   }
 
-  // The same two thresholds as before, answering with a Status Colour state
-  // rather than with a hard-coded hex: a colour literal outside :root is a
-  // defect (CONTEXT.md "Status Colour"), and these three were Material's own
+  // The same two thresholds as before, answering with a Status Color state
+  // rather than with a hard-coded hex: a color literal outside :root is a
+  // defect (CONTEXT.md "Status Color"), and these three were Material's own
   // green, amber and red rather than the droid's.
   function hwmState(hwm) {
     if (hwm > 2048) return "ok";

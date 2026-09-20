@@ -279,7 +279,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // The three appearances. Colour carries the level (amber for a warning, none
+  // The three appearances. Color carries the level (amber for a warning, none
   // for a note); only a refusal names a severity (docs/ui-copy-voice.md rule 11).
   // ---------------------------------------------------------------------------
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;

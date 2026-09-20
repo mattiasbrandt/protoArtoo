@@ -114,8 +114,8 @@ class ProductDrawings(unittest.TestCase):
         frames = set(VIEWBOX_RE.findall(LEGACY_ART.read_text(encoding="utf-8")))
         self.assertEqual({"0 0 400 300"}, frames)
 
-    def test_a_drawing_carries_no_colour_of_its_own(self):
-        # Inline is the only form in which the art follows the page's colour;
+    def test_a_drawing_carries_no_color_of_its_own(self):
+        # Inline is the only form in which the art follows the page's color;
         # a literal hex would freeze one theme into the drawing.
         art = LEGACY_ART.read_text(encoding="utf-8")
         body = art[art.index("<svg"):]
@@ -123,7 +123,7 @@ class ProductDrawings(unittest.TestCase):
         self.assertEqual(
             [],
             literals,
-            "hard-coded colour in the sprite: %s. Strokes are currentColor; the "
+            "hard-coded color in the sprite: %s. Strokes are currentColor; the "
             "only literal allowed is the fallback in var(--pa-art-bg,...), which "
             "is a background, not ink." % literals,
         )

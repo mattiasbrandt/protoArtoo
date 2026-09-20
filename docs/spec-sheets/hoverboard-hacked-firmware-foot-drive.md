@@ -1036,7 +1036,7 @@ Each sensor cable carries GND, a supply, and a UART pair.
 > battery voltage on those boards"* -- 36-42 V on a connector that looks like
 > the other one.
 
-Wire colour convention as documented (GND black, supply red, TX green, RX blue)
+Wire color convention as documented (GND black, supply red, TX green, RX blue)
 is a convention, not a standard. `UNKNOWN`: the connector part number. These are
 generic 4-pin JST-style housings and no source names a manufacturer part.
 

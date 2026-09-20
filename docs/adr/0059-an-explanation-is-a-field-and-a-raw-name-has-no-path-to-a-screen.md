@@ -62,9 +62,9 @@ ours behind it. Two facts fix the vehicle: a `title` on a button or input carrie
 no affordance, and **a touch device has no hover at all** — a builder at a bench
 with a tablet cannot reach it.
 
-**Only a refusal names a severity.** #327's two Status Colours already separate the
+**Only a refusal names a severity.** #327's two Status Colors already separate the
 three levels — red for stopped or refused, amber for *"you can do something about
-this, and should"*, uncoloured for a Note. ADR 0044's carve-out stands: *error*
+this, and should"*, uncolored for a Note. ADR 0044's carve-out stands: *error*
 remains Protocol Check's word alone, because a builder whose save was refused needs
 the word. **Log-level names are names, not severities**: "Error", "Warning",
 "Info", "Debug" are what the serial log itself prints, so the picker configuring it
@@ -72,7 +72,7 @@ matches (`data/setup.html:304-305`, `data/app.js:694-696`). The rule targets a
 severity worn as a label on a message, as at `data/firmware.html:19`.
 
 **A value shows whether it was ever set, and the source lives in the explanation.**
-One visual rule, not a colour — #327 closed that door. Where a value has a richer
+One visual rule, not a color — #327 closed that door. Where a value has a richer
 provenance the detail goes in the explanation slot the entrance rule already
 guarantees, rather than a vocabulary of marks per source. ADR 0058's Sequence
 Tempo, which stores a source and a confidence, is the first consumer.

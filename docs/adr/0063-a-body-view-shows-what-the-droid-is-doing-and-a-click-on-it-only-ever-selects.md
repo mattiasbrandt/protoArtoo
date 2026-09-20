@@ -4,7 +4,7 @@ Status: accepted (2026-09-09, issue #317), amended 2026-09-18 (#408): the droid
 is drawn as a recognisable R2-D2, and the "arrangement, not a likeness" rule is
 withdrawn. Every other decision here stands. C4a (#352) built the renderer.
 **Amended again 2026-09-19 (#408, the operator's pick of the `claude-sonnet` mock):**
-open/closed is drawn in colour, the legend is a fixed one-word list, the "Other
+open/closed is drawn in color, the legend is a fixed one-word list, the "Other
 part" slots leave the picture, and the body and the top-down dome share one card.
 See *Amendment 2026-09-19* at the end; where it and the text above disagree, the
 amendment wins.
@@ -109,9 +109,9 @@ incomplete' and 'the map is lying'"*. A builder does not place their own hardwar
 on the drawing, so the view acquires no write path and the never-writes contract
 stays absolute.
 
-**Colour stays reserved.** What a part *is* is shown by shape. #327's two meanings
+**Color stays reserved.** What a part *is* is shown by shape. #327's two meanings
 — amber for *you can act on this*, red for *stopped or refused* — remain the whole
-of colour on this surface.
+of color on this surface.
 
 ## Considered options
 
@@ -148,8 +148,8 @@ of colour on this surface.
   would make the picture complete for a real droid. Rejected: it is the first
   write on a surface whose contract is that it never writes, and the list beside
   the view already tells the truth.
-- **Colour by Part Kind**, on the grounds that what a part is, is not a state.
-  Rejected: **Status Colour** says colour carries *exactly two* meanings, and a
+- **Color by Part Kind**, on the grounds that what a part is, is not a state.
+  Rejected: **Status Color** says color carries *exactly two* meanings, and a
   third would have to be held in a reader's head alongside them.
 
 ## Consequences
@@ -163,7 +163,7 @@ of colour on this surface.
   panel names the next move and offers it, so a dimmed part on this surface never
   stops at *no*. ADR 0062 needed the exemption because the timeline has no such
   panel; this one does.
-- **`CONTEXT.md` **Part Kind** said it *"colours a surface"*, which #327's palette
+- **`CONTEXT.md` **Part Kind** said it *"colors a surface"*, which #327's palette
   rule contradicts.** Corrected to treatment with this ADR; #320 wrote it three
   hours before #327 landed and it was never revised.
 - **`CONTEXT.md` **Fitted Parts** said *"clicking an unfitted Part adds it"*.**
@@ -192,7 +192,7 @@ of colour on this surface.
 
 The operator picked the `claude-sonnet` mock on #408 (`tasks/prototypes/408-droid-picture/claude-sonnet/`, gitignored, its `README.md` carries the dated history). Five decisions above change with it:
 
-- **Open and closed are shown by colour, not geometry.** An open Part's footprint fills with the interaction accent and its stroke brightens; closed spends no colour; the footprint never leaves its own bay. This is the pattern the interactive dome already uses (`data/dome_panel_model.js`). Operator: *"open close should simply be represented with the colors (same as we did with the interactive dome design)"*. It replaces "open is drawn open" and narrows *Colour stays reserved*: amber still marks ends not measured, red still marks stopped or refused, and the accent now also marks an open Part on a droid picture.
+- **Open and closed are shown by color, not geometry.** An open Part's footprint fills with the interaction accent and its stroke brightens; closed spends no color; the footprint never leaves its own bay. This is the pattern the interactive dome already uses (`data/dome_panel_model.js`). Operator: *"open close should simply be represented with the colors (same as we did with the interactive dome design)"*. It replaces "open is drawn open" and narrows *Color stays reserved*: amber still marks ends not measured, red still marks stopped or refused, and the accent now also marks an open Part on a droid picture.
 - **The legend is a fixed list of seven one-word states, always shown:** Closed, Open, Unmeasured, Limp, Unassigned, Unfitted, Picked. Operator: *"make it short and concise. ONE word only. Drop the extra unnecessary text"*, and *always all seven* (2026-09-19). It replaces "the legend is generated from the states actually drawn". A legend that never changes shape cannot drift from the surface either.
 - **The "Other part" slots (`other1`..`other10`) are not on the picture, and not listed beside it.** Operator: *"these 'spare parts' are not a proper or common droid part concept"*. They stay what the catalog made them, a name for off-model hardware on a spare output, mappable on the Parts table and usable in a Sequence. Only the picture drops them. This replaces *Parts with no position stay listed beside the drawing*; #374, which existed to list them, closes as not planned.
 - **One card, three faces: Front, Rear, Dome (Top).** The body is drawn front and rear from the operator's hand-edited line art (`front.svg`/`rear.svg`); the dome stays **top-down** (a front or rear view cannot fit every panel) and is redrawn in the same line language. It has the body's full parity: legend, Parts list, and Open/Close for every dome-link piece. Holoprojectors pan and tilt and never open, so they carry no open state and no Open action. The redraw replaces the current look of `data/dome_layout_render.js` wherever it is shown. With #409's catalog, the front carries eleven body Parts plus the arms, and the rear four (two breadpan doors, Body Panels 7 and 8).

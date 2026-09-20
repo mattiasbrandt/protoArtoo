@@ -123,11 +123,11 @@ to a channel yet: Panel 7, Panel 9"*).
 - **The droid moving only during playback.** Rejected: close enough to what
   **Test on Droid** already does that it wins little.
 - **Amber on every part nothing drives, wherever drawn.** The plainest reading of
-  **Status Colour**. Rejected on the 24-of-42 arithmetic above.
+  **Status Color**. Rejected on the 24-of-42 arithmetic above.
 - **No amber anywhere on the surface**, as the prototype has it (*"neither
   appears on a block or a lane"*). Rejected: it also drops the one signal that
   says this routine will not fully perform. The note above the routine carries
-  it instead, which is what **Status Colour**'s *"a Part **in a sequence** that
+  it instead, which is what **Status Color**'s *"a Part **in a sequence** that
   no Output claims"* already scopes.
 
 ## Consequences

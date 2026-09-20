@@ -110,8 +110,8 @@
   // The Speed preset section's subtitle: which limit the droid is actually
   // sitting on, computed from what it answered rather than typed into the
   // markup (ADR 0066, docs/ui-copy-voice.md rule 8). A preset is a chosen
-  // posture, so this is a word and a number and never a colour (CONTEXT.md
-  // "Status Colour"). A limit that matches no preset says so instead of
+  // posture, so this is a word and a number and never a color (CONTEXT.md
+  // "Status Color"). A limit that matches no preset says so instead of
   // rounding itself to the nearest one, because the buttons above would then
   // disagree with the head.
   const presetSummaryText = (activePreset) => {

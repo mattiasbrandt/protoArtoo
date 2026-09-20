@@ -58,10 +58,10 @@
 // A STATE IS ONE CLASS, COMPUTED ONCE, AND ITS WORD IS FIXED. markClass() is
 // the whole vocabulary and LEGEND_TEXT is every word it can say, shared by the
 // body and the dome so Closed, Open, Unassigned and Picked mean and look the
-// same on both. Colour is spent on exactly two of them (ADR 0063 as amended):
+// same on both. Color is spent on exactly two of them (ADR 0063 as amended):
 // the interaction accent fills an OPEN Part, the way the interactive dome
 // always drew an open panel, and amber marks ends not measured. Closed spends
-// no colour; every other state is carried by line weight, dash and ink.
+// no color; every other state is carried by line weight, dash and ink.
 // =============================================================================
 (() => {
   "use strict";

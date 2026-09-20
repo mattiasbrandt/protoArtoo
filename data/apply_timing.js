@@ -29,7 +29,7 @@
 // promise - a fallback here is exactly the blanket "applies straight away" line
 // this vocabulary replaced, which was false for at least three steps.
 //
-// Colour follows the Status Colour rule (#327): amber only for a restart the
+// Color follows the Status Color rule (#327): amber only for a restart the
 // builder must perform, and only once a change is actually waiting on it. A
 // value that merely stages at the next start is information, never amber.
 // =============================================================================

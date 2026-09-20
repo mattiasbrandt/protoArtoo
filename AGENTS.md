@@ -636,7 +636,7 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 - Keep copy focused on device state, controls, and diagnostics
 - Operator surfaces carry no emoji (operator decision 2026-09-13 on #395, ADR 0066).
   A heading, a nav entry or a card is text plus, where a glyph earns its place, an
-  icon from the project's own small SVG set that inherits text colour and keeps
+  icon from the project's own small SVG set that inherits text color and keeps
   its label alongside. State chips stay verb-free text labels. The earlier rule
   preferring emoji over verbose labels is retired; it produced the generic look
   the **Surface Anatomy** (`CONTEXT.md`) replaces.

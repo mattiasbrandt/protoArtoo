@@ -438,7 +438,7 @@
       // second spelling of them: a provenance line takes the plain note, and a
       // dome the builder can go and plug in takes the amber "act on this" one.
       // The cached banner used to be blue, and blue reports no state at all
-      // (CONTEXT.md "Status Colour").
+      // (CONTEXT.md "Status Color").
       let banner = '';
       if (source === 'live') {
         // No banner for live

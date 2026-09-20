@@ -5,7 +5,7 @@
 // the literal you wrote, and a computed-style probe catches the token you
 // pointed at the wrong thing, or a rule a later one quietly overrode. The probe
 // technique - paint a throwaway element with var(--token), read its computed
-// colour, compare - is the reference project's own enforcement
+// color, compare - is the reference project's own enforcement
 // (r2d2-astromech-simulator v1.79.0, tests/chrome.test.js:509).
 //
 // Run against tools/serve_editor_fixture.py: the surfaces carry a PA:INCLUDE
@@ -52,7 +52,7 @@ const READ = `(row) => {
     // While a page resource is still in flight the Page Recovery View dims the
     // whole body to 0.4, so an opacity read during "checking" is the backdrop's
     // and not this rule's. Recorded rather than hidden: the driven states below
-    // are asserted on state, rail and colour, and the four families' brightness
+    // are asserted on state, rail and color, and the four families' brightness
     // is measured on the bare-class probes, which no backdrop covers.
     recoveryActive: document.body.classList.contains('recovery-active'),
   };
@@ -91,7 +91,7 @@ const READ = `(row) => {
   });
 
   try {
-    // The colours that must not appear on a way of saying no, resolved by the
+    // The colors that must not appear on a way of saying no, resolved by the
     // browser from the tokens rather than pasted in as hex.
     await page.goto(CONFIGURATION_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.PAFeatureAvailability), null, { timeout: 10000 });
@@ -176,10 +176,10 @@ const READ = `(row) => {
     };
     for (const [name, { state, style }] of Object.entries(observed)) {
       assert.equal(state, expectedStates[name], `${name} did not reach the state it was driving at`);
-      assert.equal(spendsReserved(style), false, `${name} (${state}) still paints a reserved colour: ${JSON.stringify(style)}`);
+      assert.equal(spendsReserved(style), false, `${name} (${state}) still paints a reserved color: ${JSON.stringify(style)}`);
     }
     for (const [cls, style] of Object.entries(families)) {
-      assert.equal(spendsReserved(style), false, `.${cls} paints a reserved colour: ${JSON.stringify(style)}`);
+      assert.equal(spendsReserved(style), false, `.${cls} paints a reserved color: ${JSON.stringify(style)}`);
     }
 
     const fingerprints = Object.entries(families).map(([cls, style]) => [cls, JSON.stringify(style)]);

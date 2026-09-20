@@ -91,11 +91,11 @@ const HEADLESS = process.env.HEADLESS === 'true';
     if (idle.rotationState !== 'Idle' || idle.speedText !== '0%') throw new Error('Idle status not rendered');
     if (forward.rotationState !== 'Forward' || forward.speedText !== '72%') throw new Error('Forward status not rendered');
     // A direction is a value, not a symptom: neither the word nor the bar may
-    // take a signal colour, and the bar is one colour whichever way it goes
-    // (CONTEXT.md 'Status Colour').
+    // take a signal color, and the bar is one color whichever way it goes
+    // (CONTEXT.md 'Status Color').
     if (reverse.rotationStateClass !== 'dome-rotation-state') throw new Error('Rotation state took a state class');
     if (forward.rotationStateClass !== 'dome-rotation-state') throw new Error('Rotation state took a state class');
-    if (reverse.liveFillBackground !== forward.liveFillBackground) throw new Error('The live bar changed colour with direction');
+    if (reverse.liveFillBackground !== forward.liveFillBackground) throw new Error('The live bar changed color with direction');
 
     console.log('DOME_PRESETS_START');
     console.log(JSON.stringify({ reverse, idle, forward }, null, 2));

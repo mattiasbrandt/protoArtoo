@@ -10,8 +10,8 @@ this is them - reported, never rewritten, the convention
 1. **No pictograph on an operator surface.** ADR 0066 retired the rule that
    preferred an emoji to a verbose label: a heading, a nav entry or a card is
    text plus, where a glyph earns its place, an icon from the project's own SVG
-   sprite that inherits the text colour and keeps its label alongside. An emoji
-   is none of those - it is a coloured picture the operator cannot restyle, that
+   sprite that inherits the text color and keeps its label alongside. An emoji
+   is none of those - it is a colored picture the operator cannot restyle, that
    renders differently on every machine, and that carried no meaning the word
    beside it did not already have.
 
@@ -22,7 +22,7 @@ this is them - reported, never rewritten, the convention
    defect a check catches cheaply and a person never does.
 
 WHAT THIS CHECK DELIBERATELY DOES NOT DO. The third rule of the token layer -
-no colour literal outside `:root` - is not here. It needs the stylesheet parsed
+no color literal outside `:root` - is not here. It needs the stylesheet parsed
 and every value resolved through `:root` before it can tell "the rule contains
 the string --warning" from "this rule paints amber", and
 `test/test_web/test_style_token_layer.js` already does exactly that against the

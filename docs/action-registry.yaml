@@ -2560,7 +2560,7 @@ entries:
   is_query: true
 - name: aux.action.led-color
   display_name: LED Color
-  description: Set the LED strip colour.
+  description: Set the LED strip color.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2623,7 +2623,7 @@ entries:
   executor: auxLedQueue
 - name: aux.status.led-state
   display_name: LED Strip State
-  description: Which output carries the LED strip, and its colour and effect.
+  description: Which output carries the LED strip, and its color and effect.
   domain: aux
   type: status
   marcduino_cmd: null
