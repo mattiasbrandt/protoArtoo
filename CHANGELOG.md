@@ -26,6 +26,16 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Lights: every light on the droid, on one page.** The dome's logic displays,
+  PSIs and Magic Panel, and the body's lights, listed by where they sit. A dome
+  light is lit by the dome controller, and from here you can ask it for a mode
+  and a color - the same ones a sequence sends - and the page says what it asked
+  for rather than what the dome then does. A body light says what lights it: put
+  an LED strip on a lead in Wiring and the part on that lead reads on, off or
+  flash, with brightness, and the strip's length beside it. A light you have not
+  fitted still shows, so you can choreograph before you wire. The LED strip left
+  Configuration, and an LED strip is now one kind of light protoArtoo can put on
+  a lead rather than a thing of its own.
 - **Your droid, drawn as R2.** The top of Parts is now a line drawing of your
   droid in one card, with Front, Rear and Dome (Top) you switch between by
   their names. Every door and panel sits where it really is, and shows what the
