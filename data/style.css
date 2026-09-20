@@ -8852,6 +8852,16 @@ button.output-setting-head:focus-visible {
   cursor: pointer;
 }
 
+/* A swatch wears the color its token names, picked by the word the dome uses
+   for it - the same shape as a wire taking the color of its place. */
+.light-color[data-color="red"] { background: var(--dome-red); }
+.light-color[data-color="blue"] { background: var(--dome-blue); }
+.light-color[data-color="green"] { background: var(--dome-green); }
+.light-color[data-color="white"] { background: var(--dome-white); }
+.light-color[data-color="yellow"] { background: var(--dome-yellow); }
+.light-color[data-color="orange"] { background: var(--dome-orange); }
+.light-color[data-color="purple"] { background: var(--dome-purple); }
+
 /* DEFAULT is the dome's word for the color it already uses, so its dot shows
    no color at all. */
 .light-color-default {

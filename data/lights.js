@@ -314,7 +314,10 @@
       button.setAttribute("role", "radio");
       // The swatch IS the label, so the name it stands for is the button's.
       button.setAttribute("aria-label", name);
-      if (!isDefault) button.style.backgroundColor = `var(--dome-${token.toLowerCase()})`;
+      // The color itself is the stylesheet's, reached by the token's own name -
+      // the way a wire takes its color from its place (data/style.css
+      // --wire-*). No color is written from here.
+      if (!isDefault) button.dataset.color = token.toLowerCase();
       button.addEventListener("click", () => {
         mark(token);
         onPick(token);
@@ -539,7 +542,7 @@
   const unlitPlate = (part) => {
     const node = plate(part, "Not lit");
     const link = element("a", "btn btn-sm btn-quiet link-btn", "Open Wiring");
-    link.href = "#wiring";
+    link.setAttribute("href", "#wiring");
     const row = element("div", "button-row button-row-compact");
     row.appendChild(link);
     node.appendChild(row);
