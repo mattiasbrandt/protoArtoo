@@ -22,7 +22,7 @@
 //                  ADR 0049 gives every Part, so one word means one thing
 //                  across the droid.
 //   a dome light   the dome controller owns the hardware, so it has NO Light
-//                  Type and offers that controller's own modes and colours
+//                  Type and offers that controller's own modes and colors
 //                  instead, under the labels a sequence already shows
 //                  (data/seq_protocol_check.js). Offering it on/off/flash
 //                  would hide modes its hardware has. It is NEVER "not
@@ -33,7 +33,7 @@
 // light is Wiring's answer, reached from here and never repeated.
 //
 // NOTHING HERE IS DEVICE TRUTH. Every reading is what protoArtoo asked for:
-// the strip's colour is what it set, and a dome light's state is not claimed
+// the strip's color is what it set, and a dome light's state is not claimed
 // at all, because nothing reports it back (ADR 0045).
 //
 // ONE LIT LEAD TODAY. The controller lights a single lead, so at most one body
@@ -44,7 +44,6 @@
 (() => {
   "use strict";
 
-  const TIMING = window.PAApplyTiming;
   const kinds = window.DroidPartKind;
   const catalog = window.DroidParts;
   const domeVocabulary = window.SeqProtocolCheck?.domeLights || null;
@@ -68,6 +67,16 @@
   const parts = Array.isArray(catalog?.parts) ? catalog.parts : [];
   const partById = new Map(parts.map((part) => [part.id, part]));
   const lights = parts.filter((part) => Boolean(kinds?.isLight(part)));
+
+  // What was last asked of each dome light, by Part id. It lives out here so a
+  // repaint - a status frame, a lead answering - redraws the ask rather than
+  // resetting it under a builder's hand. It is commanded intent and nothing
+  // more: what the dome did with it is the dome's (ADR 0045).
+  const asked = new Map();
+  const askOf = (part) => {
+    if (!asked.has(part.id)) asked.set(part.id, { mode: "NORMAL", color: "DEFAULT" });
+    return asked.get(part.id);
+  };
 
   // What the droid has answered so far; each is null until it has.
   let leads = null;      // [{ address, parts }] from GET /api/servo/outputs
@@ -141,8 +150,10 @@
   // ---------------------------------------------------------------------------
   // The lit lead's own setting: how long the strip is
   // ---------------------------------------------------------------------------
-  // Read once when the strip starts (src/tasks/aux_led.cpp), which is what the
-  // timing line beside it says.
+  // Read once when the strip starts (src/tasks/aux_led.cpp). That is
+  // PAApplyTiming's AT_REBOOT, said in three words beside the field rather than
+  // as the module's full sentence: the operator cut that sentence to "a very
+  // small mention at most" on 2026-09-20.
   let savedCount = null;
   let bootCount = null;
   let countValue = 1;
@@ -188,7 +199,7 @@
   const countField = (feedback) => {
     const wrap = element("div", "light-count-wrap");
     const field = element("label", "field light-count");
-    field.appendChild(element("span", undefined, "LEDs on the strip"));
+    field.appendChild(element("span", undefined, "LEDs"));
     const input = document.createElement("input");
     input.type = "number";
     input.min = "1";
@@ -205,11 +216,8 @@
     });
     field.appendChild(input);
     wrap.appendChild(field);
-    const timing = element("p", "note apply-timing");
-    TIMING.paint(timing, TIMING.AT_REBOOT, {
-      pending: bootCount !== null && savedCount !== null && savedCount !== bootCount,
-    });
-    wrap.appendChild(timing);
+    const waiting = bootCount !== null && savedCount !== null && savedCount !== bootCount;
+    wrap.appendChild(element("p", "light-state", waiting ? "Waiting for a restart" : "Read at start"));
     return wrap;
   };
 
@@ -217,8 +225,8 @@
   // A dome light
   // ---------------------------------------------------------------------------
   // The dome controller lights it, and protoArtoo asks it for a mode and a
-  // colour by forwarding the command a sequence step already sends
-  // (POST /api/dome/cmd; DL:<target>:<mode>:<colour>, validated at
+  // color by forwarding the command a sequence step already sends
+  // (POST /api/dome/cmd; DL:<target>:<mode>:<color>, validated at
   // src/protocol_check.cpp). Which lights answer to one is the dome's own
   // vocabulary rather than a list here: a light offers the control when one of
   // its catalog aliases is a target the dome answers to, and says so plainly
@@ -226,64 +234,156 @@
   const domeTarget = (part) =>
     (part.aliases || []).find((alias) => domeVocabulary?.targets.includes(alias)) || "";
 
-  const picker = (label, tokens, group, current) => {
-    const field = element("label", "field light-pick");
-    field.appendChild(element("span", undefined, label));
-    const select = document.createElement("select");
-    select.className = "type-select";
-    tokens.forEach((token) => {
-      const option = document.createElement("option");
-      option.value = token;
-      option.textContent = domeVocabulary.label(group, token);
-      if (token === current) option.selected = true;
-      select.appendChild(option);
+  // A picked-one-of-many, in the house treatment: the accent tint and inset
+  // ring data/output_settings.js's segmented() gives its active choice. Nine
+  // modes are too wide for one segmented bar, so they wrap as pills instead of
+  // hiding in a drop-down (operator, 2026-09-20: the selects "look way too
+  // big").
+  // One chip row for every pick-one-of-many on this page: the dome's nine
+  // modes and the body's three words wear the same shape, because they are the
+  // same question asked of two lights (operator, 2026-09-20).
+  const pills = (label, options, picked, onPick) => {
+    const row = element("div", "light-modes");
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-label", label);
+    const buttons = new Map();
+    const mark = (id) => buttons.forEach((button, each) =>
+      button.setAttribute("aria-checked", each === id ? "true" : "false"));
+    options.forEach((option) => {
+      const button = element("button", "light-mode", option.label);
+      button.type = "button";
+      button.setAttribute("role", "radio");
+      button.addEventListener("click", () => {
+        mark(option.id);
+        onPick(option.id);
+      });
+      buttons.set(option.id, button);
+      row.appendChild(button);
     });
-    field.appendChild(select);
-    return { field, select };
+    mark(picked);
+    return row;
+  };
+
+  // The eight color words are the dome's, and the strip borrows seven of them
+  // so one color word means one thing across the droid (operator, 2026-09-20).
+  // DEFAULT is not among the strip's: on the dome it means "the color you are
+  // already using", and protoArtoo's own strip has no such color to mean - a
+  // dot that did nothing is the dead control this page exists without.
+  //
+  // The values come from the token layer rather than from a second table here,
+  // so the swatch a builder picks and the color the strip is sent are the same
+  // fact (data/style.css --dome-*).
+  const tokenColor = (token) => {
+    const raw = getComputedStyle(document.documentElement)
+      .getPropertyValue(`--dome-${String(token).toLowerCase()}`).trim();
+    const hex = /^#([0-9a-f]{6})$/i.exec(raw);
+    if (!hex) return null;
+    const value = parseInt(hex[1], 16);
+    return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+  };
+
+  // The colors as the colors themselves, named once underneath rather than
+  // eight times over (operator, 2026-09-20). A dot stands for the name a
+  // builder picks; what a dome light's LEDs actually render is the dome's and
+  // is never claimed here (ADR 0045). DEFAULT is the dome's word for the color
+  // it already uses, so its dot carries none. A row drawn with no pick marked
+  // names nothing, which is the strip showing a color no word covers.
+  const swatches = (label, tokens, picked, onPick) => {
+    const wrap = element("div");
+    const row = element("div", "light-colors");
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-label", label);
+    const named = element("p", "light-picked");
+    const buttons = new Map();
+    const mark = (token) => {
+      buttons.forEach((button, id) =>
+        button.setAttribute("aria-checked", id === token ? "true" : "false"));
+      named.textContent = domeVocabulary.label("colors", token);
+    };
+    tokens.forEach((token) => {
+      const name = domeVocabulary.label("colors", token);
+      const isDefault = token === "DEFAULT";
+      const button = element("button", isDefault ? "light-color light-color-default" : "light-color");
+      button.type = "button";
+      button.setAttribute("role", "radio");
+      // The swatch IS the label, so the name it stands for is the button's.
+      button.setAttribute("aria-label", name);
+      if (!isDefault) button.style.backgroundColor = `var(--dome-${token.toLowerCase()})`;
+      button.addEventListener("click", () => {
+        mark(token);
+        onPick(token);
+      });
+      buttons.set(token, button);
+      row.appendChild(button);
+    });
+    mark(picked);
+    wrap.appendChild(row);
+    wrap.appendChild(named);
+    return wrap;
   };
 
   const domePlate = (part) => {
     const node = plate(part, "Dome controller");
     const target = domeTarget(part);
     if (!target) {
-      node.appendChild(element("p", "hint light-note", "The dome controller lights it. protoArtoo has no command for this one."));
+      // A state, not an explanation: the plate already says the dome controller
+      // lights it, and there is no control to account for (rule 8).
+      node.appendChild(element("p", "light-state", "No command for it yet"));
       return node;
     }
-    const mode = picker("Mode", domeVocabulary.modes, "modes", "NORMAL");
-    const colour = picker("Colour", domeVocabulary.colors, "colors", "DEFAULT");
-    const controls = element("div", "light-controls");
-    controls.appendChild(mode.field);
-    controls.appendChild(colour.field);
-    node.appendChild(controls);
-
     const feedback = feedbackNode();
-    const send = element("button", "btn", "Ask the dome");
-    send.type = "button";
-    send.addEventListener("click", async () => {
-      if (!window.PAApi) return;
-      const asked = `${domeVocabulary.label("modes", mode.select.value)}, ${domeVocabulary.label("colors", colour.select.value)}`;
-      send.disabled = true;
-      say(feedback, "Asking…");
-      try {
-        // The colour always rides along: DEFAULT is the dome's own word for
-        // "the one you already use", so it is an answer rather than an
-        // omission.
-        await window.PAApi.postForm("/api/dome/cmd", {
-          cmd: `DL:${target}:${mode.select.value}:${colour.select.value}`,
-        }, { timeoutMs: 5000 });
-        // What the dome does with it is the dome's. This line says what was
-        // asked for and never what the light is (ADR 0045).
-        say(feedback, `Asked for ${asked} at ${at()}`, "success");
-      } catch (error) {
-        console.error("[lights] dome command failed:", error);
-        say(feedback, window.PAApi.messageFor(error), "error");
-      } finally {
-        send.disabled = false;
-      }
-    });
-    const row = element("div", "button-row button-row-compact");
-    row.appendChild(send);
-    node.appendChild(row);
+    const ask = askOf(part);
+    let settle = null;
+
+    // PICKING IS APPLYING, the way every other control on this droid works
+    // (data/output_settings.js, the Component Picker): a chip or a swatch goes
+    // to the dome on its own, so there is no button to press afterwards. The
+    // short settle is what makes picking a mode and then a color one command
+    // rather than two.
+    const send = () => {
+      clearTimeout(settle);
+      settle = setTimeout(async () => {
+        if (!window.PAApi) return;
+        const words = `${domeVocabulary.label("modes", ask.mode)}, ${domeVocabulary.label("colors", ask.color)}`;
+        say(feedback, "Asking…");
+        try {
+          // The color always rides along: DEFAULT is the dome's own word for
+          // "the one you already use", so it is an answer rather than an
+          // omission.
+          await window.PAApi.postForm("/api/dome/cmd", {
+            cmd: `DL:${target}:${ask.mode}:${ask.color}`,
+          }, { timeoutMs: 5000 });
+          // What the dome does with it is the dome's. This line says what was
+          // asked for and never what the light is (ADR 0045).
+          say(feedback, `Asked for ${words} at ${at()}`, "success");
+        } catch (error) {
+          console.error("[lights] dome command failed:", error);
+          say(feedback, window.PAApi.messageFor(error), "error");
+        }
+      }, 250);
+    };
+
+    const controls = element("div", "light-controls");
+    const modeGroup = element("div");
+    modeGroup.appendChild(element("div", "light-pick-label", "Mode"));
+    modeGroup.appendChild(pills(
+      "Mode",
+      domeVocabulary.modes.map((token) => ({ id: token, label: domeVocabulary.label("modes", token) })),
+      ask.mode,
+      (token) => {
+        ask.mode = token;
+        send();
+      },
+    ));
+    const colorGroup = element("div");
+    colorGroup.appendChild(element("div", "light-pick-label", "Color"));
+    colorGroup.appendChild(swatches("Color", domeVocabulary.colors, ask.color, (token) => {
+      ask.color = token;
+      send();
+    }));
+    controls.appendChild(modeGroup);
+    controls.appendChild(colorGroup);
+    node.appendChild(controls);
     node.appendChild(feedback);
     return node;
   };
@@ -299,6 +399,7 @@
   // The three words map onto the firmware's four effects - on is `solid`, off
   // is `off`, flash is `blink`. A strip a sequence has left on `pulse` reads as
   // on, because it is lit, and nothing is mis-stated by saying so.
+  const STRIP_COLORS = (domeVocabulary?.colors || []).filter((token) => token !== "DEFAULT");
   const EFFECTS = [
     { id: "on", label: "On", effect: "solid" },
     { id: "off", label: "Off", effect: "off" },
@@ -310,15 +411,15 @@
   };
 
   // Brightness is the one reading the firmware does not store: a strip has a
-  // colour and no brightness field, and brightness on an LED strip IS that
-  // colour scaled. So it is derived from the colour the controller holds and
-  // sent back as a scaled colour, which round-trips: ask for 50% and the droid
-  // reports half the colour, which reads as 50% again. The hue is kept in
+  // color and no brightness field, and brightness on an LED strip IS that
+  // color scaled. So it is derived from the color the controller holds and
+  // sent back as a scaled color, which round-trips: ask for 50% and the droid
+  // reports half the color, which reads as 50% again. The hue is kept in
   // `tint`, so a strip turned down to nothing can be turned back up to the
-  // colour it had rather than to one this page invented; a strip that has
-  // never been given a colour starts from white.
+  // color it had rather than to one this page invented; a strip that has
+  // never been given a color starts from white.
   let tint = { r: 255, g: 255, b: 255 };
-  const brightnessOf = (colour) => Math.round((Math.max(colour.r, colour.g, colour.b) / 255) * 100);
+  const brightnessOf = (color) => Math.round((Math.max(color.r, color.g, color.b) / 255) * 100);
   const scaled = (percent) => {
     const factor = Math.max(0, Math.min(100, percent)) / 100;
     const peak = Math.max(tint.r, tint.g, tint.b) || 255;
@@ -330,7 +431,7 @@
     };
   };
 
-  const stripColour = () => ({
+  const stripColor = () => ({
     r: Math.max(0, Math.min(255, Number(auxLed?.r || 0))),
     g: Math.max(0, Math.min(255, Number(auxLed?.g || 0))),
     b: Math.max(0, Math.min(255, Number(auxLed?.b || 0))),
@@ -348,51 +449,74 @@
     }
   };
 
+  // Which color word the strip is showing, if any: the reading is compared at
+  // full brightness, because brightness IS the color scaled and a dimmed red is
+  // still red. A strip showing something no word covers marks nothing rather
+  // than claiming the nearest one.
+  const MATCH = 20;
+  const atFull = (color) => {
+    const peak = Math.max(color.r, color.g, color.b);
+    if (peak === 0) return null;
+    const lift = 255 / peak;
+    return { r: color.r * lift, g: color.g * lift, b: color.b * lift };
+  };
+  const colorWordFor = (color) => {
+    const full = atFull(color);
+    if (!full) return "";
+    return STRIP_COLORS.find((token) => {
+      const want = atFull(tokenColor(token) || { r: 0, g: 0, b: 0 });
+      return want
+        && Math.abs(want.r - full.r) < MATCH
+        && Math.abs(want.g - full.g) < MATCH
+        && Math.abs(want.b - full.b) < MATCH;
+    }) || "";
+  };
+
   const litPlate = (part, type) => {
     const node = plate(part, type.label);
-    const colour = stripColour();
+    const color = stripColor();
     const feedback = feedbackNode();
     const unavailable = auxLed?.available === false;
+    if (unavailable) node.appendChild(element("p", "light-state", "Could not start"));
 
-    // What protoArtoo last set it to - never a reading off the LEDs, which
-    // nothing reports back.
-    const shown = element("div", "led-preview");
-    const swatch = element("span", "led-swatch");
-    swatch.style.backgroundColor = `rgb(${colour.r}, ${colour.g}, ${colour.b})`;
-    swatch.style.opacity = unavailable || wordFor(auxLed?.effect) === "off" ? "0.35" : "1";
-    shown.appendChild(swatch);
-    shown.appendChild(element("span", "hint", unavailable
-      ? "Recorded, but the controller could not start it"
-      : `Set to ${wordFor(auxLed?.effect)}`));
-    node.appendChild(shown);
+    // on / off / flash, the words every Part reads (ADR 0049), as the chips the
+    // dome's modes wear.
+    const doing = element("div");
+    doing.appendChild(element("div", "light-pick-label", "Light"));
+    doing.appendChild(pills(`${part.name} light`, EFFECTS, wordFor(auxLed?.effect), (id) => {
+      const choice = EFFECTS.find((each) => each.id === id);
+      ask("/api/aux-led/effect", { effect: choice.effect }, feedback, `Asked for ${choice.label.toLowerCase()}`);
+    }));
+    node.appendChild(doing);
 
-    // on / off / flash, the words every Part reads (ADR 0049).
-    const current = wordFor(auxLed?.effect);
-    const seg = element("div", "seg light-seg");
-    seg.setAttribute("role", "radiogroup");
-    seg.setAttribute("aria-label", `${part.name} light`);
-    EFFECTS.forEach((choice) => {
-      const on = choice.id === current;
-      const button = element("button", on ? "active" : "", choice.label);
-      button.type = "button";
-      button.setAttribute("role", "radio");
-      button.setAttribute("aria-checked", on ? "true" : "false");
-      button.addEventListener("click", () => {
-        ask("/api/aux-led/effect", { effect: choice.effect }, feedback, `Asked for ${choice.label.toLowerCase()}`);
-      });
-      seg.appendChild(button);
-    });
-    node.appendChild(seg);
+    // The color, picked from the same swatches and the same words the dome
+    // offers. It goes at the brightness the strip is already showing - so
+    // picking a color changes the color and nothing else - or at full when it
+    // is showing nothing, since a color picked on a dark strip is a builder
+    // asking to see it.
+    const hue = element("div");
+    hue.appendChild(element("div", "light-pick-label", "Color"));
+    hue.appendChild(swatches(`${part.name} color`, STRIP_COLORS, colorWordFor(color), (token) => {
+      const picked = tokenColor(token);
+      if (!picked) return;
+      tint = picked;
+      const next = scaled(brightnessOf(color) || 100);
+      ask("/api/aux-led/color", { r: String(next.r), g: String(next.g), b: String(next.b) },
+        feedback, `Asked for ${domeVocabulary.label("colors", token).toLowerCase()}`);
+    }));
+    node.appendChild(hue);
 
-    // How far, as a light hears it.
-    const level = element("label", "field light-level");
-    level.appendChild(element("span", undefined, "Brightness"));
+    // How far, as a light hears it. A slider because brightness is continuous
+    // and a chip cannot say 40%; dressed to sit beside the chips above.
+    const level = element("div", "light-level");
+    level.appendChild(element("div", "light-pick-label", "Brightness"));
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "0";
     slider.max = "100";
     slider.step = "5";
-    slider.value = String(brightnessOf(colour));
+    slider.value = String(brightnessOf(color));
+    slider.setAttribute("aria-label", `${part.name} brightness`);
     slider.addEventListener("change", () => {
       const next = scaled(Number(slider.value));
       ask("/api/aux-led/color", { r: String(next.r), g: String(next.g), b: String(next.b) },
@@ -408,8 +532,7 @@
 
   const unlitPlate = (part) => {
     const node = plate(part, "Not lit");
-    node.appendChild(element("p", "hint light-note", "Nothing lights it yet. Wiring says what is on each lead."));
-    const link = element("a", "btn", "Open Wiring");
+    const link = element("a", "btn btn-sm btn-quiet link-btn", "Open Wiring");
     link.href = "#wiring";
     const row = element("div", "button-row button-row-compact");
     row.appendChild(link);
@@ -455,7 +578,7 @@
       const spare = carried.length > 0 && lit === 0;
       spareNote.classList.toggle("hidden", !spare);
       if (spare) {
-        spareNote.textContent = `A lead carries an ${carried[0].label} with no light on it yet. Parts is where a light is given its lead.`;
+        spareNote.textContent = `A lead carries an ${carried[0].label} with no light on it. Give one its lead on Parts.`;
       }
     }
   };
@@ -506,12 +629,17 @@
     paint();
   };
 
+  const readingOf = (led) => (led ? `${led.pin}:${led.r},${led.g},${led.b}:${led.effect}:${led.available}` : "");
   const renderStatus = (status) => {
-    auxLed = status?.auxLed || null;
-    const colour = stripColour();
+    const next = status?.auxLed || null;
+    const changed = readingOf(next) !== readingOf(auxLed);
+    auxLed = next;
+    const color = stripColor();
     // Remember the hue it is showing, so brightness can put it back.
-    if (colour.r || colour.g || colour.b) tint = colour;
-    paint();
+    if (color.r || color.g || color.b) tint = color;
+    // The stream repeats itself every few seconds. Redrawing on a frame that
+    // says nothing new would take the plate out from under whoever is using it.
+    if (changed) paint();
   };
 
   // Rethrows, so a section run or the surface poll can tell a read that landed

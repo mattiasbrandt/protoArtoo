@@ -144,6 +144,21 @@
   --wire-8: #9a7a4e;
   --wire-off: #8a93a0;
 
+  /* The dome's own light colors, as Lights draws them on a swatch (#410). One
+     per token the dome answers to (DL: colors, data/seq_protocol_check.js); a
+     swatch STANDS FOR the name a builder picks and is not a claim about the
+     shade the dome's LEDs render - nothing reports that back (ADR 0045). Mid
+     tones for the same reason the wire palette uses them: they read on the
+     dark plate. DEFAULT has no color of its own and is drawn as an empty dot
+     rather than as a shade this file invented. */
+  --dome-red: #c8483c;
+  --dome-blue: #4270c2;
+  --dome-green: #4e9f4a;
+  --dome-white: #e6e9ee;
+  --dome-yellow: #cbb13f;
+  --dome-orange: #cc7b33;
+  --dome-purple: #8a5ec2;
+
   /* Spacing. The anatomy's ladder is --space-2xs through --space-2xl:
      4 / 8 / 12 / 16 / 24 / 32. A rule that wants a step between two of those
      picks one of them. --space-3xs and --space-xs are the finer steps the
@@ -183,6 +198,13 @@
      radius; a button keeps a slightly rounder corner so it still reads as a
      button. --radius-pill is a capsule of any height; --radius-round is a
      circle and only ever goes on a square box. */
+  /* A light plate's corner (#410). The anatomy chamfers an instrument plate at
+     --radius-plate, and that still holds everywhere it applies; the operator
+     asked for softer corners on Lights' plates on 2026-09-20 ("not very modern
+     and sleek, looks very outdated"), and a dated operator decision is what
+     this layer follows. A new step rather than the retiring --radius-lg, which
+     no new rule may reach for. */
+  --radius-soft: 10px;
   --radius-plate: 2px;
   --radius-xs: 3px;
   --radius-sm: 4px;
@@ -8675,31 +8697,40 @@ button.output-setting-head:focus-visible {
 .light-plates {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: var(--space-md);
+  gap: var(--space-lg);
   margin-block: var(--space-md);
 }
 
+/* The plate, modernised on the operator's round-2 answer (2026-09-20): the
+   plate language stays - it is what #368/#369/#411 approved - with a softer
+   corner, a subtler edge, more room inside, and the name carrying the plate
+   over its detail. Not flatter rows and not a denser table; both were offered
+   and neither was picked. */
 .light-plate {
   display: grid;
   align-content: start;
-  gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-md) var(--space-md);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-plate);
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-soft);
   background: var(--surface-alt);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 4%, transparent);
 }
 
 .light-head {
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
-  min-height: var(--space-xl);
 }
 
+/* The name reads first and everything under it is quieter - the hierarchy the
+   operator asked for, carried by size and ink rather than by a rule. */
 .light-name {
   color: var(--text);
+  font-size: var(--fs-h2);
   font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 /* How the light is lit: its Light Type, or the controller that owns it. A
@@ -8709,10 +8740,23 @@ button.output-setting-head:focus-visible {
   margin-left: auto;
   color: var(--text-faint);
   font-family: var(--font-mono);
-  font-size: var(--fs-sect);
+  font-size: var(--fs-hint);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: right;
+  /* The name wraps before this does: a state broken across two lines reads as
+     two states. */
+  white-space: nowrap;
+}
+
+/* A state the plate reports in its own voice: mono, dim, and short enough that
+   it never becomes a sentence (docs/ui-copy-voice.md rule 8). */
+.light-state {
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.06em;
 }
 
 .light-where {
@@ -8736,37 +8780,111 @@ button.output-setting-head:focus-visible {
   font-style: italic;
 }
 
-/* The dome's two pickers sit side by side while there is room for them. */
+/* The dome's two pickers, stacked (operator, 2026-09-20: the drop-downs "look
+   way too big"). Nine modes are too many for one segmented bar, so they are
+   pills that wrap; the colors are the swatches themselves rather than their
+   names. Both keep the house treatment for "this one is picked" - the same
+   accent tint and inset ring a segmented control uses - rather than inventing
+   a third way of saying it. */
 .light-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: var(--space-sm);
 }
 
-/* A picker must not grow past its column: a select's own width wins over a
-   grid track otherwise, and the two ran into each other. */
-.light-controls .field,
-.light-pick {
-  min-width: 0;
+.light-pick-label {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-.light-pick select,
+.light-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  margin-top: var(--space-2xs);
+}
+
+.light-mode {
+  padding: 3px var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--well);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--fs-hint);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.light-mode:hover {
+  color: var(--text);
+}
+
+.light-mode[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+
+.light-mode:focus-visible,
+.light-color:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.light-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-2xs);
+}
+
+.light-color {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-round);
+  cursor: pointer;
+}
+
+/* DEFAULT is the dome's word for the color it already uses, so its dot shows
+   no color at all. */
+.light-color-default {
+  background: var(--well);
+  border-style: dashed;
+}
+
+.light-color[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--surface-alt), 0 0 0 3px var(--accent);
+}
+
+/* The picked color, named once under the row. */
+.light-picked {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+}
+
 .light-count input {
   width: 100%;
   min-width: 0;
   padding: 8px 10px;
 }
 
-.light-seg {
-  margin-top: var(--space-2xs);
-}
-
-.light-level {
-  gap: var(--space-2xs);
-}
-
+/* Brightness stays a slider - it is a continuous value and a chip cannot say
+   40% - but it is dressed to sit with the chips and swatches above it rather
+   than as the last control of an older card. */
 .light-level input[type="range"] {
   width: 100%;
+  height: 4px;
+  margin-top: var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--well);
   accent-color: var(--accent);
 }
 
@@ -8781,10 +8899,6 @@ button.output-setting-head:focus-visible {
 
 .light-count-wrap .apply-timing {
   margin: 0;
-}
-
-.light-plate .led-preview {
-  gap: var(--space-sm);
 }
 
 .light-plate .button-row {

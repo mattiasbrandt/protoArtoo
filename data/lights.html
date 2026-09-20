@@ -30,19 +30,23 @@
          them has a Light Type; protoArtoo reaches them by forwarding the dome's
          own documented commands, which is what a sequence step already sends.
          What the dome then does is the dome's to know, so this page reports
-         what was asked for and never what the lights are (ADR 0045). -->
+         what was asked for and never what the lights are (ADR 0045).
+
+         The heading carries a count and nothing else. What the section is for
+         is visible in it (docs/ui-copy-voice.md rules 8 and 15); the sentence
+         that used to sit here explained the section to a builder already
+         looking at it, and the operator cut it on 2026-09-20. -->
     <div class="card">
-      <div class="sect"><h2>In the dome</h2><span class="sub" id="lights-dome-count">finding out</span></div>
-      <p class="hint">The dome controller lights these. protoArtoo can ask it for a mode and a colour; what the dome does with the ask is the dome's.</p>
+      <div class="sect"><h2>Dome</h2><span class="sub" id="lights-dome-count">finding out</span></div>
       <div id="lights-dome"></div>
     </div>
 
-    <!-- The body's lights. Each is lit by the lead it is on, and takes that
-         lead's Light Type; one on no lit lead says so and points at Wiring.
-         The controller lights one lead today, which the card says plainly. -->
+    <!-- The body's lights. Each is lit by the lead it is on and takes that
+         lead's Light Type; one on no lit lead reads NOT LIT and offers the way
+         to Wiring. The note is drawn only when a lit lead is lighting nothing
+         declared, which is a state worth saying rather than an explanation. -->
     <div class="card">
-      <div class="sect"><h2>On the body</h2><span class="sub" id="lights-body-count">finding out</span></div>
-      <p class="hint">A body light is lit by the lead it is on. protoArtoo can light one of them today.</p>
+      <div class="sect"><h2>Body</h2><span class="sub" id="lights-body-count">finding out</span></div>
       <p class="note note-info hidden" id="lights-body-spare" role="status"></p>
       <div id="lights-body"></div>
     </div>
