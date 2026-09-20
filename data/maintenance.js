@@ -79,7 +79,6 @@
   const diagHeapFreeLight = document.getElementById("diag-heap-free-light");
   const diagHeapMinLight = document.getElementById("diag-heap-min-light");
   const diagHeapLargestLight = document.getElementById("diag-heap-largest-light");
-  const diagMemoryNote = document.getElementById("diag-memory-note");
 
   // A health signal reads as a droid LED and the COLOUR IS THE READING: the
   // light carries it and the value beside it stays ink (CONTEXT.md "Health
@@ -169,9 +168,6 @@
         diagHeapLargest.textContent = `${heapLargestKb} KB ${word}`;
       }
       setLight(diagHeapLargestLight, lampForState(heapLargestState));
-    }
-    if (diagMemoryNote) {
-      diagMemoryNote.textContent = `Lowest free memory since boot: ${heapMinKb} KB.`;
     }
     setFeedbackState(serialStatusLine, `Updated ${new Date().toLocaleTimeString()}`, "success");
   };

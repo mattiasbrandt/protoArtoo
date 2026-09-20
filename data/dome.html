@@ -67,22 +67,22 @@
         <label class="field">
           <span>Neutral pulse (µs)</span>
           <input id="dome-neutral" class="compact-number" name="domeEscNeutralUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">The width that means stop. Wrong, and the dome creeps on its own.</span>
+          <span class="hint">Wrong, and the dome creeps on its own.</span>
         </label>
         <label class="field">
           <span>Minimum pulse (µs)</span>
           <input id="dome-min-pulse" class="compact-number" name="domeEscMinPulseUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">Full reverse. Narrower than neutral.</span>
+          <span class="hint">Narrower than neutral.</span>
         </label>
         <label class="field">
           <span>Maximum pulse (µs)</span>
           <input id="dome-max-pulse" class="compact-number" name="domeEscMaxPulseUs" type="number" min="1000" max="2000" step="1">
-          <span class="hint">Full forward. Wider than neutral.</span>
+          <span class="hint">Wider than neutral.</span>
         </label>
         <label class="field">
           <span>Speed limit (%)</span>
           <input id="dome-speed-limit" class="compact-number" name="domeEscSpeedLimitPct" type="number" min="0" max="100" step="1">
-          <span class="hint">A share of the range above. 20 is a slow scan, 100 is as fast as the dome turns.</span>
+          <span class="hint">20 is a slow scan, 100 is as fast as the dome turns.</span>
         </label>
         <div class="button-row">
           <button id="reload-esc-button" class="btn" type="button">Reload</button>
@@ -114,19 +114,17 @@
           <span>Move duration (ms)</span>
           <input id="dome-rnd-move-ms" class="compact-number" name="domeEscRndMoveMs"
             type="number" min="500" max="10000" step="100">
-          <span class="hint">How long one turn lasts. Long enough and the dome comes most of the way round.</span>
+          <span class="hint">How long one turn lasts.</span>
         </label>
         <label class="field">
           <span>Shortest pause (s)</span>
           <input id="dome-rnd-pause-min" class="compact-number" name="domeEscRndPauseMin"
             type="number" min="1" max="120" step="1">
-          <span class="hint">The least time the dome ever waits between turns.</span>
         </label>
         <label class="field">
           <span>Longest pause (s)</span>
           <input id="dome-rnd-pause-max" class="compact-number" name="domeEscRndPauseMax"
             type="number" min="1" max="120" step="1">
-          <span class="hint">The most. Set it close to the shortest and the dome ticks like a clock.</span>
         </label>
         <div class="button-row">
           <button id="reload-rnd-button" class="btn" type="button">Reload</button>
