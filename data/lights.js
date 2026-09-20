@@ -198,14 +198,20 @@
 
   const countField = (feedback) => {
     const wrap = element("div", "light-count-wrap");
-    const field = element("label", "field light-count");
-    field.appendChild(element("span", undefined, "LEDs"));
+    // The label reads like every other group's on this page, and the box is
+    // sized for three digits. `.field` and `.type-select` are the FORM-scale
+    // house classes - right in a settings form, twice the size of everything
+    // else on a card (operator, 2026-09-20: "way too big and not at all
+    // matching the styles of the rest").
+    const field = element("label", "light-count");
+    field.appendChild(element("span", "light-pick-label", "LEDs"));
     const input = document.createElement("input");
     input.type = "number";
     input.min = "1";
     input.max = "255";
     input.step = "1";
-    input.className = "type-select";
+    input.className = "light-count-input";
+    input.setAttribute("aria-label", "LEDs on the strip");
     input.value = String(countValue);
     input.addEventListener("change", () => {
       const parsed = Number(input.value);

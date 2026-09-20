@@ -8870,12 +8870,6 @@ button.output-setting-head:focus-visible {
   font-size: var(--fs-cell);
 }
 
-.light-count input {
-  width: 100%;
-  min-width: 0;
-  padding: 8px 10px;
-}
-
 /* Brightness stays a slider - it is a continuous value and a chip cannot say
    40% - but it is dressed to sit with the chips and swatches above it rather
    than as the last control of an older card. */
@@ -8891,10 +8885,32 @@ button.output-setting-head:focus-visible {
 .light-count-wrap {
   display: grid;
   gap: var(--space-2xs);
+  justify-items: start;
 }
 
 .light-count {
-  max-width: 160px;
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+/* Three digits, not a form field. The house's .field/.type-select pair is
+   page-and-form scale and is half again the height of everything else on a
+   plate, which is what the operator saw (2026-09-20). */
+.light-count-input {
+  width: 72px;
+  min-height: 26px;
+  padding: 3px var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--well);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+}
+
+.light-count-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .light-count-wrap .apply-timing {
