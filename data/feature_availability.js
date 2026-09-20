@@ -30,7 +30,7 @@
       off: "Off",
       "not-in-this-build": "Not included",
       "not-on-this-board": "Not on this board",
-      checking: "Checking controller",
+      checking: "Checking",
       "identity-unavailable": "Availability unknown",
       "included": "Included",
     });

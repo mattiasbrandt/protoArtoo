@@ -238,13 +238,13 @@ const BOARD_LABELS = {
       }
 
       // Determine diagnosis based on version comparison
-      let diagMessage = "The controller could not report which features are available.";
+      let diagMessage = "The Body Controller could not report which features are available.";
       if (expectedFwVersion !== "unknown" && runningFwVersion !== "unknown") {
         if (expectedFwVersion !== runningFwVersion) {
           diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
         } else {
           // Versions match but identity is invalid (invalid feature list)
-          diagMessage = "This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
+          diagMessage = "This firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
         }
       }
 
@@ -252,7 +252,7 @@ const BOARD_LABELS = {
     } catch (error) {
       console.warn("[configuration] diagnosis failed:", error);
       // Show the no-version-evidence sentence when diagnosis cannot fetch versions
-      setIdentityDiagnosis("The controller could not report which features are available.");
+      setIdentityDiagnosis("The Body Controller could not report which features are available.");
     }
   };
 
@@ -271,8 +271,8 @@ const BOARD_LABELS = {
     // Different message based on reason: transport failure promises reconnection;
     // validation failure is terminal and Retry button says what to do
     const message = reason === "incompatible"
-      ? "Could not load controller identity."
-      : "Could not load controller identity. Reconnecting…";
+      ? "Could not load the Body Controller's identity."
+      : "Could not load the Body Controller's identity. Reconnecting…";
     setIdentityFeedback(message, "error");
     // Add persistent Retry button outside the live region
     if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
@@ -802,7 +802,7 @@ const BOARD_LABELS = {
   updateEnabledSummary();
   setSaveSummary("Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
-  setIdentityFeedback("Loading controller identity…");
+  setIdentityFeedback("Loading the Body Controller's identity…");
   if (window.PAIdentity) receiveIdentity(window.PAIdentity);
   loadFeatures();
 

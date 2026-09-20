@@ -287,7 +287,7 @@
           panel(
             '<div class="recovery-header"><span class="indicator info"></span>' +
               '<div><div class="recovery-status-reason">Loading page resources</div>' +
-              '<div class="recovery-status-detail">Preparing the controller page</div></div></div>' +
+              '<div class="recovery-status-detail">Preparing the page</div></div></div>' +
               '<p class="recovery-step"><span class="recovery-spinner"></span>Loading: page files</p>' +
               '<p class="recovery-message">Completed resources stay loaded.</p>'
           );
@@ -296,9 +296,9 @@
         function showStalled() {
           panel(
             '<div class="recovery-header"><span class="indicator fail"></span>' +
-              '<div><div class="recovery-status-reason">No response from controller</div>' +
+              '<div><div class="recovery-status-reason">No response from the Body Controller</div>' +
               '<div class="recovery-status-detail">The page could not finish loading its files.</div></div></div>' +
-              '<p class="recovery-message">The controller may be busy. Retry when ready.</p>' +
+              '<p class="recovery-message">It may be busy. Retry when ready.</p>' +
               '<div class="recovery-actions"><button type="button" class="btn" id="recovery-kernel-retry">Retry now</button></div>'
           );
           var button = document.getElementById("recovery-kernel-retry");

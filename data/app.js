@@ -665,7 +665,7 @@
   // the newest lines for the log ring (docs/api.md), and nothing more
   // specific is true for whatever query bounds out next.
   const CONSOLE_TRUNCATED_TEXT =
-    "[CUT] The controller could not fit the whole answer — some lines are missing from the reply above.";
+    "[CUT] The Body Controller could not fit the whole answer — some lines are missing from the reply above.";
   const COMMAND_HISTORY_MAX = 20;
   const CONSOLE_HISTORY_STORAGE_KEY = "pa-console-history";
   let logLines = [];
@@ -1497,7 +1497,7 @@
       return;
     }
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/diagnostics.js": "diagnostics constants",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",

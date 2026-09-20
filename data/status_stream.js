@@ -64,7 +64,7 @@
   // not report".
   const adopt = (payload) => {
     if (!isStatusFrame(payload)) {
-      emit("status_error", new Error("The controller could not report its status"));
+      emit("status_error", new Error("The Body Controller could not report its status"));
       return false;
     }
     lastStatus = payload;

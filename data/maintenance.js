@@ -33,7 +33,7 @@
       setFeedbackState(rebootFeedback, "Still saving a component change. Press again in a moment.", "warning");
       return;
     }
-    if (!confirm("Restart the controller? This page drops for about 10 seconds.")) {
+    if (!confirm("Restart the Body Controller? This page drops for about 10 seconds.")) {
       return;
     }
     if (!window.PAApi) return;
@@ -50,7 +50,7 @@
         } else {
           clearInterval(countdown);
           if (rebootFeedback) {
-            rebootFeedback.textContent = "Controller should be back. Refresh the page.";
+            rebootFeedback.textContent = "The Body Controller should be back. Refresh the page.";
           }
         }
       }, 1000);
@@ -520,7 +520,7 @@
 
     const anyRestored = lines.some((l) => l.includes(': restored'));
     const anyIssue = lines.some((l) => l.includes('FAILED') || l.includes('partial'));
-    if (anyRestored) lines.push('Restart the controller to apply everything restored.');
+    if (anyRestored) lines.push('Restart the Body Controller to apply everything restored.');
     setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
     restoreBtn.disabled = false;
   };

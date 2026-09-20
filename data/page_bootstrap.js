@@ -750,9 +750,9 @@
 
   const REASON_DETAIL = {
     timeout: "Connection timed out. Attempting to reconnect.",
-    network: "Connection to the controller was lost. Attempting to reconnect.",
-    http: "The controller rejected the request. Retrying.",
-    "bad-json": "The controller sent an incomplete reply. Retrying.",
+    network: "Connection to the Body Controller was lost. Attempting to reconnect.",
+    http: "The Body Controller rejected the request. Retrying.",
+    "bad-json": "The Body Controller sent an incomplete reply. Retrying.",
   };
 
   // ---------------------------------------------------------------------------
@@ -856,12 +856,12 @@
       banner.appendChild(el("span", "indicator warn"));
       banner.appendChild(el("span", null, "REQUEST REFUSED"));
       panel.appendChild(banner);
-      panel.appendChild(el("div", "recovery-status-reason", "Controller busy"));
+      panel.appendChild(el("div", "recovery-status-reason", "Body Controller busy"));
       panel.appendChild(
         el(
           "p",
           "recovery-message",
-          "Controller is handling other requests. Try again in a moment."
+          "It is handling other requests. Try again in a moment."
         )
       );
       panel.appendChild(countdownPanel("Retry interval", view.waitSeconds));
@@ -878,11 +878,11 @@
     if (view.mode === "loading") {
       headerText.appendChild(el("div", "recovery-status-reason", "Loading page resources"));
       headerText.appendChild(
-        el("div", "recovery-status-detail", "Preparing the controller page")
+        el("div", "recovery-status-detail", "Preparing the page")
       );
     } else {
       headerText.appendChild(
-        el("div", "recovery-status-reason", "No response from controller")
+        el("div", "recovery-status-reason", "No response from the Body Controller")
       );
       headerText.appendChild(
         el(
@@ -929,7 +929,7 @@
         el(
           "p",
           "recovery-message",
-          "Retry intervals are increasing so the controller is not overwhelmed."
+          "Retry intervals are increasing so the Body Controller is not overwhelmed."
         )
       );
     }

@@ -26,8 +26,8 @@
     </div>
 
     <div class="card">
-      <div class="sect"><h2>Controller firmware</h2><span class="sub">the program the droid runs</span></div>
-      <p class="prose">The controller's own code: drive, dome, sound, the radio and this web server. It lands in the spare half of the flash and runs only once the whole file is in.</p>
+      <div class="sect"><h2>Body Controller firmware</h2><span class="sub">the program the droid runs</span></div>
+      <p class="prose">It lands in the spare half of the flash and runs only once the whole file is in.</p>
       <div class="note note-act">
         <b>Keep the power on until the droid has restarted by itself.</b> Cutting power part-way through, or refreshing this page, leaves half an image behind.
       </div>
@@ -35,7 +35,7 @@
         <label class="field">
           <span>Firmware file</span>
           <input id="fw-file" class="file-input" type="file" accept=".bin" aria-label="Select firmware file">
-          <span class="hint">The build writes it to <code>.pio/build/&lt;env&gt;/firmware.bin</code>. The wrong one leaves a controller that will not boot, and only a USB cable gets it back.</span>
+          <span class="hint">The build writes it to <code>.pio/build/&lt;env&gt;/firmware.bin</code>. The wrong one leaves a Body Controller that will not boot, and only a USB cable gets it back.</span>
         </label>
         <div id="fw-progress" class="fw-progress hidden">
           <div class="fw-progress-track">
@@ -82,7 +82,7 @@
       <div class="sect"><h2>Reboot</h2><span class="sub">ten seconds off air</span></div>
       <p class="hint">Everything you saved survives. Reach for it when a page stops answering.</p>
       <div class="button-row button-row-compact">
-        <button id="reboot-button" class="btn danger" type="button">Reboot the controller</button>
+        <button id="reboot-button" class="btn danger" type="button">Reboot the Body Controller</button>
       </div>
       <p class="hint">Refused during an upload. A reboot mid-upload leaves half an image.</p>
       <div id="fw-reboot-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">No reboot asked for yet.</div>

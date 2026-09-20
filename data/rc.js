@@ -1615,7 +1615,7 @@
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
-        setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
+        setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the Body Controller to apply.`, "success");
         confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
         sbusRecvSel.value = confirmedSbusRecvValue;
@@ -1695,7 +1695,7 @@
     }
 
     window.PABootstrap.setResourceLabels?.({
-      "/web_api.js": "controller connection",
+      "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/rc.js": "RC control",
