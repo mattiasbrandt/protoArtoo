@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/apply_timing.js,/output_settings.js,/lights.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/seq_protocol_check.js,/apply_timing.js,/output_settings.js,/lights.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,63 +11,40 @@
   </head>
   <body data-page="lights">
 
-    <!-- Every light on the droid, on one page (operator, 2026-09-18 on #369;
-         #410): the body's LED strip and the Output that carries it, the dome's
-         lights, and the body lights add-ons bring later. The title is the name
-         in the nav and nothing under it (ADR 0066). -->
+    <!-- What lights this droid has, how each one is lit, and what it can be
+         told to do (CONTEXT.md "Lights", ADR 0067). Every Part whose Part Kind
+         is a light, grouped by where it sits.
+
+         The lists are written by data/lights.js from data/droid_parts.js, so
+         no light is named in this file: a row added to docs/droid-parts.yaml
+         lands here with no code change. Nothing on this page names an Output,
+         a pin or a board label - what is on a lead is Wiring's answer, and is
+         reached from here rather than repeated. -->
     <div class="title">
       <div>
         <h1>Lights</h1>
       </div>
     </div>
 
-    <!-- The LED strip. Which Output carries it is the one answer Wiring also
-         sets, drawn by data/output_settings.js (mounted by data/lights.js), so
-         the two pages can never disagree. The count and the live colour are
-         this page's, and moved here from Configuration (#410). The subtitle is
-         written by data/lights.js from that shared answer. -->
+    <!-- The dome's lights. The dome controller owns that hardware, so none of
+         them has a Light Type; protoArtoo reaches them by forwarding the dome's
+         own documented commands, which is what a sequence step already sends.
+         What the dome then does is the dome's to know, so this page reports
+         what was asked for and never what the lights are (ADR 0045). -->
     <div class="card">
-      <div class="sect"><h2>LED strip</h2><span class="sub" id="lights-strip-route" role="status" aria-live="polite">finding out</span></div>
-      <div class="bay lights-strip-bay">
-        <section>
-          <div class="sect"><h3>Output</h3><span class="sub">where it plugs in</span></div>
-          <div id="lights-strip-outputs"></div>
-          <p class="hint">Wiring shows the same answer. Picking an output marks it wired.</p>
-          <div id="lights-strip-outputs-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        </section>
-        <section>
-          <div class="sect"><h3>Strip</h3><span class="sub">count and colour</span></div>
-          <label class="field lights-strip-count" for="lights-strip-count">
-            <span>LEDs on the strip</span>
-            <input id="lights-strip-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1">
-          </label>
-          <div class="led-preview" aria-live="polite" aria-atomic="true">
-            <span id="lights-strip-swatch" class="led-swatch"></span>
-            <span id="lights-strip-preview-text" class="hint"></span>
-          </div>
-          <p id="lights-strip-preview-note" class="hint"></p>
-          <p class="note hidden apply-timing" id="lights-strip-count-timing"></p>
-          <div id="lights-strip-count-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        </section>
-      </div>
-    </div>
-
-    <!-- The dome's lights, read from the parts catalog's dome_lights section
-         (docs/droid-parts.yaml) by data/lights.js, so nothing here names one.
-         A light protoArtoo drives nothing of says so, and offers no control. -->
-    <div class="card">
-      <div class="sect"><h2>Dome lights</h2><span class="sub" id="lights-dome-summary">finding out</span></div>
+      <div class="sect"><h2>In the dome</h2><span class="sub" id="lights-dome-count">finding out</span></div>
+      <p class="hint">The dome controller lights these. protoArtoo can ask it for a mode and a colour; what the dome does with the ask is the dome's.</p>
       <div id="lights-dome"></div>
     </div>
 
-    <!-- Room for the body lights add-ons bring later (operator, 2026-09-18 on
-         #369: "further future AUX addon body lights"). Nothing is drawn as a
-         control until there is hardware behind it. -->
+    <!-- The body's lights. Each is lit by the lead it is on, and takes that
+         lead's Light Type; one on no lit lead says so and points at Wiring.
+         The controller lights one lead today, which the card says plainly. -->
     <div class="card">
-      <div class="sect"><h2>Body lights</h2><span class="sub">add-on lights</span></div>
-      <div class="lights-empty">
-        <p class="hint">No add-on body lights yet. They land here once protoArtoo can drive them.</p>
-      </div>
+      <div class="sect"><h2>On the body</h2><span class="sub" id="lights-body-count">finding out</span></div>
+      <p class="hint">A body light is lit by the lead it is on. protoArtoo can light one of them today.</p>
+      <p class="note note-info hidden" id="lights-body-spare" role="status"></p>
+      <div id="lights-body"></div>
     </div>
 
     <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>

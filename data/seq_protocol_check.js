@@ -133,7 +133,43 @@
     return false;
   }
 
+  // The dome controller's own light vocabulary, with the words a builder reads.
+  // The tokens are the ones src/protocol_check.cpp validates, above; the labels
+  // are the ones data/seq.js shows when a builder authors a step. Published
+  // because Lights offers the same modes and colours as a live control (#410,
+  // ADR 0067), and two surfaces naming one mode two things is the drift ADR
+  // 0045 exists to stop. data/seq.js still carries its own copy of these
+  // labels: it is the next reader to point here.
+  const DOME_LIGHT_LABELS = {
+    targets: {
+      FLD: "Front logic", RLD: "Rear logic", LOGIC: "Both logic",
+      FPSI: "Front PSI", RPSI: "Rear PSI", PSI: "Both PSI",
+      ALL: "All logic + PSI",
+    },
+    modes: {
+      NORMAL: "Normal", ALARM: "Alarm", FAILURE: "Failure", LEIA: "Leia",
+      MARCH: "March", FLASHCOLOR: "Flash Color", REDALERT: "Red Alert",
+      RAINBOW: "Rainbow", LIGHTSOUT: "Lights Out",
+    },
+    colors: {
+      DEFAULT: "Default", RED: "Red", BLUE: "Blue", GREEN: "Green",
+      WHITE: "White", YELLOW: "Yellow", ORANGE: "Orange", PURPLE: "Purple",
+    },
+  };
+
   const SeqProtocolCheck = {
+    /**
+     * The dome's light vocabulary: which targets it answers to, the modes and
+     * colours each takes, and the label to show for every token. Frozen, so a
+     * caller cannot edit the vocabulary it was handed.
+     */
+    domeLights: Object.freeze({
+      targets: Object.freeze(Array.from(DL_TARGETS)),
+      modes: Object.freeze(Array.from(DL_MODES)),
+      colors: Object.freeze(Array.from(DL_COLORS)),
+      label: (group, token) => DOME_LIGHT_LABELS[group]?.[token] || token || "",
+    }),
+
     /**
      * Validate sequence name format.
      * @param {string} name
