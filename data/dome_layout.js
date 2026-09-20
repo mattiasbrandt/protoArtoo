@@ -28,6 +28,8 @@
 //   - getSource(): 'live' | 'cached' | 'vendored' | 'stated-design' | 'unsupported'
 //     'vendored' and 'stated-design' are both tier 3: the first says the
 //     built-in drawing is this builder's dome, the second that it is not.
+//   - severityClause(elem): what an element's severity says out loud, or null
+//     where it is available; the caller adds its own consequence
 //   - statedDesignDifference(): the connected dome's panels against the stated
 //     Dome Design's, for the builder to resolve; it changes neither (#368)
 // =============================================================================
@@ -533,6 +535,41 @@
     }, { once: true });
   }
 
+  // ── What a severity says out loud ──────────────────────────────────────
+  //
+  // One clause per severity, naming the STATE and nothing else. Two surfaces
+  // ask - the Dashboard's dome control and the sequence editor - and each
+  // appends its own consequence, because pressing a button and authoring a
+  // step are not the same act. Before #348 each surface carried its own copy
+  // of all six, and they had already drifted: one said "is disabled on the
+  // dome", the other "is off".
+  //
+  // None of them names a destination. `disabled` and `active` are the dome's
+  // own runtime state (ADR 0009) and `unmapped` is its command map: there is
+  // no screen on this droid that changes any of them, so these are settled
+  // nos, and a settled no stops rather than inventing a route.
+  const SEVERITY_CLAUSE = Object.freeze({
+    disabled: (id, reason) => `${id} is off on the dome${reason}.`,
+    inactive: (id) => `${id} is not active on the dome.`,
+    in_layout_false: (id) => `${id} is not in the selected layout.`,
+    unverified: (id) => `The dome has not confirmed ${id}.`,
+    unmapped: (id) => `Nothing maps to ${id}.`,
+  });
+
+  /**
+   * The state clause for a resolved element, or null where it is available.
+   *
+   * @param {object} elem - an element from the normalized model
+   * @returns {string|null}
+   */
+  function severityClause(elem) {
+    if (!elem || !elem.severity) return null;
+    const clause = SEVERITY_CLAUSE[elem.severity];
+    if (!clause) return `${elem.id} is not available.`;
+    const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : '';
+    return clause(elem.id, reason);
+  }
+
   // ── Export ────────────────────────────────────────────────────────────
 
   window.DomeLayout = {
@@ -543,6 +580,7 @@
     onChange,
     offChange,
     getSource,
+    severityClause,
     statedDesignDifference,
   };
 })();

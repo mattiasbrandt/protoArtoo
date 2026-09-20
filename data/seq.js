@@ -1666,32 +1666,20 @@
     const elem = model?.elements?.find((e) => e.id === elementId);
     if (!elem) return null; // Element not found; no advisory
 
-    // Check availability conditions:
-    // severity is one of: null (available), 'inactive', 'disabled', 'in_layout_false',
-    // 'unmapped', 'unverified'
-    const severity = elem.severity;
-    if (!severity) return null; // Element is available; no advisory needed
+    // The state clause is data/dome_layout.js's, where severity is computed and
+    // where the Dashboard's dome control reads it too (#348). This surface adds
+    // its own consequence, because authoring a step and pressing a button are
+    // not the same act - and before #348 the two copies had already drifted.
+    const clause = window.DomeLayout?.severityClause?.(elem);
+    if (!clause) return null; // Element is available; no advisory needed
 
-    // Build message by severity tier, including disabled_reason if present
-    let message = "";
-    if (severity === "disabled") {
-      const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : "";
-      message = `${elementId} is disabled on the dome${reason}. The step runs; the dome may ignore it.`;
-    } else if (severity === "inactive") {
-      message = `${elementId} is not active. The step runs; the dome may ignore it.`;
-    } else if (severity === "in_layout_false") {
-      message = `${elementId} is not in the selected layout. The step runs, but may do nothing.`;
-    } else if (severity === "unverified") {
-      message = `${elementId} is not confirmed on the dome. The step runs anyway.`;
-    } else if (severity === "unmapped") {
-      message = `No command reaches ${elementId}, so this step cannot be authored.`;
-    } else {
-      message = `${elementId} is not available. This step may not run as expected.`;
-    }
+    // An element nothing maps to cannot be authored at all; every other
+    // severity still writes a step, and the step still runs.
+    let message = elem.severity === "unmapped" ? clause : `${clause} The step still runs.`;
 
     // Special case: excluded-but-active diagnostic
     if (elem.in_layout === false && elem.active === true) {
-      message = `${elementId} is out of the selected layout, but the dome says it is active. This step may misbehave.`;
+      message = `${elementId} is out of the selected layout, but the dome says it is active.`;
     }
 
     return message;
