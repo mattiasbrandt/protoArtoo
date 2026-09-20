@@ -119,7 +119,7 @@ inline bool consoleUtf8Valid(const char* s) {
             if (c > 0xF4) return false;  // beyond U+10FFFF
             extra = 3;
         } else {
-            return false;  // stray continuation byte or 0xF8-0xFF lead byte
+            return false;  // stray continuation byte or 0xF8-0xFF wire byte
         }
 
         unsigned char c1 = p[1];

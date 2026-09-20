@@ -370,7 +370,7 @@ test("switching an output off dashes its wire and keeps it on the sheet", async 
     outputs: structuredClone(wired),
     components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
   });
-  assert.equal(off.isLive("ledc:0"), false, "a lead nobody marked wired is drawn not wired");
+  assert.equal(off.isLive("ledc:0"), false, "a wire nobody marked wired is drawn not wired");
   assert.match(off.wire("ledc:0").textContent, /Upper utility arm/, "and still says what is on its end");
   assert.equal(
     off.unusedRows().find((row) => row.dataset.part === "utilUp"),
@@ -413,7 +413,7 @@ test("a latched estop does not rewrite the sheet", async () => {
     outputs: latched,
     components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
   });
-  assert.equal(env.isLive("ledc:0"), true, "the lead is still the lead, whatever the estop is doing");
+  assert.equal(env.isLive("ledc:0"), true, "the wire is still the wire, whatever the estop is doing");
 });
 
 // ---------------------------------------------------------------------------

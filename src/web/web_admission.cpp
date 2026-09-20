@@ -264,7 +264,7 @@ bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept) {
         return strcmp(secFetchMode, "navigate") == 0;
     }
 
-    // Fallback for clients that omit the mode. A navigating browser leads its
+    // Fallback for clients that omit the mode. A navigating browser wires its
     // Accept with text/html; asset and API callers do not.
     if (accept == nullptr) {
         return false;

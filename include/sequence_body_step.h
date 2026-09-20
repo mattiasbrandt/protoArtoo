@@ -10,7 +10,7 @@
 // the same component clamp, and both end as the same ServoCommand, which is how
 // "no new motion path" is true by construction rather than by inspection.
 //
-// A Body Step names a Part; an Output Address is where the lead plugs in. The
+// A Body Step names a Part; an Output Address is where the wire plugs in. The
 // Sequence Coordinator joins the two at dispatch, every time, from the Servo
 // Output rows the builder's own droid stores - never from anything cached at
 // save or at discovery. That is what makes authoring before wiring work: wire

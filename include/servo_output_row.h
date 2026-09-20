@@ -56,7 +56,7 @@
 #include "servo_component_helpers.h"  // servoCompTypeToString, parseServoCompType
 
 // -----------------------------------------------------------------------------
-// Output Address  --  where the lead physically plugs in
+// Output Address  --  where the wire physically plugs in
 // -----------------------------------------------------------------------------
 
 // An expander adds a driver here and rows to the table; it never adds a field
@@ -144,7 +144,7 @@ constexpr uint8_t SERVO_OUTPUT_CHANNEL_UNSET = 0xFF;
 // the row a place to store a sentence.
 constexpr uint8_t SERVO_OUTPUT_PART_ID_MAX = 12;
 
-// How many Parts one Output may drive. A lead Y-harnessed to both breadpan
+// How many Parts one Output may drive. A wire Y-harnessed to both breadpan
 // doors moves both, and a model that can name only one of them leaves the other
 // reading "- not wired -" while it moves anyway, which is a wrong answer rather
 // than a missing feature (ADR 0050). Four is the operator's decision of
@@ -173,7 +173,7 @@ struct ServoOutputRow {
     // always names a Part the firmware can resolve.
     //
     // The multiplicity is asymmetric and both halves matter (ADR 0050). An
-    // Output may drive several Parts, so a ganged lead tells the truth about
+    // Output may drive several Parts, so a ganged wire tells the truth about
     // everything it moves. A Part is driven by at most one Output, because
     // "which Output drives this Part" must have exactly one answer or firmware
     // resolves it by whichever row it scans first. The second half is a rule
@@ -606,7 +606,7 @@ inline void servoOutputTableDefaults(ServoOutputTable* table) {
 
 // -----------------------------------------------------------------------------
 // servoOutputTableFindByAddress()
-// The row a lead plugs into, found by its Output Address. Returns
+// The row a wire plugs into, found by its Output Address. Returns
 // SERVO_OUTPUT_ROW_MAX when no live row is addressed there, so "there is no
 // such output" and "row 0" are not the same answer.
 //
@@ -858,7 +858,7 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
     // id nobody can read costs its own slot, never the three beside it that a
     // builder assigned. What is left is compacted so the list stays
     // filled-first, and a Part named twice in one row keeps one slot -- driving
-    // the same Part twice from one lead is the same lead.
+    // the same Part twice from one wire is the same wire.
     for (uint8_t slot = 0; slot < SERVO_OUTPUT_PART_SLOTS; ++slot) {
         row->parts[slot][SERVO_OUTPUT_PART_ID_MAX] = '\0';
     }

@@ -246,7 +246,7 @@ The main GPIO field is **17 rows x 3 columns**, with the column header silkscree
 - The **GPIO number is printed once per row, down the left edge**, in this order top to bottom:
   `4`, `5`, `20`, `21`, `22`, `23`, `31`, `32`, `33`, `34`, `35`, `36`, `48`, `49`, `50`, `51`, `52`.
   (Matches the schematic's signal order exactly.)
-- **A 3-pin servo / ESC lead plugs onto ONE ROW**, spanning the three columns: signal into `IO`,
+- **A 3-pin servo / ESC wire plugs onto ONE ROW**, spanning the three columns: signal into `IO`,
   power into `3V3`, ground into `GND`. You do **not** plug it across three GPIOs -- each row is one
   GPIO with its own power and ground beside it. This is the whole point of the three-column field.
 - **Every row in this field is a plain GPIO number. No row carries an alias.** Operator-confirmed
@@ -271,7 +271,7 @@ The main GPIO field is **17 rows x 3 columns**, with the column header silkscree
 
 > [!NOTE]
 > **This layout is one of the reasons the FireBeetle 2 was chosen** (operator, 2026-09-01). Most of
-> this droid's components -- servos, ESCs, RC channels -- terminate in a 3-pin lead, and a
+> this droid's components -- servos, ESCs, RC channels -- terminate in a 3-pin wire, and a
 > row-per-GPIO `IO`/`3V3`/`GND` field means each one plugs onto its own row without a breakout, an
 > adapter harness, or splicing a power rail. Keep that in mind before proposing a pin reallocation
 > that moves a 3-pin component off this field: the wiring ergonomics are a feature of the board, not

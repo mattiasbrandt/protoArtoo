@@ -98,7 +98,7 @@ test("a part ganged to another says so when it moves them both", async () => {
   pressAct(env, "toggle");
   await sleep(20);
 
-  assert.match(env.feedback(), /Right body door/, "the part sharing the lead is named");
+  assert.match(env.feedback(), /Right body door/, "the part sharing the wire is named");
 });
 
 test("the estop holds every move the picture can start, body and dome, and says which no it is", async () => {

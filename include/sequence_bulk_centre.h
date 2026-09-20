@@ -98,7 +98,7 @@ inline uint32_t sequenceCadenceSpacingMs(uint16_t throwMs) {
 // #320 deliberately left open, so a row with nothing to travel is skipped and
 // counted rather than driven to a number that means nothing.
 //
-// The row's component is what this droid knows about the end of the lead:
+// The row's component is what this droid knows about the end of the wire:
 // SERVO_COMP_RGB is recorded as an LED strip with no servo PWM calibration
 // (include/robot_state.h). Part KIND -- the catalog fact that `psiFront` is a
 // light -- is not in firmware at all: include/droid_parts.h compiles the id
@@ -107,7 +107,7 @@ inline uint32_t sequenceCadenceSpacingMs(uint16_t throwMs) {
 // this counts them by component, and the two agree for every row whose builder
 // described it. Where they could differ -- a light Part on a row still recorded
 // as a servo -- the droid drives it, because the row is the builder's own
-// statement about what is on that lead and the firmware has nothing truer.
+// statement about what is on that wire and the firmware has nothing truer.
 // -----------------------------------------------------------------------------
 inline bool sequenceBulkCentreHasTravel(const ServoOutputRow& row) {
     return row.component != SERVO_COMP_RGB;

@@ -395,7 +395,7 @@ void test_a_row_carries_up_to_four_parts_and_refuses_a_fifth() {
     TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilUp"));
     TEST_ASSERT_TRUE(servoOutputAddPart(&row, "utilLo"));
 
-    // A Part the row already drives is not a second slot: the same lead. Asked
+    // A Part the row already drives is not a second slot: the same wire. Asked
     // here, with two slots still free, so it is the duplicate that refuses and
     // not the cap.
     TEST_ASSERT_FALSE(servoOutputAddPart(&row, "utilUp"));
@@ -963,7 +963,7 @@ void test_moving_a_part_takes_it_off_the_output_it_was_on() {
     TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_MAX, servoOutputTableFindPart(table, "doorFL"));
 }
 
-// A ganged lead: both breadpan doors on one Output, both reading as driven, and
+// A ganged wire: both breadpan doors on one Output, both reading as driven, and
 // moving one of them away leaves the other exactly where it was.
 void test_an_output_drives_every_part_ganged_to_it() {
     ServoOutputTable table = {};

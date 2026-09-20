@@ -1344,7 +1344,7 @@ static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRe
             servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
             const char* name = servoOutputAddressName(row.driver, row.channel);
 
-            // Every Part the Output drives, not the first: a ganged lead names
+            // Every Part the Output drives, not the first: a ganged wire names
             // all of them (ADR 0050).
             char parts[SERVO_OUTPUT_PART_SLOTS * (SERVO_OUTPUT_PART_ID_MAX + 1) + 1] = {};
             size_t used = 0;

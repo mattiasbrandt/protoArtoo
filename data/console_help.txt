@@ -139,11 +139,11 @@ system.event.boot-complete|Boot Complete|The controller is up. The Boot Complete
 system.status.sleep-mode|Sleep Mode|Whether the droid is asleep. It always wakes at boot.|buildStatusJson|
 system.status.mood|Mood|The mood now: Quiet 10, Full-Awake 11, Mid-Awake 13, Awake+ 14.|buildStatusJson|
 system.config.mood|Active Mood|The mood the droid starts in.|configApply|
-system.config.enable_arm1|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
-system.config.enable_arm2|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
-system.config.enable_aux1|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
-system.config.enable_aux2|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
-system.config.enable_aux3|{output}|Whether a lead is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_arm1|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_arm2|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_aux1|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_aux2|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
+system.config.enable_aux3|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
 system.config.enable_dome_esc|Dome Motor|Use the dome rotation motor connected to the DOME output|configApply|
 system.config.enable_rc_ch1|RC CH1|Use the receiver signal connected to RC channel 1|configApply|
 system.config.enable_rc_ch2|RC CH2|Use the receiver signal connected to RC channel 2|configApply|

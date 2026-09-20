@@ -151,7 +151,7 @@ Mounting hole centres form a 1.75 x 2.25 in rectangle, 0.125 in diameter.
 
 > [!WARNING]
 > *"All batteries must be capable of maintaining a steady voltage when supplying
-> 20+ amps (AA or 9V batteries aren't going to cut it! An 18Ah lead-acid battery
+> 20+ amps (AA or 9V batteries aren't going to cut it! An 18Ah wire-acid battery
 > is a good starting point)."*
 
 Reversing needs no stop: *"there is no need for the Sabertooth to stop before
@@ -176,7 +176,7 @@ still air without additional heatsinking."*
 
 > [!CAUTION]
 > **The SyRen's 5 V terminal cannot power a controller.** 100 mA below 12.6 V,
-> and **10 mA above it** -- a droid on a 12 V lead-acid pack sits right on that
+> and **10 mA above it** -- a droid on a 12 V wire-acid pack sits right on that
 > boundary. Do not hang an ESP32 off it. DE says *"If more power is needed, we
 > recommend using a ParkBEC or SW05."* The Sabertooth 2x25 V2's 1 A BEC is a
 > different proposition entirely.
@@ -201,7 +201,7 @@ the voltage drops below the set point again."*
 
 Switch 3 selects battery type. **Down** = lithium: auto-detects series cell count
 at startup and sets a **3.0 V per cell** cutoff. **Up** = NiCd, NiMH, alkaline,
-lead-acid, or a power supply.
+wire-acid, or a power supply.
 
 > [!CAUTION]
 > The recipe repeated across ShadowMD, SHADOW and other sketches is *"Dip

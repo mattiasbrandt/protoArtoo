@@ -24,7 +24,7 @@
 // (docs/droid-parts.yaml, "one of the two MG996R utility arm servos protoArtoo
 // already drives"), and those are Parts: identity, not wiring. The two
 // vocabularies are not a duplicate to be reconciled -- ADR 0041 and ADR 0050
-// keep them apart deliberately, because which Part a lead moves is the
+// keep them apart deliberately, because which Part a wire moves is the
 // builder's own droid's answer, not this header's. What joins them is the Part
 // list on the Servo Output row addressed to a channel, and since #345 that list
 // can only hold an id the compiled catalog vocabulary models

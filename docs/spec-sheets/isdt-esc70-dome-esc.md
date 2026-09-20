@@ -39,13 +39,13 @@ test that would settle them.
 > model is correct (Section 8).
 
 > [!CAUTION]
-> **The ESC's throttle lead is a power *output*, and the FireBeetle 2's middle
-> column is 3.3 V.** The ESC70's 3-pin lead carries its BEC at **5.0-7.5 V**, and
+> **The ESC's throttle wire is a power *output*, and the FireBeetle 2's middle
+> column is 3.3 V.** The ESC70's 3-pin wire carries its BEC at **5.0-7.5 V**, and
 > ISDT's manual says in so many words *"We Suggest DO NOT supply additional power
 > to the receiver, otherwise your ESC may be damaged."* `docs/pin_map.md` says the
 > opposing half: *"The middle column is `3V3`, not 5 V."*
 >
-> Plug the ESC's 3-pin lead onto a FireBeetle 2 row the obvious way and you put
+> Plug the ESC's 3-pin wire onto a FireBeetle 2 row the obvious way and you put
 > **5-7.5 V onto the board's 3.3 V plane**. Signal and ground only (Section 5.4).
 
 > [!IMPORTANT]
@@ -143,8 +143,8 @@ beyond its settings; ISDT's brushless ESC range; or the dome *controller* link
 ## 2. What you are actually buying
 
 **A 38.6 x 31.6 x 17.15 mm brushed car ESC**, about 49 g, with 16 AWG 200 mm
-leads and **no connectors fitted**, plus a small two-in-one **electronic switch +
-Bluetooth module** (about 4.5 g) on a short lead.
+wires and **no connectors fitted**, plus a small two-in-one **electronic switch +
+Bluetooth module** (about 4.5 g) on a short wire.
 
 | | |
 | --- | --- |
@@ -325,13 +325,13 @@ similar -- is a single-digit-amp load.
 
 ### 5.4 The BEC is an output, and that is a wiring hazard on both boards
 
-The ESC's 3-pin throttle lead is **not** a passive signal input. ISDT:
+The ESC's 3-pin throttle wire is **not** a passive signal input. ISDT:
 
 > *"Please be reminded the ESC throttle control port has BEC voltage adjustment
 > function to the receiver and the servo, We Suggest DO NOT supply additional
 > power to the receiver, otherwise your ESC may be damaged."*
 
-So the lead carries **signal, ground, and 5.0-7.5 V out**.
+So the wire carries **signal, ground, and 5.0-7.5 V out**.
 
 > [!CAUTION]
 > **On FireBeetle 2 this is a board-killer in the most natural wiring.** The
@@ -339,10 +339,10 @@ So the lead carries **signal, ground, and 5.0-7.5 V out**.
 > `docs/pin_map.md` is explicit: *"The middle column is `3V3`, not 5 V."* It also
 > notes that this plug-and-go ergonomics is *"one of the reasons the FireBeetle 2
 > was chosen"* -- which is exactly what makes the mistake easy. Push the ESC's
-> 3-pin lead onto row 48 and the BEC's 5-7.5 V lands on the 3.3 V plane.
+> 3-pin wire onto row 48 and the BEC's 5-7.5 V lands on the 3.3 V plane.
 >
 > **Wire signal and ground only.** Cut, tape back, or pull the pin on the ESC
-> lead's centre conductor. This is the same rule the pin map already states for
+> wire's centre conductor. This is the same rule the pin map already states for
 > servos -- *"Power servos and ESCs from a separate BEC, and bring only the signal
 > wire and a common ground to this field"* -- with the direction reversed: here
 > the ESC **is** the separate BEC, and it must not be allowed to feed back.
@@ -365,20 +365,20 @@ only there too**.
 
 ### 5.5 Motor wiring, polarity, and the two ways to reverse direction
 
-Motor leads are **not** polarised: *"The two output wires of the ESC can be
+Motor wires are **not** polarised: *"The two output wires of the ESC can be
 connected to either of two wires of the motor at will."* If the dome turns the
 wrong way, there are two fixes and they are equivalent -- *"the two motor wires
 can be interchanged or change the direction of motor rotation can be adjusted via
 the APP."*
 
-**Battery leads are polarised and unprotected:** *"If the ESC is connected
+**Battery wires are polarised and unprotected:** *"If the ESC is connected
 reversely, your ESC will be damaged."* No reverse-polarity protection is claimed
 anywhere in the three vendor documents.
 
 > [!NOTE]
 > **There is a third place direction can be flipped, and it is ours.** A builder
 > can also swap `dome_min_pulse_us` and `dome_max_pulse_us` on the Dome page.
-> Three independent inversion points -- motor leads, the app's Motor Rotation
+> Three independent inversion points -- motor wires, the app's Motor Rotation
 > setting, and our pulse trim -- is two too many to reason about later. **Pick the
 > app setting**, record it, and leave the other two alone; our trim exists for
 > endpoint calibration (Section 7.4), not for direction.
@@ -779,8 +779,8 @@ under-voltage protection"*. The FAQ turns those into the messages the app shows:
 | Error | ISDT's stated remedy | What it means for a droid |
 | --- | --- | --- |
 | **Receiver Waiting** | *"Center throttle for 2 seconds; recalibrate if needed"* | The arming hold has not happened (Section 7.3) |
-| **Receiver Lost** | *"Check connections; verify PWM signal is 1ms-2ms"* | Signal absent or out of range -- a dead GPIO, a broken lead, or a controller that has not booted |
-| **Motor Not Connected** | *"Check motor connections"* | A dome motor lead has come off |
+| **Receiver Lost** | *"Check connections; verify PWM signal is 1ms-2ms"* | Signal absent or out of range -- a dead GPIO, a broken wire, or a controller that has not booted |
+| **Motor Not Connected** | *"Check motor connections"* | A dome motor wire has come off |
 | **Over Current** | *"Check for shorts or excessive load"* | Effectively unreachable on a dome load (Section 5.3) |
 | **Battery Over/Under Voltage** | *"Use appropriate battery"* | The 2-3S window (Section 5.2) |
 | **Temperature High** | *"Wait for cooling"* | 90 C external is the stated ceiling |
