@@ -2,8 +2,11 @@
 
 Status: accepted (2026-09-08, issue #286, second pass). Amends
 [ADR 0041](0041-servo-outputs-are-addressed-rows-with-a-directional-endpoint-pair.md)
-in three named places; everything else in it stands. Describes the **target**
-model. Nothing in it ships today.
+in three named places; everything else in it stands. The **Motion Profile**
+ships (#414): time to full throw, time to get up to speed and the ease shape
+every move, and a builder sets all three on each Output's Servos row. **Boot
+behaviour** is still the target model: it is stored, and nothing acts on it at
+power-up yet.
 
 ## Context
 
