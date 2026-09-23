@@ -49,7 +49,7 @@ const rootTokens = () => {
   return tokens;
 };
 
-// A droid whose Outputs are named nothing like the bench's, wired so one lead
+// A droid whose Outputs are named nothing like the bench's, wired so one wire
 // carries a light and a Part sits on it.
 export const droid = () => ({
   config: {

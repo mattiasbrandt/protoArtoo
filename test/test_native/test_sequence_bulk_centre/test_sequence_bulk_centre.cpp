@@ -92,7 +92,7 @@ void test_a_row_on_a_channel_that_is_not_a_servo_is_not_driven() {
 // -----------------------------------------------------------------------------
 
 // A light has no centre to go back to. The row's own record of what is on the
-// end of the lead is what says so.
+// end of the wire is what says so.
 void test_a_row_recorded_as_an_led_strip_has_nothing_to_centre() {
     ServoOutputRow row = servoRow(LEDC_CH_AUX2, 1500, 800);
     TEST_ASSERT_TRUE(sequenceBulkCentreHasTravel(row));
@@ -102,7 +102,7 @@ void test_a_row_recorded_as_an_led_strip_has_nothing_to_centre() {
 }
 
 // A row nobody has said anything about is not a light: an unstated component
-// gets the cautious band, never an assumption that the lead does not move.
+// gets the cautious band, never an assumption that the wire does not move.
 void test_a_row_with_no_component_stated_still_has_travel() {
     ServoOutputRow row = servoRow(LEDC_CH_AUX2, 1500, 800);
     row.component = SERVO_COMP_NONE;

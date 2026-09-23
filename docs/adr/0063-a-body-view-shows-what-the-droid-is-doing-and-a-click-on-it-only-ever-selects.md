@@ -135,7 +135,7 @@ of color on this surface.
   would show two kinds of intent and ask the builder to keep track.
 - **Motion staying on the tables**, where #318's per-row drive and **Find by
   Moving** already live. Rejected: the builder is standing at the droid holding a
-  lead, and a trip to a table and back is what the picture exists to save.
+  wire, and a trip to a table and back is what the picture exists to save.
 - **Starting Find by Moving from the drawing.** Attractive — it would put the
   discovery run where the builder stands. Not taken here: ADR 0050 placed that run
   on an unwired **Parts** row on purpose, and moving it is that ticket's to
@@ -182,7 +182,7 @@ of color on this surface.
   is nothing there. The gap belongs to #301 and #333.
 - **`dup` is not this ticket's and no longer exists to decide.** ADR 0050 made a
   Part driveable by at most one **Output**, so the reference's duplicate-mapping
-  state has no counterpart here; two Parts on one Output is a shared lead and is
+  state has no counterpart here; two Parts on one Output is a shared wire and is
   legal.
 - **#289 records the wrong renderer owner**, in its body and again in its
   resolution — *"#296 owns the renderer"*, where #296's own body hands rendering

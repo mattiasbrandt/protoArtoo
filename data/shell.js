@@ -49,7 +49,7 @@
     { page: "servo", doc: "/servo.html", icon: "robot-outline", name: "Servos", aliases: ["servos"] },
     { page: "parts", doc: "/parts.html", icon: "puzzle-outline", name: "Parts", aliases: [] },
     // Wiring sits beside Parts in Configure and answers the neighbouring
-    // question - where does this lead go (CONTEXT.md "Wiring"). The member row
+    // question - where does this wire go (CONTEXT.md "Wiring"). The member row
     // in the Configure group below has been waiting for this one since #288.
     { page: "wiring", doc: "/wiring.html", icon: "connection", name: "Wiring", aliases: [] },
     // Every light on the droid: the LED strip, the dome's lights and the body

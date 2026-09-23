@@ -31,11 +31,11 @@ the patch releases, whose notes live on their own GitHub Release.
   light is lit by the dome controller, and from here you can ask it for a mode
   and a color - the same ones a sequence sends - and the page says what it asked
   for rather than what the dome then does. A body light says what lights it: put
-  an LED strip on a lead in Wiring and the part on that lead reads on, off or
+  an LED strip on a wire in Wiring and the part on that wire reads on, off or
   flash, with brightness, and the strip's length beside it. A light you have not
   fitted still shows, so you can choreograph before you wire. The LED strip left
   Configuration, and an LED strip is now one kind of light protoArtoo can put on
-  a lead rather than a thing of its own.
+  a wire rather than a thing of its own.
 - **Your droid, drawn as R2.** The top of Parts is now a line drawing of your
   droid in one card, with Front, Rear and Dome (Top) you switch between by
   their names. Every door and panel sits where it really is, and shows what the
@@ -156,9 +156,9 @@ the patch releases, whose notes live on their own GitHub Release.
   `– not wired –` where nothing does yet. Pick an output to wire a part. A part
   is only ever on one output, so picking another moves it, and the page asks
   first: it names the part, the output it leaves and what that output keeps.
-  Two parts on one lead, like a pair of doors, both read as driven.
+  Two parts on one wire, like a pair of doors, both read as driven.
 - **See what every output drives, and where it is told to be.** Servos has
-  one row for every output on the controller, in the order the leads plug in. Each row names every part on that output, so a lead split
+  one row for every output on the controller, in the order the wires plug in. Each row names every part on that output, so a wire split
   to two doors names both. Above it, a count of how many outputs are driving
   parts, wired but switched off, or driving nothing. A bar shows where the
   controller is driving each servo right now, and a tick shows where the move
@@ -234,7 +234,7 @@ the patch releases, whose notes live on their own GitHub Release.
 - **The screen names your board, not somebody else's.** Serial links, the
   refusals on Sound and Foot Drive, and `GET /api/serial` no longer say "S1",
   "S2" or "S3" unless that is what your board actually prints. The Artoo board
-  prints those; a FireBeetle 2 prints GPIO numbers, and now says so. Which lead
+  prints those; a FireBeetle 2 prints GPIO numbers, and now says so. Which wire
   a signal is on stays Wiring's answer, drawn from the board you are running.
 - **"Controller" is the Body Controller.** Once a droid has a dome controller,
   a radio receiver and a wheel controller, a bare "controller" named four

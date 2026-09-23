@@ -60,7 +60,7 @@ uint8_t configCacheServoOutputCount();
 // Part list, a Motion Profile and a boot behaviour on a Core 1 frame to get it.
 //
 // An Output Address, not an index: an index is a storage slot, while the address
-// is where the lead plugs in, and rows past the five this controller ships with
+// is where the wire plugs in, and rows past the five this controller ships with
 // are an expander's to address in whatever order they land.
 
 // The pulse width this output will actually be driven to, bounded by what the

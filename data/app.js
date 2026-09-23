@@ -100,7 +100,7 @@
   // called - what its board prints beside the pin, ARM3 on the Artoo PCB, GPIO 4
   // on the FireBeetle 2 - is the firmware's answer, read from GET /api/config
   // (every components{} entry carrying an `address`, in its order), and this
-  // page knows no Output of its own (ADR 0033 Amendment 2026-09-19). They lead
+  // page knows no Output of its own (ADR 0033 Amendment 2026-09-19). They wire
   // the card, as the firmware lists them, once that answer has arrived.
   let outputLabels = [];
   const SUBSYSTEM_LABELS = [

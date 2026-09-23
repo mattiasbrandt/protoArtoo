@@ -7,7 +7,7 @@
 // what order the plates come in are the operator's to look at, and they are not
 // here.
 //
-//   - THIS PAGE NAMES NO OUTPUT. Where a lead plugs in is Wiring's answer
+//   - THIS PAGE NAMES NO OUTPUT. Where a wire plugs in is Wiring's answer
 //     (CONTEXT.md "Lights", ADR 0067). The page reads the Outputs - it has to,
 //     to know what lights a Part - so it is one line of code away from printing
 //     one, and three iterations of this surface were rejected for doing exactly
@@ -47,7 +47,7 @@ test("Lights names no Output the firmware reported, and no pin, label or address
   }
 
   // And it is drawing the lights, so the absence above is a rule rather than an
-  // empty page: the Part on the lit lead knows what lights it.
+  // empty page: the Part on the lit wire knows what lights it.
   assert.match(shown, /Data Panel/);
   assert.match(shown, /LED STRIP|LED strip/);
 });
