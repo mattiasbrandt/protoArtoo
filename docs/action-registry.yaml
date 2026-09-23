@@ -256,7 +256,7 @@ entries:
   executor: failsafeTrigger
 - name: drive.config.speed-limit
   display_name: Speed Limit Setting
-  description: The most the controller ever sends the wheels. Saved on the droid.
+  description: The most the Body Controller ever sends the wheels. Saved on the droid.
   domain: drive
   type: config
   marcduino_cmd: null
@@ -1970,7 +1970,7 @@ entries:
   executor: audioTracksApply
 - name: sound.config.boot-complete-track
   display_name: Boot Complete System Track
-  description: The track played once the controller is up. Not the same as $B.
+  description: The track played once the Body Controller is up. Not the same as $B.
   domain: sound
   type: config
   marcduino_cmd: null
@@ -2772,7 +2772,7 @@ entries:
   executor: commandedSetWebControl
 - name: system.action.reboot
   display_name: Reboot
-  description: Restart the controller.
+  description: Restart the Body Controller.
   domain: system
   type: action
   marcduino_cmd: null
@@ -2931,7 +2931,7 @@ entries:
   executor: none
 - name: system.event.boot-complete
   display_name: Boot Complete
-  description: The controller is up. The Boot Complete sound may play.
+  description: The Body Controller is up. The Boot Complete sound may play.
   domain: system
   type: event
   marcduino_cmd: null
@@ -3650,7 +3650,7 @@ entries:
   executor: esp_core_dump_image_erase
 - name: system.api.get-admission-trace
   display_name: Get Admission Trace
-  description: Why the controller turned requests away lately. Only in a tracing build.
+  description: Why the Body Controller turned requests away lately. Only in a tracing build.
   domain: system
   type: action
   build_flag: PA_ADMISSION_TRACE
