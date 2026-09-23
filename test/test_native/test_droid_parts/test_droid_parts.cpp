@@ -18,7 +18,6 @@
 #include <unity.h>
 
 #include "droid_part_availability.h"
-#include "droid_part_control.h"
 #include "droid_parts.h"
 #include "console_record.h"
 
@@ -35,6 +34,17 @@ ServoOutputTable oneEmptyOutput() {
     servoOutputRowDefaults(&table.rows[0], SERVO_DRIVER_LEDC, LEDC_CH_ARM1,
                            SERVO_COMP_MG996R);
     return table;
+}
+
+// The Availability Reason the way the runtime asks for it: the caller searches
+// the rows (dispatchBodyMove() in src/tasks/sequence_dispatcher.cpp, one row at
+// a time from the cache) and droidPartAvailabilityFromRow() gives the verdict.
+ConsoleReason reasonFor(const ServoOutputTable& table, const char* partId) {
+    bool claimed = false;
+    for (uint8_t row = 0; row < table.count; ++row) {
+        claimed = claimed || servoOutputDrivesPart(table.rows[row], partId);
+    }
+    return droidPartAvailabilityFromRow(partId, claimed);
 }
 
 }  // namespace
@@ -126,28 +136,12 @@ void test_every_id_in_the_table_is_reachable_by_index() {
     TEST_ASSERT_EQUAL_STRING("", droidPartIdAt(DROID_PART_COUNT));
 }
 
-// --- the control paths the firmware declares ---------------------------------
-
-void test_the_catalog_spelling_is_the_one_the_firmware_answers_with() {
-    // The generator validates the catalog's `control:` against these tokens, so
-    // a synonym here would silently start refusing a catalog that is correct.
-    TEST_ASSERT_EQUAL_STRING("body-ledc", droidPartControlToken(DROID_PART_CONTROL_BODY_LEDC));
-    TEST_ASSERT_EQUAL_STRING("dome-link", droidPartControlToken(DROID_PART_CONTROL_DOME_LINK));
-    TEST_ASSERT_EQUAL_STRING("none", droidPartControlToken(DROID_PART_CONTROL_NONE));
-
-    DroidPartControl control = DROID_PART_CONTROL_NONE;
-    TEST_ASSERT_TRUE(droidPartControlFromToken("dome-link", &control));
-    TEST_ASSERT_EQUAL_INT(DROID_PART_CONTROL_DOME_LINK, control);
-    TEST_ASSERT_FALSE(droidPartControlFromToken("i2c-expander", &control));
-    TEST_ASSERT_EQUAL_INT(DROID_PART_CONTROL_DOME_LINK, control);  // left alone
-}
-
 // --- driveable here ----------------------------------------------------------
 
 void test_a_known_part_no_output_claims_reports_part_not_assigned() {
     const ServoOutputTable table = oneEmptyOutput();
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "utilUp"));
+                          reasonFor(table, "utilUp"));
     TEST_ASSERT_EQUAL_STRING("part-not-assigned",
                              consoleReasonString(CONSOLE_REASON_PART_NOT_ASSIGNED));
 }
@@ -159,11 +153,11 @@ void test_a_part_the_body_never_drives_is_unassigned_not_unknown() {
     // builder can act on. Before #358 all three answered "not a Part at all".
     const ServoOutputTable table = oneEmptyOutput();
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "pie1"));
+                          reasonFor(table, "pie1"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "psiFront"));
+                          reasonFor(table, "psiFront"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "doorFL"));
+                          reasonFor(table, "doorFL"));
 }
 
 void test_a_breadpan_door_can_be_recorded_on_the_output_that_moves_it() {
@@ -176,7 +170,7 @@ void test_a_breadpan_door_can_be_recorded_on_the_output_that_moves_it() {
     TEST_ASSERT_EQUAL_UINT8(1, servoOutputPartCount(table.rows[0]));
     TEST_ASSERT_EQUAL_STRING("doorFL", servoOutputPartAt(table.rows[0], 0));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE,
-                          droidPartAvailabilityReason(table, "doorFL"));
+                          reasonFor(table, "doorFL"));
 }
 
 void test_wiring_the_arm_later_is_what_changes_the_answer() {
@@ -185,16 +179,16 @@ void test_wiring_the_arm_later_is_what_changes_the_answer() {
     // nothing re-authored.
     ServoOutputTable table = oneEmptyOutput();
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "utilUp"));
+                          reasonFor(table, "utilUp"));
 
     TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[0], "utilUp"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE,
-                          droidPartAvailabilityReason(table, "utilUp"));
+                          reasonFor(table, "utilUp"));
 
     // And back again when the wire moves to something else.
     servoOutputRemovePartAt(&table.rows[0], 0);
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "utilUp"));
+                          reasonFor(table, "utilUp"));
 }
 
 void test_a_ganged_lead_answers_for_every_part_it_moves() {
@@ -202,10 +196,10 @@ void test_a_ganged_lead_answers_for_every_part_it_moves() {
     TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[0], "other3"));
     TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[0], "other4"));
 
-    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE, droidPartAvailabilityReason(table, "other3"));
-    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE, droidPartAvailabilityReason(table, "other4"));
+    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE, reasonFor(table, "other3"));
+    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE, reasonFor(table, "other4"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "other5"));
+                          reasonFor(table, "other5"));
 }
 
 void test_an_id_this_build_does_not_model_is_not_reported_as_unwired() {
@@ -215,21 +209,11 @@ void test_an_id_this_build_does_not_model_is_not_reported_as_unwired() {
     // not widen it to anything a builder types.
     const ServoOutputTable table = oneEmptyOutput();
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT,
-                          droidPartAvailabilityReason(table, "armOfTheFuture"));
+                          reasonFor(table, "armOfTheFuture"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT,
-                          droidPartAvailabilityReason(table, "other11"));
+                          reasonFor(table, "other11"));
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_UNKNOWN_ARGUMENT,
-                          droidPartAvailabilityReason(table, nullptr));
-}
-
-void test_a_stored_count_past_the_table_does_not_walk_off_the_end() {
-    ServoOutputTable table = oneEmptyOutput();
-    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[0], "utilLo"));
-    table.count = 250;  // a count no loader should have produced
-
-    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE, droidPartAvailabilityReason(table, "utilLo"));
-    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
-                          droidPartAvailabilityReason(table, "utilUp"));
+                          reasonFor(table, nullptr));
 }
 
 int main(int, char**) {
@@ -243,15 +227,12 @@ int main(int, char**) {
     RUN_TEST(test_the_vocabulary_refuses_what_is_not_an_id);
     RUN_TEST(test_every_id_in_the_table_is_reachable_by_index);
 
-    RUN_TEST(test_the_catalog_spelling_is_the_one_the_firmware_answers_with);
-
     RUN_TEST(test_a_known_part_no_output_claims_reports_part_not_assigned);
     RUN_TEST(test_a_part_the_body_never_drives_is_unassigned_not_unknown);
     RUN_TEST(test_a_breadpan_door_can_be_recorded_on_the_output_that_moves_it);
     RUN_TEST(test_wiring_the_arm_later_is_what_changes_the_answer);
     RUN_TEST(test_a_ganged_lead_answers_for_every_part_it_moves);
     RUN_TEST(test_an_id_this_build_does_not_model_is_not_reported_as_unwired);
-    RUN_TEST(test_a_stored_count_past_the_table_does_not_walk_off_the_end);
 
     return UNITY_END();
 }

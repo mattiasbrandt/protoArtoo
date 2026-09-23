@@ -14,24 +14,22 @@
 // refuses a `control:` token that is not one of them. Neither side keeps its
 // own copy of the list, which is the whole reason the list lives here.
 //
-// This file is an unguarded X-macro manifest, intentionally included
-// repeatedly. Define PA_PART_CONTROL(enumerator, yaml_token) before including
-// it. Adding #pragma once here breaks the mechanism: include/droid_part_control.h
-// includes it twice in one translation unit with two different macro
-// definitions - once for the enum, once for the token table - and the second
-// expansion would silently become a no-op.
+// This file is an unguarded X-macro manifest. Define
+// PA_PART_CONTROL(enumerator, yaml_token) before including it, and leave it
+// without #pragma once: a consumer expands it once per table it builds, and a
+// guard would silently turn every expansion after the first into a no-op.
 //
 // `yaml_token` is the spelling docs/droid-parts.yaml uses. It carries a hyphen,
 // so it is a string rather than a macro token. The mapping between the
 // catalog's vocabulary and the firmware's enum has exactly one home, and this
 // is it.
 //
-// Which half of that is live today (#375): these rows ARE consulted, by the
+// Which half of that is live today: these rows ARE consulted, by the
 // generator and the drift check, which read them as text and refuse a
-// `control:` token that is not among them. The C++ side built from them --
-// include/droid_part_control.h's enum and token functions -- is not; nothing
-// under src/ includes it. It is staged for C1a (#347), and that header carries
-// the same disclosure at the top.
+// `control:` token that is not among them. No C++ translation unit includes
+// this file. An enum and token functions were staged from it for C1a (#347),
+// which closed without a firmware consumer, and they were removed rather than
+// kept as a declaration nothing consults.
 
 #ifndef PA_PART_CONTROL
   #error "Define PA_PART_CONTROL before including this inventory"

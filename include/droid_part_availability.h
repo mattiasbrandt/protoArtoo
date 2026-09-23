@@ -15,14 +15,14 @@
 // re-authored - which only holds if the answer is recomputed every time it is
 // needed, from the table as it stands.
 //
-// Pure: no NVS, no FreeRTOS, no Arduino String. It reads a table it is handed.
+// Pure: no NVS, no FreeRTOS, no Arduino String. The caller does the search.
 // =============================================================================
 
 #pragma once
 
 #include "console_module.h"     // ConsoleReason - the Availability Reason set
 #include "droid_parts.h"        // the compiled id vocabulary
-#include "servo_output_row.h"   // ServoOutputTable - this droid's own wiring
+#include "servo_output_row.h"   // SERVO_OUTPUT_PART_ID_MAX, for the check below
 
 // A generated id that cannot be stored against an Output could never be
 // claimed by one, so it would report part-not-assigned forever. The generator
@@ -36,11 +36,10 @@ static_assert(DROID_PART_ID_MAX_LEN <= SERVO_OUTPUT_PART_ID_MAX,
 // The Availability Reason for a Part, for a caller that has already searched the
 // Servo Output table itself.
 //
-// It exists because the live table is handed out ONE ROW AT A TIME
-// (configCacheReadServoOutput(): "a task that wants one output should not pay
-// for twenty-four"), so a runtime caller cannot hand the whole table to the
-// function below. The verdict lives here and that function calls it, so there is
-// one policy rather than two that happen to agree today.
+// It takes the search's result rather than the table because the live table is
+// handed out ONE ROW AT A TIME (configCacheReadServoOutput(): "a task that wants
+// one output should not pay for twenty-four"), so no runtime caller holds the
+// whole table to hand over.
 //
 // `anOutputClaimsIt` is the search's result: did any row on this droid record
 // this Part.
@@ -62,26 +61,4 @@ inline ConsoleReason droidPartAvailabilityFromRow(const char* partId,
         return CONSOLE_REASON_UNKNOWN_ARGUMENT;
     }
     return anOutputClaimsIt ? CONSOLE_REASON_NONE : CONSOLE_REASON_PART_NOT_ASSIGNED;
-}
-
-// -----------------------------------------------------------------------------
-// droidPartAvailabilityReason()
-// The Availability Reason this droid reports for a Part, right now, for a caller
-// holding the whole table. Same three answers as above, which it defers to.
-// -----------------------------------------------------------------------------
-inline ConsoleReason droidPartAvailabilityReason(const ServoOutputTable& table,
-                                                 const char* partId) {
-    if (!droidPartIdIsKnown(partId)) {
-        return droidPartAvailabilityFromRow(partId, false);
-    }
-    // Clamped the way every other reader of this table clamps it: a stored
-    // count that outran the row array must not walk off the end of it.
-    const uint8_t count =
-        (table.count <= SERVO_OUTPUT_ROW_MAX) ? table.count : SERVO_OUTPUT_ROW_MAX;
-    for (uint8_t row = 0; row < count; ++row) {
-        if (servoOutputDrivesPart(table.rows[row], partId)) {
-            return droidPartAvailabilityFromRow(partId, true);
-        }
-    }
-    return droidPartAvailabilityFromRow(partId, false);
 }

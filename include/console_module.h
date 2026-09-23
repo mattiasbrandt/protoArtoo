@@ -108,7 +108,7 @@ typedef enum {
     // wired yet is legal, and the same saved step starts working the moment an
     // Output records the Part, with no re-authoring - so the question is asked
     // of the Servo Output table at execution, every time
-    // (droidPartAvailabilityReason(), include/droid_part_availability.h).
+    // (droidPartAvailabilityFromRow(), include/droid_part_availability.h).
     CONSOLE_REASON_PART_NOT_ASSIGNED = 17,
 } ConsoleReason;
 

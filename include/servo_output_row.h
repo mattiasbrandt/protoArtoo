@@ -467,7 +467,7 @@ inline bool servoOutputChannelIsValid(ServoOutputDriver driver, uint8_t channel)
 // id no build models is refused here rather than stored, so it is reported by
 // whichever door was asked -- servoOutputAddPart() returns false and
 // servoOutputRowNormalise() drops the slot and raises SERVO_FIELD_PARTS -- and
-// never reaches droidPartAvailabilityReason() to be answered as if it were
+// never reaches droidPartAvailabilityFromRow() to be answered as if it were
 // unwired hardware.
 //
 // Shape is checked first and it is not decoration: it bounds the string before
