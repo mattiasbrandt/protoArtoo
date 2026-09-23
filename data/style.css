@@ -2943,7 +2943,7 @@ body.sleep-mode-active {
   color: var(--text);
 }
 
-/* What is on an Output's lead, after its name (#412): the Part names Parts
+/* What is on an Output's wire, after its name (#412): the Part names Parts
    shows, quieter than the board's label, and absent when nothing is assigned. */
 .output-parts {
   font-weight: 400;
@@ -8506,7 +8506,7 @@ button.output-setting-head:focus-visible {
    Wiring's Outputs, drawn as the board they sit on (operator, 2026-09-19 on
    #411: the section "looks to basic and boring"). Each plate is one Output:
    the name the board prints beside it in the mono of a silkscreen, the
-   three-pin header its lead plugs onto, and a stripe along its top in the
+   three-pin header its wire plugs onto, and a stripe along its top in the
    color its wire is drawn in on the sheet above - the same --wire-* token,
    picked by the Output's place in the firmware's answer (data-wire, set by
    data/output_settings.js), so a plate and its line are found by eye. The stripe names the wire and is
