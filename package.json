@@ -1,7 +1,7 @@
 {
   "name": "protoartoo",
   "version": "1.0.0",
-  "description": "<p align=\"center\">   <img src=\"data/r2d2body.svg\" alt=\"protoArtoo logo\" width=\"96\" height=\"96\"> </p>",
+  "description": "Open-source ESP32 body controller firmware for hoverboard-driven MK4 astromech droids.",
   "main": "index.js",
   "directories": {
     "doc": "docs",

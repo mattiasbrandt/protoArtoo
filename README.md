@@ -1,9 +1,5 @@
 # protoArtoo
 
-<p align="center">
-  <img src="data/r2d2body.svg" alt="protoArtoo logo" width="96" height="96">
-</p>
-
 **Open-source ESP32 body controller firmware for hoverboard-driven MK4 astromech droids.**
 
 > An open-source firmware alternative for the [Artoo Controller PCB](https://artoo.uk).
