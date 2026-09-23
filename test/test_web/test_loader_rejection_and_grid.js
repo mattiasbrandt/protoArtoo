@@ -17,6 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
+import { outputsModule } from "./helpers/fake_droid.js";
 
 const OK_LOGS = "boot: ready\nwifi: connected";
 const OK_CONFIG = { system: { logLevel: 2 } };
@@ -35,9 +36,13 @@ const OK_OPERATIONS = {
 // Brings the home dashboard up with a controllable transport and status stream.
 const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
   const stream = { subscriber: null };
-  const env = loadPageModule("app.js", {
+  let env = null;
+  env = loadPageModule("app.js", {
     respond,
     overrides: {
+      // The log level's config read goes through the shipped data/outputs.js
+      // the Dashboard page loads first (#415).
+      PAOutputs: outputsModule(() => env.window.PAApi),
       PAStatusStream: {
         isSupported: () => sseSupported,
         getLastStatus: () => null,

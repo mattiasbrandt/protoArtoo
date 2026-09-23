@@ -18,7 +18,9 @@
 //
 // An Output is called by what its board prints beside its pin, and that label
 // is also the word POST /api/servo moves it by (ADR 0033 Amendment
-// 2026-09-19): servoWord() hands it over exactly as the droid gave it.
+// 2026-09-19): servoWord() hands it over exactly as the droid gave it. What an
+// Output is - its rows, its name, which Part it carries - is data/outputs.js's
+// answer (#415); this file asks it and works none of it out again.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -63,57 +65,26 @@
     return part.shorthand ? `${part.name} (${part.shorthand})` : part.name;
   };
   const listParts = (ids) => ids.map(partLabel).join(", ");
-  const outputLabel = (output) => output.name || output.address;
 
   // The word POST /api/servo moves an Output by: the board's own label for it,
-  // exactly as GET /api/servo/outputs gave it - ARM3 on the Artoo PCB, GPIO 49
-  // on the FireBeetle 2, the space included (ADR 0033 Amendment 2026-09-19).
+  // exactly as the droid gave it (data/outputs.js `label`) - ARM3 on the Artoo
+  // PCB, GPIO 49 on the FireBeetle 2, the space included (ADR 0033 Amendment
+  // 2026-09-19).
   // Never folded or rewritten: the label is not an id to be derived from, and a
   // board whose label is not the old protoArtoo word would be sent a word it
   // refuses. An Output no board labels - an expander's row - has none, and the
   // route cannot move it.
-  const servoWord = (output) => output.name;
+  const servoWord = (output) => output.label;
   const hasServoWord = (output) => servoWord(output) !== "";
 
   const optionText = (output) =>
-    `${outputLabel(output)} · ${output.parts.length ? listParts(output.parts) : "drives nothing"}`;
-
-  // The Output a Part is on. The firmware keeps a Part on at most one, so the
-  // first answer is the only answer.
-  const outputOf = (outputs, partId) => outputs.find((output) => output.parts.includes(partId)) || null;
+    `${output.name} · ${output.parts.length ? listParts(output.parts) : "drives nothing"}`;
 
   // A row whose every Part is a light carries no travel and no release: a light
   // has neither, and a zero or an empty bar would still read as a promise about
   // movement (data/droid_part_kind.js).
   const isLightRow = (output) =>
     output.parts.length > 0 && output.parts.every((id) => Boolean(kinds?.isLight(partById.get(id))));
-
-  // GET /api/servo/outputs, read into the shape both surfaces paint from.
-  const readOutputs = (answer) =>
-    answer.map((output) => ({
-      address: String(output.address),
-      name: typeof output.name === "string" ? output.name : "",
-      parts: Array.isArray(output.parts) ? output.parts.map(String) : [],
-      reported: "commandedUs" in output,
-      bandLoUs: Number(output.bandLoUs) || 0,
-      bandHiUs: Number(output.bandHiUs) || 0,
-      commandedUs: typeof output.commandedUs === "number" ? output.commandedUs : null,
-      targetUs: typeof output.targetUs === "number" ? output.targetUs : null,
-      // How many nudges have ended on this Output (#363); null from a firmware
-      // that does not say, which a run must refuse rather than wait on.
-      nudgesDone: typeof output.nudgesDone === "number" ? output.nudgesDone : null,
-      // What the calibration dial reads (#364). The three widths are the
-      // recorded positions, directional: openUs is whichever end the builder
-      // recorded as open, so nothing here sorts the pair.
-      component: typeof output.component === "string" ? output.component : "",
-      openUs: typeof output.openUs === "number" ? output.openUs : null,
-      centreUs: typeof output.centreUs === "number" ? output.centreUs : null,
-      closeUs: typeof output.closeUs === "number" ? output.closeUs : null,
-      calibrated: output.calibrated === true,
-      held: output.held === true,
-      // Why there is no pulse, meaningful only while commandedUs is null.
-      limp: typeof output.limp === "string" ? output.limp : "off",
-    }));
 
   // What putting a Part on `to` would do, read off the rows as the droid last
   // reported them. `from` is what the firmware needs told; the rest is what a
@@ -122,7 +93,7 @@
   // nothing from anywhere else, and putting an unwired Part on an Output takes
   // nothing from any Part already there.
   const moveFor = (outputs, partId, to) => {
-    const leaves = outputOf(outputs, partId);
+    const leaves = window.PAOutputs.forPart(partId, outputs);
     const arrives = outputs.find((output) => output.address === to) || null;
     return {
       part: partId,
@@ -141,8 +112,8 @@
   // button that agrees is the verb (r2d2-astromech-simulator v1.79.0; #347).
   const announcement = (move) => {
     const part = partLabel(move.part);
-    const from = outputLabel(move.leaves);
-    const to = outputLabel(move.arrives);
+    const from = move.leaves.name;
+    const to = move.arrives.name;
     const lines = [`${part} is on ${from}. Move it to ${to} and unwire it from ${from}?`];
     lines.push(move.keeps.length ? `${from} keeps driving ${listParts(move.keeps)}.` : `${from} will drive nothing.`);
     if (move.joins.length) {
@@ -182,7 +153,7 @@
           { movePart: move.part, movePartFrom: move.from, movePartTo: move.to },
           { timeoutMs: 4000 }
         );
-        say(move.arrives ? `${label} is on ${outputLabel(move.arrives)}.` : `${label} is not on any output now.`, "success");
+        say(move.arrives ? `${label} is on ${move.arrives.name}.` : `${label} is not on any output now.`, "success");
       } catch (error) {
         say(`${label} did not move: ${window.PAApi.messageFor(error)}`, "error");
       } finally {
@@ -251,13 +222,10 @@
     partById,
     partLabel,
     listParts,
-    outputLabel,
     servoWord,
     hasServoWord,
     optionText,
-    outputOf,
     isLightRow,
-    readOutputs,
     moveFor,
     announcement,
     mover,

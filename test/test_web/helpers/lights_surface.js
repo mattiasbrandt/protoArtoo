@@ -22,6 +22,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
+import { servoRow, configOutputs, applyOutputSave } from "./fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
@@ -32,8 +33,7 @@ const SCRIPTS = [
   "droid_part_kind.js",
   "droid_build.js",
   "seq_protocol_check.js",
-  "apply_timing.js",
-  "output_settings.js",
+  "outputs.js",
   "lights.js",
 ];
 
@@ -50,28 +50,33 @@ const rootTokens = () => {
 };
 
 // A droid whose Outputs are named nothing like the bench's, wired so one wire
-// carries a light and a Part sits on it. The ids, labels, addresses and field
-// names follow no pattern on purpose: a page that derived any of them from
-// another would pass against the real firmware's names and still be wrong.
-export const droid = () => ({
-  config: {
-    components: {
-      w7: { enabled: true, label: "GPIO 49", address: "ledc:7", enabledField: "wiredO7", typeField: "servoO7", type: "mg996r" },
-      w9: { enabled: true, label: "ARM4", address: "ledc:9", lightCapable: true, ledCountField: "ledsO9", ledCount: 16, enabledField: "wiredO9", typeField: "servoO9", type: "rgb" },
-      w4: { enabled: false, label: "GPIO 5", address: "ledc:4", lightCapable: true, ledCountField: "ledsO4", ledCount: 1, enabledField: "wiredO4", typeField: "servoO4", type: "none" },
-      domeEsc: { enabled: true, label: "DOME" },
+// carries a light and a Part sits on it. Its Outputs come from the one fake
+// droid (helpers/fake_droid.js), whose ids and save fields follow no pattern
+// tied to a label or an address.
+//
+// `idOf(address)` is the Output id GET /api/config names an Output by, which
+// is how the firmware keys its own status frame.
+export const droid = () => {
+  const outputs = [
+    servoRow("ledc:7", "GPIO 49", { parts: ["utilUp"] }),
+    servoRow("ledc:9", "ARM4", { parts: ["dataPanel"], component: "rgb" }),
+    servoRow("ledc:4", "GPIO 5", { component: "none" }),
+  ];
+  const components = configOutputs(outputs, {
+    "ledc:9": { lightCapable: true, ledCount: 16, type: "rgb" },
+    "ledc:4": { lightCapable: true, enabled: false, type: "none" },
+  });
+  const idOf = (address) => Object.keys(components).find((id) => components[id].address === address);
+  return {
+    config: {
+      components: { ...components, domeEsc: { enabled: true, label: "DOME" } },
+      droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: ["dataPanel", "psiFront"] },
     },
-    droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: ["dataPanel", "psiFront"] },
-  },
-  outputs: [
-    { address: "ledc:7", name: "GPIO 49", parts: ["utilUp"] },
-    { address: "ledc:9", name: "ARM4", parts: ["dataPanel"] },
-    { address: "ledc:4", name: "GPIO 5", parts: [] },
-  ],
-  // Keyed by the Output id GET /api/config names, which is how the firmware
-  // keys its own status frame.
-  status: { lights: { w9: { r: 0, g: 90, b: 255, effect: "solid", available: true } } },
-});
+    outputs,
+    idOf,
+    status: { lights: { [idOf("ledc:9")]: { r: 0, g: 90, b: 255, effect: "solid", available: true } } },
+  };
+};
 
 // The same droid with a SECOND lit wire, and a Part on it: what #413 exists
 // for, and the shape a page matching a reading to a wire by position gets
@@ -79,12 +84,13 @@ export const droid = () => ({
 // against its own.
 export const droidWithTwoLitWires = () => {
   const answer = droid();
-  answer.config.components.w4.enabled = true;
-  answer.config.components.w4.type = "rgb";
-  answer.config.components.w4.ledCount = 4;
+  const second = answer.config.components[answer.idOf("ledc:4")];
+  second.enabled = true;
+  second.type = "rgb";
+  second.ledCount = 4;
   answer.outputs[2].parts = ["cbi"];
   answer.config.droidBuild.fitted.push("cbi");
-  answer.status.lights.w4 = { r: 255, g: 0, b: 0, effect: "blink", available: true };
+  answer.status.lights[answer.idOf("ledc:4")] = { r: 255, g: 0, b: 0, effect: "blink", available: true };
   return answer;
 };
 
@@ -131,6 +137,7 @@ export const boot = ({ answer = droid() } = {}) => {
       },
       postForm: async (path, body) => {
         posts.push({ path, body });
+        if (path === "/api/config") applyOutputSave(answer.config.components, body);
         return { ok: true, data: answer.config };
       },
     },
@@ -189,6 +196,7 @@ export const boot = ({ answer = droid() } = {}) => {
   return {
     parsed,
     posts,
+    answer,
     window: windowMock,
     settle,
     // Everything the surface registered with the bootstrap, as it runs them.

@@ -1,15 +1,18 @@
 // =============================================================================
 // test/test_web/test_output_settings.js
 //
-// The Outputs (#369, data/output_settings.js): which are in use and what each
-// carries - a servo, or a light - set on Wiring; which servo model, set on
-// Servos. One answer drawn on two surfaces, run here as the browser runs it -
-// the shared module, Wiring's own mount (data/wiring_outputs.js) and a Servos
-// host - on a real node tree.
+// The Outputs' plates (#369, data/output_settings.js): which are in use and
+// what each carries - a servo, or a light - set on Wiring; which servo model,
+// set on Servos. One answer drawn on two surfaces, run here as the browser runs
+// it - data/outputs.js holding the droid's answer (#415), the plates file
+// drawing both views of it - on a real node tree, against the one fake droid
+// (helpers/fake_droid.js).
 //
 // Three invariants earn their place:
 //   - one answer, two views: what Wiring changes, Servos shows, and the save
-//     carries every output's fields as Configuration's rows always did;
+//     carries the field the firmware named for what changed and nothing a
+//     builder did not touch, so a save from one surface cannot reset what the
+//     other set;
 //   - each wire is its own answer (#413, ADR 0067): a droid may have several
 //     lit Parts, so giving one Output a Light Type must NOT take it off
 //     another, and the save must carry no droid-wide light field at all. This
@@ -27,32 +30,32 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDocument } from "./helpers/mini_dom.js";
+import { servoRow, configOutputs, applyOutputSave } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 
-// The Outputs as GET /api/config reports them (src/web/api_config.cpp
-// CONFIG_OUTPUTS): the page draws one plate per entry that carries an address
-// and saves it under the fields the entry names.
-const OUTPUT_FACTS = {
-  arm1: { label: "ARM1", address: "ledc:0", enabledField: "enableArm1", typeField: "arm1Type" },
-  arm2: { label: "ARM2", address: "ledc:1", enabledField: "enableArm2", typeField: "arm2Type" },
-  aux1: { label: "ARM3", address: "ledc:3", lightCapable: true, enabledField: "enableAux1", typeField: "aux1Type", ledCountField: "aux1LedCount" },
-  aux2: { label: "ARM4", address: "ledc:4", lightCapable: true, enabledField: "enableAux2", typeField: "aux2Type", ledCountField: "aux2LedCount" },
-  aux3: { label: "ARM5", address: "ledc:5", lightCapable: true, enabledField: "enableAux3", typeField: "aux3Type", ledCountField: "aux3LedCount" },
-};
-
-const CONFIG = () => ({
-  components: {
-    arm1: { ...OUTPUT_FACTS.arm1, enabled: true, type: "mg996r" },
-    arm2: { ...OUTPUT_FACTS.arm2, enabled: false, type: "mg90s" },
-    aux1: { ...OUTPUT_FACTS.aux1, enabled: false, type: "none" },
-    aux2: { ...OUTPUT_FACTS.aux2, enabled: true, type: "rgb" },
-    aux3: { ...OUTPUT_FACTS.aux3, enabled: true, type: "mg996r" },
-  },
+// An Artoo PCB: two Outputs that carry only a servo, three that may carry a
+// light. ARM2 and ARM3 are not wired; ARM4 carries the LED strip.
+const ROWS = () => [
+  servoRow("ledc:0", "ARM1"),
+  servoRow("ledc:1", "ARM2"),
+  servoRow("ledc:3", "ARM3"),
+  servoRow("ledc:4", "ARM4"),
+  servoRow("ledc:5", "ARM5"),
+];
+const CONFIG = (rows = ROWS()) => ({
+  components: configOutputs(rows, {
+    "ledc:1": { enabled: false, type: "mg90s" },
+    "ledc:3": { lightCapable: true, enabled: false, type: "none" },
+    "ledc:4": { lightCapable: true, type: "rgb" },
+    "ledc:5": { lightCapable: true },
+  }),
 });
 
-const boot = (config = CONFIG()) => {
+// Wiring's and Servos' hosts, each reading the droid the way the surface does
+// (data/outputs.js load()) and mounting its view of the plates.
+const boot = async ({ rows = ROWS(), config = CONFIG(rows) } = {}) => {
   const document = new MiniDocument();
   for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-feedback"]) {
     const node = document.createElement("div");
@@ -66,19 +69,15 @@ const boot = (config = CONFIG()) => {
     PAApi: {
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
-        assert.equal(path, "/api/config");
-        return { ok: true, data: config };
+        if (path === "/api/config") return { ok: true, data: structuredClone(config) };
+        assert.equal(path, "/api/servo/outputs");
+        return { ok: true, data: { outputs: structuredClone(rows) } };
       },
       postForm: async (path, form) => {
         posts.push({ path, form: { ...form } });
-        // Answer the way the firmware does: every Output it reports, as the
-        // form just set it.
-        for (const entry of Object.values(config.components)) {
-          if (!entry.enabledField) continue;
-          entry.enabled = form[entry.enabledField] === "true";
-          entry.type = form[entry.typeField];
-        }
-        return { ok: true, data: config };
+        // Answer the way the firmware does: the config it now holds.
+        applyOutputSave(config.components, form);
+        return { ok: true, data: structuredClone(config) };
       },
     },
     setTimeout: (fn) => {
@@ -87,56 +86,57 @@ const boot = (config = CONFIG()) => {
     },
     clearTimeout() {},
   };
-  const context = { window, document, console, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout };
+  const context = { window, document, console, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout, URLSearchParams };
   context.globalThis = context;
-  vm.runInNewContext(readFileSync(join(dataDir, "apply_timing.js"), "utf8"), context);
-  vm.runInNewContext(readFileSync(join(dataDir, "output_settings.js"), "utf8"), context);
-  vm.runInNewContext(readFileSync(join(dataDir, "wiring_outputs.js"), "utf8"), context);
+  for (const file of ["apply_timing.js", "outputs.js", "output_settings.js"]) {
+    vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
+  }
+  window.PAOutputSettings.mount("wired", {
+    body: document.getElementById("wiring-outputs-body"),
+    feedback: document.getElementById("wiring-outputs-feedback"),
+  });
   window.PAOutputSettings.mount("type", {
     body: document.getElementById("servo-types-body"),
     feedback: document.getElementById("servo-types-feedback"),
   });
+  await window.PAOutputs.load();
 
-  const plate = (host, output) =>
-    document.getElementById(host).querySelectorAll("[data-output]").find((node) => node.getAttribute("data-output") === output);
+  const plate = (host, address) =>
+    document.getElementById(host).querySelectorAll("[data-output]").find((node) => node.getAttribute("data-output") === address);
   return {
     posts,
-    settle: async () => {
-      for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-    },
+    config,
     // The debounce, fired by hand rather than waited for.
     flush: async () => {
       timers.splice(0).forEach((fn) => fn());
       for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
     },
-    wiring: (output) => plate("wiring-outputs-body", output),
+    wiring: (address) => plate("wiring-outputs-body", address),
     wiringPlates: () => document.getElementById("wiring-outputs-body").querySelectorAll("[data-output]"),
-    servos: (output) => plate("servo-types-body", output),
+    servos: (address) => plate("servo-types-body", address),
     // Wiring's in-use press is the plate's head button.
-    inUse: (output) => plate("wiring-outputs-body", output).querySelector("[aria-pressed]"),
+    inUse: (address) => plate("wiring-outputs-body", address).querySelector("[aria-pressed]"),
     option: (root, value) => root.querySelectorAll("[data-value]").find((node) => node.getAttribute("data-value") === value),
+    // The config field an Output's setting is saved under, read off the fake
+    // droid's own answer rather than restated.
+    field: (address, setting) => Object.values(config.components).find((entry) => entry.address === address)[setting],
   };
 };
 
-test("what Wiring marks in use, Servos shows at once, and the save carries every output", async () => {
-  const env = boot();
-  await env.settle();
-  assert.equal(env.servos("aux1").classList.contains("is-on"), false);
+test("what Wiring marks in use, Servos shows at once, and the save carries only what changed", async () => {
+  const env = await boot();
+  assert.equal(env.servos("ledc:3").classList.contains("is-on"), false);
 
-  env.inUse("aux1").fire("click", {});
-  assert.equal(env.inUse("aux1").getAttribute("aria-pressed"), "true", "Wiring shows the line in use");
-  assert.equal(env.servos("aux1").classList.contains("is-on"), true, "and Servos shows the same answer");
+  env.inUse("ledc:3").fire("click", {});
+  assert.equal(env.inUse("ledc:3").getAttribute("aria-pressed"), "true", "Wiring shows the line in use");
+  assert.equal(env.servos("ledc:3").classList.contains("is-on"), true, "and Servos shows the same answer");
 
   await env.flush();
   assert.equal(env.posts.length, 1);
-  const form = env.posts[0].form;
   assert.equal(env.posts[0].path, "/api/config");
-  assert.equal(form.enableAux1, "true");
-  // The fields Configuration's rows always sent, all of them, so a save from
-  // one surface cannot quietly reset what the other set.
-  assert.equal(form.enableArm1, "true");
-  assert.equal(form.arm2Type, "mg90s");
-  assert.equal(form.aux3Type, "mg996r");
+  assert.deepEqual(env.posts[0].form, { [env.field("ledc:3", "enabledField")]: "true" },
+    "the one field the firmware named for what the builder changed, and nothing else");
+  assert.equal(env.servos("ledc:3").classList.contains("is-on"), true, "the droid's answer keeps it in use");
 });
 
 // A droid may have several lit body Parts, each on its own wire (ADR 0067).
@@ -146,72 +146,33 @@ test("what Wiring marks in use, Servos shows at once, and the save carries every
 // is the invariant - and the save carries no droid-wide light field to
 // disagree with the types either.
 test("a second wire can carry a light without taking it off the first", async () => {
-  const env = boot();
-  await env.settle();
-  assert.equal(env.option(env.wiring("aux2"), "rgb").classList.contains("active"), true);
+  const env = await boot();
+  assert.equal(env.option(env.wiring("ledc:4"), "rgb").classList.contains("active"), true);
 
-  env.option(env.wiring("aux3"), "rgb").fire("click", {});
+  env.option(env.wiring("ledc:5"), "rgb").fire("click", {});
   await env.flush();
 
   const form = env.posts.at(-1).form;
-  assert.equal(form.aux3Type, "rgb", "the wire the builder just gave a light carries one");
-  assert.equal(form.aux2Type, "rgb", "and the one that already did still does");
-  assert.equal(Object.keys(form).some((key) => key.startsWith("aux_led")), false,
-    "no droid-wide light field: which wire carries a light IS its type");
+  assert.deepEqual(form, { [env.field("ledc:5", "typeField")]: "rgb" },
+    "the wire the builder just gave a light carries one, and no other wire is sent anything");
+  assert.equal(env.field("ledc:4", "type"), "rgb", "and the one that already did still does");
+  assert.equal(env.option(env.wiring("ledc:4"), "rgb").classList.contains("active"), true);
 });
 
 test("an in-use tick waits for the next start until it is put back; a servo type never waits", async () => {
-  const env = boot();
-  await env.settle();
-  const wiringLine = () => env.wiring("aux1").parentElement.parentElement.querySelector(".apply-timing");
-  const servosLine = () => env.servos("aux1").parentElement.parentElement.querySelector(".apply-timing");
+  const env = await boot();
+  const wiringLine = () => env.wiring("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
+  const servosLine = () => env.servos("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
   assert.equal(wiringLine().dataset.pending, "false", "nothing is waiting on a fresh read");
 
-  env.inUse("aux1").fire("click", {});
+  env.inUse("ledc:3").fire("click", {});
   await env.flush();
   assert.equal(wiringLine().dataset.pending, "true", "the droid still runs the outputs it started with");
   // Servos' answer is used at once, and an immediate answer says nothing at
   // all (operator, 2026-09-19 on #412).
   assert.equal(servosLine().textContent, "", "Servos' answer is used at once, so it carries no line");
 
-  env.inUse("aux1").fire("click", {});
+  env.inUse("ledc:3").fire("click", {});
   await env.flush();
   assert.equal(wiringLine().dataset.pending, "false", "put back, nothing is waiting");
-});
-
-// The browser knows no Output (operator, 2026-09-19 on #411: "the outputs is
-// supposed to be dynamic"). Which Outputs exist, what each is called, which
-// can carry the LED strip and which fields save it are the firmware's answer,
-// so a board with a different set - other names, other addresses, other
-// fields, fewer of them - is drawn and saved exactly as it reports itself, and
-// a save never writes a field the firmware did not name. The field names here
-// follow no pattern on purpose: a page that derived them from the id would
-// pass with the real firmware's names and still be wrong.
-test("the plates are the Outputs the firmware reports, and a save writes only the fields it names", async () => {
-  const env = boot({
-    components: {
-      out7: { label: "GPIO 49", address: "ledc:7", enabledField: "wiredO7", typeField: "servoO7", enabled: false, type: "mg996r" },
-      out9: { label: "GPIO 4", address: "ledc:9", lightCapable: true, ledCountField: "ledsO9", enabledField: "wiredO9", typeField: "servoO9", enabled: true, type: "none" },
-      domeEsc: { enabled: true, label: "GPIO 48" },
-    },
-  });
-  await env.settle();
-  assert.deepEqual(
-    env.wiringPlates().map((plate) => [
-      plate.getAttribute("data-output"),
-      plate.querySelector(".toggle-label").textContent,
-      plate.getAttribute("data-wire"),
-    ]),
-    [["out7", "GPIO 49", "1"], ["out9", "GPIO 4", "2"]],
-    "one plate per reported Output, named as the board prints it, colored by its place",
-  );
-  assert.equal(env.option(env.wiring("out7"), "rgb"), undefined, "an Output that cannot carry a light is not offered one");
-
-  env.inUse("out7").fire("click", {});
-  env.option(env.wiring("out9"), "rgb").fire("click", {});
-  await env.flush();
-  const form = env.posts.at(-1).form;
-  assert.deepEqual(Object.keys(form).sort(), ["servoO7", "servoO9", "wiredO7", "wiredO9"]);
-  assert.equal(form.wiredO7, "true");
-  assert.equal(form.servoO9, "rgb");
 });

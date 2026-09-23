@@ -18,7 +18,7 @@ import { bootServos, freshOutputs, withParts, sleep } from "./helpers/parts_surf
 test("taking a Part off another Output from Servos is asked in the part-first table's own words", async () => {
   const env = await bootServos({ outputs: withParts({ "ledc:0": ["doorFL", "doorFR"], "ledc:3": ["utilUp"] }) });
   const expected = env.window.PAParts.announcement(
-    env.window.PAParts.moveFor(structuredClone(env.outputs), "doorFL", "ledc:3"),
+    env.window.PAParts.moveFor(env.window.PAOutputs.list(), "doorFL", "ledc:3"),
   );
 
   const picker = env.pickOnOutput("ledc:3", "doorFL");

@@ -3,13 +3,16 @@
 //
 // Wiring (CONTEXT.md "Wiring"): the destination that answers the one question
 // no other screen can -- "I am holding a servo wire: which output does it go
-// to, and which part will it move?" It is a reference, not a control surface:
-// it writes nothing, and no act on it reaches the droid.
+// to, and which part will it move?" The sheet is a reference, not a control
+// surface: it writes nothing, and no act on it reaches the droid. The Outputs
+// plates under it are the one thing on this surface that writes, and they are
+// data/output_settings.js's, mounted by the screen caller below.
 //
 // EVERYTHING ON IT IS GENERATED. The wires come from the Board Lanes the
-// running firmware reports (GET /api/identity), the rows from this droid's own
-// Servo Output table (GET /api/servo/outputs) joined to the Droid Parts
-// Catalog, and the switches from the Component Toggles (GET /api/config).
+// running firmware reports (GET /api/identity), the Outputs from
+// data/outputs.js - this droid's Servo Output table joined to its config by
+// Output Address (#415) - with the Droid Parts Catalog naming what is on each,
+// and the lanes' switches from the Component Toggles (GET /api/config).
 // Nothing here keeps a copy of one board's pin numbers, which is the defect a
 // Board Lane exists to close (include/board_lanes.inc).
 //
@@ -168,7 +171,7 @@
   // So the join folds the name to lower case. Folding rather than a rename
   // table is what keeps a lane added later joining with no edit here -- which
   // is the whole point of a manifest where adding a lane is adding a row. An
-  // Output does not join here at all: it joins on its address (configOutputs()).
+  // Output does not join here at all: data/outputs.js joins it on its address.
   // ---------------------------------------------------------------------------
   const componentIndex = (components) => {
     const index = new Map();
@@ -196,32 +199,14 @@
     return typeof label === "string" && label !== "" ? label : "";
   };
 
-  // The Outputs as GET /api/config reports them: every components{} entry
-  // that carries an `address`, in the firmware's order (include/board_outputs.h
-  // BOARD_OUTPUTS, docs/api.md). This file knows no Output of its own - which
-  // exist, and what each is called, is the running firmware's answer
-  // (operator, 2026-09-19 on #411) - so this is the one door an Output's
-  // label and its wired flag come in by, keyed by the Output Address that
-  // also names its GET /api/servo/outputs row.
-  const configOutputs = (components) => {
-    const byAddress = new Map();
-    Object.keys(components || {}).forEach((key) => {
-      const entry = components[key];
-      if (entry && typeof entry.address === "string" && entry.address !== "") {
-        byAddress.set(entry.address, entry);
-      }
-    });
-    return byAddress;
-  };
-
-  // The one place a Part is joined to the Output that moves it. A Part is on at
-  // most one Output (CONTEXT.md "Part"), so the first hit is the answer.
-  const outputForPart = (outputs, partId) =>
-    outputs.find((output) => output.parts.includes(partId)) || null;
-
+  // The model's `outputs` are data/outputs.js's Outputs, in the firmware's
+  // order. This file knows no Output of its own - which exist, what each is
+  // called and whether it is wired are the running firmware's answer
+  // (operator, 2026-09-19 on #411) - and asks that module which one a Part is
+  // on rather than working it out again.
   const unusedRows = ({ parts = [], outputs = [] } = {}) =>
     parts
-      .filter((part) => drivableHere(part) && !outputForPart(outputs, part.id))
+      .filter((part) => drivableHere(part) && !window.PAOutputs.forPart(part.id, outputs))
       .map((part) => ({
         tier: UNUSED.id,
         part,
@@ -314,13 +299,12 @@
   // 2026-09-19 on #411). The color NAMES a wire and carries no state; a wire
   // to something not wired takes the one grey instead, and is dashed.
   //
-  // Which color is picked by the wire's place in one order - the Outputs as
-  // GET /api/config lists them, then the Board Lanes as the identity lists
-  // them, then any Output only the servo table knows (an expander's) - from
-  // the numbered palette --wire-1..--wire-8 in data/style.css, round again
-  // past eight. Nothing here knows which wires a board has: the order is the
-  // firmware's answer, and data/output_settings.js picks an Output plate's
-  // color from the same answer the same way, so a plate and its line match.
+  // Which color is picked by the wire's place in one order - the Outputs in
+  // data/outputs.js's order, then the Board Lanes as the identity lists them -
+  // from the numbered palette --wire-1..--wire-8 in data/style.css, round
+  // again past eight. Nothing here knows which wires a board has: the order is
+  // the firmware's answer, and data/output_settings.js picks an Output plate's
+  // color by its place in the same list, so a plate and its line match.
   //
   // The colors live in the stylesheet only. This file writes a token's name
   // and never a value, painted as an inline style so it beats nothing and
@@ -330,13 +314,10 @@
   const WIRE_PALETTE = 8;
   const WIRE_OFF = "var(--wire-off)";
 
-  const wireOrder = ({ components = {}, lanes = {}, outputs = [] } = {}) => {
-    const order = [...configOutputs(components).keys(), ...Object.keys(lanes).map((key) => `lane:${key}`)];
-    outputs.forEach((output) => {
-      if (!order.includes(output.address)) order.push(output.address);
-    });
-    return order;
-  };
+  const wireOrder = ({ lanes = {}, outputs = [] } = {}) => [
+    ...outputs.map((output) => output.address),
+    ...Object.keys(lanes).map((key) => `lane:${key}`),
+  ];
 
   const wireInk = (order, key) => {
     const at = order.indexOf(key);
@@ -529,9 +510,8 @@
   //
   // One board and every wire that leaves it, as the operator's reference draws
   // a loom (2026-09-19 on #411: "One diagram, every wire"): the firmware's
-  // Outputs in the order GET /api/config lists them, then its Board Lanes,
-  // then any Output only the servo table knows (an expander's) - the same
-  // order the colors are picked in (wireOrder()). What a lane table used to
+  // Outputs in data/outputs.js's order, then its Board Lanes - the same order
+  // the colors are picked in (wireOrder()). What a lane table used to
   // say beside the picture - which UART, which TX and RX pin - is on the
   // lane's own wire now, after the board's label.
   //
@@ -547,29 +527,21 @@
   // What an Output carries, as the droid reported it. What is on a wire is one
   // answer in two vocabularies (ADR 0067): a Light Type where it lights
   // something, a servo's model where it drives a servo. The stored token is the
-  // same field either way, so this reads that one field and nothing else -
-  // there is no second answer to cross-check it against any more (#413).
-  const LIGHT_TYPE_NAMES = { rgb: "the LED strip" };
-  const outputRole = (entry, row) => {
-    const type = (entry && entry.enabled === true && typeof entry.type === "string")
-      ? entry.type : "";
-    if (LIGHT_TYPE_NAMES[type]) {
-      return LIGHT_TYPE_NAMES[type];
-    }
-    return row && row.component && row.component !== "none" ? row.component : "a servo";
+  // same field either way, and data/outputs.js names it (#413).
+  const outputRole = (output) => {
+    if (output.wired && output.light) return `the ${output.light.label}`;
+    return output.component && output.component !== "none" ? output.component : "a servo";
   };
 
   // An Output's wire is named first by what the board prints beside its pin,
   // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
-  // Address"), then by its address. The label comes from the config entry the
-  // row joins by address; GET /api/servo/outputs names a row by the same
-  // label, but the sheet joins by address and never by a name. An Output the
-  // config reports nothing for - an expander channel - has no label and no
-  // switch anybody could have turned off, so it reads as its address, and as
-  // wired.
-  const outputWire = (address, entry, row, { parts, order }) => {
-    const live = entry ? entry.enabled === true : true;
-    const onIt = row ? partNames(parts, row.parts) : [];
+  // Address"), then by its address. Whether it is wired is data/outputs.js's
+  // one rule: an Output the config reports nothing for - an expander channel -
+  // has no switch anybody could have turned off, so it reads as wired.
+  const outputWire = (output, { parts, order }) => {
+    const address = output.address;
+    const live = output.wired;
+    const onIt = partNames(parts, output.parts);
     let note = "signal on the pin, ground to the board's own ground";
     if (!live) note = `not marked wired - nothing moves. Mark it under ${OUTPUTS_PLATE}`;
     else if (onIt.length === 0) note = "a spare: it gets a pulse, and nothing is recorded on the end";
@@ -578,10 +550,10 @@
       live,
       ink: wireInk(order, address),
       pair: false,
-      silk: entry && typeof entry.label === "string" ? entry.label : "",
+      silk: output.label,
       detail: address,
       name: onIt.length ? onIt.join(" + ") : "Nothing recorded",
-      role: outputRole(entry, row),
+      role: outputRole(output),
       note,
     };
   };
@@ -608,19 +580,12 @@
       : "TX to the far end's RX, RX to its TX, and ground";
 
   const sheetWires = (model = {}) => {
-    const { parts = [], outputs = [], components = {} } = model;
+    const { parts = [], outputs = [] } = model;
     const order = wireOrder(model);
-    const reported = configOutputs(components);
-    const rows = new Map(outputs.map((row) => [row.address, row]));
-    const context = { parts, order };
-    const wires = [...reported.keys()].map((address) =>
-      outputWire(address, reported.get(address), rows.get(address), context)
-    );
-    loomRows(model).forEach((lane) => wires.push(laneWire(lane, order)));
-    outputs
-      .filter((row) => !reported.has(row.address))
-      .forEach((row) => wires.push(outputWire(row.address, null, row, context)));
-    return wires;
+    return [
+      ...outputs.map((output) => outputWire(output, { parts, order })),
+      ...loomRows(model).map((lane) => laneWire(lane, order)),
+    ];
   };
 
   // Titled with the board it draws, by the product name the lineup gives it
@@ -898,7 +863,8 @@
   };
 
   let identity = window.PAIdentity || null;
-  let outputs = [];
+  // The config's Component Toggles, for the Board Lanes' switches and labels.
+  // The Outputs are data/outputs.js's, read at paint time.
   let components = {};
   let answered = false;
 
@@ -911,7 +877,7 @@
 
   const model = () => ({
     parts: window.DroidParts?.parts || [],
-    outputs,
+    outputs: window.PAOutputs.list(),
     components,
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
@@ -929,6 +895,13 @@
   write("wiring-wires-heading", esc(PLATES.wires));
   write("wiring-rail-heading", esc(PLATES.rail));
   write("wiring-unused-heading", esc(PLATES.unused));
+
+  // The Outputs plates under the sheet: the one control on this surface, drawn
+  // and saved by data/output_settings.js from the answer the sheet reads.
+  window.PAOutputSettings?.mount("wired", {
+    body: document.getElementById("wiring-outputs-body"),
+    feedback: document.getElementById("wiring-outputs-feedback"),
+  });
 
   // ---------------------------------------------------------------------------
   // The board's picture
@@ -1052,25 +1025,13 @@
   // One section for one answer. The sheet is a join of three reads and a half
   // answer is not a sheet -- a table painted from outputs the droid reported
   // and toggles it did not would say a wire is live when it is switched off --
-  // so both fetches are in the one section run and either one failing is the
-  // section failing, which is what the Page Recovery View is for.
+  // so both reads are in the one section run (data/outputs.js load()) and
+  // either one failing is the section failing, which is what the Page Recovery
+  // View is for. The same read draws the Outputs plates: GET /api/config is
+  // asked once.
   const loadSheet = async ({ handle = null } = {}) => {
-    const api = handle || window.PAApi;
-    if (!api) throw new Error("no way to reach the Body Controller");
-    const answer = await api.get("/api/servo/outputs");
-    const table = answer?.data?.outputs;
-    if (!Array.isArray(table)) throw new Error("the droid's outputs answer carries no table");
-    const config = await api.get("/api/config");
-    outputs = table.map((output) => ({
-      address: String(output.address),
-      name: typeof output.name === "string" ? output.name : "",
-      parts: Array.isArray(output.parts) ? output.parts.map(String) : [],
-      component: typeof output.component === "string" ? output.component : "",
-    }));
-    components =
-      config?.data?.components && typeof config.data.components === "object"
-        ? config.data.components
-        : {};
+    const { config } = await window.PAOutputs.load({ handle });
+    components = config.components && typeof config.components === "object" ? config.components : {};
     answered = true;
     paint();
     saveLink?.setAttribute("aria-disabled", "false");
@@ -1093,7 +1054,9 @@
   if (window.PABootstrap) {
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "parts list",
+      "/outputs.js": "the outputs",
       "/wiring.js": "the wiring sheet",
+      "/output_settings.js": "the outputs",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {
       label: "the wiring sheet",

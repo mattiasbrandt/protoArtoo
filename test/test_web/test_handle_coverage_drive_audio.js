@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule, partsGlobals } from "./helpers/page_module_env.js";
+import { outputsModule } from "./helpers/fake_droid.js";
 
 // Test payloads for each module
 const CONFIG_PAYLOAD = {
@@ -82,11 +83,15 @@ test("drive-configuration loader issues its request through the handle, not PAAp
 // Servo Page Tests
 // =============================================================================
 
+// Servos reads its Outputs through data/outputs.js (#415), which is handed the
+// section's handle and makes both reads on it: the servo table, and the config
+// once on mount for what each Output carries.
 test("servo-outputs loader issues its request through the handle, not PAApi", async () => {
   const OUTPUTS_PAYLOAD = { outputs: [] };
-  const env = loadPageModule("servo.js", {
+  let env = null;
+  env = loadPageModule("servo.js", {
     respond: () => ({ data: OUTPUTS_PAYLOAD }),
-    overrides: partsGlobals(),
+    overrides: { ...partsGlobals(), PAOutputs: outputsModule(() => env.window.PAApi) },
   });
   const { calls, handle } = makeRecordingHandle(OUTPUTS_PAYLOAD);
 
@@ -99,8 +104,8 @@ test("servo-outputs loader issues its request through the handle, not PAApi", as
   // The handle saw the request...
   assert.deepStrictEqual(
     calls.map((c) => c.path),
-    ["/api/servo/outputs"],
-    "the loader must issue GET /api/servo/outputs through the handle"
+    ["/api/servo/outputs", "/api/config"],
+    "the loader must issue GET /api/servo/outputs and GET /api/config through the handle"
   );
   // ...and nothing went around it. This is the half that catches a loader
   // which ignores the handle and reaches for window.PAApi directly.
