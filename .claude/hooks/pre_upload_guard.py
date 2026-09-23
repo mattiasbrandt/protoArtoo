@@ -17,8 +17,18 @@ def print_decision(decision: str, reason: str) -> None:
     print(json.dumps(payload))
 
 
+# `make flash`, `make ota`, `make uploadfs` and their `-<variant>` targets
+# (`flash-monitor`, `ota-chirp`, ...), with optional VAR=value words first.
+_MAKE_UPLOAD = re.compile(r"\bmake\b(?:\s+\S+=\S*)*\s+(flash|ota|uploadfs)(?:-[\w-]+)?(?=\s|$)")
+
+
+def _make_upload_target(cmd: str) -> str:
+    match = _MAKE_UPLOAD.search(cmd)
+    return match.group(1) if match else ""
+
+
 def is_upload_command(cmd: str) -> bool:
-    return (
+    return bool(_make_upload_target(cmd)) or (
         "pio" in cmd
         and (
             "-t upload" in cmd
@@ -43,11 +53,12 @@ def main() -> int:
         return 0
 
     if "/dev/ttyS0" in cmd:
-        print_decision("deny", "Blocked: use /dev/ttyUSB0 for USB uploads, not /dev/ttyS0.")
+        print_decision("deny", "Blocked: /dev/ttyS0 is not the board; use its USB serial port (/dev/ttyUSB* or /dev/ttyACM*).")
         return 0
 
-    is_uploadfs = ("-t uploadfs" in cmd) or ("--target uploadfs" in cmd)
-    has_ota_env = bool(re.search(r"-e\s+\S*_ota\b", cmd))
+    make_target = _make_upload_target(cmd)
+    is_uploadfs = ("-t uploadfs" in cmd) or ("--target uploadfs" in cmd) or make_target == "uploadfs"
+    has_ota_env = bool(re.search(r"-e\s+\S*_ota\b", cmd)) or make_target == "ota"
     has_explicit_upload_port = bool(re.search(r"--upload-port\s+\S+", cmd))
 
     if is_uploadfs:
@@ -69,7 +80,7 @@ def main() -> int:
     print_decision(
         "ask",
         "USB firmware upload detected. Ask with a structured picker: 'Is target hardware available right now?' "
-        "(Yes: continue with /dev/ttyUSB0, No: cancel and run software-only verification).",
+        "(Yes: continue, No: cancel and run software-only verification).",
     )
     return 0
 

@@ -15,13 +15,18 @@ STATE_FILE = Path("/tmp/protoartoo_backend_verify.json")
 
 def _classify_command(cmd: str) -> str:
     text = cmd.strip()
-    if "pio test -e native" in text:
+    if "pio test -e native" in text or re.search(r"\bmake\s+test\b(?!-)", text):
         return "native_tests"
-    if "pio check" in text:
+    if "pio check" in text or re.search(r"\bmake\s+check\b(?!-)", text):
         return "static_check"
     # Accept compile-only firmware build; ignore upload/uploadfs commands.
     # Use word-boundary check to avoid matching artoo_esp32_test or other suffixed envs.
     if re.search(r"pio run -e artoo_esp32(?!\w)", text) and "upload" not in text:
+        return "firmware_build"
+    # `make build` builds artoo_esp32 unless BUILD_ENV names another env.
+    if re.search(r"\bmake\s+build\b(?!-)", text) and not re.search(
+        r"BUILD_ENV=(?!artoo_esp32(?!\w))", text
+    ):
         return "firmware_build"
     return ""
 

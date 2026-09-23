@@ -66,14 +66,14 @@ def _suggest_remediation(tool_name: str, tool_input: Dict[str, Any], error_kind:
             command = str(tool_input.get("command", "")).strip()
             if command:
                 return (
-                    f"Add explicit allow rule in .claude/settings.local.json: "
-                    f"permissions.allow Bash({command})"
+                    "Denied by the operator's permission settings; do not edit them or retry. "
+                    f"If this command is needed, ask the operator to allow: Bash({command})"
                 )
-            return "Add an exact Bash allow rule in .claude/settings.local.json."
+            return "Denied by the operator's permission settings; do not edit them or retry."
         if _is_playwright_tool(tool_name):
             return (
-                f"Add allow rule for '{tool_name}' in .claude/settings.json permissions.allow, then retry once. "
-                "If already present, check that the project settings file is loaded in this runtime scope."
+                f"'{tool_name}' was denied by the operator's permission settings; do not edit them or retry. "
+                "Switch to the script-based fallback, or ask the operator to allow the tool."
             )
 
     return "Check tool error; confirm applicable permission rule at local/project scope, then retry once."
@@ -101,6 +101,10 @@ def main() -> int:
 
     tool_input = data.get("tool_input") or {}
     error_kind = _classify_error(error_text)
+    # Only a permission denial or a Playwright MCP crash has a remediation to
+    # offer; an ordinary non-zero exit is already in the tool result.
+    if error_kind == "tool_failure":
+        return 0
     permission_source = _detect_permission_source(error_text) if error_kind == "permission_denied" else "N/A"
     remediation = _suggest_remediation(tool_name, tool_input, error_kind)
 
@@ -111,8 +115,8 @@ def main() -> int:
         f"3. Exact runtime error text: {error_text}",
         f"4. Permission source: {permission_source}",
         f"5. Remediation: {remediation}",
-        "6. Retry result: PENDING",
-        "7. Operator next step: follow remediation in field 5 before retrying.",
+        "6. Fallback result: PENDING",
+        "7. Operator next step: follow field 5.",
     ]
 
     payload = {
