@@ -12,12 +12,12 @@
 // They all seem related to servo calibration"). The behaviour each piece keeps
 // is its ADR's; only the page moved (ADR 0050, ADR 0064, amended 2026-09-19).
 //
-// THIS FILE KNOWS NO OUTPUT. The rows are GET /api/servo/outputs, in its order;
-// what each is called is what its board prints (ADR 0033 Amendment
+// THIS FILE KNOWS NO OUTPUT. The rows are the Outputs GET /api/servo/outputs
+// lists, as data/outputs.js joins them to GET /api/config by Output Address
+// (#415): what each is called is what its board prints (ADR 0033 Amendment
 // 2026-09-19), and that label is also the word POST /api/servo moves it by,
 // sent exactly as the droid gave it (data/parts_mapping.js servoWord()).
-// Whether an Output is wired and what it carries is data/output_settings.js's
-// answer from GET /api/config, joined to a row by its Output Address.
+// Whether an Output is wired and what it carries come with it.
 //
 // Five rules shape this file.
 //
@@ -44,8 +44,9 @@
 (() => {
   const catalog = window.DroidParts;
   const P = window.PAParts;
-  if (!P || !catalog) {
-    console.error("[servo] window.PAParts or window.DroidParts is missing; the parts scripts did not load");
+  const OUTPUTS = window.PAOutputs;
+  if (!P || !catalog || !OUTPUTS) {
+    console.error("[servo] window.PAParts, window.DroidParts or window.PAOutputs is missing; the parts scripts did not load");
     return;
   }
   const {
@@ -53,10 +54,8 @@
     groupParts,
     partLabel,
     listParts,
-    outputLabel,
     servoWord,
     hasServoWord,
-    outputOf,
     isLightRow,
   } = P;
 
@@ -97,13 +96,11 @@
   const esc = (value) => window.PAUtils.escapeHtml(String(value));
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
-  // What data/output_settings.js says about each Output, joined by address:
-  // its stored id, whether it is wired, and what it carries.
-  let settings = new Map(); // address -> { id, enabled, type }
-  const LED_STRIP = "rgb";
-  const SERVO_TYPES = new Set(["mg996r", "mg90s"]);
-
+  // The Outputs this page draws a row for: the ones the servo table lists, in
+  // the order data/outputs.js gives them, each carrying whether it is wired
+  // and what it carries.
   let outputs = null; // null until the droid has answered
+  const tableOutputs = () => OUTPUTS.list().filter((output) => output.fromTable);
   let run = null; // the Find by Moving run in progress, at most one (below)
   let dial = null; // the Output being calibrated, at most one (below)
   let estopLatched = null; // null until the droid has said
@@ -127,8 +124,8 @@
   // refused: none may run on a guess about the estop, and the droid has not
   // said yet.
   const outputRowHtml = (output) => {
-    const label = outputLabel(output);
-    const address = output.name ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
+    const label = output.name;
+    const address = output.label ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
     return (
       `<tr class="parts-row outputs-row" data-output="${esc(output.address)}">` +
       `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}</th>` +
@@ -211,15 +208,15 @@
 
   // Why an Output offers no drive, said the way a builder needs it, or "" when
   // it does. Whether it is wired and what it carries are Wiring's and Servo
-  // assignment's answer; the route is refused for a row no board labels.
+  // assignment's answer; the route is refused for a row no board labels. An
+  // Output whose settings nobody can save has nothing set to refuse on.
   const driveRefusal = (output) => {
     if (!hasServoWord(output)) return "No name the servo route takes";
     if (isLightRow(output)) return "A light has no position";
-    const said = settings.get(output.address);
-    if (!said) return "";
-    if (said.type === LED_STRIP) return "Carries the LED strip";
-    if (!said.enabled) return "Not wired. Mark it on Wiring";
-    if (!SERVO_TYPES.has(said.type)) return "No servo set above";
+    if (!output.switchable) return "";
+    if (output.light) return `Carries the ${output.light.label}`;
+    if (!output.wired) return "Not wired. Mark it on Wiring";
+    if (!output.servo) return "No servo set above";
     return "";
   };
 
@@ -299,7 +296,7 @@
   // the builder's pointer.
   let findSet = null;
   const paintFindPick = () => {
-    const unwired = catalog.parts.filter((part) => outputOf(outputs, part.id) === null);
+    const unwired = catalog.parts.filter((part) => OUTPUTS.forPart(part.id, outputs) === null);
     const key = unwired.map((part) => part.id).join(",");
     if (key !== findSet && document.activeElement !== findPick) {
       const keep = findPick.value;
@@ -332,16 +329,14 @@
     // The droid has answered again, which is the only thing a run steps on.
     stepRun();
     paintDial();
-    // What is on each Output's wire, for the Servo assignment plates too.
-    window.PAOutputSettings?.redraw?.();
   };
 
-  const loadOutputs = async ({ handle = null } = {}) => {
-    const api = handle || window.PAApi;
-    const result = await api.get("/api/servo/outputs");
-    const answer = result?.data?.outputs;
-    if (!Array.isArray(answer)) throw new Error("the droid's outputs answer carries no table");
-    outputs = P.readOutputs(answer);
+  // The bench feed reads the servo table alone; the section run on mount reads
+  // the config with it, once, for what each Output carries.
+  const loadOutputs = async ({ handle = null, withConfig = false } = {}) => {
+    if (withConfig) await OUTPUTS.load({ handle });
+    else await OUTPUTS.refresh({ handle });
+    outputs = tableOutputs();
     paint();
   };
 
@@ -382,7 +377,7 @@
     const output = outputs?.find((each) => each.address === address);
     const row = outputRows.get(address);
     if (!output || !row) return;
-    const label = outputLabel(output);
+    const label = output.name;
     const form = { arm: servoWord(output), action };
     if (action === "position") {
       const us = Math.round(Number(row.width.value));
@@ -490,7 +485,7 @@
     current.before = output.nudgesDone;
     current.sending = true;
     runText.textContent =
-      `Nudging ${outputLabel(output)} (${current.at + 1} of ${count}). Watch the droid, and press That one when ${label} moves.`;
+      `Nudging ${output.name} (${current.at + 1} of ${count}). Watch the droid, and press That one when ${label} moves.`;
     try {
       await window.PAApi.postForm("/api/servo", { arm: servoWord(output), action: "nudge" }, { timeoutMs: 4000 });
     } catch (error) {
@@ -507,9 +502,9 @@
   const stepRun = () => {
     if (run === null || run.sending || run.address === null) return;
     const label = partLabel(run.partId);
-    const wiredTo = outputOf(outputs, run.partId);
+    const wiredTo = OUTPUTS.forPart(run.partId, outputs);
     if (wiredTo) {
-      endRun(`${label} is on ${outputLabel(wiredTo)} now, so the run stopped.`);
+      endRun(`${label} is on ${wiredTo.name} now, so the run stopped.`);
       return;
     }
     const output = outputs.find((each) => each.address === run.address);
@@ -523,7 +518,7 @@
     // stepping on: ending a nudge bumps nudgesDone, and without this the count
     // going up would read as "that one finished, try the next".
     if (output.commandedUs === null) {
-      endRun(`${outputLabel(output)} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+      endRun(`${output.name} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
       return;
     }
     if (output.nudgesDone === run.before) return;
@@ -633,15 +628,19 @@
   // What the band the dial opens at is, and why it is that one. The component
   // governs the clamp (ADR 0041), so the dial opens at the widest range the
   // firmware will actually drive this row -- never wider.
+  // A Light Type recorded on the row gets the cautious range too, and is named
+  // by data/outputs.js's word for it.
   const COMPONENT_SAID = {
     mg996r: "what an MG996R takes",
     mg90s: "what an MG90S takes, the full servo range",
-    rgb: "the cautious range: this is recorded as an LED strip",
     none: "the cautious range: nothing is recorded as fitted",
   };
 
   const bandSentence = (output) => {
-    const said = COMPONENT_SAID[output.component] || COMPONENT_SAID.none;
+    const light = OUTPUTS.lightType(output.component);
+    const said = light
+      ? `the cautious range: this is recorded as an ${light.label}`
+      : COMPONENT_SAID[output.component] || COMPONENT_SAID.none;
     const unlockable = output.component === "none" || output.component === "mg996r";
     const unlock = unlockable ? " Record the part as an MG90S for the full 500-2500." : "";
     return `${output.bandLoUs}-${output.bandHiUs} µs — ${said}.${unlock}`;
@@ -906,7 +905,7 @@
     if (dial.us < range.lo) dial.us = range.lo;
     if (dial.us > range.hi) dial.us = range.hi;
 
-    dialTitle.textContent = `Calibrating ${outputLabel(output)}`;
+    dialTitle.textContent = `Calibrating ${output.name}`;
     dialBand.textContent = bandSentence(output);
     dialEnds.textContent = endsSentence(output);
     dialReadout.textContent = `${dial.us} µs`;
@@ -1063,7 +1062,7 @@
     if (outputs === null) return;
     const output = outputs.find((each) => each.address === address);
     if (!output) return;
-    const label = outputLabel(output);
+    const label = output.name;
     const findingPart = run !== null && run.address === address ? run.partId : null;
     if (findingPart !== null) {
       markNotCurrent(address);
@@ -1147,24 +1146,19 @@
   // ---------------------------------------------------------------------------
   // Servo assignment: which servo each Output carries, drawn by
   // data/output_settings.js and shared with Wiring's wired ticks. Its plates
-  // name the Part(s) on each Output from the same rows the table paints (joined
-  // by address), and its answer - wired, and what each carries - decides what
-  // each row's drive cell offers.
+  // name the Part(s) on each Output, and a save there - wired, and what each
+  // carries - decides what each row's drive cell offers, so the rows are
+  // repainted in place whenever data/outputs.js's answer changes.
   // ---------------------------------------------------------------------------
-  const partsOn = (fact) => {
-    const output = outputs?.find((each) => each.address === fact.address);
-    return output ? listParts(output.parts) : "";
-  };
-
   window.PAOutputSettings?.mount("type", {
     body: document.getElementById("servo-types-body"),
     feedback: document.getElementById("servo-types-feedback"),
-    describe: partsOn,
+    describe: (output) => listParts(output.parts),
   });
-  window.PAOutputSettings?.onChange((state, facts) => {
-    if (!state || !Array.isArray(facts)) return;
-    settings = new Map(facts.map((fact) => [fact.address, { id: fact.id, ...state[fact.id] }]));
-    if (outputs !== null) outputs.forEach(paintOutputRow);
+  OUTPUTS.onChange(() => {
+    if (outputs === null) return;
+    outputs = tableOutputs();
+    outputs.forEach(paintOutputRow);
   });
 
   // ---------------------------------------------------------------------------
@@ -1178,13 +1172,16 @@
       "/droid_parts.js": "the parts catalog",
       "/droid_part_kind.js": "the parts catalog",
       "/parts_mapping.js": "the parts on each output",
+      "/outputs.js": "the outputs",
       "/output_settings.js": "the outputs",
       "/servo.js": "servo control",
       "/footer.js": "page footer",
     });
-    window.PABootstrap.registerSection("servo-outputs", loadOutputs, { label: "the outputs and what they drive" });
+    window.PABootstrap.registerSection("servo-outputs", (opts) => loadOutputs({ ...opts, withConfig: true }), {
+      label: "the outputs and what they drive",
+    });
   } else {
-    loadOutputs().catch((error) => console.warn("[servo] outputs unavailable:", error));
+    loadOutputs({ withConfig: true }).catch((error) => console.warn("[servo] outputs unavailable:", error));
   }
 
   // Owned by this surface, so the shell stops it when the operator leaves

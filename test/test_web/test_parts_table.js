@@ -18,6 +18,7 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { bootParts as bootPartsSurface, sleep as wait } from "./helpers/parts_surface.js";
+import { freshOutputs, withParts } from "./helpers/fake_droid.js";
 
 // mini_dom has no CSSStyleDeclaration, and since #362 this page's output-first
 // table paints its position marks through element.style. A plain object per
@@ -51,23 +52,6 @@ const IDENTITY = {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// The five LEDC Outputs a controller boots with, driving nothing.
-const freshOutputs = () => [
-  { address: "ledc:0", name: "ARM1", parts: [] },
-  { address: "ledc:1", name: "ARM2", parts: [] },
-  { address: "ledc:3", name: "ARM3", parts: [] },
-  { address: "ledc:4", name: "ARM4", parts: [] },
-  { address: "ledc:5", name: "ARM5", parts: [] },
-];
-
-const withParts = (assignments) => {
-  const outputs = freshOutputs();
-  Object.entries(assignments).forEach(([address, parts]) => {
-    outputs.find((output) => output.address === address).parts = parts.slice();
-  });
-  return outputs;
-};
 
 const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("droid_parts.js") } = {}) => {
   const document = new MiniDocument();
@@ -241,6 +225,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
     "/status_stream.js": readData("status_stream.js"),
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
+    "/outputs.js": readData("outputs.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/parts.js": readData("parts.js"),
   };

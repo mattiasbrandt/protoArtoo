@@ -18,6 +18,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { servoRow, configOutputs, outputsModule } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -61,8 +62,11 @@ const CONFIG = {
   },
 };
 
-const dashboard = (status = {}, { config = CONFIG } = {}) =>
-  loadPageModule("app.js", {
+// The Dashboard reads its config, and the Outputs' names with it, through the
+// shipped data/outputs.js its page loads first (#415).
+const dashboard = (status = {}, { config = CONFIG } = {}) => {
+  let env = null;
+  env = loadPageModule("app.js", {
     respond: (path) => {
       if (path === "/api/status") return { data: { ...HEALTHY, ...status } };
       if (path === "/api/config") return { data: config };
@@ -73,9 +77,12 @@ const dashboard = (status = {}, { config = CONFIG } = {}) =>
       PAHealthSignals: MODELS.PAHealthSignals,
       DroidParts: MODELS.DroidParts,
       DroidBuild: MODELS.DroidBuild,
+      PAOutputs: outputsModule(() => env.window.PAApi),
       PAUi: { setupActionHtml: (action) => `${action} in <a href="/setup.html">Setup</a>` },
     },
   });
+  return env;
+};
 
 test("a WiFi signal nothing measured is not printed as a very strong one", async () => {
   // wifiRssi is zero whenever the droid is not joined to a network as a
@@ -140,17 +147,14 @@ test("a mood the droid has not reported reads Not reported, not mood zero", () =
 // Outputs exist and what each is called is GET /api/config's answer (every
 // components{} entry carrying an address); the card names them from it, and a
 // status key it cannot place is not dressed up as an Output with a name this
-// page made up (ADR 0033 Amendment 2026-09-19). The ids here follow no pattern
-// on purpose, and `aux1` is the old protoArtoo word a page might still know.
+// page made up (ADR 0033 Amendment 2026-09-19). The fake droid's ids follow no
+// pattern, and `aux1` is the old protoArtoo word a page might still know.
 test("the component card names Outputs as the firmware reported them, and no others", async () => {
-  const config = {
-    ...CONFIG,
-    components: {
-      q7: { enabled: true, label: "GPIO 49", address: "ledc:0", enabledField: "e7", typeField: "t7" },
-    },
-  };
+  const components = configOutputs([servoRow("ledc:0", "GPIO 49")]);
+  const [id] = Object.keys(components);
+  const config = { ...CONFIG, components };
   const env = dashboard(
-    { q7: { state: "ready", detail: "Target 1500 us" }, aux1: { state: "ready", detail: "Servo channel enabled" } },
+    { [id]: { state: "ready", detail: "Target 1500 us" }, aux1: { state: "ready", detail: "Servo channel enabled" } },
     { config },
   );
   await env.runSection("app-initial-status");

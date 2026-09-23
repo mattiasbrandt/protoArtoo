@@ -22,6 +22,7 @@ import { dirname, join } from "path";
 import { createRequire } from "node:module";
 
 import { loadPageModule, ApiError, partsGlobals } from "./helpers/page_module_env.js";
+import { outputsModule } from "./helpers/fake_droid.js";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 
 const require = createRequire(import.meta.url);
@@ -32,6 +33,12 @@ const { createFeatureAvailability } = require("../../data/feature_availability.j
 // its own is handed a fresh one of those, for real, the way the Dashboard's
 // tests take health_signals.js.
 const withAvailability = (extra = {}) => ({ PAFeatureAvailability: createFeatureAvailability(), ...extra });
+
+// Servos, Parts, Maintenance and the Dashboard read the Outputs through the
+// shipped data/outputs.js their pages load first (#415). It is handed to every
+// module here, bound to the transport of the env it runs in, so a surface that
+// reads the Outputs reads them for real and one that does not never notices.
+const withOutputs = (overrides, envOf) => ({ ...overrides, PAOutputs: outputsModule(() => envOf().window.PAApi) });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -342,7 +349,8 @@ const SURFACE_POLLS = [
 
 for (const { file, cadenceMs, what, overrides = () => ({}) } of SURFACE_POLLS) {
   test(`${file}: ${what} poll stops when the operator is reading another surface`, async () => {
-    const env = loadPageModule(file, { respond: () => ({}), overrides: overrides() });
+    let env = null;
+    env = loadPageModule(file, { respond: () => ({}), overrides: withOutputs(overrides(), () => env) });
     await env.settle();
 
     const polls = env.intervals.filter((timer) => timer.ms === cadenceMs);
@@ -382,12 +390,13 @@ const STALE_AFTER_A_FAILED_REFRESH = [
 for (const { file, what, overrides = () => ({}) } of STALE_AFTER_A_FAILED_REFRESH) {
   test(`${file}: a refresh that fails leaves ${what} showing what it last read`, async () => {
     let answering = true;
-    const env = loadPageModule(file, {
+    let env = null;
+    env = loadPageModule(file, {
       respond: () => {
         if (!answering) throw new ApiError("the controller did not answer");
         return {};
       },
-      overrides: overrides(),
+      overrides: withOutputs(overrides(), () => env),
     });
     await env.settle();
 

@@ -20,6 +20,11 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./mini_dom.js";
+import { servoRow, freshOutputs, withParts, configOutputs, applyOutputSave } from "./fake_droid.js";
+
+// The droid's Outputs are described once, in helpers/fake_droid.js (#415).
+export { freshOutputs, withParts };
+export const output = servoRow;
 
 // mini_dom has no CSSStyleDeclaration, and the position marks are painted
 // through element.style. A plain object per element is all a style write needs.
@@ -64,67 +69,9 @@ const IDENTITY = {
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const output = (address, name, extra = {}) => ({
-  address,
-  name,
-  parts: [],
-  bandLoUs: 1000,
-  bandHiUs: 2000,
-  // What the calibration dial reads (#364). A fresh row is unmeasured, with
-  // the band's own ends standing in for a calibration nobody has made.
-  component: "mg996r",
-  openUs: 2000,
-  centreUs: 1500,
-  closeUs: 1000,
-  calibrated: false,
-  held: false,
-  limp: "off",
-  commandedUs: null,
-  targetUs: null,
-  nudgesDone: 0,
-  ...extra,
-});
-
-// A controller with ARM1 and ARM2 switched on and standing at neutral, ARM3
-// and ARM4 on, and ARM5 off.
-export const freshOutputs = () => [
-  output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:1", "ARM2", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:3", "ARM3", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:4", "ARM4", { commandedUs: 1500, targetUs: 1500 }),
-  output("ledc:5", "ARM5"),
-];
-
-export const withParts = (assignments, outputs = freshOutputs()) => {
-  Object.entries(assignments).forEach(([address, parts]) => {
-    outputs.find((each) => each.address === address).parts = parts.slice();
-  });
-  return outputs;
-};
-
-// GET /api/config's Output entries for the fake droid's rows, the way
-// src/web/api_config.cpp reports them: the label is the row's name, and every
-// Output is wired and carries an MG996R, so Servos offers every drive act. The
-// ids and field names follow no pattern on purpose.
-const configOutputs = (outputs) =>
-  Object.fromEntries(
-    outputs
-      .filter((each) => each.name !== "")
-      .map((each, index) => [
-        `out${index}`,
-        {
-          label: each.name,
-          address: each.address,
-          enabledField: `wired${index}`,
-          typeField: `servo${index}`,
-          enabled: true,
-          type: "mg996r",
-        },
-      ])
-  );
-
 // `components` replaces the GET /api/config Output entries configOutputs()
-// would derive, for a test that needs an Output unwired or carrying the strip.
+// derives from the rows (every Output wired, carrying an MG996R), for a test
+// that needs an Output unwired or carrying the strip.
 // `decoys` is markup placed in the document before the surface mounts: a test
 // that asserts something is gone writes a decoy where it used to be and
 // checks nothing reads or writes it (test/test_web/README.md).
@@ -141,6 +88,8 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
   const env = {
     document,
     outputs,
+    // What the config says about each Output, held so a save lands on it.
+    components: components || configOutputs(outputs),
     status: { estop },
     posts: [],       // every POST: { path, form }
     gets: new Map(), // GET path -> count
@@ -220,7 +169,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
         if (path === "/api/config") {
           return {
             ok: true,
-            data: { droidBuild: structuredClone(env.droidBuild), components: structuredClone(components || configOutputs(env.outputs)) },
+            data: { droidBuild: structuredClone(env.droidBuild), components: structuredClone(env.components) },
           };
         }
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
@@ -308,6 +257,11 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
             row.openUs = row.closeUs;
             row.closeUs = wasOpen;
             return { ok: true, status: 200, data: {} };
+          }
+          // An Output's own settings, under the fields its entry named; the
+          // answer is the config the droid now holds.
+          if (applyOutputSave(env.components, form)) {
+            return { ok: true, status: 200, data: { droidBuild: structuredClone(env.droidBuild), components: structuredClone(env.components) } };
           }
           // The Fitted Parts go whole, because they are a set and there is no
           // partial form of one (data/droid_build.js).
@@ -429,6 +383,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
     "/dome_panel_model.js": readData("dome_panel_model.js"),
     "/body_art.js": readData("body_art.js"),
     "/body_view.js": readData("body_view.js"),
+    "/outputs.js": readData("outputs.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/parts.js": readData("parts.js"),
     "/apply_timing.js": readData("apply_timing.js"),

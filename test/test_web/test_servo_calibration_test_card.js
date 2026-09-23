@@ -26,6 +26,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { bootServos, output, sleep } from "./helpers/parts_surface.js";
+import { configOutputs } from "./helpers/fake_droid.js";
 
 // A FireBeetle 2: its labels carry a space.
 const FIREBEETLE = () => [
@@ -36,13 +37,12 @@ const FIREBEETLE = () => [
 ];
 
 // GET /api/config's Output entries, as the firmware reports them: GPIO 4
-// carries the LED strip and GPIO 50 is not wired. The ids follow no pattern.
-const COMPONENTS = {
-  q1: { label: "GPIO 49", address: "ledc:0", enabledField: "e1", typeField: "t1", enabled: true, type: "mg996r" },
-  q2: { label: "GPIO 50", address: "ledc:1", enabledField: "e2", typeField: "t2", enabled: false, type: "mg996r" },
-  q3: { label: "GPIO 4", address: "ledc:3", ledStripPin: 1, enabledField: "e3", typeField: "t3", enabled: true, type: "rgb" },
-  q4: { label: "GPIO 5", address: "ledc:4", ledStripPin: 2, enabledField: "e4", typeField: "t4", enabled: true, type: "mg90s" },
-};
+// carries the LED strip and GPIO 50 is not wired.
+const COMPONENTS = configOutputs(FIREBEETLE(), {
+  "ledc:1": { enabled: false },
+  "ledc:3": { lightCapable: true, type: "rgb" },
+  "ledc:4": { lightCapable: true, type: "mg90s" },
+});
 
 const drive = (env, address, action) =>
   env.row(address).querySelectorAll(".outputs-go").find((node) => node.dataset.action === action);

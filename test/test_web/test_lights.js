@@ -69,13 +69,14 @@ test("a status frame does not take a half-made pick out of a builder's hand", as
   assert.equal(picked(), "Alarm", "the chip a builder pressed is the chip that is marked");
 
   // The same reading again, which is what the stream sends between changes.
-  env.pushStatus({ lights: { w9: { r: 0, g: 90, b: 255, effect: "solid", available: true } } });
+  const lit = env.answer.idOf("ledc:9");
+  env.pushStatus({ lights: { [lit]: { r: 0, g: 90, b: 255, effect: "solid", available: true } } });
   await env.settle();
   assert.equal(picked(), "Alarm", "an unchanged frame redrew the plate and lost the pick");
 
   // And a frame that really does say something new: the strip's own reading
   // changed, so the page redraws - and still owes the builder their pick.
-  env.pushStatus({ lights: { w9: { r: 255, g: 0, b: 0, effect: "blink", available: true } } });
+  env.pushStatus({ lights: { [lit]: { r: 255, g: 0, b: 0, effect: "blink", available: true } } });
   await env.settle();
   assert.equal(picked(), "Alarm", "a redraw reset a pick the builder had already made");
 });

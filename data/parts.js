@@ -24,12 +24,14 @@
 // (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-table.js:171-173).
 //
 // A move is announced before it happens (#347): data/parts_mapping.js holds the
-// question and the one request both surfaces move a Part through.
+// question and the one request both surfaces move a Part through. What each
+// Output is, and which Part is on it, is data/outputs.js's answer (#415).
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
   const kinds = window.DroidPartKind;
   const P = window.PAParts;
+  const OUTPUTS = window.PAOutputs;
 
   const {
     NOT_WIRED,
@@ -38,13 +40,14 @@
     partById,
     partLabel,
     listParts,
-    outputLabel,
     servoWord,
     hasServoWord,
     optionText,
-    outputOf,
     isLightRow,
   } = P;
+
+  // The Output a Part is on, among the rows this page last painted.
+  const outputOf = (partId) => OUTPUTS.forPart(partId, outputs);
 
   // The bench feed (#318). One read of the outputs answer a second repaints the
   // table and the picture - any Part another client or the Console moved, and
@@ -134,7 +137,7 @@
   const held = (id, select) => id === mover.pending() || document.activeElement === select;
 
   const paintRow = (id, row, addresses) => {
-    const output = outputOf(outputs, id);
+    const output = outputOf(id);
     row.node.classList.toggle("is-wired", output !== null);
     const gang = output ? output.parts.filter((other) => other !== id) : [];
     row.gang.textContent = gang.length ? ` moves with ${listParts(gang)}` : "";
@@ -161,7 +164,7 @@
     const addresses = outputs.map((output) => output.address).join(",");
     rows.forEach((row, id) => paintRow(id, row, addresses));
 
-    const wired = catalog.parts.filter((part) => outputOf(outputs, part.id) !== null).length;
+    const wired = catalog.parts.filter((part) => outputOf(part.id) !== null).length;
     const idle = outputs.filter((output) => output.parts.length === 0).length;
     let text = `${wired} of ${catalog.parts.length} parts on an output · ${idle} of ${outputs.length} outputs driving nothing`;
     // A Part the droid drives and this page has no row for would otherwise be
@@ -177,12 +180,10 @@
     paintBody();
   };
 
+  // The servo table alone: this page shows nothing the config answers.
   const loadOutputs = async ({ handle = null } = {}) => {
-    const api = handle || window.PAApi;
-    const result = await api.get("/api/servo/outputs");
-    const answer = result?.data?.outputs;
-    if (!Array.isArray(answer)) throw new Error("the droid's outputs answer carries no table");
-    outputs = P.readOutputs(answer);
+    await OUTPUTS.refresh({ handle });
+    outputs = OUTPUTS.list().filter((output) => output.fromTable);
     paint();
   };
 
@@ -295,14 +296,14 @@
   // fraction to be of, which is its own mark rather than a made-up number.
   const markFor = (partId) => {
     const part = partById.get(partId);
-    const output = outputs === null ? null : outputOf(outputs, partId);
+    const output = outputs === null ? null : outputOf(partId);
     if (outputs === null) return { mark: view.MARKS.UNKNOWN, said: "finding out" };
     if (!output) return { mark: view.MARKS.UNASSIGNED };
     if (!output.reported) return { mark: view.MARKS.UNKNOWN, said: "this firmware does not say where it is" };
     if (output.commandedUs === null) return { mark: view.MARKS.LIMP };
     // A light has no travel, so it gets no position and no Open: the treatment
     // removes what its Kind cannot promise (data/droid_part_kind.js).
-    if (kinds?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${outputLabel(output)}` };
+    if (kinds?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${output.name}` };
     if (!output.calibrated) return { mark: view.MARKS.UNMEASURED };
     const span = output.openUs - output.closeUs;
     return { mark: view.MARKS.OPENABLE, at: span === 0 ? 0 : (output.commandedUs - output.closeUs) / span };
@@ -317,7 +318,7 @@
     const marker = drawing.markerOf(markerId);
     if (marker.panTilt) return {};
     const own = marker.parts.filter((id) => !kinds?.isLight(partById.get(id)));
-    const wired = own.concat(marker.parts).find((id) => outputs !== null && outputOf(outputs, id) !== null);
+    const wired = own.concat(marker.parts).find((id) => outputs !== null && outputOf(id) !== null);
     if (wired) return markFor(wired);
     if (marker.target) return { mark: view.MARKS.OPENABLE, at: domeTold.get(marker.target) ? 1 : 0 };
     return markFor(own[0] || marker.parts[0]);
@@ -376,7 +377,7 @@
   // expander's unnamed row cannot be reached from here at all - the same bound
   // the calibration dial keeps.
   const servoOutputFor = (partId) => {
-    const output = outputs === null ? null : outputOf(outputs, partId);
+    const output = outputs === null ? null : outputOf(partId);
     if (!output || !hasServoWord(output) || isLightRow(output) || !output.calibrated) return null;
     return output;
   };
@@ -391,10 +392,10 @@
     const onDroid = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) !== -1);
     const isFitted = unfitted.length < parts.length;
     const own = parts.filter((id) => !kinds?.isLight(partById.get(id)));
-    const wiredPart = own.concat(parts).find((id) => outputs !== null && outputOf(outputs, id) !== null) || null;
-    const output = wiredPart === null ? null : outputOf(outputs, wiredPart);
+    const wiredPart = own.concat(parts).find((id) => outputs !== null && outputOf(id) !== null) || null;
+    const output = wiredPart === null ? null : outputOf(wiredPart);
     const servoOutput = wiredPart === null ? null : servoOutputFor(wiredPart);
-    const unwired = parts.filter((id) => outputs !== null && outputOf(outputs, id) === null);
+    const unwired = parts.filter((id) => outputs !== null && outputOf(id) === null);
     // A Part off the droid with an Output still mapped: the two facts disagree,
     // and neither is wrong, so the panel says both and changes neither.
     const offButMapped = fitted !== null && !isFitted && output !== null;
@@ -403,7 +404,7 @@
     const open = cls === "open";
 
     let servo;
-    if (output) servo = `On a servo (${outputLabel(output)})`;
+    if (output) servo = `On a servo (${output.name})`;
     else if (marker.target) servo = "On a servo (dome-link)";
     else if (outputs === null) servo = "Finding out";
     else servo = "No output mapped";
@@ -434,7 +435,7 @@
     if (marker.panTilt) {
       why = "";
     } else if (offButMapped) {
-      why = `Not on your droid, but still mapped to ${outputLabel(output)}. Add it back, or change its output.`;
+      why = `Not on your droid, but still mapped to ${output.name}. Add it back, or change its output.`;
     } else if (!isFitted) {
       why = "Not on your droid. Add it to your build first.";
     } else if (outputs === null && !marker.target) {
@@ -573,8 +574,8 @@
         }
         const mapped = [];
         leaving.forEach((id) => {
-          const output = outputs === null ? null : outputOf(outputs, id);
-          if (output && mapped.indexOf(outputLabel(output)) === -1) mapped.push(outputLabel(output));
+          const output = outputs === null ? null : outputOf(id);
+          if (output && mapped.indexOf(output.name) === -1) mapped.push(output.name);
         });
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
         showFeedback(
@@ -708,6 +709,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "parts list",
       "/droid_part_kind.js": "parts list",
+      "/outputs.js": "the outputs",
       "/parts.js": "parts table",
     });
     window.PABootstrap.registerSection("parts-outputs", loadOutputs, { label: "what drives each part and output" });

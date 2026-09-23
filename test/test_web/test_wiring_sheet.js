@@ -45,62 +45,28 @@ const identity = (lanes = LANES, capabilities = {}) => ({
   build_flags: { PA_HEAP_PROFILE: false },
 });
 
-// One Servo Output row as GET /api/servo/outputs answers it. Only the four
-// fields the sheet reads are here; the rest of the row is the calibration
-// dial's and is not this surface's business.
-const output = (address, name, extra = {}) => ({
-  address,
-  name,
-  parts: [],
-  component: "none",
-  bandLoUs: 1000,
-  bandHiUs: 2000,
-  openUs: 2000,
-  centreUs: 1500,
-  closeUs: 1000,
-  calibrated: false,
-  held: false,
-  limp: "off",
-  commandedUs: null,
-  targetUs: null,
-  nudgesDone: 0,
-  ...extra,
-});
+// The droid's Outputs, both halves from one description (helpers/fake_droid.js,
+// #415). Node loads the ES module helper from this CommonJS file directly.
+const { servoRow: output, freshOutputs, configOutputs } = require("./helpers/fake_droid.js");
 
-// A controller nobody has configured: the five LEDC rows
-// servoOutputTableDefaults() seeds, every one with an empty Part list
-// (include/servo_output_row.h:585-604, docs/api.md:663).
-const freshOutputs = () => [
-  output("ledc:0", "ARM1", { component: "mg996r" }),
-  output("ledc:1", "ARM2", { component: "mg996r" }),
-  output("ledc:3", "AUX1"),
-  output("ledc:4", "AUX2"),
-  output("ledc:5", "AUX3"),
-];
-
-// A fresh controller's Component Toggles: everything off, which is what an
-// unprovisioned controller carries (CONTEXT.md "Setup"). The five Outputs come
-// as GET /api/config reports them (src/web/api_config.cpp CONFIG_OUTPUTS): the
-// board's label, the address that joins each to its servo row, and the fields
-// that save it.
-const configOutput = (address, label, id, enabled, type = "") => ({
-  enabled,
-  label,
-  address,
-  ...(type ? { type } : {}),
-  enabledField: `enable${id[0].toUpperCase()}${id.slice(1)}`,
-  typeField: `${id}Type`,
-});
-const freshComponents = () => ({
-  arm1: configOutput("ledc:0", "ARM1", "arm1", false),
-  arm2: configOutput("ledc:1", "ARM2", "arm2", false),
-  aux1: configOutput("ledc:3", "ARM3", "aux1"),
-  aux2: configOutput("ledc:4", "ARM4", "aux2"),
-  aux3: configOutput("ledc:5", "ARM5", "aux3"),
+// The Component Toggles the Board Lanes join on, all off, which is what an
+// unprovisioned controller carries (CONTEXT.md "Setup").
+const LANE_TOGGLES = {
   drive: { enabled: false, label: "S1" },
   audio: { enabled: false, label: "S2" },
   protoR2link: { enabled: false, label: "S3" },
   domeEsc: { enabled: false, label: "DOME" },
+};
+
+// GET /api/config for a set of rows: every Output off unless `say` marks it
+// wired (fake_droid's configOutputs() for the rest), and the lanes' toggles.
+const componentsFor = (rows, say = {}, lanes = {}) => ({
+  ...configOutputs(
+    rows,
+    Object.fromEntries(rows.map((row) => [row.address, say[row.address] === null ? null : { enabled: false, ...say[row.address] }])),
+  ),
+  ...LANE_TOGGLES,
+  ...lanes,
 });
 
 // GET /api/identity/components, cut to the rows the board's picture and name
@@ -117,7 +83,7 @@ const lineup = (running = "artoo_pcb") => ({
 
 const boot = async ({
   outputs = freshOutputs(),
-  components = freshComponents(),
+  components = componentsFor(outputs),
   manifest = identity(),
   running = "artoo_pcb",
 } = {}) => {
@@ -298,6 +264,8 @@ const boot = async ({
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
     "/droid_parts.js": readData("droid_parts.js"),
+    "/outputs.js": readData("outputs.js"),
+    "/output_settings.js": readData("output_settings.js"),
     "/wiring.js": readData("wiring.js"),
     // The picker's lookup and frame, which name and picture the board.
     "/apply_timing.js": readData("apply_timing.js"),
@@ -362,13 +330,13 @@ test("switching an output off dashes its wire and keeps it on the sheet", async 
   const wired = [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })];
   const on = await boot({
     outputs: structuredClone(wired),
-    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
+    components: componentsFor(wired, { "ledc:0": { enabled: true } }),
   });
   assert.equal(on.isLive("ledc:0"), true);
 
   const off = await boot({
     outputs: structuredClone(wired),
-    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
+    components: componentsFor(wired),
   });
   assert.equal(off.isLive("ledc:0"), false, "a wire nobody marked wired is drawn not wired");
   assert.match(off.wire("ledc:0").textContent, /Upper utility arm/, "and still says what is on its end");
@@ -385,10 +353,8 @@ test("switching an output off dashes its wire and keeps it on the sheet", async 
 // now (#369), not on Configuration, so that is where its wire sends them - in
 // words, because a picture carries no link and the saved copy has no page.
 test("an output not wired names where it is marked wired, and not Configuration", async () => {
-  const off = await boot({
-    outputs: [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })],
-    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", false) },
-  });
+  const rows = [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })];
+  const off = await boot({ outputs: rows, components: componentsFor(rows) });
   const text = off.wire("ledc:0").textContent;
   assert.match(text, /Mark it under Outputs/, "the wire names the control on this surface");
   assert.doesNotMatch(text, /Configuration/, "and no longer the page the control left");
@@ -402,16 +368,16 @@ test("an output not wired names where it is marked wired, and not Configuration"
 // that carries a light has to say so: a builder tracing this sheet to decide
 // what to unplug is the person the wrong word costs.
 test("a wire carrying a light says so, and one carrying a servo says that", async () => {
+  const rows = [
+    output("ledc:3", "ARM3", { parts: ["dataPanel"], component: "rgb" }),
+    output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+  ];
   const env = await boot({
-    outputs: [
-      output("ledc:3", "ARM3", { parts: ["dataPanel"], component: "rgb" }),
-      output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
-    ],
-    components: {
-      ...freshComponents(),
-      aux1: configOutput("ledc:3", "ARM3", "aux1", true, "rgb"),
-      arm1: configOutput("ledc:0", "ARM1", "arm1", true, "mg996r"),
-    },
+    outputs: rows,
+    components: componentsFor(rows, {
+      "ledc:3": { enabled: true, lightCapable: true, type: "rgb" },
+      "ledc:0": { enabled: true },
+    }),
   });
   assert.match(env.wire("ledc:3").textContent, /LED strip/, "the lit wire names what lights it");
   assert.doesNotMatch(env.wire("ledc:0").textContent, /LED strip/, "and the servo's wire does not");
@@ -434,7 +400,7 @@ test("a latched estop does not rewrite the sheet", async () => {
   ];
   const env = await boot({
     outputs: latched,
-    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
+    components: componentsFor(latched, { "ledc:0": { enabled: true } }),
   });
   assert.equal(env.isLive("ledc:0"), true, "the wire is still the wire, whatever the estop is doing");
 });
@@ -462,14 +428,12 @@ test("a latched estop does not rewrite the sheet", async () => {
 // when it opens - no script, no stylesheet, no image (#366).
 test("the saved sheet is the sheet on the screen, and loads nothing when it opens", async () => {
   const { MiniDOMParser } = await import("./helpers/mini_dom.js");
-  const env = await boot({
-    outputs: [
-      output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
-      output("ledc:1", "ARM2", { parts: ["utilLo"], component: "mg996r" }),
-      output("ledc:3", "AUX1"),
-    ],
-    components: { ...freshComponents(), arm1: configOutput("ledc:0", "ARM1", "arm1", true) },
-  });
+  const rows = [
+    output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+    output("ledc:1", "ARM2", { parts: ["utilLo"], component: "mg996r" }),
+    output("ledc:3", "AUX1"),
+  ];
+  const env = await boot({ outputs: rows, components: componentsFor(rows, { "ledc:0": { enabled: true } }) });
 
   const link = env.document.getElementById("wiring-save");
   let followed = true;
@@ -504,28 +468,34 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
 // a board has, and what the board prints beside each, are the firmware's
 // answer. A board reporting a different set - two Outputs, printed GPIO 49
 // and GPIO 4 - is drawn as exactly that, in its order, named by what it
-// prints and never by the servo table's own ARM1..AUX3 words; an Output only
-// the servo table knows comes after the serial links. Each wire takes the
-// palette color at its place (--wire-n), from the stylesheet and never a
-// literal, and a wire to something not wired takes --wire-off.
+// prints and never by the servo table's own ARM1..AUX3 words. An Output only
+// the servo table knows follows the ones the config describes, before the
+// serial links: the Outputs are one list in data/outputs.js's order (#415),
+// which is the order the Outputs plates below take their colors from too.
+// Each wire takes the palette color at its place (--wire-n), from the
+// stylesheet and never a literal, and a wire to something not wired takes
+// --wire-off.
 test("the wires are the Outputs the firmware reports, named as the board prints them, colored by place", async () => {
+  const rows = [
+    output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+    output("ledc:1", "ARM2"),
+    output("ledc:3", "AUX1"),
+  ];
   const env = await boot({
-    outputs: [
-      output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
-      output("ledc:1", "ARM2"),
-      output("ledc:3", "AUX1"),
-    ],
-    components: {
-      out49: configOutput("ledc:0", "GPIO 49", "out49", true),
-      out4: configOutput("ledc:3", "GPIO 4", "out4", false, 1),
-      drive: { enabled: true, label: "GPIO 20/21" },
-      audio: { enabled: false, label: "GPIO 34/36" },
-      protoR2link: { enabled: true, label: "GPIO 22/23" },
-    },
+    outputs: rows,
+    components: componentsFor(
+      rows,
+      { "ledc:0": { label: "GPIO 49", enabled: true }, "ledc:3": { label: "GPIO 4" }, "ledc:1": null },
+      {
+        drive: { enabled: true, label: "GPIO 20/21" },
+        audio: { enabled: false, label: "GPIO 34/36" },
+        protoR2link: { enabled: true, label: "GPIO 22/23" },
+      },
+    ),
   });
   assert.deepEqual(
     env.wires().map((wire) => wire.dataset.wire),
-    ["ledc:0", "ledc:3", "drive", "audio", "protor2link", "ledc:1"],
+    ["ledc:0", "ledc:3", "ledc:1", "drive", "audio", "protor2link"],
   );
   const silk = (key) => env.wire(key).querySelector(".wd-silk")?.textContent ?? "";
   assert.equal(silk("ledc:0"), "GPIO 49");
@@ -534,9 +504,9 @@ test("the wires are the Outputs the firmware reports, named as the board prints 
   const ink = (key) => env.wire(key).querySelector(".wd-line").getAttribute("style");
   assert.equal(ink("ledc:0"), "stroke:var(--wire-1)");
   assert.equal(ink("ledc:3"), "stroke:var(--wire-off)", "not marked wired");
-  assert.equal(ink("drive"), "stroke:var(--wire-3)");
-  assert.equal(ink("protor2link"), "stroke:var(--wire-5)");
-  assert.equal(ink("ledc:1"), "stroke:var(--wire-6)");
+  assert.equal(ink("ledc:1"), "stroke:var(--wire-3)", "only the servo table knows it, so it is wired");
+  assert.equal(ink("drive"), "stroke:var(--wire-4)");
+  assert.equal(ink("protor2link"), "stroke:var(--wire-6)");
 });
 
 // The diagram pictures and names the Body Controller this image runs on, from

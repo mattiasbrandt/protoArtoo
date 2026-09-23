@@ -98,10 +98,10 @@
   //
   // The Outputs are not in this list: which ones the droid has and what each is
   // called - what its board prints beside the pin, ARM3 on the Artoo PCB, GPIO 4
-  // on the FireBeetle 2 - is the firmware's answer, read from GET /api/config
-  // (every components{} entry carrying an `address`, in its order), and this
-  // page knows no Output of its own (ADR 0033 Amendment 2026-09-19). They wire
-  // the card, as the firmware lists them, once that answer has arrived.
+  // on the FireBeetle 2 - is the firmware's answer, which data/outputs.js reads
+  // from GET /api/config (#415), and this page knows no Output of its own (ADR
+  // 0033 Amendment 2026-09-19). They wire the card, as the firmware lists
+  // them, once that answer has arrived.
   let outputLabels = [];
   const SUBSYSTEM_LABELS = [
     ["domeEsc", "Dome ESC"],
@@ -238,13 +238,10 @@
 
   let renderedComponentIds = null;
 
-  // An Output the board labels nothing reads as its address, which still says
-  // where it plugs in - never a name this page made up.
-  const adoptOutputLabels = (components) => {
-    const entries = components && typeof components === "object" ? components : {};
-    outputLabels = Object.keys(entries)
-      .filter((id) => typeof entries[id]?.address === "string" && entries[id].address !== "")
-      .map((id) => [id, typeof entries[id].label === "string" && entries[id].label !== "" ? entries[id].label : entries[id].address]);
+  // Keyed by the stored id the status frame reports each Output under, and
+  // named as data/outputs.js names it.
+  const adoptOutputLabels = (outputs) => {
+    outputLabels = outputs.filter((output) => output.fromConfig).map((output) => [output.id, output.name]);
     // Whichever arrived first, the card is drawn again from the last status
     // this page applied, so the names follow on every delivery path - the
     // stream and the fallback poll alike.
@@ -916,16 +913,18 @@
   const loadLogLevel = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
     const api = handle ?? window.PAApi;
-    const result = await api.get("/api/config", { cache: "no-store" });
+    // The config alone, read through data/outputs.js so the Outputs' names
+    // come with it (PAApi reads no-store by default).
+    const { config, outputs } = await window.PAOutputs.load({ handle: api, rows: false });
     // The identity plate's Droid Build row rides this payload rather than
     // fetching one of its own: droid_build.js's adopt() takes a config the page
     // already holds, and the controller sheds connections under load, so a
     // second GET of the same document would cost a client slot to learn what
     // this one already said.
-    renderDroidBuild(window.DroidBuild?.adopt(result.data) || null);
+    renderDroidBuild(window.DroidBuild?.adopt(config) || null);
     // The Outputs' names ride the same payload, for the same reason.
-    adoptOutputLabels(result.data?.components);
-    const level = Number(result.data?.system?.logLevel);
+    adoptOutputLabels(outputs);
+    const level = Number(config?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
     }

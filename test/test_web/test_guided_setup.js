@@ -55,7 +55,7 @@ const SURFACES = {
   },
   maintenance: {
     html: "maintenance.html",
-    scripts: ["feature_availability.js", "maintenance.js"],
+    scripts: ["feature_availability.js", "outputs.js", "maintenance.js"],
   },
 };
 
@@ -410,7 +410,8 @@ const restoreParamsFor = async (patch) => {
   env.id("restore-chk-mood-map").checked = false;
 
   env.click("backup-restore-btn");
-  await new Promise((resolve) => setImmediate(resolve));
+  // The restore reads the Outputs before it saves (data/outputs.js, #415).
+  for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
   const restore = env.posts.filter((post) => post.body instanceof URLSearchParams).at(-1);
   assert.ok(restore, "the restore must have reached the controller at all");
   return restore.body;

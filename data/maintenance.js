@@ -302,32 +302,35 @@
     }
   };
 
-  // ---- RESTORE: the Outputs this droid has, as its firmware reports them ----
-  // Which Outputs exist, and which config fields save each, is the running
-  // firmware's answer (GET /api/config: every components{} entry carrying an
-  // `address`, with its enabledField and typeField). A backup is matched to it
-  // by the Output's stored id, so a backup made before the firmware reported
-  // those fields restores the same way, and this page lists no Output of its
-  // own (ADR 0033 Amendment 2026-09-19).
-  const liveOutputs = async () => {
-    const result = await window.PAApi.get('/api/config', { timeoutMs: 5000 });
-    const components = result?.data?.components || {};
-    return Object.keys(components)
-      .filter((id) => typeof components[id]?.address === 'string'
-        && typeof components[id].enabledField === 'string'
-        && typeof components[id].typeField === 'string')
-      .map((id) => ({
-        id,
-        enabledField: components[id].enabledField,
-        typeField: components[id].typeField,
-        // Absent on an Output that cannot carry a light, which is what stops a
-        // restore inventing a field for one.
-        ledCountField: typeof components[id].ledCountField === 'string'
-          ? components[id].ledCountField : '',
-      }));
+  // ---- RESTORE: the Outputs' own settings, from the backup ----
+  // Which Outputs this droid has, and which fields save each, are
+  // data/outputs.js's answer from the running firmware (#415). A backup is
+  // matched to it by the Output's stored id, so a backup made before the
+  // firmware reported any save fields restores the same way, and this page
+  // lists no Output of its own (ADR 0033 Amendment 2026-09-19). What an Output
+  // cannot save - a light's count on one that cannot carry a light - is not
+  // asked for.
+  const outputChanges = (cfg, outputs) => {
+    const components = cfg?.components || {};
+    const changes = {};
+    outputs.forEach((output) => {
+      const saved = components[output.id];
+      if (!output.switchable || !saved) return;
+      const patch = {};
+      if (saved.enabled !== undefined) patch.wired = Boolean(saved.enabled);
+      if (saved.type !== undefined) patch.type = saved.type;
+      // A light's settings, one per Output. The droid-wide aux_led_pin /
+      // aux_led_count this replaced could only carry one answer, and a restore
+      // dropped every other lit wire (#413).
+      if (output.ledCountSettable && saved.ledCount !== undefined) patch.ledCount = saved.ledCount;
+      if (Object.keys(patch).length > 0) changes[output.address] = patch;
+    });
+    return changes;
   };
 
   // ---- RESTORE: flatten GET /api/config nested JSON to POST form params ----
+  // Everything but the Outputs' own settings, which data/outputs.js adds to
+  // the same request.
   const configToFormParams = (cfg, outputs) => {
     const p = new URLSearchParams();
     const d = cfg?.drive || {};
@@ -350,15 +353,8 @@
     if (rc.member !== undefined) p.set('rcMember', rc.member);
     if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
 
-    outputs.forEach(({ id, enabledField, typeField, ledCountField }) => {
-      if (components[id]?.enabled !== undefined) p.set(enabledField, components[id].enabled ? 'true' : 'false');
-      if (components[id]?.type !== undefined) p.set(typeField, components[id].type);
-      // A light's settings, under the field that Output named for them. The
-      // droid-wide aux_led_pin / aux_led_count this replaced could only carry
-      // one answer, and a restore dropped every other lit wire (#413).
-      if (ledCountField && components[id]?.ledCount !== undefined) {
-        p.set(ledCountField, components[id].ledCount);
-      }
+    outputs.forEach(({ id }) => {
+      if (!id) return;
       // The recorded ends, under the field names /api/config speaks for them.
       for (const end of ['OpenUs', 'CloseUs']) {
         if (cfg[`${id}${end}`] !== undefined) p.set(`${id}${end}`, cfg[`${id}${end}`]);
@@ -487,9 +483,13 @@
 
     if (chkConfig?.checked && parsedBackup.config) {
       try {
-        const outputs = await liveOutputs();
-        await window.PAApi.postForm('/api/config', configToFormParams(parsedBackup.config, outputs),
-          { timeoutMs: 10000 });
+        // One save, as it always was: the Outputs' settings go through
+        // data/outputs.js with the rest of the config riding along.
+        const { outputs } = await window.PAOutputs.load({ rows: false });
+        await window.PAOutputs.saveAll(outputChanges(parsedBackup.config, outputs), {
+          alongside: configToFormParams(parsedBackup.config, outputs),
+          timeoutMs: 10000,
+        });
         lines.push('Core config: restored');
       } catch (err) {
         lines.push(`Core config: FAILED — ${window.PAApi.messageFor(err)}`);
