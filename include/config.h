@@ -767,8 +767,13 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4656 -> 582
 // rule still lands on 10752, so the allocation does not move.
 constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8368;
 constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8368 -> 10460 -> 10752
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5792;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 5792 -> 7240 -> 7680
+// Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
+// lit wire on its own (fa8eed74, e277d325), and the chain carries that through
+// the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.
+// The rule lands on the step the stack already is, so the allocation does not
+// move.
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 6000;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 6000 -> 7500 -> 7680
 constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
 constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
 // HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this
