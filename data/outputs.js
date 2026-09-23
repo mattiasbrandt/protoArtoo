@@ -39,7 +39,8 @@
 // HOW A SERVO MOVES is its Motion Profile (ADR 0052, #414): time to full
 // throw, time to get up to speed and the ease. The config reports each on the
 // Output's entry with the field that saves it, and the ease words are listed
-// here beside the other two vocabularies.
+// here beside the other two vocabularies. What it does at power-up - its boot
+// behaviour - is reported and saved the same way, and its words live here too.
 //
 // DATA ONLY. Nothing here touches the page: the plates are drawn by
 // data/output_settings.js from what this module holds.
@@ -65,6 +66,14 @@
     Object.freeze({ id: "none", label: "none" }),
     Object.freeze({ id: "soft", label: "soft" }),
     Object.freeze({ id: "overshoot", label: "overshoot" }),
+  ]);
+
+  // What an Output does at power-up (ADR 0052), keyed by the token the firmware
+  // stores. Limp is the default and first.
+  const BOOTS = Object.freeze([
+    Object.freeze({ id: "limp", label: "limp" }),
+    Object.freeze({ id: "home-hold", label: "home and hold" }),
+    Object.freeze({ id: "home-release", label: "home and release" }),
   ]);
 
   const lightType = (token) => LIGHT_TYPES.find((type) => type.id === token) || null;
@@ -144,6 +153,8 @@
   //   throwMs, accelMs its Motion Profile's two times, or null where the
   //   ease             config reports none; the ease as the builder chose it
   //   motionSettable   the config names the fields that save all three
+  //   boot             what it does at power-up, as the builder chose it
+  //   bootSettable     the config names the field that saves boot
   //   started          what it was first reported with (above), or null
   //   parts ...        its servo table row, read by readRow()
   const outputOf = (address, id, entry, row) => {
@@ -173,6 +184,8 @@
       accelMs: typeof entry?.accelMs === "number" ? entry.accelMs : null,
       ease: text(entry?.ease),
       motionSettable: Boolean(entry && text(entry.throwField) && text(entry.accelField) && text(entry.easeField)),
+      boot: text(entry?.boot),
+      bootSettable: Boolean(entry && text(entry.bootField)),
     };
     if (entry && !started.has(address)) {
       started.set(address, Object.freeze({
@@ -208,6 +221,7 @@
         throwMs: text(entry.throwField),
         accelMs: text(entry.accelField),
         ease: text(entry.easeField),
+        boot: text(entry.bootField),
       });
       list.push(outputOf(address, id, entry, byAddress.get(address) || null));
     });
@@ -289,6 +303,7 @@
     throwMs: (value) => String(value),
     accelMs: (value) => String(value),
     ease: (value) => String(value),
+    boot: (value) => String(value),
   };
 
   // What each setting is called on screen. The droid refuses a value by the
@@ -301,6 +316,7 @@
     throwMs: "time to full throw",
     accelMs: "time to get up to speed",
     ease: "ease",
+    boot: "power-up setting",
   };
 
   // A refusal naming one of the fields this save sent, put in the page's words:
@@ -342,7 +358,7 @@
 
   /**
    * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
-   * accelMs, ease } }`, any of them per Output. The droid's answer becomes what
+   * accelMs, ease, boot } }`, any of them per Output. The droid's answer becomes what
    * this module holds.
    *
    * @param {object} changes
@@ -418,6 +434,7 @@
     NO_SERVO,
     LIGHT_TYPES,
     EASES,
+    BOOTS,
     lightType,
     servoModel,
     load,

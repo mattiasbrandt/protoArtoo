@@ -118,3 +118,17 @@ test("an Output nobody has measured cannot send a shape, and a measured one save
     { [entry("ledc:0").throwField]: "800" },
   ]);
 });
+
+// What an Output does at power-up is set on the same row (ADR 0052, #414), and
+// unlike how it moves it is NOT fenced by calibration: the two are separate
+// decisions, and calibrating never changes it. So an unmeasured Output's row
+// saves it, under the field the firmware named - never one the page made up.
+test("what an Output does at power-up saves under the firmware's field, measured or not", async () => {
+  const env = await bootServos({ outputs: freshOutputs() });
+  const entry = (address) => Object.values(env.components).find((each) => each.address === address);
+
+  env.region().fire("click", { target: env.row("ledc:1").querySelector('[data-boot="home-hold"]') });
+  await sleep(20);
+
+  assert.deepEqual(env.moves().map((post) => post.form), [{ [entry("ledc:1").bootField]: "home-hold" }]);
+});

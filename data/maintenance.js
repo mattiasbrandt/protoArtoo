@@ -332,6 +332,8 @@
         if (saved.accelMs !== undefined) patch.accelMs = saved.accelMs;
         if (saved.ease !== undefined) patch.ease = saved.ease;
       }
+      // What it does at power-up, the same way: an older backup carries none.
+      if (output.bootSettable && saved.boot !== undefined) patch.boot = saved.boot;
       if (Object.keys(patch).length > 0) changes[output.address] = patch;
     });
     return changes;
