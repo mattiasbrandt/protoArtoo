@@ -754,8 +754,12 @@ constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 
 // paLogLine -> consoleCdcProbeLog -> the RISC-V newlib float tail, the USB-CDC
 // drop path #256 recorded. The rule lands on the step the stack already is, so
 // the allocation does not move; the floor holds by 1488 B.
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4656;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4656 -> 5820 -> 6144
+// Re-derived 2026-09-23 (#414): 4656 -> 4672, the same +16 B as the Xtensa arm
+// and from the same cause: the boot pass's owed-release check copies the
+// Output's ServoCommandedPosition onto the inlined root frame. The rule lands
+// on the step the stack already is, so the allocation does not move.
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4672;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 5840 -> 6144
 // Re-derived 2026-09-18 (#369): Console 8320 -> 8352 and WebEvents 5776 ->
 // 5792. ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member,
 // the Radio Controller's Component Member, and both chains carry a snapshot by
