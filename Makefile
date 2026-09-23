@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -186,6 +186,13 @@ check-vocabulary-drift: ## Check that operator copy says which controller it mea
 # than implemented a second time (#353, #367).
 check-board-label-drift: ## Check that no operator copy carries one board's own labels
 	python3 tools/check_board_label_drift.py
+
+# The palette is declared once, in data/style.css :root. This reads everything
+# ELSE data/ paints with - an inline <style>, a style attribute, an SVG paint
+# attribute, a color constant - because test_style_token_layer.js already walks
+# the stylesheet itself through the real cascade (#353, #327).
+check-color-drift: ## Check that no surface paints with a color :root has not
+	python3 tools/check_color_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py
