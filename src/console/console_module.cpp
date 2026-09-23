@@ -1344,7 +1344,7 @@ static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRe
             servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
             const char* name = servoOutputAddressName(row.driver, row.channel);
 
-            // Every Part the Output drives, not the first: a ganged lead names
+            // Every Part the Output drives, not the first: a ganged wire names
             // all of them (ADR 0050).
             char parts[SERVO_OUTPUT_PART_SLOTS * (SERVO_OUTPUT_PART_ID_MAX + 1) + 1] = {};
             size_t used = 0;
@@ -1796,8 +1796,8 @@ static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fi
 // commit sequence every scalar config write shares regardless of which
 // outcome a clean write reports (Component Toggles below always answer
 // staged-until-reboot per ADR 0027; the four non-toggle scalar fields this
-// ticket also wires - drive.config.speed-limit, aux.config.led-pin/
-// led-count, rc.config.mode - answer applied, matching how their owning
+// ticket also wires - drive.config.speed-limit, aux.config.led-count,
+// rc.config.mode - answer applied, matching how their owning
 // task already reads config_cache live, the same as every other non-toggle
 // configApply field REST already exposes).
 static void consoleWriteScalarConfigField(uint32_t requestId, const char* operationName,
@@ -1974,43 +1974,60 @@ static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatal
                                   CONSOLE_OUTCOME_APPLIED, sink);
 }
 
-// aux.config.led-pin: value=<0..AUX_LED_PIN_MAX> (aux_led_pin).
-static void consoleExecuteAuxLedPin(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                   char* rawArgs, ConsoleCommandSource source,
-                                   const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        char buf[8] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.servo.aux_led_pin);
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "aux_led_pin", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// aux.config.led-count: value=<AUX_LED_COUNT_DEFAULT..AUX_LED_COUNT_MAX>
-// (aux_led_count).
+// aux.config.led-count: target=<board output> [value=<1..255>].
+//
+// A light's settings are one per Output since #413 (ADR 0067), so this op names
+// the Output first and the number second. With no value it reads that Output's
+// count; with one it writes it, through the same configApply() field the web
+// save uses - include/board_outputs.h's `ledCountField` for that Output, which
+// is where the per-board field name is written down once.
+//
+// aux.config.led-pin went with the single stored pin. Which Output carries a
+// light is that Output's own stored type now, and a droid may have several.
 static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                     char* rawArgs, ConsoleCommandSource source,
-                                     const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
+                                      char* rawArgs, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink) {
+    ConsoleArgs parsedArgs = {};
+    ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
+    if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
+        consoleEmitArgParseError(requestId, parseStatus, sink);
+        return;
+    }
+
+    const char* badKey = nullptr;
+    for (size_t i = 0; i < parsedArgs.count; ++i) {
+        if (strcmp(parsedArgs.items[i].key, "target") != 0 &&
+            strcmp(parsedArgs.items[i].key, "value") != 0) {
+            badKey = parsedArgs.items[i].key;
+            break;
+        }
+    }
+    if (badKey != nullptr) {
+        consoleEmitArgFailure(requestId, entry->name, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+
+    const char* target = consoleArgsFind(parsedArgs, "target");
+    if (target == nullptr || target[0] == '\0') {
+        consoleEmitArgFailure(requestId, entry->name, "target", CONSOLE_REASON_MISSING_ARGUMENT,
+                              sink);
+        return;
+    }
+
+    const BoardOutput* output = boardOutputForWord(target);
+    if (output == nullptr || output->ledCountField == nullptr) {
+        // Either this board has no such Output, or it has one that cannot carry
+        // a light. Both are "that is not an answer here", which is what
+        // OUT_OF_RANGE says for a named value.
+        consoleEmitArgFailure(requestId, entry->name, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    const char* value = consoleArgsFind(parsedArgs, "value");
+    if (value == nullptr || value[0] == '\0') {
         char buf[8] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)snap.servo.aux_led_count);
+        snprintf(buf, sizeof(buf), "%u",
+                 (unsigned)configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, output->channel));
         if (sink->onRecordBegin) {
             sink->onRecordBegin(requestId, entry->name);
         }
@@ -2023,7 +2040,13 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
         }
         return;
     }
-    consoleWriteScalarConfigField(requestId, entry->name, "aux_led_count", rawArgs, source,
+
+    // The scalar write path takes one `value=` pair, so the target is spent
+    // here and only the number travels on. Wide enough for the longest value a
+    // uint8 param takes; a longer one fails the field's own range check.
+    char writeArgs[32] = {};
+    snprintf(writeArgs, sizeof(writeArgs), "value=%s", value);
+    consoleWriteScalarConfigField(requestId, entry->name, output->ledCountField, writeArgs, source,
                                   CONSOLE_OUTCOME_APPLIED, sink);
 }
 
@@ -2171,7 +2194,6 @@ struct ConsoleScalarConfigExecutorEntry {
 
 static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
     {"drive.config.speed-limit", consoleExecuteDriveSpeedLimit},
-    {"aux.config.led-pin", consoleExecuteAuxLedPin},
     {"aux.config.led-count", consoleExecuteAuxLedCount},
     {"rc.config.mode", consoleExecuteRcMode},
     {"system.config.log-level", consoleExecuteSystemLogLevel},
