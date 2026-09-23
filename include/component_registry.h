@@ -199,15 +199,6 @@ constexpr uint8_t componentCategorySelectableCount(ComponentCategoryId category)
     return count;
 }
 
-// The family's Component Member setting exists only where more than one member
-// is selectable. Both halves are derived from the manifest, so a family that
-// grows a second driver reports a member setting the moment the row lands --
-// and the declared memberKey is checked against this in
-// test/test_native/test_component_registry rather than being trusted.
-inline bool componentCategoryHasMemberSetting(ComponentCategoryId category) {
-    return componentCategorySelectableCount(category) > 1;
-}
-
 // The stored member value to use when a controller has never chosen one, or
 // chose a part this image no longer carries. Returns 0 when the family has no
 // selectable member at all, which no caller can act on and every caller can

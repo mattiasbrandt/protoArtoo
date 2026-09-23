@@ -33,7 +33,7 @@ void test_a_declared_member_key_means_more_than_one_selectable_member() {
     for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
         const ComponentCategoryEntry& cat = COMPONENT_CATEGORIES[i];
         if (cat.memberKey != nullptr) {
-            TEST_ASSERT_TRUE_MESSAGE(componentCategoryHasMemberSetting(cat.id), cat.token);
+            TEST_ASSERT_TRUE_MESSAGE(componentCategorySelectableCount(cat.id) > 1, cat.token);
         }
     }
 }
