@@ -11,6 +11,7 @@
 #include "audio_dollar_parser.h"
 #include "config.h"
 #include "rc_mapping.h"
+#include "board_outputs.h"            // which Output a retired aux_led_pin slot named
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
 #include <cstdlib>
@@ -127,10 +128,69 @@ uint16_t adoptLegacyFixedServoKeys(const ConfigReader& r, ServoOutputRow* row) {
     return 0;
 }
 
+// -----------------------------------------------------------------------------
+// adoptRetiredAuxLedKeys()
+// The one lit wire a controller stored before #413, read onto the row it was
+// always about.
+//
+// Before ADR 0067 a droid had exactly one body light: `aux_led_pin` named which
+// of the light-capable Outputs carried it -- 1, 2 or 3, counting those Outputs
+// in include/board_outputs.h's own order -- and `aux_led_count` said how many
+// LEDs were on it. Both are now the row's: a wire carries a Light Type when its
+// `component` names one, and its LEDs are that row's `led_count`.
+//
+// It is the same bridge adoptLegacyFixedServoKeys() crosses, and idempotent for
+// the same reason: nothing writes these keys, and configSaveServoOutputs()
+// removes them once the rows they became are safely down. While they are still
+// there, no save by this firmware has happened, so no stored row can already
+// carry the answer.
+//
+// The routed wire wins over the stored type, which is the rule the browser used
+// to apply on the way in (data/output_settings.js before #413): a controller
+// that was really lighting that wire had a light on it whatever its type field
+// said, and reading it as a servo would put a PWM signal on a strip.
+//
+// Returns the row index it adopted onto, or SERVO_OUTPUT_ROW_MAX for a
+// controller with nothing to adopt.
+// -----------------------------------------------------------------------------
+uint8_t adoptRetiredAuxLedKeys(const ConfigReader& r, ServoOutputTable* table) {
+    if (table == nullptr) {
+        return SERVO_OUTPUT_ROW_MAX;
+    }
+    const uint8_t slot = r.readU8(NVS_KEY_RETIRED_AUX_LED_PIN, 0);
+    if (slot == 0) {
+        return SERVO_OUTPUT_ROW_MAX;  // disabled, or a key that is not there
+    }
+
+    uint8_t seen = 0;
+    const BoardOutput* lit = nullptr;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!BOARD_OUTPUTS[i].lightCapable) {
+            continue;
+        }
+        if (++seen == slot) {
+            lit = &BOARD_OUTPUTS[i];
+            break;
+        }
+    }
+    if (lit == nullptr) {
+        return SERVO_OUTPUT_ROW_MAX;  // a slot number this board never had
+    }
+
+    const uint8_t index = servoOutputTableFindByAddress(*table, SERVO_DRIVER_LEDC, lit->channel);
+    if (index >= SERVO_OUTPUT_ROW_MAX) {
+        return SERVO_OUTPUT_ROW_MAX;
+    }
+
+    ServoOutputRow* row = &table->rows[index];
+    row->component = SERVO_COMP_RGB;
+    row->led_count = r.readU8(NVS_KEY_RETIRED_AUX_LED_COUNT, SERVO_LIGHT_LEDS_DEFAULT);
+    return index;
+}
+
 // Forward declarations of deserialize/serialize helpers
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def);
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def);
-void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def);
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def);
 void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemConfig& def);
 void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def);
@@ -229,16 +289,6 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
     out->audioVolume = constrain(out->audioVolume, (uint8_t)0, (uint8_t)30);  // DFPlayer Mini range
 }
 
-void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def) {
-    *out = def;
-    out->aux_led_pin = r.readU8(NVS_KEY_AUX_LED_PIN, def.aux_led_pin);
-    out->aux_led_count = r.readU8(NVS_KEY_AUX_LED_COUNT, def.aux_led_count);
-
-    if (!auxLedPinSettingValid(out->aux_led_pin)) {
-        out->aux_led_pin = AUX_LED_PIN_DISABLED;
-    }
-    out->aux_led_count = constrain(out->aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
-}
 
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
     *out = def;
@@ -432,7 +482,6 @@ bool configDeserialize(const ConfigReader& reader, ConfigSnapshot* out) {
     const ConfigSnapshot& defaults = getDefaults();
     deserializeDrive(reader, &out->drive, defaults.drive);
     deserializeAudio(reader, &out->audio, defaults.audio);
-    deserializeServo(reader, &out->servo, defaults.servo);
     deserializeDome(reader, &out->dome, defaults.dome);
     deserializeSystem(reader, &out->system, defaults.system);
     deserializeWifi(reader, &out->wifi, defaults.wifi);
@@ -443,7 +492,6 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer) {
     bool ok = true;
     ok = configSerializeDrive(snap.drive, writer) && ok;
     ok = configSerializeAudio(snap.audio, writer) && ok;
-    ok = configSerializeServo(snap.servo, writer) && ok;
     ok = configSerializeDome(snap.dome, writer) && ok;
     ok = configSerializeSystem(snap.system, writer) && ok;
     ok = configSerializeWifi(snap.wifi, writer) && ok;
@@ -530,14 +578,6 @@ bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
     return ok;
 }
 
-bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    // No endpoint and no component type: an addressed Servo Output row holds
-    // both and configSerializeServoOutputs() writes it (#345, ADR 0041).
-    ok = w.writeU8(NVS_KEY_AUX_LED_PIN, cfg.aux_led_pin) && ok;
-    ok = w.writeU8(NVS_KEY_AUX_LED_COUNT, cfg.aux_led_count) && ok;
-    return ok;
-}
 
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w) {
     bool ok = true;
@@ -693,10 +733,6 @@ void configDeserializeAudio(const ConfigReader& r, AudioConfig* out) {
     deserializeAudio(r, out, getDefaults().audio);
 }
 
-void configDeserializeServo(const ConfigReader& r, ServoConfig* out) {
-    deserializeServo(r, out, getDefaults().servo);
-}
-
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out) {
     deserializeDome(r, out, getDefaults().dome);
 }
@@ -786,6 +822,16 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
                          ? adoptLegacyFixedServoKeys(r, &parsed)
                          : servoOutputRowParse(stored.c_str(), fallback, &parsed);
         out->rows[i] = parsed;
+    }
+
+    // The one lit wire a pre-#413 controller stored, onto the row it named. It
+    // runs after the rows are read so it lands on the row as stored, and its
+    // repair is reported like any other: normalising it can move a pulse width
+    // into the band SERVO_COMP_RGB takes.
+    const uint8_t adopted = adoptRetiredAuxLedKeys(r, out);
+    if (adopted < SERVO_OUTPUT_ROW_MAX) {
+        const ServoOutputRow before = out->rows[adopted];
+        rowMask[adopted] |= servoOutputRowNormalise(&out->rows[adopted], before);
     }
 
     const uint32_t contested = servoOutputTableEnforcePartOwnership(out);

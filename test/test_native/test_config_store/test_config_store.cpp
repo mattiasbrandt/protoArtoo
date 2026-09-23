@@ -222,9 +222,10 @@ void test_a_saved_config_writes_no_fixed_servo_key() {
         TEST_ASSERT_EQUAL_size_t(0, writer.data().count(set.nvsCloseKey));
         TEST_ASSERT_EQUAL_size_t(0, writer.data().count(set.nvsTypeKey));
     }
-    // The servo-domain fields that are not per-output still go down.
-    TEST_ASSERT_EQUAL_size_t(1, writer.data().count(NVS_KEY_AUX_LED_PIN));
-    TEST_ASSERT_EQUAL_size_t(1, writer.data().count(NVS_KEY_AUX_LED_COUNT));
+    // And nothing writes the retired single-strip keys either (#413): a light
+    // and its settings are an Output's own, on that Output's row.
+    TEST_ASSERT_EQUAL_size_t(0, writer.data().count(NVS_KEY_RETIRED_AUX_LED_PIN));
+    TEST_ASSERT_EQUAL_size_t(0, writer.data().count(NVS_KEY_RETIRED_AUX_LED_COUNT));
 }
 
 // Test: a save removes the sequence dwell nothing reads any more (#362)
@@ -253,13 +254,8 @@ void test_a_saved_config_removes_the_retired_sequence_dwell_keys() {
     TEST_ASSERT_FALSE(prefs.isKey("seq_op"));
     TEST_ASSERT_FALSE(prefs.isKey("seq_cl"));
 
-    // The servo domain saved on its own takes them away too, and a second
-    // save with nothing left to remove still succeeds.
-    prefs.putUShort("seq_op", 2200);
-    TEST_ASSERT_TRUE(configSaveServo(prefs, snap.servo));
-    TEST_ASSERT_FALSE(prefs.isKey("seq_op"));
+    // And a second save with nothing left to remove still succeeds.
     TEST_ASSERT_TRUE(configSave(prefs, snap));
-    TEST_ASSERT_TRUE(prefs.isKey(NVS_KEY_AUX_LED_PIN));
     prefs.end();
 }
 
@@ -500,31 +496,6 @@ void test_configLoad_save_audio_tracks() {
     TEST_ASSERT_EQUAL_UINT16(snap1.audio.snd_doodoo, snap2.audio.snd_doodoo);
 }
 
-// Test: Save all servo fields
-//
-// Endpoints and component types are not among them any more - they are an
-// addressed Servo Output row's, saved by configSaveServoOutputs() and covered
-// by test_servo_output_row. What ServoConfig still carries is the AUX LED
-// selection.
-void test_configLoad_save_servo_config() {
-    ConfigSnapshot snap1 = {};
-    snap1.servo.aux_led_pin = 2;
-    snap1.servo.aux_led_count = 8;
-
-    Preferences prefs;
-    prefs.begin("proto", false);
-    bool saveResult = configSave(prefs, snap1);
-    TEST_ASSERT_TRUE(saveResult);
-
-    ConfigSnapshot snap2 = {};
-    bool loadResult = configLoad(prefs, &snap2);
-    prefs.end();
-
-    TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_UINT8(snap1.servo.aux_led_pin, snap2.servo.aux_led_pin);
-    TEST_ASSERT_EQUAL_UINT8(snap1.servo.aux_led_count, snap2.servo.aux_led_count);
-}
-
 // Test: Save all feature toggle fields
 void test_configLoad_save_feature_toggles() {
     ConfigSnapshot snap1 = {};
@@ -566,15 +537,17 @@ void test_configValidate_dome_speed_pct() {
 }
 
 // Test: configValidate aux LED pin
-void test_configValidate_aux_led_pin() {
-    ConfigValidationResult result = configValidate(ConfigKey::AUX_LED_PIN, AUX_LED_PIN_DISABLED);
+void test_configValidate_light_led_count() {
+    ConfigValidationResult result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MIN);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
 
-    result = configValidate(ConfigKey::AUX_LED_PIN, AUX_LED_PIN_AUX3);
+    result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MAX);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
 
-    result = configValidate(ConfigKey::AUX_LED_PIN, AUX_LED_PIN_AUX3 + 1);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE, (uint8_t)result);
+    // Zero is the one that matters: a strip configured to render nothing reads
+    // as a strip that is simply off.
+    result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MIN - 1);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
 }
 
 // Test: configValidate sequence timing
@@ -760,10 +733,6 @@ void test_configCacheRead_captures_all_categories() {
     seeded.dome.dome_rnd_move_ms   = 3000;
     snprintf(seeded.dome.dome_wifi_peer_ip, sizeof(seeded.dome.dome_wifi_peer_ip), "10.0.0.5");
 
-    // AUX LED
-    seeded.servo.aux_led_pin        = 2;
-    seeded.servo.aux_led_count      = 8;
-
     // Feature toggles
     seeded.system.enable_arm1        = true;
     seeded.system.enable_dome_esc        = true;
@@ -831,10 +800,6 @@ void test_configCacheRead_captures_all_categories() {
     TEST_ASSERT_EQUAL_UINT8(10, snap.dome.dome_rnd_pause_max);
     TEST_ASSERT_EQUAL_UINT16(3000, snap.dome.dome_rnd_move_ms);
     TEST_ASSERT_EQUAL_STRING("10.0.0.5", snap.dome.dome_wifi_peer_ip);
-
-    // AUX LED
-    TEST_ASSERT_EQUAL_UINT8(2, snap.servo.aux_led_pin);
-    TEST_ASSERT_EQUAL_UINT8(8, snap.servo.aux_led_count);
 
     // Feature toggles
     TEST_ASSERT_EQUAL_INT(true, snap.system.enable_arm1);
@@ -1025,10 +990,6 @@ void test_configCacheApply_applies_all_categories() {
     snap.dome.dome_rnd_move_ms   = 3500;
     snprintf(snap.dome.dome_wifi_peer_ip, sizeof(snap.dome.dome_wifi_peer_ip), "192.168.0.99");
 
-    // AUX LED
-    snap.servo.aux_led_pin        = 3;
-    snap.servo.aux_led_count      = 12;
-
     // Feature toggles
     snap.system.enable_arm1        = true;
     snap.system.enable_arm2        = false;
@@ -1083,9 +1044,6 @@ void test_configCacheApply_applies_all_categories() {
     TEST_ASSERT_EQUAL_UINT8(85, applied.dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, applied.dome.dome_rnd_enable);
     TEST_ASSERT_EQUAL_STRING("192.168.0.99", applied.dome.dome_wifi_peer_ip);
-
-    TEST_ASSERT_EQUAL_UINT8(3, applied.servo.aux_led_pin);
-    TEST_ASSERT_EQUAL_UINT8(12, applied.servo.aux_led_count);
 
     TEST_ASSERT_EQUAL_INT(true, applied.system.enable_arm1);
     TEST_ASSERT_EQUAL_INT(false, applied.system.enable_arm2);
@@ -1172,7 +1130,6 @@ void test_config_domain_load_functions_are_independently_callable() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 550;
     snap.audio.audioVolume = 12;
-    snap.servo.aux_led_count = 19;
     snap.dome.dome_speed_limit_pct = 75;
     snap.system.enable_audio = true;
 
@@ -1182,19 +1139,16 @@ void test_config_domain_load_functions_are_independently_callable() {
 
     DriveConfig drive = {};
     AudioConfig audio = {};
-    ServoConfig servo = {};
     DomeConfig dome = {};
     SystemConfig system = {};
     configLoadDrive(prefs, &drive);
     configLoadAudio(prefs, &audio);
-    configLoadServo(prefs, &servo);
     configLoadDome(prefs, &dome);
     configLoadSystem(prefs, &system);
     prefs.end();
 
     TEST_ASSERT_EQUAL_INT16(550, drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(12, audio.audioVolume);
-    TEST_ASSERT_EQUAL_UINT8(19, servo.aux_led_count);
     TEST_ASSERT_EQUAL_UINT8(75, dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, system.enable_audio);
 }
@@ -1230,7 +1184,6 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
     TEST_ASSERT_TRUE(configLoad(prefs, &baseline));
     baseline.drive.speedLimitMax = 500;
     baseline.audio.audioVolume = 10;
-    baseline.servo.aux_led_count = 19;
     baseline.dome.dome_speed_limit_pct = 75;
     baseline.system.enable_audio = true;
     TEST_ASSERT_TRUE(configSave(prefs, baseline));
@@ -1239,7 +1192,6 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
 static void assert_domain_round_trip_baseline_preserved(const ConfigSnapshot& loaded) {
     TEST_ASSERT_EQUAL_INT16(500, loaded.drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(10, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_UINT8(19, loaded.servo.aux_led_count);
     TEST_ASSERT_EQUAL_UINT8(75, loaded.dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_audio);
 }
@@ -1274,19 +1226,6 @@ void test_config_domain_round_trip_matrix() {
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     TEST_ASSERT_EQUAL_UINT8(24, loaded.audio.audioVolume);
     loaded.audio.audioVolume = 10;
-    assert_domain_round_trip_baseline_preserved(loaded);
-
-    seed_domain_round_trip_baseline(prefs);
-    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configCacheApply(loaded);
-    configCacheRead(&fromState);
-    fromState.servo.aux_led_count = 21;
-    configCacheApply(fromState);
-    configCacheRead(&fromState);
-    TEST_ASSERT_TRUE(configSaveServo(prefs, fromState.servo));
-    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    TEST_ASSERT_EQUAL_UINT8(21, loaded.servo.aux_led_count);
-    loaded.servo.aux_led_count = 19;
     assert_domain_round_trip_baseline_preserved(loaded);
 
     seed_domain_round_trip_baseline(prefs);
@@ -1735,10 +1674,9 @@ int main() {
     RUN_TEST(test_configLoad_current_schema_does_not_remap_log_level);
     RUN_TEST(test_configLoad_schema_mismatch);
     RUN_TEST(test_configLoad_save_audio_tracks);
-    RUN_TEST(test_configLoad_save_servo_config);
     RUN_TEST(test_configLoad_save_feature_toggles);
     RUN_TEST(test_configValidate_dome_speed_pct);
-    RUN_TEST(test_configValidate_aux_led_pin);
+    RUN_TEST(test_configValidate_light_led_count);
     RUN_TEST(test_configValidate_sequence_timing);
     RUN_TEST(test_configValidate_rc_input_mode);
     RUN_TEST(test_configValidate_sound_member_asks_the_registry);

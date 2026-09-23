@@ -255,9 +255,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->wifi.ap_ssid, sizeof(snap->wifi.ap_ssid), "%s", WIFI_AP_SSID);
     snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
 
-    snap->servo.aux_led_pin = AUX_LED_PIN_DISABLED;
-    snap->servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
-
     snap->system.enable_arm1 = false;
     snap->system.enable_arm2 = false;
     snap->system.enable_aux1 = false;
@@ -645,13 +642,15 @@ ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver,
     return component;
 }
 
-void configCacheReadServo(ServoConfig* out) {
-    if (out == nullptr) {
-        return;
-    }
+uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t channel) {
+    uint8_t ledCount = SERVO_LIGHT_LEDS_DEFAULT;
     taskENTER_CRITICAL(&configCacheMux);
-    *out = configCache.servo;
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        ledCount = servoOutputCache.rows[index].led_count;
+    }
     taskEXIT_CRITICAL(&configCacheMux);
+    return ledCount;
 }
 
 bool configCacheServoAnyEnabled() {
@@ -1037,12 +1036,6 @@ void configLoadAudio(Preferences& prefs, AudioConfig* out) {
     configDeserializeAudio(reader, out);
 }
 
-void configLoadServo(Preferences& prefs, ServoConfig* out) {
-    if (out == nullptr) return;
-    PrefsReader reader(prefs);
-    configDeserializeServo(reader, out);
-}
-
 void configLoadDome(Preferences& prefs, DomeConfig* out) {
     if (out == nullptr) return;
     PrefsReader reader(prefs);
@@ -1138,6 +1131,17 @@ bool configSaveServoOutputs(Preferences& prefs) {
                 }
             }
         }
+        // The one lit wire and its LED count, gone the same way and on the same
+        // reasoning (#413): adoptRetiredAuxLedKeys() has read them onto the row
+        // they named, the rows are down, and a key nobody reads is an NVS entry
+        // spent on nothing. Removing them is also what stops that adoption
+        // running again over an answer the builder has since changed.
+        const char* const retired[] = {NVS_KEY_RETIRED_AUX_LED_PIN, NVS_KEY_RETIRED_AUX_LED_COUNT};
+        for (size_t k = 0; k < sizeof(retired) / sizeof(retired[0]); ++k) {
+            if (prefs.isKey(retired[k])) {
+                prefs.remove(retired[k]);
+            }
+        }
     }
     return ok;
 }
@@ -1175,15 +1179,6 @@ bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config) {
     PrefsWriter writer(prefs);
     return configSerializeAudio(config, writer);
-}
-
-bool configSaveServo(Preferences& prefs, const ServoConfig& config) {
-    PrefsWriter writer(prefs);
-    const bool ok = configSerializeServo(config, writer);
-    if (ok) {
-        removeRetiredServoKeys(prefs);
-    }
-    return ok;
 }
 
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
@@ -1334,12 +1329,9 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         case ConfigKey::SEQ_CLOSE_MS:
             return (value >= 100 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
 
-        // AUX LED
-        case ConfigKey::AUX_LED_PIN:
-            return (value >= 0 && value <= AUX_LED_PIN_MAX) ? ConfigValidationResult::OK
-                                                             : ConfigValidationResult::INVALID_VALUE;
-        case ConfigKey::AUX_LED_COUNT:
-            return (value >= AUX_LED_COUNT_DEFAULT && value <= AUX_LED_COUNT_MAX) ? ConfigValidationResult::OK
+        // A light's settings
+        case ConfigKey::LIGHT_LED_COUNT:
+            return (value >= SERVO_LIGHT_LEDS_MIN && value <= SERVO_LIGHT_LEDS_MAX) ? ConfigValidationResult::OK
                                                                                      : ConfigValidationResult::OUT_OF_RANGE;
 
         // RC Input Mode

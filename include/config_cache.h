@@ -34,7 +34,6 @@
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
-void configCacheReadServo(ServoConfig* out);
 bool configCacheServoAnyEnabled();
 void configCacheReadWifi(WifiConfig* out);
 
@@ -60,7 +59,7 @@ uint8_t configCacheServoOutputCount();
 // Part list, a Motion Profile and a boot behaviour on a Core 1 frame to get it.
 //
 // An Output Address, not an index: an index is a storage slot, while the address
-// is where the lead plugs in, and rows past the five this controller ships with
+// is where the wire plugs in, and rows past the five this controller ships with
 // are an expander's to address in whatever order they land.
 
 // The pulse width this output will actually be driven to, bounded by what the
@@ -92,6 +91,13 @@ bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t c
 // name the part. A caller that needs to tell the two apart asks
 // configCacheReadServoOutputEndpoints(), which returns false for the second.
 ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel);
+
+// The Light Type's settings on the output addressed there: how many LEDs the
+// wire carries (ADR 0067). SERVO_LIGHT_LEDS_DEFAULT where no live row is
+// addressed there, which is the same answer a row nobody has configured gives -
+// a caller reading this is about to start a strip and needs a length, not a
+// distinction it cannot act on.
+uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t channel);
 
 // configCacheApplyServoOutputEdits: the runtime write onto a row's endpoints and
 // component. The Apply Core is pure and cannot reach the table, so it records
