@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -172,6 +172,13 @@ check-pin-drift: ## Check the pins in config.h against the wiring in docs/pin_ma
 # report-never-rewrite shape as the four above (#399, ADR 0066).
 check-surface-anatomy: ## Check the operator surfaces against the Surface Anatomy
 	python3 tools/check_surface_anatomy.py
+
+# The three D2 guards (#353), in the same report-never-rewrite shape as the five
+# above. They keep #298's, #327's and ADR 0033's sweeps from unravelling: a bare
+# "controller", a board's own silkscreen baked into copy, and a color literal
+# outside :root are each one careless edit away and none of them breaks a test.
+check-vocabulary-drift: ## Check that operator copy says which controller it means
+	python3 tools/check_vocabulary_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py
