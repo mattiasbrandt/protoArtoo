@@ -33,6 +33,8 @@
 #include <freertos/task.h>
 #include "config_cache.h"
 #include "config.h"
+#include "ledc_pwm.h"
+#include "servo_output_row.h"
 
 // ============================================================================
 // Forward declarations
@@ -311,8 +313,9 @@ void benchPhase3DriveFrameCadence() {
     // Precondition: GPIO51 (PIN_ARM5_SERVO / AUX3) must not be driven by the firmware.
     // Two paths drive it, and the guard must ask the same question the firmware asks:
     //   1. en_aux3 - the AUX3 servo channel (include/config.h: PIN_ARM5_SERVO = 51)
-    //   2. aux_led_pin == AUX_LED_PIN_AUX3 - the WS2812B strip
-    //      (include/config.h: auxLedSelectionToGpio() maps AUX_LED_PIN_AUX3 -> PIN_ARM5_SERVO)
+    //   2. AUX3's Servo Output row naming a Light Type - the WS2812B strip. Since
+    //      #413 that is where a light lives, one answer per Output, and it is the
+    //      same read servoTaskInit()'s litArmMask() makes.
     // Read the live config cache, exactly as servoTaskInit() does at
     // src/tasks/servo_task.cpp:414-415. This env compiles all of src/ (build_src_filter
     // "+<*>"), so the cache is linked in; reading NVS directly would duplicate the
@@ -327,8 +330,8 @@ void benchPhase3DriveFrameCadence() {
         Serial.flush();
         return;
     }
-    if (benchCfg.servo.aux_led_pin == AUX_LED_PIN_AUX3) {
-        Serial.println("[BENCH P3] SKIP: AUX LED strip assigned to AUX3 - GPIO51 is driven");
+    if (configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, LEDC_CH_AUX3) == SERVO_COMP_RGB) {
+        Serial.println("[BENCH P3] SKIP: a light is on AUX3 - GPIO51 is driven");
         Serial.flush();
         return;
     }

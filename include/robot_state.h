@@ -15,6 +15,7 @@
 #include <freertos/semphr.h>
 
 #include "audio_rx_status.h"
+#include "board_outputs.h"  // BOARD_OUTPUT_COUNT - one lit-wire entry per Output
 #include "config.h"
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
@@ -101,11 +102,16 @@ enum AuxLedEffect : uint8_t {
     AUX_LED_EFFECT_PULSE,
 };
 
+// One lit wire, as the controller last set it. A droid may have several, each
+// on its own Output (ADR 0067), so this is what ONE of them is showing and
+// never the droid's lights as a whole.
 struct AuxLedState {
-    // 0 when disabled; otherwise the active GPIO number. This is the RESOLVED
-    // pin, not the operator's choice: ServoConfig::aux_led_pin is the AUX slot
-    // selection 0..3 that auxLedSelectionToGpio() turns into this.
-    uint8_t pin;
+    // Whether this Output carries a Light Type at all, as the config read at
+    // start said. It is the "is there a light here" bit; `available` is the
+    // narrower "and its driver started", and a lit wire whose RMT channel
+    // failed is lit: false, available: false -- two different answers that a
+    // single flag used to blur.
+    bool lit;
     uint8_t r;
     uint8_t g;
     uint8_t b;
@@ -339,8 +345,12 @@ struct RobotState {
     // the pair on its Servo Output row, where the direction is recorded (#345).
     ServoCommandedPosition servoCommanded[SERVO_ARM_COUNT];
 
-    // --- Zone 7: Aux LED ---
-    AuxLedState auxLed;
+    // --- Zone 7: the lit wires ---
+    // One per Output, in include/board_outputs.h's order, so an index here and
+    // an index there are the same Output and neither end keeps a list of its
+    // own. An Output that carries no light holds a zeroed entry, which reads as
+    // lit: false -- the honest answer for a wire with nothing on it (#413).
+    AuxLedState auxLed[BOARD_OUTPUT_COUNT];
 
     // --- Zone 8: Sequence dispatcher (SequenceDispatcherTask writes; DomeLinkTask writes for coordination) ---
     bool domeSeqActive;    // true while a dome sequence is running (written by SequenceDispatcherTask and DomeLinkTask)

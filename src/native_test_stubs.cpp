@@ -240,6 +240,7 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
 // reproduced here rather than stubbed away -- the payload assertions would be
 // vacuous otherwise.
 #include "aux_led.h"
+#include "board_outputs.h"
 bool g_test_aux_led_queue_ok = true;
 
 const char* auxLedEffectToString(AuxLedEffect effect) {
@@ -274,21 +275,48 @@ bool parseAuxLedEffect(const char* raw, AuxLedEffect* out) {
     return true;
 }
 
-bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource /*source*/) {
-    if (!g_test_aux_led_queue_ok) {
+// A target is a BOARD_OUTPUTS index or AUX_LED_TARGET_ALL, and the stub applies
+// the same rule the real task does: ALL reaches every lit wire, an index
+// reaches that one. A test that wants "no light here" clears that entry's
+// `lit`/`available`, which is what the real refusal reads too.
+bool auxLedTargetIsLit(uint8_t target) {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (target != AUX_LED_TARGET_ALL && target != i) {
+            continue;
+        }
+        if (robotState.auxLed[i].lit && robotState.auxLed[i].available) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b,
+                         CommandSource /*source*/) {
+    if (!g_test_aux_led_queue_ok || !auxLedTargetIsLit(target)) {
         return false;
     }
-    robotState.auxLed.r = r;
-    robotState.auxLed.g = g;
-    robotState.auxLed.b = b;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!auxLedTargetIsLit((uint8_t)i) || (target != AUX_LED_TARGET_ALL && target != i)) {
+            continue;
+        }
+        robotState.auxLed[i].r = r;
+        robotState.auxLed[i].g = g;
+        robotState.auxLed[i].b = b;
+    }
     return true;
 }
 
-bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource /*source*/) {
-    if (!g_test_aux_led_queue_ok) {
+bool auxLedQueueSetEffect(uint8_t target, AuxLedEffect effect, CommandSource /*source*/) {
+    if (!g_test_aux_led_queue_ok || !auxLedTargetIsLit(target)) {
         return false;
     }
-    robotState.auxLed.effect = effect;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!auxLedTargetIsLit((uint8_t)i) || (target != AUX_LED_TARGET_ALL && target != i)) {
+            continue;
+        }
+        robotState.auxLed[i].effect = effect;
+    }
     return true;
 }
 
