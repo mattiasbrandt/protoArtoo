@@ -3082,7 +3082,7 @@ entries:
   executor: configApply
 - name: system.config.enable_dome_esc
   display_name: Dome Motor
-  description: Use the dome rotation motor connected to the DOME output
+  description: Use the dome rotation motor.
   domain: system
   type: config
   marcduino_cmd: null
