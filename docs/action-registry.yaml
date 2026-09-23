@@ -3193,8 +3193,8 @@ entries:
   nvs_key: en_rc_ch6
   executor: configApply
 - name: system.config.enable_drive
-  display_name: "S1 \u2014 Hoverboard"
-  description: Use the hoverboard drive controller connected to S1
+  display_name: Hoverboard drive
+  description: Use the hoverboard drive controller.
   domain: system
   type: config
   marcduino_cmd: null
@@ -3209,8 +3209,8 @@ entries:
   nvs_key: en_drive
   executor: configApply
 - name: system.config.enable_audio
-  display_name: "S2 \u2014 Sound"
-  description: Use the sound module connected to S2
+  display_name: Sound
+  description: Use the sound module.
   domain: system
   type: config
   marcduino_cmd: null
@@ -3225,8 +3225,8 @@ entries:
   nvs_key: en_audio
   executor: configApply
 - name: system.config.enable_protor2link
-  display_name: "S3 \u2014 Dome Control"
-  description: Use the dome controller connected to S3
+  display_name: Dome Control
+  description: Use the dome controller.
   domain: system
   type: config
   marcduino_cmd: null
