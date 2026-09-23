@@ -19,6 +19,7 @@
 #include "servo_output_row.h"
 
 #include "../../../test/stubs/config/map_config_io.h"
+#include "../../../test/stubs/config/servo_output_table_writer.h"
 
 void setUp() {}
 void tearDown() {}
@@ -528,7 +529,7 @@ void test_a_contested_part_is_reported_by_the_loader() {
     servoOutputTableDefaults(&saved);
     TEST_ASSERT_TRUE(servoOutputAddPart(&saved.rows[0], "utilUp"));
     TEST_ASSERT_TRUE(servoOutputAddPart(&saved.rows[2], "utilUp"));
-    TEST_ASSERT_TRUE(configSerializeServoOutputs(saved, writer));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
 
     MapReader reader;
     for (const auto& pair : writer.data()) {
@@ -596,7 +597,7 @@ void test_every_field_round_trips_through_storage() {
     row.calibrated = true;
 
     MapWriter writer;
-    TEST_ASSERT_TRUE(configSerializeServoOutputs(saved, writer));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
 
     MapReader reader;
     for (const auto& pair : writer.data()) {
@@ -640,7 +641,7 @@ void test_a_row_added_without_an_address_is_reported() {
     saved.count = SERVO_OUTPUT_ROW_DEFAULT_COUNT + 1;  // a sixth row, as an expander adds
 
     MapWriter writer;
-    TEST_ASSERT_TRUE(configSerializeServoOutputs(saved, writer));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
 
     MapReader reader;
     for (const auto& pair : writer.data()) {
@@ -676,7 +677,7 @@ void test_a_damaged_stored_row_is_counted_and_named() {
     MapWriter writer;
     ServoOutputTable saved = {};
     servoOutputTableDefaults(&saved);
-    TEST_ASSERT_TRUE(configSerializeServoOutputs(saved, writer));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
 
     MapReader reader;
     for (const auto& pair : writer.data()) {

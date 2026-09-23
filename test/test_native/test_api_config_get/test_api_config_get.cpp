@@ -23,6 +23,7 @@
 #include "console_config_fields.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
+#include "../../../test/stubs/config/servo_output_table_writer.h"
 
 namespace {
 
@@ -585,7 +586,7 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     prefs.begin("proto", false);
     prefs.clear();
     PrefsWriter writer(prefs);
-    TEST_ASSERT_TRUE(configSerializeServoOutputs(table, writer));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
     ServoOutputRepairReport report = {};
     configLoadServoOutputs(prefs, &report);
     prefs.end();

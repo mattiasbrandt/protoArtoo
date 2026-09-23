@@ -20,6 +20,7 @@
 #include "servo_legacy_field_sets.h"
 
 #include "../../../test/stubs/config/map_config_io.h"
+#include "../../../test/stubs/config/servo_output_table_writer.h"
 
 // Provided by native_test_stubs.cpp
 extern RobotState robotState;
@@ -327,7 +328,10 @@ void test_a_failed_row_write_keeps_the_legacy_keys() {
     prefs.failNextStringWrites(1);
     TEST_ASSERT_FALSE(configSaveServoOutputs(prefs));
 
+    // The one failed row is carried out of the save as a failure, and the rows
+    // after it still land: a later success does not overwrite the earlier one.
     TEST_ASSERT_FALSE(prefs.isKey("so00"));
+    TEST_ASSERT_TRUE(prefs.isKey("so01"));
     TEST_ASSERT_TRUE(prefs.isKey("arm1_op"));
     TEST_ASSERT_TRUE(prefs.isKey("arm1_cl"));
     TEST_ASSERT_TRUE(prefs.isKey("arm1_type"));
@@ -371,24 +375,6 @@ void test_an_empty_string_stores_and_a_failed_write_does_not() {
     // nullptr was already an error and still is.
     TEST_ASSERT_FALSE(writer.writeStr("droid_name", nullptr));
     prefs.end();
-}
-
-// Test: the serializer reports a row that did not land (#375)
-//
-// One layer up from PrefsWriter, through the ConfigWriter seam: the accumulator
-// must carry a single failed record all the way out of the multi-row save
-// rather than letting the later rows' success overwrite it.
-void test_a_failed_row_write_is_reported_by_the_serializer() {
-    ServoOutputTable table = {};
-    servoOutputTableDefaults(&table);
-
-    MapWriter writer;
-    writer.failNextStringWrites(1);
-    TEST_ASSERT_FALSE(configSerializeServoOutputs(table, writer));
-
-    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("so_cnt"));
-    TEST_ASSERT_EQUAL_size_t(0, writer.data().count("so00"));
-    TEST_ASSERT_EQUAL_size_t(1, writer.data().count("so01"));
 }
 
 // Test: configValidate dome speed limits
@@ -1620,7 +1606,7 @@ void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
     aux2.calibrated = true;
     prefs.begin("proto", false);
     PrefsWriter writer(prefs);
-    TEST_ASSERT_TRUE(configSerializeServoOutputs(table, writer));
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
     configLoadServoOutputs(prefs, &report);
     prefs.end();
     TEST_ASSERT_TRUE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_AUX2,
@@ -1664,7 +1650,6 @@ int main() {
     RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
     RUN_TEST(test_a_failed_row_write_keeps_the_legacy_keys);
     RUN_TEST(test_an_empty_string_stores_and_a_failed_write_does_not);
-    RUN_TEST(test_a_failed_row_write_is_reported_by_the_serializer);
     RUN_TEST(test_configValidate_dome_speed);
     RUN_TEST(test_configValidate_booleans);
     RUN_TEST(test_configLoad_legacy_schema_v0);

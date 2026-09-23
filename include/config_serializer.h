@@ -58,7 +58,6 @@ void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
 // -----------------------------------------------------------------------------
 bool configSerializeServoOutputCount(uint8_t count, ConfigWriter& w);
 bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, ConfigWriter& w);
-bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w);
 
 // Fills *out with servoOutputTableDefaults() then overwrites with stored rows.
 // A row whose record exists but cannot be read is repaired field by field and

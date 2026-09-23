@@ -766,16 +766,6 @@ bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, Con
     return w.writeStr(key, encoded);
 }
 
-bool configSerializeServoOutputs(const ServoOutputTable& table, ConfigWriter& w) {
-    const uint8_t count =
-        (table.count <= SERVO_OUTPUT_ROW_MAX) ? table.count : SERVO_OUTPUT_ROW_MAX;
-    bool ok = configSerializeServoOutputCount(count, w);
-    for (uint8_t i = 0; i < count; ++i) {
-        ok = configSerializeServoOutputRow(i, table.rows[i], w) && ok;
-    }
-    return ok;
-}
-
 void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
                                    ServoOutputRepairReport* report) {
     if (out == nullptr) {
