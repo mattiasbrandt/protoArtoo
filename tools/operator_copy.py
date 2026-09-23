@@ -59,6 +59,13 @@ class Copy:
     line: int  # 1-based, in the file as written
     text: str
     kind: str  # "string", "text", "attribute" or "registry"
+    # True for text inside an SVG `<symbol>`: a drawing of a product, carrying
+    # the legend printed on THAT product. It is still copy - a builder reads it -
+    # but it is not a statement about the running board, so a check about board
+    # naming skips it. `data/asset-sets/legacy/_product_art.html` draws the
+    # Sabertooth's own `S1 S2 0V 5V` terminal block, which collides exactly with
+    # the Artoo PCB's serial-lane legend and is not the same fact.
+    in_symbol: bool = False
 
     def where(self) -> str:
         return f"{self.path}:{self.line}"
@@ -200,6 +207,7 @@ ATTRIBUTE = re.compile(
 )
 SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.S | re.I)
 STYLE_BLOCK = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.S | re.I)
+SYMBOL_BLOCK = re.compile(r"<symbol\b[^>]*>.*?</symbol\s*>", re.S | re.I)
 
 
 def line_of(text: str, offset: int) -> int:
@@ -232,13 +240,18 @@ def html_copy(path: Path, text: str) -> list[Copy]:
     for match in STYLE_BLOCK.finditer(blanked):
         blanked = _blank(blanked, match.start(1), match.end(1))
 
-    for match in ATTRIBUTE.finditer(blanked):
-        found.append(Copy(name, line_of(blanked, match.start(2)), match.group(2), "attribute"))
+    symbols = [(m.start(), m.end()) for m in SYMBOL_BLOCK.finditer(blanked)]
+    drawn = lambda offset: any(start <= offset < end for start, end in symbols)
 
-    for piece in _text_nodes(blanked):
-        offset, value = piece
+    for match in ATTRIBUTE.finditer(blanked):
+        found.append(
+            Copy(name, line_of(blanked, match.start(2)), match.group(2), "attribute",
+                 drawn(match.start(2)))
+        )
+
+    for offset, value in _text_nodes(blanked):
         if value.strip():
-            found.append(Copy(name, line_of(blanked, offset), value, "text"))
+            found.append(Copy(name, line_of(blanked, offset), value, "text", drawn(offset)))
     return found
 
 
