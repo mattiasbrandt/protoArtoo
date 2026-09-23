@@ -2,14 +2,14 @@
 // data/output_settings.js
 //
 // The body controller's Outputs as a builder sets them up: which ones are
-// wired, what servo is on each, and which one carries the LED strip. These
+// wired and what each carries - a servo, or a light. These
 // were Configuration's rows until the operator moved them where the question
-// is asked (2026-09-18 on #369): the wired ticks and the LED-strip choice to
-// Wiring, beside where each lead plugs in, and the servo type to Servos, with
+// is asked (2026-09-18 on #369): the wired ticks and the Light Type choice to
+// Wiring, beside where each wire plugs in, and the servo type to Servos, with
 // the line it drives.
 //
 // THIS FILE KNOWS NO OUTPUT. Which Outputs the body controller has, what its
-// board prints beside each, which one can carry the LED strip and which config
+// board prints beside each, which ones can carry a light and which config
 // fields save it all come from the running firmware, in GET /api/config: every
 // components{} entry that carries an `address` is an Output, in the order the
 // firmware lists them (include/board_outputs.h BOARD_OUTPUTS, docs/api.md).
@@ -19,21 +19,22 @@
 // called by what its board prints (CONTEXT.md "Output Address"), never by a
 // name this file could have made up, and never split into kinds.
 //
-// WHAT IS ON THE LEAD IS ONE ANSWER IN TWO VOCABULARIES (CONTEXT.md "Output",
-// ADR 0067): a servo's model where the lead drives a servo, a Light Type where
+// WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (CONTEXT.md "Output",
+// ADR 0067): a servo's model where the wire drives a servo, a Light Type where
 // it lights something. One stored field holds either, so `rgb` is not a servo
 // type and never was - it is the LED strip Light Type, and naming it is what
-// took it out of the servo list. A Part inherits the type of the lead it is
+// took it out of the servo list. A Part inherits the type of the wire it is
 // on, and nothing here asks which Part that is.
 //
 // ONE STATE, TWO VIEWS. Both surfaces mount a view of the same answer, read
 // from GET /api/config and written back by one save, so the two can never
 // show different choices - the same rule the Component Picker keeps for its
 // two homes. The save sends each Output's enabled and type fields, as named,
-// and aux_led_pin, derived from which wired Output carries a Light Type. One
-// lead can be lit today; per-lead light settings are their own change.
+// and nothing else: which Output carries a light IS its type, so there is no
+// second field to derive and no droid-wide answer left to send. Several wires
+// may be lit, each with its own settings (ADR 0067, #413).
 //
-// LIGHTS NEVER ASKS WHICH LEAD. It lists the droid's lights and says how each
+// LIGHTS NEVER ASKS WHICH WIRE. It lists the droid's lights and says how each
 // is lit, reading the `light` fact below; which Output carries one is Wiring's
 // question and is answered there alone (operator, 2026-09-20 on #410).
 //
@@ -43,7 +44,7 @@
 //
 // WHEN EACH VIEW'S ANSWER BITES differs, and each view says so in the one
 // timing vocabulary (data/apply_timing.js, #370). Whether an output is wired,
-// and which Output the LED strip leaves on, are read once at start (ADR 0027,
+// and which Outputs carry a light, are read once at start (ADR 0027,
 // src/tasks/aux_led.cpp); which servo an output carries lands on its Servo
 // Output row and bounds the very next move (configCommitApplied()).
 // =============================================================================
@@ -59,14 +60,13 @@
   ];
   const NO_SERVO = { id: "none", label: "None" };
 
-  // The Light Types protoArtoo can put on one of its own leads (CONTEXT.md
+  // The Light Types protoArtoo can put on one of its own wires (CONTEXT.md
   // "Light Type", ADR 0067). One today; the list is what grows when there are
   // more, and the stored token stays the one the firmware already saves.
   const LIGHT_TYPES = [
     { id: "rgb", label: "LED strip" },
   ];
   const lightTypeOf = (token) => LIGHT_TYPES.find((type) => type.id === token) || null;
-  const LED_STRIP = LIGHT_TYPES[0].id;
 
   const TIMING = window.PAApplyTiming;
   const VIEW_TIMING = { wired: TIMING.AT_REBOOT, type: TIMING.IMMEDIATE };
@@ -75,14 +75,16 @@
   //   id           the components{} key: the stored config key, never shown
   //   label        what the board prints beside it
   //   address      its Output Address, where no label reached us
-  //   strip        the aux_led_pin value that routes the LED strip to it, 0 if
-  //                it cannot carry the strip
+  //   canLight     whether a Light Type may go on this wire at all
+  //   ledCountField the POST /api/config field that saves its light's settings,
+  //                or "" where a light cannot go
+  //   ledCount     how many LEDs the droid says are on it
   //   enabledField, typeField   the POST /api/config fields that save it
   //   wire         its place in that order, which picks its wire's color
   let outputs = [];
   let state = null;  // { [id]: { enabled, type } }
-  // What the droid started with, as first read: the wired ticks and the
-  // strip's line, the two answers that wait for the next start.
+  // What the droid started with, as first read: the wired ticks and which
+  // Outputs carry a light, the two answers that wait for the next start.
   let started = null;
   const views = [];
   const listeners = new Set();
@@ -114,7 +116,8 @@
           id,
           label: text(entry.label),
           address: entry.address,
-          strip: Number(entry.ledStripPin) || 0,
+          canLight: Boolean(entry.lightCapable),
+          ledCountField: text(entry.ledCountField),
           enabledField: entry.enabledField,
           typeField: entry.typeField,
           wire: index + 1,
@@ -130,36 +133,35 @@
       const entry = components[output.id];
       next[output.id] = {
         enabled: Boolean(entry.enabled),
-        type: String(entry.type || (output.strip ? "none" : SERVO_TYPES[0].id)),
+        type: String(entry.type || (output.canLight ? "none" : SERVO_TYPES[0].id)),
+        ledCount: Number(entry.ledCount) || 1,
       };
     });
-    // The routed strip is the controller's answer; a line it routes is an LED
-    // strip even if the type field says otherwise.
-    const pin = Number(payload?.aux_led_pin || 0);
-    const routed = outputs.find((output) => output.strip && output.strip === pin);
-    if (routed) next[routed.id].type = LED_STRIP;
     state = next;
     if (!started) started = startedFrom(state);
     renderAll();
   };
 
+  // The two answers that wait for the next start: which Outputs are wired, and
+  // which of them carry a light. Both are read once when the droid boots
+  // (ADR 0027), so a change to either is what "waiting for a restart" is about.
   const startedFrom = (answer) => ({
     enabled: outputs.map((output) => answer[output.id].enabled).join(","),
-    ledPin: ledPinOf(answer),
+    lit: litSetOf(answer),
   });
 
-  // A saved wired tick or strip line the droid has not started with yet.
+  // A saved wired tick or Light Type the droid has not started with yet.
   const waitingOnStart = () => {
     if (!started || !state) return false;
     const now = startedFrom(state);
-    return now.enabled !== started.enabled || now.ledPin !== started.ledPin;
+    return now.enabled !== started.enabled || now.lit !== started.lit;
   };
 
-  // The line the strip leaves the controller on: the wired Output set to LED
-  // strip, or none (0) - what Configuration derived from its own rows.
-  const ledPinOf = (answer) =>
-    outputs.find((output) => output.strip && answer[output.id].enabled && answer[output.id].type === LED_STRIP)?.strip || 0;
-  const ledPin = () => ledPinOf(state);
+  // Which Outputs carry a light, as a comparable string. Several may, each on
+  // its own wire, so this is a set and not a single answer.
+  const litSetOf = (answer) =>
+    outputs.filter((output) => output.canLight && lightTypeOf(answer[output.id].type))
+      .map((output) => output.id).join(",");
 
   const fields = () => {
     const out = {};
@@ -167,7 +169,6 @@
       out[output.enabledField] = state[output.id].enabled ? "true" : "false";
       out[output.typeField] = state[output.id].type;
     });
-    out.aux_led_pin = String(ledPin());
     return out;
   };
 
@@ -211,15 +212,6 @@
   const change = (id, patch) => {
     if (!state) return;
     Object.assign(state[id], patch);
-    // One lit lead today: giving one Output a Light Type takes it off the
-    // others, because the controller lights a single lead.
-    if (lightTypeOf(patch.type)) {
-      outputs.forEach((output) => {
-        if (output.strip && output.id !== id && lightTypeOf(state[output.id].type)) {
-          state[output.id].type = NO_SERVO.id;
-        }
-      });
-    }
     renderAll();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 300);
@@ -264,9 +256,9 @@
   const NOT_WIRED = "Not wired";
 
   // Wiring's plate: the Output as it sits on the board - its printed name, the
-  // three-pin header its lead plugs onto, whether it is wired - and, on an
-  // Output that can carry the LED strip, whether it carries a servo or the
-  // strip. The whole head is the press. The plate wears its wire's color
+  // three-pin header its wire plugs onto, whether it is wired - and, on an
+  // Output that can carry one, whether it carries a servo or a light.
+  // The whole head is the press. The plate wears its wire's color
   // (its data-wire, from wireSlot()), the same color that wire is drawn in on
   // the sheet above, so a plate and its line on the diagram are found by eye (operator, 2026-09-19 on #411: the Outputs
   // section "looks to basic and boring").
@@ -290,8 +282,8 @@
     press.appendChild(element("span", "toggle-status", answer.enabled ? WIRED : NOT_WIRED));
     press.addEventListener("click", () => change(output.id, { enabled: !answer.enabled }));
     plate.appendChild(press);
-    if (output.strip) {
-      // What is on this lead: a servo, or one of the Light Types. Which servo
+    if (output.canLight) {
+      // What is on this wire: a servo, or one of the Light Types. Which servo
       // MODEL is Servos' question; this asks only which of the two it is.
       const carries = lightTypeOf(answer.type)?.id || "servo";
       plate.appendChild(segmented(`${name} carries`, [{ id: "servo", label: "Servo" }, ...LIGHT_TYPES], carries,
@@ -305,7 +297,7 @@
   // Servos' plate: which servo the output carries. An Output set to LED strip
   // has no servo, and says where that is answered.
   //
-  // A host may say what is on the end of each Output's lead (`describe`,
+  // A host may say what is on the end of each Output's wire (`describe`,
   // Servos' Part names, read from GET /api/servo/outputs): it goes under the
   // head, and an Output with nothing assigned gets no line at all (operator,
   // 2026-09-19 on #412: "if it has one"). Read-only: the assignment is Parts'.
@@ -321,12 +313,12 @@
     plate.appendChild(head);
     const onIt = typeof view?.describe === "function" ? view.describe(output) : "";
     if (onIt) plate.appendChild(element("p", "output-parts", onIt));
-    const light = output.strip ? lightTypeOf(answer.type) : null;
+    const light = output.canLight ? lightTypeOf(answer.type) : null;
     if (light) {
       plate.appendChild(element("p", "hint output-setting-note", `Carries the ${light.label}. Set on Wiring.`));
       return plate;
     }
-    const options = output.strip ? [NO_SERVO, ...SERVO_TYPES] : SERVO_TYPES;
+    const options = output.canLight ? [NO_SERVO, ...SERVO_TYPES] : SERVO_TYPES;
     plate.appendChild(segmented(`${name} servo`, options, answer.type,
       (value) => change(output.id, { type: value })));
     return plate;
@@ -350,10 +342,10 @@
   };
 
   // A listener is handed the answer and the Outputs it is about - id, label,
-  // address, strip - in the firmware's order, so a surface that draws its own
+  // address, canLight - in the firmware's order, so a surface that draws its own
   // rows (Servos' controls) draws them from the same list and names each the
-  // same way, and never keeps a list of its own. `light` is the lead's Light
-  // Type or null, which is exactly what a Part on that lead inherits (ADR
+  // same way, and never keeps a list of its own. `light` is the wire's Light
+  // Type or null, which is exactly what a Part on that wire inherits (ADR
   // 0067): a surface saying how a light is lit reads it here rather than
   // working the answer out a second way from the saved fields.
   const renderAll = () => {
@@ -362,6 +354,7 @@
       ...output,
       name: nameOf(output),
       light: lightTypeOf(state[output.id].type),
+      ledCount: state[output.id].ledCount,
     }));
     listeners.forEach((listener) => listener(state, facts));
   };
@@ -395,7 +388,7 @@
    * @param {object} hosts
    * @param {Element} hosts.body - where the plates go
    * @param {Element} hosts.feedback - the save line under them
-   * @param {function} [hosts.describe] - what is on an Output's lead, or ""
+   * @param {function} [hosts.describe] - what is on an Output's wire, or ""
    */
   const mount = (kind, hosts) => {
     if (!hosts?.body || !hosts?.feedback) return;
@@ -420,5 +413,13 @@
     if (state) renderAll();
   };
 
-  window.PAOutputSettings = { mount, onChange, ensure, redraw };
+  // A host that saved a field this module owns hands the answer back rather
+  // than reading it again: Lights saves a light's LED count, which is the
+  // Output's own answer, and one save with one adopt is what keeps the two
+  // surfaces from ever showing different numbers.
+  const adoptSaved = (payload) => {
+    if (payload) adopt(payload);
+  };
+
+  window.PAOutputSettings = { mount, onChange, ensure, redraw, adopt: adoptSaved };
 })();

@@ -49,27 +49,44 @@ const rootTokens = () => {
   return tokens;
 };
 
-// A droid whose Outputs are named nothing like the bench's, wired so one lead
-// carries a light and a Part sits on it.
+// A droid whose Outputs are named nothing like the bench's, wired so one wire
+// carries a light and a Part sits on it. The ids, labels, addresses and field
+// names follow no pattern on purpose: a page that derived any of them from
+// another would pass against the real firmware's names and still be wrong.
 export const droid = () => ({
   config: {
     components: {
       w7: { enabled: true, label: "GPIO 49", address: "ledc:7", enabledField: "wiredO7", typeField: "servoO7", type: "mg996r" },
-      w9: { enabled: true, label: "ARM4", address: "ledc:9", ledStripPin: 2, enabledField: "wiredO9", typeField: "servoO9", type: "rgb" },
-      w4: { enabled: false, label: "GPIO 5", address: "ledc:4", ledStripPin: 3, enabledField: "wiredO4", typeField: "servoO4", type: "none" },
+      w9: { enabled: true, label: "ARM4", address: "ledc:9", lightCapable: true, ledCountField: "ledsO9", ledCount: 16, enabledField: "wiredO9", typeField: "servoO9", type: "rgb" },
+      w4: { enabled: false, label: "GPIO 5", address: "ledc:4", lightCapable: true, ledCountField: "ledsO4", ledCount: 1, enabledField: "wiredO4", typeField: "servoO4", type: "none" },
       domeEsc: { enabled: true, label: "DOME" },
     },
     droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: ["dataPanel", "psiFront"] },
-    aux_led_pin: 2,
-    aux_led_count: 16,
   },
   outputs: [
     { address: "ledc:7", name: "GPIO 49", parts: ["utilUp"] },
     { address: "ledc:9", name: "ARM4", parts: ["dataPanel"] },
     { address: "ledc:4", name: "GPIO 5", parts: [] },
   ],
-  status: { auxLed: { pin: 2, r: 0, g: 90, b: 255, effect: "solid", available: true } },
+  // Keyed by the Output id GET /api/config names, which is how the firmware
+  // keys its own status frame.
+  status: { lights: { w9: { r: 0, g: 90, b: 255, effect: "solid", available: true } } },
 });
+
+// The same droid with a SECOND lit wire, and a Part on it: what #413 exists
+// for, and the shape a page matching a reading to a wire by position gets
+// wrong. The two wires are given different colors so each plate can be checked
+// against its own.
+export const droidWithTwoLitWires = () => {
+  const answer = droid();
+  answer.config.components.w4.enabled = true;
+  answer.config.components.w4.type = "rgb";
+  answer.config.components.w4.ledCount = 4;
+  answer.outputs[2].parts = ["cbi"];
+  answer.config.droidBuild.fitted.push("cbi");
+  answer.status.lights.w4 = { r: 255, g: 0, b: 0, effect: "blink", available: true };
+  return answer;
+};
 
 export const boot = ({ answer = droid() } = {}) => {
   const parsed = new MiniDOMParser().parseFromString(readFileSync(join(dataDir, "lights.html"), "utf8"));

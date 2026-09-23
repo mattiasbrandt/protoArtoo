@@ -2,7 +2,7 @@
 // data/wiring.js
 //
 // Wiring (CONTEXT.md "Wiring"): the destination that answers the one question
-// no other screen can -- "I am holding a servo lead: which output does it go
+// no other screen can -- "I am holding a servo wire: which output does it go
 // to, and which part will it move?" It is a reference, not a control surface:
 // it writes nothing, and no act on it reaches the droid.
 //
@@ -405,7 +405,7 @@
   // SVG text does not wrap: an over-long label runs out past its box and over
   // whatever is beside it. So a label that will not fit is cut and the whole of
   // it travels in a <title>, which is what a hover and a screen reader get.
-  // Four parts ganged to one lead is what reaches this -- rare, and exactly the
+  // Four parts ganged to one wire is what reaches this -- rare, and exactly the
   // kind of build a bench sheet is drawn for.
   const clip = (text, max) => {
     const whole = String(text ?? "");
@@ -448,7 +448,7 @@
   //
   // The line type says what the wire carries. A Board Lane is a serial link,
   // TX and RX - two conductors and a signal both ways - so it is drawn as a
-  // pair with an arrow at each end. A servo lead's signal is one conductor
+  // pair with an arrow at each end. A servo wire's signal is one conductor
   // running out to the part, so it is one line with one arrow.
   const svgLink = (index, { key, live, ink: own, pair, silk, detail, name, role, note }) => {
     const y = TOP + index * ROW_H + ROW_H / 2;
@@ -536,7 +536,7 @@
   // lane's own wire now, after the board's label.
   //
   // Which part an Output moves is on its box, because that is what is on the
-  // end of the lead; which Output a part should be on is the Parts mapping's
+  // end of the wire; which Output a part should be on is the Parts mapping's
   // job, and this sheet does not answer it.
   // ---------------------------------------------------------------------------
   const partNames = (parts, ids) => {
@@ -544,11 +544,17 @@
     return ids.map((id) => byId.get(id) || id);
   };
 
-  // What an Output carries, as the droid reported it: the LED strip where the
-  // strip is routed to it, else the servo recorded as fitted.
-  const outputRole = (entry, row, stripPin) => {
-    if (entry && entry.enabled === true && Number(entry.ledStripPin) > 0 && Number(entry.ledStripPin) === stripPin) {
-      return "the LED strip";
+  // What an Output carries, as the droid reported it. What is on a wire is one
+  // answer in two vocabularies (ADR 0067): a Light Type where it lights
+  // something, a servo's model where it drives a servo. The stored token is the
+  // same field either way, so this reads that one field and nothing else -
+  // there is no second answer to cross-check it against any more (#413).
+  const LIGHT_TYPE_NAMES = { rgb: "the LED strip" };
+  const outputRole = (entry, row) => {
+    const type = (entry && entry.enabled === true && typeof entry.type === "string")
+      ? entry.type : "";
+    if (LIGHT_TYPE_NAMES[type]) {
+      return LIGHT_TYPE_NAMES[type];
     }
     return row && row.component && row.component !== "none" ? row.component : "a servo";
   };
@@ -561,7 +567,7 @@
   // config reports nothing for - an expander channel - has no label and no
   // switch anybody could have turned off, so it reads as its address, and as
   // wired.
-  const outputWire = (address, entry, row, { parts, stripPin, order }) => {
+  const outputWire = (address, entry, row, { parts, order }) => {
     const live = entry ? entry.enabled === true : true;
     const onIt = row ? partNames(parts, row.parts) : [];
     let note = "signal on the pin, ground to the board's own ground";
@@ -575,7 +581,7 @@
       silk: entry && typeof entry.label === "string" ? entry.label : "",
       detail: address,
       name: onIt.length ? onIt.join(" + ") : "Nothing recorded",
-      role: outputRole(entry, row, stripPin),
+      role: outputRole(entry, row),
       note,
     };
   };
@@ -603,11 +609,10 @@
 
   const sheetWires = (model = {}) => {
     const { parts = [], outputs = [], components = {} } = model;
-    const stripPin = Number(model.stripPin) || 0;
     const order = wireOrder(model);
     const reported = configOutputs(components);
     const rows = new Map(outputs.map((row) => [row.address, row]));
-    const context = { parts, stripPin, order };
+    const context = { parts, order };
     const wires = [...reported.keys()].map((address) =>
       outputWire(address, reported.get(address), rows.get(address), context)
     );
@@ -895,7 +900,6 @@
   let identity = window.PAIdentity || null;
   let outputs = [];
   let components = {};
-  let stripPin = 0;
   let answered = false;
 
   // The product the board's GPIO outputs are - "Body controller board GPIO" -
@@ -911,7 +915,6 @@
     components,
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
-    stripPin,
     boardName: window.ComponentPicker?.artPartFor?.(BOARD_GPIO_PRODUCT)?.name || "",
     droidName: typeof identity?.droidName === "string" ? identity.droidName : "",
   });
@@ -1048,7 +1051,7 @@
 
   // One section for one answer. The sheet is a join of three reads and a half
   // answer is not a sheet -- a table painted from outputs the droid reported
-  // and toggles it did not would say a lead is live when it is switched off --
+  // and toggles it did not would say a wire is live when it is switched off --
   // so both fetches are in the one section run and either one failing is the
   // section failing, which is what the Page Recovery View is for.
   const loadSheet = async ({ handle = null } = {}) => {
@@ -1068,8 +1071,6 @@
       config?.data?.components && typeof config.data.components === "object"
         ? config.data.components
         : {};
-    // Which Output the LED strip is routed to, so its wire says so.
-    stripPin = Number(config?.data?.aux_led_pin) || 0;
     answered = true;
     paint();
     saveLink?.setAttribute("aria-disabled", "false");

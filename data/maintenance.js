@@ -316,7 +316,15 @@
       .filter((id) => typeof components[id]?.address === 'string'
         && typeof components[id].enabledField === 'string'
         && typeof components[id].typeField === 'string')
-      .map((id) => ({ id, enabledField: components[id].enabledField, typeField: components[id].typeField }));
+      .map((id) => ({
+        id,
+        enabledField: components[id].enabledField,
+        typeField: components[id].typeField,
+        // Absent on an Output that cannot carry a light, which is what stops a
+        // restore inventing a field for one.
+        ledCountField: typeof components[id].ledCountField === 'string'
+          ? components[id].ledCountField : '',
+      }));
   };
 
   // ---- RESTORE: flatten GET /api/config nested JSON to POST form params ----
@@ -342,9 +350,15 @@
     if (rc.member !== undefined) p.set('rcMember', rc.member);
     if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
 
-    outputs.forEach(({ id, enabledField, typeField }) => {
+    outputs.forEach(({ id, enabledField, typeField, ledCountField }) => {
       if (components[id]?.enabled !== undefined) p.set(enabledField, components[id].enabled ? 'true' : 'false');
       if (components[id]?.type !== undefined) p.set(typeField, components[id].type);
+      // A light's settings, under the field that Output named for them. The
+      // droid-wide aux_led_pin / aux_led_count this replaced could only carry
+      // one answer, and a restore dropped every other lit wire (#413).
+      if (ledCountField && components[id]?.ledCount !== undefined) {
+        p.set(ledCountField, components[id].ledCount);
+      }
       // The recorded ends, under the field names /api/config speaks for them.
       for (const end of ['OpenUs', 'CloseUs']) {
         if (cfg[`${id}${end}`] !== undefined) p.set(`${id}${end}`, cfg[`${id}${end}`]);
@@ -363,9 +377,6 @@
         p.set(param, components[key].enabled ? 'true' : 'false');
       }
     });
-
-    if (cfg.aux_led_pin !== undefined) p.set('aux_led_pin', cfg.aux_led_pin);
-    if (cfg.aux_led_count !== undefined) p.set('aux_led_count', cfg.aux_led_count);
 
     if (domeEsc.neutralUs !== undefined) p.set('domeEscNeutralUs', domeEsc.neutralUs);
     if (domeEsc.minPulseUs !== undefined) p.set('domeEscMinPulseUs', domeEsc.minPulseUs);
