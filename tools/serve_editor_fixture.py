@@ -234,8 +234,15 @@ def _console_answer(command, request_id):
     }], False
 
 
-# PA:INCLUDE pattern matching, same as gzip_fsdata.py
-INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
+# PA:INCLUDE pattern matching, same as gzip_fsdata.py, including the one
+# optional fragment (`_product_art.html#board`, #411).
+INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+(?:#[a-z]+)?)\s*-->[ \t]*\n?")
+
+# The asset set this fixture serves: the build's default (gzip_fsdata.py
+# DEFAULT_ASSET_SET). A partial resolves in the set first, then the common data
+# root - the order gzip_fsdata.py searches - since #382 moved _product_art.html
+# into the sets.
+ASSET_SET_DIR = DATA_DIR / "asset-sets" / "default"
 
 
 def _expand_includes(content, src_root):
@@ -243,11 +250,24 @@ def _expand_includes(content, src_root):
 
     Replaces <!-- PA:INCLUDE filename --> with the contents of that file.
     Single-pass, non-recursive like gzip_fsdata.py.
+
+    A `#board` fragment inlines the running board's one symbol on a device.
+    The fixture has no board, and the default set's sprite carries no symbols
+    (gzip_fsdata.py BOARD_FRAGMENT), so it inlines nothing - what the default
+    image ships.
     """
     def _replace(match):
-        target = src_root / match.group(1)
-        if not target.is_file():
-            raise ValueError(f"PA:INCLUDE target not found: {target}")
+        name, _, fragment = match.group(1).partition("#")
+        for root in (ASSET_SET_DIR, src_root):
+            target = root / name
+            if target.is_file():
+                break
+        else:
+            raise ValueError(f"PA:INCLUDE target not found: {name} in {ASSET_SET_DIR} or {src_root}")
+        if fragment:
+            if fragment != "board":
+                raise ValueError(f"PA:INCLUDE fragment #{fragment} is not one this server can select")
+            return ""
         return target.read_text(encoding="utf-8")
 
     return INCLUDE_RE.sub(_replace, content)
