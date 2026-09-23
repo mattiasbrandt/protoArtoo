@@ -976,25 +976,6 @@ body[data-page="firmware"] .card > * + * {
    is switched off in Configuration. It is an Availability Family member and wears the
    "change it here" treatment declared with the other three, further down. */
 
-.card-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.card-header-row h3 {
-  margin: 0;
-}
-
-.card-header-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
 .disabled-reason {
   margin-top: 8px;
   color: var(--silver-bright);
@@ -1010,15 +991,6 @@ body[data-page="firmware"] .card > * + * {
   line-height: 1.5;
 }
 
-.caution-banner {
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
-  border-left: 3px solid var(--warning);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 0.85em;
-  padding: var(--space-sm) var(--space-md);
-  margin-bottom: var(--space-md);
-}
 
 .hero-grid,
 .status-grid,
@@ -2910,39 +2882,6 @@ body.sleep-mode-active {
   margin-left: 6px;
 }
 
-/* ---------------------------------------------------------------------------
-   Servos (ADR 0066, #399 slice 2, #400)
-
-   One row shape for every output this page offers: what it is, what is on it,
-   and the acts, beside the thing they act on. The arm and AUX rows are written
-   by data/servo.js and the test rows are in data/servo.html; they are the same
-   row because they are the same kind of thing, and a builder should not have to
-   learn the page twice.
-
-   --row tall and divided by a seam, which is the table density the anatomy uses
-   everywhere else, so a list of outputs here reads at the same rhythm as a list
-   of outputs on Parts.
-   --------------------------------------------------------------------------- */
-.arm-control-row {
-  display: grid;
-  grid-template-columns: minmax(92px, 140px) minmax(140px, 1fr) auto;
-  align-items: center;
-  gap: var(--space-md);
-  min-height: var(--row);
-  padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.arm-control-row:last-child {
-  border-bottom: none;
-}
-
-.arm-name {
-  font-size: var(--fs-cell);
-  font-weight: 600;
-  color: var(--text);
-}
-
 /* What is on an Output's wire, after its name (#412): the Part names Parts
    shows, quieter than the board's label, and absent when nothing is assigned. */
 .output-parts {
@@ -2953,34 +2892,6 @@ body.sleep-mode-active {
 p.output-parts {
   margin: 0;
   font-size: var(--fs-cell);
-}
-
-.arm-position {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sect);
-  line-height: 1.6;
-  color: var(--text-dim);
-}
-
-/* The acts, at the far end of the row they act on. They wrap onto their own
-   line before they squeeze, because a half-width button is not a target. */
-.arm-acts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-}
-
-@media (max-width: 1100px) {
-  .arm-control-row {
-    grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
-  }
-
-  .arm-acts {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -3653,13 +3564,6 @@ label.sound-search-field {
   min-height: 1.1em;
 }
 
-.sound-note-inline {
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  margin-left: var(--space-sm);
-}
-
 .sound-category-hint {
   margin-top: var(--space-2xs);
   color: var(--text-faint);
@@ -3928,36 +3832,6 @@ body[data-page="maintenance"] .status-item dd {
 body[data-page="maintenance"] .status-item .hint {
   display: block;
   margin-top: var(--space-2xs);
-}
-
-/* Where an LED strip is routed, and what it is showing. The swatch is the one
-   thing on this surface that paints a color from data: it is the strip's own
-   live color, not a state, so it is set from the frame rather than tokened. */
-.led-route {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
-/* A count from 1 to 255 needs no more box than this. */
-.led-route .field {
-  max-width: 180px;
-}
-
-.led-preview {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.led-swatch {
-  display: inline-block;
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-round);
-  background: var(--well);
 }
 
 /* The parts a restore may write, each its own tick. */
@@ -4276,19 +4150,6 @@ body[data-page="maintenance"] .status-item .hint {
   height: 100%;
   width: var(--mini-pct, 0%);
   background: var(--accent);
-}
-
-.rc-source-card-compact {
-  padding: 8px 10px;
-}
-
-.rc-source-card-title {
-  font-weight: 600;
-}
-
-.rc-source-card-meta {
-  font-size: 0.85em;
-  opacity: 0.9;
 }
 
 .rc-slot-group-title,
@@ -5470,12 +5331,6 @@ body[data-page="maintenance"] .status-item .hint {
   font-size: 0.95rem;
 }
 
-.seq-editor-steps-helper {
-  margin-bottom: 12px;
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
-
 .seq-editor-step-table {
   display: flex;
   flex-direction: column;
@@ -6235,7 +6090,6 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
-.seq-rehearsal-lead,
 .seq-rehearsal-clear {
   margin: 0 0 var(--space-xs);
   font-size: var(--fs-cell);
@@ -6372,15 +6226,6 @@ body[data-page="maintenance"] .status-item .hint {
   left: 0;
   z-index: 1;
   background: var(--surface);
-}
-
-/* The acts, in their own column at the end of the row (ADR 0066: the acts are
-   named beside the thing they act on). Narrow, so the answer columns get the
-   width. */
-.parts-table .parts-acts {
-  width: 1%;
-  text-align: right;
-  white-space: nowrap;
 }
 
 .parts-shorthand,
@@ -8174,8 +8019,7 @@ button.droid-build-card:disabled {
   grid-auto-rows: 1fr;
 }
 
-.component-picker + .note,
-.component-picker + .component-consequence {
+.component-picker + .note {
   margin-top: 0;
 }
 
@@ -8765,10 +8609,6 @@ button.output-setting-head:focus-visible {
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
   letter-spacing: 0.08em;
-}
-
-.light-note {
-  margin: 0;
 }
 
 /* A Part the builder has not fitted still shows, and says so. Dimmed rather
