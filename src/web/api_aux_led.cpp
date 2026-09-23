@@ -193,7 +193,7 @@ bool parseTargetPayload(WebRequest& req, uint8_t* outTarget) {
 // of them to go red has changed several, and a receipt naming one would be a
 // narrower answer than the request.
 void sendLitWiresResponse(WebRequest& req) {
-    LitWireReading readings[BOARD_OUTPUT_COUNT] = {};
+    LitWireReading readings[BOARD_OUTPUT_LIGHT_CAPABLE_COUNT] = {};
     size_t count = 0;
 
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
@@ -201,7 +201,7 @@ void sendLitWiresResponse(WebRequest& req) {
         taskENTER_CRITICAL(&robotStateMux);
         state = robotState.auxLed[i];
         taskEXIT_CRITICAL(&robotStateMux);
-        if (!state.lit) {
+        if (!state.lit || count >= BOARD_OUTPUT_LIGHT_CAPABLE_COUNT) {
             continue;
         }
         readings[count].id = BOARD_OUTPUTS[i].id;
@@ -213,7 +213,7 @@ void sendLitWiresResponse(WebRequest& req) {
         ++count;
     }
 
-    char wiresJson[BOARD_OUTPUT_COUNT * 96 + 8] = {};
+    char wiresJson[LIT_WIRES_JSON_MAX] = {};
     if (!formatLitWiresJson(wiresJson, sizeof(wiresJson), readings, count, nullptr)) {
         webSendJsonError(req, 500, "lights response overflow");
         return;

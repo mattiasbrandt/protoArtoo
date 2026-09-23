@@ -111,6 +111,41 @@ inline constexpr BoardOutput BOARD_OUTPUTS[] = {
 
 inline constexpr size_t BOARD_OUTPUT_COUNT = sizeof(BOARD_OUTPUTS) / sizeof(BOARD_OUTPUTS[0]);
 
+namespace board_outputs_detail {
+constexpr size_t length(const char* s) {
+    size_t n = 0;
+    while (s[n] != '\0') ++n;
+    return n;
+}
+
+constexpr size_t countLightCapable() {
+    size_t n = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        if (output.lightCapable) ++n;
+    }
+    return n;
+}
+
+constexpr size_t longestId() {
+    size_t longest = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        const size_t len = length(output.id);
+        if (len > longest) longest = len;
+    }
+    return longest;
+}
+}  // namespace board_outputs_detail
+
+// How many of this board's Outputs a light may go on, and the longest stored id
+// among them. Both are here so a caller sizing a buffer for "every lit wire"
+// bounds it by what can actually be lit rather than by the whole table, and so
+// that adding an Output re-derives the bound instead of silently outgrowing it
+// (#413: the status frame is built on the WebEvents task's stack, where a
+// loose bound is a real cost).
+inline constexpr size_t BOARD_OUTPUT_LIGHT_CAPABLE_COUNT =
+    board_outputs_detail::countLightCapable();
+inline constexpr size_t BOARD_OUTPUT_ID_MAX_LEN = board_outputs_detail::longestId();
+
 // What `board` prints beside `output`. Never nullptr for a board that builds:
 // the static_asserts below refuse a board with an unlabelled Output.
 constexpr const char* boardOutputLabel(const char* board, const BoardOutput& output) {

@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "board_outputs.h"  // BOARD_OUTPUT_LIGHT_CAPABLE_COUNT, BOARD_OUTPUT_ID_MAX_LEN
 #include "web_request.h"
 
 // One lit wire, as a reading to serialise. `id` is the Output's components{}
@@ -41,6 +42,20 @@ struct LitWireReading {
 // the length it wrote.
 bool formatLitWiresJson(char* buf, size_t bufSize, const LitWireReading* wires, size_t count,
                         size_t* written);
+
+// How large a buffer the answer can need, derived rather than rounded: the
+// status frame is built on the WebEvents task's stack and the aux-LED reply on
+// a web handler's, so a loose bound here is stack nobody gets back.
+//
+// One entry is {"<id>":{"r":255,"g":255,"b":255,"effect":"pulse","available":false},
+//   = 3 + id + 8 + 8 + 8 + 17 + 17 + 2 punctuation and separator
+// with the widest value in every field: three-digit channels, the longest
+// effect word ("pulse", 5) and the longer boolean ("false", 5). Only an Output
+// a light may go on can appear, so the count is bounded by those and not by
+// the whole table. Plus the two braces and the terminator.
+constexpr size_t LIT_WIRE_JSON_ENTRY_MAX = 63 + BOARD_OUTPUT_ID_MAX_LEN;
+constexpr size_t LIT_WIRES_JSON_MAX =
+    BOARD_OUTPUT_LIGHT_CAPABLE_COUNT * LIT_WIRE_JSON_ENTRY_MAX + 3;
 
 void handleAuxLedColorPost(WebRequest& req);
 void handleAuxLedEffectPost(WebRequest& req);

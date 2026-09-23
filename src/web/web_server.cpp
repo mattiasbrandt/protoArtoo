@@ -265,7 +265,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool sleepMode;
     uint8_t activeMood;
     uint32_t sleepSinceMs;
-    LitWireReading litWires[BOARD_OUTPUT_COUNT];
+    LitWireReading litWires[BOARD_OUTPUT_LIGHT_CAPABLE_COUNT];
     size_t litWireCount;
     RcInputMode rcInputMode;
     bool singleSbusUseCh2;
@@ -376,7 +376,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // everything else here so one frame is one consistent reading (#413).
     litWireCount = 0;
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        if (!robotState.auxLed[i].lit) {
+        if (!robotState.auxLed[i].lit || litWireCount >= BOARD_OUTPUT_LIGHT_CAPABLE_COUNT) {
             continue;
         }
         litWires[litWireCount].id = BOARD_OUTPUTS[i].id;
@@ -403,7 +403,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
 
     // The lit wires, keyed by Output id, in the one shape the aux-LED endpoints
     // answer with too (include/api_aux_led.h). A droid with no light writes {}.
-    char litWiresJson[BOARD_OUTPUT_COUNT * 96 + 8] = {};
+    char litWiresJson[LIT_WIRES_JSON_MAX] = {};
     if (!formatLitWiresJson(litWiresJson, sizeof(litWiresJson), litWires, litWireCount, nullptr)) {
         return false;
     }
