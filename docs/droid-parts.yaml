@@ -463,7 +463,7 @@ body_lights:              # what the body carries that lights up — parts, not 
   # two things, which is the defect that cost this ticket three iterations -
   # the operator, 2026-09-20: "LED strip is simply one of the differed light
   # types we can assign to a droid part". The Light Types live where the wires
-  # are answered for (data/output_settings.js); Lights reads them from there.
+  # are answered for (data/outputs.js); Lights reads them from there.
   #
   # The ids are short on purpose. A Servo Output row stores a part id in
   # SERVO_OUTPUT_PART_ID_MAX = 12 characters (include/servo_output_row.h), so
