@@ -26,9 +26,9 @@ Automated tests are evidence, not the goal. Choose checks based on the risk touc
 - Firmware behavior change: start with `make build BUILD_ENV=<affected-env>`
   (for example, `artoo_esp32` or `firebeetle2`).
 - Safety invariants, protocol parsing, shared state transitions, config persistence,
-  JSON/API contracts, or prior regression paths: add `pio test -e native`.
+  JSON/API contracts, or prior regression paths: add `make test`.
 - Action registry, RC tokens, or `ACTION_REGISTRY[]`: add `make check-action-drift`.
-- Static-analysis investigation: add `pio check`; do not run it by default.
+- Static-analysis investigation: add `make check`; do not run it by default.
 - Docs, comments, copy, agent definitions, UI styling, or low-risk cleanup with no
   behavior change: inspection and targeted checks are acceptable.
 
@@ -58,14 +58,12 @@ Blocked-case evidence packet (required before `partial`):
 2. Attempted input (exact command/URL/arguments)
 3. Exact runtime error text
 4. Permission source (`local`/`project`/`managed`/`UNKNOWN`)
-5. Remediation attempted in-run
-6. Retry result after remediation
+5. Fallback taken in-run, if any
+6. Result of that fallback
 7. One concrete operator action requested
 
-Permission remediation:
-- Preferred safe command: `python3 -m http.server 4173 --directory data`.
-- If denied, add/confirm explicit allow rule for that exact command in `.claude/settings.local.json` (or `.claude/settings.json` for team-wide).
-- Retry once after permission update before classifying as blocked.
+A permission denial is the operator's setting: never edit `.claude/settings*.json`
+to lift it. The server command to ask for is `python3 -m http.server 4173 --directory data`.
 
 ## Reporting template
 

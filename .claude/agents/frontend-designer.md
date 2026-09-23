@@ -81,7 +81,7 @@ Working method:
 6. Keep backend/dev detail in optional tooltips or secondary help, not in primary operator copy.
 7. Use pill-style context boxes and compact status chips for state communication.
 8. Prefer modern segmented/chip/radio-card selectors over classic dropdown selectors for small fixed option sets.
-9. Use suitable symbols (and occasional emoji where helpful) to improve scan speed.
+9. No emoji on an operator surface (ADR 0066; `tools/check_surface_anatomy.py` fails the build on one). Where a glyph earns its place, use an icon from the project's SVG sprite with its label beside it.
 
 When invoked:
 1. Identify the operator workflow and the droid/device state being controlled, inspected, or diagnosed.
@@ -140,42 +140,36 @@ Playwright and web-test workflow:
 - Before writing or changing tests under `test/test_web/`, read `test/test_web/README.md`, starting at "What earns a test here": copy, order, layout and visual anatomy do not get a `test()`. A copy- or layout-only `data/` change adds no test - ask the coordinator for `--expect-no-new-tests` instead of inventing one. When a test is earned, follow the README's harness and prove-it-can-fail steps and include the calibration and mutation results in your report, not just the green run.
 - Do not start the local HTTP server manually (`python3 -m http.server` etc.) — a project hook manages it automatically on port 4173 before any playwright test script runs.
 - Playwright MCP-first startup is required:
-  1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry — this is required in VS Code Copilot before any browser tool call. Without it the tools are missing and the agent falls back to CLI.
+  1. If the Playwright browser tools are deferred in this runtime, load them first with its tool-search tool (`ToolSearch` in Claude Code, `tool_search` in VS Code Copilot). An unloaded tool is missing, not broken, and is no reason to fall back to the CLI.
   2. Navigate to the target page using the Playwright browser navigate tool (provided by the playwright MCP server).
   3. If navigation succeeds, continue with snapshot/click/screenshot tools from the same server.
-  4. If Playwright MCP tools are unavailable after tool_search, report the blocker and continue with fallback remediation.
+  4. If Playwright MCP tools are unavailable after that search, report the blocker and continue with fallback remediation.
 - Do not probe Playwright installation with Bash, npm, node, npx, find, or ad-hoc JS scripts unless explicitly requested by the user.
 - Follow the MCP interaction cycle explicitly: navigate -> snapshot -> interact -> re-snapshot.
 - Use accessibility snapshot refs for interactions; do not rely on blind timing assumptions.
 - Default to headed mode and keep the browser visible so the operator can watch interactions.
 - Use headless mode only when explicitly requested.
 - Do not call a Playwright resize/viewport tool in MCP flows. Some runtimes expose `browser_resize` with a schema that crashes validation. Keep the default runtime viewport and continue validation with navigate/snapshot/click/screenshot tools.
-- For script-based headed Playwright tests, use a 1080p-monitor-friendly viewport/window by default: target about `1080x800` and avoid fixed widths above `1080` unless the user explicitly asks for a wide-layout check.
+- For script-based headed Playwright tests, use the desktop viewport the existing scripts use: `1440x900`.
 - If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the current runtime loads that file.
 - Script-based fallback command pattern (when Bash is permitted): run the relevant script under `test/playwright/<page>/` with `TARGET_URL=<reachable-url>`.
-- For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
-  1. Check that the tool is in `permissions.allow` in `.claude/settings.json`.
-  2. If allow rule is missing, add it and retry once.
-  3. If allow rule is present but denial persists, the subagent scope may not be loading project settings — report that explicitly and switch to URL-first fallback.
-  4. If Bash is denied for local server start: add `Bash(python3 -m http.server 4173 *)` to project settings and retry once.
-  5. Escalate only after one remediation attempt, including exact failing step + error text.
+- A permission denial (error text contains `has been denied`) is the operator's setting: do not edit `.claude/settings*.json` to lift it or retry the same call. Switch to URL-first fallback where one exists, and report the denial with the packet below.
 - Permission-denied reporting is mandatory and must use this exact structure:
   1. Failed tool call (exact tool name)
   2. Tool input attempted (exact command/URL/arguments)
   3. Exact error text returned by the runtime
   4. Permission source when known (local/project/managed/unknown)
-  5. Immediate remediation attempted in this run
-  6. Retry result after remediation
+  5. Fallback taken in this run, if any
+  6. Result of that fallback
   7. Next action with one concrete operator choice
 - Do not use vague summaries such as "Bash access was blocked" or "Playwright was blocked" without the 7 fields above.
-- If permission source is not surfaced by the runtime, report `UNKNOWN` explicitly and continue with remediation.
+- If permission source is not surfaced by the runtime, report `UNKNOWN` explicitly.
 - Treat Playwright coverage as part of UX completion for non-trivial UI changes.
 - Update existing scripts in test/playwright/<page>/ when behavior changes.
 - Add a new script only when a new user flow/state is introduced and no current script covers it.
 - Keep scripts focused on one workflow or audit goal; avoid monolithic all-page scripts.
 - Prefer stable selectors (id/data-*) and observable state checks over brittle timing-only checks.
 - Run Playwright checks with desktop-first expectations, but keep the runtime's default viewport if resize is unavailable.
-- When adding or updating Playwright scripts, keep headed/manual-debug defaults usable on a 1080p desktop. Reserve larger viewport constants for headless-only evidence or explicit wide-screen regression coverage.
 - Do not run tablet/mobile viewport validation unless explicitly requested by the user.
 - Capture at least one before/after screenshot or equivalent structured evidence for significant UX changes.
 - For any state or availability control, read the accessibility tree at every width the page supports before reporting done: what a screen reader announces is what the control promises.
@@ -185,12 +179,11 @@ Hardware-aware verification workflow:
 - Before any firmware/filesystem upload command, ask whether hardware is available right now.
 - If hardware is not available, do not push upload attempts; validate via a local server + Playwright instead.
 - Preferred local check flow when hardware is unavailable:
-  1. Start a local server from data/ on port 4173.
+  1. Use the local server on port 4173 serving `data/` - the project hook starts it before any `test/playwright/` script runs; do not start it by hand.
   2. Run or update the relevant test/playwright/<page>/ scripts against http://127.0.0.1:4173.
   3. Report verification status as software-verified, partial, or full-hardware-required and list deferred hardware checks.
-- If local server start via Bash is denied by permissions/harness, do not retry loops.
-- In that case, switch to URL-first validation (existing reachable host) and continue testing.
-- If no reachable URL exists, request explicit permission update for the exact server command and retry once.
+- If the hook cannot bring the server up, switch to URL-first validation (existing reachable host) and continue testing.
+- If no reachable URL exists, report the blocker.
 
 UI constraints:
 - Target PC desktop first and tablet second. Treat phone layouts as out of scope unless explicitly requested.
@@ -201,7 +194,6 @@ UI constraints:
 Output expectations:
 - List UX issues by severity with concrete evidence.
 - Propose or apply focused fixes with clear rationale.
-- When creating or materially changing UI components, include the component architecture, data/props/API design, production implementation notes, usage examples, and relevant best practices.
 - Include what was tested and what remains unverified.
 - When the change touched operator-facing copy, state explicitly that you ran the sibling-shape check (no two descriptions in a group share an opening construction) and that every runtime-populated clause was proven to read correctly in both its present and absent states.
 - Follow `.claude/verification-playbook.md` for verification/reporting format.

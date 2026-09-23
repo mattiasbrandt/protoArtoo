@@ -5,10 +5,9 @@ user-level daemon), in one wing: **`wing_protoartoo`**. The convention on this
 machine is `wing_<project>`; the bare `protoartoo` is not a wing, and
 `protoArtoo` case-sensitively matches nothing and answers "No results found"
 rather than failing - so a wing-scoped search against it reads as *no prior art*
-when it means *no such wing*. The palace was consolidated on 2026-09-17: 82
-wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the protoArtoo part of
-`sessions` merged into `wing_protoartoo` (144,948 records). Agents with MCP
-access follow this protocol.
+when it means *no such wing*. The older `protoartoo` and `wing_wt_*` wings were
+merged into `wing_protoartoo` on 2026-09-17. Agents with MCP access follow this
+protocol.
 
 **Two things stop the protocol, and both are answered the same way - say so once
 and carry on.** If `mempalace_status` errors, skip every step below for that
@@ -69,8 +68,8 @@ it. Put what must survive on the sub-issue, in `CONTEXT.md` or in `docs/adr/`.
 
 - Use `mempalace_kg_query` when the question is about relationships between
   entities (e.g. which task introduced a constraint, which component owns a pin).
-- Use `mempalace_kg_add` to record a new fact when a constraint is confirmed
-  (e.g. "UART1 is owned by DriveTask post-T01").
+- When a write succeeds (see "Saving memories"), `mempalace_kg_add` records a
+  confirmed constraint (e.g. "UART1 is owned by DriveTask").
 - Use `mempalace_kg_timeline` to reconstruct the history of a component or
   decision when debugging a regression.
 
@@ -86,8 +85,8 @@ agent memory layer.
 - If a relevant agent exists for the domain being worked on (e.g. a reviewer,
   architect, or ops agent), read its recent diary before starting:
   `mempalace_diary_read("<agent_name>", last_n=10)`.
-- After significant domain work, write a concise AAAK diary entry:
-  `mempalace_diary_write("<agent_name>", "<aaak_entry>")`.
+- After significant domain work, when a write succeeds (see "Saving memories"),
+  write a concise AAAK diary entry: `mempalace_diary_write("<agent_name>", "<aaak_entry>")`.
 - Diary entries are compressed in AAAK — keep them structured and entity-coded
   per the AAAK spec from `mempalace_status`.
 

@@ -107,8 +107,8 @@ block. This overrides the `grilling` skill's whole-frontier round behaviour.
 Recompute the frontier after each answer; the next question is whatever that
 answer just unblocked.
 
-Finding **facts** is your job, never the operator's: dispatch a subagent rather
-than asking for something you could look up. The **decisions** are theirs.
+Finding **facts** is your job, never the operator's: look it up rather than
+ask - yourself, or a subagent when it is a wide sweep. The **decisions** are theirs.
 
 ### Keep the question short - the reasoning goes above it
 

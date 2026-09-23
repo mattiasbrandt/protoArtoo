@@ -40,8 +40,9 @@ def main() -> int:
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
             "additionalContext": (
-                "Frontend file changed under data/. Run local web verification: serve data/ on :4173 and run "
-                "relevant test/playwright/<page>/ scripts with screenshot evidence."
+                "Frontend file changed under data/. Look at it in a headed browser before handing it over; "
+                "the first iteration stops there for the operator's live review, and the relevant "
+                "test/playwright/<page>/ scripts run once the look is approved."
             ),
         }
     }

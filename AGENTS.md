@@ -261,10 +261,8 @@ worktree alike, never a wing derived from the directory you happen to be in. The
 convention on this machine is `wing_<project>` (`wing_mattias`, `wing_dotfiles`,
 `wing_work`); the bare form `protoartoo` is not a wing and neither is
 `protoArtoo`, which case-sensitively matches nothing and returns "No results
-found" rather than an error. The palace was consolidated on 2026-09-17 (3.9.0 ->
-3.10.0): 82 wings became 17, and `protoartoo`, all 65 `wing_wt_*` and the
-protoArtoo part of `sessions` were merged into `wing_protoartoo`, which now holds
-**144,948 records**. Nothing needs re-mining.
+found" rather than an error. The older `protoartoo` and `wing_wt_*` wings were
+merged into `wing_protoartoo` on 2026-09-17; nothing needs re-mining.
 
 **Writes are refused, and that is expected.** The MemPalace daemon holds the
 palace's single writer lease for its whole lifetime, and the lease is
@@ -329,11 +327,13 @@ Role-specific behavior belongs in project subagent files under `.claude/agents/`
 Keep AGENTS.md as the canonical policy/invariant source and avoid duplicating
 full policy blocks across individual agent definitions.
 
-- Default mode for non-trivial work is planner-orchestrator:
-  - Main model owns deep reasoning, architecture, risk checks, and a detailed TODO packet.
-  - Subagents execute scoped tasks from that packet.
-- Do not collapse delegated work back to main-model solo execution unless the user explicitly asks.
-- Delegate by default when work is parallelizable, read-heavy, repetitive, or review-oriented.
+- Delegate when the payoff clears the overhead: each subagent re-establishes context,
+  re-explores and reports back, and you then re-read its report. That pays for
+  genuinely independent, sizeable tracks - a wide multi-file sweep, parallel research,
+  an epic's worker slices. A few reads, searches or edits, and checking your own work,
+  stay in the main loop.
+- Once work is delegated, do not collapse it back to main-model solo execution unless the
+  user explicitly asks.
 - Subagent tasks must be narrowly scoped and deliverable-driven:
   - one objective per subagent,
   - concrete inputs and expected outputs,
@@ -637,9 +637,8 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 - Operator surfaces carry no emoji (operator decision 2026-09-13 on #395, ADR 0066).
   A heading, a nav entry or a card is text plus, where a glyph earns its place, an
   icon from the project's own small SVG set that inherits text color and keeps
-  its label alongside. State chips stay verb-free text labels. The earlier rule
-  preferring emoji over verbose labels is retired; it produced the generic look
-  the **Surface Anatomy** (`CONTEXT.md`) replaces.
+  its label alongside. State chips stay verb-free text labels; the **Surface
+  Anatomy** (`CONTEXT.md`) is the standard for the look.
 
 ## Change Hygiene
 

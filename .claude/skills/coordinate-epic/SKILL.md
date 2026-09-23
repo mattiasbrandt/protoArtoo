@@ -82,7 +82,7 @@ the same pass - never left open for one unobtainable number.
 ## Assignment (you set up, then hand the worker its worktree)
 
 `<base>` throughout this skill is the epic's integration branch - read it
-from the epic's coordination section (it changes at Phase 5 closure).
+from the epic's coordination section rather than from memory.
 
 - **Make the branch and worktree with the tool, not by hand:**
   `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug>`.
@@ -474,12 +474,10 @@ for `MEMPALACE_MCP_IDLE_HOURS`, default 8. Ten panes plus their node processes
 is how this box OOM-killed a Claude session at 8.3 GB on 2026-09-11. Closing a
 slice's pane promptly (see Integration) returns that memory.
 
-**Worktree wings fragment memory.** Auto-save derives the wing from cwd and
-only folds a worktree into its project for `<project>/.claude/worktrees/<wt>`;
-`epic_worktree.py` makes `../wt-<issue>`, a sibling, so every worker mints
-`wing_wt_<issue>`. Measured 2026-09-17: 65 such wings, 220 drawers, invisible
-to the `--wing protoArtoo` search this repo's protocol prescribes. So search
-unscoped, and never read a wing-scoped miss as "no prior art".
+**Search `wing_protoartoo` from every worktree.** `epic_worktree.py` makes
+`../wt-<issue>`, a sibling checkout, and a wing named after that directory
+matches nothing. AGENTS.md "Memory (MemPalace)" names the one wing; a miss
+against any other wing means *no such wing*, never *no prior art*.
 
 ## Reporting
 

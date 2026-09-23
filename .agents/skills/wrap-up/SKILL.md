@@ -30,13 +30,11 @@ Interpret extra wording after the trigger as close-out intent. For example:
    - Ensure the next session can restart from a durable source of truth: a formal task record such as a GitHub issue, or MemPalace status/search entries.
 
 3. Preserve memory:
-   - Add a MemPalace drawer for significant outcomes, decisions, constraints, or unresolved risks.
-   - Use the project wing from `mempalace_status`; for protoArtoo this is usually `protoartoo`.
-   - Use `hall_events` for session milestones, `hall_discoveries` for findings, and `hall_facts` for confirmed decisions.
-   - Write a concise diary entry for any relevant specialist domain used during the work.
+   - MemPalace writes are refused while the daemon holds the writer lease (AGENTS.md "Memory (MemPalace)"). Put significant outcomes, decisions, constraints and unresolved risks on the active issue, in `CONTEXT.md` or in `docs/adr/`, and note once that a write was refused.
+   - When a write does succeed, file it in `wing_protoartoo`: `hall_events` for session milestones, `hall_discoveries` for findings, `hall_facts` for confirmed decisions.
 
 4. Clean up repo state:
-   - Commit completed verified slices using the required phase commit format.
+   - Commit completed verified slices as `type(scope): summary` (AGENTS.md "Commit scope format").
    - Leave unrelated user changes untouched.
    - Report any remaining uncommitted, unverified, or blocked work explicitly.
 

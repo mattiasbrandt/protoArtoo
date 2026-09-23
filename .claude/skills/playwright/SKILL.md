@@ -11,15 +11,15 @@ in Claude Code, or a different prefix in other runtimes). Use whatever browser t
 runtime exposes from that server — do not hardcode the namespace prefix.
 
 Local server:
-- The local HTTP server on port 4173 (serving `data/`) is managed automatically by a project hook — do not start it manually with `python3 -m http.server` or similar commands.
-- If the server is already up, the hook is a no-op. If not, it starts automatically before any playwright test script runs.
+- Inside the `frontend-designer` agent, a project hook starts the local HTTP server on port 4173 (serving `data/`) before any `test/playwright/` script runs - do not start a second one there.
+- Anywhere else, if nothing answers on port 4173, start it once: `python3 -m http.server 4173 --directory data`.
 - Navigate to `http://127.0.0.1:4173/<page>.html` for local validation.
 
 Startup protocol (required):
-1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry before attempting any browser tool call. This is required in VS Code Copilot — skipping it causes the tools to be missing and triggers CLI fallback.
+1. If the Playwright browser tools are deferred in this runtime, load them first with its tool-search tool (`ToolSearch` in Claude Code, `tool_search` in VS Code Copilot). An unloaded tool is missing, not broken, and is no reason to fall back to the CLI.
 2. Navigate to the target page using the Playwright browser navigate tool.
 3. Continue with browser snapshot, click, and screenshot tools from the same server.
-4. If MCP browser tools are unavailable after tool_search, report the blocker and continue with fallback remediation.
+4. If MCP browser tools are unavailable after that search, report the blocker and continue with fallback remediation.
 5. Do not run CLI/runtime probes for Playwright (`npm`, `npx`, `node`, `find`, temporary JS scripts) unless explicitly requested.
 6. If the Playwright MCP server is not exposed, report to the operator: the server is registered in `.mcp.json` — check that the current runtime loads that file.
 7. Do not call Playwright resize/viewport tools in MCP validation flows. Validate using the runtime default viewport.
@@ -28,9 +28,8 @@ Failure protocol (required):
 1. If Playwright MCP tools are unavailable, report the blocker. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the runtime loads that file.
 2. Use URL-first fallback (reachable running host preferred). If needed, start local server on port 4173.
 3. If Bash is permitted, run existing repo scripts under `test/playwright/` against that URL to preserve audit progress.
-4. If Bash is denied for local server start, request/update permission for this exact safe command and retry once: `python3 -m http.server 4173 --directory data`.
-   (Some runtimes use absolute paths — if the allow rule is path-sensitive, use `python3 -m http.server 4173 *` as the wildcard form.)
-5. If no reachable URL and no permission update is possible, ask the operator for one explicit action: provide URL or allow one server-start command.
+4. If Bash is denied for local server start, do not edit permission settings to lift it. With no reachable URL, ask the operator for one explicit action: provide a URL or allow `python3 -m http.server 4173 --directory data`.
+5. Report what was attempted with the blocked-run format below.
 6. Escalate only after the above attempts, including exact failed step and full error text.
 
 Shutdown protocol (required):
@@ -57,8 +56,8 @@ Blocked-run report format (required):
 2. Attempted input: exact URL/command/arguments used for that failing call.
 3. Runtime error: exact returned text, unchanged.
 4. Permission source: `local`, `project`, `managed`, or `UNKNOWN`.
-5. Remediation attempted now: exact update/request/alternative path attempted.
-6. Retry result: success/fail with exact error text if fail.
+5. Fallback taken: the alternative path attempted, if any.
+6. Fallback result: success/fail with exact error text if fail.
 7. Operator next step: one concrete action only.
 
 Invalid blocker reports (forbidden):

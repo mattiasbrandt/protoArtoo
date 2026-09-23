@@ -31,9 +31,11 @@ Wrap-up means:
   - make the next session restartable from a durable source of truth: either a
     formal task record such as a GitHub issue, or MemPalace status/search entries
 3. Preserve memory:
-  - file significant decisions, outcomes, and unresolved constraints in MemPalace
-    under the project wing (`hall_events`, `hall_discoveries`, or `hall_facts`)
-  - write the relevant specialist diary entry when a specialist domain was used
+  - MemPalace writes are refused while the daemon holds the writer lease (AGENTS.md
+    "Memory (MemPalace)"): put significant decisions, outcomes and unresolved
+    constraints on the active issue, in `CONTEXT.md` or in `docs/adr/`
+  - when a write does succeed, file it in `wing_protoartoo` (`hall_events`,
+    `hall_discoveries`, or `hall_facts`)
 4. Leave the repo understandable:
   - commit completed verified slices that are ready to keep
   - do not commit `tasks/**`

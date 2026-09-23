@@ -68,7 +68,7 @@ Safety and architecture guardrails:
 - No dynamic allocation in Core 1 task loops after setup.
 - Web handlers validate input and route through state/queues; do not write hardware directly.
 
-Performance evidence baseline (from Phase 5 T20/T24):
+Performance evidence baseline:
 - Heap pressure is burst-dominated by SSE connect/disconnect behavior.
 - Critical historical floor: heapMin around 31 KB during SSE bursts.
 - DomeTask had near-overflow risk (free stack reached ~108 B before remediation).
@@ -76,25 +76,25 @@ Performance evidence baseline (from Phase 5 T20/T24):
 - Logging macro stack overhead was a major hidden contributor in small-stack tasks.
 - Large local stack buffers in cross-task helpers are forbidden on small stack tasks.
 
-Recent #8 heap/crash lessons (June 2026):
+Heap/crash lessons (#8):
 - OOM-PANIC root class: internal heap exhaustion can cause failed allocation -> abort() -> PANIC. Symptoms included OTA failures, sluggish HTTP after PANIC, and profiler low-water collapse.
 - Attribute before tuning: use `/api/profiler`, `/api/logs`, failed-allocation backtraces, mode-scoped snapshots, and coredumps before guessing at fixes.
 - Failed allocator and pressure source can differ. A recent failed-alloc backtrace pointed at WiFi/coex internal-DMA buffers, while the fix was to remove project-owned RAM pressure.
 - CHIRP catalog memory was a major pressure source: keep the small bank array stable, allocate the large entry array only for explicit catalog refresh with a live module, and size entries to actual track count instead of the fixed 300-entry worst case.
-- Learned-sequence run buffers used to be a fixed 2 x 96-step static block (~17 KB). They are now transient heap run buffers, right-sized to actual Learned sequence steps and released with `seqStoreReleaseRun()` at run end/abort.
+- Learned-sequence run buffers are transient heap buffers, right-sized to actual Learned sequence steps and released with `seqStoreReleaseRun()` at run end/abort; a fixed 2 x 96-step static block costs ~17 KB.
 - Web assets are gzipped at build time. `data/` stays raw in git; uploadfs uses staged gzipped text assets, freeing LittleFS space and enabling the 64 KB coredump partition.
 - `/api/coredump/status`, `GET /api/coredump`, and `POST /api/coredump/erase` are the seated-controller crash evidence path. Decode against the exact deployed `firmware.elf`.
 - Seated controller is OTA + HTTP evidence only for flashing/debug collection; USB flashing needs the ESP32 unseated because GPIO15/SBUS affects bootloader sync.
 
 Serial evidence: why the HTTP paths above are not the whole story:
 - **The Survival Path is the serial Console** (CONTEXT.md): the one operator surface that still answers when HTTP admission refuses everything, because it depends on no network, no heap admission decision and no browser. Your declared domain -- heap exhaustion, OOM, PANIC -- is exactly the condition in which the HTTP evidence paths start shedding requests, so an investigation restricted to HTTP loses its evidence precisely when it matters. #225 shipped that path for this reason.
-- **Two panics on the 2026-09-03 bench session were diagnosed only from serial register dumps** -- task name, PC, stack pointer and stack bounds (#266, an `httpd` task stack overflow, since fixed; and #226, a `Console` task stack overflow, still open). HTTP could report `resetReason=PANIC` and nothing further. Panic output reaches the UART before anything HTTP-facing is alive to serve it.
+- **Two panics on the 2026-09-03 bench session were diagnosed only from serial register dumps** -- task name, PC, stack pointer and stack bounds (#266, an `httpd` task stack overflow, and #226, a `Console` task stack overflow; both since closed). HTTP could report `resetReason=PANIC` and nothing further. Panic output reaches the UART before anything HTTP-facing is alive to serve it.
 - `tools/console_client.py` is how you reach it; `docs/console-client.md` is its reference. `make monitor` captures (`--until <string> --timeout <s>` for a bounded wait), `make console` opens a session you can type at.
 - The same numbers step 1 of the crash workflow reads over HTTP are answerable over serial: `system.status.health` returns `heapFree`, `heapMin`, `heapLargestBlock`, `resetReason` and `uptimeMs` as Console Records, and `system.status.logs` streams the log ring as `item` records (#239) when `/api/logs` is unreachable.
 - `tools/bench_rows/` holds a replayable command sheet per board, so gathering evidence is a tracked transcript rather than an improvised session: `make bench-rows BENCH_ROWS=tools/bench_rows/<board>.txt SKIP_MANUAL=1` runs every row that needs nobody standing at the bench.
-- Caution: a serial `system.config.log-level value=<x>` panics the controller today (#226). Read the level; do not write it over serial until that closes.
+- A serial `system.config.log-level value=<x>` panicked the Console task on 2026-09-03 (#226, closed 2026-09-04). Before writing it over serial, confirm on the current image that it no longer does.
 
-T20/T24-informed red flags (act immediately):
+Red flags (act immediately):
 - Any task stack HWM below 256 B.
 - Downward-trending HWM in long runs (possible path-dependent overflow risk).
 - heapMin below 64 KB in profiling scenarios.
@@ -160,8 +160,8 @@ Verification guidance:
 - Use risk-based verification; automated tests are evidence, not the goal.
 - For firmware behavior changes, start with `make build BUILD_ENV=<affected-env>`
   (for example, `artoo_esp32` or `firebeetle2`).
-- Add `pio test -e native` when safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, or prior regression paths are touched.
-- Run `pio check` only when investigating static-analysis issues or when the change risk justifies it.
+- Add `make test` when safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, or prior regression paths are touched.
+- Run `make check` (cppcheck) only when investigating static-analysis issues or when the change risk justifies it.
 - For memory profiling sessions, use `artoo_esp32_profiler` or `artoo_esp32_profiler_ota` when hardware/runtime evidence is relevant.
 
 Required reporting format:

@@ -101,16 +101,16 @@ Mandatory test-effort policy in this mode:
 - Ask concise multi-choice clarification questions only when ambiguity materially affects safety, correctness, architecture, or acceptance criteria.
 - For minor details, state assumptions and proceed.
 - Use non-blocking progress updates instead of repeated planning chatter.
-- **Use the tool's structured ask mechanism** (`ask_followup_question` or equivalent MCP
-  tool) for any question with discrete options — never emit lettered/numbered plain-text
-  option lists ("A:", "B:", "1.", "2.") that require the user to type a reply manually.
+- **Use the tool's structured ask mechanism** (`AskUserQuestion`) for any question
+  with discrete options — never emit lettered/numbered plain-text option lists
+  ("A:", "B:", "1.", "2.") that require the user to type a reply manually.
   Structured questions render as native UI pickers; plain-text lists break the interaction.
 
 ### Subagent Delegation Mode
 
-- Default to planner-orchestrator behavior for non-trivial tasks:
-	- main model performs deep analysis and creates a detailed TODO packet,
-	- subagents execute scoped tasks from that packet.
+- Delegation follows AGENTS.md "Subagent Orchestration Policy": delegate
+  independent, sizeable tracks; do small reads, edits and your own verification in
+  the main loop.
 - Do not fall back to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly requests solo execution.
 - On interruption, checkpoint completed results and continue with a new delegated wave.
 

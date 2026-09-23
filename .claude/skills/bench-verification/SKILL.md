@@ -25,7 +25,7 @@ the cheapest axis and skipped the four the bench exists for.
 | Axis | What it means here | How it is checked |
 |---|---|---|
 | **1. The image is what we think** | `firmwareVersion` matches the intended commit; the filesystem image matches `fs-version.json`; no `-dirty` | Console + HTTP, first rows |
-| **2. UI and UX** | Does it look right, work right and read right - at **both widths**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Headed Playwright, operator watching** (section 5) |
+| **2. UI and UX** | Does it look right, work right and read right - at **desktop width**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Headed Playwright, operator watching** (section 5) |
 | **3. Performance** | Page load and first paint, whether a surface feels sluggish, SSE under concurrent clients, heap free / min / largest block, per-task stack headroom, fragmentation, admission-floor refusals | `/api/status` and `/api/profiler` rows, Playwright timings, resource-error counts |
 | **4. Regression** | What worked last time still works. Defects this repo has shipped stay fixed | **Replay the existing rows** - see below |
 | **5. API and console behaviour** | Routes answer truthfully, the Console catalog matches its pinned counts, guards and typing hold | Console `send`s |
@@ -76,7 +76,7 @@ it.**"* A `full-hardware-required` exposure never blocks closure.
 > side of every one of them was already proven natively.
 
 **What Bench-Mode still covers is a full day**: both images on both controllers,
-every surface served from the staged filesystem image at both widths, the shell
+every surface served from the staged filesystem image at desktop width, the shell
 and the status plate surviving navigation, estop reaching every surface, config
 crossing real NVS, the Console catalog, and the runtime memory readings.
 
@@ -268,8 +268,8 @@ can take part in.
 
    **Before trusting it, check its `PAGES` list against `data/*.html`.** It goes
    stale every time the epic adds a surface, and a zero-error sweep that never
-   loaded the new page says nothing about it. Check the viewport too: the sweep
-   owes **both widths**, and a hardcoded one is half a sweep.
+   loaded the new page says nothing about it. Check the viewport too: desktop
+   width, never a phone or tablet width.
 
 2. **UI and UX of what this epic implemented.** Per-surface scripts live in
    `test/playwright/<surface>/`. Any surface the epic built without one is a gap
