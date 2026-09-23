@@ -164,3 +164,17 @@ test("DM:RESET's $s is a quiet-in-sequence warning, and $S is not", () => {
   assert.equal(found[0].n, 1);
 });
 
+
+test("a count of zero warnings takes no state color", () => {
+  // CONTEXT.md "Status Color": amber is "degraded, and you can do something
+  // about it". There is nothing to do about no warnings, and a count of nothing
+  // wrong reading as something wrong is the defect on the surface whose whole
+  // job is telling a builder what will not happen. The badge already guarded
+  // itself; the count carried .seq-rehearsal-count-warning unconditionally.
+  const classOf = (warning) =>
+    R.countsHtml({ counts: { warning, note: 0 }, checked: 3, total: 3 }).match(
+      /<span class="([^"]*)" data-count="warning"/,
+    )[1];
+  assert.equal(classOf(0), "seq-rehearsal-count", "0 warnings wears the warning color");
+  assert.match(classOf(1), /\bseq-rehearsal-count-warning\b/, "1 warning lost its color");
+});
