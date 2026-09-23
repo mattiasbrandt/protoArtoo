@@ -56,9 +56,6 @@
 static const char* TAG = "WebServer";
 
 namespace {
-constexpr uint16_t kServoPulseMinUs = 500;
-constexpr uint16_t kServoPulseMaxUs = 2500;
-
 
 const char* rcModeToString(RcInputMode mode) {
     switch (mode) {

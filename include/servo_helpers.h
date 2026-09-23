@@ -1,8 +1,9 @@
 // =============================================================================
 // include/servo_helpers.h
 //
-// Pure helpers for servo arm ID mapping and enable-flag logic.
-// No Arduino, no FreeRTOS, no queues  --  safe to include in native unit tests.
+// Pure helpers for servo arm enable-flag logic, and the way in to the armId
+// mapping, which include/output_wire.h holds. No queues and no hardware  --
+// safe to include in native unit tests.
 //
 // Extracted from src/tasks/servo_task.cpp so the mapping and enable logic
 // can be exercised without hardware dependencies.
@@ -14,62 +15,11 @@
 
 #include "config.h"    // PA_BOARD, the pin plan behind the channels below
 #include "ledc_pwm.h"  // LedcChannel enum, LEDC_CH_MAX
-// -----------------------------------------------------------------------------
-// servo_arm_id_to_ledc_channel()
-// Map armId to LEDC channel index.
-//
-//   0 -> LEDC_CH_ARM1
-//   1 -> LEDC_CH_ARM2
-//   2 -> LEDC_CH_AUX1
-//   3 -> LEDC_CH_AUX2
-//   4 -> LEDC_CH_AUX3
-//   any other -> LEDC_CH_MAX  (invalid sentinel)
-// -----------------------------------------------------------------------------
-inline uint8_t servo_arm_id_to_ledc_channel(uint8_t arm_id) {
-    switch (arm_id) {
-        case 0:
-            return LEDC_CH_ARM1;
-        case 1:
-            return LEDC_CH_ARM2;
-        case 2:
-            return LEDC_CH_AUX1;
-        case 3:
-            return LEDC_CH_AUX2;
-        case 4:
-            return LEDC_CH_AUX3;
-        default:
-            return LEDC_CH_MAX;
-    }
-}
-
-// -----------------------------------------------------------------------------
-// servo_ledc_channel_to_arm_id()
-// The inverse: which armId addresses this LEDC channel, if any.
-//
-// A caller that starts from an Output Address rather than from an arm name needs
-// this direction  --  the Servo Output rows record a driver and a channel
-// (ADR 0041), and servoCmdQueue speaks armId. The two vocabularies are kept
-// apart on purpose and this is the one bridge, not a reconciliation of them
-// (include/ledc_pwm.h).
-//
-// Returns false for LEDC_CH_DOME (a brushless ESC, not addressable as a servo)
-// and for anything out of range, leaving *out untouched. A bool rather than a
-// sentinel value: 255 already means the ARM1+ARM2 broadcast on
-// ServoCommand::armId (include/robot_state.h), so "not an arm" would have to
-// invent a second magic number to sit beside the one that means "both".
-// -----------------------------------------------------------------------------
-inline bool servo_ledc_channel_to_arm_id(uint8_t channel, uint8_t* out) {
-    if (out == nullptr) {
-        return false;
-    }
-    for (uint8_t arm_id = 0; arm_id < 5; ++arm_id) {
-        if (servo_arm_id_to_ledc_channel(arm_id) == channel) {
-            *out = arm_id;
-            return true;
-        }
-    }
-    return false;
-}
+// servo_arm_id_to_ledc_channel() and servo_ledc_channel_to_arm_id(), the armId
+// <-> Output Address bridge. They live with the one mapping between armId, the
+// BOARD_OUTPUTS index and the Output Address (#416), and every caller that has
+// always reached them through this header still does.
+#include "output_wire.h"
 
 // -----------------------------------------------------------------------------
 // servo_arm_enabled()
