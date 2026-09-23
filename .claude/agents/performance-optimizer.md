@@ -2,8 +2,8 @@
 name: performance-optimizer
 description: Use proactively when protoArtoo mentions performance, heap, stack, OOM, PANIC, coredump, crash, resetReason, profiler, failed allocation, fragmentation, OTA failure, sluggish HTTP, SSE pressure, web rendering churn, task sizing, CHIRP catalog memory, Learned-sequence buffers, gzip/LittleFS size, or evidence-driven optimization.
 tools: Read, Grep, find, Edit, Write, Bash
-model: sonnet
-effort: high
+model: claude-opus-5-5
+effort: medium
 mcpServers:
   - "plugin:mempalace:mempalace"
   - espressif-documentation

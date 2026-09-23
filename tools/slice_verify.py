@@ -775,13 +775,25 @@ def uncovered_production_files(
 
 
 def check_mutations(
-    production_web: list[str], patches: list[str], expect_no_mutations: bool
+    production_web: list[str],
+    patches: list[str],
+    expect_no_mutations: bool,
+    deleted: frozenset[str] = frozenset(),
 ) -> CheckResult:
     """Mutation coverage as a gate row: a passing block implies killed
     mutations, so there is no separate evidence left for a report to
-    substitute or omit."""
+    substitute or omit.
+
+    A file the diff deletes has no code left to mutate, so it is not asked
+    for a patch: #415 deleted data/wiring_outputs.js as its ticket required
+    and the row failed on a demand nothing could meet. What replaced the file
+    is a changed file of its own and is covered on those terms."""
     label = "mutation gate"
-    production_js = [name for name in production_web if WEB_JS_RE.match(name)]
+    production_js = [
+        name
+        for name in production_web
+        if WEB_JS_RE.match(name) and name not in deleted
+    ]
     if not patches:
         if not production_js:
             return CheckResult(label, "not required", True, [])
@@ -1220,7 +1232,13 @@ def main() -> int:
             args.expect_test_shrink,
         )),
         stage("mutations", lambda: check_mutations(
-            production["web"], mutations, args.expect_no_mutations
+            production["web"],
+            mutations,
+            args.expect_no_mutations,
+            frozenset(
+                git(["diff", "--diff-filter=D", "--name-only", base_sha, "HEAD"])
+                .splitlines()
+            ),
         )),
         check_deleted_tests(base_sha, args.expect_test_shrink),
     ]

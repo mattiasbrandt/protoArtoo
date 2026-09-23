@@ -175,6 +175,21 @@ class MutationRequirement(unittest.TestCase):
         self.assertTrue(result.passed)
         self.assertEqual(result.detail, "ACK (expect-no-mutations)")
 
+    def test_deleted_file_needs_no_patch(self):
+        result = slice_verify.check_mutations(
+            ["data/wiring_outputs.js"], [], False, frozenset({"data/wiring_outputs.js"})
+        )
+        self.assertTrue(result.passed)
+        self.assertEqual(result.detail, "not required")
+
+    def test_deletion_does_not_excuse_a_changed_file(self):
+        result = slice_verify.check_mutations(
+            ["data/app.js", "data/gone.js"], [], False, frozenset({"data/gone.js"})
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("data/app.js", " ".join(result.notes))
+        self.assertNotIn("data/gone.js", " ".join(result.notes))
+
     def test_uncovered_files_are_named(self):
         uncovered = slice_verify.uncovered_production_files(
             ["data/app.js", "data/footer.js"],
