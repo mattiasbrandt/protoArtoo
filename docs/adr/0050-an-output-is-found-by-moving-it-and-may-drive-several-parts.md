@@ -16,7 +16,7 @@ no surface to answer it.
 its channels carry **builder-typed names** it matches against part roles. An
 Output here is `(driver, channel)` plus the Part it drives - ADR 0041 deliberately
 gave it no name, and `CONTEXT.md` is explicit that the Part is identity while the
-address is only where the lead plugs in. The catalog's `aliases` are first-class
+address is only where the wire plugs in. The catalog's `aliases` are first-class
 for **import** matching, which is #294's, not for a blank device. So on a droid
 nobody has configured yet there is nothing at all to match on, and the ticket's own
 "auto-map by name" was naming a capability that cannot exist in this model.
@@ -26,7 +26,7 @@ part claimed by two channels as `dup`, *"flagged, not forbidden"*; its part-firs
 table states the opposite, *"a part has exactly one channel: giving a panel a
 channel that another one holds MOVES it"*. Both of its models are one-to-one on the
 *channel* side, and that is the case neither of them can express: a builder who
-Y-harnesses both breadpan doors to one lead can name only one of them, while the
+Y-harnesses both breadpan doors to one wire can name only one of them, while the
 other reads *- not wired -*, reports `part-not-assigned` when a sequence names it,
 and moves anyway. That is a wrong answer, not a missing feature.
 
@@ -59,7 +59,7 @@ nothing responds to leaves the Part *- not wired -*.
 
 **The multiplicity is asymmetric.** A **Part** is driven by **at most one Output**,
 and assigning it elsewhere *moves* it rather than sharing it. An **Output** may
-drive **several Parts**, so a ganged lead tells the truth about everything it
+drive **several Parts**, so a ganged wire tells the truth about everything it
 moves.
 
 **A row is labelled with the part's plain-English alias** - *Left body door*,
@@ -90,12 +90,12 @@ where a builder needs help most.
 records what the first move on an unmeasured channel is: a jump, not a ramp, hand
 near the power. A discovery run that drove to a recorded end would aim that jump at
 a linkage nobody has measured, on the one occasion the builder does not yet know
-what is on the other end of the lead.
+what is on the other end of the wire.
 
 **The asymmetry is not a compromise; the two questions genuinely have different
 answers.** *What drives this part* must have exactly one, or firmware resolves by
 whichever row it scans first and the droid's behaviour depends on table order.
-*What does this lead move* can honestly have two, and refusing to say so does not
+*What does this wire move* can honestly have two, and refusing to say so does not
 make the second servo stop moving. Two Parts on one Output cannot move
 independently, which is a **Rehearsal Warning** and a second cause for #287's
 existing "two steps driving one Output at once" rule - advice, never a refusal.
@@ -133,7 +133,7 @@ they need to be looking at the droid.
 
 **Exclusive both ways** - the ticket's own recommendation and the reference's
 part-first table verbatim. Simplest model anyone can hold, one answer in both
-directions. Rejected: a ganged lead is unrepresentable, so a builder either accepts
+directions. Rejected: a ganged wire is unrepresentable, so a builder either accepts
 that half their wiring is invisible to the software or gives up the gang.
 
 **Shared and flagged both ways**, the dome map's `dup`. Rejected: two Outputs

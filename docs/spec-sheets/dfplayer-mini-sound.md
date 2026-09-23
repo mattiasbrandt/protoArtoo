@@ -1268,7 +1268,7 @@ in `src/tasks/audio_task.cpp` replacing the `#error`.
 
 **It reuses `AudioSerialIO` unchanged** -- the five function pointers
 (`writeByte`, `rxAvailable`, `rxRead`, `delayMs`, `millisNow`) that already
-separate framing from transport. Which leads directly to the next point.
+separate framing from transport. Which wires directly to the next point.
 
 ### 14.2 It is the only roadmap part that can be verified without hardware
 

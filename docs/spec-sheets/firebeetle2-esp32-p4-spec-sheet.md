@@ -986,7 +986,7 @@ the previous revision of this sheet.
 
 | Ref | Type | Contents |
 | --- | --- | --- |
-| `J3` / `J5` / `J6` | main GPIO field: **17 rows x 3 columns** | Signal column `J3`, `+3V3` column `J5`, `GND` column `J6`. **Silkscreened `IO` / `3V3` / `GND`** above the columns; the refdes are not printed. One GPIO per row, so a 3-pin lead plugs onto a single row |
+| `J3` / `J5` / `J6` | main GPIO field: **17 rows x 3 columns** | Signal column `J3`, `+3V3` column `J5`, `GND` column `J6`. **Silkscreened `IO` / `3V3` / `GND`** above the columns; the refdes are not printed. One GPIO per row, so a 3-pin wire plugs onto a single row |
 | `J2` | 5-pin SPI | `30/MI`, `29/MO`, `28/SCK`, `GND`, `+3V3` |
 | `J9` | 4-pin UART | `TX`, `RX`, `GND`, `+3V3` |
 | `J1` | 3-pin I2C | `7/SDA` + power/ground |

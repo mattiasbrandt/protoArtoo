@@ -307,7 +307,7 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
 // CONTEXT.md "Wiring"), and the Artoo PCB prints its three AUX Outputs ARM3,
 // ARM4 and ARM5 (docs/pin_map.md, the traced board). This inventory shipped
 // them as AUX1-AUX3 - protoArtoo's word - so every sheet named those three
-// leads by a legend printed nowhere on the board in a builder's hand.
+// wires by a legend printed nowhere on the board in a builder's hand.
 void test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen(void) {
     ConfigSnapshot snap = makeDefaultSnap();
     JsonDocument doc;

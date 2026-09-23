@@ -28,7 +28,7 @@ void tearDown() {}
 namespace {
 
 // A table with one output, addressed but claiming no Part yet - the state a
-// droid is in between plugging a lead in and saying what it moves.
+// droid is in between plugging a wire in and saying what it moves.
 ServoOutputTable oneEmptyOutput() {
     ServoOutputTable table = {};
     table.count = 1;
@@ -191,7 +191,7 @@ void test_wiring_the_arm_later_is_what_changes_the_answer() {
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE,
                           droidPartAvailabilityReason(table, "utilUp"));
 
-    // And back again when the lead moves to something else.
+    // And back again when the wire moves to something else.
     servoOutputRemovePartAt(&table.rows[0], 0);
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_PART_NOT_ASSIGNED,
                           droidPartAvailabilityReason(table, "utilUp"));

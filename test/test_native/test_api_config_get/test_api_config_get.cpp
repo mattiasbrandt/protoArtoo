@@ -387,7 +387,7 @@ void moveOnto(const char* part, uint8_t channel) {
 }  // namespace
 
 // Every live row, addressed the way a move names it, with every Part it drives -
-// a ganged lead lists both, and an Output driving nothing says so with an empty
+// a ganged wire lists both, and an Output driving nothing says so with an empty
 // list rather than by being left out.
 void test_the_servo_outputs_answer_lists_every_row_and_all_its_parts() {
     seedUnwiredServoOutputRows();

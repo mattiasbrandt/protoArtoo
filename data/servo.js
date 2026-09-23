@@ -66,7 +66,7 @@
 
   // #293's honesty tiers, as the counts the Outputs section is headed with
   // (#318). A tier is a count, never a place a row moves to: the rows stay in
-  // the order the leads plug in.
+  // the order the wires plug in.
   const TIERS = [
     { id: "driving", label: "Driving parts" },
     { id: "switched-off", label: "Wired but switched off" },
@@ -332,7 +332,7 @@
     // The droid has answered again, which is the only thing a run steps on.
     stepRun();
     paintDial();
-    // What is on each Output's lead, for the Servo assignment plates too.
+    // What is on each Output's wire, for the Servo assignment plates too.
     window.PAOutputSettings?.redraw?.();
   };
 
@@ -472,7 +472,7 @@
     if (current.at >= count) {
       endRun(
         `None of the ${count} spare ${count === 1 ? "output" : "outputs"} moved ${label} in one pass, so it stays ${NOT_WIRED}. ` +
-          `Check the lead, or run it again.`,
+          `Check the wire, or run it again.`,
         "warning"
       );
       return;

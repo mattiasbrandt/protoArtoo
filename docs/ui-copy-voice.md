@@ -34,6 +34,31 @@ The model line:
 Stop there. Do not explain how it *reads*, what it *means*, or why the screen
 is shaped that way.
 
+**A note must earn its place, and the default is no note.** Before writing or
+keeping any note, hint, subtitle or explanatory line, answer both:
+
+1. **Is this note necessary?**
+2. **Is it already obvious from the rest of the text on the page** - the
+   heading, the label, the control, the value beside it?
+
+If 2 is yes, **delete it**. Do not shorten it. A note that repeats what the
+label already says costs the builder a read and tells them nothing, which is
+worse than silence. Deleting is the preferred outcome of a copy pass, and a
+high delete count is a good result, not a worrying one. This applies to notes
+that already exist, not only to ones being added.
+
+Operator, 2026-09-20: *"I want no 'poetic' long descriptive text or notes. I
+want simple short and concise, IF ANY."* Read **IF ANY** as the default.
+
+Naming an act is not licence to explain. *"Turn it on in Setup"* is the whole
+note; the sentence after it saying why, or what it means, or how the screen
+behaves, is what this rule removes.
+
+**The project spells it American: `color`, never `colour`.** Operator,
+2026-09-20. It binds operator-facing strings, headings, labels, `aria-label`s,
+comments, identifiers and docs. CSS properties were always American. The
+glossary term is **Status Color**.
+
 Length is a rule, not a taste:
 
 - A **note** or **hint** is one or two sentences.

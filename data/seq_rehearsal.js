@@ -314,13 +314,13 @@
         </li>`,
       )
       .join("");
-    const lead =
+    const wire =
       report.findings.length === 0
         ? `<p class="seq-rehearsal-clear">Nothing to flag in the ${plural(report.checked, "step", "steps")} the Rehearsal could check, out of ${report.total}.</p>`
-        : `<p class="seq-rehearsal-lead">The Rehearsal ${checkedLine(report)}. Nothing here stops a save or a run.</p>`;
+        : `<p class="seq-rehearsal-wire">The Rehearsal ${checkedLine(report)}. Nothing here stops a save or a run.</p>`;
     return `
       <div class="seq-rehearsal-report" data-rehearsal-report>
-        ${lead}
+        ${wire}
         <ul class="seq-rehearsal-list">${items}${gaps}</ul>
       </div>`;
   };

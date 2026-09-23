@@ -238,7 +238,7 @@ void test_parse_valid_utf8_in_quoted_value_is_accepted() {
 // left. This is that exact scenario, not an arbitrary/synthetic truncation:
 // the operator typed "caf\xC3\xA9" (café, a valid two-byte-terminated value -
 // see test_parse_valid_utf8_in_quoted_value_is_accepted() just above), then
-// backspaced once, removing only \xA9 and leaving the \xC3 lead byte with no
+// backspaced once, removing only \xA9 and leaving the \xC3 wire byte with no
 // continuation at all. consoleParseArgs() must reject it through the same
 // consoleUtf8Valid() call the parser itself makes (include/console_args.h:249,
 // docs/console-protocol.md s.1.2/1.3) - test_cli_utf8_ingestion only proves
@@ -302,13 +302,13 @@ void test_utf8_valid_two_byte_sequence() {
 }
 
 void test_utf8_rejects_overlong_two_byte() {
-    // 0xC0/0xC1 lead bytes are always an overlong encoding.
+    // 0xC0/0xC1 wire bytes are always an overlong encoding.
     TEST_ASSERT_FALSE(consoleUtf8Valid("\xC0\x80"));
     TEST_ASSERT_FALSE(consoleUtf8Valid("\xC1\x80"));
 }
 
 void test_utf8_rejects_truncated_sequence() {
-    TEST_ASSERT_FALSE(consoleUtf8Valid("\xE2\x82"));  // 3-byte lead, only 1 continuation
+    TEST_ASSERT_FALSE(consoleUtf8Valid("\xE2\x82"));  // 3-byte wire, only 1 continuation
 }
 
 void test_utf8_rejects_surrogate_range() {
