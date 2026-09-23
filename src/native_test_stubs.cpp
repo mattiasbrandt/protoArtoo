@@ -236,60 +236,15 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
 }
 
 // AUX LED strip. aux_led.cpp is a task translation unit and stays out of the
-// native build, so the effect-name mapping the handler depends on is
-// reproduced here rather than stubbed away -- the payload assertions would be
-// vacuous otherwise.
+// native build, so its command queue is stood in for here: a queued command is
+// applied to robotState.auxLed directly. Everything else a handler depends on -
+// the effect names, the target rule, auxLedTargetIsLit() - is the real code,
+// header-only in include/aux_led.h. A test that wants "no light here" clears
+// that entry's `lit`/`available`, which is what the real refusal reads too.
 #include "aux_led.h"
+#include "aux_led_test_hooks.h"  // declares g_test_aux_led_queue_ok, defined here
 #include "board_outputs.h"
 bool g_test_aux_led_queue_ok = true;
-
-const char* auxLedEffectToString(AuxLedEffect effect) {
-    switch (effect) {
-        case AUX_LED_EFFECT_SOLID:
-            return "solid";
-        case AUX_LED_EFFECT_BLINK:
-            return "blink";
-        case AUX_LED_EFFECT_PULSE:
-            return "pulse";
-        case AUX_LED_EFFECT_OFF:
-        default:
-            return "off";
-    }
-}
-
-bool parseAuxLedEffect(const char* raw, AuxLedEffect* out) {
-    if (raw == nullptr || out == nullptr) {
-        return false;
-    }
-    if (strcmp(raw, "off") == 0) {
-        *out = AUX_LED_EFFECT_OFF;
-    } else if (strcmp(raw, "solid") == 0) {
-        *out = AUX_LED_EFFECT_SOLID;
-    } else if (strcmp(raw, "blink") == 0) {
-        *out = AUX_LED_EFFECT_BLINK;
-    } else if (strcmp(raw, "pulse") == 0) {
-        *out = AUX_LED_EFFECT_PULSE;
-    } else {
-        return false;
-    }
-    return true;
-}
-
-// A target is a BOARD_OUTPUTS index or AUX_LED_TARGET_ALL, and the stub applies
-// the same rule the real task does: ALL reaches every lit wire, an index
-// reaches that one. A test that wants "no light here" clears that entry's
-// `lit`/`available`, which is what the real refusal reads too.
-bool auxLedTargetIsLit(uint8_t target) {
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        if (target != AUX_LED_TARGET_ALL && target != i) {
-            continue;
-        }
-        if (robotState.auxLed[i].lit && robotState.auxLed[i].available) {
-            return true;
-        }
-    }
-    return false;
-}
 
 bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b,
                          CommandSource /*source*/) {
@@ -297,7 +252,7 @@ bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b,
         return false;
     }
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        if (!auxLedTargetIsLit((uint8_t)i) || (target != AUX_LED_TARGET_ALL && target != i)) {
+        if (!auxLedTargetReaches(target, i) || !auxLedTargetIsLit((uint8_t)i)) {
             continue;
         }
         robotState.auxLed[i].r = r;
@@ -312,7 +267,7 @@ bool auxLedQueueSetEffect(uint8_t target, AuxLedEffect effect, CommandSource /*s
         return false;
     }
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        if (!auxLedTargetIsLit((uint8_t)i) || (target != AUX_LED_TARGET_ALL && target != i)) {
+        if (!auxLedTargetReaches(target, i) || !auxLedTargetIsLit((uint8_t)i)) {
             continue;
         }
         robotState.auxLed[i].effect = effect;

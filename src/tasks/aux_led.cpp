@@ -17,7 +17,6 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <string.h>
 
 #include "board_output_enabled.h"
 #include "board_outputs.h"
@@ -144,16 +143,6 @@ static bool setAuxLedStateLocked(size_t index, bool lit, uint8_t r, uint8_t g, u
     return changed;
 }
 
-// A wire this droid can be told to light: one whose driver started. Read from
-// robotState rather than from s_wires, because the task owns s_wires and the
-// web and Console tasks are the ones asking.
-static bool wireAcceptsCommands(size_t index) {
-    taskENTER_CRITICAL(&robotStateMux);
-    const bool ok = robotState.auxLed[index].lit && robotState.auxLed[index].available;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return ok;
-}
-
 static uint8_t clampLedCount(uint8_t rawCount) {
     return constrain(rawCount, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX);
 }
@@ -246,58 +235,6 @@ static bool startStrip(LitWire& wire) {
 #endif
 
 }  // namespace
-
-const char* auxLedEffectToString(AuxLedEffect effect) {
-    switch (effect) {
-        case AUX_LED_EFFECT_OFF:
-            return "off";
-        case AUX_LED_EFFECT_SOLID:
-            return "solid";
-        case AUX_LED_EFFECT_BLINK:
-            return "blink";
-        case AUX_LED_EFFECT_PULSE:
-            return "pulse";
-        default:
-            return "off";
-    }
-}
-
-bool parseAuxLedEffect(const char* raw, AuxLedEffect* out) {
-    if (raw == nullptr || out == nullptr) {
-        return false;
-    }
-
-    if (strcmp(raw, "off") == 0) {
-        *out = AUX_LED_EFFECT_OFF;
-        return true;
-    }
-    if (strcmp(raw, "solid") == 0) {
-        *out = AUX_LED_EFFECT_SOLID;
-        return true;
-    }
-    if (strcmp(raw, "blink") == 0) {
-        *out = AUX_LED_EFFECT_BLINK;
-        return true;
-    }
-    if (strcmp(raw, "pulse") == 0) {
-        *out = AUX_LED_EFFECT_PULSE;
-        return true;
-    }
-
-    return false;
-}
-
-bool auxLedTargetIsLit(uint8_t target) {
-    if (target == AUX_LED_TARGET_ALL) {
-        for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-            if (wireAcceptsCommands(i)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    return target < BOARD_OUTPUT_COUNT && wireAcceptsCommands(target);
-}
 
 bool auxLedTaskInit() {
     if (s_auxLedQueue != nullptr) {
@@ -419,8 +356,7 @@ void auxLedTask(void* pvParameters) {
 
         while (xQueueReceive(s_auxLedQueue, &cmd, 0) == pdTRUE) {
             for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-                if (!s_wires[i].available ||
-                    (cmd.target != AUX_LED_TARGET_ALL && cmd.target != i)) {
+                if (!s_wires[i].available || !auxLedTargetReaches(cmd.target, i)) {
                     continue;
                 }
                 if (cmd.type == AUX_LED_CMD_SET_COLOR) {
