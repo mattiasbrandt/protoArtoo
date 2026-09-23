@@ -495,7 +495,8 @@ void test_configApply_droid_build_records_both_halves_and_the_parts(void) {
     TEST_ASSERT_EQUAL_STRING("own", result.droidBuild.body.design);
     TEST_ASSERT_EQUAL_STRING("", result.droidBuild.body.variant);
     TEST_ASSERT_EQUAL_UINT32(3u, (uint32_t)droidFittedPartsCount(result.droidBuild.fitted));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(result.droidBuild.fitted, "gripArm"));
+    TEST_ASSERT_TRUE(
+        droidFittedPartsHasIndex(result.droidBuild.fitted, droidPartIndexOf("gripArm")));
 }
 
 void test_configApply_a_mixed_droid_saves_without_complaint(void) {

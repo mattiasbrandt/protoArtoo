@@ -31,6 +31,13 @@ void tearDown() {}
 
 namespace {
 
+// Is the Part with this id among the fitted ones. Firmware only ever fits by
+// id (droidFittedPartsFit()) and reads by index, so the by-id read is this
+// test's own.
+bool fitted(const DroidFittedParts& parts, const char* id) {
+    return droidFittedPartsHasIndex(parts, droidPartIndexOf(id));
+}
+
 DroidBuildConfig defaults() {
     DroidBuildConfig build = {};
     droidBuildDefaults(&build);
@@ -59,8 +66,8 @@ void test_a_fresh_controller_starts_on_the_pre_selected_design(void) {
     // already on the droid.
     TEST_ASSERT_EQUAL_UINT32(DROID_BUILD_DEFAULT_FITTED_COUNT,
                              (uint32_t)droidFittedPartsCount(build.fitted));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "pie1"));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "bodyPanel1"));
+    TEST_ASSERT_TRUE(fitted(build.fitted, "pie1"));
+    TEST_ASSERT_TRUE(fitted(build.fitted, "bodyPanel1"));
 }
 
 void test_a_common_addition_is_not_seeded_by_any_design(void) {
@@ -69,11 +76,11 @@ void test_a_common_addition_is_not_seeded_by_any_design(void) {
     // included since the operator's verified mapping (#409) - so a fresh
     // controller does not claim any is on the droid; the builder fits them.
     for (const char* id : {"gripArm", "gripClaw", "interArm", "interTool", "utilUp", "utilLo"}) {
-        TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, id));
+        TEST_ASSERT_FALSE(fitted(build.fitted, id));
         // ... and they are still Parts this build can name.
         TEST_ASSERT_TRUE(droidPartIdIsKnown(id));
     }
-    TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, "other1"));
+    TEST_ASSERT_FALSE(fitted(build.fitted, "other1"));
 }
 
 // ── Seeds, never fences ──────────────────────────────────────────────────────
@@ -91,9 +98,9 @@ void test_the_part_vocabulary_is_the_whole_catalog_whatever_is_fitted(void) {
 void test_a_part_no_design_carries_can_still_be_fitted(void) {
     DroidBuildConfig build = defaults();
     TEST_ASSERT_TRUE(droidFittedPartsFit(&build.fitted, "gripArm"));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "gripArm"));
+    TEST_ASSERT_TRUE(fitted(build.fitted, "gripArm"));
     // and adding it took nothing away
-    TEST_ASSERT_TRUE(droidFittedPartsHas(build.fitted, "pie1"));
+    TEST_ASSERT_TRUE(fitted(build.fitted, "pie1"));
     TEST_ASSERT_EQUAL_UINT32(DROID_BUILD_DEFAULT_FITTED_COUNT + 1,
                              (uint32_t)droidFittedPartsCount(build.fitted));
 }
@@ -101,9 +108,9 @@ void test_a_part_no_design_carries_can_still_be_fitted(void) {
 void test_a_part_this_build_cannot_name_is_not_fitted(void) {
     DroidBuildConfig build = defaults();
     TEST_ASSERT_FALSE(droidFittedPartsFit(&build.fitted, "pie99"));
-    TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, "pie99"));
-    TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, ""));
-    TEST_ASSERT_FALSE(droidFittedPartsHas(build.fitted, nullptr));
+    TEST_ASSERT_FALSE(fitted(build.fitted, "pie99"));
+    TEST_ASSERT_FALSE(fitted(build.fitted, ""));
+    TEST_ASSERT_FALSE(fitted(build.fitted, nullptr));
 }
 
 // ── The vocabulary gate on a stated design ───────────────────────────────────
@@ -183,8 +190,8 @@ void test_every_field_round_trips_through_storage(void) {
     TEST_ASSERT_EQUAL_STRING("", loaded.body.variant);
     TEST_ASSERT_EQUAL_UINT32((uint32_t)droidFittedPartsCount(saved.fitted),
                              (uint32_t)droidFittedPartsCount(loaded.fitted));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(loaded.fitted, "gripArm"));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(loaded.fitted, "pie1"));
+    TEST_ASSERT_TRUE(fitted(loaded.fitted, "gripArm"));
+    TEST_ASSERT_TRUE(fitted(loaded.fitted, "pie1"));
 }
 
 void test_a_controller_that_has_never_been_answered_takes_the_default(void) {
@@ -303,8 +310,8 @@ void test_a_stored_part_this_build_no_longer_declares_is_dropped_and_counted(voi
 
     TEST_ASSERT_EQUAL_UINT8(1, report.partsDropped);
     TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)droidFittedPartsCount(loaded.fitted));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(loaded.fitted, "utilUp"));
-    TEST_ASSERT_TRUE(droidFittedPartsHas(loaded.fitted, "utilLo"));
+    TEST_ASSERT_TRUE(fitted(loaded.fitted, "utilUp"));
+    TEST_ASSERT_TRUE(fitted(loaded.fitted, "utilLo"));
 }
 
 void test_the_stored_part_list_tolerates_spacing_and_refuses_an_overlong_token(void) {

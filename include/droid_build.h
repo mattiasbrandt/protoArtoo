@@ -157,15 +157,11 @@ inline void droidFittedPartsSetIndex(DroidFittedParts* parts, size_t index, bool
 }
 
 // -----------------------------------------------------------------------------
-// droidFittedPartsHas() / droidFittedPartsFit()
-// The same questions asked with a Part id. Fitting an id the catalog never
-// declared returns false and changes nothing: an unnameable Part cannot be on
-// a droid this image can talk about.
+// droidFittedPartsFit()
+// Fitting asked with a Part id. Fitting an id the catalog never declared
+// returns false and changes nothing: an unnameable Part cannot be on a droid
+// this image can talk about.
 // -----------------------------------------------------------------------------
-inline bool droidFittedPartsHas(const DroidFittedParts& parts, const char* id) {
-    return droidFittedPartsHasIndex(parts, droidPartIndexOf(id));
-}
-
 inline bool droidFittedPartsFit(DroidFittedParts* parts, const char* id) {
     const size_t index = droidPartIndexOf(id);
     if (index >= DROID_PART_COUNT) {
