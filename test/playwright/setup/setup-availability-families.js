@@ -33,8 +33,6 @@ const identity = {
 
 const config = {
   components: {
-    arm1: { enabled: true, type: 'mg996r' },
-    arm2: { enabled: false, type: 'mg996r' },
     drive: { enabled: true },
     audio: { enabled: true },
   },
@@ -113,12 +111,21 @@ const READ = `(row) => {
       identityMode = mode;
       await page.goto(target === 'panel' ? MAINTENANCE_URL : CONFIGURATION_URL, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => Boolean(window.PAFeatureAvailability), null, { timeout: 10000 });
+      if (target === 'row') {
+        // Let /api/config land first: it sets the toggle, and arriving after the
+        // driven change it would quietly undo it.
+        await page.waitForFunction(
+          () => document.querySelector('[data-feature-entry="system.config.enable_drive"]')?.dataset.featureState === 'on',
+          null,
+          { timeout: 10000 },
+        );
+      }
       return page.evaluate(
         async ([apply, read, which]) => {
           const el =
             which === 'panel'
               ? document.getElementById('profiler-card')
-              : document.querySelector('[data-feature-entry="system.config.enable_arm1"]');
+              : document.querySelector('[data-feature-entry="system.config.enable_drive"]');
           // eslint-disable-next-line no-eval
           eval(`(${apply})`)(el);
           await new Promise((resolve) => setTimeout(resolve, 400));
@@ -130,7 +137,7 @@ const READ = `(row) => {
     };
 
     const observed = {
-      off: await stateOf('ok', 'row', '(row) => { document.getElementById("enable-arm1").checked = false; window.PAFeatureAvailability.setIdentity(window.PAIdentity); }'),
+      off: await stateOf('ok', 'row', '(row) => { document.getElementById("enable-drive").checked = false; window.PAFeatureAvailability.setIdentity(window.PAIdentity); }'),
       notOnThisBoard: await stateOf('ok', 'row', '(row) => { row.dataset.boardCapability = "PA_CAP_HOSTED_WIFI"; window.PAFeatureAvailability.setIdentity(window.PAIdentity); }'),
       notInThisBuild: await stateOf('ok', 'row', '(row) => { row.dataset.buildFlag = "PA_HEAP_PROFILE"; window.PAFeatureAvailability.setIdentity(window.PAIdentity); }'),
       // checking and identity-unavailable are only reachable through the
