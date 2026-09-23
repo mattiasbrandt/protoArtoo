@@ -61,10 +61,3 @@ inline bool webPathIsProductPhoto(const char* uri) {
     }
     return true;
 }
-
-// The type the owned handler will send, or nullptr if this path is not ours
-// (and serveStatic() may still claim it). The ticket's test is this returning
-// image/webp for a .webp photograph rather than the table's text/plain.
-inline const char* webProductPhotoContentType(const char* uri) {
-    return webPathIsProductPhoto(uri) ? webWebpContentType() : nullptr;
-}

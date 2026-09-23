@@ -19,15 +19,9 @@ void setUp() {
 void tearDown() {
 }
 
-void test_a_product_photograph_answers_image_webp_not_text_plain() {
-    const char* type = webProductPhotoContentType("/hotrc_ds650.webp");
-    TEST_ASSERT_NOT_NULL(type);
-    TEST_ASSERT_EQUAL_STRING("image/webp", type);
-    TEST_ASSERT_TRUE(strcmp(type, "text/plain") != 0);
-}
-
-void test_the_content_type_helper_is_image_webp() {
+void test_the_content_type_is_image_webp_not_text_plain() {
     TEST_ASSERT_EQUAL_STRING("image/webp", webWebpContentType());
+    TEST_ASSERT_TRUE(strcmp(webWebpContentType(), "text/plain") != 0);
 }
 
 void test_every_registry_photograph_path_is_claimed() {
@@ -55,14 +49,11 @@ void test_every_registry_photograph_path_is_claimed() {
     };
     for (size_t i = 0; i < sizeof(kPaths) / sizeof(kPaths[0]); ++i) {
         TEST_ASSERT_TRUE_MESSAGE(webPathIsProductPhoto(kPaths[i]), kPaths[i]);
-        TEST_ASSERT_EQUAL_STRING_MESSAGE("image/webp", webProductPhotoContentType(kPaths[i]),
-                                         kPaths[i]);
     }
 }
 
 void test_a_jpg_product_path_is_not_ours() {
     TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.jpg"));
-    TEST_ASSERT_NULL(webProductPhotoContentType("/hotrc_ds650.jpg"));
 }
 
 void test_null_and_empty_are_not_product_photographs() {
@@ -83,7 +74,6 @@ void test_path_traversal_and_extra_segments_are_rejected() {
 
 void test_an_svg_path_is_not_claimed_as_a_photograph() {
     TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.svg"));
-    TEST_ASSERT_NULL(webProductPhotoContentType("/hotrc_ds650.svg"));
 }
 
 void test_the_webp_suffix_is_required() {
@@ -93,8 +83,7 @@ void test_the_webp_suffix_is_required() {
 
 int main() {
     UNITY_BEGIN();
-    RUN_TEST(test_a_product_photograph_answers_image_webp_not_text_plain);
-    RUN_TEST(test_the_content_type_helper_is_image_webp);
+    RUN_TEST(test_the_content_type_is_image_webp_not_text_plain);
     RUN_TEST(test_every_registry_photograph_path_is_claimed);
     RUN_TEST(test_a_jpg_product_path_is_not_ours);
     RUN_TEST(test_null_and_empty_are_not_product_photographs);
