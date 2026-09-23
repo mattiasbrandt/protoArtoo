@@ -14,11 +14,13 @@
 
 #include <esp_task_wdt.h>
 
+#include "board_output_enabled.h"  // boardOutputIsWired() - the wired ticks, by Output
 #include "board_outputs.h"  // boardOutputOnChannel(), boardOutputLabel()
 #include "config.h"
 #include "config_cache.h"
 #include "ledc_pwm.h"
 #include "logging.h"
+#include "output_wire.h"  // which wires LEDC must stay off (#416)
 #include "robot_state.h"
 #include "servo_component_helpers.h"  // servoCompTypeToString, for the clamp note
 #include "servo_helpers.h"
@@ -112,41 +114,25 @@ static bool isArmEnabled(uint8_t armId);
 // -----------------------------------------------------------------------------
 // litArmMask()
 // Which arms carry a light rather than a servo, one bit per armId, read from
-// the Servo Output rows (ADR 0067). A wire carries a light when its Output's
-// `component` names a Light Type. The wired tick is deliberately NOT part of
-// this answer: the mask exists to keep LEDC off a pin a WS2812B may be driving,
-// and a builder who has declared a strip there has said that pin is not a
-// servo's whether or not they have also ticked the wire in. AuxLedTask asks the
-// narrower question - a strip is only DRIVEN on a wire that is ticked in - so
-// the unticked case ends with neither side on the pin, which is the safe way
-// round.
+// the Servo Output rows (ADR 0067). The mask exists to keep LEDC off a pin a
+// WS2812B may be driving, and include/output_wire.h decides which pins those
+// are - outputWirePinKeptForLight(), deliberately wider than the question
+// AuxLedTask asks, so an unticked strip ends with neither side on the pin.
+// armId is the BOARD_OUTPUTS index, so it is passed as one.
 // -----------------------------------------------------------------------------
-static uint8_t litArmMask() {
+static uint8_t litArmMask(const SystemConfig& system) {
     uint8_t mask = 0;
     for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
-        if (channel == LEDC_CH_MAX) {
-            continue;
-        }
-        if (configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, channel) == SERVO_COMP_RGB) {
+        const OutputWireInputs in = {
+            boardOutputIsWired(system, armId),
+            configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC,
+                                                servo_arm_id_to_ledc_channel(armId)),
+        };
+        if (outputWirePinKeptForLight(in, armId)) {
             mask |= (uint8_t)(1u << armId);
         }
     }
     return mask;
-}
-
-// -----------------------------------------------------------------------------
-// armIdToLedcChannel()
-// Map armId to LEDC channel.
-//   0 = ARM1  -> LEDC_CH_ARM1  (GPIO 23)
-//   1 = ARM2  -> LEDC_CH_ARM2  (GPIO 5)
-//   2 = AUX1  -> LEDC_CH_AUX1 (GPIO 19, also labelled ARM3)
-//   3 = AUX2  -> LEDC_CH_AUX2 (GPIO 18, also labelled ARM4)
-//   4 = AUX3  -> LEDC_CH_AUX3 (GPIO 32, also labelled ARM5)
-// Returns LEDC_CH_MAX (invalid) for unknown armId.
-// -----------------------------------------------------------------------------
-static uint8_t armIdToLedcChannel(uint8_t armId) {
-    return servo_arm_id_to_ledc_channel(armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -188,7 +174,7 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
         return false;
     }
 
-    const uint8_t channel = armIdToLedcChannel(armId);
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     if (channel >= LEDC_CH_MAX || armId >= kArmCount) {
         PA_LOG_WARN(TAG, "resolveArmPulse: invalid armId %d", armId);
         return false;
@@ -502,7 +488,7 @@ static void beginTravel(uint8_t armId, CommandSource source) {
                     commandSourceToString(source), armId + 1);
         return;
     }
-    const uint8_t channel = armIdToLedcChannel(armId);
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     uint16_t openUs = 0;
     uint16_t closeUs = 0;
     uint16_t spanUs = 0;
@@ -563,7 +549,7 @@ static void updateMotion() {
         if (!s_arm[armId].moving) {
             continue;
         }
-        const uint8_t channel = armIdToLedcChannel(armId);
+        const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
         if (s_arm[armId].legNo != 0) {
             advanceLegs(armId, channel, now);
             continue;
@@ -624,7 +610,7 @@ static void stopAllMoves(const char* reason) {
 // 70 B of it on fields this path never reads.
 // -----------------------------------------------------------------------------
 static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& closeUs) {
-    const uint8_t channel = armIdToLedcChannel(armId);
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     if (channel < LEDC_CH_MAX &&
         configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, channel, &openUs, &closeUs)) {
         return;
@@ -654,7 +640,7 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason) {
     if (armId >= kArmCount || !isArmEnabled(armId)) {
         return;
     }
-    const uint8_t channel = armIdToLedcChannel(armId);
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     if (channel >= LEDC_CH_MAX) {
         return;
     }
@@ -888,7 +874,7 @@ void servoTaskInit() {
     s_aux2_enabled = cfg.system.enable_aux2;
     s_aux3_enabled = cfg.system.enable_aux3;
     s_dome_enabled = cfg.system.enable_dome_esc;
-    s_lit_arm_mask = litArmMask();
+    s_lit_arm_mask = litArmMask(cfg.system);
 
     bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;
     bool anyLedc = anyServo || s_dome_enabled;

@@ -25,6 +25,7 @@
 #include "config_cache.h"
 #include "ledc_pwm.h"
 #include "logging.h"
+#include "output_wire.h"  // which wires carry a strip (#416)
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "servo_output_row.h"
@@ -86,15 +87,16 @@ struct LitWire {
 
 static LitWire s_wires[BOARD_OUTPUT_COUNT] = {};
 
-// Whether this Output carries a light, as the stored config says: ticked as
-// wired AND with a Light Type on its Servo Output row. Both halves matter - a
-// wire nobody has plugged in is not lit, and neither is one carrying a servo.
+// Whether this Output carries a light, as the stored config says: a line the
+// board allows a light on, ticked as wired AND with a Light Type on its Servo
+// Output row. include/output_wire.h holds the rule - outputWireStripDriven(),
+// narrower on purpose than the one that keeps LEDC off the pin.
 static bool outputIsLit(const ConfigSnapshot& cfg, size_t index) {
-    if (!BOARD_OUTPUTS[index].lightCapable || !boardOutputIsWired(cfg.system, index)) {
-        return false;
-    }
-    return configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[index].channel) ==
-           SERVO_COMP_RGB;
+    const OutputWireInputs in = {
+        boardOutputIsWired(cfg.system, index),
+        configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[index].channel),
+    };
+    return outputWireStripDriven(in, index);
 }
 
 // Read the lit wires out of config into s_wires. Called by both entry points -

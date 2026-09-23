@@ -28,7 +28,7 @@
 
 #include <stdint.h>
 
-#include "robot_state.h"          // ServoComponentType
+#include "output_wire.h"          // outputWireCentreable() - whether a row has travel
 #include "sequence_body_step.h"   // SeqBodyStepPlan, sequenceBodyCentrePlan()
 #include "servo_output_row.h"     // ServoOutputRow - this droid's own wiring
 
@@ -96,21 +96,12 @@ inline uint32_t sequenceCadenceSpacingMs(uint16_t throwMs) {
 // A light has no centre to go back to. "Back to centre" is a motion act, and
 // inventing a position for a part that does not move would decide something
 // #320 deliberately left open, so a row with nothing to travel is skipped and
-// counted rather than driven to a number that means nothing.
-//
-// The row's component is what this droid knows about the end of the wire:
-// SERVO_COMP_RGB is recorded as an LED strip with no servo PWM calibration
-// (include/robot_state.h). Part KIND -- the catalog fact that `psiFront` is a
-// light -- is not in firmware at all: include/droid_parts.h compiles the id
-// vocabulary and nothing else, and the Kind lives in the browser module beside
-// it (data/droid_part_kind.js). So the surface counts light rows by Kind and
-// this counts them by component, and the two agree for every row whose builder
-// described it. Where they could differ -- a light Part on a row still recorded
-// as a servo -- the droid drives it, because the row is the builder's own
-// statement about what is on that wire and the firmware has nothing truer.
+// counted rather than driven to a number that means nothing. Which rows those
+// are is outputWireCentreable()'s answer (include/output_wire.h), beside the
+// two other things a wire's Light Type decides and the reason each differs.
 // -----------------------------------------------------------------------------
 inline bool sequenceBulkCentreHasTravel(const ServoOutputRow& row) {
-    return row.component != SERVO_COMP_RGB;
+    return outputWireCentreable(row);
 }
 
 // -----------------------------------------------------------------------------
