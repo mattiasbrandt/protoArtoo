@@ -2980,7 +2980,7 @@ entries:
   executor: configApply
 - name: system.config.enable_arm1
   display_name: '{output}'
-  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
   output: arm1
   domain: system
   type: config
@@ -2997,7 +2997,7 @@ entries:
   executor: configApply
 - name: system.config.enable_arm2
   display_name: '{output}'
-  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
   output: arm2
   domain: system
   type: config
@@ -3014,7 +3014,7 @@ entries:
   executor: configApply
 - name: system.config.enable_aux1
   display_name: '{output}'
-  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
   output: aux1
   domain: system
   type: config
@@ -3031,7 +3031,7 @@ entries:
   executor: configApply
 - name: system.config.enable_aux2
   display_name: '{output}'
-  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
   output: aux2
   domain: system
   type: config
@@ -3048,7 +3048,7 @@ entries:
   executor: configApply
 - name: system.config.enable_aux3
   display_name: '{output}'
-  description: Whether a lead is plugged into {output}. Off, nothing on it moves.
+  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
   output: aux3
   domain: system
   type: config
