@@ -606,14 +606,35 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     return found;
 }
 
-// The Motion Profile a move is planned from, field by field out of the live
-// table under the lock like the pair above. The span is derived here through
-// servoOutputLowUs() / servoOutputHighUs(), the one place that decides which
-// end of a directional pair is which, so ServoTask never orders the pair itself.
+// The Motion Profile a move is planned from, read straight out of the live
+// table under the lock like the pair above, by reference rather than as a row
+// copy. servoMotionProfileOf() orders the ends through servoOutputLowUs() /
+// servoOutputHighUs() and takes the ease through servoOutputEffectiveEasing(),
+// so ServoTask neither sorts a directional pair nor sees an overshoot on an
+// Output nobody has measured.
 bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
-                                             uint16_t* spanUs, uint16_t* throwMs,
-                                             uint16_t* accelMs, bool* calibrated) {
-    if (spanUs == nullptr || throwMs == nullptr || accelMs == nullptr || calibrated == nullptr) {
+                                             ServoMotionProfile* profile) {
+    if (profile == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *profile = servoMotionProfileOf(servoOutputCache.rows[index]);
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// Field by field out of the live table, like the pair above, and the stored
+// ease rather than servoOutputEffectiveEasing()'s: this answers what the builder
+// chose, for a surface to show, not how the Output will move.
+bool configCacheReadServoOutputMotionSettings(ServoOutputDriver driver, uint8_t channel,
+                                              uint16_t* throwMs, uint16_t* accelMs,
+                                              ServoEasing* easing) {
+    if (throwMs == nullptr || accelMs == nullptr || easing == nullptr) {
         return false;
     }
     bool found;
@@ -622,10 +643,9 @@ bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t c
     found = index < SERVO_OUTPUT_ROW_MAX;
     if (found) {
         const ServoOutputRow& row = servoOutputCache.rows[index];
-        *spanUs = (uint16_t)(servoOutputHighUs(row) - servoOutputLowUs(row));
         *throwMs = row.throw_ms;
         *accelMs = row.accel_ms;
-        *calibrated = row.calibrated;
+        *easing = row.easing;
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return found;

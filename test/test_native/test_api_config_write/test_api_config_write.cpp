@@ -382,6 +382,84 @@ void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
     TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);
 }
 
+// An Output's Motion Profile goes out and comes back under the names GET
+// /api/config gave it (#414): the page saves by the field it read, and the
+// echo is what the row now holds, so the two agree by construction.
+void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
+    seedServoOutputRows();
+
+    const WebRequestTestParam params[] = {
+        {"arm2ThrowMs", "800"}, {"arm2AccelMs", "150"}, {"arm2Ease", "overshoot"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    ServoOutputRow row = {};
+    const uint8_t arm2 = 1;  // the second default row is LEDC_CH_ARM2
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(arm2, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, row.channel);
+    TEST_ASSERT_EQUAL_UINT16(800, row.throw_ms);
+    TEST_ASSERT_EQUAL_UINT16(150, row.accel_ms);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, row.easing);
+
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObject arm2Entry = doc["components"]["arm2"];
+    TEST_ASSERT_EQUAL_STRING("arm2ThrowMs", arm2Entry["throwField"] | "");
+    TEST_ASSERT_EQUAL_STRING("arm2AccelMs", arm2Entry["accelField"] | "");
+    TEST_ASSERT_EQUAL_STRING("arm2Ease", arm2Entry["easeField"] | "");
+    TEST_ASSERT_EQUAL_UINT(800, arm2Entry["throwMs"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT(150, arm2Entry["accelMs"].as<unsigned>());
+    // The builder's choice, not the ease that runs: this row is unmeasured, so
+    // it moves as `none`, and the page is the one that says so.
+    TEST_ASSERT_EQUAL_STRING("overshoot", arm2Entry["ease"] | "");
+    // A neighbour nobody touched still reports its own defaults.
+    TEST_ASSERT_EQUAL_UINT(SERVO_THROW_MS_DEFAULT, doc["components"]["arm1"]["throwMs"].as<unsigned>());
+    TEST_ASSERT_EQUAL_STRING("none", doc["components"]["arm1"]["ease"] | "");
+}
+
+// Out of range is refused with the field and its range, never clamped into it:
+// the bounds are the stored row's own, and nothing of the request lands.
+void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
+    seedServoOutputRows();
+
+    const struct {
+        const char* field;
+        const char* value;
+    } kRefused[] = {
+        {"arm1ThrowMs", "5"},       // under one ServoTask frame
+        {"arm1ThrowMs", "20000"},   // over SERVO_THROW_MS_MAX
+        {"arm1AccelMs", "0"},       // no time at all to get up to speed
+        {"arm1Ease", "wobble"},     // not one of the three
+    };
+    for (const auto& refused : kRefused) {
+        // A good ease rides along with every bad value, so a refusal that let
+        // the rest of the request land would show up on the row.
+        const bool easeRefused = strcmp(refused.field, "arm1Ease") == 0;
+        const WebRequestTestParam params[] = {
+            {refused.field, refused.value},
+            {easeRefused ? "arm1ThrowMs" : "arm1Ease", easeRefused ? "700" : "soft"}};
+        WebRequestTestBackend backend;
+        backend.params = params;
+        backend.paramCount = 2;
+        WebRequest req(&backend);
+
+        handleConfigPost(req);
+
+        TEST_ASSERT_EQUAL_INT_MESSAGE(400, backend.sentCode, refused.value);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, refused.field), backend.sentBody);
+        ServoOutputRow row = {};
+        TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
+        TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, row.throw_ms);
+        TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, row.accel_ms);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, row.easing);
+    }
+}
+
 // --- the Droid Build through the whole route (ADR 0047) -----------------------
 
 // The commit step is the only place a stated Droid Build meets the live one,
@@ -654,6 +732,8 @@ int main() {
     RUN_TEST(test_a_calibration_write_lands_on_the_addressed_row);
     RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
     RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
+    RUN_TEST(test_a_motion_profile_round_trips_under_the_names_the_config_reports);
+    RUN_TEST(test_a_motion_profile_out_of_range_is_refused_not_clamped);
     RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);
     RUN_TEST(test_a_restored_legacy_variant_lands_as_the_variant_it_became);
     RUN_TEST(test_the_part_vocabulary_is_unchanged_by_a_droid_build_write);

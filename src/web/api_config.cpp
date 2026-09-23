@@ -496,6 +496,17 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         output["enabledField"] = entry.enabledField;
         output["typeField"] = entry.typeField;
         if (entry.ledCountField != nullptr) output["ledCountField"] = entry.ledCountField;
+        // The three fields that save its Motion Profile (#414). Their values are
+        // the live table's, added by addServoOutputFields(); the names are
+        // configMotionFieldName()'s, the one rule the Apply Core reads them by.
+        static const char* const kMotionKeys[CONFIG_MOTION_FIELD_COUNT] = {
+            "throwField", "accelField", "easeField"};
+        for (uint8_t field = 0; field < CONFIG_MOTION_FIELD_COUNT; ++field) {
+            char name[CONFIG_MOTION_FIELD_NAME_MAX] = {};
+            if (configMotionFieldName(name, sizeof(name), entry.id, (ConfigMotionField)field)) {
+                output[kMotionKeys[field]] = name;
+            }
+        }
     }
 
     components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
@@ -698,6 +709,29 @@ void addServoOutputFields(JsonDocument& doc) {
                     configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, set.channel);
             }
         }
+    }
+
+    // Each Output's Motion Profile as the builder set it (ADR 0052, #414), under
+    // the components{} entry that names the fields saving it. The ease is the
+    // stored one: an overshoot on an Output nobody has measured is reported as
+    // the builder's choice, beside the `calibrated` bit GET /api/servo/outputs
+    // carries, and the surface says it is off until the Output is calibrated.
+    if (components.isNull()) {
+        return;
+    }
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        const BoardOutput& output = BOARD_OUTPUTS[i];
+        uint16_t throwMs = 0;
+        uint16_t accelMs = 0;
+        ServoEasing easing = SERVO_EASE_NONE;
+        if (!configCacheReadServoOutputMotionSettings(SERVO_DRIVER_LEDC, output.channel, &throwMs,
+                                                      &accelMs, &easing)) {
+            continue;
+        }
+        JsonObject entry = components[output.id];
+        entry["throwMs"] = throwMs;
+        entry["accelMs"] = accelMs;
+        entry["ease"] = servoEasingToString(easing);
     }
 }
 

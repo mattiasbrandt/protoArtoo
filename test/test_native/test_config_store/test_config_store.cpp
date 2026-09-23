@@ -1576,25 +1576,23 @@ void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
     TEST_ASSERT_EQUAL_UINT16(7, openUs);
     TEST_ASSERT_EQUAL_UINT16(9, closeUs);
 
-    // The Motion Profile a move is planned from (#362): the span of that same
-    // reversed pair is its width, not a negative number and not a row sorted by
+    // The Motion Profile a move is planned from (#362): the ends of that same
+    // reversed pair come back ordered, not as a negative span and not sorted by
     // the caller, and the two times and the calibrated bit are the row's own.
-    uint16_t spanUs = 0;
-    uint16_t throwMs = 0;
-    uint16_t accelMs = 0;
-    bool calibrated = true;  // poisoned, must be overwritten
-    TEST_ASSERT_TRUE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_ARM1,
-                                                             &spanUs, &throwMs, &accelMs,
-                                                             &calibrated));
-    TEST_ASSERT_EQUAL_UINT16(700, spanUs);
-    TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, throwMs);
-    TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, accelMs);
-    TEST_ASSERT_FALSE(calibrated);
+    ServoMotionProfile profile = {};
+    profile.calibrated = true;  // poisoned, must be overwritten
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_ARM1, &profile));
+    TEST_ASSERT_EQUAL_UINT16(1200, profile.loUs);
+    TEST_ASSERT_EQUAL_UINT16(1900, profile.hiUs);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, profile.throwMs);
+    TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, profile.accelMs);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, profile.easing);
+    TEST_ASSERT_FALSE(profile.calibrated);
 
-    // A row somebody has measured and given its own pace says so. No edit door
-    // sets the calibrated bit or the two times, so the row is stored and read
-    // back the way a controller boots with one - and the two times differ, so
-    // an accessor that swapped them could not pass.
+    // A row somebody has measured and given its own pace says so. The row is
+    // stored and read back the way a controller boots with one - and the two
+    // times differ, so an accessor that swapped them could not pass.
     ServoOutputTable table = {};
     servoOutputTableDefaults(&table);
     ServoOutputRow& aux2 = table.rows[3];
@@ -1603,33 +1601,40 @@ void test_the_drive_path_asks_the_cache_for_values_not_a_row() {
     aux2.close_us = 1100;
     aux2.throw_ms = 1400;
     aux2.accel_ms = 300;
+    aux2.easing = SERVO_EASE_OVERSHOOT;
     aux2.calibrated = true;
+    // And an overshoot on a row nobody measured, which the drive path must be
+    // handed as `none` (ADR 0052): the degrade happens at this door, not in
+    // ServoTask.
+    ServoOutputRow& aux3 = table.rows[4];
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX3, aux3.channel);
+    aux3.easing = SERVO_EASE_OVERSHOOT;
+    aux3.calibrated = false;
     prefs.begin("proto", false);
     PrefsWriter writer(prefs);
     TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
     configLoadServoOutputs(prefs, &report);
     prefs.end();
-    TEST_ASSERT_TRUE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_AUX2,
-                                                             &spanUs, &throwMs, &accelMs,
-                                                             &calibrated));
-    TEST_ASSERT_EQUAL_UINT16(800, spanUs);
-    TEST_ASSERT_EQUAL_UINT16(1400, throwMs);
-    TEST_ASSERT_EQUAL_UINT16(300, accelMs);
-    TEST_ASSERT_TRUE(calibrated);
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_AUX2, &profile));
+    TEST_ASSERT_EQUAL_UINT16(1100, profile.loUs);
+    TEST_ASSERT_EQUAL_UINT16(1900, profile.hiUs);
+    TEST_ASSERT_EQUAL_UINT16(1400, profile.throwMs);
+    TEST_ASSERT_EQUAL_UINT16(300, profile.accelMs);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, profile.easing);
+    TEST_ASSERT_TRUE(profile.calibrated);
+    TEST_ASSERT_TRUE(
+        configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_AUX3, &profile));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, profile.easing);
+    TEST_ASSERT_FALSE(profile.calibrated);
 
-    // And an unclaimed address answers false with every out-param left alone.
-
-    spanUs = 7;
-    throwMs = 8;
-    accelMs = 9;
-    calibrated = true;
-    TEST_ASSERT_FALSE(configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_DOME,
-                                                              &spanUs, &throwMs, &accelMs,
-                                                              &calibrated));
-    TEST_ASSERT_EQUAL_UINT16(7, spanUs);
-    TEST_ASSERT_EQUAL_UINT16(8, throwMs);
-    TEST_ASSERT_EQUAL_UINT16(9, accelMs);
-    TEST_ASSERT_TRUE(calibrated);
+    // And an unclaimed address answers false with the profile left alone.
+    profile.throwMs = 8;
+    profile.calibrated = true;
+    TEST_ASSERT_FALSE(
+        configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, LEDC_CH_DOME, &profile));
+    TEST_ASSERT_EQUAL_UINT16(8, profile.throwMs);
+    TEST_ASSERT_TRUE(profile.calibrated);
 }
 
 int main() {

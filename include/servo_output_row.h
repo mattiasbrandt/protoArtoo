@@ -27,7 +27,9 @@
 //     (#286: a safe band by default, the full band an unlock).
 //   - Overshoot never passes the recorded ends, so on a row whose `calibrated`
 //     bit is unset there are none to work within and it degrades to `none`.
-//     servoOutputEffectiveEasing() is the only reader of the stored value
+//     servoOutputEffectiveEasing() is the only way a move reads the ease
+//     (servoMotionProfileOf(), include/servo_motion_ramp.h); the stored value
+//     is read directly only to store it and to report what the builder chose
 //     (ADR 0052).
 //   - Calibrating an output never ticks its boot behaviour. Finding an endpoint
 //     must not be the act that makes a panel move at power-up, which is why
@@ -362,8 +364,11 @@ inline uint16_t servoOutputHighUs(const ServoOutputRow& row) {
 // The easing that actually runs. Overshoot aims past the target and settles
 // back, and it must never pass the recorded ends  --  so on an output nobody
 // has measured there are no ends to work within and it degrades to `none`
-// (ADR 0052). This is the only reader of row.easing: reading the stored value
-// directly is how the degrade gets lost.
+// (ADR 0052). A move reads the ease through this and nothing else --
+// servoMotionProfileOf() is its caller, and ServoTask plans from that -- so the
+// degrade cannot be lost on the way to the pin. Storage and the config API read
+// row.easing directly, because what they report is the builder's choice, not
+// what runs.
 // -----------------------------------------------------------------------------
 inline ServoEasing servoOutputEffectiveEasing(const ServoOutputRow& row) {
     if (row.easing == SERVO_EASE_OVERSHOOT && !row.calibrated) {
@@ -949,8 +954,10 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 //
 // An edit is addressed rather than indexed, and it carries only the fields the
 // request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
-// SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE and SERVO_FIELD_COMPONENT, and a field
-// not in it keeps what the row had. That is the partial-edit door
+// SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE, SERVO_FIELD_COMPONENT,
+// SERVO_FIELD_LED_COUNT and the Motion Profile's SERVO_FIELD_THROW_MS,
+// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, and a field not in it keeps what
+// the row had. That is the partial-edit door
 // servoOutputRowNormalise() describes, given a shape a pure caller can fill.
 //
 // It carries every act on a row, not only a typed value -- one door, not three
@@ -992,6 +999,9 @@ struct ServoOutputEdit {
     ServoComponentType component;
     uint8_t led_count;             // the Light Type's setting, when the mask names it
     ServoOutputEditKind kind;
+    ServoEasing easing;            // Motion Profile, when the mask names each (#414)
+    uint16_t throw_ms;
+    uint16_t accel_ms;
 };
 
 // -----------------------------------------------------------------------------
@@ -1065,6 +1075,20 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     }
     if ((edit.fields & SERVO_FIELD_LED_COUNT) != 0) {
         row->led_count = edit.led_count;
+    }
+    // The Motion Profile is the builder's to set on any row, measured or not:
+    // an unmeasured Output keeps what it was given and moves by none of it
+    // until it is calibrated (servoMotionPlan() snaps, and
+    // servoOutputEffectiveEasing() degrades an overshoot), so nothing typed
+    // here waits on the calibration to be kept.
+    if ((edit.fields & SERVO_FIELD_THROW_MS) != 0) {
+        row->throw_ms = edit.throw_ms;
+    }
+    if ((edit.fields & SERVO_FIELD_ACCEL_MS) != 0) {
+        row->accel_ms = edit.accel_ms;
+    }
+    if ((edit.fields & SERVO_FIELD_EASING) != 0) {
+        row->easing = edit.easing;
     }
     if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
         row->open_us = edit.open_us;

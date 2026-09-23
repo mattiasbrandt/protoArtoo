@@ -36,6 +36,11 @@
 // model - it is the LED strip Light Type. Both word lists live here and
 // nowhere else in data/.
 //
+// HOW A SERVO MOVES is its Motion Profile (ADR 0052, #414): time to full
+// throw, time to get up to speed and the ease. The config reports each on the
+// Output's entry with the field that saves it, and the ease words are listed
+// here beside the other two vocabularies.
+//
 // DATA ONLY. Nothing here touches the page: the plates are drawn by
 // data/output_settings.js from what this module holds.
 // =============================================================================
@@ -54,6 +59,13 @@
   // "Light Type", ADR 0067). One today; the list is what grows when there are
   // more, and the stored token stays the one the firmware already saves.
   const LIGHT_TYPES = Object.freeze([Object.freeze({ id: "rgb", label: "LED strip" })]);
+
+  // The shape of a move (ADR 0052), in the words the firmware stores.
+  const EASES = Object.freeze([
+    Object.freeze({ id: "none", label: "none" }),
+    Object.freeze({ id: "soft", label: "soft" }),
+    Object.freeze({ id: "overshoot", label: "overshoot" }),
+  ]);
 
   const lightType = (token) => LIGHT_TYPES.find((type) => type.id === token) || null;
   const servoModel = (token) => SERVO_MODELS.find((model) => model.id === token) || null;
@@ -129,6 +141,9 @@
   //   light, servo     that token as a Light Type or as a servo model, or null
   //   ledCount         how many LEDs its light has
   //   ledCountSettable the config names a field that saves ledCount
+  //   throwMs, accelMs its Motion Profile's two times, or null where the
+  //   ease             config reports none; the ease as the builder chose it
+  //   motionSettable   the config names the fields that save all three
   //   started          what it was first reported with (above), or null
   //   parts ...        its servo table row, read by readRow()
   const outputOf = (address, id, entry, row) => {
@@ -154,6 +169,10 @@
       servo: servoModel(type),
       ledCount: Number(entry?.ledCount) || 1,
       ledCountSettable: Boolean(entry && text(entry.ledCountField)),
+      throwMs: typeof entry?.throwMs === "number" ? entry.throwMs : null,
+      accelMs: typeof entry?.accelMs === "number" ? entry.accelMs : null,
+      ease: text(entry?.ease),
+      motionSettable: Boolean(entry && text(entry.throwField) && text(entry.accelField) && text(entry.easeField)),
     };
     if (entry && !started.has(address)) {
       started.set(address, Object.freeze({
@@ -186,6 +205,9 @@
         wired: text(entry.enabledField),
         type: text(entry.typeField),
         ledCount: text(entry.ledCountField),
+        throwMs: text(entry.throwField),
+        accelMs: text(entry.accelField),
+        ease: text(entry.easeField),
       });
       list.push(outputOf(address, id, entry, byAddress.get(address) || null));
     });
@@ -264,10 +286,42 @@
     wired: (value) => (value ? "true" : "false"),
     type: (value) => String(value),
     ledCount: (value) => String(value),
+    throwMs: (value) => String(value),
+    accelMs: (value) => String(value),
+    ease: (value) => String(value),
   };
 
+  // What each setting is called on screen. The droid refuses a value by the
+  // name it saves it under (`arm2ThrowMs must be 20..10000 ms`), and that name
+  // is wire vocabulary that must never reach a builder (#414).
+  const SETTING_WORDS = {
+    wired: "wired tick",
+    type: "what is on the wire",
+    ledCount: "LED count",
+    throwMs: "time to full throw",
+    accelMs: "time to get up to speed",
+    ease: "ease",
+  };
+
+  // A refusal naming one of the fields this save sent, put in the page's words:
+  // the Output's name and the setting's, and a range read as one. Anything else
+  // is left exactly as it came, for web_api.js's messageFor() to say.
+  const sayRefusal = (error, sent) => {
+    const message = typeof error?.message === "string" ? error.message : "";
+    const field = Object.keys(sent).find((name) => message.startsWith(`${name} `));
+    if (!field) return error;
+    const { address, key } = sent[field];
+    const output = at(address);
+    const rest = message.slice(field.length).replace(/(\d+)\.\.(\d+)/g, "$1 to $2");
+    error.message = `${output ? output.name : address}'s ${SETTING_WORDS[key]}${rest}`;
+    return error;
+  };
+
+  // The form for a set of changes, and which Output and setting each field in
+  // it saves, so a refusal can be said in words.
   const formFor = (changes) => {
     const form = {};
+    const sent = {};
     Object.keys(changes).forEach((address) => {
       const fields = saveFields.get(address);
       if (!fields) throw new Error(`${address} is not an Output this droid saves settings for`);
@@ -276,9 +330,10 @@
         if (!PATCH_FIELDS[key]) throw new Error(`an Output has no setting called ${key}`);
         if (!fields[key]) throw new Error(`${address} names no field to save ${key} under`);
         form[fields[key]] = PATCH_FIELDS[key](patch[key]);
+        sent[fields[key]] = { address, key };
       });
     });
-    return form;
+    return { form, sent };
   };
 
   // Saves go out one at a time, in the order they were asked for, so a later
@@ -286,8 +341,9 @@
   let queue = Promise.resolve();
 
   /**
-   * Save Output settings: `{ [address]: { wired, type, ledCount } }`, any of
-   * the three per Output. The droid's answer becomes what this module holds.
+   * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
+   * accelMs, ease } }`, any of them per Output. The droid's answer becomes what
+   * this module holds.
    *
    * @param {object} changes
    * @param {object} [opts]
@@ -301,7 +357,7 @@
       const api = apiFor(null);
       // A request carrying other fields goes as the form those came in, and an
       // Output-only save as a plain one.
-      const fields = formFor(changes);
+      const { form: fields, sent } = formFor(changes);
       let form = fields;
       if (alongside) {
         form = new URLSearchParams(alongside);
@@ -322,7 +378,7 @@
         } catch (reloadError) {
           console.error("[outputs] reading the config after a failed save failed:", reloadError);
         }
-        throw error;
+        throw sayRefusal(error, sent);
       }
       publish();
       return outputs;
@@ -361,6 +417,7 @@
     SERVO_MODELS,
     NO_SERVO,
     LIGHT_TYPES,
+    EASES,
     lightType,
     servoModel,
     load,

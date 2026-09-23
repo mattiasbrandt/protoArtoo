@@ -26,6 +26,12 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Set how each servo moves.** Every row on Servos now takes a time to full
+  throw, a time to get up to speed and an ease: `none` stops dead on the
+  number, `soft` lets a heavy panel ease into motion, and `overshoot` swings a
+  little past and settles back, never beyond the ends you recorded. A servo
+  you have not calibrated still jumps, and its row says so. A backup now
+  carries all three.
 - **As many lit parts as you have wires for.** Your droid used to get one LED
   strip: one wire carried it, one length described it, and giving a second wire
   a strip quietly took it off the first. Now every wire answers for itself. Put

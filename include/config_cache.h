@@ -18,6 +18,7 @@
 
 #include "config_store.h"  // For type definitions (ConfigSnapshot, DomeConfig, etc.)
 #include "rc_input_active_config.h"
+#include "servo_motion_ramp.h"  // ServoMotionProfile - what a move is planned from
 #include "wifi_boot_decision.h"  // For WifiBootPosture (#189)
 
 // =============================================================================
@@ -76,14 +77,26 @@ uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t chan
 bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
                                          uint16_t* openUs, uint16_t* closeUs);
 
-// The part of the Motion Profile a move is planned from (ADR 0052): how far a
-// full throw is -- the span of the Endpoint Pair, whichever way round it was
-// recorded -- how long that throw takes, how long the move spends getting up to
-// speed, and whether anybody measured the ends. False when no live row is
-// addressed there, with the out-params untouched.
+// The Motion Profile a move is planned from (ADR 0052): the recorded ends in
+// order -- whichever way round the pair was recorded -- how long a full throw
+// takes, how long the move spends getting up to speed, the ease that actually
+// runs, and whether anybody measured the ends. servoMotionProfileOf() reads it
+// off the row, so the ease comes through servoOutputEffectiveEasing() and an
+// unmeasured overshoot arrives here already degraded to `none`. False when no
+// live row is addressed there, with *profile untouched.
 bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
-                                             uint16_t* spanUs, uint16_t* throwMs,
-                                             uint16_t* accelMs, bool* calibrated);
+                                             ServoMotionProfile* profile);
+
+// The Motion Profile as the builder set it, for GET /api/config to report
+// (#414): the two times and the STORED ease rather than the one that runs. An
+// overshoot on an Output nobody has measured is still the builder's choice and
+// is shown as one, with the surface saying it is off until the Output is
+// calibrated; the drive path asks configCacheReadServoOutputMotionProfile()
+// instead. False when no live row is addressed there, with the out-params
+// untouched.
+bool configCacheReadServoOutputMotionSettings(ServoOutputDriver driver, uint8_t channel,
+                                              uint16_t* throwMs, uint16_t* accelMs,
+                                              ServoEasing* easing);
 
 // What is fitted to the output addressed there, and SERVO_COMP_NONE when no
 // live row is addressed there -- "nothing is recorded as fitted here" and "this

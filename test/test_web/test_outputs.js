@@ -6,7 +6,7 @@
 // (helpers/fake_droid.js), because a surface that drew the right plate from a
 // wrong answer would hide the defect this file is for.
 //
-// Three invariants earn their place:
+// Four invariants earn their place:
 //   - the two halves are joined by Output Address, never by position or by a
 //     name: the config's Outputs in its order, each carrying the Parts its own
 //     servo table row lists;
@@ -16,7 +16,10 @@
 //     halves disagreed about exactly this before the module existed;
 //   - a save goes out under the fields the firmware named for that Output, and
 //     a setting the Output names no field for is refused rather than invented
-//     - the browser knows no field name of its own (ADR 0065).
+//     - the browser knows no field name of its own (ADR 0065);
+//   - a field name is wire vocabulary in the other direction too: when the
+//     droid refuses a value by the name it saves it under, that name never
+//     reaches a builder (#414, the rule #348 set for refusal tokens).
 // =============================================================================
 
 import { test } from "node:test";
@@ -99,4 +102,24 @@ test("a save goes out under the fields the firmware named, and a setting with no
   await assert.rejects(outputs.save("pca:3", { wired: false }), /not an Output this droid saves/,
     "an Output the config does not describe has nothing to save under");
   assert.equal(posts.length, sent, "and neither refusal reached the droid");
+});
+
+test("a value the droid refuses by its field name is said with the Output's name instead", async () => {
+  const answer = droid();
+  const entry = Object.values(answer.config.components).find((each) => each.address === "ledc:0");
+  const refusal = new Error(`${entry.throwField} must be 20..10000 ms`);
+  const api = {
+    get: async (path) => (path === "/api/config"
+      ? { data: structuredClone(answer.config) }
+      : { data: { outputs: structuredClone(answer.rows) } }),
+    postForm: async () => { throw refusal; },
+  };
+  const refusing = outputsModule(() => api);
+  await refusing.load();
+
+  await assert.rejects(refusing.save("ledc:0", { throwMs: 5 }), (error) => {
+    assert.ok(!error.message.includes(entry.throwField), `the field name reached the screen: ${error.message}`);
+    assert.ok(error.message.includes("GPIO 49"), `the Output is named as the builder knows it: ${error.message}`);
+    return true;
+  });
 });

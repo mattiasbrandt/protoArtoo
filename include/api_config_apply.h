@@ -27,12 +27,45 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "api_param_source.h"
+#include "board_outputs.h"  // BOARD_OUTPUT_ID_MAX_LEN - the longest stored Output id
 #include "config_cache.h"
 #include "droid_build.h"
 #include "guided_setup.h"
 #include "servo_legacy_field_sets.h"  // SERVO_LEGACY_FIELD_SET_COUNT
+
+// -----------------------------------------------------------------------------
+// The fields that save an Output's Motion Profile (ADR 0052, #414)
+//
+// Time to full throw, time to get up to speed and the ease, per Output, named
+// from its stored config id: arm1ThrowMs, arm1AccelMs, arm1Ease. The rule lives
+// here and nowhere else, so the Apply Core that reads the three and
+// GET /api/config, which hands each Output's names to the browser in
+// components{} (throwField, accelField, easeField), cannot come to disagree -
+// and a page never composes one (data/outputs.js saves by the name it read).
+// -----------------------------------------------------------------------------
+enum ConfigMotionField : uint8_t {
+    CONFIG_MOTION_THROW = 0,
+    CONFIG_MOTION_ACCEL,
+    CONFIG_MOTION_EASE,
+    CONFIG_MOTION_FIELD_COUNT,
+};
+
+// "ThrowMs" is the longest suffix; sizeof counts its terminator.
+constexpr size_t CONFIG_MOTION_FIELD_NAME_MAX = BOARD_OUTPUT_ID_MAX_LEN + sizeof("ThrowMs");
+
+inline bool configMotionFieldName(char* buf, size_t bufSize, const char* outputId,
+                                  ConfigMotionField field) {
+    static const char* const kSuffix[CONFIG_MOTION_FIELD_COUNT] = {"ThrowMs", "AccelMs", "Ease"};
+    if (buf == nullptr || bufSize == 0 || outputId == nullptr ||
+        field >= CONFIG_MOTION_FIELD_COUNT) {
+        return false;
+    }
+    const int written = snprintf(buf, bufSize, "%s%s", outputId, kSuffix[field]);
+    return written > 0 && (size_t)written < bufSize;
+}
 
 struct ConfigApplyError {
     bool hasError = false;
