@@ -251,7 +251,7 @@
   //                       Part leaves or joins the Fitted Parts (ADR 0047)
   //                       through applyDroidBuild() and nothing else. Dropping
   //                       leaves the Part's Output alone: the builder took the
-  //                       Part off, and whether the lead came off too is theirs
+  //                       Part off, and whether the wire came off too is theirs
   //                       to say, so the panel says the Output is still mapped
   //                       and routes to its picker rather than unmapping it.
   //                       A Common Addition comes off as the group the Parts
@@ -555,7 +555,7 @@
   };
 
   // Drop takes the Part off the droid and leaves its Output exactly as it was:
-  // the lead may still be plugged in, and only the builder knows. So a dropped
+  // the wire may still be plugged in, and only the builder knows. So a dropped
   // Part that still has an Output mapped is said, with where to change it, and
   // never unmapped here.
   const dropFromBuild = (ids, names) => {
@@ -579,7 +579,7 @@
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
         showFeedback(
           mapped.length
-            ? `${off} Still mapped to ${mapped.join(", ")}. Change its output below if the lead came off too.`
+            ? `${off} Still mapped to ${mapped.join(", ")}. Change its output below if the wire came off too.`
             : off,
           mapped.length ? "warning" : "success"
         );
@@ -620,7 +620,7 @@
       row.select.focus();
       showFeedback(
         pick.offButMapped
-          ? `Pick ${NOT_WIRED} in ${partLabel(target)}'s row below if the lead came off too.`
+          ? `Pick ${NOT_WIRED} in ${partLabel(target)}'s row below if the wire came off too.`
           : `Choose the output that moves ${partLabel(target)} in its row below.`
       );
       return;
