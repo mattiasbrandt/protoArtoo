@@ -640,7 +640,7 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     `POST /api/servo` cannot move). Join a row to anything by its `address`,
     never by this name.
   - `parts`: the Part ids this Output drives, from `data/droid_parts.js`. Empty
-    when it drives nothing. More than one is a ganged lead: every Part listed
+    when it drives nothing. More than one is a ganged wire: every Part listed
     moves when the Output does. A Part appears on at most one Output.
   - `bandLoUs`, `bandHiUs`: the pulse widths this Output can be driven between,
     set by the component fitted to it (`1000`..`2000` unless a part that takes
@@ -705,15 +705,22 @@ curl -s http://artoo.local/api/servo/outputs
 
 ### POST /api/aux-led/color
 
-Sets the LED strip's color.
+Sets a lit wire's color, or every lit wire's.
+
+A droid may have several lit body Parts, each on its own wire (ADR 0067), so a
+request may name the one it is about with `output` — an Output Address exactly
+as `GET /api/servo/outputs` spells it (`ledc:3`). **Leaving `output` out means
+every lit wire**, which is what this route has always meant and what a sequence
+step and an RC action send.
 
 - Body formats:
-- Form: `r`, `g`, `b` (0..255)
-- JSON: `{"r":<0..255>,"g":<0..255>,"b":<0..255>}`
-- Success: `200` LED strip state JSON (`pin`, `r`, `g`, `b`, `effect`)
+- Form: `r`, `g`, `b` (0..255), optional `output`
+- JSON: `{"r":<0..255>,"g":<0..255>,"b":<0..255>[,"output":"ledc:3"]}`
+- Success: `200` the lit wires JSON below
 - Errors:
 - `400` `{"ok":false,"error":"payload must contain r,g,b integers 0..255"}`
-- `503` `{"ok":false,"error":"aux LED unavailable"}`
+- `400` `{"ok":false,"error":"output must be an Output Address this droid has"}`
+- `503` `{"ok":false,"error":"no light on that wire"}`
 - `503` `{"ok":false,"error":"aux LED command queue full"}`
 
 #### Example request (form)
@@ -726,7 +733,7 @@ curl -s -X POST http://artoo.local/api/aux-led/color \
 #### Example response
 
 ```json
-{"ok":true,"auxLed":{"pin":1,"r":255,"g":80,"b":10,"effect":"solid"}}
+{"ok":true,"lights":{"aux1":{"r":255,"g":80,"b":10,"effect":"solid","available":true}}}
 ```
 
 #### Example request (json)
@@ -740,20 +747,22 @@ curl -s -X POST http://artoo.local/api/aux-led/color \
 #### Example response
 
 ```json
-{"ok":true,"auxLed":{"pin":1,"r":0,"g":0,"b":255,"effect":"solid"}}
+{"ok":true,"lights":{"aux1":{"r":0,"g":0,"b":255,"effect":"solid","available":true}}}
 ```
 
 ### POST /api/aux-led/effect
 
-Sets the LED strip's effect.
+Sets a lit wire's effect, or every lit wire's. `output` works exactly as it does
+for the color route above.
 
 - Body formats:
-- Form: `effect`
-- JSON: `{"effect":"off|solid|blink|pulse"}`
-- Success: `200` LED strip state JSON
+- Form: `effect`, optional `output`
+- JSON: `{"effect":"off|solid|blink|pulse"[,"output":"ledc:3"]}`
+- Success: `200` the lit wires JSON
 - Errors:
 - `400` `{"ok":false,"error":"effect must be one of off|solid|blink|pulse"}`
-- `503` `{"ok":false,"error":"aux LED unavailable"}`
+- `400` `{"ok":false,"error":"output must be an Output Address this droid has"}`
+- `503` `{"ok":false,"error":"no light on that wire"}`
 - `503` `{"ok":false,"error":"aux LED command queue full"}`
 
 #### Example request
@@ -766,7 +775,7 @@ curl -s -X POST http://artoo.local/api/aux-led/effect \
 #### Example response
 
 ```json
-{"ok":true,"auxLed":{"pin":1,"r":0,"g":0,"b":255,"effect":"blink"}}
+{"ok":true,"lights":{"aux1":{"r":0,"g":0,"b":255,"effect":"blink","available":true}}}
 ```
 
 ## Audio and Mood
@@ -1421,13 +1430,15 @@ Returns current config snapshot.
   them, and are the entries that carry an `address` (#411): the Output Address
   that joins the entry to its `GET /api/servo/outputs` row (`ledc:3`), the
   `label` it is called by on screen (`ARM3`, `GPIO 4`), `enabledField` and
-  `typeField` - the `POST /api/config` fields that save it - and
-  `ledStripPin`, the `aux_led_pin` value that routes the LED strip to it,
-  present only on an Output that can carry the strip. A page iterates these
-  entries and keeps no list of Outputs of its own.
+  `typeField` - the `POST /api/config` fields that save it - and, on an Output
+  a light may go on, `lightCapable: true`, `ledCountField` (the
+  `POST /api/config` field that saves its light's settings) and `ledCount`
+  (how many LEDs are on it). `type` is what is on the wire in either
+  vocabulary: a servo's model, or a **Light Type** where it lights something
+  (ADR 0067). A page iterates these entries and keeps no list of Outputs of its
+  own.
 - `dome`: pulse calibration, speed limit, random movement config, wifi peer IP
 - top-level servo calibration fields (`arm*OpenUs`, `aux*CloseUs`, etc.)
-- `aux_led_pin`, `aux_led_count`
 - `system.logLevel`
 - `droidBuild`: the Droid Build (ADR 0047) — `domeDesign`, `domeVariant`,
   `bodyDesign`, `bodyVariant` (design ids from `data/droid_parts.js`'s
@@ -1458,7 +1469,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"label":"ARM1","address":"ledc:0","enabledField":"enableArm1","typeField":"arm1Type","type":"mg996r"},"aux1":{"enabled":false,"label":"ARM3","address":"ledc:3","ledStripPin":1,"enabledField":"enableAux1","typeField":"aux1Type","type":"none"},"domeEsc":{"enabled":true,"label":"DOME"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000,"aux_led_pin":1,"aux_led_count":16}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"label":"ARM1","address":"ledc:0","enabledField":"enableArm1","typeField":"arm1Type","type":"mg996r"},"aux1":{"enabled":false,"label":"ARM3","address":"ledc:3","lightCapable":true,"enabledField":"enableAux1","typeField":"aux1Type","ledCountField":"aux1LedCount","type":"none","ledCount":16},"domeEsc":{"enabled":true,"label":"DOME"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000}
 ```
 
 ### POST /api/config
@@ -1537,8 +1548,13 @@ Updates supported config fields and persists to NVS.
   change the travel between them. Sending it again is a real undo: the stored
   state **is** the pair, and there is no invert flag anywhere. A bad address is
   `400` `{"ok":false,"error":"reverseOutput must be an Output Address"}`.
-- servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
-- aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
+- what is on an Output's wire: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in
+  `none|mg996r|mg90s|rgb`. `rgb` is a **Light Type**, not a servo model
+  (ADR 0067): naming it on an Output is what says that wire carries a light,
+  and several Outputs may carry one at once
+- a light's settings, one per Output that can carry one:
+  `aux1LedCount|aux2LedCount|aux3LedCount` (1..255), under the name that
+  Output's `ledCountField` gives. Read once when the strip starts
 - Part moves (ADR 0050): `movePart`, `movePartFrom`, `movePartTo` — sent
   together or not at all. `movePart` is a Part id this build models;
   `movePartFrom` is the Output the Part is on **now** and `movePartTo` the one
@@ -1557,8 +1573,6 @@ Updates supported config fields and persists to NVS.
 - `rc.sbusTimeoutMs` (50..5000)
 - `rc.sbus.recvCh2` (boolean)
 - `protoR2link.wifiPeerIp` (string, empty or IPv4)
-- `aux_led_pin` (0..3)
-- `aux_led_count` (1..255)
 
 - Success: `200` returns full updated config JSON (same shape as GET /api/config).
   `components.audio` carries `member` (the saved choice) and `activeMember` (the
@@ -1594,13 +1608,13 @@ curl -s -X POST http://artoo.local/api/config \
 ```bash
 curl -s -X POST http://artoo.local/api/config \
   -H 'Content-Type: application/json' \
-  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}'
+  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"}}'
 ```
 
 #### Example response (abridged)
 
 ```json
-{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}
+{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"}}
 ```
 
 ### GET /api/rc/map
@@ -1922,7 +1936,10 @@ Returns controller status snapshot.
   since the last rejection (`-1` if none since boot)
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
-- `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)
+- `lights` object: one entry per lit wire, keyed by the Output id
+  `GET /api/config` names it under `components` (`aux1`), each carrying `r`,
+  `g`, `b`, `effect` and `available`. A droid with no light answers `{}`. There
+  is no pin here: where a wire plugs in is Wiring's answer (ADR 0067, #413)
 - Additional component objects are conditionally present when enabled: each Output under its stored id (`arm1`..`aux3`, the `components{}` keys of `GET /api/config`, never shown - its name is that entry's `label`), and `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`
 - Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
 - Includes `hoverboard` object when feedback is valid
@@ -1936,7 +1953,7 @@ curl -s http://artoo.local/api/status
 #### Example response (abridged)
 
 ```json
-{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","fsVersion":"fs-v1.0.0","resetReason":"POWERON","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"auxLed":{"pin":1,"r":0,"g":0,"b":0,"effect":"off","available":true}}
+{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","fsVersion":"fs-v1.0.0","resetReason":"POWERON","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"lights":{"aux1":{"r":0,"g":0,"b":0,"effect":"off","available":true}}}
 ```
 
 ### GET /api/health
