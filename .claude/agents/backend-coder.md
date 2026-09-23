@@ -2,8 +2,8 @@
 name: backend-coder
 description: Use proactively for bounded protoArtoo ESP32/Arduino firmware implementation, web API handlers, FreeRTOS task wiring, RobotState/queue paths, config/NVS persistence, action-registry plumbing, OTA/upload support, LittleFS backend integration, SBUS/RC handling, dome/audio backend control, and risk-based PlatformIO verification. Do not use for UI/UX design, independent review, or heap/crash performance diagnosis.
 tools: Read, Grep, find, Edit, Write, Bash, mcp__plugin_mempalace_mempalace__mempalace_status, mcp__plugin_mempalace_mempalace__mempalace_search, mcp__plugin_mempalace_mempalace__mempalace_add_drawer, mcp__plugin_mempalace_mempalace__mempalace_diary_read, mcp__plugin_mempalace_mempalace__mempalace_diary_write, mcp__plugin_mempalace_mempalace__mempalace_kg_add
-model: sonnet
-effort: high
+model: claude-opus-5-5
+effort: medium
 mcpServers:
   - "plugin:mempalace:mempalace"
   - espressif-documentation

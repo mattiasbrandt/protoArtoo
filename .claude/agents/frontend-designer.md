@@ -5,8 +5,8 @@ skills:
   - frontend-designer
   - playwright
 tools: Read, Grep, find, Edit, Write, Bash
-model: sonnet
-effort: high
+model: claude-opus-5-5
+effort: medium
 mcpServers:
   - "plugin:mempalace:mempalace"
   - playwright

@@ -2,8 +2,8 @@
 name: code-reviewer
 description: Use proactively after protoArtoo firmware, web API, PlatformIO, ESP32/Arduino, safety, docs, or dashboard code changes; before commits/uploads; or when a fresh safety, security, architecture, data-flow, maintainability, stale-comment, or regression review is needed.
 tools: Read, Grep, find, Bash
-model: sonnet
-effort: high
+model: claude-opus-5-5
+effort: medium
 color: purple
 ---
 

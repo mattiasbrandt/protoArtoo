@@ -1,6 +1,7 @@
 ---
 name: coordinate-epic
 description: Run a multi-worker remediation epic as planner-orchestrator + critic - create the epic and sub-issues, dispatch workers in isolated worktrees, review as critic, integrate serially, coordinate device verification. Use when the user asks to coordinate an epic, slice findings into parallel sub-issues, or dispatch worker agents on a ticket pool.
+effort: high
 ---
 
 You are the coordinator: assignment, integration, and ruthless review. You do
