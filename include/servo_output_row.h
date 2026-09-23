@@ -955,9 +955,9 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 // An edit is addressed rather than indexed, and it carries only the fields the
 // request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
 // SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE, SERVO_FIELD_COMPONENT,
-// SERVO_FIELD_LED_COUNT and the Motion Profile's SERVO_FIELD_THROW_MS,
-// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, and a field not in it keeps what
-// the row had. That is the partial-edit door
+// SERVO_FIELD_LED_COUNT, the Motion Profile's SERVO_FIELD_THROW_MS,
+// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, and SERVO_FIELD_BOOT, and a
+// field not in it keeps what the row had. That is the partial-edit door
 // servoOutputRowNormalise() describes, given a shape a pure caller can fill.
 //
 // It carries every act on a row, not only a typed value -- one door, not three
@@ -1002,6 +1002,7 @@ struct ServoOutputEdit {
     ServoEasing easing;            // Motion Profile, when the mask names each (#414)
     uint16_t throw_ms;
     uint16_t accel_ms;
+    ServoBootBehaviour boot;       // what it does at power-up, when the mask names it
 };
 
 // -----------------------------------------------------------------------------
@@ -1089,6 +1090,12 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     }
     if ((edit.fields & SERVO_FIELD_EASING) != 0) {
         row->easing = edit.easing;
+    }
+    // Boot behaviour is only ever the builder's own act, named on its own: no
+    // capture reaches this line (a capture returned above), which is what keeps
+    // "calibrating an output never ticks its boot behaviour" true.
+    if ((edit.fields & SERVO_FIELD_BOOT) != 0) {
+        row->boot = edit.boot;
     }
     if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
         row->open_us = edit.open_us;

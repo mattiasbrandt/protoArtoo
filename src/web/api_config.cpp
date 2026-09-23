@@ -496,11 +496,12 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         output["enabledField"] = entry.enabledField;
         output["typeField"] = entry.typeField;
         if (entry.ledCountField != nullptr) output["ledCountField"] = entry.ledCountField;
-        // The three fields that save its Motion Profile (#414). Their values are
-        // the live table's, added by addServoOutputFields(); the names are
-        // configMotionFieldName()'s, the one rule the Apply Core reads them by.
+        // The fields that save its Motion Profile and its boot behaviour
+        // (#414). Their values are the live table's, added by
+        // addServoOutputFields(); the names are configMotionFieldName()'s, the
+        // one rule the Apply Core reads them by.
         static const char* const kMotionKeys[CONFIG_MOTION_FIELD_COUNT] = {
-            "throwField", "accelField", "easeField"};
+            "throwField", "accelField", "easeField", "bootField"};
         for (uint8_t field = 0; field < CONFIG_MOTION_FIELD_COUNT; ++field) {
             char name[CONFIG_MOTION_FIELD_NAME_MAX] = {};
             if (configMotionFieldName(name, sizeof(name), entry.id, (ConfigMotionField)field)) {
@@ -711,11 +712,13 @@ void addServoOutputFields(JsonDocument& doc) {
         }
     }
 
-    // Each Output's Motion Profile as the builder set it (ADR 0052, #414), under
-    // the components{} entry that names the fields saving it. The ease is the
-    // stored one: an overshoot on an Output nobody has measured is reported as
-    // the builder's choice, beside the `calibrated` bit GET /api/servo/outputs
-    // carries, and the surface says it is off until the Output is calibrated.
+    // Each Output's Motion Profile and boot behaviour as the builder set them
+    // (ADR 0052, #414), under the components{} entry that names the fields
+    // saving them. The ease is the stored one: an overshoot on an Output nobody
+    // has measured is reported as the builder's choice, beside the `calibrated`
+    // bit GET /api/servo/outputs carries, and the surface says it is off until
+    // the Output is calibrated. The boot behaviour has no such fence: it is
+    // independent of calibration by design (include/servo_output_row.h).
     if (components.isNull()) {
         return;
     }
@@ -724,14 +727,16 @@ void addServoOutputFields(JsonDocument& doc) {
         uint16_t throwMs = 0;
         uint16_t accelMs = 0;
         ServoEasing easing = SERVO_EASE_NONE;
+        ServoBootBehaviour boot = SERVO_BOOT_LIMP;
         if (!configCacheReadServoOutputMotionSettings(SERVO_DRIVER_LEDC, output.channel, &throwMs,
-                                                      &accelMs, &easing)) {
+                                                      &accelMs, &easing, &boot)) {
             continue;
         }
         JsonObject entry = components[output.id];
         entry["throwMs"] = throwMs;
         entry["accelMs"] = accelMs;
         entry["ease"] = servoEasingToString(easing);
+        entry["boot"] = servoBootBehaviourToString(boot);
     }
 }
 

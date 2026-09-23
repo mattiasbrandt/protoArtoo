@@ -37,19 +37,21 @@
 #include "servo_legacy_field_sets.h"  // SERVO_LEGACY_FIELD_SET_COUNT
 
 // -----------------------------------------------------------------------------
-// The fields that save an Output's Motion Profile (ADR 0052, #414)
+// The fields that save how an Output moves (ADR 0052, #414)
 //
-// Time to full throw, time to get up to speed and the ease, per Output, named
-// from its stored config id: arm1ThrowMs, arm1AccelMs, arm1Ease. The rule lives
-// here and nowhere else, so the Apply Core that reads the three and
-// GET /api/config, which hands each Output's names to the browser in
-// components{} (throwField, accelField, easeField), cannot come to disagree -
-// and a page never composes one (data/outputs.js saves by the name it read).
+// Its Motion Profile - time to full throw, time to get up to speed and the
+// ease - and what it does at power-up, per Output, named from its stored config
+// id: arm1ThrowMs, arm1AccelMs, arm1Ease, arm1Boot. The rule lives here and
+// nowhere else, so the Apply Core that reads the four and GET /api/config,
+// which hands each Output's names to the browser in components{} (throwField,
+// accelField, easeField, bootField), cannot come to disagree - and a page never
+// composes one (data/outputs.js saves by the name it read).
 // -----------------------------------------------------------------------------
 enum ConfigMotionField : uint8_t {
     CONFIG_MOTION_THROW = 0,
     CONFIG_MOTION_ACCEL,
     CONFIG_MOTION_EASE,
+    CONFIG_MOTION_BOOT,
     CONFIG_MOTION_FIELD_COUNT,
 };
 
@@ -58,7 +60,7 @@ constexpr size_t CONFIG_MOTION_FIELD_NAME_MAX = BOARD_OUTPUT_ID_MAX_LEN + sizeof
 
 inline bool configMotionFieldName(char* buf, size_t bufSize, const char* outputId,
                                   ConfigMotionField field) {
-    static const char* const kSuffix[CONFIG_MOTION_FIELD_COUNT] = {"ThrowMs", "AccelMs", "Ease"};
+    static const char* const kSuffix[CONFIG_MOTION_FIELD_COUNT] = {"ThrowMs", "AccelMs", "Ease", "Boot"};
     if (buf == nullptr || bufSize == 0 || outputId == nullptr ||
         field >= CONFIG_MOTION_FIELD_COUNT) {
         return false;

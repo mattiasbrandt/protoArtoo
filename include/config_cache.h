@@ -87,16 +87,16 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
 bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
                                              ServoMotionProfile* profile);
 
-// The Motion Profile as the builder set it, for GET /api/config to report
-// (#414): the two times and the STORED ease rather than the one that runs. An
-// overshoot on an Output nobody has measured is still the builder's choice and
-// is shown as one, with the surface saying it is off until the Output is
-// calibrated; the drive path asks configCacheReadServoOutputMotionProfile()
-// instead. False when no live row is addressed there, with the out-params
-// untouched.
+// How the builder set this Output to move, for GET /api/config to report
+// (#414): the two times, the STORED ease rather than the one that runs, and
+// what it does at power-up. An overshoot on an Output nobody has measured is
+// still the builder's choice and is shown as one, with the surface saying it is
+// off until the Output is calibrated; the drive path asks
+// configCacheReadServoOutputMotionProfile() instead. False when no live row is
+// addressed there, with the out-params untouched.
 bool configCacheReadServoOutputMotionSettings(ServoOutputDriver driver, uint8_t channel,
                                               uint16_t* throwMs, uint16_t* accelMs,
-                                              ServoEasing* easing);
+                                              ServoEasing* easing, ServoBootBehaviour* boot);
 
 // What is fitted to the output addressed there, and SERVO_COMP_NONE when no
 // live row is addressed there -- "nothing is recorded as fitted here" and "this
