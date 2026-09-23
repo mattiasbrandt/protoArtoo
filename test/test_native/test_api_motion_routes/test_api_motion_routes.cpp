@@ -15,6 +15,7 @@
 
 #include <cstring>
 
+#include "board_outputs.h"
 #include "api_aux_led.h"
 #include "api_dome.h"
 #include "api_drive.h"
@@ -29,6 +30,7 @@
 #include "drive_arbiter.h"
 #include "failsafe_gate.h"
 #include "robot_state.h"
+#include "servo_output_row.h"
 #include "web_admission.h"
 #include "web_request_test_backend.h"
 #include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
@@ -1132,12 +1134,41 @@ void test_back_to_centre_takes_no_parameters() {
 }
 
 // -----------------------------------------------------------------------------
-// AUX LED
+// The lit wires
 // -----------------------------------------------------------------------------
 
+// Light every wire that can carry one, so the routes have something to command,
+// and clear the rest. robotState.auxLed is keyed by BOARD_OUTPUTS index, which
+// is the same index the routes resolve an Output Address to.
+static void lightEveryCapableWire() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+        robotState.auxLed[i].lit = BOARD_OUTPUTS[i].lightCapable;
+        robotState.auxLed[i].available = BOARD_OUTPUTS[i].lightCapable;
+    }
+}
+
+// The Output Address of the Nth light-capable Output, as GET /api/servo/outputs
+// spells it, which is what a surface sends back as `output`.
+static void litWireAddress(size_t which, char* buf, size_t bufSize, size_t* outIndex) {
+    size_t seen = 0;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!BOARD_OUTPUTS[i].lightCapable) {
+            continue;
+        }
+        if (seen++ != which) {
+            continue;
+        }
+        TEST_ASSERT_TRUE(servoOutputFormatAddress(buf, bufSize, SERVO_DRIVER_LEDC,
+                                                  BOARD_OUTPUTS[i].channel));
+        *outIndex = i;
+        return;
+    }
+    TEST_FAIL_MESSAGE("this board has no such light-capable Output");
+}
+
 void test_aux_led_color_accepts_form_fields() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 4;
+    lightEveryCapableWire();
     const WebRequestTestParam params[] = {{"r", "10"}, {"g", "20"}, {"b", "30"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -1152,8 +1183,7 @@ void test_aux_led_color_accepts_form_fields() {
 }
 
 void test_aux_led_color_accepts_a_json_body() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 4;
+    lightEveryCapableWire();
     WebRequestTestBackend backend;
     backend.body = "{\"r\":1,\"g\":2,\"b\":3}";
     WebRequest req(&backend);
@@ -1162,6 +1192,75 @@ void test_aux_led_color_accepts_a_json_body() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"g\":2"));
+}
+
+// THE INVARIANT #413 EXISTS FOR: a droid may have several lit wires, each with
+// its own settings, so a command naming one must not reach the others. The
+// route that carried a single strip had no way to be wrong about this; this one
+// does, and one resolution slip turns a builder's per-Part control into a
+// broadcast they cannot see is happening.
+void test_a_color_sent_to_one_wire_reaches_only_that_wire() {
+    lightEveryCapableWire();
+    char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+    size_t commanded = 0;
+    litWireAddress(0, address, sizeof(address), &commanded);
+
+    const WebRequestTestParam params[] = {
+        {"r", "10"}, {"g", "20"}, {"b", "30"}, {"output", address}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+
+    handleAuxLedColorPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_UINT8(10, robotState.auxLed[commanded].r);
+    TEST_ASSERT_EQUAL_UINT8(30, robotState.auxLed[commanded].b);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (i == commanded) {
+            continue;
+        }
+        TEST_ASSERT_EQUAL_UINT8(0, robotState.auxLed[i].r);
+        TEST_ASSERT_EQUAL_UINT8(0, robotState.auxLed[i].b);
+    }
+}
+
+// And the other half: no `output` still means every lit wire, which is what an
+// RC trigger and a sequence step have always meant by this route.
+void test_a_color_with_no_output_reaches_every_lit_wire() {
+    lightEveryCapableWire();
+    const WebRequestTestParam params[] = {{"r", "7"}, {"g", "0"}, {"b", "0"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+
+    handleAuxLedColorPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 7 : 0, robotState.auxLed[i].r);
+    }
+}
+
+// An address this droid does not have is a refusal, not a silent broadcast: a
+// surface sending an address it did not read must not command the whole droid.
+void test_an_unknown_output_is_refused_rather_than_broadcast() {
+    lightEveryCapableWire();
+    const WebRequestTestParam params[] = {
+        {"r", "9"}, {"g", "0"}, {"b", "0"}, {"output", "ledc:250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 4;
+    WebRequest req(&backend);
+
+    handleAuxLedColorPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(0, robotState.auxLed[i].r);
+    }
 }
 
 void test_aux_led_color_rejects_an_out_of_range_channel() {
@@ -1178,8 +1277,7 @@ void test_aux_led_color_rejects_an_out_of_range_channel() {
 }
 
 void test_aux_led_effect_reports_the_new_effect() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 4;
+    lightEveryCapableWire();
     const WebRequestTestParam params[] = {{"effect", "pulse"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -1207,7 +1305,9 @@ void test_aux_led_effect_rejects_an_unknown_effect() {
 
 void test_aux_led_reports_an_unavailable_strip_distinctly() {
     g_test_aux_led_queue_ok = false;
-    robotState.auxLed.available = false;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+    }
     const WebRequestTestParam params[] = {{"effect", "solid"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -1217,7 +1317,7 @@ void test_aux_led_reports_an_unavailable_strip_distinctly() {
     handleAuxLedEffectPost(req);
 
     TEST_ASSERT_EQUAL_INT(503, backend.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "aux LED unavailable"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "no light on that wire"));
 }
 
 int main(int, char**) {
@@ -1289,6 +1389,9 @@ int main(int, char**) {
 
     RUN_TEST(test_aux_led_color_accepts_form_fields);
     RUN_TEST(test_aux_led_color_accepts_a_json_body);
+    RUN_TEST(test_a_color_sent_to_one_wire_reaches_only_that_wire);
+    RUN_TEST(test_a_color_with_no_output_reaches_every_lit_wire);
+    RUN_TEST(test_an_unknown_output_is_refused_rather_than_broadcast);
     RUN_TEST(test_aux_led_color_rejects_an_out_of_range_channel);
     RUN_TEST(test_aux_led_effect_reports_the_new_effect);
     RUN_TEST(test_aux_led_effect_rejects_an_unknown_effect);

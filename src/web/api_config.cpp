@@ -34,6 +34,7 @@
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
+#include "board_output_enabled.h"  // boardOutputIsWired() - which stored tick says a wire is in
 #include "web_param_source.h"
 #include "drive_speed_preset.h"
 #include "audio_task.h"
@@ -441,38 +442,9 @@ const char* getComponentLabel(const char* componentName) {
 // Console and POST /api/servo read too. What differs between boards is what
 // they print, and that stays in include/component_labels.inc. The one fact a
 // config answer adds beside them is which SystemConfig field holds each
-// Output's wired tick, which is this table - kept in BOARD_OUTPUTS' order and
-// checked against its ids, so the two cannot pair a tick with the wrong Output.
+// Output's wired tick, and that pairing now lives in
+// include/board_output_enabled.h, where the strip driver reads it too.
 // -----------------------------------------------------------------------------
-namespace {
-    struct ConfigOutputEnabled {
-        const char* id;
-        bool SystemConfig::*enabled;
-    };
-
-    constexpr ConfigOutputEnabled CONFIG_OUTPUT_ENABLED[] = {
-        {"arm1", &SystemConfig::enable_arm1},
-        {"arm2", &SystemConfig::enable_arm2},
-        {"aux1", &SystemConfig::enable_aux1},
-        {"aux2", &SystemConfig::enable_aux2},
-        {"aux3", &SystemConfig::enable_aux3},
-    };
-
-    constexpr bool configOutputsAlign() {
-        if (sizeof(CONFIG_OUTPUT_ENABLED) / sizeof(CONFIG_OUTPUT_ENABLED[0]) != BOARD_OUTPUT_COUNT) {
-            return false;
-        }
-        for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-            if (!board_outputs_detail::equals(CONFIG_OUTPUT_ENABLED[i].id, BOARD_OUTPUTS[i].id)) {
-                return false;
-            }
-        }
-        return true;
-    }
-    static_assert(configOutputsAlign(),
-                  "CONFIG_OUTPUT_ENABLED must list BOARD_OUTPUTS' ids, in its order");
-}
-
 // -----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 // populateConfigJson()
@@ -513,15 +485,20 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
         const BoardOutput& entry = BOARD_OUTPUTS[i];
         JsonObject output = components[entry.id].to<JsonObject>();
-        output["enabled"] = snap.system.*CONFIG_OUTPUT_ENABLED[i].enabled;
+        output["enabled"] = boardOutputIsWired(snap.system, i);
         if (const char* label = boardOutputLabel(entry)) output["label"] = label;
         char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
         if (servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, entry.channel)) {
             output["address"] = address;
         }
-        if (entry.ledStripPin != AUX_LED_PIN_DISABLED) output["ledStripPin"] = entry.ledStripPin;
+        // Whether a Light Type may go on this wire at all, and the field that
+        // saves its settings. Both are absent on an Output that cannot carry
+        // one, so a surface draws the light controls for exactly the Outputs
+        // the firmware says can have them and never counts them itself.
+        if (entry.lightCapable) output["lightCapable"] = true;
         output["enabledField"] = entry.enabledField;
         output["typeField"] = entry.typeField;
+        if (entry.ledCountField != nullptr) output["ledCountField"] = entry.ledCountField;
     }
 
     components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
@@ -568,14 +545,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
-    // The ten calibration fields and the five component types data/servo.js
-    // reads are NOT built here. Since #345 an endpoint lives on an addressed
+    // The ten calibration fields, the five component types data/servo.js reads
+    // and each lit wire's LED count are NOT built here. Since #345 an endpoint lives on an addressed
     // Servo Output row and nowhere else, and this builder is pure -- it cannot
     // reach the live table. addServoOutputFields() adds them in
     // sendConfigSnapshot(), the same seam "pendingApply" uses.
-    doc["aux_led_pin"] = snap.servo.aux_led_pin;
-    doc["aux_led_count"] = snap.servo.aux_led_count;
-
     JsonObject domeEsc = doc["domeEsc"].to<JsonObject>();
     domeEsc["neutralUs"] = snap.dome.dome_neutral_us;
     domeEsc["minPulseUs"] = snap.dome.dome_min_pulse_us;
@@ -716,6 +690,16 @@ void addServoOutputFields(JsonDocument& doc) {
             const ServoComponentType component =
                 configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, set.channel);
             components[set.componentKey]["type"] = servoCompTypeToString(component);
+            // The Light Type's settings, beside the type that says there is
+            // one: how many LEDs this wire carries (ADR 0067). Reported for
+            // every Output that could carry a light, not only the ones that do,
+            // so a builder who names a Light Type sees the number they last
+            // saved rather than a default the surface invented.
+            const BoardOutput* output = boardOutputOnChannel(set.channel);
+            if (output != nullptr && output->lightCapable) {
+                components[set.componentKey]["ledCount"] =
+                    configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, set.channel);
+            }
         }
     }
 }

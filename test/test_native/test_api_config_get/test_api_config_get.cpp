@@ -303,8 +303,6 @@ void test_the_worst_case_config_still_fits_the_response_buffer() {
     snap.dome.dome_rnd_pause_max = UINT8_MAX;
     snap.dome.dome_rnd_move_ms = UINT16_MAX;
     snap.system.logLevel = UINT8_MAX;
-    snap.servo.aux_led_pin = UINT8_MAX;
-    snap.servo.aux_led_count = UINT8_MAX;
     snap.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
     snap.system.rc_member = 6;      // rc_transmitter_elrs, the longest radio id
     snap.system.sound_member = 21;  // dfplayer_mini, the longest sound id

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "board_outputs.h"
 #include "component_registry.h"
 #include "config.h"
 #include "drive_speed_preset.h"
@@ -579,24 +580,6 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         return;
     }
 
-    uint8_t auxLedPin = 0;
-    if (paramUint8(params, "aux_led_pin", AUX_LED_PIN_DISABLED, AUX_LED_PIN_MAX, &auxLedPin)) {
-        working->servo.aux_led_pin = auxLedPin;
-        result->changed = true;
-    } else if (configParamHas(params, "aux_led_pin")) {
-        setError(result, "aux_led_pin must be 0..3");
-        return;
-    }
-
-    uint8_t auxLedCount = 0;
-    if (paramUint8(params, "aux_led_count", AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX, &auxLedCount)) {
-        working->servo.aux_led_count = auxLedCount;
-        result->changed = true;
-    } else if (configParamHas(params, "aux_led_count")) {
-        setError(result, "aux_led_count must be 1..255");
-        return;
-    }
-
     if (configParamHas(params, "plain")) {
         JsonDocument bodyDoc;
         DeserializationError jsonErr = deserializeJson(bodyDoc, configParamGet(params, "plain"));
@@ -630,32 +613,6 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                 setError(result, "rc.sbus.recvCh2 must be boolean");
                 return;
             }
-        }
-
-        if (bodyDoc["aux_led_pin"].is<uint8_t>()) {
-            uint8_t parsed = bodyDoc["aux_led_pin"].as<uint8_t>();
-            if (!auxLedPinSettingValid(parsed)) {
-                setError(result, "aux_led_pin must be 0..3");
-                return;
-            }
-            working->servo.aux_led_pin = parsed;
-            result->changed = true;
-        } else if (!bodyDoc["aux_led_pin"].isNull()) {
-            setError(result, "aux_led_pin must be integer 0..3");
-            return;
-        }
-
-        if (bodyDoc["aux_led_count"].is<uint8_t>()) {
-            uint8_t parsed = bodyDoc["aux_led_count"].as<uint8_t>();
-            if (parsed < AUX_LED_COUNT_DEFAULT) {
-                setError(result, "aux_led_count must be 1..255");
-                return;
-            }
-            working->servo.aux_led_count = parsed;
-            result->changed = true;
-        } else if (!bodyDoc["aux_led_count"].isNull()) {
-            setError(result, "aux_led_count must be integer 1..255");
-            return;
         }
 
         JsonVariantConst protoR2linkCfg = bodyDoc["protoR2link"];
@@ -876,6 +833,51 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             continue;
         }
         result->servoOutputs.edits[result->servoOutputs.count++] = edit;
+        result->changed = true;
+    }
+
+    // A light's settings, one per Output that can carry one: how many LEDs are
+    // on that wire (ADR 0067, #413). The field names are BOARD_OUTPUTS'
+    // `ledCountField`, NOT one of the five legacy sets above - this is a new
+    // per-Output answer, and it outlives the fixed names the loop above exists
+    // to keep reading.
+    //
+    // It MERGES into the edit that loop may already have made for the same
+    // Output Address rather than adding one beside it, which is what keeps the
+    // edit list inside its bound: every Output that can carry a light is one of
+    // the five that loop covers.
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        const BoardOutput& output = BOARD_OUTPUTS[i];
+        if (output.ledCountField == nullptr || !configParamHas(params, output.ledCountField)) {
+            continue;
+        }
+        uint8_t ledCount = 0;
+        if (!paramUint8(params, output.ledCountField, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX,
+                        &ledCount)) {
+            char err[192];
+            snprintf(err, sizeof(err), "%s must be %u..%u", output.ledCountField,
+                     (unsigned)SERVO_LIGHT_LEDS_MIN, (unsigned)SERVO_LIGHT_LEDS_MAX);
+            setError(result, err);
+            return;
+        }
+
+        ServoOutputEdit* edit = nullptr;
+        for (size_t e = 0; e < result->servoOutputs.count; ++e) {
+            ServoOutputEdit& candidate = result->servoOutputs.edits[e];
+            if (candidate.driver == SERVO_DRIVER_LEDC && candidate.channel == output.channel &&
+                candidate.kind == SERVO_EDIT_TYPED) {
+                edit = &candidate;
+                break;
+            }
+        }
+        if (edit == nullptr) {
+            edit = &result->servoOutputs.edits[result->servoOutputs.count++];
+            *edit = ServoOutputEdit{};
+            edit->driver = SERVO_DRIVER_LEDC;
+            edit->channel = output.channel;
+        }
+        edit->led_count = ledCount;
+        edit->fields |= SERVO_FIELD_LED_COUNT;
         result->changed = true;
     }
 

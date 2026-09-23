@@ -1,9 +1,15 @@
 // =============================================================================
 // src/web/api_aux_led.cpp
 //
-// AUX LED REST API
-//   POST /api/aux-led/color   body: {"r":0,"g":0,"b":0}
-//   POST /api/aux-led/effect  body: {"effect":"solid|blink|pulse|off"}
+// The lit wires' REST API
+//   POST /api/aux-led/color   body: {"r":0,"g":0,"b":0[,"output":"ledc:9"]}
+//   POST /api/aux-led/effect  body: {"effect":"solid|blink|pulse|off"[,"output":"ledc:9"]}
+//
+// `output` names ONE wire by its Output Address, the same word GET
+// /api/servo/outputs answers with. Leaving it out means every lit wire, which
+// is what it has always meant and what a sequence step and an RC action send:
+// they mean "the droid's body lights" (ADR 0067, #413). A surface controlling
+// one Part's light sends the address of the Output that Part is on.
 //
 // Both endpoints accept either a JSON body or ordinary form fields; a JSON body
 // wins when present. Written against the project-owned WebRequest seam
@@ -15,11 +21,14 @@
 #include <ArduinoJson.h>
 
 #include <cstdint>
+#include <cstdio>
 
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "aux_led.h"
+#include "board_outputs.h"
 #include "robot_state.h"
+#include "servo_output_row.h"
 
 namespace {
 
@@ -131,33 +140,89 @@ bool parseEffectPayload(WebRequest& req, AuxLedEffect* outEffect) {
     return parseAuxLedEffect(raw, outEffect);
 }
 
-bool isAuxLedAvailable() {
-    taskENTER_CRITICAL(&robotStateMux);
-    const bool available = robotState.auxLed.available;
-    const uint8_t pin = robotState.auxLed.pin;
-    taskEXIT_CRITICAL(&robotStateMux);
+// Which wire a request is about. An absent `output` is every lit wire; an
+// `output` naming an Output Address this board does not have is a 400 rather
+// than a silent broadcast, because a surface sending an address it did not read
+// must not quietly command the whole droid.
+//
+// *outTarget is only written on success.
+bool parseTargetPayload(WebRequest& req, uint8_t* outTarget) {
+    if (outTarget == nullptr) {
+        return false;
+    }
 
-    return available && pin != 0;
+    // Wider than the longest Output Address, so an over-long value fails to
+    // parse as an address rather than being truncated into a valid one.
+    char raw[SERVO_OUTPUT_ADDRESS_STR_MAX + 8] = {};
+    bool named = false;
+
+    JsonDocument body;
+    bool hasJson = false;
+    if (!parseJsonBody(req, &body, &hasJson)) {
+        return false;
+    }
+    if (hasJson) {
+        if (body["output"].is<const char*>()) {
+            snprintf(raw, sizeof(raw), "%s", body["output"].as<const char*>());
+            named = true;
+        }
+    } else if (req.param("output", raw, sizeof(raw))) {
+        named = true;
+    }
+
+    if (!named || raw[0] == '\0') {
+        *outTarget = AUX_LED_TARGET_ALL;
+        return true;
+    }
+
+    ServoOutputDriver driver = SERVO_DRIVER_LEDC;
+    uint8_t channel = 0;
+    if (!servoOutputParseAddress(raw, &driver, &channel) || driver != SERVO_DRIVER_LEDC) {
+        return false;
+    }
+    const BoardOutput* output = boardOutputOnChannel(channel);
+    if (output == nullptr) {
+        return false;
+    }
+    *outTarget = (uint8_t)(output - BOARD_OUTPUTS);
+    return true;
 }
 
-void sendAuxLedStateResponse(WebRequest& req) {
-    uint8_t pin = 0;
-    uint8_t r = 0;
-    uint8_t g = 0;
-    uint8_t b = 0;
-    AuxLedEffect effect = AUX_LED_EFFECT_OFF;
+// Every lit wire and what it is showing, as the status frame reports them. It
+// is the whole set rather than just the wire commanded: a builder who asked all
+// of them to go red has changed several, and a receipt naming one would be a
+// narrower answer than the request.
+void sendLitWiresResponse(WebRequest& req) {
+    LitWireReading readings[BOARD_OUTPUT_COUNT] = {};
+    size_t count = 0;
 
-    taskENTER_CRITICAL(&robotStateMux);
-    pin = robotState.auxLed.pin;
-    r = robotState.auxLed.r;
-    g = robotState.auxLed.g;
-    b = robotState.auxLed.b;
-    effect = robotState.auxLed.effect;
-    taskEXIT_CRITICAL(&robotStateMux);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        AuxLedState state = {};
+        taskENTER_CRITICAL(&robotStateMux);
+        state = robotState.auxLed[i];
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (!state.lit) {
+            continue;
+        }
+        readings[count].id = BOARD_OUTPUTS[i].id;
+        readings[count].r = state.r;
+        readings[count].g = state.g;
+        readings[count].b = state.b;
+        readings[count].effect = auxLedEffectToString(state.effect);
+        readings[count].available = state.available;
+        ++count;
+    }
 
-    char body[160] = {};
-    if (!formatAuxLedStateJson(body, sizeof(body), pin, r, g, b, auxLedEffectToString(effect))) {
-        webSendJsonError(req, 500, "aux LED response overflow");
+    char wiresJson[BOARD_OUTPUT_COUNT * 96 + 8] = {};
+    if (!formatLitWiresJson(wiresJson, sizeof(wiresJson), readings, count, nullptr)) {
+        webSendJsonError(req, 500, "lights response overflow");
+        return;
+    }
+
+    char body[sizeof(wiresJson) + 32] = {};
+    const int written = snprintf(body, sizeof(body), "{\"ok\":true,\"lights\":%s}", wiresJson);
+    if (written <= 0 || (size_t)written >= sizeof(body)) {
+        webSendJsonError(req, 500, "lights response overflow");
         return;
     }
 
@@ -165,11 +230,11 @@ void sendAuxLedStateResponse(WebRequest& req) {
 }
 
 // Both endpoints reject a refused queue the same way, and the distinction the
-// operator needs is why: an absent strip is a wiring/config answer, a full
-// queue is a retry.
-void sendAuxLedQueueRefusal(WebRequest& req) {
-    if (!isAuxLedAvailable()) {
-        webSendJsonError(req, 503, "aux LED unavailable");
+// operator needs is why: a wire with no light on it is a wiring/config answer,
+// a full queue is a retry.
+void sendAuxLedQueueRefusal(WebRequest& req, uint8_t target) {
+    if (!auxLedTargetIsLit(target)) {
+        webSendJsonError(req, 503, "no light on that wire");
         return;
     }
     webSendJsonError(req, 503, "aux LED command queue full");
@@ -186,12 +251,18 @@ void handleAuxLedColorPost(WebRequest& req) {
         return;
     }
 
-    if (!auxLedQueueSetColor(r, g, b, SRC_WEB_API)) {
-        sendAuxLedQueueRefusal(req);
+    uint8_t target = AUX_LED_TARGET_ALL;
+    if (!parseTargetPayload(req, &target)) {
+        webSendJsonError(req, 400, "output must be an Output Address this droid has");
         return;
     }
 
-    sendAuxLedStateResponse(req);
+    if (!auxLedQueueSetColor(target, r, g, b, SRC_WEB_API)) {
+        sendAuxLedQueueRefusal(req, target);
+        return;
+    }
+
+    sendLitWiresResponse(req);
 }
 
 void handleAuxLedEffectPost(WebRequest& req) {
@@ -201,10 +272,16 @@ void handleAuxLedEffectPost(WebRequest& req) {
         return;
     }
 
-    if (!auxLedQueueSetEffect(effect, SRC_WEB_API)) {
-        sendAuxLedQueueRefusal(req);
+    uint8_t target = AUX_LED_TARGET_ALL;
+    if (!parseTargetPayload(req, &target)) {
+        webSendJsonError(req, 400, "output must be an Output Address this droid has");
         return;
     }
 
-    sendAuxLedStateResponse(req);
+    if (!auxLedQueueSetEffect(target, effect, SRC_WEB_API)) {
+        sendAuxLedQueueRefusal(req, target);
+        return;
+    }
+
+    sendLitWiresResponse(req);
 }
