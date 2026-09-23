@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 5849680e6b37e19b657cdb778d5afa55e47ce9896d3b7234fd64d7d4e0f40bd7
+ * Source digest: sha256 6cf36b5530216dee4203afcc2b33f49772d3e4f1fb2c4dbfaee8d9be6424e5b4
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -54,7 +54,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "5849680e6b37e19b657cdb778d5afa55e47ce9896d3b7234fd64d7d4e0f40bd7",
+    "sourceSha256": "6cf36b5530216dee4203afcc2b33f49772d3e4f1fb2c4dbfaee8d9be6424e5b4",
     "designs": [
       {
         "id": "mk4",

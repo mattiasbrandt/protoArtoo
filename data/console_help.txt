@@ -7,7 +7,7 @@ drive.action.speed-preset-turbo|Speed Preset Turbo|Cap the feet at the Turbo pre
 drive.action.speed-preset-cycle|Speed Preset Cycle|Step the speed preset: Slow, Normal, Turbo, and round again.|applySpeedPresetRuntime|
 drive.status.current|Drive Status|What the feet are doing: speed, steer and failsafe.|buildStatusJson|
 drive.event.failsafe-triggered|Failsafe Triggered|The feet stopped: signal lost, estop or watchdog.|failsafeTrigger|
-drive.config.speed-limit|Speed Limit Setting|The most the controller ever sends the wheels. Saved on the droid.|configApply|
+drive.config.speed-limit|Speed Limit Setting|The most the Body Controller ever sends the wheels. Saved on the droid.|configApply|
 dome.action.set-speed|Dome Speed|Turn the dome. Bind it to a stick.|domeCmdQueue|
 dome.action.send-command|Send Dome Command|Send a raw Marcduino command to the dome.|sequenceStart|
 dome.action.marcduino-sequence|Marcduino Sequence|Play a numbered body sequence, usually SE30 to SE36.|parseMarcduinoCommand|
@@ -95,7 +95,7 @@ sound.config.mood-interval-mid|Mid-Awake Interval|Seconds between chatter in Mid
 sound.config.mood-interval-full|Full-Awake Interval|Seconds between chatter in Full-Awake. Read-only here; set it on the Sound page.|audioTracksApply|
 sound.config.mood-interval-awake-plus|Awake+ Interval|Seconds between chatter in Awake+. Read-only here; set it on the Sound page.|audioTracksApply|
 sound.config.startup-track|Startup Boot Sound Track ($B)|The track $B plays at startup. Not the same as Boot Complete.|audioTracksApply|track:uint16:1
-sound.config.boot-complete-track|Boot Complete System Track|The track played once the controller is up. Not the same as $B.|audioTracksApply|track:uint16:1
+sound.config.boot-complete-track|Boot Complete System Track|The track played once the Body Controller is up. Not the same as $B.|audioTracksApply|track:uint16:1
 sound.config.network-down-track|Network Link Lost System Track|The track played once when the WiFi module's link is lost for good.|audioTracksApply|track:uint16:1
 sound.config.track-assignments|Track Assignments|Which track each Named Track plays, $B included.|audioTracksApply|key:string:1|track:uint16:1
 sound.config.system-track-assignments|System Sound Assignments|Which track each system event plays, Boot Complete included.|audioTracksApply|key:string:1|track:uint16:1
@@ -126,7 +126,7 @@ system.action.estop|Emergency Stop|Stop the feet now and latch the estop.|failsa
 system.action.estop-clear|Clear E-Stop|Release the latched estop. The feet can move again.|failsafeClearEstop|
 system.action.enable-web-control|Enable Web Control|Let the browser drive the feet.|commandedSetWebControl|
 system.action.disable-web-control|Disable Web Control|Take the feet back from the browser. They stop.|commandedSetWebControl|
-system.action.reboot|Reboot|Restart the controller.|requestSystemRestart|
+system.action.reboot|Reboot|Restart the Body Controller.|requestSystemRestart|
 system.action.reboot-wifi-module|Reboot WiFi Module|Restart the WiFi module; the link is back in a few seconds and nothing else pauses. Run it over serial, since WiFi drops with it.|hostedLinkResetCoprocessor|
 system.action.set-mood|Set Mood|Set the mood: how much the body chatters and how the dome lights behave.|applyMood|mood:uint8:1
 system.action.sleep|Sleep|Put the droid to sleep: chatter, dome and servo idle moves rest. Drive and RC stay awake.|commandedSetSleep|
@@ -134,7 +134,7 @@ system.action.wake|Wake|Wake the droid: chatter, dome and servo idle moves come 
 system.action.sleep-toggle|Sleep / Wake Toggle|Sleep or wake. Drive stays awake either way.|commandedSetSleep|
 system.event.drives-engaged|Drives Engaged|The droid switched to Driving.|none|
 system.event.dome-enabled|Dome Enabled|The dome motor came on.|none|
-system.event.boot-complete|Boot Complete|The controller is up. The Boot Complete sound may play.|none|
+system.event.boot-complete|Boot Complete|The Body Controller is up. The Boot Complete sound may play.|none|
 system.status.sleep-mode|Sleep Mode|Whether the droid is asleep. It always wakes at boot.|buildStatusJson|
 system.status.mood|Mood|The mood now: Quiet 10, Full-Awake 11, Mid-Awake 13, Awake+ 14.|buildStatusJson|
 system.config.mood|Active Mood|The mood the droid starts in.|configApply|
@@ -143,16 +143,16 @@ system.config.enable_arm2|{output}|Whether a wire is plugged into {output}. Off,
 system.config.enable_aux1|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
 system.config.enable_aux2|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
 system.config.enable_aux3|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
-system.config.enable_dome_esc|Dome Motor|Use the dome rotation motor connected to the DOME output|configApply|
+system.config.enable_dome_esc|Dome Motor|Use the dome rotation motor.|configApply|
 system.config.enable_rc_ch1|RC CH1|Use the receiver signal connected to RC channel 1|configApply|
 system.config.enable_rc_ch2|RC CH2|Use the receiver signal connected to RC channel 2|configApply|
 system.config.enable_rc_ch3|RC CH3|Use the receiver signal connected to RC channel 3|configApply|
 system.config.enable_rc_ch4|RC CH4|Use the receiver signal connected to RC channel 4|configApply|
 system.config.enable_rc_ch5|RC CH5|Use the receiver signal connected to RC channel 5|configApply|
 system.config.enable_rc_ch6|RC CH6|Use the receiver signal connected to RC channel 6|configApply|
-system.config.enable_drive|S1 — Hoverboard|Use the hoverboard drive controller connected to S1|configApply|
-system.config.enable_audio|S2 — Sound|Use the sound module connected to S2|configApply|
-system.config.enable_protor2link|S3 — Dome Control|Use the dome controller connected to S3|configApply|
+system.config.enable_drive|Hoverboard drive|Use the hoverboard drive controller.|configApply|
+system.config.enable_audio|Sound|Use the sound module.|configApply|
+system.config.enable_protor2link|Dome Control|Use the dome controller.|configApply|
 system.config.log-level|Log Level|How much the log says: 1 Error, 2 Warning, 3 Info, 4 Debug.|configApply|
 system.status.health|Health|Health at a glance: estop, radio, WiFi, memory, storage, uptime and last reset.|captureHealthSnapshot|
 system.status.dashboard-health|Dashboard Health Signals|The Dashboard's health lights, worked out in the browser.|buildStatusJson|
@@ -169,7 +169,7 @@ system.action.profiler-trace-stop|Stop Heap Trace|Stop the leak trace and print 
 system.api.get-coredump-status|Get Coredump Status|Whether a crash dump is stored, and its size.|none|
 system.api.get-coredump|Download Coredump|Download the stored crash dump.|none|
 system.action.erase-coredump|Erase Coredump|Erase the stored crash dump.|esp_core_dump_image_erase|
-system.api.get-admission-trace|Get Admission Trace|Why the controller turned requests away lately. Only in a tracing build.|fillAdmissionTraceResponse|
+system.api.get-admission-trace|Get Admission Trace|Why the Body Controller turned requests away lately. Only in a tracing build.|fillAdmissionTraceResponse|
 system.api.get-validation|Get Validation Snapshot|One snapshot of the hardware checks.|populateValidationJson|
 system.action.upload-firmware|Upload Firmware|Upload new firmware. It runs after the next boot.|none|
 system.action.upload-filesystem|Upload Filesystem|Upload a new web UI image. The pages are gone while it writes.|none|

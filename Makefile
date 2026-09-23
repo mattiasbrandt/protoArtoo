@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -172,6 +172,27 @@ check-pin-drift: ## Check the pins in config.h against the wiring in docs/pin_ma
 # report-never-rewrite shape as the four above (#399, ADR 0066).
 check-surface-anatomy: ## Check the operator surfaces against the Surface Anatomy
 	python3 tools/check_surface_anatomy.py
+
+# The three D2 guards (#353), in the same report-never-rewrite shape as the five
+# above. They keep #298's, #327's and ADR 0033's sweeps from unravelling: a bare
+# "controller", a board's own silkscreen baked into copy, and a color literal
+# outside :root are each one careless edit away and none of them breaks a test.
+check-vocabulary-drift: ## Check that operator copy says which controller it means
+	python3 tools/check_vocabulary_drift.py
+
+# Board Component Labels read from include/component_labels.inc, the components
+# whose naming is the board's read from BOARD_OUTPUTS[] and the Lane manifest,
+# and the config.h/pin_map.md half delegated to check_pin_drift.check() rather
+# than implemented a second time (#353, #367).
+check-board-label-drift: ## Check that no operator copy carries one board's own labels
+	python3 tools/check_board_label_drift.py
+
+# The palette is declared once, in data/style.css :root. This reads everything
+# ELSE data/ paints with - an inline <style>, a style attribute, an SVG paint
+# attribute, a color constant - because test_style_token_layer.js already walks
+# the stylesheet itself through the real cascade (#353, #327).
+check-color-drift: ## Check that no surface paints with a color :root has not
+	python3 tools/check_color_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py

@@ -281,6 +281,12 @@
   // ---------------------------------------------------------------------------
   // The three appearances. Color carries the level (amber for a warning, none
   // for a note); only a refusal names a severity (docs/ui-copy-voice.md rule 11).
+  //
+  // A count of ZERO takes no color. Amber means "degraded, and you can do
+  // something about it" (CONTEXT.md "Status Color"), and there is nothing to do
+  // about no warnings - a count of nothing wrong reading as something wrong, on
+  // the surface whose whole job is telling a builder what will not happen. The
+  // badge below already guarded itself this way; the count did not.
   // ---------------------------------------------------------------------------
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -288,7 +294,7 @@
 
   const countsHtml = (report) => `
     <div class="seq-rehearsal-counts" data-rehearsal-counts>
-      <span class="seq-rehearsal-count seq-rehearsal-count-warning" data-count="warning">${plural(report.counts.warning, "warning", "warnings")}</span>
+      <span class="seq-rehearsal-count${report.counts.warning > 0 ? " seq-rehearsal-count-warning" : ""}" data-count="warning">${plural(report.counts.warning, "warning", "warnings")}</span>
       <span class="seq-rehearsal-count" data-count="note">${plural(report.counts.note, "note", "notes")}</span>
       <span class="seq-rehearsal-checked">Rehearsal ${checkedLine(report)}</span>
     </div>`;
