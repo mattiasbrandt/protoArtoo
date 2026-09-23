@@ -640,7 +640,7 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     `POST /api/servo` cannot move). Join a row to anything by its `address`,
     never by this name.
   - `parts`: the Part ids this Output drives, from `data/droid_parts.js`. Empty
-    when it drives nothing. More than one is a ganged lead: every Part listed
+    when it drives nothing. More than one is a ganged wire: every Part listed
     moves when the Output does. A Part appears on at most one Output.
   - `bandLoUs`, `bandHiUs`: the pulse widths this Output can be driven between,
     set by the component fitted to it (`1000`..`2000` unless a part that takes

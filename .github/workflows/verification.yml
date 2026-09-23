@@ -220,6 +220,31 @@ jobs:
         continue-on-error: true
         run: make check-surface-anatomy
 
+      # #298 banned the bare word "controller" in operator copy unconditionally
+      # and #348 swept it out. Nothing mechanical stopped it coming back, and
+      # nothing else in this workflow reads copy, so it runs here beside the
+      # other report-never-rewrite checks (#353).
+      - name: 🗣️ Vocabulary drift
+        id: vocabulary-drift
+        continue-on-error: true
+        run: make check-vocabulary-drift
+
+      # No operator surface keeps its own copy of one board's wiring (ADR 0033).
+      # It also runs the pin comparison #367 owns, so the two halves of the same
+      # question answer in one place (#353).
+      - name: 🔖 Board label drift
+        id: board-label-drift
+        continue-on-error: true
+        run: make check-board-label-drift
+
+      # "There is no second palette to drift against" (CONTEXT.md "Status
+      # Color"). The stylesheet's own half is test_style_token_layer.js, in the
+      # web suite below; this is everything else data/ paints with (#353).
+      - name: 🎨 Color drift
+        id: color-drift
+        continue-on-error: true
+        run: make check-color-drift
+
       - name: 🌐 Web logic tests
         id: web-tests
         continue-on-error: true
@@ -248,6 +273,9 @@ jobs:
           COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
           PIN_DRIFT_OUTCOME: ${{ steps.pin-drift.outcome }}
           ANATOMY_OUTCOME: ${{ steps.surface-anatomy.outcome }}
+          VOCABULARY_OUTCOME: ${{ steps.vocabulary-drift.outcome }}
+          BOARD_LABEL_OUTCOME: ${{ steps.board-label-drift.outcome }}
+          COLOR_OUTCOME: ${{ steps.color-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -283,6 +311,9 @@ jobs:
             row "$COMPONENT_DRIFT_OUTCOME" "Component registry drift" "make check-component-drift"
             row "$PIN_DRIFT_OUTCOME" "Pin drift"            "make check-pin-drift"
             row "$ANATOMY_OUTCOME"  "Surface Anatomy"      "make check-surface-anatomy"
+            row "$VOCABULARY_OUTCOME" "Vocabulary drift"   "make check-vocabulary-drift"
+            row "$BOARD_LABEL_OUTCOME" "Board label drift" "make check-board-label-drift"
+            row "$COLOR_OUTCOME"      "Color drift"        "make check-color-drift"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
             echo ""
@@ -311,6 +342,9 @@ jobs:
           COMPONENT_DRIFT_OUTCOME: ${{ steps.component-drift.outcome }}
           PIN_DRIFT_OUTCOME: ${{ steps.pin-drift.outcome }}
           ANATOMY_OUTCOME: ${{ steps.surface-anatomy.outcome }}
+          VOCABULARY_OUTCOME: ${{ steps.vocabulary-drift.outcome }}
+          BOARD_LABEL_OUTCOME: ${{ steps.board-label-drift.outcome }}
+          COLOR_OUTCOME: ${{ steps.color-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           CODE_CHANGED: ${{ steps.changes.outputs.code }}
@@ -336,6 +370,9 @@ jobs:
           check "$COMPONENT_DRIFT_OUTCOME" "component-drift"
           check "$PIN_DRIFT_OUTCOME"    "pin-drift"
           check "$ANATOMY_OUTCOME"      "surface-anatomy"
+          check "$VOCABULARY_OUTCOME"   "vocabulary-drift"
+          check "$BOARD_LABEL_OUTCOME"  "board-label-drift"
+          check "$COLOR_OUTCOME"        "color-drift"
           check "$WEB_OUTCOME"          "web-tests"
           check "$TOOLING_OUTCOME"      "tooling-tests"
 
