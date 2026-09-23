@@ -90,7 +90,6 @@ void test_reverse_is_read_off_the_pair() {
     ServoOutputRow row = mg996rRow();
     row.open_us = 1900;
     row.close_us = 1100;
-    TEST_ASSERT_FALSE(servoOutputIsReversed(row));
     TEST_ASSERT_EQUAL_UINT16(1100, servoOutputLowUs(row));
     TEST_ASSERT_EQUAL_UINT16(1900, servoOutputHighUs(row));
 
@@ -98,7 +97,6 @@ void test_reverse_is_read_off_the_pair() {
     const uint16_t open = row.open_us;
     row.open_us = row.close_us;
     row.close_us = open;
-    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
     TEST_ASSERT_EQUAL_UINT16(1100, servoOutputLowUs(row));
     TEST_ASSERT_EQUAL_UINT16(1900, servoOutputHighUs(row));
 }
@@ -222,7 +220,6 @@ void test_the_drag_follows_a_reversed_pair_the_same_way_round() {
     // above.
     TEST_ASSERT_EQUAL_UINT16(1300, servoOutputCapture(&row, SERVO_END_CLOSE, 1300));
     TEST_ASSERT_EQUAL_UINT16(1300, row.centre_us);
-    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
 }
 
 // Capturing the centre is the builder placing that number deliberately. Moving
@@ -275,7 +272,6 @@ void test_reverse_swaps_the_pair_and_measures_nothing() {
 
     TEST_ASSERT_EQUAL_UINT16(1100, row.open_us);
     TEST_ASSERT_EQUAL_UINT16(1900, row.close_us);
-    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
     // The travel between the ends is the same span, so the centre does not move.
     TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
     TEST_ASSERT_FALSE(row.calibrated);
@@ -285,7 +281,6 @@ void test_reverse_swaps_the_pair_and_measures_nothing() {
     servoOutputApplyEdit(&row, reverse);
     TEST_ASSERT_EQUAL_UINT16(1900, row.open_us);
     TEST_ASSERT_EQUAL_UINT16(1100, row.close_us);
-    TEST_ASSERT_FALSE(servoOutputIsReversed(row));
 }
 
 // A reverse never carries a width, so it cannot put one on the row even when a
@@ -629,8 +624,8 @@ void test_every_field_round_trips_through_storage() {
     TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_RELEASE, back.boot);
     TEST_ASSERT_TRUE(back.calibrated);
 
-    // The reversed pair came back reversed, with no flag to disagree with it.
-    TEST_ASSERT_TRUE(servoOutputIsReversed(back));
+    // The pair came back in the direction it was saved, with no flag to
+    // disagree with it; only the low/high reading sorts it.
     TEST_ASSERT_EQUAL_UINT16(700, servoOutputLowUs(back));
     TEST_ASSERT_EQUAL_UINT16(2300, servoOutputHighUs(back));
 }
@@ -725,7 +720,6 @@ void test_a_fixed_pair_arrives_with_its_direction_and_a_midpoint_centre() {
     // Halfway between the builder's own two ends, not the middle of the band.
     TEST_ASSERT_EQUAL_UINT16(1550, row.centre_us);
     // Sorting the pair here would be the invert flag ADR 0041 refuses.
-    TEST_ASSERT_TRUE(servoOutputIsReversed(row));
 }
 
 void test_a_fixed_pair_carries_nothing_it_was_never_told() {
@@ -835,7 +829,6 @@ void test_an_upgrading_controller_finds_its_calibration_on_the_rows() {
     const uint8_t aux1 = servoOutputTableFindByAddress(loaded, SERVO_DRIVER_LEDC, LEDC_CH_AUX1);
     TEST_ASSERT_EQUAL_UINT16(1400, loaded.rows[aux1].open_us);
     TEST_ASSERT_EQUAL_UINT16(1900, loaded.rows[aux1].close_us);
-    TEST_ASSERT_TRUE(servoOutputIsReversed(loaded.rows[aux1]));
     TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG996R, loaded.rows[aux1].component);
 
     // Nothing was moved, so nothing is reported.

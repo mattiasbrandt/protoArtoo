@@ -358,15 +358,6 @@ inline uint16_t servoOutputHighUs(const ServoOutputRow& row) {
 }
 
 // -----------------------------------------------------------------------------
-// servoOutputIsReversed()
-// True when the linkage runs the other way. Derived from the pair every time it
-// is asked for, so it can never disagree with the numbers beside it.
-// -----------------------------------------------------------------------------
-inline bool servoOutputIsReversed(const ServoOutputRow& row) {
-    return row.open_us < row.close_us;
-}
-
-// -----------------------------------------------------------------------------
 // servoOutputEffectiveEasing()
 // The easing that actually runs. Overshoot aims past the target and settles
 // back, and it must never pass the recorded ends  --  so on an output nobody
