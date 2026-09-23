@@ -78,11 +78,11 @@ export const withParts = (assignments, outputs = freshOutputs()) => {
  *
  * Every Output also reports its Motion Profile and the three fields that save
  * it (#414): time to full throw, time to get up to speed and the ease, at the
- * firmware's defaults.
+ * firmware's defaults - and what it does at power-up, limp, with its field.
  *
  * `say` changes what the config says about an Output, by address: any of
  * `enabled`, `type`, `label`, `lightCapable` (which also names a
- * `ledCountField`), `ledCount`, `throwMs`, `accelMs`, `ease`, or `null` for an
+ * `ledCountField`), `ledCount`, `throwMs`, `accelMs`, `ease`, `boot`, or `null` for an
  * Output the config does not describe at all (an expander channel only the
  * servo table knows).
  */
@@ -105,9 +105,11 @@ export const configOutputs = (rows, say = {}) =>
             throwField: `full${index}`,
             accelField: `rise${index}`,
             easeField: `shape${index}`,
+            bootField: `wake${index}`,
             throwMs: 1000,
             accelMs: 250,
             ease: "none",
+            boot: "limp",
             ...(lightCapable ? { lightCapable: true, ledCountField: `leds${index}`, ledCount: 1 } : {}),
             ...rest,
           },
@@ -137,7 +139,8 @@ export const applyOutputSave = (components, form) => {
       entry.ledCount = Number(form[entry.ledCountField]);
       named = true;
     }
-    [["throwField", "throwMs", Number], ["accelField", "accelMs", Number], ["easeField", "ease", String]]
+    [["throwField", "throwMs", Number], ["accelField", "accelMs", Number], ["easeField", "ease", String],
+      ["bootField", "boot", String]]
       .forEach(([fieldKey, valueKey, read]) => {
         if (entry[fieldKey] && entry[fieldKey] in form) {
           entry[valueKey] = read(form[entry[fieldKey]]);

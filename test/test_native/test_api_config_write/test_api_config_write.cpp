@@ -389,10 +389,11 @@ void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
     seedServoOutputRows();
 
     const WebRequestTestParam params[] = {
-        {"arm2ThrowMs", "800"}, {"arm2AccelMs", "150"}, {"arm2Ease", "overshoot"}};
+        {"arm2ThrowMs", "800"}, {"arm2AccelMs", "150"}, {"arm2Ease", "overshoot"},
+        {"arm2Boot", "home-release"}};
     WebRequestTestBackend backend;
     backend.params = params;
-    backend.paramCount = 3;
+    backend.paramCount = 4;
     WebRequest req(&backend);
 
     handleConfigPost(req);
@@ -405,6 +406,7 @@ void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
     TEST_ASSERT_EQUAL_UINT16(800, row.throw_ms);
     TEST_ASSERT_EQUAL_UINT16(150, row.accel_ms);
     TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, row.easing);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_RELEASE, row.boot);
 
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
@@ -412,6 +414,8 @@ void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
     TEST_ASSERT_EQUAL_STRING("arm2ThrowMs", arm2Entry["throwField"] | "");
     TEST_ASSERT_EQUAL_STRING("arm2AccelMs", arm2Entry["accelField"] | "");
     TEST_ASSERT_EQUAL_STRING("arm2Ease", arm2Entry["easeField"] | "");
+    TEST_ASSERT_EQUAL_STRING("arm2Boot", arm2Entry["bootField"] | "");
+    TEST_ASSERT_EQUAL_STRING("home-release", arm2Entry["boot"] | "");
     TEST_ASSERT_EQUAL_UINT(800, arm2Entry["throwMs"].as<unsigned>());
     TEST_ASSERT_EQUAL_UINT(150, arm2Entry["accelMs"].as<unsigned>());
     // The builder's choice, not the ease that runs: this row is unmeasured, so
@@ -420,6 +424,8 @@ void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
     // A neighbour nobody touched still reports its own defaults.
     TEST_ASSERT_EQUAL_UINT(SERVO_THROW_MS_DEFAULT, doc["components"]["arm1"]["throwMs"].as<unsigned>());
     TEST_ASSERT_EQUAL_STRING("none", doc["components"]["arm1"]["ease"] | "");
+    // Limp is the default, and a neighbour nobody set stays limp.
+    TEST_ASSERT_EQUAL_STRING("limp", doc["components"]["arm1"]["boot"] | "");
 }
 
 // Out of range is refused with the field and its range, never clamped into it:
@@ -435,6 +441,7 @@ void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
         {"arm1ThrowMs", "20000"},   // over SERVO_THROW_MS_MAX
         {"arm1AccelMs", "0"},       // no time at all to get up to speed
         {"arm1Ease", "wobble"},     // not one of the three
+        {"arm1Boot", "home"},       // not one of the three boot modes
     };
     for (const auto& refused : kRefused) {
         // A good ease rides along with every bad value, so a refusal that let
@@ -457,6 +464,7 @@ void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
         TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, row.throw_ms);
         TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, row.accel_ms);
         TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, row.easing);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
     }
 }
 

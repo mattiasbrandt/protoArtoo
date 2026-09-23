@@ -230,6 +230,12 @@ struct ServoCommandedPosition {
     bool held;
     // Why there is no pulse, read only while `pulsing` is false.
     ServoLimpReason limp;
+    // A move is still in progress: a ramp, an overshoot's settle back to its
+    // target (which passes through `targetUs` on the way out, so equal widths
+    // are not "arrived"), or an out-and-back with its dwells. The boot pass
+    // waits for this to fall before it takes a "go home and release" Output's
+    // drive off, so a release never cuts a move short (#414).
+    bool moving;
 };
 
 // -----------------------------------------------------------------------------

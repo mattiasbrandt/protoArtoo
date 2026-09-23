@@ -2,7 +2,9 @@
 // include/sequence_bulk_centre.h
 //
 // Put every Servo Output back to centre, one press, paced by the droid
-// (#318, #365; CONTEXT.md "Cadence Floor").
+// (#318, #365; CONTEXT.md "Cadence Floor") -- and, on the same cursor, the boot
+// pass that sends each Output home at power-up as its boot behaviour says
+// (ADR 0052, #414).
 //
 // One operator standing at the bench chooses this, which is what makes it
 // legitimate: it is never emitted automatically, and that is the line ADR 0043
@@ -11,6 +13,14 @@
 // in what order, how far apart -- is the Sequence Coordinator's and lives here,
 // never in the browser, because a safe pace a page holds is one a hand-edited
 // or imported client could walk around (CONTEXT.md "Sequence Coordinator").
+//
+// The boot pass is the other thing this cursor runs, and it is the same act
+// asked a different way: nobody pressed, so each row's own boot behaviour
+// decides whether it goes home at all (sequenceBulkCentreRowStep()). It is
+// generated motion like the press, so it takes the same Floor, the same one-row
+// -per-tick cursor and the same halt rule, rather than a second pacing machine
+// beside this one (ADR 0052: "the boot pass is generated, so the Cadence Floor
+// paces it").
 //
 // The run is a cursor over this droid's own Servo Output rows, read one at a
 // time from the live table at the moment each row's turn comes. Nothing is
@@ -109,20 +119,89 @@ inline bool sequenceBulkCentreHasTravel(const ServoOutputRow& row) {
 //
 // `nextRow` is the index of the row whose turn it is, `dueMs` the earliest it
 // may start, and the two counters are what the Coordinator reports when the
-// sweep ends. `src` is who pressed, kept so the log line can say.
+// sweep ends. `src` is who pressed, kept so the log line can say. `kind` is
+// which of the two acts this is.
+//
+// `releaseArm` is a release the run still owes: an Output whose boot behaviour
+// is "go home and release" was sent home, and its drive comes off once the
+// move has SETTLED (sequenceBulkCentreReleaseCheck()). `dueMs` -- the Output's
+// own full-throw time, floored -- is the earliest it is looked at, and the next
+// row waits behind it, so one Output is let go before the next one starts.
+// Nothing blocks on it: the run looks again each tick, like a row.
 //
 // The counters survive the run ending, whatever ended it, so an estop that cut
 // a sweep short can still be reported as "four of nine" rather than as nothing.
 // Starting a run is what zeroes them.
 // -----------------------------------------------------------------------------
+enum SeqBulkCentreKind : uint8_t {
+    SEQ_BULK_CENTRE_PRESS = 0,  // an operator asked: every row with travel goes to centre
+    SEQ_BULK_CENTRE_BOOT,       // power-up: each row does what its boot behaviour says
+};
+
+// No release owed. Not an armId: servoCmdQueue's broadcast is 255, and a run
+// never owes one to two Outputs at once.
+constexpr uint8_t SEQ_BULK_CENTRE_NO_RELEASE = 0xFE;
+
 struct SeqBulkCentreRun {
     bool     active;
     uint8_t  nextRow;
     uint32_t dueMs;
-    uint8_t  centred;  // Outputs this run has started moving
-    uint8_t  skipped;  // rows it passed over, with nothing to centre
-    uint8_t  src;      // CommandSource of the operator who asked
+    uint8_t  centred;     // Outputs this run has started moving
+    uint8_t  skipped;     // rows it passed over, with nothing to centre
+    uint8_t  src;         // CommandSource of the operator who asked
+    uint8_t  kind;        // SeqBulkCentreKind
+    uint8_t  releaseArm;  // armId owed a release at dueMs, or SEQ_BULK_CENTRE_NO_RELEASE
 };
+
+// -----------------------------------------------------------------------------
+// sequenceBulkCentreRowStep()
+// What the run does with one row: whether it sends it to centre, and whether it
+// then owes it a release.
+//
+// A row with no travel (a light) is passed over by either act. A press centres
+// every other row. The boot pass asks the row:
+//
+//   limp          -- passed over, and costs the pass no time. Nothing is
+//                    commanded, so the Part stays wherever it was left. Limp is
+//                    every row's default (servoOutputRowDefaults()) and no
+//                    capture changes it, so calibrating an Output is never the
+//                    act that makes it move at power-up.
+//   home-hold     -- to its recorded centre, and held there.
+//   home-release  -- to its recorded centre, then its drive comes off.
+//
+// Where a home row goes, and whether this image can drive it at all, is
+// sequenceBodyCentrePlan()'s answer, the same as for a press: one plan, so an
+// Output the press refuses is refused here for the same reason.
+// -----------------------------------------------------------------------------
+struct SeqBulkCentreRowStep {
+    bool centre;        // send this row to its recorded centre
+    bool releaseAfter;  // and take its drive off once the move has had its time
+};
+
+inline SeqBulkCentreRowStep sequenceBulkCentreRowStep(const SeqBulkCentreRun& run,
+                                                      const ServoOutputRow& row) {
+    SeqBulkCentreRowStep step = {false, false};
+    if (!sequenceBulkCentreHasTravel(row)) {
+        return step;
+    }
+    if (run.kind != SEQ_BULK_CENTRE_BOOT) {
+        step.centre = true;
+        return step;
+    }
+    switch (row.boot) {
+        case SERVO_BOOT_HOME_HOLD:
+            step.centre = true;
+            break;
+        case SERVO_BOOT_HOME_RELEASE:
+            step.centre = true;
+            step.releaseAfter = true;
+            break;
+        case SERVO_BOOT_LIMP:
+        default:
+            break;
+    }
+    return step;
+}
 
 // -----------------------------------------------------------------------------
 // sequenceBulkCentreStart()
@@ -134,6 +213,10 @@ struct SeqBulkCentreRun {
 // to do, and two overlapping sweeps is the many-at-once shape the Floor exists
 // to prevent.
 // -----------------------------------------------------------------------------
+//
+// A press also supersedes a boot pass still going: the operator's word is the
+// later one, and a release the pass owed is dropped with it -- the press is
+// about to send that Output to centre and hold it there anyway.
 inline void sequenceBulkCentreStart(SeqBulkCentreRun* run, uint32_t nowMs, uint8_t src) {
     if (run == nullptr) {
         return;
@@ -144,6 +227,39 @@ inline void sequenceBulkCentreStart(SeqBulkCentreRun* run, uint32_t nowMs, uint8
     run->centred = 0;
     run->skipped = 0;
     run->src = src;
+    run->kind = SEQ_BULK_CENTRE_PRESS;
+    run->releaseArm = SEQ_BULK_CENTRE_NO_RELEASE;
+}
+
+// -----------------------------------------------------------------------------
+// sequenceBootPassStart()
+// Power-up: start the boot pass, or refuse it.
+//
+// A droid that comes up with the estop latched -- a TWDT reset latches it on
+// the way up (failsafe_boot_twdt.h) -- runs NO boot pass. Not a paused one and
+// not one deferred to the estop clearing: the estop has let go of every Output
+// (ADR 0043), and a pass that started when the halt cleared would drive Parts
+// the moment somebody reached in to find out why the droid reset. The same
+// holds for Sleep Mode, which releases every Output on the same rule. It is the
+// rule a pressed back-to-centre already keeps under either halt: refused, not
+// queued.
+//
+// The source is SRC_INTERNAL, the one CommandSource that names the firmware
+// acting on its own at boot. Returns whether the pass started.
+// -----------------------------------------------------------------------------
+inline bool sequenceBootPassStart(SeqBulkCentreRun* run, uint32_t nowMs, bool estopLatched,
+                                  bool sleepMode) {
+    if (run == nullptr) {
+        return false;
+    }
+    if (estopLatched || sleepMode) {
+        run->active = false;
+        run->releaseArm = SEQ_BULK_CENTRE_NO_RELEASE;
+        return false;
+    }
+    sequenceBulkCentreStart(run, nowMs, SRC_INTERNAL);
+    run->kind = SEQ_BULK_CENTRE_BOOT;
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -152,10 +268,28 @@ inline void sequenceBulkCentreStart(SeqBulkCentreRun* run, uint32_t nowMs, uint8
 // taking over, or the last row. Nothing is commanded on the way out -- an
 // estop releases every Output on its own edge (ADR 0043), and driving anything
 // to a position as a run ends would be exactly the park ADR 0043 replaced.
+//
+// A release the boot pass still owed is dropped too, for the same reason:
+// nothing is sent as a run ends. Under a halt the Output has already been let
+// go; after a stop or a sequence taking over it stays where the pass put it,
+// held, until whatever took over moves it.
 // -----------------------------------------------------------------------------
 inline void sequenceBulkCentreEnd(SeqBulkCentreRun* run) {
     if (run != nullptr) {
         run->active = false;
+        run->releaseArm = SEQ_BULK_CENTRE_NO_RELEASE;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// sequenceBulkCentreOweRelease()
+// The row just started was a "go home and release": owe it a release at the
+// moment the next row falls due. Call it before sequenceBulkCentreAdvance(), so
+// a last row that owes one keeps the run alive until the release has gone.
+// -----------------------------------------------------------------------------
+inline void sequenceBulkCentreOweRelease(SeqBulkCentreRun* run, uint8_t armId) {
+    if (run != nullptr && run->active) {
+        run->releaseArm = armId;
     }
 }
 
@@ -169,6 +303,59 @@ inline bool sequenceBulkCentreRowDue(const SeqBulkCentreRun& run, uint32_t nowMs
 }
 
 // -----------------------------------------------------------------------------
+// sequenceBulkCentreReleaseCheck()
+// Whether the release the run owes may go now, given where ServoTask says that
+// Output is.
+//
+// The run's `dueMs` -- the Output's full-throw time, floored -- is the EARLIEST
+// moment, never the trigger. A move can outlast one full throw: an overshoot
+// goes out to its aim and then settles back (servoMotionSettleBack(),
+// include/servo_motion_ramp.h), and a release at the throw time would cut the
+// drive part way through the settle, leaving the Part wherever it had got to.
+// So the release waits, a tick at a time, until ServoTask no longer reports a
+// move in progress. Equal widths are not the test: an overshoot passes through
+// its target on the way out.
+//
+// An Output with no pulse on it has nothing to release -- ServoTask refused the
+// move (an Output switched off, or one that carries a light), or something else
+// already let it go -- so the release is dropped rather than sent: a release
+// command would re-label why it is limp.
+// -----------------------------------------------------------------------------
+enum SeqBulkCentreRelease : uint8_t {
+    SEQ_RELEASE_WAIT = 0,  // not yet: too early, or the Output is still moving
+    SEQ_RELEASE_SEND,      // settled and driven: take its drive off
+    SEQ_RELEASE_DROP,      // nothing driven there any more: owe nothing
+};
+
+inline SeqBulkCentreRelease sequenceBulkCentreReleaseCheck(const SeqBulkCentreRun& run,
+                                                           uint32_t nowMs,
+                                                           const ServoCommandedPosition& at) {
+    if (run.releaseArm == SEQ_BULK_CENTRE_NO_RELEASE || !sequenceBulkCentreRowDue(run, nowMs)) {
+        return SEQ_RELEASE_WAIT;
+    }
+    if (!at.pulsing) {
+        return SEQ_RELEASE_DROP;
+    }
+    return at.moving ? SEQ_RELEASE_WAIT : SEQ_RELEASE_SEND;
+}
+
+// -----------------------------------------------------------------------------
+// sequenceBulkCentreReleaseSent()
+// The release the run owed has gone to ServoTask, or was dropped because there
+// was nothing left to release. The run ends here when the cursor had already
+// passed the last row -- the release was all it was still alive for.
+// -----------------------------------------------------------------------------
+inline void sequenceBulkCentreReleaseSent(SeqBulkCentreRun* run, uint8_t rowCount) {
+    if (run == nullptr || !run->active) {
+        return;
+    }
+    run->releaseArm = SEQ_BULK_CENTRE_NO_RELEASE;
+    if (run->nextRow >= rowCount) {
+        run->active = false;
+    }
+}
+
+// -----------------------------------------------------------------------------
 // sequenceBulkCentreAdvance()
 // The row whose turn it was has been dealt with; move the cursor on.
 //
@@ -178,7 +365,8 @@ inline bool sequenceBulkCentreRowDue(const SeqBulkCentreRun& run, uint32_t nowMs
 //
 // `rowCount` is re-read from the live table on every step rather than captured
 // at the start, so a table that shrank under the run ends it here instead of
-// walking past the end of it.
+// walking past the end of it. A run that still owes a release stays alive past
+// its last row until sequenceBulkCentreReleaseSent() says it has gone.
 // -----------------------------------------------------------------------------
 inline void sequenceBulkCentreAdvance(SeqBulkCentreRun* run, uint8_t rowCount, uint32_t nowMs,
                                       bool started, uint16_t throwMs) {
@@ -192,7 +380,7 @@ inline void sequenceBulkCentreAdvance(SeqBulkCentreRun* run, uint8_t rowCount, u
         run->skipped++;
     }
     run->nextRow++;
-    if (run->nextRow >= rowCount) {
+    if (run->nextRow >= rowCount && run->releaseArm == SEQ_BULK_CENTRE_NO_RELEASE) {
         run->active = false;
     }
 }

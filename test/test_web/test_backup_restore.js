@@ -43,7 +43,7 @@ const BACKUP = {
   generated: "2026-09-01T00:00:00Z",
   config: {
     components: {
-      [DOOR]: { enabled: true, type: "mg90s", ledCount: 9, throwMs: 700, accelMs: 120, ease: "overshoot" },
+      [DOOR]: { enabled: true, type: "mg90s", ledCount: 9, throwMs: 700, accelMs: 120, ease: "overshoot", boot: "home-release" },
       [STRIP]: { enabled: true, type: "rgb", ledCount: 24 },
       aux3: { enabled: true, type: "mg996r" },
     },
@@ -100,4 +100,6 @@ test("a restore saves each Output under the fields the running firmware names fo
   assert.equal(form.get(field(DOOR, "throwField")), "700", "time to full throw goes back under the firmware's field");
   assert.equal(form.get(field(DOOR, "accelField")), "120", "time to get up to speed under its");
   assert.equal(form.get(field(DOOR, "easeField")), "overshoot", "and the ease under its");
+  assert.equal(form.get(field(DOOR, "bootField")), "home-release",
+    "and what it does at power-up, or a restored droid comes up limp everywhere");
 });

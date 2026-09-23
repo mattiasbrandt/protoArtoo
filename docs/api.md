@@ -1441,7 +1441,10 @@ Returns current config snapshot.
   and `easeField` naming the `POST /api/config` fields that save each. `ease`
   is the builder's choice as stored: an Output that is not `calibrated` (see
   `GET /api/servo/outputs`) moves by none of the three - it jumps, and an
-  `overshoot` there runs as `none` - until somebody records its ends. A page
+  `overshoot` there runs as `none` - until somebody records its ends. Every
+  Output also carries `boot`, what it does at power-up (`limp`, `home-hold`
+  or `home-release`, ADR 0052), with `bootField` naming the field that saves
+  it; `limp` is the default and calibrating never changes it. A page
   iterates these entries and keeps no list of Outputs of its own.
 - `dome`: pulse calibration, speed limit, random movement config, wifi peer IP
 - top-level servo calibration fields (`arm*OpenUs`, `aux*CloseUs`, etc.)
@@ -1475,7 +1478,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"label":"ARM1","address":"ledc:0","enabledField":"enableArm1","typeField":"arm1Type","throwField":"arm1ThrowMs","accelField":"arm1AccelMs","easeField":"arm1Ease","type":"mg996r","throwMs":1000,"accelMs":250,"ease":"soft"},"aux1":{"enabled":false,"label":"ARM3","address":"ledc:3","lightCapable":true,"enabledField":"enableAux1","typeField":"aux1Type","ledCountField":"aux1LedCount","type":"none","ledCount":16},"domeEsc":{"enabled":true,"label":"DOME"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"label":"ARM1","address":"ledc:0","enabledField":"enableArm1","typeField":"arm1Type","throwField":"arm1ThrowMs","accelField":"arm1AccelMs","easeField":"arm1Ease","bootField":"arm1Boot","type":"mg996r","throwMs":1000,"accelMs":250,"ease":"soft","boot":"limp"},"aux1":{"enabled":false,"label":"ARM3","address":"ledc:3","lightCapable":true,"enabledField":"enableAux1","typeField":"aux1Type","ledCountField":"aux1LedCount","type":"none","ledCount":16},"domeEsc":{"enabled":true,"label":"DOME"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000}
 ```
 
 ### POST /api/config
@@ -1570,6 +1573,15 @@ Updates supported config fields and persists to NVS.
   `... must be none, soft or overshoot` for an ease), with nothing in the
   request applied. Takes effect on the next move; no command carries a time or
   a shape (ADR 0049)
+- what an Output does at power-up (ADR 0052, #414), under the name its
+  `components` entry gives (`arm1Boot`, and the same for every Output):
+  `limp` (no pulse; the Part stays where it was left - the default),
+  `home-hold` (to its recorded centre, and held) or `home-release` (to its
+  recorded centre, then the drive comes off once the move has settled).
+  Anything else is refused: `400` `{"ok":false,"error":"arm1Boot must be limp,
+  home-hold or home-release"}`. Takes effect at the next power-up, where the
+  home Outputs go one at a time, paced by the Cadence Floor; a droid that powers
+  up with the estop latched (a watchdog reset) moves none of them
 - Part moves (ADR 0050): `movePart`, `movePartFrom`, `movePartTo` — sent
   together or not at all. `movePart` is a Part id this build models;
   `movePartFrom` is the Output the Part is on **now** and `movePartTo` the one

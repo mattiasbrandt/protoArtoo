@@ -59,7 +59,17 @@ uint8_t getChannelGpio(uint8_t channel) {
 // channels do not fail init).
 // Stores the mask in s_configuredMask for use by write functions.
 // Returns true if timer config succeeds, even if enabledMask is 0 (no channels).
-// Configured channels start at neutral (1500us).
+//
+// A configured SERVO channel starts with no pulse at all (duty 0): the servo is
+// limp wherever it was left, and nothing moves at power-up until ServoTask
+// drives it. What an Output does at power-up is its boot behaviour's to say
+// (ADR 0052), and every Output is limp by default. A neutral pulse here used to
+// move every servo on the droid to 1500 us at once on every power-up, which is
+// both the move limp exists to prevent and the many-at-once shape the Cadence
+// Floor exists to hold apart. The DOME channel is the exception and starts at
+// neutral, because it drives an ESC, not a servo: a floating signal line reads
+// as Receiver Lost to an ESC70 (include/ledc_pwm.h, ledcPwmRelease()), and
+// domeTaskInit() then arms it at its configured neutral.
 // -----------------------------------------------------------------------------
 bool ledcPwmInit(uint8_t enabledMask) {
     s_configuredMask = enabledMask;
@@ -94,7 +104,7 @@ bool ledcPwmInit(uint8_t enabledMask) {
         channelConfig.channel = (ledc_channel_t)i;
         channelConfig.intr_type = LEDC_INTR_DISABLE;
         channelConfig.timer_sel = PA_LEDC_TIMER;
-        channelConfig.duty = pulseUsToDuty(SERVO_PULSE_NEUTRAL_US);
+        channelConfig.duty = (i == LEDC_CH_DOME) ? pulseUsToDuty(SERVO_PULSE_NEUTRAL_US) : 0;
         channelConfig.hpoint = 0;
 
         err = ledc_channel_config(&channelConfig);
@@ -206,18 +216,4 @@ bool ledcPwmRelease(uint8_t channel) {
     }
 
     return true;
-}
-
-// -----------------------------------------------------------------------------
-// ledcPwmInitNeutralPositions()
-// Set only configured channels to neutral.
-// Skips channels outside the enabled mask.
-// -----------------------------------------------------------------------------
-void ledcPwmInitNeutralPositions() {
-    for (int i = 0; i < LEDC_CH_MAX; i++) {
-        if (s_configuredMask & (1 << i)) {
-            ledcPwmSetNeutral(i);
-        }
-    }
-    ESP_LOGI(TAG, "Configured channels set to neutral");
 }

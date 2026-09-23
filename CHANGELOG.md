@@ -32,6 +32,13 @@ the patch releases, whose notes live on their own GitHub Release.
   little past and settles back, never beyond the ends you recorded. A servo
   you have not calibrated still jumps, and its row says so. A backup now
   carries all three.
+- **Choose what each servo does at power-up.** Every servo row on Servos now
+  says what happens when the droid is switched on: stay limp where it was left
+  (the default), go home to its centre and hold it there, or go home and then
+  let go. Servos going home move one at a time, never all at once, and none
+  move at all if the droid comes up with the emergency stop latched. Servos no
+  longer all jump to their middle position at power-up. A backup carries the
+  choice.
 - **As many lit parts as you have wires for.** Your droid used to get one LED
   strip: one wire carried it, one length described it, and giving a second wire
   a strip quietly took it off the first. Now every wire answers for itself. Put

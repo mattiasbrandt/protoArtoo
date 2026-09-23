@@ -211,8 +211,11 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 // cleared and `limp` says why.
 //
 // Called at every place one of them changes: a write, a ramp planned, a move
-// abandoned, a hold taken, a release, and init. It is a copy into robotState
-// under robotStateMux, like every robotState write, and allocates nothing.
+// abandoned, a hold taken, a release, and init -- so `moving` is published at
+// every place it changes too, the settle back of an overshoot included, since
+// a new ramp is planned by stepMove() without the move ever ending. It is a
+// copy into robotState under robotStateMux, like every robotState write, and
+// allocates nothing.
 // -----------------------------------------------------------------------------
 static void publishCommanded(uint8_t armId) {
     const ServoCommandedPosition commanded = {
@@ -222,6 +225,7 @@ static void publishCommanded(uint8_t armId) {
         s_arm[armId].nudgesDone,
         s_arm[armId].hold.held,
         s_arm[armId].limp,
+        s_arm[armId].moving,
     };
     taskENTER_CRITICAL(&robotStateMux);
     robotState.servoCommanded[armId] = commanded;
@@ -580,7 +584,11 @@ static void updateMotion() {
             continue;
         }
         if (stepMove(armId, channel, now)) {
+            // The frame stepMove() wrote was published with the move still in
+            // progress; this is where it ends, and a reader waiting on
+            // `moving` to fall has to hear it.
             endMove(armId);
+            publishCommanded(armId);
         }
     }
 }
@@ -911,20 +919,22 @@ void servoTaskInit() {
                                                    s_aux2_enabled, s_aux3_enabled, s_dome_enabled,
                                                    s_lit_arm_mask);
 
+        // Every servo output comes up with no pulse on it (ledcPwmInit()): limp
+        // where it was left, which is what an Output's boot behaviour defaults
+        // to (ADR 0052). One whose boot behaviour sends it home is driven there
+        // by the boot pass the Sequence Coordinator runs, paced by the Cadence
+        // Floor (include/sequence_bulk_centre.h) - never by a pulse put on every
+        // output at once here. So no output is `known` yet, the first move to
+        // each is a jump from wherever it stands, and a surface reads it as
+        // limp since boot (SERVO_LIMP_OFF).
         if (!ledcPwmInit(ledcMask)) {
             PA_LOG_ERROR(TAG, "LEDC init failed");
             return;
         }
-
-        // Call neutral init; it now respects the configured mask.
-        ledcPwmInitNeutralPositions();
-
-        // Every enabled output was just driven to neutral, so that is where its
-        // first move starts from rather than from a position nobody knows.
         for (uint8_t armId = 0; armId < kArmCount; ++armId) {
             if (isArmEnabled(armId)) {
-                s_arm[armId].commandedUs = SERVO_PULSE_NEUTRAL_US;
-                s_arm[armId].known = true;
+                s_arm[armId].known = false;
+                s_arm[armId].limp = SERVO_LIMP_OFF;
                 publishCommanded(armId);
             }
         }
@@ -944,7 +954,7 @@ void servoTaskInit() {
     }
 
     if (anyServo) {
-        PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 channels armed at neutral)");
+        PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 limp until driven)");
     } else {
         PA_LOG_INFO(TAG, "arm/aux outputs disabled");
     }

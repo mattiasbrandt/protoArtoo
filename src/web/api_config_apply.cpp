@@ -895,8 +895,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     }
 
     // Each Output's Motion Profile (ADR 0052, #414): time to full throw, time
-    // to get up to speed and the ease, under the names configMotionFieldName()
-    // gives them. A value outside what the stored row takes is REFUSED with the
+    // to get up to speed and the ease, and what it does at power-up, under the
+    // names configMotionFieldName() gives them. A value outside what the stored row takes is REFUSED with the
     // field and the range, never clamped: the bounds are the NVS parser's own
     // (servoOutputRowNormalise(), SERVO_THROW_MS_MIN and the rest), so a number
     // this door takes is exactly one the row keeps, and a number it refuses is
@@ -906,9 +906,11 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         char throwField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
         char accelField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
         char easeField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
+        char bootField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
         if (!configMotionFieldName(throwField, sizeof(throwField), output.id, CONFIG_MOTION_THROW) ||
             !configMotionFieldName(accelField, sizeof(accelField), output.id, CONFIG_MOTION_ACCEL) ||
-            !configMotionFieldName(easeField, sizeof(easeField), output.id, CONFIG_MOTION_EASE)) {
+            !configMotionFieldName(easeField, sizeof(easeField), output.id, CONFIG_MOTION_EASE) ||
+            !configMotionFieldName(bootField, sizeof(bootField), output.id, CONFIG_MOTION_BOOT)) {
             // The buffers are sized from the longest stored id, so this is a
             // build whose table outgrew CONFIG_MOTION_FIELD_NAME_MAX: refuse,
             // rather than read a truncated name as some other field.
@@ -918,7 +920,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         const bool hasThrow = configParamHas(params, throwField);
         const bool hasAccel = configParamHas(params, accelField);
         const bool hasEase = configParamHas(params, easeField);
-        if (!hasThrow && !hasAccel && !hasEase) {
+        const bool hasBoot = configParamHas(params, bootField);
+        if (!hasThrow && !hasAccel && !hasEase && !hasBoot) {
             continue;
         }
 
@@ -947,6 +950,16 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             setError(result, err);
             return;
         }
+        // Limp is what a row nobody configured does; a value that is not one of
+        // the three is refused rather than read as limp, so a typo can never
+        // quietly take a Part off its power-up home or put one on it.
+        ServoBootBehaviour boot = SERVO_BOOT_LIMP;
+        if (hasBoot && !servoParseBootBehaviour(configParamGet(params, bootField), &boot)) {
+            char err[192];
+            snprintf(err, sizeof(err), "%s must be limp, home-hold or home-release", bootField);
+            setError(result, err);
+            return;
+        }
 
         ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
         if (edit == nullptr) {
@@ -968,6 +981,12 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             edit->fields |= SERVO_FIELD_EASING;
             appendApplied(&result->applied, "[CFG] %s updated to %s", easeField,
                           servoEasingToString(easing));
+        }
+        if (hasBoot) {
+            edit->boot = boot;
+            edit->fields |= SERVO_FIELD_BOOT;
+            appendApplied(&result->applied, "[CFG] %s updated to %s", bootField,
+                          servoBootBehaviourToString(boot));
         }
         result->changed = true;
     }

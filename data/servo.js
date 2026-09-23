@@ -44,7 +44,9 @@
 // How a servo moves is set on its row, beside the dial (ADR 0052, #414): time
 // to full throw, time to get up to speed and the ease. Until the Output is
 // calibrated it moves by none of the three - it jumps - so its row offers
-// nothing to set, and says why.
+// nothing to set, and says why. What it does at power-up sits beside them and
+// is offered whether or not it is calibrated: the two are separate decisions
+// (ADR 0052), and calibrating never changes it.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -166,7 +168,16 @@
       OUTPUTS.EASES.map((ease) =>
         `<button type="button" role="radio" aria-checked="false" data-ease="${esc(ease.id)}">${esc(ease.label)}</button>`
       ).join("") +
-      `</div></div></td>` +
+      `</div></div>` +
+      // At power-up (#414): limp, the default, or home. Hold keeps the drive
+      // on, and its one-sentence risk shows only while hold is picked.
+      `<div class="outputs-boot"><span class="outputs-drive-note">at power-up</span>` +
+      `<div class="seg outputs-boot-seg" role="radiogroup" aria-label="${esc(`What ${label} does at power-up`)}">` +
+      OUTPUTS.BOOTS.map((boot) =>
+        `<button type="button" role="radio" aria-checked="false" data-boot="${esc(boot.id)}">${esc(boot.label)}</button>`
+      ).join("") +
+      `</div><div class="hint outputs-boot-risk">Hold keeps the drive on, so a blocked part grinds.</div>` +
+      `</div></td>` +
       `<td class="outputs-acts">` +
       `<button class="btn btn-sm outputs-calibrate" type="button" ` +
       `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
@@ -209,6 +220,9 @@
         throwMs: node.querySelector(".outputs-throw"),
         accelMs: node.querySelector(".outputs-accel"),
         eases: Array.from(node.querySelectorAll("[data-ease]")),
+        boot: node.querySelector(".outputs-boot"),
+        boots: Array.from(node.querySelectorAll("[data-boot]")),
+        bootRisk: node.querySelector(".outputs-boot-risk"),
         calibrate: node.querySelector(".outputs-calibrate"),
         off: node.querySelector(".outputs-off"),
       });
@@ -311,8 +325,21 @@
   // nothing; its stored profile waits on the row until it is calibrated.
   // ---------------------------------------------------------------------------
   const motionOpen = (output) => isDriveable(output) && output.motionSettable && output.calibrated;
+  // Power-up is not fenced by calibration: a Part sent home goes to the centre
+  // the row holds, measured or not, exactly as back to centre does.
+  const bootOpen = (output) => isDriveable(output) && output.bootSettable;
 
   const paintMotion = (row, output, driveable) => {
+    const bootShown = driveable && output.bootSettable;
+    row.boot.hidden = !bootShown;
+    if (bootShown) {
+      row.boots.forEach((button) => {
+        const on = button.dataset.boot === output.boot;
+        button.classList.toggle("active", on);
+        button.setAttribute("aria-checked", on ? "true" : "false");
+      });
+      row.bootRisk.hidden = output.boot !== "home-hold";
+    }
     const shown = driveable && output.motionSettable;
     const open = shown && output.calibrated;
     row.motionOff.hidden = !shown || open;
@@ -333,10 +360,11 @@
   // row takes and says which; the row then repaints to what it holds.
   const saveMotion = async (address, patch) => {
     const output = outputs?.find((each) => each.address === address);
-    if (!output || !motionOpen(output)) return;
+    const power = "boot" in patch;
+    if (!output || !(power ? bootOpen(output) : motionOpen(output))) return;
     try {
       await OUTPUTS.save(address, patch);
-      showFeedback(`${output.name} saved. The next move uses it.`, "success");
+      showFeedback(`${output.name} saved. ${power ? "The next power-up uses it." : "The next move uses it."}`, "success");
     } catch (error) {
       // data/outputs.js has already put a refusal in the page's words.
       showFeedback(`Not saved: ${window.PAApi.messageFor(error)}.`, "error");
@@ -626,7 +654,16 @@
     }
     const candidates = spareOutputs();
     if (!candidates.length) {
-      showFeedback("Nothing to nudge. Every output with a pulse already drives a part.", "warning");
+      // A spare Output powers up limp unless its row says otherwise (ADR 0052),
+      // so "no spare Output" and "no spare Output with a pulse" need different
+      // words: only the second is fixed by driving one.
+      const limpSpare = outputs.some((output) => output.parts.length === 0 && output.commandedUs === null && hasServoWord(output));
+      showFeedback(
+        limpSpare
+          ? "Nothing to nudge. The spare outputs are limp, so none can twitch. Drive one first."
+          : "Nothing to nudge. Every output with a pulse already drives a part.",
+        "warning"
+      );
       return;
     }
     if (candidates.some((output) => output.nudgesDone === null)) {
@@ -1183,6 +1220,11 @@
     if (button.dataset.ease) {
       const output = outputs?.find((each) => each.address === address);
       if (output && button.dataset.ease !== output.ease) started(saveMotion(address, { ease: button.dataset.ease }));
+      return;
+    }
+    if (button.dataset.boot) {
+      const output = outputs?.find((each) => each.address === address);
+      if (output && button.dataset.boot !== output.boot) started(saveMotion(address, { boot: button.dataset.boot }));
       return;
     }
     if (button.classList.contains("outputs-calibrate")) openDial(address);
