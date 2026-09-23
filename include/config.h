@@ -850,8 +850,13 @@ constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
 // heap/log-mutex tail (#250), and the bulk centre's own branch is nowhere near
 // it. The rule lands on the step the stack already is; the floor holds by
 // 1216 B.
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4416;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4416 -> 5520 -> 5632
+// Re-derived 2026-09-23 (#414): 4416 -> 4432. The boot pass runs on the same
+// cursor as back to centre, and the owed release it checks - a copy of the
+// Output's ServoCommandedPosition - lands on the same inlined root frame,
+// 608 -> 624 B. The 3808 B below the root is unchanged. The rule lands on the
+// step the stack already is; the floor holds by 1200 B.
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4432;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4432 -> 5540 -> 5632
 // Re-derived 2026-09-12 (#354): 7360 -> 7376, the deepest branch now running
 // consoleExecuteCommand -> dispatchRcTriggerActionTest -> ... ->
 // handleSequenceCommand -> sequenceStart() -> domeQueueTx -> logQueueDrop:
