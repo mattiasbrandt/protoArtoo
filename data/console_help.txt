@@ -117,11 +117,10 @@ servo.action.toggle-aux2|{output} Toggle|Open or close the part on {output}.|ser
 servo.action.toggle-aux3|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
 servo.status.current|Servo Status|Where each servo was last told to be.|buildStatusJson|
 servo.api.get-outputs|Get Servo Outputs|Every servo output, the parts on it, and where it was told to be. Nothing reads a servo back.|configCacheReadServoOutput|
-aux.action.led-color|LED Color|Set the LED strip color.|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
-aux.action.led-effect|LED Effect|Set the LED strip effect.|auxLedQueue|effect:string:1
-aux.status.led-state|LED Strip State|Which output carries the LED strip, and its color and effect.|buildStatusJson|
-aux.config.led-pin|LED Strip Output|Which output carries the LED strip: 0 for none, or 1 to 3 for the outputs that can, in the order Wiring lists them.|configApply|aux_led_pin:uint8:1
-aux.config.led-count|LED Count|How many LEDs are on the strip.|configApply|aux_led_count:uint8:1
+aux.action.led-color|LED Color|Set the color on every lit output.|auxLedQueue|r:uint8:1|g:uint8:1|b:uint8:1
+aux.action.led-effect|LED Effect|Set the effect on every lit output.|auxLedQueue|effect:string:1
+aux.status.led-state|LED Strip State|Every lit output, with the color and effect it was last set to.|buildStatusJson|
+aux.config.led-count|LED Count|How many LEDs are on one output's strip. Name the output; add a value to set it.|configApply|target:string:1|value:uint8:0
 system.action.set-mode|Set Mode|Switch between Stationary and Driving. Stationary locks the feet.|commandedSetStationary|
 system.action.estop|Emergency Stop|Stop the feet now and latch the estop.|failsafeTrigger|
 system.action.estop-clear|Clear E-Stop|Release the latched estop. The feet can move again.|failsafeClearEstop|

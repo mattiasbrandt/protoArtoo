@@ -33,7 +33,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "config.h"    // PA_BOARD, AUX_LED_PIN_*
+#include "config.h"    // PA_BOARD
 #include "ledc_pwm.h"  // LEDC_CH_*
 
 namespace board_outputs_detail {
@@ -86,22 +86,65 @@ struct BoardOutput {
     const char* id;            // stored config key, the components{} key; never shown
     const char* component;     // its key in include/component_labels.inc
     uint8_t channel;           // the LEDC channel this image drives it on
-    uint8_t ledStripPin;       // the aux_led_pin selection that routes the LED strip
-                               // to it (AUX_LED_PIN_*), AUX_LED_PIN_DISABLED where
-                               // the strip cannot go
+    // Whether a Light Type may go on this wire at all (ADR 0067). It is a board
+    // fact, not a builder's answer: these are the lines each board's pin plan
+    // reserves for a WS2812B's timing (include/config.h PIN_ARM3..5_SERVO), and
+    // which of them actually carries a light is the Output's own `component`,
+    // one per wire. It replaced a single aux_led_pin slot number, which was a
+    // second store of the same fact and could only ever name one (#413).
+    bool lightCapable;
     const char* enabledField;  // the POST /api/config field that saves it as wired
     const char* typeField;     // the POST /api/config field that saves what it carries
+    // The POST /api/config field that saves the Light Type's settings - how
+    // many LEDs the wire carries. nullptr where a light cannot go, so an Output
+    // that could never be lit reports no field for it and no surface draws one.
+    const char* ledCountField;
 };
 
 inline constexpr BoardOutput BOARD_OUTPUTS[] = {
-    {"arm1", "enable_arm1", LEDC_CH_ARM1, AUX_LED_PIN_DISABLED, "enableArm1", "arm1Type"},
-    {"arm2", "enable_arm2", LEDC_CH_ARM2, AUX_LED_PIN_DISABLED, "enableArm2", "arm2Type"},
-    {"aux1", "enable_aux1", LEDC_CH_AUX1, AUX_LED_PIN_AUX1, "enableAux1", "aux1Type"},
-    {"aux2", "enable_aux2", LEDC_CH_AUX2, AUX_LED_PIN_AUX2, "enableAux2", "aux2Type"},
-    {"aux3", "enable_aux3", LEDC_CH_AUX3, AUX_LED_PIN_AUX3, "enableAux3", "aux3Type"},
+    {"arm1", "enable_arm1", LEDC_CH_ARM1, false, "enableArm1", "arm1Type", nullptr},
+    {"arm2", "enable_arm2", LEDC_CH_ARM2, false, "enableArm2", "arm2Type", nullptr},
+    {"aux1", "enable_aux1", LEDC_CH_AUX1, true, "enableAux1", "aux1Type", "aux1LedCount"},
+    {"aux2", "enable_aux2", LEDC_CH_AUX2, true, "enableAux2", "aux2Type", "aux2LedCount"},
+    {"aux3", "enable_aux3", LEDC_CH_AUX3, true, "enableAux3", "aux3Type", "aux3LedCount"},
 };
 
 inline constexpr size_t BOARD_OUTPUT_COUNT = sizeof(BOARD_OUTPUTS) / sizeof(BOARD_OUTPUTS[0]);
+
+namespace board_outputs_detail {
+constexpr size_t length(const char* s) {
+    size_t n = 0;
+    while (s[n] != '\0') ++n;
+    return n;
+}
+
+constexpr size_t countLightCapable() {
+    size_t n = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        if (output.lightCapable) ++n;
+    }
+    return n;
+}
+
+constexpr size_t longestId() {
+    size_t longest = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        const size_t len = length(output.id);
+        if (len > longest) longest = len;
+    }
+    return longest;
+}
+}  // namespace board_outputs_detail
+
+// How many of this board's Outputs a light may go on, and the longest stored id
+// among them. Both are here so a caller sizing a buffer for "every lit wire"
+// bounds it by what can actually be lit rather than by the whole table, and so
+// that adding an Output re-derives the bound instead of silently outgrowing it
+// (#413: the status frame is built on the WebEvents task's stack, where a
+// loose bound is a real cost).
+inline constexpr size_t BOARD_OUTPUT_LIGHT_CAPABLE_COUNT =
+    board_outputs_detail::countLightCapable();
+inline constexpr size_t BOARD_OUTPUT_ID_MAX_LEN = board_outputs_detail::longestId();
 
 // What `board` prints beside `output`. Never nullptr for a board that builds:
 // the static_asserts below refuse a board with an unlabelled Output.

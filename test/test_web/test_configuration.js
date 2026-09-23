@@ -18,11 +18,13 @@
 //     the stronger rule on the new surface - this page names no Output ever -
 //     and is asserted in test_lights.js.
 //
-// What IS this page's, and is new, is the other half of that move: the strip's
-// length is Lights' field now, and a save from here that still carried
-// aux_led_count would fight it silently, one surface overwriting the other with
-// whatever it last read. That is a harness-only fact - two writers for one
-// field looks like nothing on screen - which is what earns it a test
+// What IS this page's, and is new, is the other half of that move: a light's
+// settings belong to the Output that carries it, and a save from here carrying
+// a droid-wide light field would fight the surface that owns it, one
+// overwriting the other with whatever it last read. The two names below are
+// the retired ones (#413), which is exactly what a regression would bring
+// back. That is a harness-only fact - two writers for one field looks like
+// nothing on screen - which is what earns it a test
 // (test/test_web/README.md).
 // =============================================================================
 
@@ -42,6 +44,6 @@ test("Configuration's save carries the components and nothing of the LED strip",
   assert.ok(save, "a pick saves");
   assert.equal(save.get("enableDrive"), "false", "the pick itself is carried");
   for (const field of ["aux_led_count", "aux_led_pin"]) {
-    assert.equal(save.get(field), null, `Configuration still writes ${field}, which is Lights' to save`);
+    assert.equal(save.get(field), null, `Configuration writes ${field}, a droid-wide light field no surface owns any more`);
   }
 });

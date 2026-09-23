@@ -47,8 +47,6 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.system.rc_free2 = {};
     snap.system.rc_free3 = {};
 
-    snap.servo.aux_led_pin = AUX_LED_PIN_DISABLED;
-    snap.servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
     snap.drive.speedPresetActive = SpeedPresetId::Normal;
     snap.drive.sbusTimeoutMs = SBUS_TIMEOUT_MS;
     return snap;
@@ -112,8 +110,6 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.system.rc_free1 = xtrig;
     snap.system.rc_free2 = xtrig;
     snap.system.rc_free3 = xtrig;
-    snap.servo.aux_led_pin = AUX_LED_PIN_AUX3;
-    snap.servo.aux_led_count = AUX_LED_COUNT_MAX;
 
     // Max-length Device WiFi Settings (32-char SSIDs, 63-char passwords).
     snap.wifi.provisioned = true;
@@ -221,30 +217,12 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(doc["aux3CloseUs"].isNull());
     TEST_ASSERT_TRUE(components["arm1"]["type"].isNull());
     TEST_ASSERT_TRUE(components["aux3"]["type"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux_led_pin"].isNull());
-    TEST_ASSERT_TRUE(!doc["aux_led_count"].isNull());
-    TEST_ASSERT_EQUAL_UINT(AUX_LED_PIN_DISABLED, doc["aux_led_pin"].as<unsigned>());
-    TEST_ASSERT_EQUAL_UINT(AUX_LED_COUNT_DEFAULT, doc["aux_led_count"].as<unsigned>());
-}
-
-// --- Test 3b ---
-// AUX LED config fields retain all valid pin selections and count values.
-void test_populateConfigJson_aux_led_round_trip(void) {
-    const uint8_t pins[] = {AUX_LED_PIN_DISABLED, AUX_LED_PIN_AUX1, AUX_LED_PIN_AUX2, AUX_LED_PIN_AUX3};
-    const uint8_t counts[] = {AUX_LED_COUNT_DEFAULT, 32, AUX_LED_COUNT_MAX};
-
-    for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
-        for (size_t j = 0; j < sizeof(counts) / sizeof(counts[0]); ++j) {
-            ConfigSnapshot snap = makeDefaultSnap();
-            snap.servo.aux_led_pin = pins[i];
-            snap.servo.aux_led_count = counts[j];
-
-            JsonDocument doc;
-            TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
-            TEST_ASSERT_EQUAL_UINT(pins[i], doc["aux_led_pin"].as<unsigned>());
-            TEST_ASSERT_EQUAL_UINT(counts[j], doc["aux_led_count"].as<unsigned>());
-        }
-    }
+    // A light's LED count is on the same row and is absent here for the same
+    // reason (#413). Which Outputs COULD carry one is a board fact this pure
+    // builder does know, so that much is here.
+    TEST_ASSERT_TRUE(components["aux3"]["ledCount"].isNull());
+    TEST_ASSERT_TRUE(!components["aux3"]["ledCountField"].isNull());
+    TEST_ASSERT_TRUE(components["arm1"]["ledCountField"].isNull());
 }
 
 // --- Test 4 ---
@@ -376,18 +354,19 @@ void test_populateConfigJson_reports_every_output_with_its_label(void) {
         for (JsonPair entry : components) {
             if (strcmp(entry.value()["address"] | "", address) != 0) continue;
             found = true;
-            stripPins += entry.value()["ledStripPin"].is<unsigned>() ? 1 : 0;
+            stripPins += entry.value()["lightCapable"].as<bool>() ? 1 : 0;
         }
         TEST_ASSERT_TRUE_MESSAGE(found, address);
     }
-    // Three lines can carry the strip (include/config.h AUX_LED_PIN_AUX1..3).
+    // Three wires can carry a light (include/board_outputs.h lightCapable).
     TEST_ASSERT_EQUAL_UINT(3u, stripPins);
     // The enabled flag is read from the Output's own field, not a neighbour's.
     TEST_ASSERT_TRUE(components["aux2"]["enabled"].as<bool>());
     TEST_ASSERT_FALSE(components["aux1"]["enabled"].as<bool>());
     TEST_ASSERT_EQUAL_STRING("enableAux2", components["aux2"]["enabledField"] | "");
     TEST_ASSERT_EQUAL_STRING("ledc:4", components["aux2"]["address"] | "");
-    TEST_ASSERT_EQUAL_UINT(AUX_LED_PIN_AUX2, components["aux2"]["ledStripPin"].as<unsigned>());
+    TEST_ASSERT_TRUE(components["aux2"]["lightCapable"].as<bool>());
+    TEST_ASSERT_EQUAL_STRING("aux2LedCount", components["aux2"]["ledCountField"] | "");
 }
 
 int main(void) {
@@ -395,7 +374,6 @@ int main(void) {
     RUN_TEST(test_populateConfigJson_typical_valid_json);
     RUN_TEST(test_populateConfigJson_worst_case_fits_buffer);
     RUN_TEST(test_populateConfigJson_expected_keys_present);
-    RUN_TEST(test_populateConfigJson_aux_led_round_trip);
     RUN_TEST(test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext);
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
     RUN_TEST(test_populateConfigJson_clears_existing_document);

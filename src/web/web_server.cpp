@@ -32,7 +32,9 @@
 #include "../../include/config.h"
 #include "../../include/config_cache.h"
 #include "../../include/failed_alloc_tracker.h"
+#include "../../include/api_aux_led.h"  // LitWireReading, formatLitWiresJson()
 #include "../../include/aux_led.h"
+#include "../../include/board_outputs.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
 #include "../../include/web_admission.h"
@@ -263,12 +265,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool sleepMode;
     uint8_t activeMood;
     uint32_t sleepSinceMs;
-    uint8_t auxLedPin;
-    uint8_t auxLedR;
-    uint8_t auxLedG;
-    uint8_t auxLedB;
-    AuxLedEffect auxLedEffect;
-    bool auxLedAvailable;
+    LitWireReading litWires[BOARD_OUTPUT_LIGHT_CAPABLE_COUNT];
+    size_t litWireCount;
     RcInputMode rcInputMode;
     bool singleSbusUseCh2;
     uint16_t arm1TargetUs;
@@ -374,12 +372,21 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     activeMood = robotState.activeMood;
     sleepMode = robotState.sleepMode;
     sleepSinceMs = robotState.sleepSinceMs;
-    auxLedPin = robotState.auxLed.pin;
-    auxLedR = robotState.auxLed.r;
-    auxLedG = robotState.auxLed.g;
-    auxLedB = robotState.auxLed.b;
-    auxLedEffect = robotState.auxLed.effect;
-    auxLedAvailable = robotState.auxLed.available;
+    // The droid's lit wires, read inside the same critical section as
+    // everything else here so one frame is one consistent reading (#413).
+    litWireCount = 0;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!robotState.auxLed[i].lit || litWireCount >= BOARD_OUTPUT_LIGHT_CAPABLE_COUNT) {
+            continue;
+        }
+        litWires[litWireCount].id = BOARD_OUTPUTS[i].id;
+        litWires[litWireCount].r = robotState.auxLed[i].r;
+        litWires[litWireCount].g = robotState.auxLed[i].g;
+        litWires[litWireCount].b = robotState.auxLed[i].b;
+        litWires[litWireCount].effect = auxLedEffectToString(robotState.auxLed[i].effect);
+        litWires[litWireCount].available = robotState.auxLed[i].available;
+        ++litWireCount;
+    }
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
@@ -394,7 +401,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     wifiClientConnected = connectivity.wifiClientConnected;
     wifiRssi = connectivity.wifiRssi;
 
-    const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
+    // The lit wires, keyed by Output id, in the one shape the aux-LED endpoints
+    // answer with too (include/api_aux_led.h). A droid with no light writes {}.
+    char litWiresJson[LIT_WIRES_JSON_MAX] = {};
+    if (!formatLitWiresJson(litWiresJson, sizeof(litWiresJson), litWires, litWireCount, nullptr)) {
+        return false;
+    }
 
     // Admission evidence, read from the project-owned counters the serving
     // backend writes (include/web_admission.h). The JSON field names below are
@@ -414,7 +426,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"queueOverflowCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"failedAllocs\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"queueOverflowCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"failedAllocs\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"lights\":%s",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -480,8 +492,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
         sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood,
-        (unsigned)auxLedPin, (unsigned)auxLedR, (unsigned)auxLedG, (unsigned)auxLedB,
-        auxLedEffectLabel, auxLedAvailable ? "true" : "false");
+        litWiresJson);
 
     // Connection lifetime. httpRequestsServed against httpSocketsAccepted is
     // the measurement: their ratio is requests per connection, which is what

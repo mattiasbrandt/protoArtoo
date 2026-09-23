@@ -136,28 +136,22 @@ static void consoleExecuteDirectTestBindable(uint32_t requestId, const char* ope
 // aux.action.led-color: r=/g=/b=<0..255> - the same auxLedQueueSetColor()
 // call handleAuxLedColorPost() makes (src/web/api_aux_led.cpp), reused
 // verbatim (a single complete queue call, no persist - no extraction
-// needed). The two refusal reasons handleAuxLedColorPost()'s own
-// sendAuxLedQueueRefusal() distinguishes - strip unavailable vs. queue full -
-// are reproduced the same way: robotState.auxLed.available/pin read
-// directly (isAuxLedAvailable() is private to api_aux_led.cpp's anonymous
-// namespace), matching the drive.action.move precedent (include/
-// console_direct_action_drive.h) of reading RobotState directly rather than
-// exporting a REST-private helper. "Unavailable" (pin==0, no strip
-// configured) maps to CONSOLE_REASON_COMPONENT_DISABLED - "the owning
-// Component Toggle is off" (docs/console-protocol.md s.6), the exact fit for
-// an AUX LED pin unset via aux.config.led-pin.
-static bool consoleAuxLedAvailable() {
-    bool available = false;
-    uint8_t pin = 0;
-    taskENTER_CRITICAL(&robotStateMux);
-    available = robotState.auxLed.available;
-    pin = robotState.auxLed.pin;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return available && pin != 0;
-}
-
+// needed).
+//
+// It names no Output and means EVERY lit wire (AUX_LED_TARGET_ALL). That is
+// what this action has always meant - "the droid's body lights" - and what an
+// RC trigger and a sequence step mean by it, so a droid that grows a second
+// lit wire (ADR 0067, #413) keeps doing here what it did with one. Commanding
+// ONE light is a surface's act, and it goes through the REST route's `output`.
+//
+// The two refusal reasons handleAuxLedColorPost()'s own
+// sendAuxLedQueueRefusal() distinguishes - no light on that wire vs. queue
+// full - are reproduced through the same auxLedTargetIsLit() both doors ask.
+// "No light" maps to CONSOLE_REASON_COMPONENT_DISABLED - "the owning Component
+// Toggle is off" (docs/console-protocol.md s.6), the exact fit for a droid
+// with no wire carrying a Light Type.
 static void consoleAnswerAuxLedRefusal(uint32_t requestId, const ConsoleRecordSink* sink) {
-    if (!consoleAuxLedAvailable()) {
+    if (!auxLedTargetIsLit(AUX_LED_TARGET_ALL)) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
                                 CONSOLE_REASON_COMPONENT_DISABLED);
@@ -198,8 +192,8 @@ static void consoleExecuteAuxLedColor(uint32_t requestId, const char* operationN
         }
     }
 
-    if (!auxLedQueueSetColor((uint8_t)rgb[0], (uint8_t)rgb[1], (uint8_t)rgb[2],
-                             consoleCommandSourceFor(source))) {
+    if (!auxLedQueueSetColor(AUX_LED_TARGET_ALL, (uint8_t)rgb[0], (uint8_t)rgb[1],
+                             (uint8_t)rgb[2], consoleCommandSourceFor(source))) {
         consoleAnswerAuxLedRefusal(requestId, sink);
         return;
     }
@@ -250,7 +244,7 @@ static void consoleExecuteAuxLedEffect(uint32_t requestId, const char* operation
         return;
     }
 
-    if (!auxLedQueueSetEffect(effect, consoleCommandSourceFor(source))) {
+    if (!auxLedQueueSetEffect(AUX_LED_TARGET_ALL, effect, consoleCommandSourceFor(source))) {
         consoleAnswerAuxLedRefusal(requestId, sink);
         return;
     }

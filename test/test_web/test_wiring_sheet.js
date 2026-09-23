@@ -83,20 +83,20 @@ const freshOutputs = () => [
 // as GET /api/config reports them (src/web/api_config.cpp CONFIG_OUTPUTS): the
 // board's label, the address that joins each to its servo row, and the fields
 // that save it.
-const configOutput = (address, label, id, enabled, strip = 0) => ({
+const configOutput = (address, label, id, enabled, type = "") => ({
   enabled,
   label,
   address,
-  ...(strip ? { ledStripPin: strip } : {}),
+  ...(type ? { type } : {}),
   enabledField: `enable${id[0].toUpperCase()}${id.slice(1)}`,
   typeField: `${id}Type`,
 });
 const freshComponents = () => ({
   arm1: configOutput("ledc:0", "ARM1", "arm1", false),
   arm2: configOutput("ledc:1", "ARM2", "arm2", false),
-  aux1: configOutput("ledc:3", "ARM3", "aux1", false, 1),
-  aux2: configOutput("ledc:4", "ARM4", "aux2", false, 2),
-  aux3: configOutput("ledc:5", "ARM5", "aux3", false, 3),
+  aux1: configOutput("ledc:3", "ARM3", "aux1"),
+  aux2: configOutput("ledc:4", "ARM4", "aux2"),
+  aux3: configOutput("ledc:5", "ARM5", "aux3"),
   drive: { enabled: false, label: "S1" },
   audio: { enabled: false, label: "S2" },
   protoR2link: { enabled: false, label: "S3" },
@@ -392,6 +392,29 @@ test("an output not wired names where it is marked wired, and not Configuration"
   const text = off.wire("ledc:0").textContent;
   assert.match(text, /Mark it under Outputs/, "the wire names the control on this surface");
   assert.doesNotMatch(text, /Configuration/, "and no longer the page the control left");
+});
+
+// What is on a wire is ONE answer in two vocabularies (ADR 0067): a servo's
+// model where it drives a servo, a Light Type where it lights something. The
+// sheet used to need two answers to agree - the Output's own ledStripPin and a
+// droid-wide aux_led_pin - and drew "a servo" on a wire that was really driving
+// a strip whenever they disagreed. There is one field now (#413), and a wire
+// that carries a light has to say so: a builder tracing this sheet to decide
+// what to unplug is the person the wrong word costs.
+test("a wire carrying a light says so, and one carrying a servo says that", async () => {
+  const env = await boot({
+    outputs: [
+      output("ledc:3", "ARM3", { parts: ["dataPanel"], component: "rgb" }),
+      output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+    ],
+    components: {
+      ...freshComponents(),
+      aux1: configOutput("ledc:3", "ARM3", "aux1", true, "rgb"),
+      arm1: configOutput("ledc:0", "ARM1", "arm1", true, "mg996r"),
+    },
+  });
+  assert.match(env.wire("ledc:3").textContent, /LED strip/, "the lit wire names what lights it");
+  assert.doesNotMatch(env.wire("ledc:0").textContent, /LED strip/, "and the servo's wire does not");
 });
 
 // A latched estop takes the pulse off every output, and that is not a fact

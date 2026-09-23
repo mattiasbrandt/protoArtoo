@@ -148,9 +148,11 @@ enum class ConfigKey : uint8_t {
     SEQ_OPEN_MS = 81,
     SEQ_CLOSE_MS = 82,
 
-    // AUX LED
-    AUX_LED_PIN = 83,
-    AUX_LED_COUNT = 84,
+    // A light's settings. 83 was AUX_LED_PIN, which Output carried the one
+    // strip; #413 made a Light Type an Output's own answer, so there is no
+    // scalar to validate any more and the number is left unused rather than
+    // reissued to something unrelated.
+    LIGHT_LED_COUNT = 84,
 
     // Feature toggles
     ENABLE_ARM1 = 85,
@@ -275,26 +277,15 @@ struct AudioConfig {
     uint16_t snd_cat_whis_hi;
 };
 
-// No endpoint, no component type: those are an addressed Servo Output row's,
-// and a row is the only place either is stored (#345, ADR 0041). What is left
-// here is servo-adjacent config that is not per-output: the AUX LED selection.
-//
-// The sequence dwell that used to sit here (seq_open_ms / seq_close_ms, NVS
-// keys seq_op / seq_cl) is gone. Its only reader was ServoTask's own body
-// routine state machine, which #354 deleted when the body routines became
-// sequences; a move's travel time is now the Output's Motion Profile, run by
-// the ramp (ADR 0052). configSave() removes the two keys from a controller
-// that still carries them (#362).
-struct ServoConfig {
-    // NOT a GPIO, despite the name: an AUX slot selection, 0..AUX_LED_PIN_MAX
-    // (AUX_LED_PIN_DISABLED/AUX1/AUX2/AUX3, include/config.h). The GPIO it
-    // resolves to is the board's, via auxLedSelectionToGpio(), and it is
-    // robotState.auxLed.pin -- a different field with the same word in it that
-    // really does hold a GPIO. The NVS key aux_led_pin is operator-visible and
-    // stays; this comment is the guard against reading the two as one thing.
-    uint8_t aux_led_pin;
-    uint8_t aux_led_count;
-};
+// ServoConfig is gone (#413). It ended as two fields - which single Output
+// carried the LED strip, and how many LEDs were on it - and both were a second
+// store of something an addressed Servo Output row already answers: a wire
+// carries a Light Type when its `component` names one, and the LEDs on it are
+// that row's `led_count` (ADR 0067). One droid, one strip was the limit that
+// model imposed, and there is now no servo-adjacent setting that is not
+// per-output, so there is no struct left to hold one. The endpoints and
+// component types left earlier (#345, ADR 0041) and the sequence dwell after
+// them (#354, #362).
 
 // -----------------------------------------------------------------------------
 // Device WiFi Settings (ADR 0015  --  runtime WiFi provisioning)
@@ -445,7 +436,6 @@ inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out,
 struct ConfigSnapshot {
     DriveConfig drive;
     AudioConfig audio;
-    ServoConfig servo;
     DomeConfig dome;
     SystemConfig system;
     WifiConfig wifi;
@@ -477,6 +467,12 @@ struct ConfigSnapshot {
 // is 4 everywhere. A member needing 8-byte alignment would change that, and
 // this assertion is where it would say so.
 //
+// #413 deleted ServoConfig - the last two bytes of servo config that were not
+// an Output's own - and the number did NOT move: measured at 916 B before and
+// after, because those two bytes sat in padding the members either side of
+// them already carried. A deletion is not automatically a shrink, and the
+// figure here is the compiler's rather than the arithmetic's.
+//
 // A field addition that moves the number is a decision, not an accident: it
 // changes what every seam that crosses this struct costs, so re-measure the
 // Console task's chain before updating the value here. The recipe moved out of
@@ -500,7 +496,6 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out);
 
 void configLoadDrive(Preferences& prefs, DriveConfig* out);
 void configLoadAudio(Preferences& prefs, AudioConfig* out);
-void configLoadServo(Preferences& prefs, ServoConfig* out);
 void configLoadDome(Preferences& prefs, DomeConfig* out);
 void configLoadSystem(Preferences& prefs, SystemConfig* out);
 void configLoadWifi(Preferences& prefs, WifiConfig* out);
@@ -546,7 +541,6 @@ bool configSaveGuidedSetup(Preferences& prefs);
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config);
-bool configSaveServo(Preferences& prefs, const ServoConfig& config);
 bool configSaveDome(Preferences& prefs, const DomeConfig& config);
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 bool configSaveWifi(Preferences& prefs, const WifiConfig& config);

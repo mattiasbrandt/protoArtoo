@@ -9,6 +9,7 @@
 #include <unity.h>
 
 #include <cstring>
+#include "board_outputs.h"
 #include <map>
 #include <string>
 
@@ -434,13 +435,25 @@ void test_configApply_json_body_invalid_json_rejected(void) {
     TEST_ASSERT_EQUAL_STRING("invalid json body", result.error.message);
 }
 
-void test_configApply_json_body_aux_led_pin_type_error(void) {
-    std::map<std::string, std::string> m = {{"plain", "{\"aux_led_pin\":\"nope\"}"}};
+// A light's LED count is one per Output (#413), saved under that Output's own
+// field name. A value outside the band says which field it was about, because a
+// request carrying three of them needs to know which one it got wrong.
+void test_configApply_led_count_out_of_range_names_its_output(void) {
+    const BoardOutput* lit = nullptr;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].ledCountField != nullptr) {
+            lit = &BOARD_OUTPUTS[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(lit);
+
+    std::map<std::string, std::string> m = {{lit->ledCountField, "0"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("aux_led_pin must be integer 0..3", result.error.message);
+    TEST_ASSERT_NOT_NULL(strstr(result.error.message, lit->ledCountField));
 }
 
 // --- applied-fields record ---
@@ -658,7 +671,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_json_body_sbusTimeoutMs_updates);
     RUN_TEST(test_configApply_json_body_sbusTimeoutMs_out_of_range_rejected);
     RUN_TEST(test_configApply_json_body_invalid_json_rejected);
-    RUN_TEST(test_configApply_json_body_aux_led_pin_type_error);
+    RUN_TEST(test_configApply_led_count_out_of_range_names_its_output);
     RUN_TEST(test_configApply_multiple_fields_record_applied_lines_in_order);
     RUN_TEST(test_configApply_droid_build_records_both_halves_and_the_parts);
     RUN_TEST(test_configApply_a_mixed_droid_saves_without_complaint);

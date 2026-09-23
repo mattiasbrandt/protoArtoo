@@ -135,6 +135,17 @@ constexpr uint16_t SERVO_ACCEL_MS_DEFAULT = SERVO_THROW_MS_DEFAULT / 4;
 constexpr uint16_t SERVO_RELEASE_MS_NEVER = 0;
 constexpr uint16_t SERVO_RELEASE_MS_MAX = 60000;
 
+// A Light Type's settings: how many LEDs are on the wire (CONTEXT.md "Light
+// Type", ADR 0067). One per Output, beside the type that says what is on it,
+// because a droid may have several lit Parts each on its own wire. Read once
+// when a strip starts (src/tasks/aux_led.cpp). One is the default because a
+// single indicator LED is the smallest honest strip; zero would be a strip
+// that renders nothing while reading as configured. 255 is the type's own
+// ceiling and the largest chain this driver addresses.
+constexpr uint8_t SERVO_LIGHT_LEDS_MIN = 1;
+constexpr uint8_t SERVO_LIGHT_LEDS_MAX = 255;
+constexpr uint8_t SERVO_LIGHT_LEDS_DEFAULT = 1;
+
 // A channel value that is not an address on any driver. Rows past the table's
 // count carry it, so a row nobody has addressed cannot read as channel 0.
 constexpr uint8_t SERVO_OUTPUT_CHANNEL_UNSET = 0xFF;
@@ -202,12 +213,19 @@ struct ServoOutputRow {
     ServoEasing easing;   // Motion Profile: the shape of the move
     ServoBootBehaviour boot;        // what this output does at power-up
     ServoComponentType component;   // what is fitted; governs the clamp
+    // The Light Type's settings, meaningful only while `component` names one:
+    // how many LEDs the wire carries. It is kept on a row whose component is a
+    // servo rather than reset, so naming a servo by mistake and naming the
+    // Light Type back does not cost the builder the number they typed.
+    uint8_t led_count;
     bool calibrated;                // a human measured this against the linkage
 };
 
-// The whole table measures 1682 B of static RAM on artoo-esp32 - a 70-byte row
-// times twenty-four, plus the count - read with `nm -S` off the linked image
-// rather than projected. The budget in tools/build_budgets.json was raised to
+// The whole table measures 1730 B of static RAM on artoo-esp32 - a 72-byte row
+// times twenty-four, plus the count and its padding - read with `nm -S` off the
+// linked image rather than projected. It was 1682 B at a 70-byte row until
+// #413 put the Light Type's LED count on it, which cost 2 B a row rather than
+// the 1 B the field is: the row is 2-byte aligned and had no hole left. The budget in tools/build_budgets.json was raised to
 // 112,000 B for exactly this spend; that budget is heap headroom rather than
 // spare DRAM, so a row field is not free even though the segment has room.
 struct ServoOutputTable {
@@ -263,9 +281,10 @@ enum ServoOutputField : uint16_t {
     SERVO_FIELD_BOOT = 1u << 10,
     SERVO_FIELD_COMPONENT = 1u << 11,
     SERVO_FIELD_CALIBRATED = 1u << 12,
+    SERVO_FIELD_LED_COUNT = 1u << 13,
 };
 
-constexpr uint8_t SERVO_OUTPUT_FIELD_COUNT = 13;
+constexpr uint8_t SERVO_OUTPUT_FIELD_COUNT = 14;
 
 // What a repaired row load found, for the one sentence the loader logs. Kept
 // small on purpose: it crosses the config load seam by value.
@@ -281,8 +300,8 @@ struct ServoOutputRepairReport {
 // refused mechanically). Index matches ServoOutputField's bit position.
 inline const char* servoOutputFieldName(uint8_t bitIndex) {
     static const char* const kNames[SERVO_OUTPUT_FIELD_COUNT] = {
-        "driver", "channel", "parts", "open",   "centre",    "close",     "throw",
-        "accel",  "release", "ease",  "boot",   "component", "calibrated",
+        "driver", "channel", "parts", "open",   "centre",    "close",      "throw",
+        "accel",  "release", "ease",  "boot",   "component", "calibrated", "leds",
     };
     return (bitIndex < SERVO_OUTPUT_FIELD_COUNT) ? kNames[bitIndex] : "";
 }
@@ -569,6 +588,7 @@ inline void servoOutputRowDefaults(ServoOutputRow* row, ServoOutputDriver driver
     row->easing = SERVO_EASE_NONE;
     row->boot = SERVO_BOOT_LIMP;
     row->component = component;
+    row->led_count = SERVO_LIGHT_LEDS_DEFAULT;
     row->calibrated = false;
 }
 
@@ -921,6 +941,15 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
         repaired |= SERVO_FIELD_BOOT;
     }
 
+    // Zero LEDs is the dangerous value here for the same reason zero travel is
+    // above: a strip configured to render nothing reads as a strip that is
+    // simply off. The ceiling is the field's own type, so only the floor can be
+    // crossed.
+    if (row->led_count < SERVO_LIGHT_LEDS_MIN) {
+        row->led_count = SERVO_LIGHT_LEDS_DEFAULT;
+        repaired |= SERVO_FIELD_LED_COUNT;
+    }
+
     return repaired;
 }
 
@@ -970,6 +999,7 @@ struct ServoOutputEdit {
     uint16_t centre_us;            // captures only; a typed edit never names it
     uint16_t close_us;
     ServoComponentType component;
+    uint8_t led_count;             // the Light Type's setting, when the mask names it
     ServoOutputEditKind kind;
 };
 
@@ -1042,6 +1072,9 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     if ((edit.fields & SERVO_FIELD_COMPONENT) != 0) {
         row->component = edit.component;
     }
+    if ((edit.fields & SERVO_FIELD_LED_COUNT) != 0) {
+        row->led_count = edit.led_count;
+    }
     if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
         row->open_us = edit.open_us;
     }
@@ -1111,14 +1144,21 @@ inline uint16_t servoOutputAdoptFixedPair(ServoOutputRow* row, uint16_t openUs, 
 
 // -----------------------------------------------------------------------------
 // servoOutputRowFormat()
-// The stored form: thirteen colon-separated fields, words where the model has
+// The stored form: fourteen colon-separated fields, words where the model has
 // words. An unassigned Part writes "-" rather than an empty field, so a short
 // record is a damaged record rather than an ambiguous one.
+//
+// THE LED COUNT IS LAST, AND THAT IS LOAD-BEARING. A controller that stored
+// its rows before #413 holds thirteen-field records, and servoOutputRowParse()
+// reads one as this shape without its final field rather than as damage. Any
+// field added later goes after this one for the same reason; inserting one
+// would renumber a builder's stored calibration into the wrong members.
 // -----------------------------------------------------------------------------
 // The longest record a full row can produce: 4 driver + 3 channel + 51 parts
 // (four ids and three commas) + 15 endpoints + 15 times + 9 "overshoot" + 12
-// "home-release" + 6 "mg996r" + 1 calibrated + 12 separators = 128 characters.
-// 191 leaves room for a longer word without a format change reaching the wire.
+// "home-release" + 6 "mg996r" + 1 calibrated + 3 leds + 13 separators = 132
+// characters. 191 leaves room for a longer word without a format change
+// reaching the wire.
 constexpr size_t SERVO_OUTPUT_ROW_STR_MAX = 191;
 
 inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow& row) {
@@ -1146,13 +1186,13 @@ inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow
     }
 
     const int written =
-        snprintf(buf, bufSize, "%s:%u:%s:%u:%u:%u:%u:%u:%u:%s:%s:%s:%u",
+        snprintf(buf, bufSize, "%s:%u:%s:%u:%u:%u:%u:%u:%u:%s:%s:%s:%u:%u",
                  servoOutputDriverToString(row.driver), (unsigned)row.channel,
                  partList, (unsigned)row.open_us,
                  (unsigned)row.centre_us, (unsigned)row.close_us, (unsigned)row.throw_ms,
                  (unsigned)row.accel_ms, (unsigned)row.release_ms, servoEasingToString(row.easing),
                  servoBootBehaviourToString(row.boot), servoCompTypeToString(row.component),
-                 row.calibrated ? 1u : 0u);
+                 row.calibrated ? 1u : 0u, (unsigned)row.led_count);
     return written > 0 && (size_t)written < bufSize;
 }
 
@@ -1162,8 +1202,15 @@ inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow
 // and returns the mask of fields it had to repair.
 //
 // The stored blob is not trusted: a record that is missing, over-long or short
-// of fields leaves every field at its fallback and reports all thirteen, rather
+// of fields leaves every field at its fallback and reports all fourteen, rather
 // than producing a row that is half somebody's calibration and half zeroes.
+//
+// ONE OLD SHAPE IS NOT DAMAGE. A record of SERVO_OUTPUT_FIELD_COUNT - 1 fields
+// is what a controller stored before the LED count joined the row (#413). Its
+// thirteen fields mean exactly what they mean now, so they are read and the
+// missing one is left at the fallback, and nothing is reported: a builder's
+// calibration surviving an upgrade is not a repair. Any shorter record is
+// still damage, because no shape this firmware ever wrote was shorter.
 // -----------------------------------------------------------------------------
 inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallback,
                                     ServoOutputRow* out) {
@@ -1200,7 +1247,9 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
         *sep = '\0';
         cursor = sep + 1;
     }
-    if (tooManyFields || fieldCount != SERVO_OUTPUT_FIELD_COUNT) {
+    // SERVO_OUTPUT_FIELD_COUNT - 1 is the pre-#413 shape; see the header note.
+    const bool oldShape = fieldCount == (uint8_t)(SERVO_OUTPUT_FIELD_COUNT - 1);
+    if (tooManyFields || (fieldCount != SERVO_OUTPUT_FIELD_COUNT && !oldShape)) {
         return kAllFields;
     }
 
@@ -1294,6 +1343,15 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
         // read must never claim a human measured it.
         out->calibrated = false;
         repaired |= SERVO_FIELD_CALIBRATED;
+    }
+
+    if (!oldShape) {
+        uint16_t leds = 0;
+        if (servoOutputParseU16(fields[13], &leds) && leds <= SERVO_LIGHT_LEDS_MAX) {
+            out->led_count = (uint8_t)leds;
+        } else {
+            repaired |= SERVO_FIELD_LED_COUNT;
+        }
     }
 
     repaired |= servoOutputRowNormalise(out, fallback);

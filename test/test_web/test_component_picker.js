@@ -71,9 +71,11 @@ test("a card whose photograph is missing lays out like the rest and is never gre
 });
 
 test("a Configuration save never sends the LED strip route it no longer holds", async () => {
-  // The route is set on Wiring now (data/output_settings.js). Configuration
-  // used to derive aux_led_pin from its own AUX rows and send it on every
-  // save; with those rows gone, sending it would clear the route Wiring set.
+  // What carries a light is the Output's own stored type now, set on Wiring
+  // (data/output_settings.js, ADR 0067). Configuration used to derive
+  // aux_led_pin from its own AUX rows and send it on every save; there is no
+  // droid-wide route left to send, and a save carrying one would be a second
+  // store for a fact the types already hold (#413).
   const env = await ready();
   env.press(env.plate("dome_controller", "not-fitted")).fire("click", {});
   assert.equal(env.posts.length, 1);

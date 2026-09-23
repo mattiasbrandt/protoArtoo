@@ -30,7 +30,6 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer);
 // Domain-level serializers (used by domain-specific save functions in config_store)
 bool configSerializeDrive(const DriveConfig& cfg, ConfigWriter& w);
 bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w);
-bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w);
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w);
 bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w);
 bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
@@ -39,7 +38,6 @@ bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
 // Each fills *out with defaults then overwrites with stored values.
 void configDeserializeDrive(const ConfigReader& r, DriveConfig* out);
 void configDeserializeAudio(const ConfigReader& r, AudioConfig* out);
-void configDeserializeServo(const ConfigReader& r, ServoConfig* out);
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out);
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out);
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);

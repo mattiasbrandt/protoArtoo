@@ -43,6 +43,7 @@
                               // config write lock (#226 defect 1 rework, #269)
 
 #include "action_registry.h"
+#include "board_outputs.h"
 #include "api_identity.h"        // formatIdentityJson(), IDENTITY_JSON_MAX_BYTES -
                                   // system.api.get-identity's JSON-builder leg (#221)
 #include "validation_snapshot.h"  // ValidationSnapshot, captureValidationSnapshot(),
@@ -244,6 +245,28 @@ static const char* capturedValue(const char* name) {
     for (int i = 0; i < g_cap.fieldCount; i++) {
         if (strcmp(g_cap.names[i], name) == 0) return g_cap.values[i];
     }
+    return nullptr;
+}
+
+// The lit wires the aux tests command. robotState.auxLed is keyed by
+// BOARD_OUTPUTS index, so this lights exactly the Outputs the running board
+// says can carry a light and leaves the rest dark - which is what makes "it
+// reached only the lit ones" an assertion rather than a coincidence.
+static void lightEveryCapableWire() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+        robotState.auxLed[i].lit = BOARD_OUTPUTS[i].lightCapable;
+        robotState.auxLed[i].available = BOARD_OUTPUTS[i].lightCapable;
+    }
+}
+
+static const BoardOutput* firstLightCapableOutput() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable) {
+            return &BOARD_OUTPUTS[i];
+        }
+    }
+    TEST_FAIL_MESSAGE("this board has no Output that can carry a light");
     return nullptr;
 }
 
@@ -2437,22 +2460,65 @@ void test_drive_speed_limit_rejects_out_of_range() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
-void test_aux_led_pin_read_and_write() {
-    runQuery("aux.config.led-pin value=2");
+// A light's settings are one per Output since #413, so the op names the Output
+// first. On a FireBeetle 2 with no WiFi the Console is the only route to them.
+void test_aux_led_count_read_and_write_names_its_output() {
+    const char* const target = boardOutputLabel(*firstLightCapableOutput());
+    char write[64] = {};
+    snprintf(write, sizeof(write), "aux.config.led-count target=%s value=30", target);
+    runQuery(write);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
 
-    runQuery("aux.config.led-pin");
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_STRING("2", capturedValue("value"));
-}
-
-void test_aux_led_count_read_and_write() {
-    runQuery("aux.config.led-count value=30");
-    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
-
-    runQuery("aux.config.led-count");
+    char read[64] = {};
+    snprintf(read, sizeof(read), "aux.config.led-count target=%s", target);
+    runQuery(read);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
     TEST_ASSERT_EQUAL_STRING("30", capturedValue("value"));
+}
+
+// And the count it reports is that Output's, not the droid's: writing one
+// Output's count must leave the others where they were.
+void test_aux_led_count_is_one_outputs_own() {
+    const BoardOutput* first = firstLightCapableOutput();
+    const BoardOutput* second = nullptr;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable && &BOARD_OUTPUTS[i] != first) {
+            second = &BOARD_OUTPUTS[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(second);
+
+    char write[64] = {};
+    snprintf(write, sizeof(write), "aux.config.led-count target=%s value=44",
+             boardOutputLabel(*first));
+    runQuery(write);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+
+    char read[64] = {};
+    snprintf(read, sizeof(read), "aux.config.led-count target=%s", boardOutputLabel(*second));
+    runQuery(read);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("1", capturedValue("value"));
+}
+
+// An Output that cannot carry a light has no count to read or write, and says
+// so rather than answering for a neighbour.
+void test_aux_led_count_refuses_an_output_that_cannot_be_lit() {
+    const BoardOutput* servoOnly = nullptr;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (!BOARD_OUTPUTS[i].lightCapable) {
+            servoOnly = &BOARD_OUTPUTS[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(servoOnly);
+
+    char read[64] = {};
+    snprintf(read, sizeof(read), "aux.config.led-count target=%s", boardOutputLabel(*servoOnly));
+    runQuery(read);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
 void test_rc_mode_read_and_write() {
@@ -3971,17 +4037,20 @@ void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
 // aux.action.led-color / aux.action.led-effect (#221 remainder)
 // =============================================================================
 
+// The Console action names no Output and means every lit wire, which is what
+// it has always meant and what an RC trigger and a sequence step mean by it.
 void test_aux_led_color_queues_a_valid_rgb_triple() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
 
     runQuery("aux.action.led-color r=10 g=20 b=30");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
-    TEST_ASSERT_EQUAL_UINT8(10, robotState.auxLed.r);
-    TEST_ASSERT_EQUAL_UINT8(20, robotState.auxLed.g);
-    TEST_ASSERT_EQUAL_UINT8(30, robotState.auxLed.b);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 10 : 0, robotState.auxLed[i].r);
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 20 : 0, robotState.auxLed[i].g);
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[i].lightCapable ? 30 : 0, robotState.auxLed[i].b);
+    }
 }
 
 void test_aux_led_color_rejects_an_out_of_range_component() {
@@ -3992,17 +4061,14 @@ void test_aux_led_color_rejects_an_out_of_range_component() {
     TEST_ASSERT_EQUAL_STRING("g", capturedValue("argument"));
 }
 
-void test_aux_led_color_reports_component_disabled_when_pin_unset() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 0;  // no pin selected: aux.config.led-pin's "disabled" state
-    // The native auxLedQueueSetColor() stub (src/native_test_stubs.cpp) only
-    // gates on g_test_aux_led_queue_ok, unlike the real implementation
-    // (src/tasks/aux_led.cpp, not in [env:native]'s build filter) which also
-    // refuses when the strip is unavailable - so this forces the same
-    // refusal the real availability gate would produce, to prove
-    // consoleAnswerAuxLedRefusal() picks COMPONENT_DISABLED over QUEUE_FULL
-    // from robotState.auxLed alone once the call has failed either way.
-    g_test_aux_led_queue_ok = false;
+// A droid with nothing lit: no wire carries a Light Type, which is a config
+// answer and not a busy queue. The native stub refuses for the same reason the
+// real queue does (both ask auxLedTargetIsLit), so this reaches
+// consoleAnswerAuxLedRefusal() the way the device would.
+void test_aux_led_color_reports_component_disabled_when_nothing_is_lit() {
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        robotState.auxLed[i] = {};
+    }
 
     runQuery("aux.action.led-color r=1 g=1 b=1");
 
@@ -4011,8 +4077,7 @@ void test_aux_led_color_reports_component_disabled_when_pin_unset() {
 }
 
 void test_aux_led_color_reports_queue_full_when_available_but_refused() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
     g_test_aux_led_queue_ok = false;
 
     runQuery("aux.action.led-color r=1 g=1 b=1");
@@ -4022,8 +4087,7 @@ void test_aux_led_color_reports_queue_full_when_available_but_refused() {
 }
 
 void test_aux_led_effect_queues_a_valid_effect() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
 
     runQuery("aux.action.led-effect effect=pulse");
 
@@ -4040,8 +4104,7 @@ void test_aux_led_effect_queues_a_valid_effect() {
 // "off" - a legitimate value handleAuxLedEffectPost() accepts today - must
 // still be accepted here, not rejected as an unlisted enum value.
 void test_aux_led_effect_accepts_off_despite_the_buggy_catalog_enum() {
-    robotState.auxLed.available = true;
-    robotState.auxLed.pin = 5;
+    lightEveryCapableWire();
 
     runQuery("aux.action.led-effect effect=off");
 
@@ -5415,8 +5478,9 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_table_paramkeys_match_config_apply);
     RUN_TEST(test_drive_speed_limit_read_and_write);
     RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
-    RUN_TEST(test_aux_led_pin_read_and_write);
-    RUN_TEST(test_aux_led_count_read_and_write);
+    RUN_TEST(test_aux_led_count_read_and_write_names_its_output);
+    RUN_TEST(test_aux_led_count_is_one_outputs_own);
+    RUN_TEST(test_aux_led_count_refuses_an_output_that_cannot_be_lit);
     RUN_TEST(test_rc_mode_read_and_write);
     RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);
     RUN_TEST(test_log_level_read_and_write_the_integer);
@@ -5573,7 +5637,7 @@ int main(int, char**) {
 
     RUN_TEST(test_aux_led_color_queues_a_valid_rgb_triple);
     RUN_TEST(test_aux_led_color_rejects_an_out_of_range_component);
-    RUN_TEST(test_aux_led_color_reports_component_disabled_when_pin_unset);
+    RUN_TEST(test_aux_led_color_reports_component_disabled_when_nothing_is_lit);
     RUN_TEST(test_aux_led_color_reports_queue_full_when_available_but_refused);
     RUN_TEST(test_aux_led_effect_queues_a_valid_effect);
     RUN_TEST(test_aux_led_effect_accepts_off_despite_the_buggy_catalog_enum);

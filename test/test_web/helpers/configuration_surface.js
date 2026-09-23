@@ -81,8 +81,6 @@ export const configured = () => ({
   },
   rc: { member: "hotrc_ds650", inputMode: "dual_sbus", sbus: { recvCh2: false } },
   system: { logLevel: 3 },
-  aux_led_pin: 2,
-  aux_led_count: 16,
   wifi: { provisioned: true, mode: "client", staSsid: "bench" },
   guidedSetup: { run: "not-run", recorded: true, visited: [] },
 });

@@ -1,18 +1,20 @@
 // =============================================================================
 // test/test_web/test_output_settings.js
 //
-// The arm and AUX outputs (#369, data/output_settings.js): which are in use and
-// which AUX line carries the LED strip, set on Wiring; which servo each carries,
-// set on Servos. One answer drawn on two surfaces, run here as the browser runs
-// it - the shared module, Wiring's own mount (data/wiring_outputs.js) and a
-// Servos host - on a real node tree.
+// The Outputs (#369, data/output_settings.js): which are in use and what each
+// carries - a servo, or a light - set on Wiring; which servo model, set on
+// Servos. One answer drawn on two surfaces, run here as the browser runs it -
+// the shared module, Wiring's own mount (data/wiring_outputs.js) and a Servos
+// host - on a real node tree.
 //
-// Two invariants earn their place:
+// Three invariants earn their place:
 //   - one answer, two views: what Wiring changes, Servos shows, and the save
 //     carries every output's fields as Configuration's rows always did;
-//   - one LED strip: the controller routes the strip down one AUX line, so
-//     giving it to a second line takes it off the first, and the route sent is
-//     the line that now carries it. Sending two, or none, is the defect;
+//   - each wire is its own answer (#413, ADR 0067): a droid may have several
+//     lit Parts, so giving one Output a Light Type must NOT take it off
+//     another, and the save must carry no droid-wide light field at all. This
+//     test used to assert the opposite, because the firmware could light one
+//     wire; the exclusion it asserted is now the defect;
 //   - when each view's answer bites (#370): an in-use tick is read once at
 //     start, so a changed one says it is waiting and one put back does not;
 //     a servo type bounds the next move, so Servos never says it is waiting.
@@ -35,9 +37,9 @@ const dataDir = join(__dirname, "../../data");
 const OUTPUT_FACTS = {
   arm1: { label: "ARM1", address: "ledc:0", enabledField: "enableArm1", typeField: "arm1Type" },
   arm2: { label: "ARM2", address: "ledc:1", enabledField: "enableArm2", typeField: "arm2Type" },
-  aux1: { label: "ARM3", address: "ledc:3", ledStripPin: 1, enabledField: "enableAux1", typeField: "aux1Type" },
-  aux2: { label: "ARM4", address: "ledc:4", ledStripPin: 2, enabledField: "enableAux2", typeField: "aux2Type" },
-  aux3: { label: "ARM5", address: "ledc:5", ledStripPin: 3, enabledField: "enableAux3", typeField: "aux3Type" },
+  aux1: { label: "ARM3", address: "ledc:3", lightCapable: true, enabledField: "enableAux1", typeField: "aux1Type", ledCountField: "aux1LedCount" },
+  aux2: { label: "ARM4", address: "ledc:4", lightCapable: true, enabledField: "enableAux2", typeField: "aux2Type", ledCountField: "aux2LedCount" },
+  aux3: { label: "ARM5", address: "ledc:5", lightCapable: true, enabledField: "enableAux3", typeField: "aux3Type", ledCountField: "aux3LedCount" },
 };
 
 const CONFIG = () => ({
@@ -48,7 +50,6 @@ const CONFIG = () => ({
     aux2: { ...OUTPUT_FACTS.aux2, enabled: true, type: "rgb" },
     aux3: { ...OUTPUT_FACTS.aux3, enabled: true, type: "mg996r" },
   },
-  aux_led_pin: 2,
 });
 
 const boot = (config = CONFIG()) => {
@@ -77,7 +78,6 @@ const boot = (config = CONFIG()) => {
           entry.enabled = form[entry.enabledField] === "true";
           entry.type = form[entry.typeField];
         }
-        config.aux_led_pin = Number(form.aux_led_pin);
         return { ok: true, data: config };
       },
     },
@@ -137,21 +137,27 @@ test("what Wiring marks in use, Servos shows at once, and the save carries every
   assert.equal(form.enableArm1, "true");
   assert.equal(form.arm2Type, "mg90s");
   assert.equal(form.aux3Type, "mg996r");
-  assert.equal(form.aux_led_pin, "2", "the strip stays where it was");
 });
 
-test("giving the LED strip to a second AUX line takes it off the first, and routes it there", async () => {
+// A droid may have several lit body Parts, each on its own wire (ADR 0067).
+// Until #413 the controller could light exactly one, and this module took a
+// Light Type off every other Output the moment one was given a light. That
+// exclusion would now silently unwire a builder's second strip, so its absence
+// is the invariant - and the save carries no droid-wide light field to
+// disagree with the types either.
+test("a second wire can carry a light without taking it off the first", async () => {
   const env = boot();
   await env.settle();
+  assert.equal(env.option(env.wiring("aux2"), "rgb").classList.contains("active"), true);
 
   env.option(env.wiring("aux3"), "rgb").fire("click", {});
   await env.flush();
 
   const form = env.posts.at(-1).form;
-  assert.equal(form.aux3Type, "rgb");
-  assert.notEqual(form.aux2Type, "rgb", "only one line carries the strip");
-  assert.equal(form.aux_led_pin, "3", "and the route names the line that now carries it");
-  assert.match(env.servos("aux2").textContent, /MG996R|None/, "Servos offers AUX 2 a servo again");
+  assert.equal(form.aux3Type, "rgb", "the wire the builder just gave a light carries one");
+  assert.equal(form.aux2Type, "rgb", "and the one that already did still does");
+  assert.equal(Object.keys(form).some((key) => key.startsWith("aux_led")), false,
+    "no droid-wide light field: which wire carries a light IS its type");
 });
 
 test("an in-use tick waits for the next start until it is put back; a servo type never waits", async () => {
@@ -185,10 +191,9 @@ test("the plates are the Outputs the firmware reports, and a save writes only th
   const env = boot({
     components: {
       out7: { label: "GPIO 49", address: "ledc:7", enabledField: "wiredO7", typeField: "servoO7", enabled: false, type: "mg996r" },
-      out9: { label: "GPIO 4", address: "ledc:9", ledStripPin: 2, enabledField: "wiredO9", typeField: "servoO9", enabled: true, type: "none" },
+      out9: { label: "GPIO 4", address: "ledc:9", lightCapable: true, ledCountField: "ledsO9", enabledField: "wiredO9", typeField: "servoO9", enabled: true, type: "none" },
       domeEsc: { enabled: true, label: "GPIO 48" },
     },
-    aux_led_pin: 0,
   });
   await env.settle();
   assert.deepEqual(
@@ -200,14 +205,13 @@ test("the plates are the Outputs the firmware reports, and a save writes only th
     [["out7", "GPIO 49", "1"], ["out9", "GPIO 4", "2"]],
     "one plate per reported Output, named as the board prints it, colored by its place",
   );
-  assert.equal(env.option(env.wiring("out7"), "rgb"), undefined, "an Output that cannot carry the strip is not offered it");
+  assert.equal(env.option(env.wiring("out7"), "rgb"), undefined, "an Output that cannot carry a light is not offered one");
 
   env.inUse("out7").fire("click", {});
   env.option(env.wiring("out9"), "rgb").fire("click", {});
   await env.flush();
   const form = env.posts.at(-1).form;
-  assert.deepEqual(Object.keys(form).sort(), ["aux_led_pin", "servoO7", "servoO9", "wiredO7", "wiredO9"]);
+  assert.deepEqual(Object.keys(form).sort(), ["servoO7", "servoO9", "wiredO7", "wiredO9"]);
   assert.equal(form.wiredO7, "true");
   assert.equal(form.servoO9, "rgb");
-  assert.equal(form.aux_led_pin, "2", "the strip is routed by the line the firmware gave that Output");
 });

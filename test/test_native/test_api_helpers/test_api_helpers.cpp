@@ -4,7 +4,7 @@
 // Native unit tests for web API parsing helpers and format functions.
 // Tests: parseDriveValue, parseUint32Value, parseBoolValue,
 //        formatSleepControlJson, formatIdentityJson, formatSpeedPresetResponseJson,
-//        formatAuxLedStateJson
+//        formatLitWiresJson
 // =============================================================================
 #include <unity.h>
 
@@ -283,24 +283,44 @@ void test_formatSpeedPresetResponseJson_invalid_preset_fails() {
 }
 
 
-// --- formatAuxLedStateJson() tests ---
+// --- formatLitWiresJson() tests ---
 
-void test_formatAuxLedStateJson_valid_payload() {
-    char out[128] = {};
-    TEST_ASSERT_TRUE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "pulse"));
+// Several wires in one frame is the shape #413 exists for, and the one the
+// single-strip payload could not express. A reading carries no pin and no
+// board label: where a wire plugs in is Wiring's answer.
+void test_formatLitWiresJson_several_wires() {
+    const LitWireReading wires[] = {
+        {"aux1", 10, 20, 30, "pulse", true},
+        {"aux3", 0, 0, 0, "off", false},
+    };
+    char out[256] = {};
+    TEST_ASSERT_TRUE(formatLitWiresJson(out, sizeof(out), wires, 2, nullptr));
     TEST_ASSERT_EQUAL_STRING(
-        "{\"ok\":true,\"auxLed\":{\"pin\":19,\"r\":10,\"g\":20,\"b\":30,\"effect\":\"pulse\"}}",
+        "{\"aux1\":{\"r\":10,\"g\":20,\"b\":30,\"effect\":\"pulse\",\"available\":true},"
+        "\"aux3\":{\"r\":0,\"g\":0,\"b\":0,\"effect\":\"off\",\"available\":false}}",
         out);
 }
 
-void test_formatAuxLedStateJson_null_effect_fails() {
-    char out[128] = {};
-    TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, nullptr));
+// A droid with no light says so, rather than leaving a surface to tell "no
+// lights" from "no answer".
+void test_formatLitWiresJson_no_wires_is_an_empty_object() {
+    char out[32] = {};
+    size_t written = 0;
+    TEST_ASSERT_TRUE(formatLitWiresJson(out, sizeof(out), nullptr, 0, &written));
+    TEST_ASSERT_EQUAL_STRING("{}", out);
+    TEST_ASSERT_EQUAL_size_t(2, written);
 }
 
-void test_formatAuxLedStateJson_small_buffer_fails() {
+void test_formatLitWiresJson_null_effect_fails() {
+    const LitWireReading wires[] = {{"aux1", 10, 20, 30, nullptr, true}};
+    char out[128] = {};
+    TEST_ASSERT_FALSE(formatLitWiresJson(out, sizeof(out), wires, 1, nullptr));
+}
+
+void test_formatLitWiresJson_small_buffer_fails() {
+    const LitWireReading wires[] = {{"aux1", 10, 20, 30, "solid", true}};
     char out[16] = {};
-    TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "solid"));
+    TEST_ASSERT_FALSE(formatLitWiresJson(out, sizeof(out), wires, 1, nullptr));
 }
 
 // trimAsciiWhitespace() replaced the Arduino String::trim() that the sequence
@@ -380,9 +400,10 @@ int main() {
     RUN_TEST(test_formatSpeedPresetResponseJson_small_buffer_fails);
     RUN_TEST(test_formatSpeedPresetResponseJson_out_of_range_fails);
     RUN_TEST(test_formatSpeedPresetResponseJson_invalid_preset_fails);
-    RUN_TEST(test_formatAuxLedStateJson_valid_payload);
-    RUN_TEST(test_formatAuxLedStateJson_null_effect_fails);
-    RUN_TEST(test_formatAuxLedStateJson_small_buffer_fails);
+    RUN_TEST(test_formatLitWiresJson_several_wires);
+    RUN_TEST(test_formatLitWiresJson_no_wires_is_an_empty_object);
+    RUN_TEST(test_formatLitWiresJson_null_effect_fails);
+    RUN_TEST(test_formatLitWiresJson_small_buffer_fails);
     RUN_TEST(test_trimAsciiWhitespace_strips_both_ends);
     RUN_TEST(test_trimAsciiWhitespace_leaves_inner_spaces);
     RUN_TEST(test_trimAsciiWhitespace_all_whitespace_becomes_empty);

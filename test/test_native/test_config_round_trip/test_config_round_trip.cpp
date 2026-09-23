@@ -9,7 +9,9 @@
 #include <unity.h>
 
 #include "config_store.h"
+#include "board_outputs.h"
 #include "config_serializer.h"
+#include "servo_output_row.h"
 #include "../../../test/stubs/config/map_config_io.h"
 
 void setUp(void) {}
@@ -39,7 +41,7 @@ void test_default_snapshot_round_trip(void) {
     TEST_ASSERT_EQUAL_INT(defaults.drive.speedPresetNormal, loaded.drive.speedPresetNormal);
     TEST_ASSERT_EQUAL_INT(defaults.drive.speedPresetTurbo, loaded.drive.speedPresetTurbo);
     TEST_ASSERT_EQUAL_INT(defaults.audio.audioVolume, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_INT(defaults.servo.aux_led_count, loaded.servo.aux_led_count);
+    TEST_ASSERT_EQUAL_INT(defaults.dome.dome_speed_limit_pct, loaded.dome.dome_speed_limit_pct);
 }
 
 // Test 2: Typical snapshot round-trip with non-default values
@@ -52,7 +54,7 @@ void test_typical_snapshot_round_trip(void) {
     snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "r2d2test");
     snap.drive.speedLimitMax = 600;  // exact upper boundary
     snap.audio.audioVolume = 15;
-    snap.servo.aux_led_count = 22;
+    snap.dome.dome_speed_limit_pct = 22;
     snap.dome.dome_min_speed = 0.25f;
     snap.system.enable_arm1 = true;
 
@@ -71,7 +73,7 @@ void test_typical_snapshot_round_trip(void) {
     TEST_ASSERT_EQUAL_STRING("r2d2test", loaded.system.droid_name);
     TEST_ASSERT_EQUAL_INT(600, loaded.drive.speedLimitMax);
     TEST_ASSERT_EQUAL_INT(15, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_INT(22, loaded.servo.aux_led_count);
+    TEST_ASSERT_EQUAL_INT(22, loaded.dome.dome_speed_limit_pct);
     TEST_ASSERT_EQUAL_INT(1, loaded.system.enable_arm1);
     // Float comparison with tolerance
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.25f, loaded.dome.dome_min_speed);
@@ -155,7 +157,7 @@ void test_schema_v0_migration(void) {
 
     // Values not in the map should have defaults
     TEST_ASSERT_EQUAL_INT(defaults.drive.speedPresetSlow, loaded.drive.speedPresetSlow);
-    TEST_ASSERT_EQUAL_INT(defaults.servo.aux_led_count, loaded.servo.aux_led_count);
+    TEST_ASSERT_EQUAL_INT(defaults.dome.dome_speed_limit_pct, loaded.dome.dome_speed_limit_pct);
 }
 
 // Test 6: Unknown key tolerance
@@ -176,7 +178,7 @@ void test_unknown_key_tolerance(void) {
     TEST_ASSERT_EQUAL_INT(600, loaded.drive.speedLimitMax);  // clamped at boundary
     TEST_ASSERT_EQUAL_INT(18, loaded.audio.audioVolume);
     // Unknown key should not corrupt anything
-    TEST_ASSERT_EQUAL_INT(defaults.servo.aux_led_count, loaded.servo.aux_led_count);
+    TEST_ASSERT_EQUAL_INT(defaults.dome.dome_speed_limit_pct, loaded.dome.dome_speed_limit_pct);
 }
 
 // Test 7: Moodcat mask — upper nibble must be stripped on both serialize and deserialize
@@ -336,6 +338,106 @@ void test_dome_wifi_peer_ip_clear_overwrites_stored_value(void) {
 }
 
 // Test initialization function for Unity
+// -----------------------------------------------------------------------------
+// The bridge a droid with one lit body light crosses (#413, ADR 0067)
+//
+// Before this change a droid had exactly one: aux_led_pin named which of the
+// light-capable Outputs carried it and aux_led_count said how long the strip
+// was. Both are an Output's own now, on its Servo Output row. A builder must
+// not have to answer either question again, and the strip must not come back as
+// a servo output on the pin it is actually driving - so the adoption is a
+// behaviour, not a nicety, and this is the test that says so.
+// -----------------------------------------------------------------------------
+
+// The row the retired aux_led_pin slot named: the Nth light-capable Output in
+// BOARD_OUTPUTS order, counting from one, which is what that number always
+// meant. Worked out here from the same table the firmware reads rather than
+// hardcoded, so a board with a different set of strip-capable Outputs is asked
+// the same question.
+static const BoardOutput* outputForRetiredSlot(uint8_t slot) {
+    uint8_t seen = 0;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable && ++seen == slot) {
+            return &BOARD_OUTPUTS[i];
+        }
+    }
+    return nullptr;
+}
+
+static const ServoOutputRow* rowOn(const ServoOutputTable& table, uint8_t channel) {
+    const uint8_t index = servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, channel);
+    return index < SERVO_OUTPUT_ROW_MAX ? &table.rows[index] : nullptr;
+}
+
+void test_one_lit_light_survives_the_upgrade(void) {
+    const BoardOutput* lit = outputForRetiredSlot(2);
+    TEST_ASSERT_NOT_NULL(lit);
+
+    // A controller as it stood before the upgrade: the two retired keys, and no
+    // row record at all for the Output they were about.
+    MapReader reader;
+    reader.setSchemaVersion(1);
+    reader.set(NVS_KEY_RETIRED_AUX_LED_PIN, (uint32_t)2);
+    reader.set(NVS_KEY_RETIRED_AUX_LED_COUNT, (uint32_t)16);
+
+    ServoOutputTable table = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &table, &report);
+
+    const ServoOutputRow* row = rowOn(table, lit->channel);
+    TEST_ASSERT_NOT_NULL(row);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_RGB, (uint8_t)row->component);
+    TEST_ASSERT_EQUAL_UINT8(16, row->led_count);
+
+    // And only that Output: the other light-capable ones are untouched, which
+    // is what stops the upgrade lighting a wire nobody said carried a strip.
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (&BOARD_OUTPUTS[i] == lit) {
+            continue;
+        }
+        const ServoOutputRow* other = rowOn(table, BOARD_OUTPUTS[i].channel);
+        TEST_ASSERT_NOT_NULL(other);
+        TEST_ASSERT_NOT_EQUAL((uint8_t)SERVO_COMP_RGB, (uint8_t)other->component);
+    }
+}
+
+// The other half of the same behaviour: once the keys are gone - which
+// configSaveServoOutputs() does after the rows are safely down - nothing
+// re-adopts, so an answer the builder has since changed stands.
+void test_a_droid_with_no_retired_keys_adopts_nothing(void) {
+    MapReader reader;
+    reader.setSchemaVersion(1);
+
+    ServoOutputTable table = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &table, &report);
+
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        const ServoOutputRow* row = rowOn(table, BOARD_OUTPUTS[i].channel);
+        TEST_ASSERT_NOT_NULL(row);
+        TEST_ASSERT_NOT_EQUAL((uint8_t)SERVO_COMP_RGB, (uint8_t)row->component);
+    }
+}
+
+// A stored row written before the LED count joined it has thirteen fields, not
+// fourteen. That is the shape this firmware used to write, so it is read as
+// itself with the count defaulted - never as a damaged record, which would
+// throw away a builder's whole calibration on the first boot after an upgrade.
+void test_a_thirteen_field_row_is_the_old_shape_not_damage(void) {
+    ServoOutputRow fallback = {};
+    servoOutputRowDefaults(&fallback, SERVO_DRIVER_LEDC, LEDC_CH_ARM1, SERVO_COMP_MG996R);
+
+    ServoOutputRow parsed = {};
+    const uint16_t repaired = servoOutputRowParse(
+        "ledc:0:doorFL:1900:1450:1050:800:200:0:none:limp:mg996r:1", fallback, &parsed);
+
+    TEST_ASSERT_EQUAL_UINT16(0, repaired);
+    TEST_ASSERT_EQUAL_UINT16(1900, parsed.open_us);
+    TEST_ASSERT_EQUAL_UINT16(1050, parsed.close_us);
+    TEST_ASSERT_TRUE(parsed.calibrated);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_LIGHT_LEDS_DEFAULT, parsed.led_count);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_default_snapshot_round_trip);
@@ -350,5 +452,8 @@ int main(void) {
     RUN_TEST(test_wifi_standalone_ap_mode_round_trip);
     RUN_TEST(test_wifi_corrupt_values_fall_back_to_defaults);
     RUN_TEST(test_dome_wifi_peer_ip_clear_overwrites_stored_value);
+    RUN_TEST(test_one_lit_light_survives_the_upgrade);
+    RUN_TEST(test_a_droid_with_no_retired_keys_adopts_nothing);
+    RUN_TEST(test_a_thirteen_field_row_is_the_old_shape_not_damage);
     return UNITY_END();
 }

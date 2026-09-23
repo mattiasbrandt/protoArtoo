@@ -9,6 +9,7 @@
 // =============================================================================
 #include <unity.h>
 #include "config.h"
+#include "board_outputs.h"
 
 void setUp() {
 }
@@ -141,23 +142,23 @@ void test_pins_are_defined() {
     TEST_ASSERT_GREATER_THAN(0, PIN_I2C_SDA);
 }
 
-// Verify that servo pins and LED functions are available
+// Verify that servo pins are defined, and that every Output a light may go on
+// resolves to one of this board's own strip-capable pins. The aux_led_pin slot
+// numbers this used to check are gone (#413): which Output carries a light is
+// that Output's stored type, and the GPIO behind it is the channel's.
 void test_servo_and_led_config_available() {
     TEST_ASSERT_GREATER_THAN(0, PIN_ARM1_SERVO);
     TEST_ASSERT_GREATER_THAN(0, PIN_ARM2_SERVO);
-    TEST_ASSERT_TRUE(auxLedPinSettingValid(AUX_LED_PIN_DISABLED));
-    TEST_ASSERT_TRUE(auxLedPinSettingValid(AUX_LED_PIN_AUX1));
-    TEST_ASSERT_TRUE(auxLedPinSettingValid(AUX_LED_PIN_AUX2));
-    TEST_ASSERT_TRUE(auxLedPinSettingValid(AUX_LED_PIN_AUX3));
-    TEST_ASSERT_FALSE(auxLedPinSettingValid(AUX_LED_PIN_MAX + 1));
-}
-
-// Verify auxLedSelectionToGpio mapping
-void test_aux_led_selection_to_gpio_mapping() {
-    TEST_ASSERT_EQUAL_INT(auxLedSelectionToGpio(AUX_LED_PIN_DISABLED), 0);
-    TEST_ASSERT_EQUAL_INT(auxLedSelectionToGpio(AUX_LED_PIN_AUX1), PIN_ARM3_SERVO);
-    TEST_ASSERT_EQUAL_INT(auxLedSelectionToGpio(AUX_LED_PIN_AUX2), PIN_ARM4_SERVO);
-    TEST_ASSERT_EQUAL_INT(auxLedSelectionToGpio(AUX_LED_PIN_AUX3), PIN_ARM5_SERVO);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        const bool stripCapableChannel = BOARD_OUTPUTS[i].channel == LEDC_CH_AUX1 ||
+                                         BOARD_OUTPUTS[i].channel == LEDC_CH_AUX2 ||
+                                         BOARD_OUTPUTS[i].channel == LEDC_CH_AUX3;
+        TEST_ASSERT_EQUAL_INT(stripCapableChannel ? 1 : 0, BOARD_OUTPUTS[i].lightCapable ? 1 : 0);
+        // And an Output that can carry one names the field that saves its
+        // settings, which is what a surface reads to draw the control at all.
+        TEST_ASSERT_EQUAL_INT(stripCapableChannel ? 1 : 0,
+                              BOARD_OUTPUTS[i].ledCountField != nullptr ? 1 : 0);
+    }
 }
 
 // Verify that the drive backend capability gate is declared for this board
@@ -206,7 +207,6 @@ int main() {
     RUN_TEST(test_chip_target_mapped_for_artoo_esp32);
     RUN_TEST(test_pins_are_defined);
     RUN_TEST(test_servo_and_led_config_available);
-    RUN_TEST(test_aux_led_selection_to_gpio_mapping);
     RUN_TEST(test_drive_backend_capability_gate_is_declared);
     RUN_TEST(test_dedicated_audio_uart_capability_absent_on_artoo_esp32);
     RUN_TEST(test_uart_controller_allocation_on_artoo_esp32);

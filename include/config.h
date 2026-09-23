@@ -204,33 +204,6 @@ constexpr uint8_t PIN_ARM4_SERVO = 18;  // ARM4  --  can carry the LED strip
 constexpr uint8_t PIN_ARM5_SERVO = 32;  // ARM5  --  can carry the LED strip
 constexpr uint8_t PIN_DOME_ESC = 25;
 
-// LED strip selection values (NVS aux_led_pin): which Output carries the strip
-constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
-constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
-constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
-constexpr uint8_t AUX_LED_PIN_AUX3 = 3;
-constexpr uint8_t AUX_LED_PIN_MAX = AUX_LED_PIN_AUX3;
-constexpr uint8_t AUX_LED_COUNT_DEFAULT = 1;
-constexpr uint8_t AUX_LED_COUNT_MAX = 255;
-
-inline bool auxLedPinSettingValid(uint8_t selection) {
-    return selection <= AUX_LED_PIN_MAX;
-}
-
-inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
-    switch (selection) {
-        case AUX_LED_PIN_AUX1:
-            return PIN_ARM3_SERVO;
-        case AUX_LED_PIN_AUX2:
-            return PIN_ARM4_SERVO;
-        case AUX_LED_PIN_AUX3:
-            return PIN_ARM5_SERVO;
-        case AUX_LED_PIN_DISABLED:
-        default:
-            return 0;
-    }
-}
-
 // -----------------------------------------------------------------------------
 // I2C
 // -----------------------------------------------------------------------------
@@ -314,8 +287,8 @@ constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // Servo outputs (LEDC PWM)
 // Allocation: the first two Outputs on LDO-backed pins (49-50 on VDD_IO_6). The
-// three that can carry the optional WS2812B strip (aux_led_pin 1-3, via
-// auxLedSelectionToGpio()) use non-LDO main IO where they can, to avoid placing
+// three that can carry the optional WS2812B strip (include/board_outputs.h
+// `lightCapable`) use non-LDO main IO where they can, to avoid placing
 // a high-frequency timing-critical line on unmeasured LDO rails. GPIO 4 and 5
 // cost JTAG, which is acceptable post-debug. Each is named by the GPIO number
 // the shield prints (include/component_labels.inc; ADR 0033 Amendment 2026-09-19).
@@ -331,33 +304,6 @@ constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 // GPIO7 is "Board default SDA". Header table (lines 826-827): J7 = 8/SCL, J1 = 7/SDA.
 constexpr uint8_t PIN_I2C_SCL = 8;   // I2C clock, board default
 constexpr uint8_t PIN_I2C_SDA = 7;   // I2C data, board default
-
-// LED strip selection values (NVS aux_led_pin): which Output carries the strip
-constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
-constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
-constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
-constexpr uint8_t AUX_LED_PIN_AUX3 = 3;
-constexpr uint8_t AUX_LED_PIN_MAX = AUX_LED_PIN_AUX3;
-constexpr uint8_t AUX_LED_COUNT_DEFAULT = 1;
-constexpr uint8_t AUX_LED_COUNT_MAX = 255;
-
-inline bool auxLedPinSettingValid(uint8_t selection) {
-    return selection <= AUX_LED_PIN_MAX;
-}
-
-inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
-    switch (selection) {
-        case AUX_LED_PIN_AUX1:
-            return PIN_ARM3_SERVO;
-        case AUX_LED_PIN_AUX2:
-            return PIN_ARM4_SERVO;
-        case AUX_LED_PIN_AUX3:
-            return PIN_ARM5_SERVO;
-        case AUX_LED_PIN_DISABLED:
-        default:
-            return 0;
-    }
-}
 
 // FireBeetle 2 pin coherence guards — constexpr-driven inventory-driven checks.
 //
@@ -974,8 +920,14 @@ static_assert(HOSTED_RECOVERY_TASK_STACK_BYTES >= HOSTED_RECOVERY_TASK_MEASURED_
 // NVS
 // -----------------------------------------------------------------------------
 constexpr char NVS_NAMESPACE[] = "proto";
-constexpr char NVS_KEY_AUX_LED_PIN[] = "aux_led_pin";
-constexpr char NVS_KEY_AUX_LED_COUNT[] = "aux_led_count";
+// Retired with #413, and read once more on the way out. They were the single
+// lit wire and its LED count, one pair for the whole droid; a Light Type and
+// its settings now live on the Output that carries them (ADR 0067). A
+// controller upgrading still holds them, so configDeserializeServoOutputs()
+// reads them onto the row they were about and configSaveServoOutputs() removes
+// them once that row is safely down. Nothing writes them.
+constexpr char NVS_KEY_RETIRED_AUX_LED_PIN[] = "aux_led_pin";
+constexpr char NVS_KEY_RETIRED_AUX_LED_COUNT[] = "aux_led_count";
 constexpr char DROID_NAME_DEFAULT[] = "protoartoo";
 constexpr size_t DROID_NAME_MAX_LEN = 32;
 

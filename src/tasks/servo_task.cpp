@@ -14,6 +14,7 @@
 
 #include <esp_task_wdt.h>
 
+#include "board_outputs.h"  // boardOutputOnChannel(), boardOutputLabel()
 #include "config.h"
 #include "config_cache.h"
 #include "ledc_pwm.h"
@@ -37,7 +38,12 @@ static bool s_aux1_enabled = false;
 static bool s_aux2_enabled = false;
 static bool s_aux3_enabled = false;
 static bool s_dome_enabled = false;
-static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
+// Which arms carry a light instead of a servo, one bit per armId. Captured at
+// startup beside the toggles above, because what a wire carries is read once at
+// boot like every other Component Toggle (ADR 0027). A droid may have several
+// lit wires (ADR 0067, #413), which is why this is a mask and not the single
+// slot number it replaced.
+static uint8_t s_lit_arm_mask = 0;
 
 // -----------------------------------------------------------------------------
 // Where each output is, and the move it is part way through (ADR 0052).
@@ -104,6 +110,32 @@ static struct {
 static bool isArmEnabled(uint8_t armId);
 
 // -----------------------------------------------------------------------------
+// litArmMask()
+// Which arms carry a light rather than a servo, one bit per armId, read from
+// the Servo Output rows (ADR 0067). A wire carries a light when its Output's
+// `component` names a Light Type. The wired tick is deliberately NOT part of
+// this answer: the mask exists to keep LEDC off a pin a WS2812B may be driving,
+// and a builder who has declared a strip there has said that pin is not a
+// servo's whether or not they have also ticked the wire in. AuxLedTask asks the
+// narrower question - a strip is only DRIVEN on a wire that is ticked in - so
+// the unticked case ends with neither side on the pin, which is the safe way
+// round.
+// -----------------------------------------------------------------------------
+static uint8_t litArmMask() {
+    uint8_t mask = 0;
+    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+        const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+        if (channel == LEDC_CH_MAX) {
+            continue;
+        }
+        if (configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, channel) == SERVO_COMP_RGB) {
+            mask |= (uint8_t)(1u << armId);
+        }
+    }
+    return mask;
+}
+
+// -----------------------------------------------------------------------------
 // armIdToLedcChannel()
 // Map armId to LEDC channel.
 //   0 = ARM1  -> LEDC_CH_ARM1  (GPIO 23)
@@ -122,14 +154,15 @@ static uint8_t armIdToLedcChannel(uint8_t armId) {
 // Check feature toggle for a given armId using the boot-time snapshot.
 // Toggles are read once at startup and never re-checked per iteration.
 // armId 255 (broadcast) is allowed only if both ARM1 and ARM2 are enabled.
-// AUX channel selected for WS2812 is treated as unavailable to avoid
-// pin ownership conflicts.
+// An output whose wire carries a Light Type is treated as unavailable to avoid
+// pin ownership conflicts: a WS2812B's signal line and a servo's PWM cannot
+// share a pin.
 // Per ADR 0027, this function gates all servo operations on the component
 // toggle snapshot captured at startup.
 // -----------------------------------------------------------------------------
 static bool isArmEnabled(uint8_t armId) {
     return servo_arm_enabled(armId, s_arm1_enabled, s_arm2_enabled, s_aux1_enabled, s_aux2_enabled,
-                             s_aux3_enabled, s_aux_led_pin);
+                             s_aux3_enabled, s_lit_arm_mask);
 }
 
 // -----------------------------------------------------------------------------
@@ -855,7 +888,7 @@ void servoTaskInit() {
     s_aux2_enabled = cfg.system.enable_aux2;
     s_aux3_enabled = cfg.system.enable_aux3;
     s_dome_enabled = cfg.system.enable_dome_esc;
-    s_aux_led_pin = cfg.servo.aux_led_pin;
+    s_lit_arm_mask = litArmMask();
 
     bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;
     bool anyLedc = anyServo || s_dome_enabled;
@@ -864,7 +897,7 @@ void servoTaskInit() {
         // Build enabled-channels mask using the helper from servo_helpers.h.
         uint8_t ledcMask = servo_enabled_ledc_mask(s_arm1_enabled, s_arm2_enabled, s_aux1_enabled,
                                                    s_aux2_enabled, s_aux3_enabled, s_dome_enabled,
-                                                   s_aux_led_pin);
+                                                   s_lit_arm_mask);
 
         if (!ledcPwmInit(ledcMask)) {
             PA_LOG_ERROR(TAG, "LEDC init failed");
@@ -884,19 +917,15 @@ void servoTaskInit() {
             }
         }
 
-        if (s_aux_led_pin != AUX_LED_PIN_DISABLED) {
-            uint8_t reservedChannel = LEDC_CH_MAX;
-            if (s_aux_led_pin == AUX_LED_PIN_AUX1) {
-                reservedChannel = LEDC_CH_AUX1;
-            } else if (s_aux_led_pin == AUX_LED_PIN_AUX2) {
-                reservedChannel = LEDC_CH_AUX2;
-            } else if (s_aux_led_pin == AUX_LED_PIN_AUX3) {
-                reservedChannel = LEDC_CH_AUX3;
+        for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+            if ((s_lit_arm_mask & (uint8_t)(1u << armId)) == 0) {
+                continue;
             }
-            if (reservedChannel != LEDC_CH_MAX) {
-                PA_LOG_INFO(TAG, "AUX LED active on selection %u (GPIO %u) - LEDC skipped for that header",
-                            (unsigned)s_aux_led_pin, (unsigned)getChannelGpio(reservedChannel));
-            }
+            const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+            const BoardOutput* output = boardOutputOnChannel(channel);
+            PA_LOG_INFO(TAG, "%s carries a light (GPIO %u) - LEDC skipped for that header",
+                        output != nullptr ? boardOutputLabel(*output) : "an output",
+                        (unsigned)getChannelGpio(channel));
         }
     } else {
         PA_LOG_INFO(TAG, "all LEDC outputs disabled - skipping LEDC init");

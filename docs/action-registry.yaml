@@ -2560,7 +2560,7 @@ entries:
   is_query: true
 - name: aux.action.led-color
   display_name: LED Color
-  description: Set the LED strip color.
+  description: Set the color on every lit output.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2595,7 +2595,7 @@ entries:
   executor: auxLedQueue
 - name: aux.action.led-effect
   display_name: LED Effect
-  description: Set the LED strip effect.
+  description: Set the effect on every lit output.
   domain: aux
   type: action
   marcduino_cmd: null
@@ -2623,7 +2623,7 @@ entries:
   executor: auxLedQueue
 - name: aux.status.led-state
   display_name: LED Strip State
-  description: Which output carries the LED strip, and its color and effect.
+  description: Every lit output, with the color and effect it was last set to.
   domain: aux
   type: status
   marcduino_cmd: null
@@ -2638,34 +2638,9 @@ entries:
   nvs_key: null
   executor: buildStatusJson
   is_query: false
-- name: aux.config.led-pin
-  display_name: LED Strip Output
-  description: 'Which output carries the LED strip: 0 for none, or 1 to 3 for the outputs that can, in the order Wiring lists them.'
-  domain: aux
-  type: config
-  marcduino_cmd: null
-  api_path: /api/config
-  sse_event: null
-  cpp_enum: null
-  cpp_file: null
-  sources:
-  - internal
-  safety_critical: false
-  requires_web_control: false
-  params:
-  - name: aux_led_pin
-    type: uint8
-    values:
-    - 0
-    - 1
-    - 2
-    - 3
-    required: true
-  nvs_key: aux_led_pin
-  executor: configApply
 - name: aux.config.led-count
   display_name: LED Count
-  description: How many LEDs are on the strip.
+  description: How many LEDs are on one output's strip. Name the output; add a value to set it.
   domain: aux
   type: config
   marcduino_cmd: null
@@ -2678,13 +2653,21 @@ entries:
   safety_critical: false
   requires_web_control: false
   params:
-  - name: aux_led_count
+  - name: target
+    type: string
+    board_output: true
+    required: true
+  - name: value
     type: uint8
     range:
     - 1
     - 255
-    required: true
-  nvs_key: aux_led_count
+    required: false
+  # No NVS key of its own since #413: a light's settings live on the addressed
+  # Servo Output row that carries the Light Type, beside the type itself
+  # (ADR 0067). aux.config.led-pin went with them - which output carries a
+  # light is that output's own stored type, and a droid may have several.
+  nvs_key: null
   executor: configApply
 - name: system.action.set-mode
   display_name: Set Mode

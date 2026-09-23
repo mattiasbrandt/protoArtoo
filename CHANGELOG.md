@@ -26,6 +26,14 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **As many lit parts as you have wires for.** Your droid used to get one LED
+  strip: one wire carried it, one length described it, and giving a second wire
+  a strip quietly took it off the first. Now every wire answers for itself. Put
+  a strip on as many wires as your board has, tell each one how long it is, and
+  every part on a lit wire gets its own color, its own brightness and its own
+  on / off / flash. Asking one for red leaves the others where they were. If you
+  already had a strip, it stays exactly where it was and you are not asked about
+  it again.
 - **Lights: every light on the droid, on one page.** The dome's logic displays,
   PSIs and Magic Panel, and the body's lights, listed by where they sit. A dome
   light is lit by the dome controller, and from here you can ask it for a mode

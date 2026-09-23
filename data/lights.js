@@ -9,9 +9,9 @@
 // before they wire.
 //
 // AN LED STRIP IS NOT A THING ON THE DROID. It is a Light Type: what protoArtoo
-// puts on one of its own leads to light a Part (ADR 0067). So it is never a row
-// here; it is what a row's lead CARRIES, read from data/output_settings.js's
-// `light` fact, and the Part on that lead inherits it. Three iterations of this
+// puts on one of its own wires to light a Part (ADR 0067). So it is never a row
+// here; it is what a row's wire CARRIES, read from data/output_settings.js's
+// `light` fact, and the Part on that wire inherits it. Three iterations of this
 // page were rejected for building the strip as a thing, and the Light Type is
 // what stops the fourth.
 //
@@ -29,18 +29,19 @@
 //                  driven": no Output of ours drives it, which is a different
 //                  sentence, and a builder commands it from here today.
 //
-// NOTHING HERE NAMES AN OUTPUT, a pin or a board label. Which lead carries a
+// NOTHING HERE NAMES AN OUTPUT, a pin or a board label. Which wire carries a
 // light is Wiring's answer, reached from here and never repeated.
 //
 // NOTHING HERE IS DEVICE TRUTH. Every reading is what protoArtoo asked for:
 // the strip's color is what it set, and a dome light's state is not claimed
 // at all, because nothing reports it back (ADR 0045).
 //
-// ONE LIT LEAD TODAY. The controller lights a single lead, so at most one body
-// light is lit and the page says so plainly. The per-lead firmware change is
-// staged behind this surface; when it lands, each lead answers for itself and
-// the only change here is that more than one row finds a Light Type.
-// =============================================================================
+// EACH WIRE ANSWERS FOR ITSELF. A droid may have several lit body Parts, each
+// on its own wire with its own Light Type and its own settings (ADR 0067,
+// #413). So a plate reads the wire its Part is on - its color, its effect, its
+// LED count - and a command names that wire. Nothing here is the droid's lights
+// as a whole.
+// ==============================================================================
 (() => {
   "use strict";
 
@@ -69,7 +70,7 @@
   const lights = parts.filter((part) => Boolean(kinds?.isLight(part)));
 
   // What was last asked of each dome light, by Part id. It lives out here so a
-  // repaint - a status frame, a lead answering - redraws the ask rather than
+  // repaint - a status frame, a wire answering - redraws the ask rather than
   // resetting it under a builder's hand. It is commanded intent and nothing
   // more: what the dome did with it is the dome's (ADR 0045).
   const asked = new Map();
@@ -79,9 +80,12 @@
   };
 
   // What the droid has answered so far; each is null until it has.
-  let leads = null;      // [{ address, parts }] from GET /api/servo/outputs
-  let leadLight = null;  // { [address]: Light Type } from the Outputs' answer
-  let auxLed = null;     // what the controller last set its lit lead to
+  let wires = null;      // [{ address, parts }] from GET /api/servo/outputs
+  let wireFacts = null;  // { [address]: the Outputs' answer for that wire }
+  // What the controller last set each lit wire to, by the Output id the
+  // firmware keys its status frame with. Empty until a frame arrives, which
+  // reads as "no wire is showing anything" and is the honest start.
+  let showing = {};
 
   // Where a light sits, in the words a builder reads on the droid: a dome
   // light is IN the panel that carries it, by the Printed Droid shorthand
@@ -100,13 +104,16 @@
     return (part.aliases || []).find((word) => word && word.toLowerCase() !== name) || "";
   };
 
-  // A light Part inherits the Light Type of the lead it is on (ADR 0067), so
-  // this is two lookups and no rule of its own: which lead drives this Part,
-  // and what that lead carries.
-  const lightTypeFor = (part) => {
-    if (leads === null || leadLight === null) return null;
-    const lead = leads.find((row) => row.parts.includes(part.id));
-    return lead ? leadLight[lead.address] || null : null;
+  // The wire a light Part is on, with everything that wire answers for: its
+  // Light Type, its LED count and the field that saves it. A Part INHERITS all
+  // of it (ADR 0067) - two lookups and no rule of its own: which wire drives
+  // this Part, and what the droid said about that wire. null where the Part is
+  // on no wire, or on one carrying no light.
+  const wireFor = (part) => {
+    if (wires === null || wireFacts === null) return null;
+    const wire = wires.find((row) => row.parts.includes(part.id));
+    const fact = wire ? wireFacts[wire.address] : null;
+    return fact && fact.light ? fact : null;
   };
 
   // A light the builder has not fitted still shows - the droid design carries
@@ -148,55 +155,61 @@
   };
 
   // ---------------------------------------------------------------------------
-  // The lit lead's own setting: how long the strip is
+  // A lit wire's own setting: how long its strip is
   // ---------------------------------------------------------------------------
-  // Read once when the strip starts (src/tasks/aux_led.cpp). That is
-  // PAApplyTiming's AT_REBOOT, said in three words beside the field rather than
-  // as the module's full sentence: the operator cut that sentence to "a very
-  // small mention at most" on 2026-09-20.
-  let savedCount = null;
-  let bootCount = null;
-  let countValue = 1;
-  let saveTimer = null;
-  let saving = false;
-  let saveAgain = false;
+  // One per wire, saved under the field that wire named (`ledCountField`, from
+  // GET /api/config), so two lit Parts never share a number. Read once when the
+  // strip starts (src/tasks/aux_led.cpp). That is PAApplyTiming's AT_REBOOT,
+  // said in three words beside the field rather than as the module's full
+  // sentence: the operator cut that sentence to "a very small mention at most"
+  // on 2026-09-20.
+  //
+  // What the droid booted with is remembered per wire, so "Waiting for a
+  // restart" is about the wire the builder is looking at and not the droid.
+  const bootCounts = new Map();
+  const pending = new Map();
+  const saveTimers = new Map();
+  const saving = new Set();
+  const saveAgain = new Set();
 
-  const adoptCount = (config) => {
-    if (config?.aux_led_count === undefined) return;
-    savedCount = Number(config.aux_led_count);
-    if (bootCount === null) bootCount = savedCount;
-    countValue = savedCount;
+  const countOf = (wire) => {
+    if (pending.has(wire.id)) return pending.get(wire.id);
+    return Number(wire.ledCount) || 1;
   };
 
-  const saveCount = async (feedback) => {
-    if (!window.PAApi) return;
-    if (saving) {
-      saveAgain = true;
+  const saveCount = async (wire, feedback) => {
+    if (!window.PAApi || !wire.ledCountField) return;
+    if (saving.has(wire.id)) {
+      saveAgain.add(wire.id);
       return;
     }
-    saving = true;
+    saving.add(wire.id);
     say(feedback, "Saving…");
     try {
-      const result = await window.PAApi.postForm("/api/config", { aux_led_count: String(countValue) }, { timeoutMs: 5000 });
-      adoptCount(result.data);
+      const result = await window.PAApi.postForm(
+        "/api/config", { [wire.ledCountField]: String(countOf(wire)) }, { timeoutMs: 5000 });
+      // The Outputs module owns this answer, so the saved payload goes back
+      // through it and the redraw comes from there - the same one save, one
+      // state rule Wiring and Servos keep.
+      window.PAOutputSettings?.adopt?.(result.data);
+      pending.delete(wire.id);
       say(feedback, `Saved at ${at()}`, "success");
       paint();
     } catch (error) {
       console.error("[lights] count save failed:", error);
       say(feedback, window.PAApi.messageFor(error), "error");
       // What the droid holds, not the length it refused.
-      if (savedCount !== null) countValue = savedCount;
+      pending.delete(wire.id);
       paint();
     } finally {
-      saving = false;
-      if (saveAgain) {
-        saveAgain = false;
-        saveCount(feedback);
+      saving.delete(wire.id);
+      if (saveAgain.delete(wire.id)) {
+        saveCount(wire, feedback);
       }
     }
   };
 
-  const countField = (feedback) => {
+  const countField = (wire, feedback) => {
     const wrap = element("div", "light-count-wrap");
     // The label reads like every other group's on this page, and the box is
     // sized for three digits. `.field` and `.type-select` are the FORM-scale
@@ -212,17 +225,19 @@
     input.step = "1";
     input.className = "light-count-input";
     input.setAttribute("aria-label", "LEDs on the strip");
-    input.value = String(countValue);
+    input.value = String(countOf(wire));
     input.addEventListener("change", () => {
       const parsed = Number(input.value);
-      countValue = Number.isFinite(parsed) ? Math.max(1, Math.min(255, Math.round(parsed))) : 1;
-      input.value = String(countValue);
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => saveCount(feedback), 300);
+      const next = Number.isFinite(parsed) ? Math.max(1, Math.min(255, Math.round(parsed))) : 1;
+      pending.set(wire.id, next);
+      input.value = String(next);
+      clearTimeout(saveTimers.get(wire.id));
+      saveTimers.set(wire.id, setTimeout(() => saveCount(wire, feedback), 300));
     });
     field.appendChild(input);
     wrap.appendChild(field);
-    const waiting = bootCount !== null && savedCount !== null && savedCount !== bootCount;
+    const booted = bootCounts.get(wire.id);
+    const waiting = booted !== undefined && Number(wire.ledCount) !== booted;
     wrap.appendChild(element("p", "light-state", waiting ? "Waiting for a restart" : "Read at start"));
     return wrap;
   };
@@ -400,7 +415,7 @@
   // ---------------------------------------------------------------------------
   // A body light
   // ---------------------------------------------------------------------------
-  // protoArtoo lights it through the lead it is on, so it names that lead's
+  // protoArtoo lights it through the wire it is on, so it names that wire's
   // Light Type and reads on / off / flash with brightness (ADR 0049). The
   // commands are the controller's own: POST /api/aux-led/effect and
   // /api/aux-led/color.
@@ -424,12 +439,17 @@
   // color scaled. So it is derived from the color the controller holds and
   // sent back as a scaled color, which round-trips: ask for 50% and the droid
   // reports half the color, which reads as 50% again. The hue is kept in
-  // `tint`, so a strip turned down to nothing can be turned back up to the
+  // `tints`, so a strip turned down to nothing can be turned back up to the
   // color it had rather than to one this page invented; a strip that has
   // never been given a color starts from white.
-  let tint = { r: 255, g: 255, b: 255 };
+  //
+  // ONE TINT PER WIRE. Two lit Parts have two hues to remember, and a single
+  // one would put a builder's red back on the wire they turned blue down.
+  const tints = new Map();
+  const tintOf = (wire) => tints.get(wire.id) || { r: 255, g: 255, b: 255 };
   const brightnessOf = (color) => Math.round((Math.max(color.r, color.g, color.b) / 255) * 100);
-  const scaled = (percent) => {
+  const scaled = (wire, percent) => {
+    const tint = tintOf(wire);
     const factor = Math.max(0, Math.min(100, percent)) / 100;
     const peak = Math.max(tint.r, tint.g, tint.b) || 255;
     const lift = 255 / peak;
@@ -440,17 +460,27 @@
     };
   };
 
-  const stripColor = () => ({
-    r: Math.max(0, Math.min(255, Number(auxLed?.r || 0))),
-    g: Math.max(0, Math.min(255, Number(auxLed?.g || 0))),
-    b: Math.max(0, Math.min(255, Number(auxLed?.b || 0))),
-  });
+  // What one wire is showing, as the droid last reported it. Keyed by the
+  // Output id the firmware keys its own status frame with, so a reading and a
+  // wire are matched by the droid's own identifier rather than by position.
+  const readingFor = (wire) => showing[wire.id] || null;
+  const stripColor = (wire) => {
+    const led = readingFor(wire);
+    return {
+      r: Math.max(0, Math.min(255, Number(led?.r || 0))),
+      g: Math.max(0, Math.min(255, Number(led?.g || 0))),
+      b: Math.max(0, Math.min(255, Number(led?.b || 0))),
+    };
+  };
 
-  const ask = async (path, fields, feedback, asked) => {
+  // A command names the wire it is about by its Output Address, which is what
+  // the droid's own outputs table calls it. Nothing here shows that address:
+  // where a wire plugs in is Wiring's answer.
+  const ask = async (path, wire, fields, feedback, asked) => {
     if (!window.PAApi) return;
     say(feedback, "Asking…");
     try {
-      await window.PAApi.postForm(path, fields, { timeoutMs: 5000 });
+      await window.PAApi.postForm(path, { ...fields, output: wire.address }, { timeoutMs: 5000 });
       say(feedback, `${asked} at ${at()}`, "success");
     } catch (error) {
       console.error("[lights] light command failed:", error);
@@ -481,20 +511,23 @@
     }) || "";
   };
 
-  const litPlate = (part, type) => {
-    const node = plate(part, type.label);
-    const color = stripColor();
+  const litPlate = (part, wire) => {
+    const node = plate(part, wire.light.label);
+    const color = stripColor(wire);
+    const reading = readingFor(wire);
     const feedback = feedbackNode();
-    const unavailable = auxLed?.available === false;
-    if (unavailable) node.appendChild(element("p", "light-state", "Could not start"));
+    if (reading?.available === false) {
+      node.appendChild(element("p", "light-state", "Could not start"));
+    }
 
     // on / off / flash, the words every Part reads (ADR 0049), as the chips the
     // dome's modes wear.
     const doing = element("div");
     doing.appendChild(element("div", "light-pick-label", "Light"));
-    doing.appendChild(pills(`${part.name} light`, EFFECTS, wordFor(auxLed?.effect), (id) => {
+    doing.appendChild(pills(`${part.name} light`, EFFECTS, wordFor(reading?.effect), (id) => {
       const choice = EFFECTS.find((each) => each.id === id);
-      ask("/api/aux-led/effect", { effect: choice.effect }, feedback, `Asked for ${choice.label.toLowerCase()}`);
+      ask("/api/aux-led/effect", wire, { effect: choice.effect }, feedback,
+        `Asked for ${choice.label.toLowerCase()}`);
     }));
     node.appendChild(doing);
 
@@ -508,9 +541,9 @@
     hue.appendChild(swatches(`${part.name} color`, STRIP_COLORS, colorWordFor(color), (token) => {
       const picked = tokenColor(token);
       if (!picked) return;
-      tint = picked;
-      const next = scaled(brightnessOf(color) || 100);
-      ask("/api/aux-led/color", { r: String(next.r), g: String(next.g), b: String(next.b) },
+      tints.set(wire.id, picked);
+      const next = scaled(wire, brightnessOf(color) || 100);
+      ask("/api/aux-led/color", wire, { r: String(next.r), g: String(next.g), b: String(next.b) },
         feedback, `Asked for ${domeVocabulary.label("colors", token).toLowerCase()}`);
     }));
     node.appendChild(hue);
@@ -527,14 +560,14 @@
     slider.value = String(brightnessOf(color));
     slider.setAttribute("aria-label", `${part.name} brightness`);
     slider.addEventListener("change", () => {
-      const next = scaled(Number(slider.value));
-      ask("/api/aux-led/color", { r: String(next.r), g: String(next.g), b: String(next.b) },
+      const next = scaled(wire, Number(slider.value));
+      ask("/api/aux-led/color", wire, { r: String(next.r), g: String(next.g), b: String(next.b) },
         feedback, `Asked for ${slider.value}% brightness`);
     });
     level.appendChild(slider);
     node.appendChild(level);
 
-    node.appendChild(countField(feedback));
+    node.appendChild(countField(wire, feedback));
     node.appendChild(feedback);
     return node;
   };
@@ -569,25 +602,29 @@
     if (bodyHost) {
       const plates = element("div", "light-plates");
       body.forEach((part) => {
-        const type = lightTypeFor(part);
-        plates.appendChild(type ? litPlate(part, type) : unlitPlate(part));
+        const wire = wireFor(part);
+        plates.appendChild(wire ? litPlate(part, wire) : unlitPlate(part));
       });
       bodyHost.replaceChildren(plates);
     }
-    const lit = body.filter((part) => lightTypeFor(part)).length;
+    const lit = body.filter((part) => wireFor(part)).length;
     if (bodyCount) {
       bodyCount.textContent = lit === 0 ? `${body.length} lights · none lit yet` : `${body.length} lights · ${lit} lit`;
     }
 
-    // A lead carrying a light that lights nothing declared is worth saying: the
+    // A wire carrying a light that lights nothing declared is worth saying: the
     // strip is on and the droid cannot say what it is lighting. A Part is given
-    // its lead on Parts, so that is where this points.
+    // its wire on Parts, so that is where this points.
     if (spareNote) {
-      const carried = leadLight === null ? [] : Object.values(leadLight).filter(Boolean);
-      const spare = carried.length > 0 && lit === 0;
+      const carried = wireFacts === null
+        ? [] : Object.values(wireFacts).filter((fact) => fact.light);
+      const spare = carried.length > lit;
       spareNote.classList.toggle("hidden", !spare);
       if (spare) {
-        spareNote.textContent = `A lead carries an ${carried[0].label} with no light on it. Give one its lead on Parts.`;
+        const many = carried.length - lit > 1;
+        spareNote.textContent = many
+          ? `${carried.length - lit} wires carry a light with nothing on them. Give each one its Part on Parts.`
+          : `A wire carries an ${carried.find((fact) => fact.light).light.label} with no light on it. Give one its wire on Parts.`;
       }
     }
   };
@@ -595,57 +632,69 @@
   // ---------------------------------------------------------------------------
   // What the droid says
   // ---------------------------------------------------------------------------
-  // What each lead carries is the Outputs' one saved answer
+  // What each wire carries is the Outputs' one saved answer
   // (data/output_settings.js). This page listens and never writes: a listener
   // hears only the next change, so it asks for the answer it may have missed -
   // ensure() reads it if nobody has, redraw() replays it if somebody already
   // did.
   window.PAOutputSettings?.onChange((state, facts) => {
     if (!state || !Array.isArray(facts)) return;
-    leadLight = {};
+    wireFacts = {};
     facts.forEach((fact) => {
-      leadLight[fact.address] = fact.light || null;
+      wireFacts[fact.address] = fact;
+      // What the droid booted this wire with, taken from the first answer that
+      // named it: every later comparison is against that, so "Waiting for a
+      // restart" is about the LED count the running strip actually has.
+      if (fact.light && !bootCounts.has(fact.id)) bootCounts.set(fact.id, Number(fact.ledCount) || 1);
     });
     paint();
   });
   window.PAOutputSettings?.ensure?.();
   window.PAOutputSettings?.redraw?.();
 
-  // Which lead drives which Part is the droid's own table, and the same read
+  // Which wire drives which Part is the droid's own table, and the same read
   // Parts and Servos make.
-  const loadLeads = async ({ handle = null } = {}) => {
+  const loadWires = async ({ handle = null } = {}) => {
     const api = handle || window.PAApi;
     if (!api) throw new Error("no way to reach the Body Controller");
     const answer = await api.get("/api/servo/outputs");
     const table = answer?.data?.outputs;
     if (!Array.isArray(table)) throw new Error("the droid's outputs answer carries no table");
-    leads = table.map((row) => ({
+    wires = table.map((row) => ({
       address: String(row.address),
       parts: Array.isArray(row.parts) ? row.parts.map(String) : [],
     }));
     paint();
   };
 
-  // One read serves the strip's length and the Droid Build a light reads "Not
-  // on your droid" from. The Build is adopted from this payload rather than
-  // fetched again, which is what DroidBuild.adopt() exists for.
+  // The Droid Build a light reads "Not on your droid" from, adopted from this
+  // payload rather than fetched again - which is what DroidBuild.adopt() exists
+  // for. What each wire carries, and how long its strip is, come from the same
+  // payload through the Outputs module, which owns that answer.
   const loadConfig = async ({ handle = null } = {}) => {
     const api = handle || window.PAApi;
     if (!api) throw new Error("no way to reach the Body Controller");
     const result = await api.get("/api/config");
-    adoptCount(result.data);
     window.DroidBuild?.adopt?.(result.data);
     paint();
   };
 
-  const readingOf = (led) => (led ? `${led.pin}:${led.r},${led.g},${led.b}:${led.effect}:${led.available}` : "");
+  // Every lit wire's reading, flattened to one comparable string so a frame
+  // that says nothing new is not redrawn. The droid keys them by Output id and
+  // so does this: matching a reading to a wire by position would put one
+  // wire's color on another's plate the moment the set changes.
+  const readingOf = (led) => (led ? `${led.r},${led.g},${led.b}:${led.effect}:${led.available}` : "");
+  const frameOf = (byId) => Object.keys(byId).sort()
+    .map((id) => `${id}=${readingOf(byId[id])}`).join("|");
   const renderStatus = (status) => {
-    const next = status?.auxLed || null;
-    const changed = readingOf(next) !== readingOf(auxLed);
-    auxLed = next;
-    const color = stripColor();
-    // Remember the hue it is showing, so brightness can put it back.
-    if (color.r || color.g || color.b) tint = color;
+    const next = (status && typeof status.lights === "object" && status.lights) || {};
+    const changed = frameOf(next) !== frameOf(showing);
+    showing = next;
+    // Remember the hue each wire is showing, so its brightness can put it back.
+    Object.keys(showing).forEach((id) => {
+      const led = showing[id];
+      if (led && (led.r || led.g || led.b)) tints.set(id, { r: led.r, g: led.g, b: led.b });
+    });
     // The stream repeats itself every few seconds. Redrawing on a frame that
     // says nothing new would take the plate out from under whoever is using it.
     if (changed) paint();
@@ -667,14 +716,14 @@
       "/droid_part_kind.js": "the parts catalog",
       "/droid_build.js": "this droid's build",
       "/seq_protocol_check.js": "the dome's commands",
-      "/output_settings.js": "what each lead carries",
+      "/output_settings.js": "what each wire carries",
       "/lights.js": "the lights",
     });
     window.PABootstrap.registerSection("lights", loadConfig, { label: "the droid's lights" });
-    window.PABootstrap.registerSection("lights-leads", loadLeads, { label: "what lights each lead" });
+    window.PABootstrap.registerSection("lights-wires", loadWires, { label: "what lights each wire" });
   } else {
     loadConfig().catch((error) => console.warn("[lights] config unavailable:", error));
-    loadLeads().catch((error) => console.warn("[lights] leads unavailable:", error));
+    loadWires().catch((error) => console.warn("[lights] wires unavailable:", error));
   }
 
   // SSE-first for what the strip was set to, with visibility-aware fallback

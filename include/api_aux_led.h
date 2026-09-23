@@ -11,13 +11,51 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "board_outputs.h"  // BOARD_OUTPUT_LIGHT_CAPABLE_COUNT, BOARD_OUTPUT_ID_MAX_LEN
 #include "web_request.h"
 
-// Format JSON response for AUX LED endpoints.
-// Output: {"ok":true,"auxLed":{"pin":<u8>,"r":<u8>,"g":<u8>,"b":<u8>,"effect":"..."}}
-// Returns false if the payload does not fit in buf.
-bool formatAuxLedStateJson(char* buf, size_t bufSize, uint8_t pin, uint8_t r, uint8_t g, uint8_t b,
-                           const char* effect);
+// One lit wire, as a reading to serialise. `id` is the Output's components{}
+// key - a stored identifier, never a name a builder reads - which is what a
+// surface iterating GET /api/config's Outputs already holds. There is no pin
+// here and there is no Output label: where a wire plugs in is Wiring's answer,
+// and a status frame that carried a board's pin number would be the third
+// place it is written down.
+struct LitWireReading {
+    const char* id;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    const char* effect;
+    bool available;  // false when this wire's driver did not start
+};
+
+// The droid's lit wires as a JSON object, keyed by Output id:
+//   {"aux1":{"r":<u8>,"g":<u8>,"b":<u8>,"effect":"...","available":true}}
+// An empty list writes {} - a droid with no light says so rather than leaving
+// a surface to tell "no lights" from "no answer".
+//
+// The OBJECT ONLY, with no field name around it, so the status frame can put it
+// under "lights" and the aux-LED endpoints can wrap it in an "ok" envelope
+// without two spellings of one shape existing.
+//
+// Returns false if the payload does not fit in buf; *written, when given, is
+// the length it wrote.
+bool formatLitWiresJson(char* buf, size_t bufSize, const LitWireReading* wires, size_t count,
+                        size_t* written);
+
+// How large a buffer the answer can need, derived rather than rounded: the
+// status frame is built on the WebEvents task's stack and the aux-LED reply on
+// a web handler's, so a loose bound here is stack nobody gets back.
+//
+// One entry is {"<id>":{"r":255,"g":255,"b":255,"effect":"pulse","available":false},
+//   = 3 + id + 8 + 8 + 8 + 17 + 17 + 2 punctuation and separator
+// with the widest value in every field: three-digit channels, the longest
+// effect word ("pulse", 5) and the longer boolean ("false", 5). Only an Output
+// a light may go on can appear, so the count is bounded by those and not by
+// the whole table. Plus the two braces and the terminator.
+constexpr size_t LIT_WIRE_JSON_ENTRY_MAX = 63 + BOARD_OUTPUT_ID_MAX_LEN;
+constexpr size_t LIT_WIRES_JSON_MAX =
+    BOARD_OUTPUT_LIGHT_CAPABLE_COUNT * LIT_WIRE_JSON_ENTRY_MAX + 3;
 
 void handleAuxLedColorPost(WebRequest& req);
 void handleAuxLedEffectPost(WebRequest& req);
