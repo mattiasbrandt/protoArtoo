@@ -954,8 +954,10 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 //
 // An edit is addressed rather than indexed, and it carries only the fields the
 // request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
-// SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE and SERVO_FIELD_COMPONENT, and a field
-// not in it keeps what the row had. That is the partial-edit door
+// SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE, SERVO_FIELD_COMPONENT,
+// SERVO_FIELD_LED_COUNT and the Motion Profile's SERVO_FIELD_THROW_MS,
+// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, and a field not in it keeps what
+// the row had. That is the partial-edit door
 // servoOutputRowNormalise() describes, given a shape a pure caller can fill.
 //
 // It carries every act on a row, not only a typed value -- one door, not three
@@ -997,6 +999,9 @@ struct ServoOutputEdit {
     ServoComponentType component;
     uint8_t led_count;             // the Light Type's setting, when the mask names it
     ServoOutputEditKind kind;
+    ServoEasing easing;            // Motion Profile, when the mask names each (#414)
+    uint16_t throw_ms;
+    uint16_t accel_ms;
 };
 
 // -----------------------------------------------------------------------------
@@ -1070,6 +1075,20 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     }
     if ((edit.fields & SERVO_FIELD_LED_COUNT) != 0) {
         row->led_count = edit.led_count;
+    }
+    // The Motion Profile is the builder's to set on any row, measured or not:
+    // an unmeasured Output keeps what it was given and moves by none of it
+    // until it is calibrated (servoMotionPlan() snaps, and
+    // servoOutputEffectiveEasing() degrades an overshoot), so nothing typed
+    // here waits on the calibration to be kept.
+    if ((edit.fields & SERVO_FIELD_THROW_MS) != 0) {
+        row->throw_ms = edit.throw_ms;
+    }
+    if ((edit.fields & SERVO_FIELD_ACCEL_MS) != 0) {
+        row->accel_ms = edit.accel_ms;
+    }
+    if ((edit.fields & SERVO_FIELD_EASING) != 0) {
+        row->easing = edit.easing;
     }
     if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
         row->open_us = edit.open_us;
