@@ -76,10 +76,15 @@ export const withParts = (assignments, outputs = freshOutputs()) => {
  * src/web/api_config.cpp reports them: the row's name as the board's label,
  * wired, carrying an MG996R, saved under fields of their own.
  *
+ * Every Output also reports its Motion Profile and the three fields that save
+ * it (#414): time to full throw, time to get up to speed and the ease, at the
+ * firmware's defaults.
+ *
  * `say` changes what the config says about an Output, by address: any of
  * `enabled`, `type`, `label`, `lightCapable` (which also names a
- * `ledCountField`), `ledCount`, or `null` for an Output the config does not
- * describe at all (an expander channel only the servo table knows).
+ * `ledCountField`), `ledCount`, `throwMs`, `accelMs`, `ease`, or `null` for an
+ * Output the config does not describe at all (an expander channel only the
+ * servo table knows).
  */
 export const configOutputs = (rows, say = {}) =>
   Object.fromEntries(
@@ -97,6 +102,12 @@ export const configOutputs = (rows, say = {}) =>
             type: "mg996r",
             enabledField: `wired${index}`,
             typeField: `servo${index}`,
+            throwField: `full${index}`,
+            accelField: `rise${index}`,
+            easeField: `shape${index}`,
+            throwMs: 1000,
+            accelMs: 250,
+            ease: "none",
             ...(lightCapable ? { lightCapable: true, ledCountField: `leds${index}`, ledCount: 1 } : {}),
             ...rest,
           },
@@ -106,8 +117,9 @@ export const configOutputs = (rows, say = {}) =>
 
 /**
  * Apply a POST /api/config form to the Output entries it names, as the
- * firmware does, and say whether it named any: a wired tick, a type or a
- * light's LED count under the field each entry gave for it.
+ * firmware does, and say whether it named any: a wired tick, a type, a
+ * light's LED count or a Motion Profile field under the field each entry gave
+ * for it.
  */
 export const applyOutputSave = (components, form) => {
   let named = false;
@@ -125,6 +137,13 @@ export const applyOutputSave = (components, form) => {
       entry.ledCount = Number(form[entry.ledCountField]);
       named = true;
     }
+    [["throwField", "throwMs", Number], ["accelField", "accelMs", Number], ["easeField", "ease", String]]
+      .forEach(([fieldKey, valueKey, read]) => {
+        if (entry[fieldKey] && entry[fieldKey] in form) {
+          entry[valueKey] = read(form[entry[fieldKey]]);
+          named = true;
+        }
+      });
   });
   return named;
 };

@@ -85,3 +85,36 @@ test("a firmware that reports no position is not shown as an Output with no puls
   assert.equal(env.tier("switched-off"), "Wired but switched off — 0 outputs");
   assert.equal(env.tier("driving"), "Driving parts — 1 output");
 });
+
+// How an Output moves is set on its row (ADR 0052, #414), and an Output nobody
+// has measured moves by none of it: its first move is a jump whatever its
+// profile says. So its row can send no shape and no time - not from a control
+// it hides, and not from an event that reaches the table anyway - while a
+// measured Output's row saves under the field the firmware named for it.
+test("an Output nobody has measured cannot send a shape, and a measured one saves it under the firmware's field", async () => {
+  const outputs = freshOutputs();
+  outputs[0].calibrated = true;
+  const env = await bootServos({ outputs });
+  const entry = (address) => Object.values(env.components).find((each) => each.address === address);
+  const pickEase = (address, ease) =>
+    env.region().fire("click", { target: env.row(address).querySelector(`[data-ease="${ease}"]`) });
+  const typeThrow = (address, ms) => {
+    const box = env.row(address).querySelector(".outputs-throw");
+    box.value = String(ms);
+    env.region().fire("change", { target: box });
+  };
+
+  pickEase("ledc:1", "overshoot");
+  typeThrow("ledc:1", 800);
+  await sleep(20);
+  assert.equal(env.moves().length, 0, "the unmeasured Output asked the droid for nothing");
+
+  pickEase("ledc:0", "overshoot");
+  await sleep(20);
+  typeThrow("ledc:0", 800);
+  await sleep(20);
+  assert.deepEqual(env.moves().map((post) => post.form), [
+    { [entry("ledc:0").easeField]: "overshoot" },
+    { [entry("ledc:0").throwField]: "800" },
+  ]);
+});
