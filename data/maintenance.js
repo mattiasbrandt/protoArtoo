@@ -315,14 +315,23 @@
     const changes = {};
     outputs.forEach((output) => {
       const saved = components[output.id];
-      if (!output.switchable || !saved) return;
+      if (!saved) return;
       const patch = {};
-      if (saved.enabled !== undefined) patch.wired = Boolean(saved.enabled);
-      if (saved.type !== undefined) patch.type = saved.type;
+      if (output.switchable) {
+        if (saved.enabled !== undefined) patch.wired = Boolean(saved.enabled);
+        if (saved.type !== undefined) patch.type = saved.type;
+      }
       // A light's settings, one per Output. The droid-wide aux_led_pin /
       // aux_led_count this replaced could only carry one answer, and a restore
       // dropped every other lit wire (#413).
       if (output.ledCountSettable && saved.ledCount !== undefined) patch.ledCount = saved.ledCount;
+      // How it moves (ADR 0052, #414). A backup from before the firmware
+      // reported these carries none, and the droid keeps what it has.
+      if (output.motionSettable) {
+        if (saved.throwMs !== undefined) patch.throwMs = saved.throwMs;
+        if (saved.accelMs !== undefined) patch.accelMs = saved.accelMs;
+        if (saved.ease !== undefined) patch.ease = saved.ease;
+      }
       if (Object.keys(patch).length > 0) changes[output.address] = patch;
     });
     return changes;

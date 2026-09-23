@@ -291,8 +291,37 @@
     ease: (value) => String(value),
   };
 
+  // What each setting is called on screen. The droid refuses a value by the
+  // name it saves it under (`arm2ThrowMs must be 20..10000 ms`), and that name
+  // is wire vocabulary that must never reach a builder (#414).
+  const SETTING_WORDS = {
+    wired: "wired tick",
+    type: "what is on the wire",
+    ledCount: "LED count",
+    throwMs: "time to full throw",
+    accelMs: "time to get up to speed",
+    ease: "ease",
+  };
+
+  // A refusal naming one of the fields this save sent, put in the page's words:
+  // the Output's name and the setting's, and a range read as one. Anything else
+  // is left exactly as it came, for web_api.js's messageFor() to say.
+  const sayRefusal = (error, sent) => {
+    const message = typeof error?.message === "string" ? error.message : "";
+    const field = Object.keys(sent).find((name) => message.startsWith(`${name} `));
+    if (!field) return error;
+    const { address, key } = sent[field];
+    const output = at(address);
+    const rest = message.slice(field.length).replace(/(\d+)\.\.(\d+)/g, "$1 to $2");
+    error.message = `${output ? output.name : address}'s ${SETTING_WORDS[key]}${rest}`;
+    return error;
+  };
+
+  // The form for a set of changes, and which Output and setting each field in
+  // it saves, so a refusal can be said in words.
   const formFor = (changes) => {
     const form = {};
+    const sent = {};
     Object.keys(changes).forEach((address) => {
       const fields = saveFields.get(address);
       if (!fields) throw new Error(`${address} is not an Output this droid saves settings for`);
@@ -301,9 +330,10 @@
         if (!PATCH_FIELDS[key]) throw new Error(`an Output has no setting called ${key}`);
         if (!fields[key]) throw new Error(`${address} names no field to save ${key} under`);
         form[fields[key]] = PATCH_FIELDS[key](patch[key]);
+        sent[fields[key]] = { address, key };
       });
     });
-    return form;
+    return { form, sent };
   };
 
   // Saves go out one at a time, in the order they were asked for, so a later
@@ -327,7 +357,7 @@
       const api = apiFor(null);
       // A request carrying other fields goes as the form those came in, and an
       // Output-only save as a plain one.
-      const fields = formFor(changes);
+      const { form: fields, sent } = formFor(changes);
       let form = fields;
       if (alongside) {
         form = new URLSearchParams(alongside);
@@ -348,7 +378,7 @@
         } catch (reloadError) {
           console.error("[outputs] reading the config after a failed save failed:", reloadError);
         }
-        throw error;
+        throw sayRefusal(error, sent);
       }
       publish();
       return outputs;

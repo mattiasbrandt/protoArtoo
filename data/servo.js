@@ -199,7 +199,8 @@
         us: node.querySelector(".outputs-us"),
         driveNote: node.querySelector(".outputs-drive-note"),
         driveActs: node.querySelector(".outputs-drive-acts"),
-        width: node.querySelector(".outputs-drive .outputs-width"),
+        // The drive cell's own box: the Motion cell's two borrow its class.
+        width: node.querySelector(".outputs-drive").querySelector(".outputs-width"),
         go: Array.from(node.querySelectorAll(".outputs-go")),
         release: node.querySelector(".outputs-release"),
         motion: node.querySelector(".outputs-motion"),
@@ -337,7 +338,8 @@
       await OUTPUTS.save(address, patch);
       showFeedback(`${output.name} saved. The next move uses it.`, "success");
     } catch (error) {
-      showFeedback(`${output.name} not saved: ${window.PAApi.messageFor(error)}`, "error");
+      // data/outputs.js has already put a refusal in the page's words.
+      showFeedback(`Not saved: ${window.PAApi.messageFor(error)}.`, "error");
       const row = outputRows.get(address);
       const now = outputs?.find((each) => each.address === address);
       if (row && now) paintMotion(row, now, isDriveable(now));
