@@ -228,7 +228,7 @@ send sound.status.current
 # reshaped image boots and the servo path still answers for its Outputs. Board
 # only: a strip or a servo on a wire is full-hardware-required, never a row.
 @row 416 the-outputs-answer-after-the-wire-module
-pause Upload this image over USB (unseated), let it boot, re-attach, then press Enter
+pause Upload this image over USB, let it boot, re-attach, then press Enter
 send system.status.health
 send servo.api.get-outputs
 pause Fetch GET /api/servo/outputs from this board and keep the answer for #355, then press Enter
