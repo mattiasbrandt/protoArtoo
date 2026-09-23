@@ -6,8 +6,8 @@
 //
 // The invariant: which Outputs exist, and which config fields save each, is the
 // running firmware's answer - GET /api/config's Output entries, each with its
-// enabledField and typeField - and a backup is matched to it by the Output's
-// stored id. So a backup made before the firmware reported those fields
+// enabledField, typeField and, where a light may go on that wire, its
+// ledCountField - and a backup is matched to it by the Output's stored id. So a backup made before the firmware reported those fields
 // restores the same way, and the page lists no Output of its own (ADR 0033
 // Amendment 2026-09-19). The field names here follow no pattern on purpose: a
 // page that built them from the id would send fields this firmware never named.
@@ -26,6 +26,9 @@ const { createFeatureAvailability } = require("../../data/feature_availability.j
 const LIVE = {
   components: {
     arm1: { enabled: false, label: "GPIO 49", address: "ledc:0", enabledField: "wiredA", typeField: "servoA", type: "mg996r" },
+    // An Output a light may go on names a third field, for that light's own
+    // settings (ADR 0067). One that may not names none.
+    aux1: { enabled: false, label: "GPIO 4", address: "ledc:3", enabledField: "wiredB", typeField: "servoB", ledCountField: "ledsB", type: "rgb", ledCount: 1 },
     domeEsc: { enabled: false, label: "GPIO 48" },
   },
 };
@@ -35,7 +38,11 @@ const BACKUP = {
   schema: 1,
   generated: "2026-09-01T00:00:00Z",
   config: {
-    components: { arm1: { enabled: true, type: "mg90s" }, aux3: { enabled: true, type: "mg996r" } },
+    components: {
+      arm1: { enabled: true, type: "mg90s", ledCount: 9 },
+      aux1: { enabled: true, type: "rgb", ledCount: 24 },
+      aux3: { enabled: true, type: "mg996r" },
+    },
     arm1OpenUs: 1900,
     arm1CloseUs: 1100,
   },
@@ -67,4 +74,13 @@ test("a restore saves each Output under the fields the running firmware names fo
   assert.equal(form.get("arm1OpenUs"), "1900", "the recorded ends follow the Output's id");
   assert.equal(form.get("enableArm1"), null, "no field the firmware did not name");
   assert.equal(form.get("aux3Type"), null, "and nothing for an Output this droid does not report");
+
+  // A light's settings are one per Output since #413. The droid-wide pair this
+  // replaced could carry exactly one answer, so a restore onto a droid with two
+  // lit wires put one builder's LED count on both and dropped the other. Each
+  // one goes back under the field ITS Output named, and an Output that cannot
+  // carry a light gets none - even when the backup holds a number for it.
+  assert.equal(form.get("ledsB"), "24", "the lit Output's LED count goes back under its own field");
+  assert.equal(form.get("ledCount"), null, "never under a name of the page's own making");
+  assert.equal(form.get("ledsA"), null, "and an Output that cannot be lit is sent no count");
 });
