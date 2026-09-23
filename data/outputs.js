@@ -36,6 +36,11 @@
 // model - it is the LED strip Light Type. Both word lists live here and
 // nowhere else in data/.
 //
+// HOW A SERVO MOVES is its Motion Profile (ADR 0052, #414): time to full
+// throw, time to get up to speed and the ease. The config reports each on the
+// Output's entry with the field that saves it, and the ease words are listed
+// here beside the other two vocabularies.
+//
 // DATA ONLY. Nothing here touches the page: the plates are drawn by
 // data/output_settings.js from what this module holds.
 // =============================================================================
@@ -54,6 +59,13 @@
   // "Light Type", ADR 0067). One today; the list is what grows when there are
   // more, and the stored token stays the one the firmware already saves.
   const LIGHT_TYPES = Object.freeze([Object.freeze({ id: "rgb", label: "LED strip" })]);
+
+  // The shape of a move (ADR 0052), in the words the firmware stores.
+  const EASES = Object.freeze([
+    Object.freeze({ id: "none", label: "none" }),
+    Object.freeze({ id: "soft", label: "soft" }),
+    Object.freeze({ id: "overshoot", label: "overshoot" }),
+  ]);
 
   const lightType = (token) => LIGHT_TYPES.find((type) => type.id === token) || null;
   const servoModel = (token) => SERVO_MODELS.find((model) => model.id === token) || null;
@@ -129,6 +141,9 @@
   //   light, servo     that token as a Light Type or as a servo model, or null
   //   ledCount         how many LEDs its light has
   //   ledCountSettable the config names a field that saves ledCount
+  //   throwMs, accelMs its Motion Profile's two times, or null where the
+  //   ease             config reports none; the ease as the builder chose it
+  //   motionSettable   the config names the fields that save all three
   //   started          what it was first reported with (above), or null
   //   parts ...        its servo table row, read by readRow()
   const outputOf = (address, id, entry, row) => {
@@ -154,6 +169,10 @@
       servo: servoModel(type),
       ledCount: Number(entry?.ledCount) || 1,
       ledCountSettable: Boolean(entry && text(entry.ledCountField)),
+      throwMs: typeof entry?.throwMs === "number" ? entry.throwMs : null,
+      accelMs: typeof entry?.accelMs === "number" ? entry.accelMs : null,
+      ease: text(entry?.ease),
+      motionSettable: Boolean(entry && text(entry.throwField) && text(entry.accelField) && text(entry.easeField)),
     };
     if (entry && !started.has(address)) {
       started.set(address, Object.freeze({
@@ -186,6 +205,9 @@
         wired: text(entry.enabledField),
         type: text(entry.typeField),
         ledCount: text(entry.ledCountField),
+        throwMs: text(entry.throwField),
+        accelMs: text(entry.accelField),
+        ease: text(entry.easeField),
       });
       list.push(outputOf(address, id, entry, byAddress.get(address) || null));
     });
@@ -264,6 +286,9 @@
     wired: (value) => (value ? "true" : "false"),
     type: (value) => String(value),
     ledCount: (value) => String(value),
+    throwMs: (value) => String(value),
+    accelMs: (value) => String(value),
+    ease: (value) => String(value),
   };
 
   const formFor = (changes) => {
@@ -286,8 +311,9 @@
   let queue = Promise.resolve();
 
   /**
-   * Save Output settings: `{ [address]: { wired, type, ledCount } }`, any of
-   * the three per Output. The droid's answer becomes what this module holds.
+   * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
+   * accelMs, ease } }`, any of them per Output. The droid's answer becomes what
+   * this module holds.
    *
    * @param {object} changes
    * @param {object} [opts]
@@ -361,6 +387,7 @@
     SERVO_MODELS,
     NO_SERVO,
     LIGHT_TYPES,
+    EASES,
     lightType,
     servoModel,
     load,

@@ -40,6 +40,11 @@
 //
 // The whole droid goes back to centre on one press (#318, #365), and THE DROID
 // PACES IT: this page sends one request and holds no pace at all.
+//
+// How a servo moves is set on its row, beside the dial (ADR 0052, #414): time
+// to full throw, time to get up to speed and the ease. Until the Output is
+// calibrated it moves by none of the three - it jumps - so its row offers
+// nothing to set, and says why.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -147,6 +152,21 @@
       `<button class="btn btn-sm outputs-go" type="button" data-action="stop" disabled aria-disabled="true">stop</button>` +
       `</span></td>` +
       `<td class="outputs-release"></td>` +
+      // How it moves (#414). The two numbers borrow the drive cell's compact
+      // box (.outputs-drive-acts .outputs-width); the pill and the controls
+      // each sit in a plain wrapper so `hidden` can take them off the row.
+      `<td class="outputs-motion">` +
+      `<div class="outputs-motion-off"><span class="status-pill pill-info">off until calibrated</span></div>` +
+      `<div class="outputs-motion-set">` +
+      `<div><span class="outputs-drive-acts"><input class="input-narrow outputs-width outputs-throw" type="number" step="10" ` +
+      `aria-label="${esc(`Time to full throw for ${label}, in milliseconds`)}"> ms to full throw</span></div>` +
+      `<div><span class="outputs-drive-acts"><input class="input-narrow outputs-width outputs-accel" type="number" step="10" ` +
+      `aria-label="${esc(`Time to get up to speed for ${label}, in milliseconds`)}"> ms to get up to speed</span></div>` +
+      `<div class="seg outputs-ease" role="radiogroup" aria-label="${esc(`How ${label} eases`)}">` +
+      OUTPUTS.EASES.map((ease) =>
+        `<button type="button" role="radio" aria-checked="false" data-ease="${esc(ease.id)}">${esc(ease.label)}</button>`
+      ).join("") +
+      `</div></div></td>` +
       `<td class="outputs-acts">` +
       `<button class="btn btn-sm outputs-calibrate" type="button" ` +
       `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
@@ -165,7 +185,7 @@
     outputsRegion.innerHTML =
       `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
       `<th scope="col">Commanded position</th><th scope="col">Drive it</th><th scope="col">Output Release</th>` +
-      `<th scope="col">Calibrate</th></tr></thead><tbody>` +
+      `<th scope="col">Motion</th><th scope="col">Calibrate</th></tr></thead><tbody>` +
       outputs.map(outputRowHtml).join("") +
       `</tbody></table>`;
     outputRows.clear();
@@ -179,9 +199,15 @@
         us: node.querySelector(".outputs-us"),
         driveNote: node.querySelector(".outputs-drive-note"),
         driveActs: node.querySelector(".outputs-drive-acts"),
-        width: node.querySelector(".outputs-width"),
+        width: node.querySelector(".outputs-drive .outputs-width"),
         go: Array.from(node.querySelectorAll(".outputs-go")),
         release: node.querySelector(".outputs-release"),
+        motion: node.querySelector(".outputs-motion"),
+        motionOff: node.querySelector(".outputs-motion-off"),
+        motionSet: node.querySelector(".outputs-motion-set"),
+        throwMs: node.querySelector(".outputs-throw"),
+        accelMs: node.querySelector(".outputs-accel"),
+        eases: Array.from(node.querySelectorAll("[data-ease]")),
         calibrate: node.querySelector(".outputs-calibrate"),
         off: node.querySelector(".outputs-off"),
       });
@@ -254,6 +280,7 @@
     const driveable = isDriveable(output);
     row.calibrate.hidden = !driveable;
     row.off.hidden = !driveable;
+    paintMotion(row, output, driveable);
     row.node.classList.toggle("is-held", output.held);
     if (!output.reported) {
       row.us.textContent = "Not reported by this firmware";
@@ -272,6 +299,49 @@
     // An Output that has gone limp says WHICH of the ways it can happen this
     // was (#364): a bound the dial ran into is not the estop letting go.
     else row.release.textContent = LIMP_SAID[output.limp] || LIMP_SAID.off;
+  };
+
+  // ---------------------------------------------------------------------------
+  // How it moves (ADR 0052, #414)
+  //
+  // Only an Output that is calibrated, drives a servo and whose three fields
+  // the droid names offers them. An unmeasured Output jumps whatever its
+  // profile says, so its row says so rather than taking numbers that would do
+  // nothing; its stored profile waits on the row until it is calibrated.
+  // ---------------------------------------------------------------------------
+  const motionOpen = (output) => isDriveable(output) && output.motionSettable && output.calibrated;
+
+  const paintMotion = (row, output, driveable) => {
+    const shown = driveable && output.motionSettable;
+    const open = shown && output.calibrated;
+    row.motionOff.hidden = !shown || open;
+    row.motionSet.hidden = !open;
+    if (!open) return;
+    // Never the box the builder is typing in.
+    if (document.activeElement !== row.throwMs) row.throwMs.value = output.throwMs === null ? "" : String(output.throwMs);
+    if (document.activeElement !== row.accelMs) row.accelMs.value = output.accelMs === null ? "" : String(output.accelMs);
+    row.eases.forEach((button) => {
+      const on = button.dataset.ease === output.ease;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  };
+
+  // One field at a time, through the one module that saves an Output's
+  // settings (data/outputs.js). The droid refuses a number outside what the
+  // row takes and says which; the row then repaints to what it holds.
+  const saveMotion = async (address, patch) => {
+    const output = outputs?.find((each) => each.address === address);
+    if (!output || !motionOpen(output)) return;
+    try {
+      await OUTPUTS.save(address, patch);
+      showFeedback(`${output.name} saved. The next move uses it.`, "success");
+    } catch (error) {
+      showFeedback(`${output.name} not saved: ${window.PAApi.messageFor(error)}`, "error");
+      const row = outputRows.get(address);
+      const now = outputs?.find((each) => each.address === address);
+      if (row && now) paintMotion(row, now, isDriveable(now));
+    }
   };
 
   const paintOutputs = (addresses) => {
@@ -359,6 +429,19 @@
   });
 
   outputsRegion.addEventListener("change", (event) => {
+    const box = event.target;
+    if (box?.classList?.contains("outputs-throw") || box?.classList?.contains("outputs-accel")) {
+      const address = box.closest?.("[data-output]")?.dataset.output;
+      if (!address) return;
+      const ms = Math.round(Number(box.value));
+      const key = box.classList.contains("outputs-throw") ? "throwMs" : "accelMs";
+      if (box.value === "" || !Number.isFinite(ms)) {
+        showFeedback("Type a time in milliseconds.", "warning");
+        return;
+      }
+      started(saveMotion(address, { [key]: ms }));
+      return;
+    }
     const select = event.target;
     if (!select?.classList?.contains("outputs-add")) return;
     const address = select.closest?.("[data-output]")?.dataset.output;
@@ -1095,6 +1178,11 @@
     // A browser delivers no click to a disabled button; this is the rule
     // itself: a refused control asks the droid for nothing.
     if (!address || button.disabled) return;
+    if (button.dataset.ease) {
+      const output = outputs?.find((each) => each.address === address);
+      if (output && button.dataset.ease !== output.ease) started(saveMotion(address, { ease: button.dataset.ease }));
+      return;
+    }
     if (button.classList.contains("outputs-calibrate")) openDial(address);
     else if (button.classList.contains("outputs-off")) started(pulsesOff(address));
     else if (button.classList.contains("outputs-go")) started(drive(address, button.dataset.action));
