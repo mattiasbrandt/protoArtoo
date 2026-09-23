@@ -1,7 +1,8 @@
 // =============================================================================
 // test/test_native/test_sequence_bulk_centre/test_sequence_bulk_centre.cpp
 //
-// Put every Servo Output back to centre, paced by the droid (#318, #365).
+// Put every Servo Output back to centre, paced by the droid (#318, #365), and
+// the boot pass that runs on the same cursor at power-up (#414).
 //
 // What these hold is the part the browser must never be able to reach: the
 // spacing between two Outputs the Coordinator starts, the rows it passes over,
@@ -254,6 +255,163 @@ void test_a_run_across_a_millis_wrap_is_judged_on_elapsed_time() {
     TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, (uint32_t)(nearWrap + 450)));
 }
 
+// -----------------------------------------------------------------------------
+// The boot pass (ADR 0052, #414): the same cursor, each row asked its boot mode
+// -----------------------------------------------------------------------------
+
+static ServoOutputRow bootRow(uint8_t channel, ServoBootBehaviour boot, uint16_t throwMs) {
+    ServoOutputRow row = servoRow(channel, 1560, throwMs);
+    row.boot = boot;
+    return row;
+}
+
+static SeqBulkCentreRun bootPass(uint32_t nowMs) {
+    SeqBulkCentreRun run = {};
+    TEST_ASSERT_TRUE(sequenceBootPassStart(&run, nowMs, /*estopLatched=*/false, /*sleepMode=*/false));
+    return run;
+}
+
+// A limp row commands nothing and costs the pass no time: the Part stays where
+// it was left. Limp is every row's default, so a droid nobody has configured
+// does not move at power-up at all.
+void test_limp_commands_nothing_at_boot() {
+    SeqBulkCentreRun run = bootPass(1000);
+    const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, bootRow(LEDC_CH_ARM1, SERVO_BOOT_LIMP, 800));
+    TEST_ASSERT_FALSE(step.centre);
+    TEST_ASSERT_FALSE(step.releaseAfter);
+
+    ServoOutputRow fresh = {};
+    servoOutputRowDefaults(&fresh, SERVO_DRIVER_LEDC, LEDC_CH_ARM2, SERVO_COMP_MG996R);
+    TEST_ASSERT_FALSE(sequenceBulkCentreRowStep(run, fresh).centre);
+
+    sequenceBulkCentreAdvance(&run, 5, 1000, step.centre, 800);
+    TEST_ASSERT_EQUAL_UINT8(0, run.centred);
+    TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, 1000));
+}
+
+// The two home modes go to the recorded centre, the same plan a press makes;
+// only "go home and release" owes a release afterwards.
+void test_the_two_home_modes_go_to_the_recorded_centre() {
+    const SeqBulkCentreRun run = bootPass(0);
+    const ServoOutputRow hold = bootRow(LEDC_CH_ARM1, SERVO_BOOT_HOME_HOLD, 800);
+    const ServoOutputRow release = bootRow(LEDC_CH_AUX1, SERVO_BOOT_HOME_RELEASE, 800);
+
+    const SeqBulkCentreRowStep holdStep = sequenceBulkCentreRowStep(run, hold);
+    TEST_ASSERT_TRUE(holdStep.centre);
+    TEST_ASSERT_FALSE(holdStep.releaseAfter);
+    const SeqBulkCentreRowStep releaseStep = sequenceBulkCentreRowStep(run, release);
+    TEST_ASSERT_TRUE(releaseStep.centre);
+    TEST_ASSERT_TRUE(releaseStep.releaseAfter);
+
+    TEST_ASSERT_EQUAL_UINT16(1560, sequenceBodyCentrePlan(hold).targetUs);
+    TEST_ASSERT_EQUAL_UINT16(1560, sequenceBodyCentrePlan(release).targetUs);
+}
+
+// A press is not asked the boot mode: the operator asked for every Output, and
+// a limp row goes back to centre like any other.
+void test_a_press_centres_a_limp_row_the_boot_pass_leaves_alone() {
+    SeqBulkCentreRun run = {};
+    sequenceBulkCentreStart(&run, 0, SRC_WEB_API);
+    const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, bootRow(LEDC_CH_ARM1, SERVO_BOOT_LIMP, 800));
+    TEST_ASSERT_TRUE(step.centre);
+    TEST_ASSERT_FALSE(step.releaseAfter);
+    TEST_ASSERT_FALSE(sequenceBulkCentreRowStep(run, bootRow(LEDC_CH_ARM1, SERVO_BOOT_HOME_RELEASE, 800)).releaseAfter);
+}
+
+// Outputs never start together: each home row holds the next off by the
+// Cadence Floor, exactly as a press does.
+void test_the_boot_pass_is_spaced_by_the_cadence_floor() {
+    SeqBulkCentreRun run = bootPass(2000);
+    sequenceBulkCentreAdvance(&run, 5, 2000, true, 200);
+
+    TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 2000 + SEQ_CADENCE_FLOOR_MS - 1));
+    TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, 2000 + SEQ_CADENCE_FLOOR_MS));
+}
+
+// A droid that powers up with the estop latched - a TWDT reset latches it on
+// the way up - runs no boot pass: nothing is due at boot, and nothing becomes
+// due later, whenever the estop is cleared. Sleep Mode the same.
+void test_nothing_moves_at_boot_when_estop_is_latched() {
+    SeqBulkCentreRun run = {};
+    TEST_ASSERT_FALSE(sequenceBootPassStart(&run, 0, /*estopLatched=*/true, /*sleepMode=*/false));
+    TEST_ASSERT_FALSE(run.active);
+    TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 0));
+    TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 600000));
+
+    TEST_ASSERT_FALSE(sequenceBootPassStart(&run, 0, /*estopLatched=*/false, /*sleepMode=*/true));
+    TEST_ASSERT_FALSE(run.active);
+}
+
+// An estop that latches during the pass ends it where it got to, and a release
+// the pass owed goes with it: the estop has already let go of every Output.
+void test_an_estop_during_the_boot_pass_ends_it_and_owes_nothing() {
+    SeqBulkCentreRun run = bootPass(0);
+    sequenceBulkCentreOweRelease(&run, 2);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 800);
+
+    sequenceBulkCentreEnd(&run);
+
+    TEST_ASSERT_FALSE(run.active);
+    ServoCommandedPosition settled = {};
+    settled.pulsing = true;
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 90000, settled));
+}
+
+// "Go home and release" on an overshoot row: the move outlasts one full throw,
+// because it goes out to its aim and settles back. The release must not come
+// before it settles, however long past the throw time that is.
+void test_a_release_waits_for_an_overshoot_to_settle() {
+    SeqBulkCentreRun run = bootPass(0);
+    ServoOutputRow row = bootRow(LEDC_CH_AUX1, SERVO_BOOT_HOME_RELEASE, 800);
+    row.easing = SERVO_EASE_OVERSHOOT;
+    const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
+    TEST_ASSERT_TRUE(step.releaseAfter);
+    sequenceBulkCentreOweRelease(&run, 2);
+    sequenceBulkCentreAdvance(&run, 1, 0, true, row.throw_ms);
+    TEST_ASSERT_TRUE(run.active);  // the last row, but a release is still owed
+
+    ServoCommandedPosition at = {};
+    at.pulsing = true;
+    at.moving = true;
+    at.nowUs = 1560;  // passing through its target on the way out to the aim
+    at.targetUs = 1560;
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 799, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 800, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 1400, at));
+
+    at.moving = false;  // settled back onto the centre
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_SEND, sequenceBulkCentreReleaseCheck(run, 1420, at));
+    sequenceBulkCentreReleaseSent(&run, 1);
+    TEST_ASSERT_FALSE(run.active);
+}
+
+// Even settled, the release is never looked at before the Output's floored
+// full-throw time: that is the earliest check, a snap included.
+void test_a_release_is_never_earlier_than_the_floored_throw() {
+    SeqBulkCentreRun run = bootPass(0);
+    sequenceBulkCentreOweRelease(&run, 0);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 200);
+
+    ServoCommandedPosition settled = {};
+    settled.pulsing = true;
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, SEQ_CADENCE_FLOOR_MS - 1, settled));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_SEND, sequenceBulkCentreReleaseCheck(run, SEQ_CADENCE_FLOOR_MS, settled));
+}
+
+// An Output ServoTask never drove - switched off, or carrying a light - has no
+// pulse to take off: the release is dropped, not sent, and the pass goes on.
+void test_a_release_on_an_output_with_no_pulse_is_dropped() {
+    SeqBulkCentreRun run = bootPass(0);
+    sequenceBulkCentreOweRelease(&run, 3);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 500);
+
+    const ServoCommandedPosition limp = {};
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_DROP, sequenceBulkCentreReleaseCheck(run, 500, limp));
+    sequenceBulkCentreReleaseSent(&run, 5);
+    TEST_ASSERT_TRUE(run.active);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BULK_CENTRE_NO_RELEASE, run.releaseArm);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_an_output_goes_to_its_recorded_centre_not_to_half_its_throw);
@@ -275,5 +433,14 @@ int main() {
     RUN_TEST(test_a_halt_ends_the_run_where_it_got_to);
     RUN_TEST(test_pressing_again_starts_over_rather_than_queueing);
     RUN_TEST(test_a_run_across_a_millis_wrap_is_judged_on_elapsed_time);
+    RUN_TEST(test_limp_commands_nothing_at_boot);
+    RUN_TEST(test_the_two_home_modes_go_to_the_recorded_centre);
+    RUN_TEST(test_a_press_centres_a_limp_row_the_boot_pass_leaves_alone);
+    RUN_TEST(test_the_boot_pass_is_spaced_by_the_cadence_floor);
+    RUN_TEST(test_nothing_moves_at_boot_when_estop_is_latched);
+    RUN_TEST(test_an_estop_during_the_boot_pass_ends_it_and_owes_nothing);
+    RUN_TEST(test_a_release_waits_for_an_overshoot_to_settle);
+    RUN_TEST(test_a_release_is_never_earlier_than_the_floored_throw);
+    RUN_TEST(test_a_release_on_an_output_with_no_pulse_is_dropped);
     return UNITY_END();
 }

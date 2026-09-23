@@ -159,6 +159,7 @@ inline uint16_t clampPulseWidth(uint8_t channel, uint16_t pulseUs) {
 // A bit set to 1 includes the channel; 0 excludes it.
 // Bit positions: 0=ARM1, 1=ARM2, 2=DOME, 3=AUX1, 4=AUX2, 5=AUX3.
 // Pass 0 to skip initialization entirely.
+// Servo channels start with no pulse (limp); the DOME channel starts at neutral.
 // Must be called once before using any PWM outputs.
 // Returns true on success, false if LEDC setup fails.
 bool ledcPwmInit(uint8_t enabledMask);
@@ -194,7 +195,3 @@ bool ledcPwmRelease(uint8_t channel);
 
 // Get the GPIO pin associated with a channel. Returns 0 if channel invalid.
 uint8_t getChannelGpio(uint8_t channel);
-
-// Initialize all outputs to neutral position.
-// Call after ledcPwmInit() to ensure servos/ESC start in a known state.
-void ledcPwmInitNeutralPositions();
