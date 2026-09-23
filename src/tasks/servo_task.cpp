@@ -202,7 +202,9 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 //
 // `nowUs` is the width on the pin. `targetUs` is where the move in progress
 // ends, or `nowUs` again when nothing is moving, so the two marks a surface
-// draws close up exactly when the move does. `pulsing` is `known`: an output
+// draws close up exactly when the move does. An overshoot's aim is never the
+// target: the move ends where it settles (ramp.settleUs), and that is the
+// number a builder asked for. `pulsing` is `known`: an output
 // only becomes known by this task putting a pulse on it -- the neutral pulse at
 // init, or a write -- and only releaseArm() takes one away (pulses off, a hold
 // bound, or the halt edge; ADR 0043, ADR 0064), which is where `known` is
@@ -215,7 +217,7 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 static void publishCommanded(uint8_t armId) {
     const ServoCommandedPosition commanded = {
         s_arm[armId].commandedUs,
-        s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs,
+        s_arm[armId].moving ? s_arm[armId].ramp.settleUs : s_arm[armId].commandedUs,
         s_arm[armId].known,
         s_arm[armId].nudgesDone,
         s_arm[armId].hold.held,
@@ -293,9 +295,11 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
 // and is also the first move after a release (#364): a released output is no
 // longer `known`, so there is no position to ramp from.
 //
-// The profile arrives as four values, not as the row they sit in: like the
-// clamp and the Endpoint Pair, it is answered by address out of the live table,
-// so no 70 B ServoOutputRow is put on ServoTask's measured chain (ADR 0040).
+// The profile arrives as a ServoMotionProfile, not as the row it sits in: like
+// the clamp and the Endpoint Pair, it is answered by address out of the live
+// table, so no 70 B ServoOutputRow is put on ServoTask's measured chain
+// (ADR 0040). Its ease is already the one that runs (servoMotionProfileOf()),
+// so an overshoot on an unmeasured Output never reaches the planner as one.
 // -----------------------------------------------------------------------------
 static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     uint8_t channel = LEDC_CH_MAX;
@@ -307,19 +311,15 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     // way through, and a nudge part way through, alike.
     endMove(armId);
 
-    uint16_t spanUs = 0;
-    uint16_t throwMs = 0;
-    uint16_t accelMs = 0;
-    bool calibrated = false;
+    ServoMotionProfile profile = {};
     if (!s_arm[armId].known ||
-        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
-                                                 &accelMs, &calibrated)) {
+        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile)) {
         writeArmPulse(armId, channel, targetUs);
         return;
     }
 
-    const ServoMotionRamp ramp = servoMotionPlan(s_arm[armId].commandedUs, targetUs, spanUs,
-                                                 throwMs, accelMs, calibrated, millis());
+    const ServoMotionRamp ramp =
+        servoMotionPlan(s_arm[armId].commandedUs, targetUs, profile, millis());
     if (ramp.durationMs == 0) {
         writeArmPulse(armId, channel, targetUs);
         return;
@@ -393,16 +393,12 @@ static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
     s_arm[armId].legDwelling = false;
     s_arm[armId].moving = true;
 
-    uint16_t spanUs = 0;
-    uint16_t throwMs = 0;
-    uint16_t accelMs = 0;
-    bool calibrated = false;
-    ServoMotionRamp ramp = {s_arm[armId].commandedUs, targetUs, nowMs, 0, 0};
-    if (configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
-                                                &accelMs, &calibrated)) {
-        ramp = servoMotionPlan(s_arm[armId].commandedUs, targetUs, spanUs, throwMs, accelMs,
-                               calibrated, nowMs);
-    }
+    // An Output no row describes leaves the profile as it was initialised:
+    // `calibrated` unset, which the planner answers with a snap -- the same
+    // jump every unmeasured move makes.
+    ServoMotionProfile profile = {};
+    configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile);
+    const ServoMotionRamp ramp = servoMotionPlan(s_arm[armId].commandedUs, targetUs, profile, nowMs);
     s_arm[armId].ramp = ramp;
     if (ramp.durationMs == 0) {
         // A snap: the leg is over the moment it is written.
@@ -491,22 +487,20 @@ static void beginTravel(uint8_t armId, CommandSource source) {
     const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     uint16_t openUs = 0;
     uint16_t closeUs = 0;
-    uint16_t spanUs = 0;
-    uint16_t throwMs = 0;
-    uint16_t accelMs = 0;
-    bool calibrated = false;
+    ServoMotionProfile profile = {};
     if (channel >= LEDC_CH_MAX ||
         !configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, channel, &openUs, &closeUs) ||
-        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &spanUs, &throwMs,
-                                                 &accelMs, &calibrated)) {
+        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile)) {
         PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - no output row records its ends",
                     commandSourceToString(source), armId + 1);
         return;
     }
     ServoTravelPlan plan = {};
-    if (!calibrated || !servoTravelPlan(s_arm[armId].commandedUs, openUs, closeUs, &plan)) {
+    if (!profile.calibrated ||
+        !servoTravelPlan(s_arm[armId].commandedUs, openUs, closeUs, &plan)) {
         PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - %s", commandSourceToString(source), armId + 1,
-                    calibrated ? "its two ends are the same width" : "nobody has measured its ends");
+                    profile.calibrated ? "its two ends are the same width"
+                                       : "nobody has measured its ends");
         return;
     }
     // Whatever the arm was doing is over, an out-and-back in progress included:
@@ -522,6 +516,38 @@ static void beginTravel(uint8_t armId, CommandSource source) {
     beginLeg(armId, 1, millis());
 }
 
+// -----------------------------------------------------------------------------
+// stepMove()
+// One frame of whatever ramp the arm is on: put the width the ramp says on the
+// pin, and answer whether the whole move is over.
+//
+// An overshoot is over when it has SETTLED, not when it reaches its aim. The
+// aim was decided when the target was set (servoMotionPlan()); arriving there
+// starts the way back to the target, planned from the Output's profile as it
+// stands now, and the arm stays `moving` through both halves -- so a new
+// command, a hold, stopAllMoves() or a release ends an overshoot exactly where
+// it has got to, the same way it ends any ramp.
+// -----------------------------------------------------------------------------
+static bool stepMove(uint8_t armId, uint8_t channel, uint32_t nowMs) {
+    writeArmPulse(armId, channel, servoMotionPositionAt(s_arm[armId].ramp, nowMs));
+    if (!servoMotionArrived(s_arm[armId].ramp, nowMs)) {
+        return false;
+    }
+    if (!servoMotionSettles(s_arm[armId].ramp)) {
+        return true;
+    }
+    // A row that has gone from under the move leaves `calibrated` unset, and
+    // the planner answers that with a snap onto the target.
+    ServoMotionProfile profile = {};
+    configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile);
+    s_arm[armId].ramp = servoMotionSettleBack(s_arm[armId].ramp, profile, nowMs);
+    if (s_arm[armId].ramp.durationMs == 0) {
+        writeArmPulse(armId, channel, s_arm[armId].ramp.toUs);
+        return true;
+    }
+    return false;
+}
+
 // One frame of an out-and-back in progress: wait out a dwell, then start the
 // next leg; otherwise advance the leg's ramp like any other move and notice its
 // arrival.
@@ -533,8 +559,7 @@ static void advanceLegs(uint8_t armId, uint8_t channel, uint32_t nowMs) {
         beginLeg(armId, (uint8_t)(s_arm[armId].legNo + 1), nowMs);
         return;
     }
-    writeArmPulse(armId, channel, servoMotionPositionAt(s_arm[armId].ramp, nowMs));
-    if (servoMotionArrived(s_arm[armId].ramp, nowMs)) {
+    if (stepMove(armId, channel, nowMs)) {
         legArrived(armId, nowMs);
     }
 }
@@ -554,8 +579,7 @@ static void updateMotion() {
             advanceLegs(armId, channel, now);
             continue;
         }
-        writeArmPulse(armId, channel, servoMotionPositionAt(s_arm[armId].ramp, now));
-        if (servoMotionArrived(s_arm[armId].ramp, now)) {
+        if (stepMove(armId, channel, now)) {
             endMove(armId);
         }
     }
@@ -706,8 +730,10 @@ static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source) {
         PA_LOG_INFO(TAG, "[%s] Arm%d held by the dial at %u us", commandSourceToString(source),
                     armId + 1, (unsigned)positionUs);
     }
+    // Where the move ends, which on an overshoot is where it settles, not its
+    // aim: a keepalive for the width the builder asked for is still a refresh.
     const uint16_t goingToUs =
-        s_arm[armId].moving ? s_arm[armId].ramp.toUs : s_arm[armId].commandedUs;
+        s_arm[armId].moving ? s_arm[armId].ramp.settleUs : s_arm[armId].commandedUs;
     if (s_arm[armId].known && goingToUs == positionUs) {
         // Nothing to drive; the mirror still has to learn the hold was taken.
         if (taken) {

@@ -27,7 +27,9 @@
 //     (#286: a safe band by default, the full band an unlock).
 //   - Overshoot never passes the recorded ends, so on a row whose `calibrated`
 //     bit is unset there are none to work within and it degrades to `none`.
-//     servoOutputEffectiveEasing() is the only reader of the stored value
+//     servoOutputEffectiveEasing() is the only way a move reads the ease
+//     (servoMotionProfileOf(), include/servo_motion_ramp.h); the stored value
+//     is read directly only to store it and to report what the builder chose
 //     (ADR 0052).
 //   - Calibrating an output never ticks its boot behaviour. Finding an endpoint
 //     must not be the act that makes a panel move at power-up, which is why
@@ -362,8 +364,11 @@ inline uint16_t servoOutputHighUs(const ServoOutputRow& row) {
 // The easing that actually runs. Overshoot aims past the target and settles
 // back, and it must never pass the recorded ends  --  so on an output nobody
 // has measured there are no ends to work within and it degrades to `none`
-// (ADR 0052). This is the only reader of row.easing: reading the stored value
-// directly is how the degrade gets lost.
+// (ADR 0052). A move reads the ease through this and nothing else --
+// servoMotionProfileOf() is its caller, and ServoTask plans from that -- so the
+// degrade cannot be lost on the way to the pin. Storage and the config API read
+// row.easing directly, because what they report is the builder's choice, not
+// what runs.
 // -----------------------------------------------------------------------------
 inline ServoEasing servoOutputEffectiveEasing(const ServoOutputRow& row) {
     if (row.easing == SERVO_EASE_OVERSHOOT && !row.calibrated) {
