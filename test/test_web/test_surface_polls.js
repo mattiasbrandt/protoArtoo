@@ -366,6 +366,43 @@ for (const { file, cadenceMs, what, overrides = () => ({}) } of SURFACE_POLLS) {
 }
 
 // =============================================================================
+// ... and none of them reads the droid's status on its own
+//
+// Every one of these used to: a one-shot /api/status when the stream had not
+// delivered yet, or a fallback poll of its own at 2, 3 or 5 s, each spending
+// one of the controller's three client slots to ask what the shell had just
+// asked. The status is the Live Reading's to read now, once, for every reader
+// (data/live_reading.js, #419).
+// =============================================================================
+
+const READS_NO_STATUS_OF_ITS_OWN = [
+  { file: "app.js" },
+  { file: "dome.js" },
+  { file: "drive.js" },
+  { file: "sound.js" },
+  { file: "rc.js" },
+  { file: "footer.js" },
+  { file: "maintenance.js", overrides: withAvailability },
+  { file: "configuration.js", overrides: withAvailability },
+  { file: "servo.js", overrides: partsGlobals },
+  { file: "parts.js", overrides: partsGlobals },
+];
+
+for (const { file, overrides = () => ({}) } of READS_NO_STATUS_OF_ITS_OWN) {
+  test(`${file}: asks the droid for no status of its own`, async () => {
+    let env = null;
+    env = loadPageModule(file, { respond: () => ({}), overrides: withOutputs(overrides(), () => env) });
+    await env.settle(8);
+
+    assert.deepEqual(
+      env.requests.filter((request) => request.path === "/api/status").map((request) => request.path),
+      [],
+      `${file} read /api/status itself; the Live Reading is the one reader`,
+    );
+  });
+}
+
+// =============================================================================
 // ... and what each of them shows after a refresh that did not land
 //
 // This is the defect that reopened #360. Every one of these sites caught its

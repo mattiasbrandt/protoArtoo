@@ -20,6 +20,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 // Recording MockElement that tracks appendChild calls for DOM state verification
 class MockElement {
@@ -231,6 +232,9 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
   const identityActions = new MockElement("div", "identity-actions", mockDocument);
   mockDocument.elements.set("identity-actions", identityActions);
   mockDocument.body.appendChild(identityActions);
+  // And the line the diagnosis of a failed identity is written to.
+  const identityDiagnosis = new MockElement("div", "identity-diagnosis", mockDocument);
+  mockDocument.elements.set("identity-diagnosis", identityDiagnosis);
 
   // Load the shell's own chain first: the status stream and the Live Reading
   // it starts, then shell.js.
@@ -526,4 +530,29 @@ test("Retry button clears from identity-actions on pa:identity-available", () =>
 
   // innerHTML should be cleared (empty string)
   assert.strictEqual(identityActions.innerHTML, "", "identity-actions innerHTML should be cleared on pa:identity-available");
+});
+
+// Why the page cannot read the droid's feature list decides what the builder
+// does next: upload both halves of one release, or stop re-uploading the same
+// one. The two are told apart by the firmware the droid reports running, read
+// from the Live Reading (#419), against the version this web bundle was built
+// for.
+test("a failed identity is diagnosed from the firmware the droid reports running", async () => {
+  const diagnosisFor = async (running) => {
+    const { context, windowMock, mockDocument } = loadContextWithIdentity();
+    windowMock.PAApi = {
+      get: async (path) => {
+        if (path === "/fw-version.json") return { data: { fwVersion: "2.0.0" } };
+        throw new Error(`unexpected GET ${path}`);
+      },
+    };
+    windowMock.PAStatusStream.seed(statusFrame({ firmwareVersion: running }));
+    windowMock.dispatchEvent(new context.CustomEvent("pa:identity-unavailable", { detail: { reason: "incompatible" } }));
+    windowMock.dispatchEvent(new context.CustomEvent("pa:assets-ready"));
+    for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    return mockDocument.getElementById("identity-diagnosis").textContent;
+  };
+
+  assert.match(await diagnosisFor("1.9.0"), /do not match/, "a firmware from another release is the cause");
+  assert.match(await diagnosisFor("2.0.0"), /same release again will not fix it/, "the same release is not");
 });

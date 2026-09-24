@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 const loadRc = (config, diagnostics) =>
   loadPageModule("rc.js", {
@@ -20,9 +21,6 @@ const loadRc = (config, diagnostics) =>
       if (path === "/api/rc/map") return { data: { mode: config?.rc?.inputMode, map: config?.__map || [] } };
       if (path === "/api/rc") return { data: diagnostics };
       return { data: {} };
-    },
-    overrides: {
-      PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
     },
   });
 
@@ -61,4 +59,26 @@ test("an ELRS receiver offers no channel to map", async () => {
   const list = env.element("rc-channel-items").innerHTML;
   assert.doesNotMatch(list, /rc-channel-item/, "no channel is offered");
   assert.match(list, /no channel arrives/);
+});
+
+// Detect channel listens to a receiver, so it is offered only while the droid
+// reports one: an RC source in the status frame, as the Live Reading hands it
+// over (#419). The browser has a stream here, which is when RC reads it.
+test("Detect is refused while the droid reports no RC source, and offered once it reports one", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: () => ({ data: {} }),
+    overrides: {
+      EventSource: class {
+        addEventListener() {}
+        close() {}
+      },
+    },
+  });
+  const detect = env.element("rc-learn-btn");
+
+  env.pushStatus(statusFrame());
+  assert.equal(detect.disabled, true, "no receiver reported, nothing to detect");
+
+  env.pushStatus(statusFrame({ rcCh1: { state: "active" } }));
+  assert.equal(detect.disabled, false, "a reported receiver can be listened to");
 });
