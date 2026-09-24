@@ -132,3 +132,26 @@ test("what an Output does at power-up saves under the firmware's field, measured
 
   assert.deepEqual(env.moves().map((post) => post.form), [{ [entry("ledc:1").bootField]: "home-hold" }]);
 });
+
+// An upgrade can narrow an Output's recorded ends into what its part takes, and
+// the firmware alone knows which rows it did that to (#417): it reports the
+// pair it narrowed from on that row, and stops once the builder saves the
+// Output. The row says so only while the droid reports it, with the droid's
+// numbers - the page never decides a narrowing of its own, from the band, the
+// component or which Output it is.
+test("a row shows narrowed ends only while the droid reports them, with the droid's numbers", async () => {
+  const outputs = freshOutputs();
+  outputs[1].narrowedFrom = { openUs: 2200, closeUs: 2100 };
+  const env = await bootServos({ outputs });
+  const note = (address) => env.cell(address, "outputs-narrowed");
+
+  assert.equal(note("ledc:1").hidden, false, "the reported row says it was narrowed");
+  assert.match(note("ledc:1").textContent, /2200\D+2100/, "with the pair the droid reported");
+  for (const other of outputs.filter((each) => each.address !== "ledc:1")) {
+    assert.equal(note(other.address).hidden, true, `${other.address} was not reported narrowed`);
+  }
+
+  env.outputs[1].narrowedFrom = null; // the builder saved that Output
+  await env.frame();
+  assert.equal(note("ledc:1").hidden, true, "the note goes when the droid stops reporting it");
+});
