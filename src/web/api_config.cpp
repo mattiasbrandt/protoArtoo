@@ -1325,6 +1325,21 @@ void handleServoOutputsGet(WebRequest& req) {
         // what test sweep needs -- there is nowhere sane to sweep between until
         // ends exist -- and what degrades overshoot (ADR 0052).
         output["calibrated"] = row.calibrated;
+        // The pair `main` stored here, when the component band narrowed it on
+        // the way onto this row and the builder has not saved this Output
+        // since (#417). The operator's call: the band stays, and it narrows
+        // visibly - so the Servos row can say what the builder's own numbers
+        // were. null on every other Output.
+        uint16_t narrowedOpenUs = 0;
+        uint16_t narrowedCloseUs = 0;
+        if (configCacheReadServoOutputNarrowedFrom(row.driver, row.channel, &narrowedOpenUs,
+                                                   &narrowedCloseUs)) {
+            JsonObject narrowedFrom = output["narrowedFrom"].to<JsonObject>();
+            narrowedFrom["openUs"] = narrowedOpenUs;
+            narrowedFrom["closeUs"] = narrowedCloseUs;
+        } else {
+            output["narrowedFrom"] = nullptr;
+        }
 
         // Commanded, both: where ServoTask has told the Output to be now, and
         // where the move in progress ends. Nothing reads a servo back. null for
@@ -1363,7 +1378,9 @@ void handleServoOutputsGet(WebRequest& req) {
     // fields the calibration dial reads, 109 B a row, taking the same answer to
     // 6209 B. Raised to 8192 for that, deliberately and once: it is a bound on
     // a per-request malloc, so the spend is transient rather than BSS, and 8192
-    // leaves the same kind of headroom 4096 left over 3589.
+    // leaves the same kind of headroom 4096 left over 3589. `narrowedFrom`
+    // (#417) took the measured answer to 6800 B, and 6920 B with a pair on all
+    // five rows that can carry one.
     //
     // What that worst case is NOT is what this controller sends. Twenty-four
     // rows is the expander nobody has fitted; the five LEDC outputs answer in

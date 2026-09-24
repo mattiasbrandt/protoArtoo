@@ -112,6 +112,14 @@ ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver,
 // distinction it cannot act on.
 uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t channel);
 
+// The pair `main` stored for the output addressed there, when the component
+// band narrowed it on the way onto the row and the builder has not saved that
+// output since (#417, include/servo_legacy_field_sets.h ServoLegacyNarrowing).
+// False, leaving both untouched, for every other output - which is almost
+// every output on almost every droid. For a surface, not a control path.
+bool configCacheReadServoOutputNarrowedFrom(ServoOutputDriver driver, uint8_t channel,
+                                            uint16_t* openUs, uint16_t* closeUs);
+
 // configCacheApplyServoOutputEdits: the runtime write onto a row's endpoints and
 // component. The Apply Core is pure and cannot reach the table, so it records
 // what a request asked for as addressed ServoOutputEdits and the Commit Step

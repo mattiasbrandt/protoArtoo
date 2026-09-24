@@ -4,6 +4,8 @@
 // Round-trip tests for config persistence seam.
 // Tests configDeserialize/configSerialize against MapReader/MapWriter.
 // =============================================================================
+#include <cstdio>
+#include <cstring>
 #include <string>
 
 #include <unity.h>
@@ -419,6 +421,83 @@ void test_a_droid_with_no_retired_keys_adopts_nothing(void) {
     }
 }
 
+// The stored form of `row` at `index`, as this firmware writes it - or, with
+// `oldShape`, as a controller wrote it before #413, one field shorter.
+static void storeRow(MapReader* reader, uint8_t index, const ServoOutputRow& row, bool oldShape) {
+    char encoded[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    TEST_ASSERT_TRUE(servoOutputRowFormat(encoded, sizeof(encoded), row));
+    if (oldShape) {
+        *strrchr(encoded, ':') = '\0';
+    }
+    char key[8] = {};
+    snprintf(key, sizeof(key), "so%02u", (unsigned)index);
+    reader->set(key, std::string(encoded));
+}
+
+// A controller that has saved a row since the upgrade, with the retired light
+// keys still beside it: the save that wrote the row lost a later row write, so
+// the keys were never removed (#417). The row is the builder's answer - here, a
+// servo put back on the wire `main` lit - and reading the keys over it on every
+// boot would turn the servo back into a strip, and keep LEDC off its pin.
+void test_a_saved_row_is_not_overwritten_by_the_retired_light_keys(void) {
+    const BoardOutput* lit = outputForRetiredSlot(2);
+    TEST_ASSERT_NOT_NULL(lit);
+
+    ServoOutputTable defaults = {};
+    servoOutputTableDefaults(&defaults);
+    const uint8_t index = servoOutputTableFindByAddress(defaults, SERVO_DRIVER_LEDC, lit->channel);
+    TEST_ASSERT_TRUE(index < SERVO_OUTPUT_ROW_MAX);
+
+    ServoOutputRow servo = defaults.rows[index];
+    servo.component = SERVO_COMP_MG996R;
+    servo.led_count = 10;
+
+    MapReader reader;
+    reader.setSchemaVersion(CONFIG_SCHEMA_VERSION);
+    reader.set("so_cnt", (uint32_t)defaults.count);
+    storeRow(&reader, index, servo, false);
+    reader.set(NVS_KEY_RETIRED_AUX_LED_PIN, (uint32_t)2);
+    reader.set(NVS_KEY_RETIRED_AUX_LED_COUNT, (uint32_t)40);
+
+    ServoOutputTable table = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &table, &report);
+
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)table.rows[index].component);
+    TEST_ASSERT_EQUAL_UINT8(10, table.rows[index].led_count);
+    TEST_ASSERT_FALSE(report.litAdopted);
+}
+
+// The other side of the same gate: a row stored before #413 has no Light Type
+// field to hold the answer, so the keys still land on it. Epic-lineage
+// controllers stored rows and `aux_led_pin` together before the LED count
+// joined the row, and a gate on "no stored row" alone would drop their strip.
+void test_a_row_stored_before_the_light_joined_it_still_adopts_the_light(void) {
+    const BoardOutput* lit = outputForRetiredSlot(2);
+    TEST_ASSERT_NOT_NULL(lit);
+
+    ServoOutputTable defaults = {};
+    servoOutputTableDefaults(&defaults);
+    const uint8_t index = servoOutputTableFindByAddress(defaults, SERVO_DRIVER_LEDC, lit->channel);
+    TEST_ASSERT_TRUE(index < SERVO_OUTPUT_ROW_MAX);
+
+    MapReader reader;
+    reader.setSchemaVersion(CONFIG_SCHEMA_VERSION);
+    reader.set("so_cnt", (uint32_t)defaults.count);
+    storeRow(&reader, index, defaults.rows[index], true);
+    reader.set(NVS_KEY_RETIRED_AUX_LED_PIN, (uint32_t)2);
+    reader.set(NVS_KEY_RETIRED_AUX_LED_COUNT, (uint32_t)40);
+
+    ServoOutputTable table = {};
+    ServoOutputRepairReport report = {};
+    configDeserializeServoOutputs(reader, &table, &report);
+
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_RGB, (uint8_t)table.rows[index].component);
+    TEST_ASSERT_EQUAL_UINT8(40, table.rows[index].led_count);
+    TEST_ASSERT_TRUE(report.litAdopted);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)(lit - BOARD_OUTPUTS), report.litOutput);
+}
+
 // A stored row written before the LED count joined it has thirteen fields, not
 // fourteen. That is the shape this firmware used to write, so it is read as
 // itself with the count defaulted - never as a damaged record, which would
@@ -455,5 +534,7 @@ int main(void) {
     RUN_TEST(test_one_lit_light_survives_the_upgrade);
     RUN_TEST(test_a_droid_with_no_retired_keys_adopts_nothing);
     RUN_TEST(test_a_thirteen_field_row_is_the_old_shape_not_damage);
+    RUN_TEST(test_a_saved_row_is_not_overwritten_by_the_retired_light_keys);
+    RUN_TEST(test_a_row_stored_before_the_light_joined_it_still_adopts_the_light);
     return UNITY_END();
 }

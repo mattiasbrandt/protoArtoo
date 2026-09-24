@@ -357,6 +357,13 @@ portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 // guessed row.
 static ServoOutputTable servoOutputCache = {};
 
+// Which of `main`'s servo pairs the band narrowed on the way onto a row, and
+// what they were (#417, ServoLegacyNarrowing). Filled beside the rows by
+// configLoadServoOutputs(); a set's bit is cleared by the first edit that
+// reaches its row, and configSaveServoOutputs() keeps the keys of every set
+// whose bit is still set. Guarded by configCacheMux like the rows.
+static ServoLegacyNarrowing servoLegacyNarrowingCache = {};
+
 // The Droid Build, live (ADR 0047).
 //
 // Filled by configLoadDroidBuild() from main's boot path, like the rows above.
@@ -507,6 +514,15 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
             continue;
         }
         const uint16_t repaired = servoOutputApplyEdit(&servoOutputCache.rows[index], edits[i]);
+        // A save of this Output, which is what ends a narrowing: the builder
+        // has now said what they want here, so `main`'s pair is no longer the
+        // only record of their numbers and the next save may remove it.
+        if (edits[i].driver == SERVO_DRIVER_LEDC) {
+            const size_t set = servoLegacyFieldSetForChannel(edits[i].channel);
+            if (set < SERVO_LEGACY_FIELD_SET_COUNT) {
+                servoLegacyNarrowingCache.sets &= (uint8_t)~(1u << set);
+            }
+        }
         if (repaired == 0) {
             continue;
         }
@@ -523,6 +539,26 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return report;
+}
+
+bool configCacheReadServoOutputNarrowedFrom(ServoOutputDriver driver, uint8_t channel,
+                                            uint16_t* openUs, uint16_t* closeUs) {
+    if (openUs == nullptr || closeUs == nullptr || driver != SERVO_DRIVER_LEDC) {
+        return false;
+    }
+    const size_t set = servoLegacyFieldSetForChannel(channel);
+    if (set >= SERVO_LEGACY_FIELD_SET_COUNT) {
+        return false;
+    }
+    bool narrowed;
+    taskENTER_CRITICAL(&configCacheMux);
+    narrowed = (servoLegacyNarrowingCache.sets & (1u << set)) != 0;
+    if (narrowed) {
+        *openUs = servoLegacyNarrowingCache.openUs[set];
+        *closeUs = servoLegacyNarrowingCache.closeUs[set];
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return narrowed;
 }
 
 // The runtime write onto a Part's place (ADR 0050, #347).
@@ -1083,7 +1119,7 @@ void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report)
     // measured worst-case chain (include/config.h, #250) -- so the table never
     // becomes a stack frame. Safe because this runs once, from setup(), before
     // any task that reads the table exists.
-    configDeserializeServoOutputs(reader, &servoOutputCache, report);
+    configDeserializeServoOutputs(reader, &servoOutputCache, report, &servoLegacyNarrowingCache);
 }
 
 void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report) {
@@ -1114,6 +1150,19 @@ bool configSaveGuidedSetup(Preferences& prefs) {
     return configSerializeGuidedSetup(guided, writer);
 }
 
+// Remove each key that is there. False when a removal that was asked for did
+// not happen - Preferences::remove() reports nvs_erase_key()'s answer - so the
+// caller can say the save failed rather than claim keys gone that are not.
+static bool removeKeys(Preferences& prefs, const char* const* keys, size_t count) {
+    bool ok = true;
+    for (size_t k = 0; k < count; ++k) {
+        if (prefs.isKey(keys[k]) && !prefs.remove(keys[k])) {
+            ok = false;
+        }
+    }
+    return ok;
+}
+
 bool configSaveServoOutputs(Preferences& prefs) {
     PrefsWriter writer(prefs);
     const uint8_t count = configCacheServoOutputCount();
@@ -1142,26 +1191,27 @@ bool configSaveServoOutputs(Preferences& prefs) {
     // save that ran before configLoadServoOutputs() would be writing an empty
     // table over a builder's calibration, and removing the keys on top of that
     // is how the calibration would be lost rather than merely unloaded.
+    //
+    // A set the band narrowed on the way in is kept, whatever else this save
+    // did, until the builder saves that Output (#417): its keys are the only
+    // record left of the numbers `main` drove to, and GET /api/servo/outputs
+    // reads them back from findLegacyNarrowing() on every boot until then.
+    //
+    // A removal that fails is a failed save. The keys it left are still read
+    // on the next boot, and a caller told "saved" would have no reason to try
+    // again.
     if (ok && count > 0) {
+        uint8_t keep;
+        taskENTER_CRITICAL(&configCacheMux);
+        keep = servoLegacyNarrowingCache.sets;
+        taskEXIT_CRITICAL(&configCacheMux);
         for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+            if ((keep & (1u << i)) != 0) {
+                continue;
+            }
             const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
             const char* const keys[] = {set.nvsOpenKey, set.nvsCloseKey, set.nvsTypeKey};
-            for (size_t k = 0; k < sizeof(keys) / sizeof(keys[0]); ++k) {
-                if (prefs.isKey(keys[k])) {
-                    prefs.remove(keys[k]);
-                }
-            }
-        }
-        // The one lit wire and its LED count, gone the same way and on the same
-        // reasoning (#413): adoptRetiredAuxLedKeys() has read them onto the row
-        // they named, the rows are down, and a key nobody reads is an NVS entry
-        // spent on nothing. Removing them is also what stops that adoption
-        // running again over an answer the builder has since changed.
-        const char* const retired[] = {NVS_KEY_RETIRED_AUX_LED_PIN, NVS_KEY_RETIRED_AUX_LED_COUNT};
-        for (size_t k = 0; k < sizeof(retired) / sizeof(retired[0]); ++k) {
-            if (prefs.isKey(retired[k])) {
-                prefs.remove(retired[k]);
-            }
+            ok = removeKeys(prefs, keys, sizeof(keys) / sizeof(keys[0])) && ok;
         }
     }
     return ok;
@@ -1174,20 +1224,35 @@ bool configSaveServoOutputs(Preferences& prefs) {
 // fixed servo key sets: the removal needs no schema bump because it has nothing
 // to migrate, and it is idempotent - a controller that never had the keys, or
 // has already lost them, finds nothing to remove.
-static void removeRetiredServoKeys(Preferences& prefs) {
+static bool removeRetiredServoKeys(Preferences& prefs) {
     static const char* const kRetired[] = {"seq_op", "seq_cl"};
-    for (size_t i = 0; i < sizeof(kRetired) / sizeof(kRetired[0]); ++i) {
-        if (prefs.isKey(kRetired[i])) {
-            prefs.remove(kRetired[i]);
-        }
-    }
+    return removeKeys(prefs, kRetired, sizeof(kRetired) / sizeof(kRetired[0]));
+}
+
+// The one lit wire and its LED count (#413). adoptRetiredAuxLedKeys() has read
+// them onto the row they named, and a key nobody reads is an NVS entry spent on
+// nothing; removing them is also what stops that adoption running again.
+//
+// Here, after the snapshot, and not beside the fixed servo sets in
+// configSaveServoOutputs(): the adoption has two halves, and the second - the
+// wired tick the loader sets on the lit Output, since `main` drove its strip
+// from these keys alone (#417) - lives in SystemConfig, which this save is the
+// one to write. Removed before it landed, a save that failed on the snapshot
+// would leave a Light Type on the row and no tick anywhere, and the strip dark.
+// Every caller runs this only after configSaveServoOutputs() succeeded, so the
+// row half is down too.
+static bool removeRetiredLightKeys(Preferences& prefs) {
+    static const char* const kRetired[] = {NVS_KEY_RETIRED_AUX_LED_PIN,
+                                           NVS_KEY_RETIRED_AUX_LED_COUNT};
+    return removeKeys(prefs, kRetired, sizeof(kRetired) / sizeof(kRetired[0]));
 }
 
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     PrefsWriter writer(prefs);
-    const bool ok = configSerialize(snapshot, writer);
+    bool ok = configSerialize(snapshot, writer);
     if (ok) {
-        removeRetiredServoKeys(prefs);
+        ok = removeRetiredServoKeys(prefs);
+        ok = removeRetiredLightKeys(prefs) && ok;
     }
     return ok;
 }

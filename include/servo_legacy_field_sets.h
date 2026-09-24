@@ -27,10 +27,11 @@
 // This table is the only statement anywhere of which Output Address each set
 // was ever about: the names carry their channel in their spelling and nowhere
 // else, which is exactly why an expander could never be another one of them.
-// Nothing here stores a value. It is deleted whole when both reasons above
-// have gone.
+// The table stores no value. It is deleted whole when both reasons above have
+// gone, and ServoLegacyNarrowing below goes with it.
 //
-// Pure: names and a channel. No NVS, no FreeRTOS, no Arduino String.
+// Pure: names, a channel, and the shape of one load's answer. No NVS, no
+// FreeRTOS, no Arduino String.
 // =============================================================================
 #pragma once
 
@@ -67,3 +68,38 @@ inline constexpr ServoLegacyFieldSet SERVO_LEGACY_FIELD_SETS[SERVO_LEGACY_FIELD_
     {LEDC_CH_AUX3, "aux3_op", "aux3_cl", "aux3_type", "aux3OpenUs", "aux3CloseUs", "aux3Type",
      "aux3"},
 };
+
+// Which Output a set was about, as an index into SERVO_LEGACY_FIELD_SETS, or
+// SERVO_LEGACY_FIELD_SET_COUNT for a channel no set ever named.
+inline size_t servoLegacyFieldSetForChannel(uint8_t channel) {
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        if (SERVO_LEGACY_FIELD_SETS[i].channel == channel) {
+            return i;
+        }
+    }
+    return SERVO_LEGACY_FIELD_SET_COUNT;
+}
+
+// -----------------------------------------------------------------------------
+// ServoLegacyNarrowing  --  the pairs the band moved on the way in (#417)
+//
+// `main` clamped every endpoint to 500..2500 whatever was fitted; a row clamps
+// into its component's band, and MG996R and "nothing recorded" both take
+// 1000..2000. So a pair `main` held legally can arrive narrowed: 2200/800
+// becomes 2000/1000, and 2200/2100 becomes 2000/2000, which no longer moves.
+//
+// The band stays (#286). What the operator decided on 2026-09-24 is that it
+// narrows visibly: the Output says it was narrowed and what the builder's own
+// numbers were, and those numbers are not deleted until the builder saves that
+// Output. So a set's keys outlive the first save while its bit is set here,
+// and the bit is what GET /api/servo/outputs reads the original pair from.
+//
+// Bit i is SERVO_LEGACY_FIELD_SETS[i]. The two pairs are what `main` stored,
+// as stored; they mean nothing while the bit is clear.
+// -----------------------------------------------------------------------------
+struct ServoLegacyNarrowing {
+    uint8_t sets;
+    uint16_t openUs[SERVO_LEGACY_FIELD_SET_COUNT];
+    uint16_t closeUs[SERVO_LEGACY_FIELD_SET_COUNT];
+};
+static_assert(SERVO_LEGACY_FIELD_SET_COUNT <= 8, "ServoLegacyNarrowing::sets is one byte");
