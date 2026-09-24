@@ -140,6 +140,45 @@ test("once the droid has let go, the page stops asking and waits to be told to r
   assert.equal(env.text("ledc:0", "outputs-release"), "Went limp - ten minutes is the most a dial holds");
 });
 
+// The firmware drops a refresh that finds no hold standing, and takes the
+// Output only for a plain hold (#417, ADR 0064: resuming is one press). So the
+// page must send the plain form only for a press - opening the dial, take it
+// again - and stop asking where nobody is watching: after the estop, and from a
+// hidden tab. Before this, an estop cleared from the radio with the tab in the
+// background left the keepalive taking the servo back on its own.
+test("the page takes an Output only on a press, and stops asking on the estop and while hidden", async () => {
+  const env = await bootServos();
+  const refreshes = (posts) => posts.map((post) => post.form.refresh ?? "press");
+  env.pressCalibrate("ledc:0");
+  await sleep(20);
+  assert.deepEqual(refreshes(env.holds()), ["press"], "opening the dial is a press");
+
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  keepalive.fn();
+  env.drive(1600);
+  await sleep(120);
+  assert.deepEqual(refreshes(env.holds().slice(1)), ["1", "1"], "a tick and a drag only refresh");
+
+  env.pushStatus({ estop: true });
+  assert.ok(env.cleared.includes(keepalive.id), "the estop stops the keepalive");
+  const atEstop = env.holds().length;
+  keepalive.fn();
+  env.pushStatus({ estop: false });
+  env.wentLimp("ledc:0", "estop");
+  await env.frame();
+  assert.equal(env.holds().length, atEstop, "nothing is asked for once the estop let go");
+
+  env.pressDial("cal-resume");
+  await sleep(20);
+  assert.deepEqual(refreshes(env.holds().slice(atEstop)), ["press"], "take it again is the one press");
+  const resumed = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  assert.notEqual(resumed.id, keepalive.id, "and it starts asking again");
+
+  env.document.visibilityState = "hidden";
+  env.document.dispatch("visibilitychange", { type: "visibilitychange" });
+  assert.ok(env.cleared.includes(resumed.id), "a hidden tab stops asking, so the expiry ends the hold");
+});
+
 test("pulses off during a Find by Moving run ends the run at once and says which happened", async () => {
   const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
   env.pressFind("doorRL");

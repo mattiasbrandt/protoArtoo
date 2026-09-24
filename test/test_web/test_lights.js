@@ -104,6 +104,28 @@ test("each lit Part reads its own wire, not the first one the droid reported", a
   assert.equal(ledsOf("cbi"), "4");
 });
 
+// A wire the droid has not reported on has no state to show. This page drew
+// such a wire as Off, with its brightness at 0, until #417: the firmware keeps
+// "no lights" ({}) apart from "not said" on purpose, and a page that fills the
+// gap with Off tells the builder a strip is dark when nobody said so.
+test("a lit wire the droid has not reported shows no state until it does", async () => {
+  const answer = droidWithTwoLitWires();
+  const cbiWire = answer.idOf("ledc:4");
+  const cbiReading = answer.status.lights[cbiWire];
+  delete answer.status.lights[cbiWire];
+  const env = await ready({ answer });
+
+  const checked = () => env.plateFor("cbi").querySelectorAll(".light-mode")
+    .filter((node) => node.getAttribute("aria-checked") === "true").map((node) => node.textContent);
+  assert.deepEqual(checked(), [], "no effect is marked for a wire nobody reported");
+  assert.equal(env.plateFor("cbi").querySelector(".light-level").hidden, true, "and no brightness is shown");
+
+  env.pushStatus({ lights: { ...answer.status.lights, [cbiWire]: cbiReading } });
+  await env.settle();
+  assert.deepEqual(checked(), ["Flash"], "once it reports, it shows what it said");
+  assert.equal(env.plateFor("cbi").querySelector(".light-level").hidden, false);
+});
+
 // And a command names the wire the Part is on, so a builder pressing Off on one
 // light does not darken the other. A missing `output` means every lit wire on
 // this route, which is exactly what must not happen from a per-Part control.
