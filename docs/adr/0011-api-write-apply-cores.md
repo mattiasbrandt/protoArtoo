@@ -189,3 +189,51 @@ Consequences:
 - `sizeof(ConfigSnapshot)` gets a `static_assert` beside the struct, and the two
   comments that disagreed with it (744 B in the serializer, "small" on the
   outcome) are corrected in the same slice.
+
+## Amended 2026-09-24
+
+Recorded after the architecture review grilling of 2026-09-24. The 2026-09-04
+amendment put one config write lock "beside `configCommitApplied`, ... taken by
+every adapter", and rejected a locked read-modify-write as "more than the defect
+needs". #417 (8a949e14) then had to add the lock, and the cache read inside it,
+to every Core 0 writer one by one: 17 take sites across 8 files, most of them
+the same window written twice, once in the REST handler and once in the Console.
+A writer that forgets the lock compiles and silently loses another's write. The
+rejection's two reasons have both expired: the Commanded Mode setters became
+one-field writes on Core 1 that take no lock, and every caller has been touched
+anyway.
+
+Decided:
+
+- **Each write operation gets one Write Window**, kept beside its Apply Core:
+  take the lock, read the cache into the caller's Working Snapshot, run the
+  Apply Core, run the Commit Step, release. The REST handler and the Console
+  call the same Write Window and hold no lock of their own. Commit-only writes
+  (volume, mode save) and the speed preset's save-or-revert get one each. One
+  per operation, never a global write function, so ADR 0036's "one Commit Step
+  per core, never a global commit function" holds.
+- **The lock becomes private** to the Write Windows. Its bound, its busy
+  answers (503 `config write busy`, `temporarily-unavailable`) and the rule that
+  it is released before the answer are unchanged; every response stays
+  byte-identical.
+- **The caller still supplies the Working Snapshot.** Adapter stack use does
+  not move, so no ADR 0040 chain is re-derived for this.
+- **A holder check makes the window enforced rather than remembered.** The
+  whole-snapshot and NVS config writers check that the caller holds the lock:
+  a failure fails the native test and logs on the device, and never resets the
+  board. The one-field Core 1 setters and the boot-effective fields are outside
+  it, and the boot load is exempt. The check is armed once adapters start; in
+  native tests the adapter and route suites arm it in setUp, so state seeding
+  in the other suites is unchanged.
+
+Considered and rejected:
+
+- **One global Write Window** taking any apply-and-commit step: fewest places,
+  but it is the global commit function ADR 0036 forbids.
+- **The lock inside each Commit Step**: the cache read happens before the Apply
+  Core runs, so it would fall outside the window again - the gap #417 closed.
+- **A Write Window that owns a static Working Snapshot**: about 944 B of .bss
+  per operation on the low-heap board, and the adapter would still need a copy
+  to render from.
+- **Always-on holder check with seeding through a test hook**: about 70 test
+  setups would change for no extra coverage of a real writer.
