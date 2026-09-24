@@ -237,3 +237,37 @@ Considered and rejected:
   to render from.
 - **Always-on holder check with seeding through a test hook**: about 70 test
   setups would change for no extra coverage of a real writer.
+
+## Amended 2026-09-25
+
+Recorded after the architecture review grilling of 2026-09-25 (#425). The
+Decision promised "a field-level error (field + message, byte-identical to
+today's 400 bodies)". Only the message shipped. So both adapters dig the field
+back out of the sentence: the Console's wifi adapter matches the sentence's
+first word, the config adapter reports every refusal as `out-of-range` under
+the core's POST field name, and `data/outputs.js` finds the field and the range
+with a prefix match and a regex. Rewording one firmware sentence breaks all
+three without a compile error.
+
+Decided:
+
+- **A refusal carries field, reason and accepts as data**, beside the sentence
+  it has today, in every Apply Core. Reason is a small set; a value that clashes
+  with another saved value is its own reason, `conflict`, and a missing partner
+  is `missing-argument`.
+- **The Console answers from the data:** the argument the builder typed, the
+  core's reason as its token, and `accepts=` the way a refused `target=` already
+  does.
+- **The HTTP 400 body keeps the same `error` text and gains `field`, `reason`
+  and `accepts` keys.** "Byte-identical to today's 400 bodies" becomes "the same
+  error text": the promise that protected callers reading `error` still holds,
+  and the page can stop reading a sentence.
+
+Considered and rejected:
+
+- **HTTP stays byte-identical and only the Console gains the data.** Rejected:
+  the browser parses the same sentence the Console did, for the same reason
+  (#414: a POST field name must never reach a builder), and would keep doing so.
+- **Reuse `out-of-range` for a clash.** Rejected: nothing is out of range, and
+  `accepts=` cannot say what would be taken, so the answer would mislead.
+
