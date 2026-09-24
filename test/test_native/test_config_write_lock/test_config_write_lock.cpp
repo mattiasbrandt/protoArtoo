@@ -37,7 +37,7 @@
                               // singleton every xSemaphoreCreateMutexStatic()
                               // returns natively, so a test can inspect the
                               // real take/give accounting of the config write
-                              // lock in src/web/api_config.cpp
+                              // lock in src/config_write_lock.cpp
 
 #include "api_audio.h"
 #include "api_config.h"

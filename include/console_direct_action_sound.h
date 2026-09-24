@@ -39,7 +39,7 @@
                                            // audioQueueTrackStop(), audioQueueQueryStatus(),
                                            // audioGetCapabilities() - includes audio_driver.h
                                            // transitively for AudioDriver::AUDIO_CAP_CATALOG
-#include "api_audio.h"                    // AudioSetVolumeCommitOutcome, audioSetVolumeCommitApplied(),
+#include "api_audio.h"                    // AudioSetVolumeCommitOutcome, audioSetVolumeWriteWindow(),
                                            // AudioMoodMapCommitOutcome, audioMoodMapCommitApplied(),
                                            // AudioCategoryRangeCommitOutcome,
                                            // audioCategoryRangeCommitApplied() - and, transitively,
@@ -165,17 +165,13 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
     if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
         return;
     }
-    // Inside the config write lock, as sound.config.volume takes it for the
-    // same Commit Step: it writes the cache and saves it whole (#417).
+    // The Write Window sound.config.volume and POST /api/audio call too
+    // (include/api_audio.h): the Commit Step writes the cache and saves it whole.
     AudioSetVolumeCommitOutcome commit;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        commit = audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
-    }  // guard released here
+    if (!audioSetVolumeWriteWindow((uint8_t)level, consoleCommandSourceFor(source), &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (!commit.queued) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,

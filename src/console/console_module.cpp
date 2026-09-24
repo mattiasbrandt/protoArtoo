@@ -54,14 +54,15 @@
                                // - the existing validators the live RC trigger path already
                                // calls (#221 reuses them verbatim for the raw Marcduino console
                                // operations, rather than inventing a second set of format rules)
-#include "api_config.h"        // configCommitApplied() - the ADR 0036 Commit Step beside
-                               // configApply(), shared verbatim with handleConfigPost (#226) -
-                               // and ConfigWriteLock, the one lock every config writer takes
+#include "api_config.h"        // configWriteWindow() - the config write's Write Window
+                               // (ADR 0011, amended 2026-09-24), shared verbatim with
+                               // handleConfigPost: configApply() and its Commit Step under the
+                               // one config write lock
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
-#include "api_wifi_apply.h"    // wifiApply(), wifiCommitApplied() - the POST /api/wifi
-                               // Apply Core and its ADR 0036 Commit Step, shared verbatim
-                               // with handleWifiPost (#227; the Commit Step was extracted
-                               // for exactly this second caller in that ticket's phase 1)
+#include "api_wifi_apply.h"    // wifiWriteWindow() - the POST /api/wifi Apply Core and its
+                               // ADR 0036 Commit Step under the config write lock, shared
+                               // verbatim with handleWifiPost (#227 extracted the Commit Step
+                               // for exactly this second caller)
 #include "api_helpers.h"       // parseBoolValue() - reused verbatim for rc.action.toggle-debug's
                                // enabled= argument, matching src/web/api_rc.cpp's own JSON body parse
 #include "commanded_modes.h"   // commandedSetStationary/Sleep/WebControl/RcDebug() - Commanded
@@ -92,8 +93,8 @@
                                // servo.action.open/close/set-position below
 #include "ledc_pwm.h"          // SERVO_PULSE_MIN_US/MAX_US - the same pulse-width bounds
                                // handleServoPost() enforces for its own position_us range
-#include "api_identity.h"      // identitySetCommitApplied() - the ADR 0036 Commit Step beside
-                               // handleIdentityPost() (#221 remainder), reused verbatim by
+#include "api_identity.h"      // identitySetWriteWindow() - the identity write's Write Window,
+                               // shared with handleIdentityPost() (#221 remainder) by
                                // system.action.set-identity below
 #include "aux_led.h"           // AuxLedEffect, parseAuxLedEffect(), auxLedQueueSetColor/SetEffect()
                                // - reused verbatim by aux.action.led-color/-effect below (#221
@@ -1735,16 +1736,17 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // module seam - browser and serial cannot race configuration persistence or
 // shared result state").
 //
-// The config write lock (ConfigWriteLock, include/api_config.h) covers that
-// window and more: every adapter, this module and the REST routes alike,
-// holds it from the configCacheRead() of its working snapshot through
-// configCommitApplied()'s NVS write. This module used to hold a mutex of its
-// own there, which serialized its two adapters against each other but not
-// against a dashboard form POST - a lock held in one adapter is the copy of
-// correctness ADR 0011's 2026-08-27 amendment forbids, and the write path is
-// the seam's, not an adapter's. Because that one lock spans this instance's
+// The config Write Window (configWriteWindow(), include/api_config.h) covers
+// that window and more: it holds the config write lock from the
+// configCacheRead() of the working snapshot through configCommitApplied()'s
+// NVS write, for this module and the REST route alike. This module used to
+// hold a mutex of its own there, which serialized its two adapters against
+// each other but not against a dashboard form POST - a lock held in one
+// adapter is the copy of correctness ADR 0011's 2026-08-27 amendment forbids,
+// and the write path is the seam's, not an adapter's (#269; the lock left the
+// adapters altogether in #418). Because that one lock spans this instance's
 // entire in-flight window, it protects this static too and no second mutex
-// is needed here (#269).
+// is needed here. It is released before this module's answer is emitted.
 static ConfigApplyResult s_consoleConfigApplyResult;
 
 // Bridges a Console write onto the exact param name api_config_apply.cpp's
@@ -1831,42 +1833,27 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
     params.ctx = &adapter;
     params.get = consoleScalarConfigParamGet;
 
-    // Serialized against every other config writer, this module's other
-    // adapter and the REST routes alike (s_consoleConfigApplyResult's own
-    // declaration comment above has the reasoning): a scoped lock so it
-    // releases as soon as this module's last read of
-    // s_consoleConfigApplyResult is done, in configCommitApplied(), rather
-    // than being held any longer than the shared state needs protecting.
-    //
-    // The cache read is inside the lock, not before it (#417): a snapshot read
-    // before another writer's commit and written back after it reverts that
-    // writer's fields - the lost update the lock exists to stop, one statement
-    // earlier (include/api_config.h).
-    bool applyHadError = false;
+    // The config Write Window, shared with the REST route: it reads the cache,
+    // runs configApply() and commits under the one config write lock, and
+    // releases it before anything below emits the answer.
+    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+    // The verdict comes back from inside the window: s_consoleConfigApplyResult
+    // is shared with this module's other adapter, which may overwrite it as
+    // soon as the lock is released, so nothing below reads it.
     ConfigCommitOutcome commit = {};
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            // Another writer is mid-write - report busy rather than
-            // proceeding unserialized into the shared config path.
-            if (sink->onRecordResult) {
-                sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
-                                    CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-            }
-            return;
+    const ConfigWriteWindowAnswer answer =
+        configWriteWindow(params, &working, &s_consoleConfigApplyResult, src, &commit);
+    if (answer == ConfigWriteWindowAnswer::Busy) {
+        // Another writer is mid-write - report busy rather than
+        // proceeding unserialized into the shared config path.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
         }
+        return;
+    }
 
-        configCacheRead(&working);
-        const bool domeEnabledBefore = working.system.enable_dome_esc;
-        configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
-        applyHadError = s_consoleConfigApplyResult.error.hasError;
-        if (!applyHadError) {
-            CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-            commit = configCommitApplied(&working, s_consoleConfigApplyResult, src);
-        }
-    }  // guard released here, after the last read of s_consoleConfigApplyResult
-
-    if (applyHadError) {
+    if (answer == ConfigWriteWindowAnswer::Refused) {
         // configApply()'s only failure for a single supplied field is that
         // field's own type/range/enum check - OUT_OF_RANGE matches
         // consoleValidateArgsAgainstSchema()'s classification for the same
@@ -2554,29 +2541,14 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
     WifiConfig working = {};
     WifiApplyResult applyResult;
     WifiCommitOutcome commit = {};
-    {
-        // Serialized against every other config writer, for the reason
-        // s_consoleConfigApplyResult's declaration gives above:
-        // wifiCommitApplied() read-modify-writes the shared config-cache
-        // snapshot and then writes NVS, so an interleaved config write on any
-        // adapter would lose one of the two updates. The read of the current
-        // settings is inside the guard too - reading them outside it would
-        // reopen the same window one statement earlier.
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            if (sink->onRecordResult) {
-                sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
-                                     CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-            }
-            return;
+    // The WiFi Write Window handleWifiPost calls too (api_wifi_apply.h).
+    if (!wifiWriteWindow(params, &working, &applyResult, &commit)) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                 CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
         }
-
-        configCacheReadWifi(&working);
-        wifiApply(params, &working, &applyResult);
-        if (applyResult.ok) {
-            commit = wifiCommitApplied(&working);
-        }
-    }  // guard released here
+        return;
+    }
 
     if (!applyResult.ok) {
         const char* failing = consoleWifiFailingConsoleKey(applyResult.errorMessage);
@@ -2813,13 +2785,12 @@ static const char* consoleAudioTracksParamGet(void* ctx, const char* name) {
     return consoleArgsFind(*adapter->args, name);
 }
 
-// The shared write half of every audioTracksApply row. The config write lock
-// spans the snapshot read, the core and the Commit Step for the reason
+// The shared write half of every audioTracksApply row. It runs through the
+// tracks Write Window, which holds the config write lock across the snapshot
+// read, the core and the Commit Step for the reason
 // s_consoleConfigApplyResult's declaration gives above: audioTracksCommitApplied()
 // read-modify-writes the shared config cache and then writes NVS, so an
 // interleaved config write on any adapter would lose one of the two updates.
-// Reading the snapshot outside the guard would reopen that window one
-// statement earlier.
 static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                          const char* fixedKey, const ConsoleArgs& args,
                                          const ConsoleRecordSink* sink) {
@@ -2833,21 +2804,13 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     // module static nor the sharing hazard one would bring (pin fact 4).
     AudioTracksApplyResult result;
     AudioTracksCommitOutcome commit;
-    bool applyHadError = false;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        ConfigSnapshot working = {};
-        configCacheRead(&working);
-        audioTracksApply(params, consoleAudioCatalogSupported(), &working, &result);
-        applyHadError = result.error.hasError;
-        if (!applyHadError) {
-            commit = audioTracksCommitApplied(&working, result);
-        }
-    }  // guard released here, after the Commit Step's last shared-state write
+    ConfigSnapshot working = {};
+    // The Write Window POST /api/audio/tracks calls (include/api_audio.h).
+    if (!audioTracksWriteWindow(params, consoleAudioCatalogSupported(), &working, &result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
+    const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
         // The core reports its refusal as a human sentence, not a field id
@@ -3014,22 +2977,14 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 
     AudioCategoryRangeApplyResult result;
     AudioCategoryRangeCommitOutcome commit;
-    bool applyHadError = false;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        ConfigSnapshot working = {};
-        configCacheRead(&working);
-        audioCategoryRangeApply(consoleArgsAsParamSource(parsedArgs), consoleAudioCatalogSupported(),
-                                &working, &result);
-        applyHadError = result.error.hasError;
-        if (!applyHadError) {
-            commit = audioCategoryRangeCommitApplied(&working, result);
-        }
-    }  // guard released here
+    ConfigSnapshot working = {};
+    // The Write Window POST /api/audio/category-range calls (include/api_audio.h).
+    if (!audioCategoryRangeWriteWindow(consoleArgsAsParamSource(parsedArgs),
+                                       consoleAudioCatalogSupported(), &working, &result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
+    const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
         // Any of: an unusable lo_key/hi_key pair, an out-of-range bound, or
@@ -3091,27 +3046,22 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
     }
 
     AudioMoodMapApplyResult result;
-    AudioMoodMapCommitOutcome commit;
-    bool applyHadError = false;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        audioMoodMapApply(consoleArgsAsParamSource(parsedArgs), &result);
-        applyHadError = result.error.hasError;
-        if (!applyHadError) {
-            commit = audioMoodMapCommitApplied(result);
-        }
-    }  // guard released here
+    audioMoodMapApply(consoleArgsAsParamSource(parsedArgs), &result);
 
-    if (applyHadError) {
+    if (result.error.hasError) {
         // All four fields are required with range 0-4095 in the registry
         // schema, so the schema check above already refused everything this
         // core can refuse - handled explicitly rather than assumed away, the
         // same way consoleExecuteSoundSetMoodMap() handles its own.
         consoleEmitArgFailure(requestId, entry->name, "quiet", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    // The Write Window POST /api/audio/mood-map calls (include/api_audio.h).
+    // The Apply Core above reads no config, so it runs before the window, as
+    // the REST route runs it.
+    AudioMoodMapCommitOutcome commit;
+    if (!audioMoodMapWriteWindow(result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
         return;
     }
     if (!commit.ok) {
@@ -3183,18 +3133,12 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
     // the Commit Step takes.
     const long level = strtol(consoleArgsFind(parsedArgs, "volume"), nullptr, 10);
 
+    // The Write Window POST /api/audio's volume branch calls (include/api_audio.h).
     AudioSetVolumeCommitOutcome commit;
-    {
-        // The Commit Step read-modify-writes the shared config-cache snapshot
-        // and then writes NVS, the same window every other config write in
-        // this module serializes on.
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        commit = audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
-    }  // guard released here
+    if (!audioSetVolumeWriteWindow((uint8_t)level, consoleCommandSourceFor(source), &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
 
     if (!commit.queued) {
         // The live apply never reached AudioTask, so nothing was persisted

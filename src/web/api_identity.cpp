@@ -18,13 +18,13 @@
 #include <Preferences.h>
 #include <stdio.h>
 
-#include "api_config.h"  // ConfigWriteLock - the identity write's window
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "component_registry.h"
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_write_lock.h"  // identitySetWriteWindow() lives here
 #include "logging.h"
 #include "web_request.h"
 
@@ -85,6 +85,20 @@ IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working) {
     return outcome;
 }
 
+// See include/api_identity.h for the full contract.
+bool identitySetWriteWindow(const char* droidName, bool mdnsUseName, ConfigSnapshot* working,
+                            IdentitySetCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    snprintf(working->system.droid_name, sizeof(working->system.droid_name), "%s", droidName);
+    working->system.mdns_use_name = mdnsUseName;
+    *commit = identitySetCommitApplied(working);
+    return true;
+}
+
 // GET /api/identity/components -- the Component Registry lineup.
 //
 // Every row, including the parts nothing drives: a builder sees a product we
@@ -140,20 +154,11 @@ void handleIdentityPost(WebRequest& req) {
         }
     }
 
-    // Cache read through commit inside the config write lock, like every other
-    // config writer: the Commit Step writes the whole snapshot back (#417).
     ConfigSnapshot working = {};
     IdentitySetCommitOutcome commit;
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            webSendJsonError(req, 503, "config write busy");
-            return;
-        }
-        configCacheRead(&working);
-        snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-        working.system.mdns_use_name = mdnsUseName;
-        commit = identitySetCommitApplied(&working);
+    if (!identitySetWriteWindow(normalized, mdnsUseName, &working, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
     }
     if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist identity");

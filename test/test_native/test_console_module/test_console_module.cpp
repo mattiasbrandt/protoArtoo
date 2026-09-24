@@ -2649,10 +2649,11 @@ void test_scalar_config_write_rejects_an_unknown_argument() {
 // Cross-adapter serialization (#226 rework, defect 1): consoleWriteScalarConfigField()
 // is the sole reader/writer of s_consoleConfigApplyResult, and both Console
 // adapters (serial task, browser's psychic server task - both pinned to
-// Core 0) can call it concurrently. The config write lock (ConfigWriteLock,
-// include/api_config.h) serializes the whole configApply() -> error check ->
-// configCommitApplied() window, and since #269 the REST config routes take
-// the same one; these tests simulate another writer holding it via the native
+// Core 0) can call it concurrently. The config write lock
+// (include/config_write_lock.h), held by the config Write Window
+// configWriteWindow() since #418, serializes the whole configApply() -> error
+// check -> configCommitApplied() window, and the REST config route calls the
+// same window; these tests simulate another writer holding it via the native
 // mutex stub's exposed singleton (paStubMutexStorage()), which is what every
 // xSemaphoreCreateMutexStatic() returns natively, matching the precedent
 // test_console_serial_output.cpp already set for inspecting/driving

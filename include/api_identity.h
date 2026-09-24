@@ -41,6 +41,17 @@ struct IdentitySetCommitOutcome {
 };
 IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working);
 
+// Write Window for an identity write (ADR 0011, amended 2026-09-24; CONTEXT.md
+// "Write Window"): take the config write lock, read the cache into
+// `*working`, set the already-validated `droidName` and `mdnsUseName` on it,
+// run identitySetCommitApplied(), release. POST /api/identity and the
+// Console's identity write both call this and hold no lock of their own: the
+// Commit Step writes the whole snapshot back.
+//
+// False -> busy: nothing read or written; `*working` and `*commit` untouched.
+bool identitySetWriteWindow(const char* droidName, bool mdnsUseName, ConfigSnapshot* working,
+                            IdentitySetCommitOutcome* commit);
+
 void handleIdentityGet(WebRequest& req);
 void handleIdentityPost(WebRequest& req);
 

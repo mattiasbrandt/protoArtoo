@@ -34,9 +34,10 @@
  *    below read the outer's answer after the interruption precisely so that
  *    would show.
  *  - The config-write critical section (`s_consoleConfigApplyResult` under
- *    the config write lock, ConfigWriteLock in include/api_config.h - the one
- *    every config writer takes since #269, this module's two adapters and the
- *    REST routes alike). The lock tests below drive it from BOTH Console
+ *    the config write lock, include/config_write_lock.h - the one every config
+ *    writer runs under since #269, and since #418 only inside the Write Window
+ *    this module's two adapters and the REST routes share). The lock tests
+ *    below drive it from BOTH Console
  *    sources, which the existing coverage in test_console_module.cpp does only
  *    from the serial one; test_config_write_lock.cpp drives the REST side.
  */

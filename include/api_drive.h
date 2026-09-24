@@ -83,3 +83,13 @@ enum class ManualCommandResult : uint8_t {
 // caller (POST /api/manual-command, api_system.cpp) can hand over a borrowed
 // seam parameter without a copy.
 ManualCommandResult executeManualCommand(const char* raw);
+
+// The mode save's Write Window (ADR 0011, amended 2026-09-24): store the
+// commanded mode the droid is already in and say whether it reached flash.
+// False covers both a busy config write lock and a failed NVS write; either
+// way the mode stays applied and the caller reports the save as failed. Every
+// caller that stores a commanded mode - POST /api/mode, the manual command
+// paths and the Console's drive.action.set-mode - calls this and holds no lock
+// of its own. The decision behind reporting rather than reverting is on the
+// definition (src/web/api_drive.cpp).
+bool saveCommandedMode();

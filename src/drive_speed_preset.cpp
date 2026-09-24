@@ -1,6 +1,6 @@
 #include "drive_speed_preset.h"
 
-#include "api_config.h"  // ConfigWriteLock - the persisted write's window
+#include "config_write_lock.h"  // applySpeedPresetPersisted() is the persisted preset's Write Window
 #include "audio_task.h"
 #include "config.h"
 #include "config_cache.h"
@@ -54,11 +54,12 @@ bool applySpeedPresetRuntime(SpeedPresetId preset) {
 }
 
 // The persisted preset, from POST /api/drive/speed-preset and the Console's
-// drive.action.speed-preset-* (Core 0). It writes the cache and then the
-// whole of it to NVS, so it is a config writer like any other and takes the
-// config write lock across both - the previous pair it may have to restore
-// is read inside it too. A lock that cannot be taken is a failed write,
-// which both callers already answer as one.
+// drive.action.speed-preset-* (Core 0), and its Write Window (ADR 0011,
+// amended 2026-09-24): it writes the cache and then the whole of it to NVS,
+// so it holds the config write lock across both - the previous pair it may
+// have to restore is read inside it too. Both callers call this and hold no
+// lock of their own. A lock that cannot be taken is a failed write, which
+// both callers already answer as one.
 bool applySpeedPresetPersisted(SpeedPresetId preset) {
     AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
     if (!speedPresetSlot(preset, &slot)) {

@@ -50,7 +50,6 @@
 #include "api_audio_category_range_apply.h"
 #include "api_audio_mood_map_apply.h"
 #include "api_audio_tracks_apply.h"
-#include "api_config.h"  // ConfigWriteLock - every config writer's window
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "audio_catalog_gate.h"
@@ -60,6 +59,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_write_lock.h"  // the four audio Write Windows live here
 #include "logging.h"
 #include "mood.h"
 #include "mood_sound_mapping.h"
@@ -521,17 +521,10 @@ void handleAudioMoodMapPost(WebRequest& req) {
         return;
     }
 
-    // The Commit Step reads the cache, writes NVS and writes the whole snapshot
-    // back, so it runs inside the config write lock like every other config
-    // writer - the Console's sound.config.mood-map already does (#417).
     AudioMoodMapCommitOutcome commit;
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            webSendJsonError(req, 503, "config write busy");
-            return;
-        }
-        commit = audioMoodMapCommitApplied(result);
+    if (!audioMoodMapWriteWindow(result, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
     }
     if (!commit.ok) {
         webSendJsonError(req, 500, "NVS write failed");
@@ -662,23 +655,11 @@ void handleAudioTracksPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     static AudioTracksApplyResult result;
-    // The cache read through the commit, inside the config write lock: a
-    // snapshot read before another writer's commit and written back after it
-    // reverts that writer's fields (#417). The Console's twin locks the same
-    // window.
+    ConfigSnapshot snap;
     AudioTracksCommitOutcome commit;
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            webSendJsonError(req, 503, "config write busy");
-            return;
-        }
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-        audioTracksApply(params, audioCatalogSupported(), &snap, &result);
-        if (!result.error.hasError) {
-            commit = audioTracksCommitApplied(&snap, result);
-        }
+    if (!audioTracksWriteWindow(params, audioCatalogSupported(), &snap, &result, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
     }
     if (result.error.hasError) {
         sendApplyError(req, result.error.message, result.error.notFound);
@@ -787,21 +768,11 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     static AudioCategoryRangeApplyResult result;
-    // Cache read through commit inside the config write lock, as for the
-    // tracks route above (#417).
+    ConfigSnapshot snap;
     AudioCategoryRangeCommitOutcome commit;
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            webSendJsonError(req, 503, "config write busy");
-            return;
-        }
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-        audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
-        if (!result.error.hasError) {
-            commit = audioCategoryRangeCommitApplied(&snap, result);
-        }
+    if (!audioCategoryRangeWriteWindow(params, audioCatalogSupported(), &snap, &result, &commit)) {
+        webSendJsonError(req, 503, "config write busy");
+        return;
     }
     if (result.error.hasError) {
         sendApplyError(req, result.error.message, result.error.notFound);
@@ -868,6 +839,58 @@ AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSo
     PA_LOG_INFO(TAG, "[AUDIO] volume level=%d saved=%s", (int)level,
                 outcome.saved ? "true" : "false");
     return outcome;
+}
+
+// The four audio Write Windows. See include/api_audio.h for the contract.
+
+bool audioTracksWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                            ConfigSnapshot* working, AudioTracksApplyResult* result,
+                            AudioTracksCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    audioTracksApply(params, catalogSupported, working, result);
+    if (!result->error.hasError) {
+        *commit = audioTracksCommitApplied(working, *result);
+    }
+    return true;
+}
+
+bool audioCategoryRangeWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                                   ConfigSnapshot* working, AudioCategoryRangeApplyResult* result,
+                                   AudioCategoryRangeCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    audioCategoryRangeApply(params, catalogSupported, working, result);
+    if (!result->error.hasError) {
+        *commit = audioCategoryRangeCommitApplied(working, *result);
+    }
+    return true;
+}
+
+bool audioMoodMapWriteWindow(const AudioMoodMapApplyResult& result,
+                             AudioMoodMapCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    *commit = audioMoodMapCommitApplied(result);
+    return true;
+}
+
+bool audioSetVolumeWriteWindow(uint8_t level, CommandSource source,
+                               AudioSetVolumeCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    *commit = audioSetVolumeCommitApplied(level, source);
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -1157,18 +1180,10 @@ void handleAudioPost(WebRequest& req) {
         if (refusedWhileSoundOff(req)) {
             return;
         }
-        // The Commit Step writes the cache and saves it whole, so it runs inside
-        // the config write lock (#417). Taken here and not inside it, because
-        // the Console's sound.config.volume already holds the lock when it
-        // calls the same function, and the mutex is not recursive.
         AudioSetVolumeCommitOutcome commit;
-        {
-            ConfigWriteLock lock;
-            if (!lock.acquired()) {
-                webSendJsonError(req, 503, "config write busy");
-                return;
-            }
-            commit = audioSetVolumeCommitApplied((uint8_t)level, SRC_WEB_API);
+        if (!audioSetVolumeWriteWindow((uint8_t)level, SRC_WEB_API, &commit)) {
+            webSendJsonError(req, 503, "config write busy");
+            return;
         }
         if (!commit.queued) {
             webSendJsonError(req, 503, "audio command queue full");

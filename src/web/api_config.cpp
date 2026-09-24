@@ -23,8 +23,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ctype.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 #include <string.h>
 
 #include "api_config_apply.h"
@@ -43,6 +41,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_write_lock.h"  // this file implements the config and RC Map Write Windows
 #include "console_config_fields.h"  // kComponentToggleFields - the boot mask's bit order
 #include "logging.h"
 #include "robot_state.h"
@@ -936,7 +935,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
 // WebRequest-free per ADR 0036's Consequences ("persistSystemConfig(WebRequest&,
 // ...), which sends its own HTTP error today, is the first such extraction"):
 // the caller renders its own failure, so this stays reachable from a future
-// non-web caller without a request object in scope. handleRcMapPost is the
+// non-web caller without a request object in scope. rcMapWriteWindow() is the
 // only caller today.
 bool persistSystemConfig(const SystemConfig& system) {
     Preferences prefs;
@@ -951,44 +950,31 @@ bool persistSystemConfig(const SystemConfig& system) {
     return true;
 }
 
+// Write Window for POST /api/rc/map (ADR 0011, amended 2026-09-24). The route
+// read-modify-writes the same config cache and the same NVS namespace the
+// config write does, so it is guarded the same way. False -> busy, nothing
+// read or written. True -> `*result` holds rcMapApply()'s answer, and when it
+// is ok the map is in the cache and `*persisted` says whether NVS took it.
+// One adapter today, so it stays in this file.
+bool rcMapWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
+                      RcMapApplyResult* result, bool* persisted) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheRead(working);
+    rcMapApply(params, working, result);
+    if (result->ok) {
+        configCacheApply(*working);
+        // Re-read what the cache actually holds, then persist from that - one
+        // snapshot on the caller's stack, not two.
+        configCacheRead(working);
+        *persisted = persistSystemConfig(working->system);
+    }
+    return true;
+}
+
 }  // namespace
-
-// =============================================================================
-// The config write lock - see include/api_config.h for the contract.
-// =============================================================================
-
-// Static storage and no init call: xSemaphoreCreateMutexStatic() takes no
-// heap, and a static FreeRTOS mutex may be created before the scheduler
-// starts, which is where a namespace-scope initializer runs. Nothing in
-// setup() has to remember to create it - which matters because the adapters
-// that take it (these routes and the Console module) share no init point,
-// and the one that used to own the mutex is not the seam that owns the
-// serialization.
-static StaticSemaphore_t s_configWriteMutexStorage;
-static SemaphoreHandle_t s_configWriteMutex = xSemaphoreCreateMutexStatic(&s_configWriteMutexStorage);
-
-// The bound a contended take waits before answering busy. One second is long
-// enough to cover the other adapter's whole window including its NVS write,
-// and short enough that a browser POST answers rather than hangs.
-static const TickType_t kConfigWriteLockTimeoutTicks = pdMS_TO_TICKS(1000);
-
-ConfigWriteLock::ConfigWriteLock() : held_(false) {
-    if (s_configWriteMutex == nullptr) {
-        // Cannot happen with static creation above; kept as the same
-        // defensive single-threaded-boot fallback src/seq_store.cpp's lock()
-        // takes, so a future move of the creation point cannot turn config
-        // writes into a hard failure.
-        held_ = true;
-        return;
-    }
-    held_ = (xSemaphoreTake(s_configWriteMutex, kConfigWriteLockTimeoutTicks) == pdTRUE);
-}
-
-ConfigWriteLock::~ConfigWriteLock() {
-    if (held_ && s_configWriteMutex != nullptr) {
-        xSemaphoreGive(s_configWriteMutex);
-    }
-}
 
 // See include/api_config.h for the full contract.
 ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
@@ -999,9 +985,9 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // Whether the Part is where the request says can only be answered against
     // the live table, and a request that would take a Part off an Output its
     // sender never read it on must change nothing - not the move, and not the
-    // fields riding beside it (#347). Both callers hold the config write lock
-    // across this call, so no other writer can move the Part between this answer
-    // and the write.
+    // fields riding beside it (#347). configWriteWindow() holds the config write
+    // lock across this call, so no other writer can move the Part between this
+    // answer and the write.
     if (result.partMove.requested) {
         outcome.refusal = partMoveRefusal(configCacheMoveServoOutputPart(result.partMove.move));
         if (outcome.refusal != nullptr) {
@@ -1158,6 +1144,24 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     return outcome;
 }
 
+// See include/api_config.h for the full contract.
+ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
+                                          ConfigApplyResult* result, CommandSource source,
+                                          ConfigCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return ConfigWriteWindowAnswer::Busy;
+    }
+    configCacheRead(working);
+    const bool domeEnabledBefore = working->system.enable_dome_esc;
+    configApply(params, working, domeEnabledBefore, result);
+    if (result->error.hasError) {
+        return ConfigWriteWindowAnswer::Refused;
+    }
+    *commit = configCommitApplied(working, *result, source);
+    return ConfigWriteWindowAnswer::Committed;
+}
+
 // GET /api/config - the config snapshot data/app.js fetches on every page load.
 void handleConfigGet(WebRequest& req) {
     ConfigSnapshot snap;
@@ -1197,29 +1201,10 @@ void handleRcMapPost(WebRequest& req) {
     // with the ADR 0011 apply-core out-parameter convention.
     static RcMapApplyResult result;
 
-    // This route read-modify-writes the same config cache and the same NVS
-    // namespace the config write path does, so it takes the same lock across
-    // the same window. Answers are rendered after the release: nothing below
+    // Answers are rendered after the Write Window returns: nothing below
     // touches config state.
-    bool busy = false;
     bool persisted = false;
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            busy = true;
-        } else {
-            configCacheRead(&working);
-            rcMapApply(params, &working, &result);
-            if (result.ok) {
-                configCacheApply(working);
-                // Re-read what the cache actually holds, then persist from
-                // that - one snapshot local on this task's stack, not two.
-                configCacheRead(&working);
-                persisted = persistSystemConfig(working.system);
-            }
-        }
-    }
-
+    const bool busy = !rcMapWriteWindow(params, &working, &result, &persisted);
     if (busy) {
         webSendJsonError(req, 503, "config write busy");
         return;
@@ -1257,36 +1242,19 @@ void handleConfigPost(WebRequest& req) {
     // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
     // record) - static avoids a large stack frame on the server task,
     // matching api_seq.cpp's SeqRunEvidence precedent. Only this task calls
-    // this handler, so the instance needs no protection of its own; the lock
-    // below is about the shared config cache and NVS, not about this buffer.
+    // this handler, so the instance needs no protection of its own; the Write
+    // Window's lock is about the shared config cache and NVS, not this buffer.
     static ConfigApplyResult result;
 
-    // The lock spans the cache read through the commit: a writer that read
-    // the cache before another writer's commit and applies afterwards is
-    // exactly how the loser's fields used to be reverted before NVS.
-    bool busy = false;
+    // configWriteWindow() leaves the post-commit snapshot in `working`.
     ConfigCommitOutcome commit = {};
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            busy = true;
-        } else {
-            configCacheRead(&working);
-            const bool domeEnabledBefore = working.system.enable_dome_esc;
-            configApply(params, &working, domeEnabledBefore, &result);
-            if (!result.error.hasError) {
-                // configCommitApplied() leaves the post-commit snapshot in
-                // `working`.
-                commit = configCommitApplied(&working, result, SRC_WEB_API);
-            }
-        }
-    }
-
-    if (busy) {
+    const ConfigWriteWindowAnswer answer =
+        configWriteWindow(params, &working, &result, SRC_WEB_API, &commit);
+    if (answer == ConfigWriteWindowAnswer::Busy) {
         webSendJsonError(req, 503, "config write busy");
         return;
     }
-    if (result.error.hasError) {
+    if (answer == ConfigWriteWindowAnswer::Refused) {
         webSendJsonError(req, 400, result.error.message);
         return;
     }
@@ -1448,32 +1416,9 @@ void handleWifiPost(WebRequest& req) {
     // ADR 0011 apply-core out-parameter convention.
     static WifiApplyResult result;
 
-    // wifiCommitApplied() read-modify-writes the shared config-cache snapshot
-    // and then writes NVS, so an interleaved config write on any adapter
-    // would lose one of the two updates. The read of the current settings is
-    // inside the window too - reading them outside it would reopen exactly
-    // that gap one statement earlier. The Console's own WiFi write
-    // (src/console/console_module.cpp) takes the same lock.
-    bool busy = false;
+    // The Write Window shared with the Console's WiFi write (api_wifi_apply.h).
     WifiCommitOutcome commit = {};
-    {
-        ConfigWriteLock lock;
-        if (!lock.acquired()) {
-            busy = true;
-        } else {
-            configCacheReadWifi(&working);
-            wifiApply(params, &working, &result);
-            if (result.ok) {
-                // Commit Step (ADR 0036, api_wifi_apply.h): persist to NVS,
-                // stage the config cache (Staged Network Switch, ADR 0015),
-                // and broadcast status - shared with the Console WiFi write
-                // path instead of each adapter carrying its own copy of the
-                // sequence.
-                commit = wifiCommitApplied(&working);
-            }
-        }
-    }
-
+    const bool busy = !wifiWriteWindow(params, &working, &result, &commit);
     if (busy) {
         webSendJsonError(req, 503, "config write busy");
         return;

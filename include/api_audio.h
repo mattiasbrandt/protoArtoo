@@ -125,7 +125,8 @@ int formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, boo
 // effects for each of the three audio write Apply Cores, extracted so a
 // non-REST caller (the Controller Console) reaches the identical
 // NVS-persist/rollback/log/queue-refresh sequence rather than a second copy.
-// Both callers exist now: the REST handlers below, and the Console - its
+// They run inside the Write Windows declared below, which both adapters call:
+// the REST handlers, and the Console - its
 // sound.action.set-mood-map / set-category-range executors
 // (include/console_direct_action_sound.h) and its sound.config.* rows
 // (src/console/console_module.cpp), which reach these through the same
@@ -161,6 +162,38 @@ struct AudioSetVolumeCommitOutcome {
     bool saved = false;
 };
 AudioSetVolumeCommitOutcome audioSetVolumeCommitApplied(uint8_t level, CommandSource source);
+
+// Write Windows (ADR 0011, amended 2026-09-24; CONTEXT.md "Write Window") for
+// the four audio config writes: each takes the config write lock, runs its
+// Commit Step - after reading the cache into the caller's `*working` and
+// running the Apply Core, for the two that write a snapshot back - and
+// releases. The REST handlers and the Console call these and hold no lock of
+// their own. Each Commit Step writes the config cache, NVS or both, and a
+// write that interleaves with another config write loses one of the two.
+//
+// All four: false -> busy; nothing was read or written and every out-parameter
+// is untouched. True -> the window ran.
+
+// `*result` holds audioTracksApply()'s answer; `*commit` the Commit Step's
+// outcome when that answer carries no error.
+bool audioTracksWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                            ConfigSnapshot* working, AudioTracksApplyResult* result,
+                            AudioTracksCommitOutcome* commit);
+
+// As audioTracksWriteWindow(), for audioCategoryRangeApply().
+bool audioCategoryRangeWriteWindow(const ConfigParamSource& params, bool catalogSupported,
+                                   ConfigSnapshot* working, AudioCategoryRangeApplyResult* result,
+                                   AudioCategoryRangeCommitOutcome* commit);
+
+// `result` must already hold audioMoodMapApply()'s error-free answer: that
+// core reads no config, so it runs before the window and a refused request
+// answers without waiting for the lock.
+bool audioMoodMapWriteWindow(const AudioMoodMapApplyResult& result,
+                             AudioMoodMapCommitOutcome* commit);
+
+// `level` already validated (0-30) by the caller.
+bool audioSetVolumeWriteWindow(uint8_t level, CommandSource source,
+                               AudioSetVolumeCommitOutcome* commit);
 
 void handleAudioGet(WebRequest& req);
 void handleAudioPost(WebRequest& req);
