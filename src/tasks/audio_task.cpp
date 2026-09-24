@@ -59,6 +59,10 @@
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "web_server.h"
+#if !PA_CAP_DEDICATED_AUDIO_UART
+#include "../drivers/audio_soft_uart_rx.h"
+#include "soft_uart_storm_guard.h"
+#endif
 
 static const char* TAG = "AudioTask";
 
@@ -711,6 +715,43 @@ static void pumpUnsolicitedRx() {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
+#if !PA_CAP_DEDICATED_AUDIO_UART
+// Soft-UART RX storm guard, AudioTask's half (#417 F15). The ISR switches its
+// own interrupt off when PIN_AUDIO_RX re-enters past what the MP3 Trigger ever
+// sends; this logs it and switches it back on after the backoff. The backoff
+// holds a storm to one ~50 ms burst of ISR time per period on Core 0.
+static constexpr uint32_t SOFT_UART_RX_STORM_BACKOFF_MS = 5000u;
+
+static void serviceSoftUartRxStorm(uint32_t nowMs) {
+    static bool s_backingOff = false;
+    static uint32_t s_offSinceMs = 0;
+    if (!s_backingOff) {
+        uint32_t spanUs = 0;
+        if (!softUartRxStormTripped(&spanUs)) {
+            return;
+        }
+        s_backingOff = true;
+        s_offSinceMs = nowMs;
+        PA_LOG_WARN(TAG,
+                    "sound RX noise on GPIO %u: %u edges in %lu us - RX off for %lu ms "
+                    "(an unplugged MP3 Trigger needs a pull-up on this pin)",
+                    (unsigned)PIN_AUDIO_RX, (unsigned)(SOFT_UART_STORM_MAX_ENTRIES + 1u),
+                    (unsigned long)spanUs, (unsigned long)SOFT_UART_RX_STORM_BACKOFF_MS);
+        return;
+    }
+    if ((uint32_t)(nowMs - s_offSinceMs) < SOFT_UART_RX_STORM_BACKOFF_MS) {
+        return;
+    }
+    s_backingOff = false;
+    if (softUartRxRearm()) {
+        PA_LOG_INFO(TAG, "sound RX re-armed on GPIO %u", (unsigned)PIN_AUDIO_RX);
+    } else {
+        PA_LOG_ERROR(TAG, "sound RX re-arm refused on GPIO %u - RX stays off",
+                     (unsigned)PIN_AUDIO_RX);
+    }
+}
+#endif
+
 // Human-readable command names for the step core's ignore-reason logs.
 static const char* playCommandName(AudioCommandType type) {
     switch (type) {
@@ -933,6 +974,9 @@ void audioTask(void* pvParameters) {
             executePlaybackIntent(idle.intent, SRC_INTERNAL);
         }
         pumpUnsolicitedRx();
+#if !PA_CAP_DEDICATED_AUDIO_UART
+        serviceSoftUartRxStorm(millis());
+#endif
         if (idle.autoQuery) {
             AudioModuleState ms{};
             bool acquired = audioUartClaim();
