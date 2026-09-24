@@ -307,9 +307,11 @@
     row.off.hidden = !driveable;
     paintMotion(row, output, driveable);
     row.node.classList.toggle("is-held", output.held);
+    // The droid does not send this Output's pulse at all: the Live Reading's
+    // word for a field that never arrives, not the one for one still coming.
     if (!output.reported) {
-      row.us.textContent = "Not reported by this firmware";
-      row.release.textContent = "Not reported by this firmware";
+      row.us.textContent = window.PALiveReading.UNKNOWN;
+      row.release.textContent = window.PALiveReading.UNKNOWN;
       return;
     }
     // An Output with no pulse says so: a blank cell cannot be told from a table

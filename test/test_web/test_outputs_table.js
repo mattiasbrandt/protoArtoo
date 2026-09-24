@@ -81,7 +81,7 @@ test("a firmware that reports no position is not shown as an Output with no puls
   outputs[2].parts = ["utilUp"];
   const env = await bootServos({ outputs });
 
-  assert.equal(env.text("ledc:3", "outputs-us"), "Not reported by this firmware");
+  assert.equal(env.text("ledc:3", "outputs-us"), "Unknown");
   assert.equal(env.tier("switched-off"), "Wired but switched off — 0 outputs");
   assert.equal(env.tier("driving"), "Driving parts — 1 output");
 });

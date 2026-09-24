@@ -302,7 +302,7 @@
     const output = outputs === null ? null : outputOf(partId);
     if (outputs === null) return { mark: view.MARKS.UNKNOWN, said: "finding out" };
     if (!output) return { mark: view.MARKS.UNASSIGNED };
-    if (!output.reported) return { mark: view.MARKS.UNKNOWN, said: "this firmware does not say where it is" };
+    if (!output.reported) return { mark: view.MARKS.UNKNOWN, said: window.PALiveReading.UNKNOWN };
     if (output.commandedUs === null) return { mark: view.MARKS.LIMP };
     // A light has no travel, so it gets no position and no Open: the treatment
     // removes what its Kind cannot promise (data/droid_part_kind.js).
