@@ -17,10 +17,11 @@
 // would publish every Output at 50 Hz for nothing. An estop edge while asleep
 // with nothing driven only re-labels why each Output is limp, which is true.
 //
-// Pure: no FreeRTOS, no clock. ServoTask reads both flags under robotStateMux
-// and keeps the previous frame's; this header owns the rule, so it is under
-// native test away from the 50 Hz loop that applies it -- the shape
-// include/servo_hold.h set for the dial's bounds.
+// Pure: no clock and no state of its own; robot_state.h is here only for
+// ServoLimpReason. ServoTask reads both flags under robotStateMux and keeps the
+// previous frame's; this header owns the rule, so it is under native test away
+// from the 50 Hz loop that applies it -- the shape include/servo_hold.h set for
+// the dial's bounds.
 // =============================================================================
 #pragma once
 
