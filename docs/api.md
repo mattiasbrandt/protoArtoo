@@ -1616,6 +1616,11 @@ Updates supported config fields and persists to NVS.
 - `protoR2link.wifiPeerIp` (string, empty or IPv4)
 
 - Success: `200` returns full updated config JSON (same shape as GET /api/config).
+  When the write stored an endpoint at a different number than it was sent,
+  the answer also carries `clamped`: each such field and the number it holds
+  now, `{"aux2OpenUs":2000,"aux2CloseUs":1000}`. A type change that pulls ends
+  the request did not name into the new component's band lists those too.
+  Absent when nothing was clamped, and never on `GET /api/config`.
   `components.audio` carries `member` (the saved choice) and `activeMember` (the
   module running since the last boot). The two differ exactly while a member
   change is staged and the controller has not rebooted.

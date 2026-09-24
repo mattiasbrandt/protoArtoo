@@ -62,6 +62,12 @@ struct ConfigCommitOutcome {
     // config adapter carries exactly one field that is never movePart, so today
     // the REST route is the one caller that meets it.
     const char* refusal = nullptr;
+    // Rows whose open or close end the component band moved on the way in, by
+    // row index (ServoOutputRepairReport::openMovedRows). The clamp is
+    // deliberate (#286); what the REST answer owes is saying so, which
+    // sendConfigSnapshot() does as `clamped` (#417).
+    uint32_t openClampedRows = 0;
+    uint32_t closeClampedRows = 0;
 };
 
 // =============================================================================

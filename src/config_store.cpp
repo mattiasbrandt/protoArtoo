@@ -526,6 +526,12 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
         if (repaired == 0) {
             continue;
         }
+        if ((repaired & SERVO_FIELD_OPEN) != 0) {
+            report.openMovedRows |= (uint32_t)1u << index;
+        }
+        if ((repaired & SERVO_FIELD_CLOSE) != 0) {
+            report.closeMovedRows |= (uint32_t)1u << index;
+        }
         if (report.rowsRepaired == 0) {
             report.firstRow = index;
             report.firstRowMask = repaired;

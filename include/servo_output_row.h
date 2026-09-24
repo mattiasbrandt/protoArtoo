@@ -304,6 +304,13 @@ struct ServoOutputRepairReport {
     // would go dark (#417). Meaningless while `litAdopted` is false.
     bool litAdopted;
     uint8_t litOutput;
+    // Filled by the edit door (configCacheApplyServoOutputEdits()) only: bit i
+    // set when the component band moved row i's open or close end, so the
+    // config POST can say which number it stored instead of the one it was
+    // sent (#417). A type-only edit sets them too, for the ends it did not
+    // name. 32 bits hold SERVO_OUTPUT_ROW_MAX rows.
+    uint32_t openMovedRows;
+    uint32_t closeMovedRows;
 };
 
 // One table, so no surface types a field name (#286: machine vocabulary
