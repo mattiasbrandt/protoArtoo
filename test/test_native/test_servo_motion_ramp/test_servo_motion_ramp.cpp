@@ -213,6 +213,21 @@ void test_overshoot_never_passes_the_recorded_ends() {
     TEST_ASSERT_EQUAL_UINT16(1680, narrow.settleUs);
 }
 
+// A target outside the recorded ends has no room past it either (#417). The
+// calibration dial drives a calibrated Output past its ends, so a move can
+// start and end below `lo`: clamping its aim to `lo` would send it 150 us past
+// a 150 us move and back.
+void test_overshoot_gives_no_aim_to_a_target_outside_the_ends() {
+    TEST_ASSERT_EQUAL_UINT16(1250, servoMotionOvershootAim(1100, 1250, 1400, 1800));
+    TEST_ASSERT_EQUAL_UINT16(1150, servoMotionOvershootAim(1100, 1150, 1800, 2000));
+    TEST_ASSERT_EQUAL_UINT16(1950, servoMotionOvershootAim(2100, 1950, 1400, 1800));
+
+    const ServoMotionRamp below =
+        servoMotionPlan(1100, 1250, profile(SERVO_EASE_OVERSHOOT, true, kThrowMs, kAccelMs, 1400, 1800), 0);
+    TEST_ASSERT_EQUAL_UINT16(1250, below.toUs);
+    TEST_ASSERT_FALSE(servoMotionSettles(below));
+}
+
 void test_overshoot_is_skipped_under_an_eighth_of_travel() {
     // An eighth of 1000 us is 125 us: 120 us reads as a wobble, not as weight,
     // so the move plans exactly as `none` would.
@@ -261,6 +276,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_soft_breathes_in_and_ends_where_and_when_none_does);
     RUN_TEST(test_overshoot_aims_a_twelfth_past_and_settles_back);
     RUN_TEST(test_overshoot_never_passes_the_recorded_ends);
+    RUN_TEST(test_overshoot_gives_no_aim_to_a_target_outside_the_ends);
     RUN_TEST(test_overshoot_is_skipped_under_an_eighth_of_travel);
     RUN_TEST(test_an_uncalibrated_overshoot_row_plans_exactly_like_none);
     return UNITY_END();

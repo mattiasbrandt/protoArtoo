@@ -222,9 +222,10 @@ void handleServoPost(WebRequest& req) {
 // sweep is in flight restarts it rather than queueing a second one.
 //
 // The Coordinator refuses to start under a latched estop or in Sleep Mode and
-// says so in the log, exactly as ServoTask refuses an ordinary servo command
-// there. This route does not duplicate that judgement, which would put the
-// same rule in two places and let them disagree.
+// says so in the log. Its moves are SRC_SEQ, which ServoTask refuses under
+// either halt, so a sweep's move still queued when one lands is dropped there
+// too. This route does not duplicate that judgement, which would put the same
+// rule in two places and let them disagree.
 // =============================================================================
 void handleServoCentrePost(WebRequest& req) {
     taskENTER_CRITICAL(&robotStateMux);

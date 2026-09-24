@@ -145,13 +145,22 @@ static bool dispatchBodyMove(const SeqAction& act) {
 // row with travel on a press, and on the boot pass only the rows whose boot
 // behaviour sends them home.
 //
-// A release the boot pass owes goes first. Its full-throw time (floored) is the
-// earliest it is looked at; it goes only once ServoTask reports the Output's
-// move over, so an overshoot is never cut mid-settle
-// (sequenceBulkCentreReleaseCheck()), and the next row waits behind it. The
-// drive comes off through ServoTask's own SERVO_CMD_RELEASE, the one path a
-// pulse comes off a pin by. It is sent even when the table shrank under the
-// run, because the Output it names was already driven.
+// The Output the last started row moved goes first. Its full-throw time
+// (floored) is the earliest the next row is looked at, and the next row starts
+// only once ServoTask reports that Output's move over, so no two Outputs are in
+// motion together and an overshoot is never cut mid-settle
+// (sequenceBulkCentreAwaitCheck()). A release the boot pass owes goes then,
+// and the next row waits behind it too. The drive comes off through
+// ServoTask's own SERVO_CMD_RELEASE, the one path a pulse comes off a pin by.
+// It is sent even when the table shrank under the run, because the Output it
+// names was already driven.
+//
+// Every command a run sends is SRC_SEQ, whoever pressed and whether or not
+// anybody did: expanding the press, or the power-up, into moves is the
+// Coordinator acting, and SRC_SEQ is what ServoTask refuses in Sleep Mode. So
+// a move still on servoCmdQueue when Sleep Mode ends the run is dropped there
+// rather than driving an Output the droid has just let go of. `run.src` names
+// who asked, in the line that reports the run done.
 //
 // The cursor is what says whether the turn is over: every path that dealt with
 // the row advances it, and the one path that could not - a full servoCmdQueue -
@@ -163,30 +172,30 @@ static bool dispatchBodyMove(const SeqAction& act) {
 static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     const uint8_t rowCount = configCacheServoOutputCount();
 
-    if (run.releaseArm != SEQ_BULK_CENTRE_NO_RELEASE) {
+    if (run.awaitArm != SEQ_BULK_CENTRE_NO_AWAIT) {
         ServoCommandedPosition at = {};
-        if (run.releaseArm < SERVO_ARM_COUNT) {
+        if (run.awaitArm < SERVO_ARM_COUNT) {
             taskENTER_CRITICAL(&robotStateMux);
-            at = robotState.servoCommanded[run.releaseArm];
+            at = robotState.servoCommanded[run.awaitArm];
             taskEXIT_CRITICAL(&robotStateMux);
         }
-        const SeqBulkCentreRelease release = sequenceBulkCentreReleaseCheck(run, now, at);
-        if (release == SEQ_RELEASE_WAIT) {
-            return;  // still settling: looked at again on the next tick
+        const SeqBulkCentreAwait awaited = sequenceBulkCentreAwaitCheck(run, now, at);
+        if (awaited == SEQ_AWAIT_WAIT) {
+            return;  // still moving: looked at again on the next tick
         }
-        if (release == SEQ_RELEASE_SEND) {
+        if (awaited == SEQ_AWAIT_RELEASE) {
             ServoCommand cmd = {};
-            cmd.armId = run.releaseArm;
+            cmd.armId = run.awaitArm;
             cmd.type = SERVO_CMD_RELEASE;
-            cmd.source = (CommandSource)run.src;
+            cmd.source = SRC_SEQ;
             cmd.timestampMs = now;
             if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
                 return;  // owed still: it comes round again on the next tick
             }
-        } else {
-            PA_LOG_INFO(TAG, "arm%u has no pulse left to release", (unsigned)run.releaseArm + 1);
+        } else if (awaited == SEQ_AWAIT_DROP) {
+            PA_LOG_INFO(TAG, "arm%u has no pulse left to release", (unsigned)run.awaitArm + 1);
         }
-        sequenceBulkCentreReleaseSent(&run, rowCount);
+        sequenceBulkCentreAwaitOver(&run, rowCount);
         if (!run.active) {
             return;
         }
@@ -221,14 +230,12 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     cmd.armId = plan.armId;
     cmd.type = SERVO_CMD_POSITION;
     cmd.positionUs = plan.targetUs;
-    cmd.source = (CommandSource)run.src;
+    cmd.source = SRC_SEQ;
     cmd.timestampMs = now;
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         return;  // the cursor stays put: this row's turn comes round again
     }
-    if (step.releaseAfter) {
-        sequenceBulkCentreOweRelease(&run, plan.armId);
-    }
+    sequenceBulkCentreAwait(&run, plan.armId, step.releaseAfter);
     sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms);
 }
 
@@ -406,7 +413,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     // measured stack chain (ADR 0040).
     static SeqBulkCentreRun centreRun;
     centreRun = SeqBulkCentreRun{};
-    centreRun.releaseArm = SEQ_BULK_CENTRE_NO_RELEASE;
+    centreRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
 
     // Power-up: each body Output does what its boot behaviour says (ADR 0052),
     // paced by the Cadence Floor like any sweep this task generates. The estop
@@ -646,6 +653,21 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 if (centreRun.active && centreRun.kind == SEQ_BULK_CENTRE_BOOT) {
                     PA_LOG_INFO(TAG, "boot pass ended - back to centre took over");
                 }
+                // A running sequence ends here, the way a web stop ends one: a
+                // sequence starting ends a sweep for the same reason (above),
+                // and whichever came later is the operator's word. Left
+                // running, its body steps and the sweep's rows would be
+                // dispatched together - the many-at-once shape the Cadence
+                // Floor exists to keep apart.
+                if (seqEngineActive(engine)) {
+                    PA_LOG_INFO(TAG, "abort %s (back to centre)", activeName);
+                    seqEngineAbort(engine);
+                    drainBestEffort(engine, now);  // dome and audio resets, never a body move
+                    seqEvidenceEnd(SEQ_RUN_ABORTED, "back to centre", now, bodyQueueFullCount());
+                    seqStoreReleaseRun();  // reclaim any Learned-run buffers
+                    clearSuppression();
+                    activeName[0] = '\0';
+                }
                 sequenceBulkCentreStart(&centreRun, now, (uint8_t)centreSrc);
                 // Rows, not outputs going back: how many of them have anything
                 // to centre is only known row by row, and the line at the end
@@ -663,8 +685,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         if (sequenceBulkCentreRowDue(centreRun, now)) {
             centreOneOutput(centreRun, now);
             if (!centreRun.active) {
-                PA_LOG_INFO(TAG, "%s done - %u centred, %u skipped", bulkCentreName(centreRun),
-                            (unsigned)centreRun.centred, (unsigned)centreRun.skipped);
+                PA_LOG_INFO(TAG, "[%s] %s done - %u centred, %u skipped",
+                            commandSourceToString((CommandSource)centreRun.src),
+                            bulkCentreName(centreRun), (unsigned)centreRun.centred,
+                            (unsigned)centreRun.skipped);
             }
         }
 
