@@ -122,6 +122,14 @@
     centreUs: typeof row.centreUs === "number" ? row.centreUs : null,
     closeUs: typeof row.closeUs === "number" ? row.closeUs : null,
     calibrated: row.calibrated === true,
+    // The pair this Output held before the upgrade, when its part's range
+    // could not take it and the droid moved it in (#417); null otherwise, and
+    // from a firmware that does not say.
+    narrowedFrom:
+      row.narrowedFrom && typeof row.narrowedFrom.openUs === "number" &&
+      typeof row.narrowedFrom.closeUs === "number"
+        ? { openUs: row.narrowedFrom.openUs, closeUs: row.narrowedFrom.closeUs }
+        : null,
     held: row.held === true,
     // Why there is no pulse, meaningful only while commandedUs is null.
     limp: typeof row.limp === "string" ? row.limp : "off",

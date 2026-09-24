@@ -11,11 +11,14 @@
 
 #include <unity.h>
 
+#include "board_output_enabled.h"
 #include "component_registry.h"
 #include "config_store.h"
 #include "config_cache.h"
 #include "config_nvsio.h"
+#include "config_save_test_hooks.h"
 #include "config_serializer.h"
+#include "output_wire.h"
 #include "robot_state.h"
 #include "servo_legacy_field_sets.h"
 
@@ -346,6 +349,203 @@ void test_a_failed_row_write_keeps_the_legacy_keys() {
     TEST_ASSERT_EQUAL_UINT16(1850, openUs);
     TEST_ASSERT_EQUAL_UINT16(1150, closeUs);
     prefs.end();
+}
+
+// --- the upgrade from `main` (#417) -------------------------------------------
+
+namespace {
+
+void expectNarrowedFrom(uint8_t channel, uint16_t openUs, uint16_t closeUs) {
+    uint16_t o = 0;
+    uint16_t c = 0;
+    TEST_ASSERT_TRUE(configCacheReadServoOutputNarrowedFrom(SERVO_DRIVER_LEDC, channel, &o, &c));
+    TEST_ASSERT_EQUAL_UINT16(openUs, o);
+    TEST_ASSERT_EQUAL_UINT16(closeUs, c);
+}
+
+void expectNotNarrowed(uint8_t channel) {
+    uint16_t o = 0;
+    uint16_t c = 0;
+    TEST_ASSERT_FALSE(configCacheReadServoOutputNarrowedFrom(SERVO_DRIVER_LEDC, channel, &o, &c));
+}
+
+void expectEndpoints(uint8_t channel, uint16_t openUs, uint16_t closeUs) {
+    uint16_t o = 0;
+    uint16_t c = 0;
+    TEST_ASSERT_TRUE(configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, channel, &o, &c));
+    TEST_ASSERT_EQUAL_UINT16(openUs, o);
+    TEST_ASSERT_EQUAL_UINT16(closeUs, c);
+}
+
+void typeEndpoints(uint8_t channel, uint16_t openUs, uint16_t closeUs) {
+    ServoOutputEdit edit = {};
+    edit.driver = SERVO_DRIVER_LEDC;
+    edit.channel = channel;
+    edit.fields = (uint16_t)(SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE);
+    edit.open_us = openUs;
+    edit.close_us = closeUs;
+    configCacheApplyServoOutputEdits(&edit, 1);
+}
+
+// What loadConfigToState() does with what is in NVS (src/main.cpp, which the
+// native build does not compile), in its order: the snapshot, the rows beside
+// it, the lit wire's tick, then the cache.
+void bootFrom(Preferences& prefs, ConfigSnapshot* snap) {
+    prefs.begin(NVS_NAMESPACE, true);
+    configLoad(prefs, snap);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    prefs.end();
+    boardOutputTickAdoptedLight(report, &snap->system);
+    configCacheApply(*snap);
+}
+
+// The Output `main`'s aux_led_pin slot named: the Nth light-capable one.
+size_t outputForRetiredSlot(uint8_t slot) {
+    uint8_t seen = 0;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable && ++seen == slot) {
+            return i;
+        }
+    }
+    return BOARD_OUTPUT_COUNT;
+}
+
+bool stripDriven(const ConfigSnapshot& snap, size_t output) {
+    OutputWireInputs in = {};
+    in.wired = boardOutputIsWired(snap.system, output);
+    in.component =
+        configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[output].channel);
+    return outputWireStripDriven(in, output);
+}
+
+}  // namespace
+
+// Test: a pair the band narrowed keeps `main`'s keys until that Output is saved
+//
+// The operator's call on #417: #286's band stays, and it narrows visibly. The
+// keys are the only record of the builder's own numbers, so a save that is
+// about anything else must leave them, and a later boot - which reads the row
+// as stored, not from the keys - must still know the row is the narrowed one.
+void test_a_narrowed_pair_keeps_its_keys_until_that_output_is_saved() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+    prefs.putUShort("arm1_op", 2200);  // legal on `main`, past what an MG996R takes
+    prefs.putUShort("arm1_cl", 2100);
+    prefs.putUChar("arm1_type", (uint8_t)SERVO_COMP_MG996R);
+    prefs.putUShort("arm2_op", 1850);  // inside the band: adopted as it stood
+    prefs.putUShort("arm2_cl", 1150);
+    prefs.putUChar("arm2_type", (uint8_t)SERVO_COMP_MG996R);
+
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);
+    expectEndpoints(LEDC_CH_ARM1, 2000, 2000);
+    expectNarrowedFrom(LEDC_CH_ARM1, 2200, 2100);
+    expectNotNarrowed(LEDC_CH_ARM2);
+
+    TEST_ASSERT_TRUE(configSaveServoOutputs(prefs));
+    TEST_ASSERT_TRUE(prefs.isKey("so00"));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_op"));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_cl"));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_type"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm2_op"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm2_cl"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm2_type"));
+
+    ServoOutputRepairReport again = {};
+    configLoadServoOutputs(prefs, &again);
+    expectEndpoints(LEDC_CH_ARM1, 2000, 2000);
+    expectNarrowedFrom(LEDC_CH_ARM1, 2200, 2100);
+
+    // The builder saves that Output. That ends it, and the next save removes
+    // the keys.
+    typeEndpoints(LEDC_CH_ARM1, 1900, 1100);
+    expectNotNarrowed(LEDC_CH_ARM1);
+    TEST_ASSERT_TRUE(configSaveServoOutputs(prefs));
+    TEST_ASSERT_FALSE(prefs.isKey("arm1_op"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm1_cl"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm1_type"));
+
+    ServoOutputRepairReport third = {};
+    configLoadServoOutputs(prefs, &third);
+    expectEndpoints(LEDC_CH_ARM1, 1900, 1100);
+    expectNotNarrowed(LEDC_CH_ARM1);
+    prefs.end();
+}
+
+// Test: the upgrade from `main`, end to end, from what `main` leaves in NVS
+//
+// This path runs once on a real droid and cannot be taken back - the first
+// save removes `main`'s keys - so it is walked here through boot, save and a
+// second boot with the real load and save sequence. One lit wire, as `main`
+// had exactly one: lit from the stored slot, typed as a strip, and ticked or
+// not, since `main` never asked the tick. An MG996R pair `main` held legally
+// and the band cannot, and one it can.
+static void walkTheUpgradeFromMain(bool litWireTicked) {
+    const size_t lit = outputForRetiredSlot(2);
+    TEST_ASSERT_TRUE(lit < BOARD_OUTPUT_COUNT);
+    const size_t litSet = servoLegacyFieldSetForChannel(BOARD_OUTPUTS[lit].channel);
+    TEST_ASSERT_TRUE(litSet < SERVO_LEGACY_FIELD_SET_COUNT);
+    // The wired tick's NVS key, as src/config_serializer.cpp spells it: "en_aux2".
+    char tickKey[16] = {};
+    snprintf(tickKey, sizeof(tickKey), "en_%s", BOARD_OUTPUTS[lit].id);
+
+    Preferences& prefs = g_test_config_prefs;
+    prefs.begin(NVS_NAMESPACE, false);
+    prefs.clear();
+    prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);  // 3 on `main` too
+    prefs.putUChar(NVS_KEY_RETIRED_AUX_LED_PIN, 2);
+    prefs.putUChar(NVS_KEY_RETIRED_AUX_LED_COUNT, 40);
+    prefs.putUChar(SERVO_LEGACY_FIELD_SETS[litSet].nvsTypeKey, (uint8_t)SERVO_COMP_RGB);
+    prefs.putBool(tickKey, litWireTicked);
+    prefs.putBool("en_arm1", true);
+    prefs.putUShort("arm1_op", 2200);
+    prefs.putUShort("arm1_cl", 2100);
+    prefs.putUChar("arm1_type", (uint8_t)SERVO_COMP_MG996R);
+    prefs.putUShort("arm2_op", 1850);
+    prefs.putUShort("arm2_cl", 1150);
+    prefs.putUChar("arm2_type", (uint8_t)SERVO_COMP_MG996R);
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    bootFrom(prefs, &snap);
+    TEST_ASSERT_TRUE(stripDriven(snap, lit));
+    TEST_ASSERT_EQUAL_UINT8(
+        40, configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel));
+    expectEndpoints(LEDC_CH_ARM1, 2000, 2000);
+    expectNarrowedFrom(LEDC_CH_ARM1, 2200, 2100);
+    expectEndpoints(LEDC_CH_ARM2, 1850, 1150);
+    expectNotNarrowed(LEDC_CH_ARM2);
+
+    // The first save: rows and the snapshot down, `main`'s keys gone except
+    // the narrowed pair's.
+    TEST_ASSERT_TRUE(saveConfigToNvs());
+    prefs.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_FALSE(prefs.isKey(NVS_KEY_RETIRED_AUX_LED_PIN));
+    TEST_ASSERT_FALSE(prefs.isKey(NVS_KEY_RETIRED_AUX_LED_COUNT));
+    TEST_ASSERT_TRUE(prefs.getBool(tickKey, false));
+    TEST_ASSERT_TRUE(prefs.isKey("arm1_op"));
+    TEST_ASSERT_FALSE(prefs.isKey("arm2_op"));
+    prefs.end();
+
+    // The next boot finds it all on the rows and the tick.
+    ConfigSnapshot again = {};
+    bootFrom(prefs, &again);
+    TEST_ASSERT_TRUE(stripDriven(again, lit));
+    TEST_ASSERT_EQUAL_UINT8(
+        40, configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel));
+    expectEndpoints(LEDC_CH_ARM1, 2000, 2000);
+    expectNarrowedFrom(LEDC_CH_ARM1, 2200, 2100);
+    expectEndpoints(LEDC_CH_ARM2, 1850, 1150);
+}
+
+void test_the_upgrade_from_main_keeps_a_ticked_lit_wire_and_both_pairs() {
+    walkTheUpgradeFromMain(true);
+}
+
+void test_the_upgrade_from_main_keeps_an_unticked_lit_wire_lit() {
+    walkTheUpgradeFromMain(false);
 }
 
 // Test: the two zeros putString() returns are told apart (#375)
@@ -1112,6 +1312,35 @@ void test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty() {
                               "a stationary toggle marked the RC mapping dirty");
 }
 
+// The RC speed preset's write (#417): the preset and the limit it names, and
+// nothing else - it runs on Core 1, and a whole-snapshot write there is what
+// put a config POST's fields back. It does mark the RC mapping dirty, unlike
+// stationary: the mapping caches the limit as its maxOut.
+void test_configCacheSelectSpeedPreset_writes_only_the_speed_pair() {
+    ConfigSnapshot seeded = {};
+    configSnapshotDefaults(&seeded);
+    seeded.drive.speedPresetSlow = 150;
+    seeded.drive.speedPresetNormal = 300;
+    seeded.drive.speedPresetTurbo = 600;
+    seeded.drive.speedPresetActive = SpeedPresetId::Normal;
+    seeded.drive.speedLimitMax = 300;
+    seeded.audio.audioVolume = 17;
+    configCacheApply(seeded);
+    robotState.rcConfigDirty = false;
+
+    TEST_ASSERT_EQUAL_INT(150, configCacheSelectSpeedPreset(SpeedPresetId::Slow));
+
+    ConfigSnapshot expected = seeded;
+    expected.drive.speedLimitMax = 150;
+    expected.drive.speedPresetActive = SpeedPresetId::Slow;
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(&expected, &after, sizeof(ConfigSnapshot)),
+                                  "the speed preset setter touched something else");
+    TEST_ASSERT_TRUE_MESSAGE(robotState.rcConfigDirty,
+                             "the RC mapping would keep driving at the old limit");
+}
+
 void test_config_domain_load_functions_are_independently_callable() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 550;
@@ -1654,6 +1883,9 @@ int main() {
     RUN_TEST(test_a_saved_config_removes_the_retired_sequence_dwell_keys);
     RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
     RUN_TEST(test_a_failed_row_write_keeps_the_legacy_keys);
+    RUN_TEST(test_a_narrowed_pair_keeps_its_keys_until_that_output_is_saved);
+    RUN_TEST(test_the_upgrade_from_main_keeps_a_ticked_lit_wire_and_both_pairs);
+    RUN_TEST(test_the_upgrade_from_main_keeps_an_unticked_lit_wire_lit);
     RUN_TEST(test_an_empty_string_stores_and_a_failed_write_does_not);
     RUN_TEST(test_configValidate_dome_speed);
     RUN_TEST(test_configValidate_booleans);
@@ -1682,6 +1914,7 @@ int main() {
     RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);
     RUN_TEST(test_configCacheSetStationary_writes_only_that_field);
     RUN_TEST(test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty);
+    RUN_TEST(test_configCacheSelectSpeedPreset_writes_only_the_speed_pair);
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
     RUN_TEST(test_config_domain_round_trip_matrix);

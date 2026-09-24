@@ -296,6 +296,21 @@ struct ServoOutputRepairReport {
     uint16_t fieldsRepaired;  // how many fields in total across every row
     uint16_t firstRowMask;    // that row's repaired fields, for the receipt
     bool countRepaired;       // the stored row count was out of range
+    // The one lit wire a controller stored before #413 was read onto a row this
+    // load (configDeserializeServoOutputs()). `litOutput` is that Output's
+    // index in include/board_outputs.h's BOARD_OUTPUTS, which is also the index
+    // of its wired tick, so the loader can tick it: on `main` the strip was
+    // driven from the stored slot alone, and a lit wire that came back unticked
+    // would go dark (#417). Meaningless while `litAdopted` is false.
+    bool litAdopted;
+    uint8_t litOutput;
+    // Filled by the edit door (configCacheApplyServoOutputEdits()) only: bit i
+    // set when the component band moved row i's open or close end, so the
+    // config POST can say which number it stored instead of the one it was
+    // sent (#417). A type-only edit sets them too, for the ends it did not
+    // name. 32 bits hold SERVO_OUTPUT_ROW_MAX rows.
+    uint32_t openMovedRows;
+    uint32_t closeMovedRows;
 };
 
 // One table, so no surface types a field name (#286: machine vocabulary
@@ -1233,9 +1248,17 @@ inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow
 // missing one is left at the fallback, and nothing is reported: a builder's
 // calibration surviving an upgrade is not a repair. Any shorter record is
 // still damage, because no shape this firmware ever wrote was shorter.
+//
+// `oldShape`, when given, says which of the two it was. The loader needs it:
+// a thirteen-field record was written before the retired light keys were read
+// onto rows, so it cannot carry their answer, and a fourteen-field one can
+// (#417). It is false for an unreadable record as well as a current one.
 // -----------------------------------------------------------------------------
 inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallback,
-                                    ServoOutputRow* out) {
+                                    ServoOutputRow* out, bool* oldShapeOut = nullptr) {
+    if (oldShapeOut != nullptr) {
+        *oldShapeOut = false;
+    }
     if (out == nullptr) {
         return 0;
     }
@@ -1273,6 +1296,9 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
     const bool oldShape = fieldCount == (uint8_t)(SERVO_OUTPUT_FIELD_COUNT - 1);
     if (tooManyFields || (fieldCount != SERVO_OUTPUT_FIELD_COUNT && !oldShape)) {
         return kAllFields;
+    }
+    if (oldShapeOut != nullptr) {
+        *oldShapeOut = oldShape;
     }
 
     uint16_t repaired = 0;

@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "api_config.h"  // ConfigWriteLock - saveCommandedMode()'s window
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "audio_task.h"
@@ -205,7 +206,15 @@ bool paramLowercase(WebRequest& req, const char* name, char* out, size_t outSize
 //
 // What "reported" looks like is the caller's to decide, because each surface
 // has its own vocabulary. What none of them may do is answer plain success.
+//
+// The save reads the whole cache and writes it, rows included, so it runs
+// inside the config write lock like every other config writer (#417); a lock
+// that cannot be taken is a save that did not happen, and is reported as one.
 bool saveCommandedMode() {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
     return saveConfigToNvs();
 }
 

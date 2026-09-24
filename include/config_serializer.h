@@ -14,6 +14,7 @@
 #include "config_io.h"
 #include "droid_build.h"
 #include "guided_setup.h"
+#include "servo_legacy_field_sets.h"  // ServoLegacyNarrowing
 #include "servo_output_row.h"
 
 // configDeserialize: Load a ConfigSnapshot from a ConfigReader.
@@ -39,6 +40,10 @@ bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
 void configDeserializeDrive(const ConfigReader& r, DriveConfig* out);
 void configDeserializeAudio(const ConfigReader& r, AudioConfig* out);
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out);
+// Whether the dome ESC pulse set in NVS is out of order, which the dome
+// deserialisers above answer with the defaults (#417). For the loader's
+// warning: the deserialisers are pure and cannot say so themselves.
+bool configDomePulsesStoredOutOfOrder(const ConfigReader& r);
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out);
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
 
@@ -73,8 +78,15 @@ bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, Con
 // include/servo_legacy_field_sets.h's. The only repair an adoption can report
 // is a pulse width the component band had to move, and it is counted like any
 // other.
+//
+// *narrowing, when given, names the rows that still stand where the band put
+// `main`'s pair, with that pair: their keys are kept by the next save, and GET
+// /api/servo/outputs reports the pair, until the builder saves that Output
+// (#417). *report also says whether the retired lit wire was adopted and onto
+// which Output, so the loader can tick it wired.
 void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
-                                   ServoOutputRepairReport* report);
+                                   ServoOutputRepairReport* report,
+                                   ServoLegacyNarrowing* narrowing = nullptr);
 
 // -----------------------------------------------------------------------------
 // The Droid Build (ADR 0047)

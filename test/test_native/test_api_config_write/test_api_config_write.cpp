@@ -382,6 +382,41 @@ void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
     TEST_ASSERT_EQUAL_UINT16(1000, row.open_us);
 }
 
+// The clamp is not silent (#417). A type change pulls both ends of a pair the
+// new band cannot take - ends the request never named - and the answer says
+// which fields were stored at what, so a builder sees their 2400 us became
+// 2000 without comparing numbers. A write that clamped nothing says nothing.
+void test_the_answer_names_every_end_the_band_moved() {
+    seedServoOutputRows();
+
+    const WebRequestTestParam micro[] = {
+        {"aux2Type", "mg90s"}, {"aux2OpenUs", "2400"}, {"aux2CloseUs", "600"}};
+    WebRequestTestBackend first;
+    first.params = micro;
+    first.paramCount = 3;
+    WebRequest firstReq(&first);
+    handleConfigPost(firstReq);
+    TEST_ASSERT_EQUAL_INT(200, first.sentCode);
+    JsonDocument firstDoc;
+    TEST_ASSERT_FALSE(deserializeJson(firstDoc, first.sentBody));
+    TEST_ASSERT_TRUE(firstDoc["clamped"].isNull());
+
+    const WebRequestTestParam typeOnly[] = {{"aux2Type", "mg996r"}};
+    WebRequestTestBackend backend;
+    backend.params = typeOnly;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObject clamped = doc["clamped"].as<JsonObject>();
+    TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)clamped.size());
+    TEST_ASSERT_EQUAL_INT(2000, clamped["aux2OpenUs"] | 0);
+    TEST_ASSERT_EQUAL_INT(1000, clamped["aux2CloseUs"] | 0);
+}
+
 // An Output's Motion Profile goes out and comes back under the names GET
 // /api/config gave it (#414): the page saves by the field it read, and the
 // echo is what the row now holds, so the two agree by construction.
@@ -740,6 +775,7 @@ int main() {
     RUN_TEST(test_a_calibration_write_lands_on_the_addressed_row);
     RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
     RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
+    RUN_TEST(test_the_answer_names_every_end_the_band_moved);
     RUN_TEST(test_a_motion_profile_round_trips_under_the_names_the_config_reports);
     RUN_TEST(test_a_motion_profile_out_of_range_is_refused_not_clamped);
     RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);

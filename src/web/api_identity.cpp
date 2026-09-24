@@ -18,6 +18,7 @@
 #include <Preferences.h>
 #include <stdio.h>
 
+#include "api_config.h"  // ConfigWriteLock - the identity write's window
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "component_registry.h"
@@ -139,12 +140,21 @@ void handleIdentityPost(WebRequest& req) {
         }
     }
 
+    // Cache read through commit inside the config write lock, like every other
+    // config writer: the Commit Step writes the whole snapshot back (#417).
     ConfigSnapshot working = {};
-    configCacheRead(&working);
-    snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-    working.system.mdns_use_name = mdnsUseName;
-
-    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
+    IdentitySetCommitOutcome commit;
+    {
+        ConfigWriteLock lock;
+        if (!lock.acquired()) {
+            webSendJsonError(req, 503, "config write busy");
+            return;
+        }
+        configCacheRead(&working);
+        snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
+        working.system.mdns_use_name = mdnsUseName;
+        commit = identitySetCommitApplied(&working);
+    }
     if (!commit.persisted) {
         webSendJsonError(req, 500, "failed to persist identity");
         return;

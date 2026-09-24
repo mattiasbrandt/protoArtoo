@@ -165,8 +165,17 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
     if (consoleRefusedWhileSoundOff(requestId, operationName, sink)) {
         return;
     }
-    AudioSetVolumeCommitOutcome commit =
-        audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
+    // Inside the config write lock, as sound.config.volume takes it for the
+    // same Commit Step: it writes the cache and saves it whole (#417).
+    AudioSetVolumeCommitOutcome commit;
+    {
+        ConfigWriteLock guard;
+        if (!guard.acquired()) {
+            consoleAnswerConfigWriteBusy(requestId, sink);
+            return;
+        }
+        commit = audioSetVolumeCommitApplied((uint8_t)level, consoleCommandSourceFor(source));
+    }  // guard released here
     if (!commit.queued) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,

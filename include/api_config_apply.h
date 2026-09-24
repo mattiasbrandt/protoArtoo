@@ -177,6 +177,13 @@ struct ConfigGuidedSetupEdit {
 
 struct ConfigApplyResult {
     bool changed = false;  // false -> shell sends the "no fields supplied" 400
+    // Whether the request stated the fields RC input also writes at runtime:
+    // the speed group (speedLimitMax, or a preset value the active limit is
+    // derived from) and stationary. The Commit Step keeps the live value of
+    // whichever it did not, so an RC change that landed after the request's
+    // read is not reverted by a request that said nothing about it (#417).
+    bool speedLimitStated = false;
+    bool stationaryStated = false;
     ConfigApplyError error;
     ConfigApplyActions actions;
     ConfigAppliedFields applied;

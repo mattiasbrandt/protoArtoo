@@ -850,6 +850,42 @@ void addGuidedSetupFields(JsonDocument& doc) {
     }
 }
 
+// The endpoints this write stored at a different number than it was sent,
+// under the field the request names each by and holding the number the row
+// now has (#417). The component band's clamp is deliberate (#286 decision 5):
+// an MG996R cannot take 2200 us however it arrives, and a type-only edit pulls
+// the ends it did not name into the new band. Refusing would break a type
+// change and a restore from an older backup, so the write stands; this is
+// what makes it not silent. Only on a write that clamped something, and only
+// the write route passes a commit here, so a read never carries it.
+void addClampedEndpointFields(JsonDocument& doc, const ConfigCommitOutcome& commit) {
+    if (commit.openClampedRows == 0 && commit.closeClampedRows == 0) {
+        return;
+    }
+    JsonObject clamped = doc["clamped"].to<JsonObject>();
+    const uint8_t count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        const uint32_t bit = (uint32_t)1u << i;
+        if (((commit.openClampedRows | commit.closeClampedRows) & bit) == 0) {
+            continue;
+        }
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row) || row.driver != SERVO_DRIVER_LEDC) {
+            continue;
+        }
+        const size_t set = servoLegacyFieldSetForChannel(row.channel);
+        if (set >= SERVO_LEGACY_FIELD_SET_COUNT) {
+            continue;  // no POST field names this row's ends
+        }
+        if ((commit.openClampedRows & bit) != 0) {
+            clamped[SERVO_LEGACY_FIELD_SETS[set].openField] = row.open_us;
+        }
+        if ((commit.closeClampedRows & bit) != 0) {
+            clamped[SERVO_LEGACY_FIELD_SETS[set].closeField] = row.close_us;
+        }
+    }
+}
+
 // The config snapshot response, shared by the read route and the write route's
 // echo. Both must return the same shape for the same device state, so they
 // build it the same way rather than twice.
@@ -859,13 +895,17 @@ void addGuidedSetupFields(JsonDocument& doc) {
 // outstanding, was Network Recovery Mode the posture actually entered at boot,
 // what do the addressed Servo Output rows hold) that a pure snapshot serializer
 // cannot see.
-void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
+void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
+                        const ConfigCommitOutcome* commit = nullptr) {
     JsonDocument doc;
     if (!populateConfigJson(doc, snap)) {
         webSendJsonError(req, 500, "config json build failed");
         return;
     }
     addServoOutputFields(doc);
+    if (commit != nullptr) {
+        addClampedEndpointFields(doc, *commit);
+    }
     addAudioMemberFields(doc);
     addActiveFields(doc);
     addDroidBuildFields(doc);
@@ -975,7 +1015,11 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
     }
 
-    configCacheApply(*working);
+    // Not configCacheApply(): the speed group and stationary are also written
+    // at runtime by RC input on Core 1, which cannot take the config write lock
+    // this commit holds, so `working` may carry a value from before one landed.
+    // Whichever of them the request did not state keeps its live value (#417).
+    configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
 
     // The endpoints a builder just changed still arrive as arm1OpenUs and its
     // nine siblings, and the Apply Core that validated them is pure, so this is
@@ -997,6 +1041,8 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",
                     (unsigned)servoOutputRepair.firstRow, note);
     }
+    outcome.openClampedRows = servoOutputRepair.openMovedRows;
+    outcome.closeClampedRows = servoOutputRepair.closeMovedRows;
 
     // The Droid Build the request stated, onto the live answer (ADR 0047). A
     // half the request did not name is left exactly as it stood: a builder
@@ -1040,13 +1086,14 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         configCacheApplyGuidedSetup(guided);
     }
 
-    // Sync stationary mode with edge detection and drive-on cue. Safe to call
-    // unconditionally: when the request omits "stationary", configApply() left
-    // working->system.stationary at the cache value read before the call, which
-    // always matches robotState.stationary (commandedSetStationary is the only
-    // runtime writer of both, keeping them in lockstep) - so the edge-detect
-    // inside it is a no-op and no cue fires.
-    commandedSetStationary(working->system.stationary, source);
+    // Sync stationary mode with edge detection and drive-on cue - only when the
+    // request stated it. When it did not, `working` holds the value read at the
+    // start of the request, and an RC toggle since (commandedSetStationary() on
+    // Core 1, which keeps robotState and the cache in lockstep) would be undone
+    // here and its cue replayed; the apply above has kept the live value (#417).
+    if (result.stationaryStated) {
+        commandedSetStationary(working->system.stationary, source);
+    }
 
     if (result.actions.playDomeOnCue) {
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
@@ -1252,7 +1299,7 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
 
-    sendConfigSnapshot(req, working);
+    sendConfigSnapshot(req, working, &commit);
 }
 
 // GET /api/servo/outputs - every live Servo Output row, the Parts each drives,
@@ -1325,6 +1372,21 @@ void handleServoOutputsGet(WebRequest& req) {
         // what test sweep needs -- there is nowhere sane to sweep between until
         // ends exist -- and what degrades overshoot (ADR 0052).
         output["calibrated"] = row.calibrated;
+        // The pair `main` stored here, when the component band narrowed it on
+        // the way onto this row and the builder has not saved this Output
+        // since (#417). The operator's call: the band stays, and it narrows
+        // visibly - so the Servos row can say what the builder's own numbers
+        // were. null on every other Output.
+        uint16_t narrowedOpenUs = 0;
+        uint16_t narrowedCloseUs = 0;
+        if (configCacheReadServoOutputNarrowedFrom(row.driver, row.channel, &narrowedOpenUs,
+                                                   &narrowedCloseUs)) {
+            JsonObject narrowedFrom = output["narrowedFrom"].to<JsonObject>();
+            narrowedFrom["openUs"] = narrowedOpenUs;
+            narrowedFrom["closeUs"] = narrowedCloseUs;
+        } else {
+            output["narrowedFrom"] = nullptr;
+        }
 
         // Commanded, both: where ServoTask has told the Output to be now, and
         // where the move in progress ends. Nothing reads a servo back. null for
@@ -1363,7 +1425,9 @@ void handleServoOutputsGet(WebRequest& req) {
     // fields the calibration dial reads, 109 B a row, taking the same answer to
     // 6209 B. Raised to 8192 for that, deliberately and once: it is a bound on
     // a per-request malloc, so the spend is transient rather than BSS, and 8192
-    // leaves the same kind of headroom 4096 left over 3589.
+    // leaves the same kind of headroom 4096 left over 3589. `narrowedFrom`
+    // (#417) took the measured answer to 6800 B, and 6920 B with a pair on all
+    // five rows that can carry one.
     //
     // What that worst case is NOT is what this controller sends. Twenty-four
     // rows is the expander nobody has fitted; the five LEDC outputs answer in

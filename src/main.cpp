@@ -18,6 +18,7 @@
 #include "audio_sound_member.h"
 #include "audio_task.h"
 #include "aux_led.h"
+#include "board_output_enabled.h"  // boardOutputTickAdoptedLight() - the wire main lit
 #include "config_store.h"
 #include "component_registry.h"
 #include "config_cache.h"
@@ -372,6 +373,10 @@ void loadConfigToState() {
                     guidedSetupRepair.runRepaired ? "reset" : "kept",
                     (unsigned)guidedSetupRepair.stepsDropped);
     }
+
+    // The wire `main` lit from its retired slot is ticked wired, or its strip
+    // would go dark: see boardOutputTickAdoptedLight().
+    boardOutputTickAdoptedLight(servoOutputRepair, &snap.system);
 
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
     // All validation and clamping is now performed within configLoad()

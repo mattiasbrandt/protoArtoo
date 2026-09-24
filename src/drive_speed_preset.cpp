@@ -1,5 +1,6 @@
 #include "drive_speed_preset.h"
 
+#include "api_config.h"  // ConfigWriteLock - the persisted write's window
 #include "audio_task.h"
 #include "config.h"
 #include "config_cache.h"
@@ -12,30 +13,12 @@ namespace {
 
 static const char* TAG = "DrivePreset";
 
-bool readSpeedPresetValueAndSlot(SpeedPresetId preset, int16_t* valueOut,
-                                AudioPlaybackSlot* slotOut) {
-    if (valueOut == nullptr || slotOut == nullptr) {
+// The cue a preset announces itself with. False for a value that is not a
+// preset, which both callers refuse before touching the cache.
+bool speedPresetSlot(SpeedPresetId preset, AudioPlaybackSlot* slotOut) {
+    if (slotOut == nullptr) {
         return false;
     }
-
-    int16_t slow;
-    int16_t normal;
-    int16_t turbo;
-
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    slow = cfg.drive.speedPresetSlow;
-    normal = cfg.drive.speedPresetNormal;
-    turbo = cfg.drive.speedPresetTurbo;
-
-    if (slow < 0) slow = 0;
-    if (normal < 0) normal = 0;
-    if (turbo < 0) turbo = 0;
-    if (slow > SPEED_LIMIT_MAX) slow = SPEED_LIMIT_MAX;
-    if (normal > SPEED_LIMIT_MAX) normal = SPEED_LIMIT_MAX;
-    if (turbo > SPEED_LIMIT_MAX) turbo = SPEED_LIMIT_MAX;
-
-    *valueOut = speedPresetValueForId(preset, slow, normal, turbo);
     switch (preset) {
         case SpeedPresetId::Slow:
             *slotOut = AUDIO_SLOT_SYS_MODE_SLOW;
@@ -53,47 +36,54 @@ bool readSpeedPresetValueAndSlot(SpeedPresetId preset, int16_t* valueOut,
 
 }  // namespace
 
+// The RC speed preset, on RCInputTask (Core 1) and from the action-test
+// dispatch. Both fields go through one configCacheMux section and nothing
+// else is touched: no ConfigWriteLock, which a real-time loop must never take,
+// and no whole-snapshot write that could put back fields a config POST has
+// just committed (#417).
 bool applySpeedPresetRuntime(SpeedPresetId preset) {
-    int16_t value = SPEED_PRESET_NORMAL;
     AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
-    if (!readSpeedPresetValueAndSlot(preset, &value, &slot)) {
+    if (!speedPresetSlot(preset, &slot)) {
         return false;
     }
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    cfg.drive.speedLimitMax = value;
-    cfg.drive.speedPresetActive = preset;
-    configCacheApply(cfg);
+    configCacheSelectSpeedPreset(preset);
 
     audioQueuePlaySlot(slot, SRC_INTERNAL);
     return true;
 }
 
+// The persisted preset, from POST /api/drive/speed-preset and the Console's
+// drive.action.speed-preset-* (Core 0). It writes the cache and then the
+// whole of it to NVS, so it is a config writer like any other and takes the
+// config write lock across both - the previous pair it may have to restore
+// is read inside it too. A lock that cannot be taken is a failed write,
+// which both callers already answer as one.
 bool applySpeedPresetPersisted(SpeedPresetId preset) {
-    int16_t targetValue = SPEED_PRESET_NORMAL;
     AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
-    if (!readSpeedPresetValueAndSlot(preset, &targetValue, &slot)) {
+    if (!speedPresetSlot(preset, &slot)) {
         return false;
     }
 
-    int16_t previousLimit = SPEED_PRESET_NORMAL;
-    SpeedPresetId previousPreset = SpeedPresetId::Normal;
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    previousLimit = cfg.drive.speedLimitMax;
-    previousPreset = cfg.drive.speedPresetActive;
-    cfg.drive.speedLimitMax = targetValue;
-    cfg.drive.speedPresetActive = preset;
-    configCacheApply(cfg);
+    {
+        ConfigWriteLock lock;
+        if (!lock.acquired()) {
+            PA_LOG_WARN(TAG, "Speed preset not changed: config write busy");
+            return false;
+        }
 
-    if (!saveConfigToNvs()) {
+        ConfigSnapshot cfg = {};
         configCacheRead(&cfg);
-        cfg.drive.speedLimitMax = previousLimit;
-        cfg.drive.speedPresetActive = previousPreset;
-        configCacheApply(cfg);
-        PA_LOG_WARN(TAG, "Failed to persist speed preset change; runtime reverted");
-        return false;
+        const int16_t previousLimit = cfg.drive.speedLimitMax;
+        const SpeedPresetId previousPreset = cfg.drive.speedPresetActive;
+
+        configCacheSelectSpeedPreset(preset);
+
+        if (!saveConfigToNvs()) {
+            configCacheSetSpeedLimit(previousLimit, previousPreset);
+            PA_LOG_WARN(TAG, "Failed to persist speed preset change; runtime reverted");
+            return false;
+        }
     }
 
     audioQueuePlaySlot(slot, SRC_INTERNAL);

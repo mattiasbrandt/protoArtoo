@@ -478,13 +478,15 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
         backend.sentBody,
         "{\"address\":\"ledc:3\",\"name\":\"ARM3\",\"parts\":[],\"bandLoUs\":1000,"
         "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
-        "\"closeUs\":1000,\"calibrated\":false,\"commandedUs\":null,\"targetUs\":null,"
+        "\"closeUs\":1000,\"calibrated\":false,\"narrowedFrom\":null,\"commandedUs\":null,"
+        "\"targetUs\":null,"
         "\"held\":false,\"limp\":\"off\",\"nudgesDone\":1}"));
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:5\",\"name\":\"ARM5\",\"parts\":[],\"bandLoUs\":1000,"
         "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
-        "\"closeUs\":1000,\"calibrated\":false,\"commandedUs\":null,\"targetUs\":null,"
+        "\"closeUs\":1000,\"calibrated\":false,\"narrowedFrom\":null,\"commandedUs\":null,"
+        "\"targetUs\":null,"
         "\"held\":false,\"limp\":\"off\",\"nudgesDone\":0}"));
 }
 
@@ -602,7 +604,10 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     // 6209 B at #364, when every row gained the seven fields the calibration
     // dial reads -- the fitted component, the three recorded widths, the
     // `calibrated` bit, whether a dial holds the Output and why it has no
-    // pulse. 109 B a row, and the route refuses at 8192.
+    // pulse. 109 B a row, and the route refuses at 8192. 6800 B at #417, when
+    // every row gained `narrowedFrom` - null here, 20 B a row; only the five
+    // rows `main`'s fixed key sets addressed can carry a pair instead, 24 B
+    // more each, so the ceiling of that is 6920 B.
     //
     // Twenty-four rows is the expander case nobody has fitted. The five this
     // controller drives answer in 1219 B, which is what the Parts page's

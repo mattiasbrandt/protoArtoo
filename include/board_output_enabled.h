@@ -57,3 +57,28 @@ inline bool boardOutputIsWired(const SystemConfig& system, size_t index) {
     }
     return system.*BOARD_OUTPUT_ENABLED[index].enabled;
 }
+
+// -----------------------------------------------------------------------------
+// boardOutputTickAdoptedLight()
+// The second half of reading `main`'s one lit wire onto its row (#417).
+//
+// `main` drove its strip from the stored slot alone (`aux_led_pin`) and never
+// asked the wire's own tick; this firmware drives a strip only on a wire that
+// is ticked in AND names a Light Type (outputWireStripDriven()). So the row
+// half of the adoption on its own turns a strip `main` was lighting dark
+// whenever that wire had been left unticked. Ticking it here is what keeps
+// "a controller that was lighting a wire keeps lighting it" true.
+//
+// Only where the loader actually adopted - the same gate as the row half, so a
+// wire whose row already carries the builder's own answer is not ticked behind
+// their back. Before configCacheApply(), so the tick is in the snapshot the
+// first save writes; configSave() removes the retired keys only once that has
+// landed.
+// -----------------------------------------------------------------------------
+inline void boardOutputTickAdoptedLight(const ServoOutputRepairReport& report,
+                                        SystemConfig* system) {
+    if (system == nullptr || !report.litAdopted || report.litOutput >= BOARD_OUTPUT_COUNT) {
+        return;
+    }
+    system->*BOARD_OUTPUT_ENABLED[report.litOutput].enabled = true;
+}

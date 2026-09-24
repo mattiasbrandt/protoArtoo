@@ -10,6 +10,7 @@
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "config.h"
+#include "dome_math.h"  // domePulsesInOrder()
 #include "rc_mapping.h"
 #include "board_outputs.h"            // which Output a retired aux_led_pin slot named
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -139,11 +140,19 @@ uint16_t adoptLegacyFixedServoKeys(const ConfigReader& r, ServoOutputRow* row) {
 // LEDs were on it. Both are now the row's: a wire carries a Light Type when its
 // `component` names one, and its LEDs are that row's `led_count`.
 //
-// It is the same bridge adoptLegacyFixedServoKeys() crosses, and idempotent for
-// the same reason: nothing writes these keys, and configSaveServoOutputs()
-// removes them once the rows they became are safely down. While they are still
-// there, no save by this firmware has happened, so no stored row can already
-// carry the answer.
+// ONLY ONTO A ROW WITH NO ANSWER OF ITS OWN. `unanswered` has bit i set for a
+// row whose record is absent or has the thirteen-field shape stored before
+// #413; neither can hold a Light Type answer, so the keys are the only answer
+// there is. A fourteen-field record was written by this firmware and already
+// carries whatever the builder set -- an LED count, or a servo put back on
+// the wire -- and the keys can still be in NVS beside it: they are removed
+// only by a save that landed whole, so one failed row write keeps them. Adopting
+// over that record would undo the builder's answer on every boot until a good
+// save made the undo permanent, and a servo put back would be dead, since LEDC
+// stays off a pin whose row names a Light Type (#417). A gate on "no record"
+// alone would be too narrow the other way: epic-lineage controllers stored
+// thirteen-field rows beside `aux_led_pin` before #413, and would lose the
+// strip.
 //
 // The routed wire wins over the stored type, which is the rule the browser used
 // to apply on the way in (data/output_settings.js before #413): a controller
@@ -151,10 +160,12 @@ uint16_t adoptLegacyFixedServoKeys(const ConfigReader& r, ServoOutputRow* row) {
 // said, and reading it as a servo would put a PWM signal on a strip.
 //
 // Returns the row index it adopted onto, or SERVO_OUTPUT_ROW_MAX for a
-// controller with nothing to adopt.
+// controller with nothing to adopt. *litOutput is the Output's index in
+// BOARD_OUTPUTS, set only on an adoption.
 // -----------------------------------------------------------------------------
-uint8_t adoptRetiredAuxLedKeys(const ConfigReader& r, ServoOutputTable* table) {
-    if (table == nullptr) {
+uint8_t adoptRetiredAuxLedKeys(const ConfigReader& r, ServoOutputTable* table,
+                               uint32_t unanswered, uint8_t* litOutput) {
+    if (table == nullptr || litOutput == nullptr) {
         return SERVO_OUTPUT_ROW_MAX;
     }
     const uint8_t slot = r.readU8(NVS_KEY_RETIRED_AUX_LED_PIN, 0);
@@ -163,29 +174,84 @@ uint8_t adoptRetiredAuxLedKeys(const ConfigReader& r, ServoOutputTable* table) {
     }
 
     uint8_t seen = 0;
-    const BoardOutput* lit = nullptr;
+    size_t lit = BOARD_OUTPUT_COUNT;
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
         if (!BOARD_OUTPUTS[i].lightCapable) {
             continue;
         }
         if (++seen == slot) {
-            lit = &BOARD_OUTPUTS[i];
+            lit = i;
             break;
         }
     }
-    if (lit == nullptr) {
+    if (lit >= BOARD_OUTPUT_COUNT) {
         return SERVO_OUTPUT_ROW_MAX;  // a slot number this board never had
     }
 
-    const uint8_t index = servoOutputTableFindByAddress(*table, SERVO_DRIVER_LEDC, lit->channel);
-    if (index >= SERVO_OUTPUT_ROW_MAX) {
+    const uint8_t index =
+        servoOutputTableFindByAddress(*table, SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel);
+    if (index >= SERVO_OUTPUT_ROW_MAX || (unanswered & ((uint32_t)1u << index)) == 0) {
         return SERVO_OUTPUT_ROW_MAX;
     }
 
     ServoOutputRow* row = &table->rows[index];
     row->component = SERVO_COMP_RGB;
     row->led_count = r.readU8(NVS_KEY_RETIRED_AUX_LED_COUNT, SERVO_LIGHT_LEDS_DEFAULT);
+    *litOutput = (uint8_t)lit;
     return index;
+}
+
+// -----------------------------------------------------------------------------
+// findLegacyNarrowing()
+// Which rows still stand exactly where the band put `main`'s pair, and what
+// that pair was (#417, include/servo_legacy_field_sets.h ServoLegacyNarrowing).
+//
+// One rule answers both boots that matter. On the first, the row was just
+// adopted from the keys. On a later one the row is stored, because a save
+// wrote it, but the keys were kept for it -- configSaveServoOutputs() keeps a
+// narrowed set's keys until the builder saves that Output. Either way the
+// question is the same: adopting the keys onto this row again changes nothing
+// on it, and the band moved an end on the way. A row the builder has since
+// saved differently fails the first half; keys the band did not move fail the
+// second, and are removed by the next save like any other.
+//
+// Both keys must be there. `main` wrote the pair together and clamped each to
+// 500..2500, so 0 reads as absent rather than as a width. And a row carrying a
+// Light Type is skipped: a light is driven by no pulse width, so there is no
+// number of the builder's on it to lose. That is the wire `main` lit, whose
+// set can hold anything - `main` stored a type of `rgb` there, which takes the
+// same band as a servo.
+// -----------------------------------------------------------------------------
+void findLegacyNarrowing(const ConfigReader& r, const ServoOutputTable& table,
+                         ServoLegacyNarrowing* out) {
+    *out = {};
+    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
+        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
+        const uint16_t openUs = r.readU16(set.nvsOpenKey, 0);
+        const uint16_t closeUs = r.readU16(set.nvsCloseKey, 0);
+        if (openUs == 0 || closeUs == 0) {
+            continue;
+        }
+        const uint8_t index = servoOutputTableFindByAddress(table, SERVO_DRIVER_LEDC, set.channel);
+        if (index >= SERVO_OUTPUT_ROW_MAX) {
+            continue;
+        }
+        const ServoOutputRow& row = table.rows[index];
+        if (row.component == SERVO_COMP_RGB) {
+            continue;
+        }
+        ServoOutputRow again = row;
+        const uint16_t moved = adoptLegacyFixedServoKeys(r, &again);
+        const bool bandMovedAnEnd = (moved & (SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE)) != 0;
+        const bool stillTheAdoption = again.open_us == row.open_us &&
+                                      again.close_us == row.close_us &&
+                                      again.component == row.component;
+        if (bandMovedAnEnd && stillTheAdoption) {
+            out->sets |= (uint8_t)(1u << i);
+            out->openUs[i] = openUs;
+            out->closeUs[i] = closeUs;
+        }
+    }
 }
 
 // Forward declarations of deserialize/serialize helpers
@@ -290,13 +356,32 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
 }
 
 
+// The three ESC pulse widths as stored, each held to 1000..2000 on its own. The
+// order between them is the caller's to judge (domePulsesInOrder()).
+void readDomePulses(const ConfigReader& r, const DomeConfig& def, DomeConfig* out) {
+    out->dome_neutral_us = constrain(r.readU16("dome_neu", def.dome_neutral_us), (uint16_t)1000,
+                                     (uint16_t)2000);
+    out->dome_min_pulse_us = constrain(r.readU16("dome_minp", def.dome_min_pulse_us),
+                                       (uint16_t)1000, (uint16_t)2000);
+    out->dome_max_pulse_us = constrain(r.readU16("dome_maxp", def.dome_max_pulse_us),
+                                       (uint16_t)1000, (uint16_t)2000);
+}
+
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
     *out = def;
     out->dome_min_speed = floatFromBits(r.readU32("dome_min", floatToBits(def.dome_min_speed)));
     out->dome_max_speed = floatFromBits(r.readU32("dome_max", floatToBits(def.dome_max_speed)));
-    out->dome_neutral_us = r.readU16("dome_neu", def.dome_neutral_us);
-    out->dome_min_pulse_us = r.readU16("dome_minp", def.dome_min_pulse_us);
-    out->dome_max_pulse_us = r.readU16("dome_maxp", def.dome_max_pulse_us);
+    readDomePulses(r, def, out);
+    // A set stored out of order - before the config door refused one (#417) -
+    // cannot put a stop on the ESC, so all three take the defaults rather than
+    // one being picked to move: which of them is wrong is not something the
+    // stored numbers can say. configLoad() warns (configDomePulsesStoredOutOfOrder()).
+    if (!domePulsesInOrder(out->dome_min_pulse_us, out->dome_neutral_us,
+                           out->dome_max_pulse_us)) {
+        out->dome_neutral_us = def.dome_neutral_us;
+        out->dome_min_pulse_us = def.dome_min_pulse_us;
+        out->dome_max_pulse_us = def.dome_max_pulse_us;
+    }
     out->dome_speed_limit_pct = r.readU8("dome_pct", def.dome_speed_limit_pct);
     out->dome_rnd_enable = r.readBool("dome_rnd_en", def.dome_rnd_enable);
     out->dome_rnd_speed_pct = r.readU8("dome_rnd_spd", def.dome_rnd_speed_pct);
@@ -315,9 +400,6 @@ void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& d
         out->dome_min_speed = 0.0f;
     if (out->dome_max_speed > 1.0f)
         out->dome_max_speed = 1.0f;
-    out->dome_neutral_us = constrain(out->dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_min_pulse_us = constrain(out->dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_max_pulse_us = constrain(out->dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
     out->dome_speed_limit_pct = constrain(out->dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
 }
 
@@ -737,6 +819,13 @@ void configDeserializeDome(const ConfigReader& r, DomeConfig* out) {
     deserializeDome(r, out, getDefaults().dome);
 }
 
+bool configDomePulsesStoredOutOfOrder(const ConfigReader& r) {
+    DomeConfig stored = getDefaults().dome;
+    readDomePulses(r, stored, &stored);
+    return !domePulsesInOrder(stored.dome_min_pulse_us, stored.dome_neutral_us,
+                              stored.dome_max_pulse_us);
+}
+
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out) {
     deserializeSystem(r, out, getDefaults().system);
 }
@@ -767,7 +856,8 @@ bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, Con
 }
 
 void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
-                                   ServoOutputRepairReport* report) {
+                                   ServoOutputRepairReport* report,
+                                   ServoLegacyNarrowing* narrowing) {
     if (out == nullptr) {
         return;
     }
@@ -786,6 +876,9 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
     // at a time: "a Part is driven by at most one Output" is a fact about the
     // whole table, so it runs once every row has been read.
     uint16_t rowMask[SERVO_OUTPUT_ROW_MAX] = {};
+    // Rows no record answers for the Light Type: absent, or stored before #413.
+    // See adoptRetiredAuxLedKeys().
+    uint32_t unanswered = 0;
 
     // The bridge, crossed on first read (#286): a controller upgrading from
     // before ADR 0041 has five fixed key sets in NVS and no row records at all,
@@ -808,9 +901,16 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
         // A repair is still counted: the only thing an adoption can report is a
         // pulse width the component band had to move, and a builder's own number
         // changing under them is exactly what this project says out loud.
-        rowMask[i] = (stored.length() == 0)
-                         ? adoptLegacyFixedServoKeys(r, &parsed)
-                         : servoOutputRowParse(stored.c_str(), fallback, &parsed);
+        bool oldShape = false;
+        if (stored.length() == 0) {
+            rowMask[i] = adoptLegacyFixedServoKeys(r, &parsed);
+            unanswered |= (uint32_t)1u << i;
+        } else {
+            rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed, &oldShape);
+            if (oldShape) {
+                unanswered |= (uint32_t)1u << i;
+            }
+        }
         out->rows[i] = parsed;
     }
 
@@ -818,10 +918,19 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
     // runs after the rows are read so it lands on the row as stored, and its
     // repair is reported like any other: normalising it can move a pulse width
     // into the band SERVO_COMP_RGB takes.
-    const uint8_t adopted = adoptRetiredAuxLedKeys(r, out);
+    uint8_t litOutput = 0;
+    const uint8_t adopted = adoptRetiredAuxLedKeys(r, out, unanswered, &litOutput);
     if (adopted < SERVO_OUTPUT_ROW_MAX) {
         const ServoOutputRow before = out->rows[adopted];
         rowMask[adopted] |= servoOutputRowNormalise(&out->rows[adopted], before);
+        local.litAdopted = true;
+        local.litOutput = litOutput;
+    }
+
+    // After the light adoption, so the wire `main` lit is already a light and
+    // findLegacyNarrowing() passes over it.
+    if (narrowing != nullptr) {
+        findLegacyNarrowing(r, *out, narrowing);
     }
 
     const uint32_t contested = servoOutputTableEnforcePartOwnership(out);

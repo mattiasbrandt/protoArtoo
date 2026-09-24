@@ -130,6 +130,7 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
   - `400` `{"ok":false,"error":"mdnsUseName must be true/false or 1/0"}`
   - `500` `{"ok":false,"error":"failed to persist identity"}`
+  - `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request
 
@@ -292,6 +293,7 @@ Sets operation mode.
 - `400` `{"ok":false,"error":"missing mode parameter"}`
 - `400` `{"ok":false,"error":"invalid mode - use 'stationary' or 'driving'"}`
 - `500` `{"ok":false,"error":"mode applied but NVS save failed"}`
+  (also the answer when another config writer held the config write window for over a second: the mode is applied, the save waits for the next write)
 
 The `500` means the droid IS in the requested mode now, and only the store
 missed: it comes back up in the previous mode after a reboot. The mode is not
@@ -321,6 +323,7 @@ Applies persisted speed preset.
 - `400` `{"ok":false,"error":"missing preset"}`
 - `400` `{"ok":false,"error":"invalid preset - use slow, normal, or turbo"}`
 - `500` `{"ok":false,"error":"failed to persist speed preset"}`
+  (also the answer when another config writer held the config write window for over a second; the preset was not changed)
 - `500` `{"ok":false,"error":"speed preset response overflow"}`
 
 #### Example request
@@ -663,6 +666,14 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     endpoint numbers into a form does **not** set it. While it is false there
     are no recorded ends to work within, so overshoot easing degrades to `none`
     and a test sweep has nowhere sane to sweep between.
+  - `narrowedFrom`: `{"openUs":2200,"closeUs":2100}` when the pair this Output
+    held before an upgrade from a release without Servo Output rows did not fit
+    the band above and was narrowed into it, and nobody has saved this Output
+    since; `null` otherwise. Those releases took any pair from 500 to 2500; an
+    MG996R, or an Output with nothing recorded as fitted, takes 1000 to 2000, so
+    2200/2100 arrives as 2000/2000. The numbers are the ones that release
+    stored, kept until this Output is saved, so they can be read back and a
+    pair that fits chosen from them.
   - `held`: whether a calibration dial currently holds this Output, meaning
     both firmware bounds above are armed and the pulse stays on until one fires
     or the builder lets go.
@@ -696,11 +707,11 @@ curl -s http://artoo.local/api/servo/outputs
 #### Example response (an Artoo PCB, fresh, with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 let go with pulses off after a nudge, and ARM5 released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
 ```
 
 ### POST /api/aux-led/color
@@ -840,6 +851,7 @@ Action endpoint.
   when audio output is off this boot (every action)
 - `503` `{"ok":false,"error":"audio command queue full"}`
 - `500` `{"ok":false,"error":"volume applied but NVS save failed"}`
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; the volume was not changed (`action=volume`)
 
 #### Example request (play)
 
@@ -952,6 +964,7 @@ Updates one persisted key.
 - invalid CHIRP arguments
 - `404` when CHIRP mapping requested on non-catalog backend
 - `500` on NVS write failure
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request (non-CHIRP)
 
@@ -997,6 +1010,7 @@ Atomically updates one category low/high pair.
 - invalid CHIRP binding arguments
 - `404` when CHIRP binding operation requested on non-catalog backend
 - `500` on NVS write failure
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request
 
@@ -1044,6 +1058,7 @@ Sets mood category masks.
 - JSON parse failure
 - invalid range/type
 - `500` on NVS write failure
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request (form)
 
@@ -1530,6 +1545,12 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"guidedSetupSummaryDone must be true or false"}`; ending a
   run sends `false` so the run that ended has a summary to show (#371).
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
+  - The three pulse widths must also run `min <= neutral <= max`, judged with
+    the stored values for any the request leaves out. A set out of order is
+    refused with `400` naming all three (`domeEscMinPulseUs 1800,
+    domeEscNeutralUs 1500, domeEscMaxPulseUs 1200: must be min <= neutral <=
+    max`): out of order, a stop does not put neutral on the ESC. A set stored
+    out of order by an older firmware loads as `1000`/`1500`/`2000`.
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
 - servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`. The accepted range is what a servo can take; what an output *keeps* is bounded by the component type fitted to it, so an `mg996r` output holds 1000..2000 and a value outside that is moved into range rather than refused. The response echoes what was stored, which is what the droid will drive to.
@@ -1602,6 +1623,11 @@ Updates supported config fields and persists to NVS.
 - `protoR2link.wifiPeerIp` (string, empty or IPv4)
 
 - Success: `200` returns full updated config JSON (same shape as GET /api/config).
+  When the write stored an endpoint at a different number than it was sent,
+  the answer also carries `clamped`: each such field and the number it holds
+  now, `{"aux2OpenUs":2000,"aux2CloseUs":1000}`. A type change that pulls ends
+  the request did not name into the new component's band lists those too.
+  Absent when nothing was clamped, and never on `GET /api/config`.
   `components.audio` carries `member` (the saved choice) and `activeMember` (the
   module running since the last boot). The two differ exactly while a member
   change is staged and the controller has not rebooted.
