@@ -75,7 +75,7 @@ static const TaskStackArm kArms[] = {
     {"AuxLedTask", 3504U, 4096U, RULE_DECLINED},
     {"DomeLinkTask", 5872U, 6144U, RULE_DECLINED},
     {"SafetyMonitor", 3088U, 4096U, RULE_APPLIED},
-    {"SeqDisp", 4416U, 5632U, RULE_APPLIED},
+    {"SeqDisp", 4432U, 5632U, RULE_APPLIED},
     {"Console", 7376U, 9728U, RULE_APPLIED},
     {"WebEvents", 5904U, 6144U, RULE_DECLINED},
     {"ArduinoOTA", 3696U, 4096U, RULE_DECLINED},
