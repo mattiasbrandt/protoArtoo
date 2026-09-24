@@ -143,12 +143,17 @@ enum ServoCommandType : uint8_t {
     // can ask for a big one. One output per command; 255 is refused.
     SERVO_CMD_NUDGE,
     // The calibration dial's hold (ADR 0064, #364): drive one output to
-    // positionUs and keep the dial's hold on it. The first HOLD takes the
-    // Output and starts the ten-minute ceiling; every HOLD after it refreshes
-    // the short expiry and nothing else, so a page can keep a hold alive but
-    // never past the ceiling (include/servo_hold.h). One output per command;
-    // 255 is refused.
+    // positionUs and keep the dial's hold on it. A HOLD is a press: with no
+    // hold standing it takes the Output and starts the ten-minute ceiling;
+    // on a standing hold it refreshes the short expiry and nothing else, so a
+    // page can keep a hold alive but never past the ceiling
+    // (include/servo_hold.h). One output per command; 255 is refused.
     SERVO_CMD_HOLD,
+    // The dial's keepalive and its own moves (#417): the same drive as a
+    // HOLD, honoured only while the hold still stands and dropped otherwise,
+    // so nothing but a press ever takes an Output that a bound, the estop or
+    // pulses off let go. One output per command; 255 is refused.
+    SERVO_CMD_HOLD_REFRESH,
     // Pulses off (ADR 0043, ADR 0064, #364): take the pulse off the pin. The
     // output goes limp where it is -- nothing is commanded -- and any move,
     // nudge or hold on it ends. 255 releases ARM1 and ARM2, as the other

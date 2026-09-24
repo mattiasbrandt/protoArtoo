@@ -519,10 +519,17 @@ Queues servo command.
   ways and a request can extend neither: it lets go about **3 s** after hold
   commands stop arriving, and **10 minutes** after the first one however many
   keep arriving. Either way the output goes limp where it is and
-  `GET /api/servo/outputs` reports `limp` as `expiry` or `ceiling`. Send one a
-  second to keep a hold alive; send another after it has let go to take the
-  output back, which restarts both bounds. `arm=both` is refused — a dial
-  stands on one output.
+  `GET /api/servo/outputs` reports `limp` as `expiry` or `ceiling`. A plain
+  hold is a **press**: it takes the output when no hold stands, which restarts
+  both bounds, and otherwise refreshes the one that does. `arm=both` is
+  refused — a dial stands on one output.
+- `refresh=1` (with `action=hold` only): a refresh, not a press. Send one a
+  second to keep a hold alive, and for every move of the dial. The controller
+  honours it only while the hold still stands; once a bound, the estop or
+  pulses off has let go it moves nothing and takes nothing, and still answers
+  `200` (the request was queued; `held` on `GET /api/servo/outputs` says
+  whether a hold stands). Only a plain hold takes the output back. Any other
+  value, or `refresh` on another action, is refused.
 - `action=release` (pulses off, ADR 0043): take the pulse off the output. It
   goes limp **exactly where it is** — nothing is driven to a position first, so
   where the part ends up is whatever gravity and friction decide. It carries no
@@ -542,6 +549,7 @@ Queues servo command.
 - `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, nudge, travel, hold, or release"}`
 - `400` `{"ok":false,"error":"A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"}` (the running board's words; the same sentence names `hold` and `travel`)
 - `400` missing/invalid `positionUs`
+- `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
 #### Example request (open, Artoo PCB)

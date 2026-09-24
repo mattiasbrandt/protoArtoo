@@ -97,8 +97,9 @@ constexpr ServoActionSpec kServoActions[] = {
     // cannot be handed a big nudge however the request is spelled.
     {"nudge", SERVO_CMD_NUDGE, 0, false, true},
     // The calibration dial's hold (ADR 0064, #364): drive there and keep the
-    // pulse on it. Every hold refreshes the short expiry; the first one starts
-    // the ten-minute ceiling, which nothing sent here can move.
+    // pulse on it. Every hold refreshes the short expiry; the one that takes
+    // the Output starts the ten-minute ceiling, which nothing sent here can
+    // move. `refresh=1` makes it a refresh only (#417): see handleServoPost().
     {"hold", SERVO_CMD_HOLD, 0, true, true},
     // Pulses off (ADR 0043, ADR 0064, #364): the Output goes limp where it is.
     // No width, because a release commands no position at all.
@@ -165,6 +166,22 @@ void handleServoPost(WebRequest& req) {
         return;
     }
 
+    // A hold is a press unless it says it is a refresh (#417). The dial's
+    // keepalive and its own moves send `refresh=1`, which ServoTask honours
+    // only while the hold still stands, so nothing but a press -- opening the
+    // dial, "take it again", a test sweep -- takes an Output a bound, the
+    // estop or pulses off let go. Any other value is refused rather than read
+    // as a press, which would be the one wrong way to read it.
+    ServoCommandType type = spec->type;
+    char refreshRaw[4] = {};
+    if (req.param("refresh", refreshRaw, sizeof(refreshRaw))) {
+        if (spec->type != SERVO_CMD_HOLD || strcmp(refreshRaw, "1") != 0) {
+            webSendJsonError(req, 400, "refresh=1 is for a hold only");
+            return;
+        }
+        type = SERVO_CMD_HOLD_REFRESH;
+    }
+
     uint16_t positionUs = spec->positionUs;
     if (spec->needsWidth) {
         char positionRaw[16] = {};
@@ -195,7 +212,7 @@ void handleServoPost(WebRequest& req) {
     // servoCmdQueue submission both this handler and the Console's
     // servo.action.* executors now make.
     ServoSubmitOutcome outcome =
-        servoSubmitCommand((uint8_t)armId, spec->type, positionUs, SRC_WEB_API);
+        servoSubmitCommand((uint8_t)armId, type, positionUs, SRC_WEB_API);
     if (!outcome.ok) {
         webSendJsonError(req, 503, "Servo command queue full");
         return;

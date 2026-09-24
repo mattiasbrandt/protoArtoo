@@ -32,22 +32,54 @@ void test_nothing_is_bounded_until_a_hold_is_taken() {
         servoHoldBoundHit(hold, 900000, SERVO_HOLD_EXPIRY_MS, SERVO_HOLD_CEILING_MS));
 }
 
-void test_the_first_command_takes_the_hold_and_the_next_only_refreshes_it() {
+void test_a_press_takes_the_hold_and_what_follows_only_refreshes_it() {
     ServoHoldState hold = {};
-    TEST_ASSERT_TRUE(servoHoldCommand(&hold, 10000));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_TAKEN, servoHoldCommand(&hold, 10000, SERVO_HOLD_ASK_TAKE));
     TEST_ASSERT_TRUE(hold.held);
     TEST_ASSERT_EQUAL_UINT32(10000, hold.takenMs);
 
     // Every command after it moves the expiry and leaves the ceiling where it
-    // was: that is what stops a page extending the hold indefinitely.
-    TEST_ASSERT_FALSE(servoHoldCommand(&hold, 11000));
+    // was: that is what stops a page extending the hold indefinitely. A second
+    // press is no exception.
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_REFRESHED,
+                            servoHoldCommand(&hold, 11000, SERVO_HOLD_ASK_REFRESH));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_REFRESHED,
+                            servoHoldCommand(&hold, 12000, SERVO_HOLD_ASK_TAKE));
     TEST_ASSERT_EQUAL_UINT32(10000, hold.takenMs);
-    TEST_ASSERT_EQUAL_UINT32(11000, hold.lastCommandMs);
+    TEST_ASSERT_EQUAL_UINT32(12000, hold.lastCommandMs);
+}
+
+// A refresh keeps only a hold that stands (#417). After a bound, the estop or
+// pulses off let go, the keepalive still in flight must take nothing: before
+// this, one landing after the ceiling fired took the Output with a fresh
+// ceiling, and one landing after an estop cleared took a servo nobody was
+// watching. Only a press takes it back.
+void test_a_refresh_after_a_release_takes_nothing() {
+    ServoHoldState hold = {};
+    servoHoldCommand(&hold, 1000, SERVO_HOLD_ASK_TAKE);
+    servoHoldEnd(&hold);  // the ceiling, the expiry, the estop or pulses off
+
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_DROPPED,
+                            servoHoldCommand(&hold, 2000, SERVO_HOLD_ASK_REFRESH));
+    TEST_ASSERT_FALSE(hold.held);
+    TEST_ASSERT_EQUAL_UINT32(1000, hold.takenMs);
+    TEST_ASSERT_EQUAL_UINT32(1000, hold.lastCommandMs);
+
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_TAKEN, servoHoldCommand(&hold, 3000, SERVO_HOLD_ASK_TAKE));
+    TEST_ASSERT_TRUE(hold.held);
+}
+
+// And an Output no dial ever held is not taken by a refresh either.
+void test_a_refresh_with_no_hold_ever_taken_takes_nothing() {
+    ServoHoldState hold = {};
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_DROPPED,
+                            servoHoldCommand(&hold, 5000, SERVO_HOLD_ASK_REFRESH));
+    TEST_ASSERT_FALSE(hold.held);
 }
 
 void test_commands_that_stop_arriving_end_the_hold_within_seconds() {
     ServoHoldState hold = {};
-    servoHoldCommand(&hold, 10000);
+    servoHoldCommand(&hold, 10000, SERVO_HOLD_ASK_TAKE);
     // One second on: the page's keepalive cadence, well inside the expiry.
     TEST_ASSERT_EQUAL_UINT8(
         SERVO_HOLD_BOUND_NONE,
@@ -64,17 +96,17 @@ void test_commands_that_stop_arriving_end_the_hold_within_seconds() {
 // abandoned bench keeps sending, and the hold must still end.
 void test_a_hold_kept_alive_by_commands_still_ends_at_the_ceiling() {
     ServoHoldState hold = {};
-    servoHoldCommand(&hold, 1000);
+    servoHoldCommand(&hold, 1000, SERVO_HOLD_ASK_TAKE);
     uint32_t now = 1000;
     for (int beat = 0; beat < 599; ++beat) {
         now += 1000;
-        servoHoldCommand(&hold, now);  // one command a second, exactly what the dial sends
+        servoHoldCommand(&hold, now, SERVO_HOLD_ASK_REFRESH);  // the dial's keepalive, once a second
         TEST_ASSERT_EQUAL_UINT8(
             SERVO_HOLD_BOUND_NONE,
             servoHoldBoundHit(hold, now, SERVO_HOLD_EXPIRY_MS, SERVO_HOLD_CEILING_MS));
     }
     now += 1000;  // ten minutes since the hold was taken
-    servoHoldCommand(&hold, now);
+    servoHoldCommand(&hold, now, SERVO_HOLD_ASK_REFRESH);
     TEST_ASSERT_EQUAL_UINT8(
         SERVO_HOLD_BOUND_CEILING,
         servoHoldBoundHit(hold, now, SERVO_HOLD_EXPIRY_MS, SERVO_HOLD_CEILING_MS));
@@ -84,7 +116,7 @@ void test_a_hold_kept_alive_by_commands_still_ends_at_the_ceiling() {
 // ten minutes is the most a dial holds, not that the link dropped.
 void test_the_ceiling_is_the_reason_given_when_both_have_fired() {
     ServoHoldState hold = {};
-    servoHoldCommand(&hold, 1000);
+    servoHoldCommand(&hold, 1000, SERVO_HOLD_ASK_TAKE);
     TEST_ASSERT_EQUAL_UINT8(
         SERVO_HOLD_BOUND_CEILING,
         servoHoldBoundHit(hold, 1000 + SERVO_HOLD_CEILING_MS + 60000, SERVO_HOLD_EXPIRY_MS,
@@ -95,7 +127,7 @@ void test_the_ceiling_is_the_reason_given_when_both_have_fired() {
 // ones the released hold had run down (ADR 0064).
 void test_a_hold_taken_again_restarts_both_bounds() {
     ServoHoldState hold = {};
-    servoHoldCommand(&hold, 1000);
+    servoHoldCommand(&hold, 1000, SERVO_HOLD_ASK_TAKE);
     servoHoldEnd(&hold);
     TEST_ASSERT_FALSE(hold.held);
     TEST_ASSERT_EQUAL_UINT8(
@@ -103,7 +135,8 @@ void test_a_hold_taken_again_restarts_both_bounds() {
         servoHoldBoundHit(hold, 1000 + SERVO_HOLD_CEILING_MS, SERVO_HOLD_EXPIRY_MS,
                           SERVO_HOLD_CEILING_MS));
 
-    TEST_ASSERT_TRUE(servoHoldCommand(&hold, 1000 + SERVO_HOLD_CEILING_MS));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_HOLD_TAKEN,
+                            servoHoldCommand(&hold, 1000 + SERVO_HOLD_CEILING_MS, SERVO_HOLD_ASK_TAKE));
     TEST_ASSERT_EQUAL_UINT32(1000 + SERVO_HOLD_CEILING_MS, hold.takenMs);
     TEST_ASSERT_EQUAL_UINT8(
         SERVO_HOLD_BOUND_NONE,
@@ -119,7 +152,7 @@ void test_a_hold_across_a_millis_wrap_is_judged_on_elapsed_time() {
     // it and a subtraction that is not unsigned reads as 49 days rather than
     // as two seconds.
     const uint32_t beforeWrap = 0xFFFFFC00u;
-    servoHoldCommand(&hold, beforeWrap);
+    servoHoldCommand(&hold, beforeWrap, SERVO_HOLD_ASK_TAKE);
 
     const uint32_t twoSecondsOn = beforeWrap + 2000u;
     TEST_ASSERT_TRUE(twoSecondsOn < beforeWrap);  // the clock really has wrapped
@@ -150,7 +183,9 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_two_bounds_are_the_numbers_the_decision_names);
     RUN_TEST(test_nothing_is_bounded_until_a_hold_is_taken);
-    RUN_TEST(test_the_first_command_takes_the_hold_and_the_next_only_refreshes_it);
+    RUN_TEST(test_a_press_takes_the_hold_and_what_follows_only_refreshes_it);
+    RUN_TEST(test_a_refresh_after_a_release_takes_nothing);
+    RUN_TEST(test_a_refresh_with_no_hold_ever_taken_takes_nothing);
     RUN_TEST(test_commands_that_stop_arriving_end_the_hold_within_seconds);
     RUN_TEST(test_a_hold_kept_alive_by_commands_still_ends_at_the_ceiling);
     RUN_TEST(test_the_ceiling_is_the_reason_given_when_both_have_fired);
