@@ -118,7 +118,10 @@
   // Repainted in place
   // ---------------------------------------------------------------------------
   let outputs = null; // null until the droid has answered
-  let estopLatched = null; // null until the droid has said
+  // The Live Reading's three-valued estop (data/live_reading.js): "latched",
+  // "clear", or "finding-out" until the droid has said and whenever contact
+  // with it is lost.
+  let estop = "finding-out";
 
   const mover = P.mover({
     dialog,
@@ -211,10 +214,9 @@
   // A control that was held catches up with whatever arrived while it was.
   tableRegion.addEventListener("focusout", () => paint());
 
-  // The estop gates the picture's Open it; the answer rides the status stream.
-  window.PAStatusStream?.subscribe((eventType, payload) => {
-    if (eventType !== "status" || !payload || typeof payload !== "object") return;
-    estopLatched = payload.estop === true;
+  // The estop gates the picture's Open it; the answer is the Live Reading's.
+  window.PALiveReading.subscribe((reading) => {
+    estop = reading.estop;
   });
 
   // ---------------------------------------------------------------------------
@@ -445,9 +447,9 @@
       why = "Not on your droid. Add it to your build first.";
     } else if (outputs === null && !marker.target) {
       why = "Finding out what drives it.";
-    } else if (estopLatched === null) {
+    } else if (estop === "finding-out") {
       why = "Finding out if the droid is stopped. Open it waits for the answer.";
-    } else if (estopLatched) {
+    } else if (estop === "latched") {
       why = "Estop latched. Nothing moves until it is cleared.";
     } else if (!output && !marker.target) {
       why = "No output mapped. Give it one first.";
@@ -467,7 +469,7 @@
         toggle: {
           shown: !marker.panTilt,
           label: open ? "Close it" : "Open it",
-          enabled: canToggle && isFitted && estopLatched === false,
+          enabled: canToggle && isFitted && estop === "clear",
         },
         fit: {
           shown: fitted !== null,
@@ -695,14 +697,11 @@
     window.DroidBuild?.load()?.then(() => paintBody());
     window.DroidBuild?.onChange?.(() => paintBody());
     paintBody();
-    // The estop gates every act on this page, and it arrives on the status
-    // stream rather than on the bench feed. Subscribed here, below the
-    // definitions it calls, because the stream replays its last frame to a new
-    // subscriber synchronously.
-    window.PAStatusStream?.subscribe((eventType) => {
-      if (eventType !== "status") return;
-      paintBody();
-    });
+    // The estop gates every act on this page, and it arrives on the Live
+    // Reading rather than on the bench feed. Subscribed here, below the
+    // definitions it calls, because the Live Reading hands a new subscriber
+    // the current reading synchronously.
+    window.PALiveReading.subscribe(() => paintBody());
   } else if (!view) {
     console.error("[parts] window.BodyView is missing; /body_view.js did not load");
   }

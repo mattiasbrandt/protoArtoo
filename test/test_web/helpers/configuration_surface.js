@@ -6,7 +6,10 @@
 // Configuration's own chain with guided Setup over it, and a controller that
 // answers GET /api/identity/components row for row from
 // include/component_registry.inc - so a registry row added tomorrow is a card
-// in every suite that uses this, and none of them restates the lineup.
+// in every suite that uses this, and none of them restates the lineup. The
+// droid's live state reaches it the way it reaches every surface: through the
+// shipped status stream into the shipped Live Reading, started as the Operator
+// Shell starts it.
 // =============================================================================
 
 import vm from "node:vm";
@@ -21,6 +24,8 @@ const root = join(__dirname, "../../..");
 const dataDir = join(root, "data");
 
 const SCRIPTS = [
+  "status_stream.js",
+  "live_reading.js",
   "feature_availability.js",
   "product_art.js",
   "apply_timing.js",
@@ -174,7 +179,6 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
       setResourceLabels() {},
       refreshSections() {},
     },
-    PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
     addEventListener() {},
     removeEventListener() {},
     // Recorded, never run by a clock: a test that waited on real time could
@@ -197,6 +201,12 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
   const context = {
     window: windowMock,
     document: documentMock,
+    // A browser has one, so the Live Reading takes the stream rather than a
+    // poll; what it would carry, a test hands to the stream itself.
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
     console: { log() {}, warn() {}, error() {}, info() {} },
     setTimeout: windowMock.setTimeout,
     clearTimeout: windowMock.clearTimeout,
@@ -205,7 +215,11 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
     Event: windowMock.Event,
   };
   context.globalThis = context;
-  for (const file of SCRIPTS) vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
+  for (const file of SCRIPTS) {
+    vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
+    // The Operator Shell starts the Live Reading before any surface runs.
+    if (file === "live_reading.js") windowMock.PALiveReading.start();
+  }
 
   const host = (family) => parsed.querySelector(`[data-component-family="${family}"]`);
   const plate = (family, option) => host(family).querySelector(`[data-option="${option}"]`);

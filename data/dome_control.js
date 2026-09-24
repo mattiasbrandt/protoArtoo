@@ -221,18 +221,16 @@
 
     // The estop holds every servo move a picture of the droid can start
     // (operator, 2026-09-19, #372): a panel press is refused while the estop is
-    // latched, and while the droid has not yet said whether it is, the same
-    // hold the Parts picture keeps. The answer is the session's last status,
-    // which the Operator Shell seeds from its boot read and the stream keeps
-    // current (data/status_stream.js); this page keeps no copy of its own.
+    // latched, and while the droid has not said whether it is -- before its
+    // first frame, and again once contact with it is lost -- the same hold the
+    // Parts picture keeps. The answer is the Live Reading's
+    // (data/live_reading.js); this page keeps no copy of its own.
     // Returns the sentence to say instead, or null when the press may go.
     function estopHold() {
-      const status = window.PAStatusStream?.getLastStatus?.();
-      if (!status || typeof status !== 'object') {
-        return 'Finding out if the droid is stopped. The dome waits for the answer.';
-      }
-      if (status.estop === true) return 'Estop latched. Nothing moves until it is cleared.';
-      return null;
+      const { estop } = window.PALiveReading.current();
+      if (estop === 'clear') return null;
+      if (estop === 'latched') return 'Estop latched. Nothing moves until it is cleared.';
+      return 'Finding out if the droid is stopped. The dome waits for the answer.';
     }
 
     async function togglePanel(elementId, svgElement) {

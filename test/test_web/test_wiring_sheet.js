@@ -263,6 +263,7 @@ const boot = async ({
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
+    "/live_reading.js": readData("live_reading.js"),
     "/droid_parts.js": readData("droid_parts.js"),
     "/outputs.js": readData("outputs.js"),
     "/output_settings.js": readData("output_settings.js"),

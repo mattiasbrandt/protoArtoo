@@ -138,3 +138,64 @@ test("an unsupported schema is tier 3 plus its own warning", async () => {
   assert.equal(model.usesVendoredDrawing, false);
 });
 
+
+// The dome's own layout is worth asking for again only when its link has just
+// come up: the dome link's state is a status field, heard through the Live
+// Reading like every other (#419), and a link that stays up is not asked again
+// on every frame -- each ask is a request to a dome on a shared serial line.
+test("a dome link coming up re-reads the layout once, and a link that stays up does not", async () => {
+  const { statusFrame } = require("./helpers/fake_droid.js");
+  const layoutReads = [];
+  // `window` IS the global in a browser, so the sandbox is its own window and
+  // the shipped files run unmodified.
+  const sandbox = {
+    PAAssetsReady: true,
+    addEventListener() {},
+    localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {} },
+    PAApi: {
+      get: (route) => {
+        layoutReads.push(route);
+        return Promise.resolve({ ok: false, status: 503, data: null });
+      },
+    },
+    DOME_PANEL_MAP_DESIGN: "mk4",
+    DOME_PANEL_MAP_VARIANT: "complex",
+    DomeCommandMap: { resolvePanelCommand: () => null },
+    DroidBuild: seam("mk4", "complex", true),
+    document: { visibilityState: "visible", addEventListener() {} },
+    // A browser has one; it never opens here, and frames reach the Live
+    // Reading the way the Operator Shell's read hands them over.
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
+    console: { warn() {}, error() {}, log() {} },
+    setTimeout,
+    clearTimeout,
+    Promise,
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(read("status_stream.js"), sandbox);
+  vm.runInContext(read("live_reading.js"), sandbox);
+  sandbox.PALiveReading.start();
+  vm.runInContext(read("dome_layout.js"), sandbox);
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const push = (state) => sandbox.PAStatusStream.seed(statusFrame({ dome_link: { state } }));
+
+  push("not_seen");
+  await settle();
+  const before = layoutReads.filter((route) => route === "/api/dome/layout").length;
+
+  push("connected");
+  await settle();
+  push("connected");
+  push("connected");
+  await settle();
+
+  assert.equal(
+    layoutReads.filter((route) => route === "/api/dome/layout").length - before,
+    1,
+    "one layout read when the link came up, and none for the frames after it",
+  );
+});

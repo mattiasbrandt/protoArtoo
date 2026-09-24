@@ -198,48 +198,32 @@ const BOARD_LABELS = {
         }
       }
 
-      // Get running version from status stream (live or cached)
-      let runningFwVersion = "unknown";
-      let runningFsVersion = "unknown";
-      const lastStatus = window.PAStatusStream?.getLastStatus?.();
-      if (lastStatus?.firmwareVersion) {
-        runningFwVersion = String(lastStatus.firmwareVersion);
-      }
-      if (lastStatus?.fsVersion) {
-        runningFsVersion = String(lastStatus.fsVersion);
-      }
-
-      // If no cached status, wait briefly for a status event with bounded timeout
-      if (runningFwVersion === "unknown" && window.PAStatusStream?.isSupported?.()) {
-        try {
-          const statusPromise = new Promise((resolve) => {
-            const unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
-              if (eventType === "status" && payload?.firmwareVersion) {
-                unsubscribe();
-                resolve(payload);
-              }
-            });
-            // Timeout after 3 seconds to avoid indefinite wait
-            setTimeout(() => {
-              unsubscribe();
-              resolve(null);
-            }, 3000);
+      // The running version, from the Live Reading, waiting briefly for a
+      // frame that carries it when none has yet. Bounded, because this
+      // diagnosis must never hold anything up.
+      const firmwareIn = (reading) =>
+        reading.status?.firmwareVersion ? String(reading.status.firmwareVersion) : null;
+      let runningFwVersion = firmwareIn(window.PALiveReading.current());
+      if (runningFwVersion === null) {
+        runningFwVersion = await new Promise((resolve) => {
+          let unsubscribe = null;
+          const timer = setTimeout(() => {
+            unsubscribe();
+            resolve(null);
+          }, 3000);
+          unsubscribe = window.PALiveReading.subscribe((reading) => {
+            const version = firmwareIn(reading);
+            if (version === null || unsubscribe === null) return;
+            clearTimeout(timer);
+            unsubscribe();
+            resolve(version);
           });
-          const status = await statusPromise;
-          if (status?.firmwareVersion) {
-            runningFwVersion = String(status.firmwareVersion);
-          }
-          if (status?.fsVersion) {
-            runningFsVersion = String(status.fsVersion);
-          }
-        } catch (_error) {
-          // Continue with last known values
-        }
+        });
       }
 
       // Determine diagnosis based on version comparison
       let diagMessage = "The Body Controller could not report which features are available.";
-      if (expectedFwVersion !== "unknown" && runningFwVersion !== "unknown") {
+      if (expectedFwVersion !== "unknown" && runningFwVersion !== null) {
         if (expectedFwVersion !== runningFwVersion) {
           diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
         } else {
@@ -811,50 +795,15 @@ const BOARD_LABELS = {
   // One thing on this surface reads the live status rather than the saved
   // configuration: the sound module named beside Audio. The serial lanes and
   // the memory readings that used to share this read are Maintenance's now
-  // (data/maintenance.js), and the LED strip's live color is Lights' (#410),
-  // so this surface asks for the status on its own account while it is the
-  // one on screen (#404).
+  // (data/maintenance.js), and the LED strip's live color is Lights' (#410).
+  // It rides the Live Reading like every surface (data/live_reading.js).
   const s2DriverLabel = document.getElementById("s2-driver-label");
 
-  const renderLiveStatus = (d) => {
+  const renderLiveStatus = (reading) => {
     if (s2DriverLabel) {
-      s2DriverLabel.textContent = d.audio?.driver || "";
+      s2DriverLabel.textContent = reading.status?.audio?.driver || "";
     }
   };
 
-  // Rethrows, so the surface poll below can tell a read that landed from one
-  // that did not (#360). This surface has no status line of its own to say it
-  // on: the poll's report and the shell's "showing what this screen last read"
-  // note say it instead.
-  const refreshLiveStatus = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderLiveStatus(result.data);
-  };
-
-  // SSE-first, with visibility-aware fallback polling.
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderLiveStatus(payload);
-    });
-    // One-shot fetch if SSE hasn't delivered a status frame yet. The stream is
-    // what this surface reads from after it, so a failure is reported rather
-    // than retried here.
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshLiveStatus().catch((error) => {
-        console.warn("[configuration] status read failed:", error);
-      });
-    }
-  } else {
-    // Fallback: poll every 5 s, suspended while the tab is hidden and while the
-    // operator is reading another surface -- the shell stops it on the way out
-    // and starts it again on the way back (ADR 0048, #360). The failed read is
-    // PASurface.poll()'s to report, so that a refresh that never landed does
-    // not take the "showing what this screen last read" note down (#360).
-    window.PASurface.poll(refreshLiveStatus, {
-      cadenceMs: 5000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
-  }
+  window.PALiveReading.subscribe(renderLiveStatus);
 })();

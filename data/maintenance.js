@@ -97,7 +97,7 @@
     return `${hours}h ${minutes}m ${seconds}s`;
   };
 
-  const renderSerialStatus = (d) => {
+  const renderSerialStatus = (d, receivedAt) => {
     // The same four readings as before, on the same four states: what changed
     // is that the light carries the color and the words carry the reading.
     // "off" for a lane that is switched off is the grey CONTEXT.md "Health
@@ -162,53 +162,35 @@
     }
     if (diagHeapLargest) {
       if (!hasLargest) {
-        diagHeapLargest.textContent = "Not reported by this firmware";
+        diagHeapLargest.textContent = window.PALiveReading.UNKNOWN;
       } else {
         const word = heapLargestState === "critical" ? "Fragmented" : heapLargestState === "watch" ? "Watch" : "Good";
         diagHeapLargest.textContent = `${heapLargestKb} KB ${word}`;
       }
       setLight(diagHeapLargestLight, lampForState(heapLargestState));
     }
-    setFeedbackState(serialStatusLine, `Updated ${new Date().toLocaleTimeString()}`, "success");
+    // When the droid sent it, not when it was painted: a lost link repaints
+    // the same frame, and "Updated" must not move with it.
+    setFeedbackState(serialStatusLine, `Updated ${new Date(receivedAt).toLocaleTimeString()}`, "success");
   };
 
-  // Says so on the status line, then rethrows: the surface poll below has to be
-  // able to tell a read that landed from one that did not, and swallowing here
-  // would tell it every read landed (#360).
-  const refreshSerialStatus = async () => {
-    if (!window.PAApi) return;
-    try {
-      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-      renderSerialStatus(result.data);
-    } catch (error) {
-      setFeedbackState(serialStatusLine, "Status unavailable", "error");
-      throw error;
+  // Every reading here rides the Live Reading, which owns the stream or the one
+  // fallback poll for the whole shell (data/live_reading.js). Before the droid
+  // has sent a frame each readout says so in its words; once contact is lost
+  // the values stay, and the status line says they are not being refreshed.
+  const FINDING_OUT_READOUTS = [serialS1, serialS2, serialS3, diagUptime, diagHeapFree, diagHeapMin, diagHeapLargest];
+  const renderReading = (reading) => {
+    if (reading.status === null) {
+      FINDING_OUT_READOUTS.forEach((node) => {
+        if (node) node.textContent = window.PALiveReading.FINDING_OUT;
+      });
+      return;
     }
+    renderSerialStatus(reading.status, reading.receivedAt);
+    if (reading.notHearing === "link") setFeedbackState(serialStatusLine, "Status unavailable", "error");
   };
 
-  // SSE-first serial status updates with visibility-aware fallback polling.
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderSerialStatus(payload);
-    });
-    // One-shot fetch if SSE hasn't delivered a status frame yet. The status
-    // line already carries the failure; the stream is what this page reads
-    // from after it.
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshSerialStatus().catch(() => {});
-    }
-  } else {
-    // Fallback: poll every 5 s, suspended while the tab is hidden and while the
-    // operator is reading another surface -- the shell stops it on the way out
-    // and starts it again on the way back (ADR 0048, #360). The failed read is
-    // PASurface.poll()'s to report, so that a refresh that never landed does
-    // not take the "showing what this screen last read" note down (#360).
-    window.PASurface.poll(refreshSerialStatus, {
-      cadenceMs: 5000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
-  }
+  window.PALiveReading.subscribe(renderReading);
 })();
 
 

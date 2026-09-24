@@ -17,24 +17,18 @@ import assert from "node:assert";
 import { createRequire } from "node:module";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 const require = createRequire(import.meta.url);
 const { createFeatureAvailability } = require("../../data/feature_availability.js");
 
+// Maintenance fed whole frames through the stream and the Live Reading.
 const loadMaintenance = (config = {}, respond = null) => {
-  let deliver = null;
   const env = loadPageModule("maintenance.js", {
     respond: respond || (() => ({ data: config })),
-    overrides: {
-      PAFeatureAvailability: createFeatureAvailability(),
-      PAStatusStream: {
-        isSupported: () => true,
-        subscribe: (handler) => { deliver = handler; return () => {}; },
-        getLastStatus: () => null,
-      },
-    },
+    overrides: { PAFeatureAvailability: createFeatureAvailability() },
   });
-  env.status = (payload) => deliver("status", payload);
+  env.status = (changes) => env.pushStatus(statusFrame(changes));
   return env;
 };
 

@@ -29,6 +29,7 @@ const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part
 const part3Src = bootstrapFile.substring(part3Marker);
 const shellSrc = readData("shell.js");
 const statusStreamSrc = readData("status_stream.js");
+const liveReadingSrc = readData("live_reading.js");
 
 const IDENTITY = {
   droidName: "artoo",
@@ -202,7 +203,7 @@ const boot = async ({ hash = "", stored = null, brokenDoc = null, docDelayMs = 0
 
   // The host appends a <script src> per resource; answer each the way a browser
   // would, and execute the files under test for real.
-  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc };
+  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc, "/live_reading.js": liveReadingSrc };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
     const src = node.src;

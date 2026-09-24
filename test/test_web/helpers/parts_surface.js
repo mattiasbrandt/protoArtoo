@@ -20,10 +20,10 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./mini_dom.js";
-import { servoRow, freshOutputs, withParts, configOutputs, applyOutputSave } from "./fake_droid.js";
+import { servoRow, freshOutputs, withParts, configOutputs, applyOutputSave, statusFrame } from "./fake_droid.js";
 
 // The droid's Outputs are described once, in helpers/fake_droid.js (#415).
-export { freshOutputs, withParts };
+export { freshOutputs, withParts, statusFrame };
 export const output = servoRow;
 
 // mini_dom has no CSSStyleDeclaration, and the position marks are painted
@@ -75,7 +75,10 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // `decoys` is markup placed in the document before the surface mounts: a test
 // that asserts something is gone writes a decoy where it used to be and
 // checks nothing reads or writes it (test/test_web/README.md).
-const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, components = null, decoys = [] } = {}) => {
+// `frame` replaces the whole status the droid answers with, for a test about a
+// frame that is missing something; otherwise the droid answers a whole frame
+// with `estop` set.
+const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, frame = null, components = null, decoys = [] } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -90,11 +93,12 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
     outputs,
     // What the config says about each Output, held so a save lands on it.
     components: components || configOutputs(outputs),
-    status: { estop },
+    status: frame || statusFrame({ estop }),
     posts: [],       // every POST: { path, form }
     gets: new Map(), // GET path -> count
     intervals: [],
     cleared: [],
+    streams: [], // every EventSource the page opened, newest last
     nudgeFails: null, // set to an Error to make the next POST /api/servo fail
     configFails: null, // the same for the next POST /api/config
     centreFails: null, // the same for the next POST /api/servo/centre
@@ -359,7 +363,13 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
         return new MiniDOMParser().parseFromString(html, type);
       }
     },
+    // Recorded, so a test can drop the stream the way the browser reports a
+    // lost connection: through the handler status_stream.js installed.
     EventSource: class {
+      constructor(url) {
+        this.url = url;
+        env.streams.push(this);
+      }
       addEventListener() {}
       close() {}
     },
@@ -377,6 +387,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
+    "/live_reading.js": readData("live_reading.js"),
     "/droid_parts.js": readData("droid_parts.js"),
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/droid_build.js": readData("droid_build.js"),
@@ -504,8 +515,16 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, c
     const button = env.dialButton(className);
     env.dial().fire("click", { target: button });
   };
-  // A status frame on the shared stream, the way /api/events delivers one.
-  env.pushStatus = (frame) => windowMock.PAStatusStream.seed({ ...frame });
+  // A status frame on the shared stream, the way /api/events delivers one: a
+  // whole frame with `changes` on top.
+  env.pushStatus = (changes) => windowMock.PAStatusStream.seed(statusFrame(changes));
+  // The stream drops, the way a browser reports it: the open EventSource's
+  // own error handler, which status_stream.js installed.
+  env.loseStream = () => {
+    const stream = env.streams[env.streams.length - 1];
+    assert.ok(stream?.onerror, "the page opened a status stream");
+    stream.onerror();
+  };
   env.navigate = (to) => {
     windowMock.location.hash = to;
   };

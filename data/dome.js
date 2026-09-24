@@ -30,10 +30,10 @@
   const rndFeedback = document.getElementById("rnd-feedback");
 
   let domeHardwareEnabled = true;
-  // Only WHETHER a status frame has arrived, not what it said about web
+  // Only WHETHER the droid has sent a reading yet, not what it said about web
   // control: this surface has no control web control gates, so the value
-  // itself is the topbar's to report (#348).
-  let webControlStatusKnown = false;
+  // itself is the plate's to report (#348).
+  let statusHeard = false;
 
   const FEEDBACK_BASE_CLASS = "feedback";
 
@@ -127,8 +127,8 @@
 
     if (!domeHardwareEnabled) {
       showFeedback(domeFeedback, "Dome ESC is switched off. Switch it on in Configuration.", "warning");
-    } else if (!webControlStatusKnown) {
-      showFeedback(domeFeedback, "Waiting for live status frame...");
+    } else if (!statusHeard) {
+      showFeedback(domeFeedback, window.PALiveReading.FINDING_OUT);
     } else {
       showFeedback(domeFeedback, "Dome ready.");
     }
@@ -158,8 +158,9 @@
     return clampSpeed(direct);
   };
 
-  const renderStatusFrame = (payload) => {
-    webControlStatusKnown = typeof payload?.webControlEnabled === "boolean";
+  const renderReading = (reading) => {
+    const payload = reading.status;
+    statusHeard = payload !== null;
 
     const statusDomeEnabled = resolveDomeEnabledFromStatus(payload);
     if (typeof statusDomeEnabled === "boolean") {
@@ -280,15 +281,6 @@
     }
   };
 
-  // Failure is the caller's, not this function's: the surface poll below has
-  // to be able to tell a read that landed from one that did not, and a catch
-  // here would tell it every read landed (#360).
-  const refreshStatus = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatusFrame(result.data);
-  };
-
   const validateRndDomeConfig = () => {
     const speedVal = parseEscField(domeRndSpeed, 5, 100, "Speed");
     if (speedVal.error) return { ok: false, error: speedVal.error };
@@ -362,31 +354,9 @@
   domeRndMoveMs?.addEventListener("input", debouncedRndSave);
   reloadRndButton?.addEventListener("click", loadEscConfig);
 
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType !== "status") return;
-      renderStatusFrame(payload);
-    });
-    if (!window.PAStatusStream.getLastStatus()) {
-      // Keep pending/last-known UI state when status is temporarily
-      // unavailable: the stream is what this page reads from, and this one-shot
-      // is only for the gap before its first frame.
-      refreshStatus().catch(() => {});
-    }
-  } else {
-    // Owned by this surface: the shell stops it when the operator leaves Dome
-    // and starts it again on the way back, so a screen nobody is reading is not
-    // competing for the controller's three-client budget (ADR 0048, #360). The
-    // hidden-tab pause and the refresh on returning to the tab are the poll's
-    // own, rather than three hand-rolled pieces at this site. So is the failed
-    // read: PASurface.poll() catches it, which is what keeps a refresh that
-    // never landed from reporting the screen as current (#360).
-    window.PASurface.poll(refreshStatus, {
-      cadenceMs: 5000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
-  }
+  // The dome's live state rides the Live Reading, which owns the stream or the
+  // one fallback poll for the whole shell (data/live_reading.js).
+  window.PALiveReading.subscribe(renderReading);
 
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
@@ -407,6 +377,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/dome.js": "dome control",
       "/footer.js": "page footer",

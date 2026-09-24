@@ -110,7 +110,10 @@
   const tableOutputs = () => OUTPUTS.list().filter((output) => output.fromTable);
   let run = null; // the Find by Moving run in progress, at most one (below)
   let dial = null; // the Output being calibrated, at most one (below)
-  let estopLatched = null; // null until the droid has said
+  // Whether anything may be asked to move: the Live Reading's answer
+  // (data/live_reading.js), false until the droid has said its estop is clear
+  // and whenever contact with it is lost.
+  let moveActsLive = false;
 
   // ---------------------------------------------------------------------------
   // The table: built once per set of Outputs
@@ -1083,11 +1086,12 @@
   };
 
   // Every act that asks the droid to move something is refused while the estop
-  // is latched, and until the droid has said it is not; the shell's own notice
-  // names why. The rows are rebuilt whenever the SET of Outputs changes, so
-  // their buttons are re-gated after each build as well as on each frame.
+  // is latched, until the droid has said it is not, and while contact with it
+  // is lost; the shell's own notice names why. The rows are rebuilt whenever
+  // the SET of Outputs changes, so their buttons are re-gated after each build
+  // as well as on each reading.
   function gateActs() {
-    const live = estopLatched === false;
+    const live = moveActsLive;
     outputRows.forEach((row) => {
       window.PAApi.gateControls([row.calibrate, row.off, ...row.go], live);
     });
@@ -1266,14 +1270,14 @@
     return false;
   });
 
-  // The estop, on the status stream rather than the bench feed. Subscribed
-  // below every definition it calls, because the stream replays its last frame
-  // to a new subscriber synchronously.
-  window.PAStatusStream?.subscribe((eventType, payload) => {
-    if (eventType !== "status" || !payload || typeof payload !== "object") return;
-    estopLatched = payload.estop === true;
+  // The estop, from the Live Reading rather than the bench feed. Subscribed
+  // below every definition it calls, because the Live Reading hands a new
+  // subscriber the current reading synchronously.
+  window.PALiveReading.subscribe((reading) => {
+    moveActsLive = reading.moveActsLive;
     gateActs();
-    if (estopLatched && run !== null) {
+    const latched = reading.estopLatched;
+    if (latched && run !== null) {
       const { partId, address } = run;
       if (address !== null) markNotCurrent(address);
       endRun(`The estop stopped the run. ${partLabel(partId)} stays ${NOT_WIRED}.`, "error");
@@ -1281,7 +1285,7 @@
     // A latched estop has released every enabled Output (ADR 0043), so a dial
     // that was holding one is no longer holding anything, and stops asking.
     // The panel stays open and says so; take it again is the way back.
-    if (payload.estop === true && dial !== null) {
+    if (latched && dial !== null) {
       dial.sweeping = false;
       dial.holding = false;
       stopKeepalive();
@@ -1290,7 +1294,7 @@
     // And it ends a back-to-centre sweep wherever it had got to (#365): no
     // row's commanded mark is current any longer, so each is held back rather
     // than guessed at until the droid answers again.
-    if (payload.estop === true && outputs !== null) {
+    if (latched && outputs !== null) {
       outputs.forEach((output) => markNotCurrent(output.address));
       window.PAUtils.showFeedback(
         centreSaid,
@@ -1325,6 +1329,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/droid_parts.js": "the parts catalog",
       "/droid_part_kind.js": "the parts catalog",

@@ -1481,13 +1481,15 @@
   const subscribeRcEvents = () => {
     if (!window.PAStatusStream?.isSupported()) return false;
 
+    // Whether an RC source is enabled is a status field, read off the Live
+    // Reading like every other (data/live_reading.js). The rc events below
+    // are the stream's own and are read off it directly.
+    window.PALiveReading.subscribe((reading) => {
+      if (reading.status !== null) setRcInputsEnabled(rcEnabledFromStatus(reading.status));
+    });
+
     window.PAStatusStream.subscribe((eventType, payload) => {
       try {
-        if (eventType === 'status') {
-          const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
-          setRcInputsEnabled(rcEnabledFromStatus(data));
-          return;
-        }
         if (eventType !== 'rc') return;
         const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
 
@@ -1697,6 +1699,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/rc.js": "RC control",
       "/footer.js": "page footer",

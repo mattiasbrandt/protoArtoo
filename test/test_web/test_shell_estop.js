@@ -23,6 +23,7 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -35,6 +36,7 @@ const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part
 const part3Src = bootstrapFile.substring(part3Marker);
 const shellSrc = readData("shell.js");
 const statusStreamSrc = readData("status_stream.js");
+const liveReadingSrc = readData("live_reading.js");
 
 const IDENTITY = {
   droidName: "artoo",
@@ -62,7 +64,7 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
     document,
     requests: [],   // every GET path
     posts: [],      // { path, via } -- via names which PAApi method carried it
-    status: { estop, webControlEnabled: true },
+    status: statusFrame({ estop, webControlEnabled: true }),
     statusHangs,
     statusFails,
     estopPostFails,
@@ -199,7 +201,7 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
     close() {}
   };
 
-  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc };
+  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc, "/live_reading.js": liveReadingSrc };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
     const src = node.src;
@@ -296,7 +298,7 @@ test("the estop's liveness follows the droid, not the surface that happens to be
 
   // A status arriving on the shared stream while a surface that knows nothing
   // about the estop is the one on screen.
-  env.window.PAStatusStream.seed({ estop: true });
+  env.window.PAStatusStream.seed(statusFrame({ estop: true }));
   assert.equal(env.estopStateText(), "Estop: latched", "the control repaints wherever the operator is");
 });
 
@@ -356,7 +358,7 @@ test("the session reads status once at boot, and hands it to the stream so nobod
   );
   assert.deepEqual(
     env.window.PAStatusStream.getLastStatus(),
-    { estop: true, webControlEnabled: true },
+    statusFrame({ estop: true, webControlEnabled: true }),
     "and it is the stream that holds it afterwards, so a later consumer is answered rather than fetching again",
   );
 });
@@ -425,11 +427,11 @@ test("the Dashboard's Clear is live when the session's status already says latch
   // stream (ADR 0048). A droid that is already stopped when the operator opens
   // the Dashboard is that read's answer.
   const stream = loadStatusStream();
-  stream.seed({ estop: true, sleepMode: false });
+  stream.seed(statusFrame({ estop: true }));
 
   const calls = [];
   const env = loadPageModule("app.js", {
-    overrides: { PAApi: apiFor(calls, { estop: true }), PAStatusStream: stream },
+    overrides: { PAApi: apiFor(calls, statusFrame({ estop: true })), PAStatusStream: stream },
   });
   await env.settle();
 
@@ -439,12 +441,9 @@ test("the Dashboard's Clear is live when the session's status already says latch
     "the droid is latched and this is one of the two screens that can release it",
   );
 
-  // And nothing was going to repair it later: the fetch that would have found
-  // the latch is skipped precisely because the session already holds a frame,
-  // and the droid pushes a status only when one changes -- which a stopped
-  // droid nobody is touching never does.
-  await env.runSection("app-initial-status", {});
-  await env.settle();
+  // And nothing was going to repair it later: the Dashboard reads no status of
+  // its own, and the droid pushes one only when something changes -- which a
+  // stopped droid nobody is touching never does.
   assert.deepEqual(
     calls.filter((call) => call.path === "/api/status"),
     [],
@@ -454,7 +453,7 @@ test("the Dashboard's Clear is live when the session's status already says latch
 
 test("the Dashboard keeps the release, and its button is dead while there is no latch to release", async () => {
   const calls = [];
-  const status = { estop: false };
+  const status = statusFrame();
   const env = loadPageModule("app.js", { overrides: { PAApi: apiFor(calls, status) } });
   const button = env.element("estop-clear");
 
@@ -469,9 +468,9 @@ test("the Dashboard keeps the release, and its button is dead while there is no 
   await env.settle();
   assert.deepEqual(calls, [], "and pressing it asks the droid for nothing");
 
-  // The droid says it is latched.
+  // The droid says it is latched, in the answer to the session's status read.
   status.estop = true;
-  await env.runSection("app-initial-status", {});
+  await env.window.PALiveReading.read();
   await env.settle();
   assert.equal(button.disabled, false, "now there is something to release");
 
@@ -488,92 +487,59 @@ test("the Dashboard keeps the release, and its button is dead while there is no 
 // ---------------------------------------------------------------------------
 // Part 2b: one place decides a latch
 //
-// Wave 1 answered "is it latched" four different ways. #346 put the decision
-// in data/shell.js and could not reach the last two readers -- Foot Drive's
-// `!!payload.estop` and the Dashboard's truthy read -- because data/app.js was
-// fenced to this ticket. They read the shell's answer now.
+// Wave 1 answered "is it latched" four different ways -- `=== true` on the
+// plate, `!!payload.estop` in the chrome and on Foot Drive, a truthy read on
+// the Dashboard -- and #346 could only publish the shell's answer beside them.
+// The Live Reading decides it now, for the chrome and every surface (#419).
 // ---------------------------------------------------------------------------
 
-// Frames that tell `=== true` apart from truthiness, which is the whole point
-// of asking once: a field that did not arrive, or arrived as something other
-// than a boolean, must not answer this question at all (#346).
+// Frames that tell `=== true` apart from truthiness: a field that arrived as
+// something other than a boolean must not read as a latch, and a frame that
+// never mentioned the estop is not a reading at all (#346).
 const LATCH_FRAMES = [
-  { frame: { estop: true }, latched: true },
-  { frame: { estop: false }, latched: false },
-  { frame: { estop: 1 }, latched: false },
-  { frame: { estop: "true" }, latched: false },
-  { frame: { estop: null }, latched: false },
-  { frame: {}, latched: false },
+  { frame: (() => { const frame = statusFrame(); delete frame.estop; return frame; })(), says: "Estop: finding out" },
+  { frame: statusFrame({ estop: true }), says: "Estop: latched" },
+  { frame: statusFrame({ estop: false }), says: "Estop: clear" },
+  { frame: statusFrame({ estop: 1 }), says: "Estop: clear" },
+  { frame: statusFrame({ estop: "true" }), says: "Estop: clear" },
+  { frame: statusFrame({ estop: null }), says: "Estop: clear" },
 ];
 
-test("the shell publishes the latch decision, and it is the one it uses itself", async () => {
-  const env = await boot({ estop: true });
-  const isLatched = env.window.PAEstop?.isLatched;
+test("the chrome reads a latch only from a whole frame, and only from `true`", async () => {
+  const env = await boot({ statusHangs: true });
 
-  assert.equal(typeof isLatched, "function", "a surface cannot read a decision the shell keeps to itself");
-  for (const { frame, latched } of LATCH_FRAMES) {
-    assert.equal(
-      isLatched(frame),
-      latched,
-      `${JSON.stringify(frame)} must read ${latched ? "latched" : "not latched"}`,
-    );
-  }
-
-  // And the chrome's own state line agrees with it, so "published" is the same
-  // answer the shell acts on rather than a second one beside it.
-  assert.equal(env.estopStateText(), "Estop: latched");
-});
-
-test("the harness's copy of that decision is the shipped one, frame for frame", async () => {
-  const env = await boot();
-  const shipped = env.window.PAEstop.isLatched;
-  // What loadPageModule() hands a surface running on its own. A surface always
-  // runs inside the shell in the product, so this stub stands in for the shell
-  // -- and a stub that answered differently would let a reader pass here and
-  // decide a latch its own way on a droid.
-  const harness = loadPageModule("app.js").window.PAEstop.isLatched;
-
-  for (const { frame } of LATCH_FRAMES) {
-    assert.equal(
-      harness(frame),
-      shipped(frame),
-      `${JSON.stringify(frame)}: the harness and data/shell.js must answer the same`,
-    );
+  for (const { frame, says } of LATCH_FRAMES) {
+    env.window.PAStatusStream.seed(frame);
+    assert.equal(env.estopStateText(), says, `${JSON.stringify(frame)} must read "${says}"`);
   }
 });
 
-test("Foot Drive and the Dashboard read that decision instead of the field", async () => {
-  // A stand-in that answers the OPPOSITE of the field it is handed. A reader
-  // that still decides for itself cannot follow it, so `!!payload.estop` and a
-  // truthy read both fail here while a call to the shell's answer passes. The
-  // droid says LATCHED and the decision says clear, so a Clear button that
-  // follows the decision is the disabled one.
-  const inverted = { isLatched: (status) => !status.estop };
-  const latched = { estop: true, sleepMode: false };
+test("Foot Drive and the Dashboard follow the Live Reading, not the field", async () => {
+  // The frame the droid last sent says LATCHED, and then the droid stops
+  // answering. A reader deciding from the field would keep offering Clear; the
+  // Live Reading says nobody knows the estop any more, so neither may.
+  const latched = statusFrame({ estop: true });
+  for (const [file, button] of [["app.js", "estop-clear"], ["drive.js", "clear-estop-button"]]) {
+    let answering = true;
+    const env = loadPageModule(file, {
+      respond: (path) => {
+        if (path === "/api/status" && !answering) throw new Error("no response from the droid");
+        return { data: path === "/api/status" ? latched : {} };
+      },
+    });
+    await env.window.PALiveReading.read();
+    await env.settle();
+    assert.equal(env.element(button).disabled, false, `${file}: a heard latch offers its release`);
 
-  const dashboardStream = loadStatusStream();
-  dashboardStream.seed(latched);
-  const dashboard = loadPageModule("app.js", {
-    overrides: { PAApi: apiFor([], latched), PAStatusStream: dashboardStream, PAEstop: inverted },
-  });
-  await dashboard.settle();
-  assert.equal(
-    dashboard.element("estop-clear").disabled,
-    true,
-    "the Dashboard followed the shell's answer, not the estop field",
-  );
-
-  const driveStream = loadStatusStream();
-  driveStream.seed(latched);
-  const drive = loadPageModule("drive.js", {
-    overrides: { PAApi: apiFor([], latched), PAStatusStream: driveStream, PAEstop: inverted },
-  });
-  await drive.settle();
-  assert.equal(
-    drive.element("clear-estop-button").disabled,
-    true,
-    "and so did Foot Drive",
-  );
+    answering = false;
+    env.intervals.forEach((timer) => timer.fn());
+    await env.settle();
+    assert.equal(
+      env.element(button).disabled,
+      true,
+      `${file}: once contact is lost the latch is not known, whatever the last frame said`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -612,7 +578,7 @@ test("the sleep overlay does not paint over the one control it says stays active
 
 test("Drive keeps the release, sends it off the request queue, and no longer latches", async () => {
   const calls = [];
-  const env = loadPageModule("drive.js", { overrides: { PAApi: apiFor(calls, { estop: true }) } });
+  const env = loadPageModule("drive.js", { overrides: { PAApi: apiFor(calls, statusFrame({ estop: true })) } });
 
   assert.throws(
     () => env.emitOn("estop-button", "click"),

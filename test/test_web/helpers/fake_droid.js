@@ -27,6 +27,23 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../../data");
 
 /**
+ * A status frame as GET /api/status and the status stream carry one. The six
+ * core fields come from the first unconditional chunk of buildStatusJson()
+ * (src/web/web_server.cpp), so a real frame has all of them or none, and the
+ * Live Reading ignores a frame missing one (data/live_reading.js). `changes`
+ * lands on top.
+ */
+export const statusFrame = (changes = {}) => ({
+  estop: false,
+  sbusHwFailsafe: false,
+  sbusSignalLost: false,
+  webDriveExpired: false,
+  webControlEnabled: false,
+  sleepMode: false,
+  ...changes,
+});
+
+/**
  * One Servo Output row as GET /api/servo/outputs answers it
  * (src/web/api_config.cpp handleServoOutputsGet(), docs/api.md). A fresh row
  * is unmeasured, with the band's own ends standing in for a calibration nobody

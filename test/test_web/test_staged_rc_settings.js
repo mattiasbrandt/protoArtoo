@@ -95,11 +95,6 @@ const loadInteractiveModule = (files, respond) => {
     // data/page_bootstrap.js publishes window.PASurface in the browser; this
     // context hand-rolls its globals, so it has to carry it too (#360).
     PASurface: { poll: () => ({ start() {}, stop() {}, cancelRetry() {} }) },
-    PAStatusStream: {
-      isSupported: () => false,
-      subscribe() {},
-      getLastStatus: () => null,
-    },
     PA_HEAP: {},
     setTimeout: (fn, ms) => {
       const id = timers.length + 1;
@@ -164,11 +159,14 @@ const loadInteractiveModule = (files, respond) => {
     isNaN,
   };
   context.globalThis = context;
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream"]) {
+  for (const key of ["PAApi", "PAUtils", "PABootstrap"]) {
     context[key] = windowMock[key];
   }
-  for (const file of Array.isArray(files) ? files : [files]) {
+  // Every document loads the status stream and the Live Reading ahead of a
+  // surface, and the Operator Shell starts the reading before any surface runs.
+  for (const file of ["status_stream.js", "live_reading.js", ...(Array.isArray(files) ? files : [files])]) {
     vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+    if (file === "live_reading.js") windowMock.PALiveReading.start();
   }
 
   const settle = async () => {

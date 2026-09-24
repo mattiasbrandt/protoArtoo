@@ -2,112 +2,53 @@
 // data/footer.js
 //
 // Footer metadata controller.
-// Shows firmware + web bundle version only.
-// Prefers SSE status stream; falls back to periodic API fetch when needed.
+// Shows firmware + web bundle version only, from the Live Reading
+// (data/live_reading.js), which owns the stream or the one fallback poll for
+// the whole shell. The footer asks the droid for nothing of its own (#419).
 // =============================================================================
 (() => {
   const footer = document.getElementById("fw-meta");
   if (!footer) return;
 
-  let fsVersion = "unknown";
-  let unsubscribe = null;
-  let hasRealData = false;
-  let versionPoll = null;
-  let retryPoll = null;
+  // The web bundle's own version, read from the file that ships with it, for
+  // a firmware that does not report one in its status. null until it is read.
+  let bundleVersion = null;
+  let reading = window.PALiveReading.current();
 
-  const renderFooter = (status) => {
-    if (!status) {
-      footer.textContent = "Firmware info unavailable";
-      hasRealData = false;
-      return;
-    }
-
-    const fw = String(status.firmwareVersion || "unknown");
-    const apiFsVersion = String(status.fsVersion || "unknown");
-    const resolvedWeb = apiFsVersion !== "unknown" ? apiFsVersion : fsVersion;
-
-    footer.innerHTML =
-      `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
-      `FS: <span class="mono">${window.PAUtils.escapeHtml(resolvedWeb)}</span>`;
-    hasRealData = true;
+  // A version the frame carries, or the Live Reading's word for one it does
+  // not: Finding out before the droid has sent a frame, Unknown after.
+  const versionOf = (field) => {
+    const value = reading.status?.[field];
+    if (value) return String(value);
+    return reading.word(field) || window.PALiveReading.UNKNOWN;
   };
 
-  const loadFsVersion = async () => {
+  const renderFooter = () => {
+    const fw = versionOf("firmwareVersion");
+    const web = reading.status?.fsVersion ? String(reading.status.fsVersion) : bundleVersion || versionOf("fsVersion");
+    footer.innerHTML =
+      `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
+      `FS: <span class="mono">${window.PAUtils.escapeHtml(web)}</span>`;
+  };
+
+  const loadBundleVersion = async () => {
     if (!window.PAApi) return;
     try {
       const result = await window.PAApi.get("/fs-version.json", { timeoutMs: 2500, cache: "no-store" });
       if (result.data && typeof result.data === "object" && result.data.fsVersion) {
-        fsVersion = String(result.data.fsVersion);
+        bundleVersion = String(result.data.fsVersion);
+        renderFooter();
       }
-    } catch (_error) {
-      // ignore: fetch error - keep fallback fsVersion value
-    }
-  };
-
-  const fetchStatus = async () => {
-    if (!window.PAApi) {
-      footer.textContent = "Firmware info unavailable";
-      hasRealData = false;
-      return false;
-    }
-    try {
-      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
-      renderFooter(result.data);
-      return true;
     } catch (error) {
-      // fetch timeout/error - log and show unavailable message
-      console.warn("[footer] failed to fetch status:", error?.message || error);
-      footer.textContent = "Firmware info unavailable";
-      hasRealData = false;
-      return false;
+      // The status frame's own fsVersion still answers; this file is only the
+      // fallback for a firmware that sends none.
+      console.warn("[footer] /fs-version.json unavailable:", error?.message || error);
     }
   };
 
-  const init = async () => {
-    await loadFsVersion();
-
-    if (window.PAStatusStream?.isSupported()) {
-      // SSE mode: subscribe and set up conditional polling
-      unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
-        if (eventType === "status") {
-          renderFooter(payload);
-          // Status arrived: cancel any pending retry
-          retryPoll?.cancelRetry();
-        }
-      });
-
-      // Start retry poll only if no cached status
-      if (!window.PAStatusStream.getLastStatus()) {
-        retryPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
-          retry: { baseMs: 500, factor: 2, maxAttempts: 3 },
-          runOnStart: true,
-        });
-        retryPoll.start();
-      }
-
-      // Version poll: conditional, only while no real data
-      versionPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
-        cadenceMs: 5000,
-        skipWhen: () => hasRealData,
-        refreshOnReturn: true,
-      });
-      versionPoll.start();
-    } else {
-      // Fallback mode: no SSE, poll for everything
-      versionPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
-        cadenceMs: 5000,
-        runOnStart: true,
-        refreshOnReturn: true,
-      });
-      versionPoll.start();
-    }
-
-    window.addEventListener("beforeunload", () => {
-      if (unsubscribe) unsubscribe();
-      if (versionPoll) versionPoll.stop();
-      if (retryPoll) retryPoll.stop();
-    });
-  };
-
-  init();
+  window.PALiveReading.subscribe((next) => {
+    reading = next;
+    renderFooter();
+  });
+  loadBundleVersion();
 })();

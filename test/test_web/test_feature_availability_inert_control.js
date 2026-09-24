@@ -111,7 +111,6 @@ const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {})
       registerSection: (name, load, opts = {}) => sections.set(name, { load, opts }),
       setResourceLabels() {},
     },
-    PAStatusStream: { isSupported: () => false, getLastStatus: () => null, subscribe() {} },
     PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
     // data/page_bootstrap.js publishes window.PASurface in the browser; this
     // context hand-rolls its globals, so it has to carry it too (#360).
@@ -182,10 +181,13 @@ const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {})
     RegExp,
   };
   context.globalThis = context;
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream", "PageBootstrap"]) {
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PageBootstrap"]) {
     context[key] = windowMock[key];
   }
-  vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
+  // The shell's own chain: the status stream and the Live Reading it starts.
+  for (const file of ["status_stream.js", "live_reading.js", "shell.js"]) {
+    vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  }
   element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   for (const file of ["feature_availability.js", "apply_timing.js", "configuration.js", "maintenance.js"]) {
     vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });

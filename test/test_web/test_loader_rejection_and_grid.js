@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
-import { outputsModule } from "./helpers/fake_droid.js";
+import { outputsModule, statusFrame } from "./helpers/fake_droid.js";
 
 const OK_LOGS = "boot: ready\nwifi: connected";
 const OK_CONFIG = { system: { logLevel: 2 } };
@@ -34,8 +34,7 @@ const OK_OPERATIONS = {
 };
 
 // Brings the home dashboard up with a controllable transport and status stream.
-const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
-  const stream = { subscriber: null };
+const loadDashboard = async ({ respond } = {}) => {
   let env = null;
   env = loadPageModule("app.js", {
     respond,
@@ -43,20 +42,10 @@ const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
       // The log level's config read goes through the shipped data/outputs.js
       // the Dashboard page loads first (#415).
       PAOutputs: outputsModule(() => env.window.PAApi),
-      PAStatusStream: {
-        isSupported: () => sseSupported,
-        getLastStatus: () => null,
-        subscribe: (handler) => {
-          stream.subscriber = handler;
-          return () => {
-            stream.subscriber = null;
-          };
-        },
-      },
     },
   });
   await env.settle();
-  return { ...env, stream };
+  return env;
 };
 
 // The default transport: every endpoint answers successfully.
@@ -131,11 +120,10 @@ test("A console operations response without a records array is rejected", async 
 // #109: the component grid
 // -----------------------------------------------------------------------------
 
-// Delivers a status payload the way the live stream does, which is what drives
-// renderComponentStatus.
-const pushStatus = (env, payload) => {
-  assert.ok(env.stream.subscriber, "the dashboard must subscribe to the status stream");
-  env.stream.subscriber("status", payload);
+// Delivers a whole status frame through the stream and the Live Reading, which
+// is what drives renderComponentStatus.
+const pushStatus = (env, changes) => {
+  env.pushStatus(statusFrame(changes));
   return env.element("component-status-grid").innerHTML;
 };
 

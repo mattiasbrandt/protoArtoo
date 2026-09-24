@@ -26,6 +26,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 // AUDIO_CAP_* bits, from include/audio_driver.h.
 const CAP_STATUS_QUERY = 0x01;
@@ -144,13 +145,10 @@ test("a module with no status query at all loses the Total tracks row too", asyn
 test("with sound switched off the page says so, naming the module that was picked", async () => {
   const offLine = "MP3 Trigger picked \u00b7 sound is off";
   const env = loadPageModule("sound.js", {
-    respond: (path) =>
-      path === "/api/status"
-        ? { data: { audio: { state: "off", detail: offLine, driver: "MP3 Trigger", output: "off", link_ok: false } } }
-        : { data: audioStatus(CAP_STATUS_QUERY, { driver: "MP3 Trigger", output: "off", link_ok: false }) },
-    // A stream that has not delivered yet, so the page reads the status once.
-    overrides: { PAStatusStream: { isSupported: () => true, subscribe: () => () => {}, getLastStatus: () => null } },
+    respond: () => ({ data: audioStatus(CAP_STATUS_QUERY, { driver: "MP3 Trigger", output: "off", link_ok: false }) }),
   });
+  // The droid's status, as the Live Reading hands it to the page.
+  env.pushStatus(statusFrame({ audio: { state: "off", detail: offLine, driver: "MP3 Trigger", output: "off", link_ok: false } }));
   await env.settle();
 
   const badge = env.element("sound-state-badge");

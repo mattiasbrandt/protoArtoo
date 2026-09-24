@@ -296,8 +296,11 @@ const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = 
   context.globalThis = context;
   for (const key of ["PABootstrap", "PageBootstrap"]) context[key] = windowMock[key];
 
-  for (const file of SURFACES[surface].scripts) {
+  // Every document loads the status stream and the Live Reading ahead of a
+  // surface, and the Operator Shell starts the reading before any surface runs.
+  for (const file of ["status_stream.js", "live_reading.js", ...SURFACES[surface].scripts]) {
     vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
+    if (file === "live_reading.js") windowMock.PALiveReading.start();
   }
 
   const id = (name) => parsed.getElementById(name);

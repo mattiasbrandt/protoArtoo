@@ -543,11 +543,11 @@
   // True while a surface has polling that stopped when the operator left it and
   // has not answered since.
   //
-  // It answers for a SURFACE, not for one poll of it: Sound owns two (the
-  // status fallback and the audio module's own) and Maintenance owns two (the
-  // serial fallback and the memory profiler). A surface is current only when
-  // everything it asks for has answered, so one poll of two is not an answer
-  // from the surface (#360).
+  // It answers for a SURFACE, not for one poll of it: a surface may own more
+  // than one -- Sound and Maintenance each owned two until the droid's status
+  // moved to the Live Reading's one shell-wide poll (#419). A surface is
+  // current only when everything it asks for has answered, so one poll of two
+  // is not an answer from the surface (#360).
   //
   // Only polling the surface still WANTS counts. A poll the surface turned off
   // itself -- the way the memory profiler does when the manifest says it is not
@@ -575,10 +575,11 @@
     if (!entry.stale) return;
     entry.stale = false;
     // The note belongs to the surface, so it comes down only when the surface
-    // has answered -- every poll it still wants. Sound's status read landing
-    // while its audio module has answered nothing is not Sound answering, and
-    // taking the note down there says current over values that are not: the
-    // same untruth, in the same direction, as the swallow above (#360).
+    // has answered -- every poll it still wants. One poll landing while
+    // another the surface still wants has answered nothing is not the surface
+    // answering, and taking the note down there says current over values that
+    // are not: the same untruth, in the same direction, as the swallow above
+    // (#360).
     if (surfaceIsStale(entry.owner)) return;
     if (typeof window.dispatchEvent !== "function") return;
     window.dispatchEvent(new CustomEvent("pa:surface-fresh", { detail: { surface: entry.owner } }));

@@ -2,9 +2,10 @@
 // test/test_web/helpers/lights_surface.js
 //
 // Lights as the browser runs it: data/lights.html, its own script chain, and a
-// controller that answers the three reads the surface makes - GET /api/config,
-// GET /api/servo/outputs and GET /api/status - plus the status stream it
-// subscribes to.
+// controller that answers the two reads the surface makes - GET /api/config and
+// GET /api/servo/outputs. What the strips are showing reaches it the way it
+// reaches every surface: a status frame through the shipped status stream into
+// the shipped Live Reading, started the way the Operator Shell starts it.
 //
 // The droid it answers with is deliberately NOT the bench's: the Outputs carry
 // labels and addresses that follow no pattern, so a suite asking "does this
@@ -22,13 +23,15 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
-import { servoRow, configOutputs, applyOutputSave } from "./fake_droid.js";
+import { servoRow, configOutputs, applyOutputSave, statusFrame } from "./fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
 const dataDir = join(root, "data");
 
 const SCRIPTS = [
+  "status_stream.js",
+  "live_reading.js",
   "droid_parts.js",
   "droid_part_kind.js",
   "droid_build.js",
@@ -74,7 +77,7 @@ export const droid = () => {
     },
     outputs,
     idOf,
-    status: { lights: { [idOf("ledc:9")]: { r: 0, g: 90, b: 255, effect: "solid", available: true } } },
+    status: statusFrame({ lights: { [idOf("ledc:9")]: { r: 0, g: 90, b: 255, effect: "solid", available: true } } }),
   };
 };
 
@@ -100,8 +103,6 @@ export const boot = ({ answer = droid() } = {}) => {
   const posts = [];
   const sections = new Map();
   const timers = [];
-  let streamListener = null;
-  let lastStatus = answer.status;
 
   const documentMock = {
     documentElement: parsed.documentElement,
@@ -132,7 +133,6 @@ export const boot = ({ answer = droid() } = {}) => {
       get: async (path) => {
         if (path === "/api/config") return { ok: true, data: answer.config };
         if (path === "/api/servo/outputs") return { ok: true, data: { outputs: answer.outputs } };
-        if (path === "/api/status") return { ok: true, data: lastStatus };
         throw new Error(`unexpected GET ${path}`);
       },
       postForm: async (path, body) => {
@@ -145,17 +145,6 @@ export const boot = ({ answer = droid() } = {}) => {
       registerSection: (name, load) => sections.set(name, load),
       setResourceLabels() {},
     },
-    PAStatusStream: {
-      isSupported: () => true,
-      getLastStatus: () => lastStatus,
-      subscribe: (listener) => {
-        streamListener = listener;
-        return () => {
-          streamListener = null;
-        };
-      },
-    },
-    PASurface: { poll: () => ({ start() {}, stop() {} }) },
     getComputedStyle: () => ({ getPropertyValue: (name) => tokens.get(name) || "" }),
     addEventListener() {},
     // Recorded, never run by a clock: a test that waited on real time could
@@ -177,6 +166,12 @@ export const boot = ({ answer = droid() } = {}) => {
   const context = {
     window: windowMock,
     document: documentMock,
+    // A browser has one, so the Live Reading takes the stream rather than a
+    // poll. It never opens: the assets are never announced ready here.
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
     getComputedStyle: windowMock.getComputedStyle,
     console: { log() {}, warn() {}, error() {}, info() {} },
     setTimeout: windowMock.setTimeout,
@@ -187,6 +182,12 @@ export const boot = ({ answer = droid() } = {}) => {
   context.globalThis = context;
   for (const file of SCRIPTS) {
     vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
+    // The Operator Shell starts the Live Reading before any surface runs, and
+    // its boot read hands the droid's first frame to the stream.
+    if (file === "live_reading.js") {
+      windowMock.PALiveReading.start();
+      if (answer.status) windowMock.PAStatusStream.seed(answer.status);
+    }
   }
 
   const settle = async () => {
@@ -201,11 +202,9 @@ export const boot = ({ answer = droid() } = {}) => {
     settle,
     // Everything the surface registered with the bootstrap, as it runs them.
     runSections: () => Promise.all([...sections.values()].map((load) => load())),
-    // A status frame arriving on the stream the surface subscribed to.
-    pushStatus: (status) => {
-      lastStatus = status;
-      streamListener?.("status", status);
-    },
+    // A status frame arriving on the stream: a whole frame with `changes` on
+    // top, through the shipped stream and Live Reading.
+    pushStatus: (changes) => windowMock.PAStatusStream.seed(statusFrame(changes)),
     // The settles the surface asked for, run when a test wants them.
     flushTimers: () => {
       const due = timers.splice(0, timers.length);

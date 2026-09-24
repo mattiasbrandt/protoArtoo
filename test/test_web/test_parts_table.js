@@ -223,6 +223,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
+    "/live_reading.js": readData("live_reading.js"),
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
