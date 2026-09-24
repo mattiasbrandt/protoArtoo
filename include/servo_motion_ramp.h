@@ -108,10 +108,14 @@ struct ServoMotionRamp {
 // the travel -- a shorter one would read as a wobble rather than as weight --
 // and clamped to the recorded ends, which is the whole fence (ADR 0052). A
 // target already at or outside an end has no room past it, so it gets no aim
-// rather than one pointing back the way the move came.
+// rather than one pointing back the way the move came, or one clamped onto the
+// nearer end past a target the calibration dial left outside the ends (#417).
 // -----------------------------------------------------------------------------
 inline uint16_t servoMotionOvershootAim(uint16_t fromUs, uint16_t toUs, uint16_t loUs,
                                         uint16_t hiUs) {
+    if (toUs <= loUs || toUs >= hiUs) {
+        return toUs;
+    }
     const int32_t delta = (int32_t)toUs - (int32_t)fromUs;
     const int32_t distance = delta < 0 ? -delta : delta;
     if (hiUs <= loUs || distance <= (int32_t)(hiUs - loUs) / 8) {
