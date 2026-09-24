@@ -653,6 +653,21 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 if (centreRun.active && centreRun.kind == SEQ_BULK_CENTRE_BOOT) {
                     PA_LOG_INFO(TAG, "boot pass ended - back to centre took over");
                 }
+                // A running sequence ends here, the way a web stop ends one: a
+                // sequence starting ends a sweep for the same reason (above),
+                // and whichever came later is the operator's word. Left
+                // running, its body steps and the sweep's rows would be
+                // dispatched together - the many-at-once shape the Cadence
+                // Floor exists to keep apart.
+                if (seqEngineActive(engine)) {
+                    PA_LOG_INFO(TAG, "abort %s (back to centre)", activeName);
+                    seqEngineAbort(engine);
+                    drainBestEffort(engine, now);  // dome and audio resets, never a body move
+                    seqEvidenceEnd(SEQ_RUN_ABORTED, "back to centre", now, bodyQueueFullCount());
+                    seqStoreReleaseRun();  // reclaim any Learned-run buffers
+                    clearSuppression();
+                    activeName[0] = '\0';
+                }
                 sequenceBulkCentreStart(&centreRun, now, (uint8_t)centreSrc);
                 // Rows, not outputs going back: how many of them have anything
                 // to centre is only known row by row, and the line at the end
