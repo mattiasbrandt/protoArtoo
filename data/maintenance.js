@@ -246,8 +246,12 @@
     downloadBtn.disabled = true;
     setFeedback('Downloading settings...');
     try {
-      const [configRes, rcMapRes, tracksRes, moodMapRes, fwRes] = await Promise.allSettled([
+      // The Outputs' centre, `calibrated` and Part map are on
+      // /api/servo/outputs, not /api/config (ADR 0056 puts them in the
+      // Configuration group all the same), so a backup carries both (#417).
+      const [configRes, servoOutputsRes, rcMapRes, tracksRes, moodMapRes, fwRes] = await Promise.allSettled([
         window.PAApi.get('/api/config', { timeoutMs: 10000 }),
+        window.PAApi.get('/api/servo/outputs', { timeoutMs: 10000 }),
         window.PAApi.get('/api/rc/map', { timeoutMs: 10000 }),
         window.PAApi.get('/api/audio/tracks', { timeoutMs: 10000 }),
         window.PAApi.get('/api/audio/mood-map', { timeoutMs: 10000 }),
@@ -262,6 +266,7 @@
       };
 
       const config = extract(configRes, 'config');
+      const servo_outputs = extract(servoOutputsRes, 'servo_outputs');
       const rc_map = extract(rcMapRes, 'rc_map');
       const audio_tracks = extract(tracksRes, 'audio_tracks');
       const audio_mood_map = extract(moodMapRes, 'audio_mood_map');
@@ -279,6 +284,7 @@
         generated: new Date().toISOString(),
         fw_version,
         config,
+        servo_outputs,
         rc_map,
         audio_tracks,
         audio_mood_map,
@@ -337,6 +343,87 @@
       if (Object.keys(patch).length > 0) changes[output.address] = patch;
     });
     return changes;
+  };
+
+  // ---- RESTORE: centre, `calibrated` and the Part map (#417) ----
+  // The typed save above writes the ends and nothing that says a human measured
+  // them, and it moves an unmeasured centre to the midpoint. So the rows the
+  // file says were measured get their centre CAPTURED back - a capture is the
+  // one write that sets `calibrated`, records a number and commands no motion -
+  // and only those: capturing an unmeasured row would claim a measurement
+  // nobody made. One POST per Output, since the apply takes one capture.
+  //
+  // The Part map REPLACES what the droid has (ADR 0056), against a fresh read:
+  // every Part the file puts somewhere else, or nowhere, comes off first, and
+  // only then does each Part go onto the Output the file names. Freeing first
+  // is what keeps a destination from being full of Parts that are leaving it.
+  //
+  // Returns what did not land, in a few words each; empty when it all did.
+  const restoreServoOutputs = async (saved) => {
+    const gaps = [];
+    let fresh;
+    try {
+      const res = await window.PAApi.get('/api/servo/outputs', { timeoutMs: 10000 });
+      fresh = Array.isArray(res.data?.outputs) ? res.data.outputs : null;
+    } catch {
+      fresh = null;
+    }
+    if (fresh === null) return ['centre, calibration and Part map'];
+
+    const live = new Map(fresh.map((row) => [row.address, row]));
+    const nameOf = (address) => live.get(address)?.name || address;
+    const rows = saved.filter((row) => row && typeof row.address === 'string');
+
+    for (const row of rows) {
+      const here = live.get(row.address);
+      const partsOn = Array.isArray(row.parts) ? row.parts : [];
+      if (!here) {
+        if (row.calibrated === true || partsOn.length > 0) gaps.push(`${row.name || row.address} not on this droid`);
+        continue;
+      }
+      if (row.calibrated === true) {
+        try {
+          await window.PAApi.postForm('/api/config',
+            { captureOutput: row.address, captureEnd: 'centre', captureUs: String(row.centreUs) },
+            { timeoutMs: 5000 });
+        } catch {
+          gaps.push(`${nameOf(row.address)} centre`);
+        }
+      } else if (here.calibrated === true) {
+        // Nothing clears `calibrated` but a new row, so a measured Output the
+        // file says was not measured stays measured, and the receipt says so.
+        gaps.push(`${nameOf(row.address)} still marked measured`);
+      }
+    }
+
+    const want = new Map();
+    rows.forEach((row) => {
+      if (!live.has(row.address) || !Array.isArray(row.parts)) return;
+      row.parts.forEach((part) => want.set(part, row.address));
+    });
+    const where = new Map();
+    fresh.forEach((row) => (row.parts || []).forEach((part) => where.set(part, row.address)));
+    const move = async (part, to) => {
+      const from = where.get(part) || 'none';
+      try {
+        await window.PAApi.postForm('/api/config',
+          { movePart: part, movePartFrom: from, movePartTo: to }, { timeoutMs: 5000 });
+        if (to === 'none') where.delete(part);
+        else where.set(part, to);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (const [part, address] of Array.from(where)) {
+      if (want.get(part) !== address && !(await move(part, 'none'))) gaps.push(`part ${part}`);
+    }
+    for (const [part, address] of want) {
+      if (where.get(part) !== address && !(await move(part, address)) && !gaps.includes(`part ${part}`)) {
+        gaps.push(`part ${part}`);
+      }
+    }
+    return gaps;
   };
 
   // ---- RESTORE: flatten GET /api/config nested JSON to POST form params ----
@@ -441,31 +528,50 @@
 
   // ---- RESTORE: audio tracks (one POST per key) ----
   const TRACKS_SKIP = new Set(['volume', 'chirp_bindings', 'chirp_category_bindings']);
+  // A category's lo/hi pair, which only /api/audio/category-range writes
+  // together with its CHIRP bank and page. A plain track post would leave the
+  // bank and page behind (#417).
+  const isCategoryKey = (key) => key.startsWith('snd_cat_');
 
   const restoreAudioTracks = async (tracks) => {
     const failed = [];
     for (const [key, value] of Object.entries(tracks)) {
-      if (TRACKS_SKIP.has(key) || typeof value !== 'number') continue;
+      if (TRACKS_SKIP.has(key) || isCategoryKey(key) || typeof value !== 'number') continue;
+      // A banked slot goes back banked or it has failed. Falling back to a
+      // plain track would write 0 to its binding and still read as restored.
       const chirp = tracks.chirp_bindings?.[key];
+      const fields = chirp
+        ? { key, track: chirp.index, bank: chirp.bank, page: chirp.page }
+        : { key, track: value };
       try {
-        if (chirp) {
-          let bankedOk = false;
-          try {
-            await window.PAApi.postForm('/api/audio/tracks',
-              new URLSearchParams({ key, track: chirp.index, bank: chirp.bank, page: chirp.page }),
-              { timeoutMs: 5000 });
-            bankedOk = true;
-          } catch { /* fall through to simple track */ }
-          if (!bankedOk) {
-            await window.PAApi.postForm('/api/audio/tracks',
-              new URLSearchParams({ key, track: value }), { timeoutMs: 5000 });
-          }
-        } else {
-          await window.PAApi.postForm('/api/audio/tracks',
-            new URLSearchParams({ key, track: value }), { timeoutMs: 5000 });
-        }
+        await window.PAApi.postForm('/api/audio/tracks', new URLSearchParams(fields), { timeoutMs: 5000 });
       } catch {
         failed.push(key);
+      }
+    }
+    // Each category pair with its bank and page, the payload data/sound.js
+    // sends. A file from a droid with a CHIRP catalog lists every bound pair,
+    // so a pair it does not list was unbound there and is cleared here: a
+    // restore replaces.
+    const categoryBindings = tracks.chirp_category_bindings;
+    for (const loKey of Object.keys(tracks).filter((key) => isCategoryKey(key) && key.endsWith('_lo'))) {
+      const hiKey = loKey.replace(/_lo$/, '_hi');
+      if (typeof tracks[loKey] !== 'number' || typeof tracks[hiKey] !== 'number') {
+        failed.push(loKey);
+        continue;
+      }
+      const payload = { lo_key: loKey, hi_key: hiKey, lo: tracks[loKey], hi: tracks[hiKey] };
+      const binding = categoryBindings?.[loKey];
+      if (binding?.bank && binding?.page) {
+        payload.bank = binding.bank;
+        payload.page = binding.page;
+      } else if (categoryBindings && typeof categoryBindings === 'object') {
+        payload.clear_binding = 1;
+      }
+      try {
+        await window.PAApi.postForm('/api/audio/category-range', payload, { timeoutMs: 3000 });
+      } catch {
+        failed.push(loKey);
       }
     }
     if (typeof tracks.volume === 'number') {
@@ -493,6 +599,7 @@
     const chkMoodMap = document.getElementById('restore-chk-mood-map');
 
     if (chkConfig?.checked && parsedBackup.config) {
+      let saved = false;
       try {
         // One save, as it always was: the Outputs' settings go through
         // data/outputs.js with the rest of the config riding along.
@@ -501,9 +608,18 @@
           alongside: configToFormParams(parsedBackup.config, outputs),
           timeoutMs: 10000,
         });
-        lines.push('Core config: restored');
+        saved = true;
       } catch (err) {
         lines.push(`Core config: FAILED — ${window.PAApi.messageFor(err)}`);
+      }
+      if (saved) {
+        // "restored" only when all of it landed: a file from before backups
+        // carried the Outputs' rows has no centre, calibration or Part map.
+        const rows = parsedBackup.servo_outputs?.outputs;
+        const gaps = Array.isArray(rows)
+          ? await restoreServoOutputs(rows)
+          : ['no centre, calibration or Part map in this file'];
+        lines.push(gaps.length === 0 ? 'Core config: restored' : `Core config: partial — ${gaps.join(', ')}`);
       }
     }
 
