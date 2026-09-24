@@ -43,7 +43,7 @@
                                            // and their outcomes - and, transitively,
                                            // api_audio_mood_map_apply.h/api_audio_category_range_apply.h
                                            // for audioMoodMapApply()/audioCategoryRangeApply()
-#include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
+#include "config_cache.h"                 // ConfigSnapshot
 #include "audio_sound_member.h"           // audioSoundOn(), AUDIO_SOUND_OFF_REASON
 
 // With audio output off at boot nothing drains the audio queue, so every row

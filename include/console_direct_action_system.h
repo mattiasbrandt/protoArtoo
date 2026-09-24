@@ -49,7 +49,7 @@
 #include "failsafe_gate.h"                // failsafeClearEstop() - the single
                                           // explicit-intent ESTOP release path
 #include "mood.h"                         // applyMood()
-#include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
+#include "config_cache.h"                 // ConfigSnapshot
 #include "api_helpers.h"                  // normalizeDroidName(), parseBoolValue()
 #include "api_identity.h"                 // identitySetWriteWindow(), IdentitySetCommitOutcome
 #include "api_drive.h"                    // saveCommandedMode() - the mode save's Write Window
