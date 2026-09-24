@@ -1055,6 +1055,39 @@ void test_servo_hold_out_of_range_is_rejected() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "positionUs must be between"));
 }
 
+// The dial's keepalive says it is a refresh (#417), and ServoTask drops one
+// that finds no hold standing. A spelling the door does not know is refused,
+// never read as a press: a press is the one form that takes an Output back.
+void test_servo_hold_refresh_takes_only_the_one_spelling() {
+    const WebRequestTestParam good[] = {
+        {"arm", "ARM3"}, {"action", "hold"}, {"positionUs", "1750"}, {"refresh", "1"}};
+    WebRequestTestBackend accepted;
+    accepted.params = good;
+    accepted.paramCount = 4;
+    WebRequest acceptedReq(&accepted);
+    handleServoPost(acceptedReq);
+    TEST_ASSERT_EQUAL_INT(200, accepted.sentCode);
+
+    const WebRequestTestParam bad[] = {
+        {"arm", "ARM3"}, {"action", "hold"}, {"positionUs", "1750"}, {"refresh", "true"}};
+    WebRequestTestBackend refused;
+    refused.params = bad;
+    refused.paramCount = 4;
+    WebRequest refusedReq(&refused);
+    handleServoPost(refusedReq);
+    TEST_ASSERT_EQUAL_INT(400, refused.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(refused.sentBody, "refresh=1 is for a hold only"));
+
+    const WebRequestTestParam notHold[] = {
+        {"arm", "ARM3"}, {"action", "position"}, {"positionUs", "1750"}, {"refresh", "1"}};
+    WebRequestTestBackend misplaced;
+    misplaced.params = notHold;
+    misplaced.paramCount = 4;
+    WebRequest misplacedReq(&misplaced);
+    handleServoPost(misplacedReq);
+    TEST_ASSERT_EQUAL_INT(400, misplaced.sentCode);
+}
+
 // Pulses off (#364, ADR 0043): no width travels with it, because a release
 // commands no position at all - the Output goes limp where it is.
 void test_servo_release_takes_an_arm_and_no_width() {
@@ -1381,6 +1414,7 @@ int main(int, char**) {
     RUN_TEST(test_servo_hold_without_a_width_is_rejected);
     RUN_TEST(test_servo_hold_refuses_the_broadcast_arm);
     RUN_TEST(test_servo_hold_out_of_range_is_rejected);
+    RUN_TEST(test_servo_hold_refresh_takes_only_the_one_spelling);
     RUN_TEST(test_servo_release_takes_an_arm_and_no_width);
     RUN_TEST(test_servo_release_accepts_the_broadcast_arm);
     RUN_TEST(test_an_unknown_servo_action_names_every_action_there_is);

@@ -710,12 +710,14 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // The calibration dial's hold (ADR 0064, #364): drive one output to a width and
 // keep the pulse on it until the builder lets go or a bound fires.
 //
-// The first hold takes the output and starts both bounds; every hold after it
-// refreshes the short expiry and nothing else (include/servo_hold.h), so the
-// page that sends one a second keeps the hold alive and can never push it past
-// the ceiling. A hold at the width the output is already going to -- the page's
-// keepalive -- is a refresh and no move at all: replanning a ramp part way
-// through, once a second, would restart the move the builder is watching.
+// A press takes the output and starts both bounds; the keepalive and the dial's
+// own moves only refresh a hold that stands (include/servo_hold.h), so the page
+// that sends one a second keeps the hold alive, can never push it past the
+// ceiling, and can never take back an output a bound, the estop or pulses off
+// let go (#417). A dropped refresh drives nothing. A hold at the width the
+// output is already going to -- the page's keepalive -- is a refresh and no
+// move at all: replanning a ramp part way through, once a second, would
+// restart the move the builder is watching.
 //
 // The drive itself is driveArmTo()'s, like every other command: through the
 // component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap
@@ -728,13 +730,19 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // the field. What this function does provide is the bit to test: an output with
 // `hold.held` set is one a release must leave alone.
 // -----------------------------------------------------------------------------
-static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source) {
+static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source, ServoHoldAsk ask) {
     if (armId >= kArmCount) {
         PA_LOG_WARN(TAG, "[%s] Hold rejected - takes one arm, not %d", commandSourceToString(source),
                     armId);
         return;
     }
-    const bool taken = servoHoldCommand(&s_arm[armId].hold, millis());
+    const ServoHoldOutcome outcome = servoHoldCommand(&s_arm[armId].hold, millis(), ask);
+    if (outcome == SERVO_HOLD_DROPPED) {
+        PA_LOG_DEBUG(TAG, "[%s] Arm%d hold refresh dropped - the dial no longer holds it",
+                     commandSourceToString(source), armId + 1);
+        return;
+    }
+    const bool taken = outcome == SERVO_HOLD_TAKEN;
     if (taken) {
         PA_LOG_INFO(TAG, "[%s] Arm%d held by the dial at %u us", commandSourceToString(source),
                     armId + 1, (unsigned)positionUs);
@@ -868,13 +876,15 @@ static void processCommand(const ServoCommand& cmd) {
             break;
 
         case SERVO_CMD_HOLD:
+        case SERVO_CMD_HOLD_REFRESH:
             // The same width rule as a position; the hold is what differs.
             if (cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
                 PA_LOG_WARN(TAG, "[%s] Invalid hold position %d us - rejected",
                             commandSourceToString(cmd.source), cmd.positionUs);
                 return;
             }
-            holdArm(cmd.armId, cmd.positionUs, cmd.source);
+            holdArm(cmd.armId, cmd.positionUs, cmd.source,
+                    cmd.type == SERVO_CMD_HOLD ? SERVO_HOLD_ASK_TAKE : SERVO_HOLD_ASK_REFRESH);
             break;
 
         case SERVO_CMD_RELEASE:

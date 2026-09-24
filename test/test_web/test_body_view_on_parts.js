@@ -60,6 +60,23 @@ test("a part nothing drives makes no claim about where it is", async () => {
   assert.equal(smallDoor.classList.contains("is-closed"), false);
 });
 
+// The dome reports nothing back, so a dome piece this page has not told
+// anything has no known position. It drew Closed until #417 - a position nobody
+// said. Once told, it draws what it was told, which is all anybody knows.
+test("a dome piece nobody has told draws no position, and one told draws what it was told", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+  const pie = () => marker(env, "dome-pp1");
+
+  assert.ok(pie().classList.contains("is-unknown"), "an untold dome piece draws no state");
+  assert.equal(pie().classList.contains("is-closed"), false, "and not Closed");
+
+  pick(env, "dome-pp1");
+  pressAct(env, "toggle");
+  await sleep(20);
+  assert.equal(domePosts(env).length, 1);
+  assert.ok(pie().classList.contains("is-open"), "told to open, it draws Open");
+});
+
 test("a click only selects: the panel fills and the droid is asked for nothing", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
   const before = env.posts.length;
