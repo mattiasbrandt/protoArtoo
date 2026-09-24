@@ -135,7 +135,8 @@
     const address = output.label ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
     return (
       `<tr class="parts-row outputs-row" data-output="${esc(output.address)}">` +
-      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}</th>` +
+      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}` +
+      `<div class="hint outputs-narrowed" hidden></div></th>` +
       `<td><span class="outputs-parts"></span><select class="parts-output outputs-add" ` +
       `aria-label="${esc(`Put a part on ${label}`)}"><option value="">Put a part on ${esc(label)}...</option>` +
       `${addOptions}</select></td>` +
@@ -208,6 +209,7 @@
         now: node.querySelector(".outputs-now"),
         tick: node.querySelector(".outputs-tick"),
         us: node.querySelector(".outputs-us"),
+        narrowed: node.querySelector(".outputs-narrowed"),
         driveNote: node.querySelector(".outputs-drive-note"),
         driveActs: node.querySelector(".outputs-drive-acts"),
         // The drive cell's own box: the Motion cell's two borrow its class.
@@ -287,6 +289,11 @@
     // estop cut a nudge short.
     row.bar.classList.remove("is-stale");
     row.parts.textContent = output.parts.length ? listParts(output.parts) : NOT_WIRED;
+    // The ends the upgrade moved into this part's range, and what they were,
+    // until the builder saves this Output (#417).
+    const was = output.narrowedFrom;
+    row.narrowed.hidden = was === null;
+    row.narrowed.textContent = was === null ? "" : `Ends moved to fit: were open ${was.openUs}, close ${was.closeUs} µs`;
     row.now.style.width = pulsing ? markAt(output.commandedUs, output) : "0%";
     row.tick.style.left = pulsing ? markAt(output.targetUs, output) : "0%";
     const refusal = driveRefusal(output);
