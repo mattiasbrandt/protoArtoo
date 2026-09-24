@@ -1538,6 +1538,12 @@ Updates supported config fields and persists to NVS.
   `{"ok":false,"error":"guidedSetupSummaryDone must be true or false"}`; ending a
   run sends `false` so the run that ended has a summary to show (#371).
 - domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
+  - The three pulse widths must also run `min <= neutral <= max`, judged with
+    the stored values for any the request leaves out. A set out of order is
+    refused with `400` naming all three (`domeEscMinPulseUs 1800,
+    domeEscNeutralUs 1500, domeEscMaxPulseUs 1200: must be min <= neutral <=
+    max`): out of order, a stop does not put neutral on the ESC. A set stored
+    out of order by an older firmware loads as `1000`/`1500`/`2000`.
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
 - servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`. The accepted range is what a servo can take; what an output *keeps* is bounded by the component type fitted to it, so an `mg996r` output holds 1000..2000 and a value outside that is moved into range rather than refused. The response echoes what was stored, which is what the droid will drive to.

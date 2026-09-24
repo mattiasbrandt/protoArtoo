@@ -10,6 +10,7 @@
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "config.h"
+#include "dome_math.h"  // domePulsesInOrder()
 #include "rc_mapping.h"
 #include "board_outputs.h"            // which Output a retired aux_led_pin slot named
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -355,13 +356,32 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
 }
 
 
+// The three ESC pulse widths as stored, each held to 1000..2000 on its own. The
+// order between them is the caller's to judge (domePulsesInOrder()).
+void readDomePulses(const ConfigReader& r, const DomeConfig& def, DomeConfig* out) {
+    out->dome_neutral_us = constrain(r.readU16("dome_neu", def.dome_neutral_us), (uint16_t)1000,
+                                     (uint16_t)2000);
+    out->dome_min_pulse_us = constrain(r.readU16("dome_minp", def.dome_min_pulse_us),
+                                       (uint16_t)1000, (uint16_t)2000);
+    out->dome_max_pulse_us = constrain(r.readU16("dome_maxp", def.dome_max_pulse_us),
+                                       (uint16_t)1000, (uint16_t)2000);
+}
+
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
     *out = def;
     out->dome_min_speed = floatFromBits(r.readU32("dome_min", floatToBits(def.dome_min_speed)));
     out->dome_max_speed = floatFromBits(r.readU32("dome_max", floatToBits(def.dome_max_speed)));
-    out->dome_neutral_us = r.readU16("dome_neu", def.dome_neutral_us);
-    out->dome_min_pulse_us = r.readU16("dome_minp", def.dome_min_pulse_us);
-    out->dome_max_pulse_us = r.readU16("dome_maxp", def.dome_max_pulse_us);
+    readDomePulses(r, def, out);
+    // A set stored out of order - before the config door refused one (#417) -
+    // cannot put a stop on the ESC, so all three take the defaults rather than
+    // one being picked to move: which of them is wrong is not something the
+    // stored numbers can say. configLoad() warns (configDomePulsesStoredOutOfOrder()).
+    if (!domePulsesInOrder(out->dome_min_pulse_us, out->dome_neutral_us,
+                           out->dome_max_pulse_us)) {
+        out->dome_neutral_us = def.dome_neutral_us;
+        out->dome_min_pulse_us = def.dome_min_pulse_us;
+        out->dome_max_pulse_us = def.dome_max_pulse_us;
+    }
     out->dome_speed_limit_pct = r.readU8("dome_pct", def.dome_speed_limit_pct);
     out->dome_rnd_enable = r.readBool("dome_rnd_en", def.dome_rnd_enable);
     out->dome_rnd_speed_pct = r.readU8("dome_rnd_spd", def.dome_rnd_speed_pct);
@@ -380,9 +400,6 @@ void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& d
         out->dome_min_speed = 0.0f;
     if (out->dome_max_speed > 1.0f)
         out->dome_max_speed = 1.0f;
-    out->dome_neutral_us = constrain(out->dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_min_pulse_us = constrain(out->dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome_max_pulse_us = constrain(out->dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
     out->dome_speed_limit_pct = constrain(out->dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
 }
 
@@ -800,6 +817,13 @@ void configDeserializeAudio(const ConfigReader& r, AudioConfig* out) {
 
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out) {
     deserializeDome(r, out, getDefaults().dome);
+}
+
+bool configDomePulsesStoredOutOfOrder(const ConfigReader& r) {
+    DomeConfig stored = getDefaults().dome;
+    readDomePulses(r, stored, &stored);
+    return !domePulsesInOrder(stored.dome_min_pulse_us, stored.dome_neutral_us,
+                              stored.dome_max_pulse_us);
 }
 
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out) {

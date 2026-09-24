@@ -1061,6 +1061,15 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     // Now that migrations are done, deserialize from the migrated NVS
     PrefsReader migratedReader(prefs);
     bool ok = configDeserialize(migratedReader, out);
+    // Said out loud, like a repaired servo row: the dome's pulse set the builder
+    // saved is not the one it will run, and the next save makes that permanent.
+    if (configDomePulsesStoredOutOfOrder(migratedReader)) {
+        PA_LOG_WARN("config",
+                    "stored dome ESC pulses out of order (need min <= neutral <= max); "
+                    "using %u/%u/%u us",
+                    (unsigned)out->dome.dome_min_pulse_us, (unsigned)out->dome.dome_neutral_us,
+                    (unsigned)out->dome.dome_max_pulse_us);
+    }
 
     // Apply in-place schema 1->2 migration if needed
     if (stored < 2) {

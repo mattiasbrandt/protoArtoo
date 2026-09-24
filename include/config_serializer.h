@@ -40,6 +40,10 @@ bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
 void configDeserializeDrive(const ConfigReader& r, DriveConfig* out);
 void configDeserializeAudio(const ConfigReader& r, AudioConfig* out);
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out);
+// Whether the dome ESC pulse set in NVS is out of order, which the dome
+// deserialisers above answer with the defaults (#417). For the loader's
+// warning: the deserialisers are pure and cannot say so themselves.
+bool configDomePulsesStoredOutOfOrder(const ConfigReader& r);
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out);
 void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);
 

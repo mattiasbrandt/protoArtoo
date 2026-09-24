@@ -77,6 +77,19 @@ void test_asymmetric_neutral_half_reverse() {
     TEST_ASSERT_EQUAL_UINT16(1300, pulse);
 }
 
+// A set out of order has no range to map into, and clamping into it anyway made
+// speed 0 drive the ESC (min 1800, neutral 1500, max 1200 put out 1200 us for
+// every speed, #417). Whatever is asked, it answers neutral - inverted, and
+// with neutral outside an otherwise ordered pair.
+void test_an_out_of_order_set_answers_neutral_for_every_speed() {
+    const float speeds[] = {-1.0f, -0.5f, 0.0f, 0.5f, 1.0f};
+    for (float speed : speeds) {
+        TEST_ASSERT_EQUAL_UINT16(1500, domeSpeedToPulseUs(speed, 1500, 1800, 1200, 100));
+        TEST_ASSERT_EQUAL_UINT16(1500, domeSpeedToPulseUs(speed, 1500, 1000, 1400, 100));
+        TEST_ASSERT_EQUAL_UINT16(1500, domeSpeedToPulseUs(speed, 1500, 1600, 2000, 100));
+    }
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_neutral_speed_gives_neutral_pulse);
@@ -93,5 +106,6 @@ int main() {
     RUN_TEST(test_asymmetric_neutral_reverse_range);
     RUN_TEST(test_asymmetric_neutral_half_forward);
     RUN_TEST(test_asymmetric_neutral_half_reverse);
+    RUN_TEST(test_an_out_of_order_set_answers_neutral_for_every_speed);
     return UNITY_END();
 }

@@ -635,6 +635,53 @@ void test_configApply_a_part_move_missing_or_misspelling_an_end_is_refused(void)
     }
 }
 
+// --- the dome ESC pulse set is judged as a set (#417) ---
+//
+// Each width passing 1000..2000 on its own is not enough: out of order, speed 0
+// is not a stop (include/dome_math.h). A partial POST is judged against the two
+// it will be stored beside, which is the case the Dome page's own check cannot
+// reach - a direct POST, or a restore.
+void test_configApply_an_out_of_order_dome_pulse_set_is_refused(void) {
+    std::map<std::string, std::string> full = {
+        {"domeEscMinPulseUs", "1800"}, {"domeEscNeutralUs", "1500"}, {"domeEscMaxPulseUs", "1200"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.dome.dome_min_pulse_us = 1000;
+    snap.dome.dome_neutral_us = 1500;
+    snap.dome.dome_max_pulse_us = 2000;
+    ConfigApplyResult result;
+    configApply(makeSource(&full), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING(
+        "domeEscMinPulseUs 1800, domeEscNeutralUs 1500, domeEscMaxPulseUs 1200: "
+        "must be min <= neutral <= max",
+        result.error.message);
+
+    // One field, legal alone, that puts neutral above the stored max.
+    std::map<std::string, std::string> partial = {{"domeEscMaxPulseUs", "1400"}};
+    ConfigSnapshot stored = makeDefaultSnap();
+    stored.dome.dome_min_pulse_us = 1000;
+    stored.dome.dome_neutral_us = 1500;
+    stored.dome.dome_max_pulse_us = 2000;
+    ConfigApplyResult partialResult;
+    configApply(makeSource(&partial), &stored, false, &partialResult);
+    TEST_ASSERT_TRUE(partialResult.error.hasError);
+    TEST_ASSERT_EQUAL_STRING(
+        "domeEscMinPulseUs 1000, domeEscNeutralUs 1500, domeEscMaxPulseUs 1400: "
+        "must be min <= neutral <= max",
+        partialResult.error.message);
+
+    // An ordered set, neutral on an end, still goes through.
+    std::map<std::string, std::string> ordered = {{"domeEscNeutralUs", "2000"}};
+    ConfigSnapshot fine = makeDefaultSnap();
+    fine.dome.dome_min_pulse_us = 1000;
+    fine.dome.dome_neutral_us = 1500;
+    fine.dome.dome_max_pulse_us = 2000;
+    ConfigApplyResult okResult;
+    configApply(makeSource(&ordered), &fine, false, &okResult);
+    TEST_ASSERT_FALSE(okResult.error.hasError);
+    TEST_ASSERT_EQUAL_UINT16(2000, fine.dome.dome_neutral_us);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -682,5 +729,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_an_empty_fitted_list_is_an_answer);
     RUN_TEST(test_configApply_a_part_this_build_cannot_name_is_refused);
     RUN_TEST(test_configApply_without_droid_build_params_records_no_edit);
+    RUN_TEST(test_configApply_an_out_of_order_dome_pulse_set_is_refused);
     return UNITY_END();
 }

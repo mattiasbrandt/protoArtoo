@@ -16,6 +16,7 @@
 #include "board_outputs.h"
 #include "component_registry.h"
 #include "config.h"
+#include "dome_math.h"  // domePulsesInOrder() - the one order rule for the ESC pulse set
 #include "drive_speed_preset.h"
 #include "servo_component_helpers.h"
 
@@ -719,6 +720,29 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     } else if (configParamHas(params, "domeEscMaxPulseUs")) {
         setError(result, "domeEscMaxPulseUs must be 1000..2000");
         return;
+    }
+
+    // The three as a set, once each has passed on its own and been merged over
+    // what is stored: a request naming one of them is judged with the other two
+    // it will be stored beside. Out of order, speed 0 is not a stop
+    // (include/dome_math.h domePulsesInOrder()), so the set is refused whole
+    // rather than stored. Only when the request named one, so a POST about
+    // something else is never refused over a set it did not touch.
+    if (configParamHas(params, "domeEscNeutralUs") ||
+        configParamHas(params, "domeEscMinPulseUs") ||
+        configParamHas(params, "domeEscMaxPulseUs")) {
+        const DomeConfig& dome = working->dome;
+        if (!domePulsesInOrder(dome.dome_min_pulse_us, dome.dome_neutral_us,
+                               dome.dome_max_pulse_us)) {
+            char err[192];
+            snprintf(err, sizeof(err),
+                     "domeEscMinPulseUs %u, domeEscNeutralUs %u, domeEscMaxPulseUs %u: "
+                     "must be min <= neutral <= max",
+                     (unsigned)dome.dome_min_pulse_us, (unsigned)dome.dome_neutral_us,
+                     (unsigned)dome.dome_max_pulse_us);
+            setError(result, err);
+            return;
+        }
     }
 
     uint8_t domePct;

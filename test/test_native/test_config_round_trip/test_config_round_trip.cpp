@@ -517,6 +517,37 @@ void test_a_thirteen_field_row_is_the_old_shape_not_damage(void) {
     TEST_ASSERT_EQUAL_UINT8(SERVO_LIGHT_LEDS_DEFAULT, parsed.led_count);
 }
 
+// A dome pulse set stored out of order - saved before the config door refused
+// one (#417) - cannot stop the dome, so it loads as the defaults, and the
+// loader can tell it did.
+void test_an_out_of_order_stored_dome_pulse_set_loads_as_the_defaults(void) {
+    MapReader reader;
+    reader.setSchemaVersion(CONFIG_SCHEMA_VERSION);
+    reader.set("dome_minp", (uint32_t)1800);
+    reader.set("dome_neu", (uint32_t)1500);
+    reader.set("dome_maxp", (uint32_t)1200);
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configDeserialize(reader, &snap));
+    TEST_ASSERT_EQUAL_UINT16(1000, snap.dome.dome_min_pulse_us);
+    TEST_ASSERT_EQUAL_UINT16(1500, snap.dome.dome_neutral_us);
+    TEST_ASSERT_EQUAL_UINT16(2000, snap.dome.dome_max_pulse_us);
+    TEST_ASSERT_TRUE(configDomePulsesStoredOutOfOrder(reader));
+
+    // An ordered set is kept exactly, and is not reported.
+    MapReader ordered;
+    ordered.setSchemaVersion(CONFIG_SCHEMA_VERSION);
+    ordered.set("dome_minp", (uint32_t)1100);
+    ordered.set("dome_neu", (uint32_t)1480);
+    ordered.set("dome_maxp", (uint32_t)1900);
+    ConfigSnapshot kept = {};
+    TEST_ASSERT_TRUE(configDeserialize(ordered, &kept));
+    TEST_ASSERT_EQUAL_UINT16(1100, kept.dome.dome_min_pulse_us);
+    TEST_ASSERT_EQUAL_UINT16(1480, kept.dome.dome_neutral_us);
+    TEST_ASSERT_EQUAL_UINT16(1900, kept.dome.dome_max_pulse_us);
+    TEST_ASSERT_FALSE(configDomePulsesStoredOutOfOrder(ordered));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_default_snapshot_round_trip);
@@ -536,5 +567,6 @@ int main(void) {
     RUN_TEST(test_a_thirteen_field_row_is_the_old_shape_not_damage);
     RUN_TEST(test_a_saved_row_is_not_overwritten_by_the_retired_light_keys);
     RUN_TEST(test_a_row_stored_before_the_light_joined_it_still_adopts_the_light);
+    RUN_TEST(test_an_out_of_order_stored_dome_pulse_set_loads_as_the_defaults);
     return UNITY_END();
 }
