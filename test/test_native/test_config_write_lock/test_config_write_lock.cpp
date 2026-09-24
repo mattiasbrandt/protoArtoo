@@ -358,6 +358,42 @@ void test_the_other_rest_config_writers_wait_for_the_window(void) {
     configCacheSetActiveAudioEnabled(false);
 }
 
+// =============================================================================
+// The Console sound actions #417 missed (#418)
+// =============================================================================
+
+/**
+ * The two Console sound actions that wrote the config cache and NVS with no
+ * lock at all until #418: sound.action.set-category-range read the cache,
+ * applied and wrote the snapshot back, and set-mood-map wrote its four masks
+ * and the snapshot, both beside any other writer. Through their Write Windows
+ * they wait for the window like every other writer, and write nothing when
+ * they cannot have it. On the pre-#418 code both answer ok here and the range
+ * lands in the cache.
+ */
+void test_the_console_sound_actions_wait_for_the_window(void) {
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;  // another writer, mid-write
+
+    runConsole(CONSOLE_SOURCE_SERIAL,
+               "sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=10 hi=20");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+        "result status=err outcome=unavailable reason=temporarily-unavailable",
+        g_consoleLastRecord, "set-category-range ran beside a write that held the window");
+
+    runConsole(CONSOLE_SOURCE_SERIAL, "sound.action.set-mood-map quiet=1 mid=2 full=3 awakeplus=4");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+        "result status=err outcome=unavailable reason=temporarily-unavailable",
+        g_consoleLastRecord, "set-mood-map ran beside a write that held the window");
+
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, after.audio.snd_cat_gen_lo,
+                                     "a refused category range still reached the config cache");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, after.audio.snd_moodcat_quiet,
+                                     "a refused mood map still reached the config cache");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "a refused writer took the window anyway");
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_a_console_write_interleaved_into_a_rest_write_is_never_silently_reverted);
@@ -366,5 +402,6 @@ int main() {
     RUN_TEST(test_alternating_rest_and_console_writes_both_land_with_balanced_locking);
     RUN_TEST(test_an_rc_change_landing_mid_post_is_not_reverted);
     RUN_TEST(test_the_other_rest_config_writers_wait_for_the_window);
+    RUN_TEST(test_the_console_sound_actions_wait_for_the_window);
     return UNITY_END();
 }

@@ -39,10 +39,8 @@
                                            // audioQueueTrackStop(), audioQueueQueryStatus(),
                                            // audioGetCapabilities() - includes audio_driver.h
                                            // transitively for AudioDriver::AUDIO_CAP_CATALOG
-#include "api_audio.h"                    // AudioSetVolumeCommitOutcome, audioSetVolumeWriteWindow(),
-                                           // AudioMoodMapCommitOutcome, audioMoodMapCommitApplied(),
-                                           // AudioCategoryRangeCommitOutcome,
-                                           // audioCategoryRangeCommitApplied() - and, transitively,
+#include "api_audio.h"                    // the volume, mood-map and category-range Write Windows
+                                           // and their outcomes - and, transitively,
                                            // api_audio_mood_map_apply.h/api_audio_category_range_apply.h
                                            // for audioMoodMapApply()/audioCategoryRangeApply()
 #include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
@@ -581,7 +579,14 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
         return;
     }
 
-    AudioMoodMapCommitOutcome commit = audioMoodMapCommitApplied(result);
+    // The Write Window POST /api/audio/mood-map calls (include/api_audio.h). It
+    // ran unguarded here until #418: its Commit Step writes the config cache
+    // and NVS, and a config write interleaving with it lost one of the two.
+    AudioMoodMapCommitOutcome commit;
+    if (!audioMoodMapWriteWindow(result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (!commit.ok) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
@@ -633,11 +638,18 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
         return;
     }
 
+    // The Write Window POST /api/audio/category-range calls
+    // (include/api_audio.h). This read-modify-write of the config cache ran
+    // unguarded here until #418, so a config write landing between its cache
+    // read and its commit was reverted.
     ConfigSnapshot snap = {};
-    configCacheRead(&snap);
     AudioCategoryRangeApplyResult result;
-    audioCategoryRangeApply(consoleArgsAsParamSource(args), consoleAudioCatalogSupported(), &snap,
-                            &result);
+    AudioCategoryRangeCommitOutcome commit;
+    if (!audioCategoryRangeWriteWindow(consoleArgsAsParamSource(args), consoleAudioCatalogSupported(),
+                                       &snap, &result, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (result.error.hasError) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
@@ -646,7 +658,6 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
         return;
     }
 
-    AudioCategoryRangeCommitOutcome commit = audioCategoryRangeCommitApplied(&snap, result);
     if (!commit.ok) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
