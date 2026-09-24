@@ -45,6 +45,9 @@
 // Console would put this lock and the serial output mutex in a fixed order
 // around a blocking device write. Not recursive: a Write Window never calls
 // another.
+//
+// Whether the caller holds it is what the config writers check
+// (include/config_write_window_check.h).
 // =============================================================================
 #pragma once
 

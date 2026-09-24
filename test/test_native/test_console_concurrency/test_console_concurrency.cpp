@@ -57,6 +57,7 @@
 #include "console_catalog.h"
 #include "console_module.h"
 #include "console_record.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
 
 // =============================================================================
 // Capture: one per concurrent request, so the two answers can be compared
@@ -200,10 +201,16 @@ void setUp(void) {
     captureReset(&g_inner);
     memset(&g_plan, 0, sizeof(g_plan));
     g_active = nullptr;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown(void) {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
     paStubMutexReset();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // Every record a capture holds must carry that capture's own request ID.

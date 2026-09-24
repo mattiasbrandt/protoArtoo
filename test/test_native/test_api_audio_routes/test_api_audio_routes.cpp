@@ -35,6 +35,8 @@
 #include "config_cache.h"
 #include "robot_state.h"
 #include "web_request_test_backend.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 
 // Recorded side effects and controls from src/native_test_stubs.cpp.
 extern uint8_t g_test_audio_capabilities;
@@ -124,9 +126,15 @@ void setUp() {
     g_test_audio_catalog_entry_count = 0;
     g_test_applied_mood = 0;
     g_test_status_broadcast_count = 0;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // -----------------------------------------------------------------------------
@@ -310,7 +318,10 @@ void test_tracks_get_serializes_every_field_from_the_config_snapshot() {
     snap.audio.snd_rand_max = 9;
     snap.audio.audioVolume = 21;
     snap.audio.snd_int_awake = 45;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     callGet(handleAudioTracksGet, nullptr, 0);
 
@@ -450,7 +461,10 @@ void test_mood_map_get_returns_the_configured_masks() {
     snap.audio.snd_moodcat_mid = 6;
     snap.audio.snd_moodcat_full = 7;
     snap.audio.snd_moodcat_awakeplus = 8;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     callGet(handleAudioMoodMapGet, nullptr, 0);
 

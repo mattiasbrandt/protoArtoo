@@ -27,6 +27,11 @@
  * here where a device would block up to the bound and then proceed. That is
  * the stronger case to assert against: the nested writer must report the
  * refusal, never report success and lose its write.
+ *
+ * Since #418 the lock is no adapter's at all: each write operation has one
+ * Write Window (ADR 0011, amended 2026-09-24) that every adapter calls, and
+ * this suite arms the holder check in setUp() so any config write made outside
+ * a window fails the test that made it (tearDown()).
  */
 
 #include <unity.h>
@@ -47,6 +52,8 @@
 #include "console_module.h"
 #include "console_record.h"
 #include "web_request_test_backend.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 
 // =============================================================================
 // A minimal Console capture: only the last record matters here, which for a
@@ -101,10 +108,16 @@ void setUp(void) {
     memset(g_consoleLastRecord, 0, sizeof(g_consoleLastRecord));
     g_consoleRecordCount = 0;
     paStubMutexReset();
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown(void) {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
     paStubMutexReset();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // =============================================================================
@@ -265,7 +278,10 @@ static void seedSpeedPresets() {
     snap.drive.speedPresetActive = SpeedPresetId::Normal;
     snap.drive.speedLimitMax = 300;
     snap.system.stationary = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 }
 
 /**
@@ -308,7 +324,7 @@ void test_an_rc_change_landing_mid_post_is_not_reverted(void) {
     TEST_ASSERT_FALSE(after.system.stationary);
 }
 
-static int postWhileHeld(void (*handler)(WebRequest&), const WebRequestTestParam* params,
+static int postRequest(void (*handler)(WebRequest&), const WebRequestTestParam* params,
                          size_t count) {
     WebRequestTestBackend backend;
     backend.params = params;
@@ -329,23 +345,23 @@ void test_the_other_rest_config_writers_wait_for_the_window(void) {
     m->held = 1;
 
     const WebRequestTestParam volume[] = {{"action", "volume"}, {"level", "12"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioPost, volume, 2), "volume");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postRequest(handleAudioPost, volume, 2), "volume");
     const WebRequestTestParam moodMap[] = {
         {"quiet", "1"}, {"mid", "2"}, {"full", "3"}, {"awakeplus", "4"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioMoodMapPost, moodMap, 4),
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postRequest(handleAudioMoodMapPost, moodMap, 4),
                                   "mood map");
     const WebRequestTestParam tracks[] = {{"key", "scream"}, {"track", "3"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioTracksPost, tracks, 2), "tracks");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postRequest(handleAudioTracksPost, tracks, 2), "tracks");
     const WebRequestTestParam range[] = {
         {"lo_key", "snd_cat_gen_lo"}, {"hi_key", "snd_cat_gen_hi"}, {"lo", "10"}, {"hi", "20"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioCategoryRangePost, range, 4),
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postRequest(handleAudioCategoryRangePost, range, 4),
                                   "category range");
     const WebRequestTestParam identity[] = {{"droidName", "artoo"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleIdentityPost, identity, 1), "identity");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postRequest(handleIdentityPost, identity, 1), "identity");
     // The mode is a state the droid is already in, so it is applied and the
     // save is what is refused - answered as a save that did not happen.
     const WebRequestTestParam mode[] = {{"mode", "stationary"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(500, postWhileHeld(handleModePost, mode, 1), "mode");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(500, postRequest(handleModePost, mode, 1), "mode");
 
     const ConfigSnapshot after = readSnapshot();
     TEST_ASSERT_EQUAL_UINT8_MESSAGE(0, after.audio.audioVolume,
@@ -359,8 +375,36 @@ void test_the_other_rest_config_writers_wait_for_the_window(void) {
 }
 
 // =============================================================================
-// The Console sound actions #417 missed (#418)
+// The Write Window and its holder check (#418, ADR 0011 amended 2026-09-24)
 // =============================================================================
+
+/**
+ * The check this whole suite leans on: armed, a config write made without the
+ * lock is counted - and still lands, because the defect is the caller's missing
+ * window and refusing the write would lose it. The same write inside a window
+ * is not counted. Take the check out of configCacheApplyKeepingLive() and the
+ * first count stays 0.
+ */
+void test_a_config_write_outside_any_write_window_is_counted_and_still_lands(void) {
+    ConfigSnapshot snap = readSnapshot();
+    snap.drive.speedLimitMax = 42;
+    configCacheApply(snap);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, configWriteWindowMisses(),
+                                     "a write outside every Write Window was not counted");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(42, readSnapshot().drive.speedLimitMax,
+                                  "the holder check refused the write instead of reporting it");
+
+    {
+        const ConfigWriteWindowForTest window;
+        snap.drive.speedLimitMax = 43;
+        configCacheApply(snap);
+    }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, configWriteWindowMisses(),
+                                     "a write inside a Write Window was counted as a miss");
+
+    configWriteWindowArm(true);  // the miss above was this test's own
+}
 
 /**
  * The two Console sound actions that wrote the config cache and NVS with no
@@ -394,6 +438,63 @@ void test_the_console_sound_actions_wait_for_the_window(void) {
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "a refused writer took the window anyway");
 }
 
+/**
+ * Every Write Window, from both adapters, writes only while it holds the lock:
+ * each request below lands, and tearDown() finds no write the holder check
+ * counted. A window that commits after releasing - or an adapter that calls a
+ * Commit Step with no window around it - is a counted miss.
+ */
+void test_every_write_window_writes_inside_its_window(void) {
+    configCacheSetActiveAudioEnabled(true);
+
+    const WebRequestTestParam config[] = {{"speedLimitMax", "80"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleConfigPost, config, 1), "config");
+    const WebRequestTestParam map[] = {{"plain", "{\"map\":[]}"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleRcMapPost, map, 1), "rc map");
+    const WebRequestTestParam wifi[] = {
+        {"mode", "client"}, {"staSsid", "bench-net"}, {"staPassword", "hunter2hunter2"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleWifiPost, wifi, 3), "wifi");
+    const WebRequestTestParam volume[] = {{"action", "volume"}, {"level", "12"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleAudioPost, volume, 2), "volume");
+    const WebRequestTestParam moodMap[] = {
+        {"quiet", "1"}, {"mid", "2"}, {"full", "3"}, {"awakeplus", "4"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleAudioMoodMapPost, moodMap, 4),
+                                  "mood map");
+    const WebRequestTestParam tracks[] = {{"key", "scream"}, {"track", "3"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleAudioTracksPost, tracks, 2), "tracks");
+    const WebRequestTestParam range[] = {
+        {"lo_key", "snd_cat_gen_lo"}, {"hi_key", "snd_cat_gen_hi"}, {"lo", "10"}, {"hi", "20"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleAudioCategoryRangePost, range, 4),
+                                  "category range");
+    const WebRequestTestParam identity[] = {{"droidName", "artoo"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleIdentityPost, identity, 1), "identity");
+    const WebRequestTestParam mode[] = {{"mode", "stationary"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleModePost, mode, 1), "mode");
+
+    runConsole(CONSOLE_SOURCE_SERIAL, "system.config.enable_arm1 value=true");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(kConsoleWriteApplied, g_consoleLastRecord, "Console config");
+    runConsole(CONSOLE_SOURCE_SERIAL,
+               "sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=11 hi=21");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("result status=ok outcome=applied", g_consoleLastRecord,
+                                     "Console category range");
+    runConsole(CONSOLE_SOURCE_SERIAL, "sound.action.set-mood-map quiet=5 mid=6 full=7 awakeplus=8");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("result status=ok outcome=applied", g_consoleLastRecord,
+                                     "Console mood map");
+
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_EQUAL_INT(80, after.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_UINT8(12, after.audio.audioVolume);
+    TEST_ASSERT_EQUAL_UINT16(3, after.audio.snd_scream);
+    TEST_ASSERT_EQUAL_UINT16(11, after.audio.snd_cat_gen_lo);
+    TEST_ASSERT_EQUAL_UINT16(5, after.audio.snd_moodcat_quiet);
+    TEST_ASSERT_TRUE(after.system.enable_arm1);
+
+    struct PaStubMutex* m = paStubMutexStorage();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a Write Window was left held");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(m->takeCount, m->giveCount, "takes and gives are not balanced");
+    configCacheSetActiveAudioEnabled(false);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_a_console_write_interleaved_into_a_rest_write_is_never_silently_reverted);
@@ -402,6 +503,8 @@ int main() {
     RUN_TEST(test_alternating_rest_and_console_writes_both_land_with_balanced_locking);
     RUN_TEST(test_an_rc_change_landing_mid_post_is_not_reverted);
     RUN_TEST(test_the_other_rest_config_writers_wait_for_the_window);
+    RUN_TEST(test_a_config_write_outside_any_write_window_is_counted_and_still_lands);
     RUN_TEST(test_the_console_sound_actions_wait_for_the_window);
+    RUN_TEST(test_every_write_window_writes_inside_its_window);
     return UNITY_END();
 }

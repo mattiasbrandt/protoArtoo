@@ -502,7 +502,10 @@ void configLoadWifi(Preferences& prefs, WifiConfig* out);
 
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.
-// Holds no mutex and performs no robotState reads/writes.
+// Holds no mutex and performs no robotState reads/writes. After boot it runs
+// inside a Write Window, as every configSave*() writer and
+// configUpdateAudioMoodMasks() do: each checks that its caller holds the config
+// write lock, and logs when it does not (include/config_write_window_check.h).
 // Returns false if any write fails; true on success.
 void configSnapshotDefaults(ConfigSnapshot* snap);
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);

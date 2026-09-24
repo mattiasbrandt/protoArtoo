@@ -18,6 +18,8 @@
 #include "config_cache.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 
 extern bool g_test_commanded_stationary;
 extern unsigned g_test_status_broadcast_count;
@@ -39,9 +41,15 @@ void setUp() {
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
     g_test_status_broadcast_count = 0;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // --- POST /api/config -------------------------------------------------------
@@ -132,7 +140,12 @@ void test_config_commit_leaves_working_agreeing_with_the_config_cache() {
     static ConfigApplyResult result;
     result = ConfigApplyResult{};
 
-    ConfigCommitOutcome commit = configCommitApplied(&working, result, SRC_WEB_API);
+    ConfigCommitOutcome commit = {};
+    {
+        // Standing where configWriteWindow() would: this test drives the Commit Step directly.
+        const ConfigWriteWindowForTest window;
+        commit = configCommitApplied(&working, result, SRC_WEB_API);
+    }
 
     TEST_ASSERT_TRUE(commit.persisted);
     const ConfigSnapshot cached = readSnapshot();
@@ -510,7 +523,10 @@ void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
 void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
     DroidBuildConfig before = {};
     droidBuildDefaults(&before);
-    configCacheApplyDroidBuild(before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyDroidBuild(before);
+    }
 
     const WebRequestTestParam params[] = {
         {"domeDesign", "mk4"}, {"domeVariant", "basic"},
@@ -545,7 +561,10 @@ void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
 void test_a_restored_legacy_variant_lands_as_the_variant_it_became() {
     DroidBuildConfig before = {};
     droidBuildDefaults(&before);
-    configCacheApplyDroidBuild(before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyDroidBuild(before);
+    }
 
     const WebRequestTestParam params[] = {
         {"bodyDesign", "mk4"}, {"bodyVariant", "simple"},
@@ -607,7 +626,10 @@ void test_the_part_vocabulary_is_unchanged_by_a_droid_build_write() {
 void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
     DroidBuildConfig before = {};
     droidBuildDefaults(&before);
-    configCacheApplyDroidBuild(before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyDroidBuild(before);
+    }
 
     const WebRequestTestParam params[] = {{"domeDesign", "mk9"}, {"domeVariant", "complex"}};
     WebRequestTestBackend backend;
@@ -629,7 +651,10 @@ void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
 void test_a_roadmap_design_is_refused_as_a_stated_half() {
     DroidBuildConfig before = {};
     droidBuildDefaults(&before);
-    configCacheApplyDroidBuild(before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyDroidBuild(before);
+    }
 
     const WebRequestTestParam params[] = {{"bodyDesign", "mk3"}, {"bodyVariant", ""}};
     WebRequestTestBackend backend;
@@ -651,7 +676,10 @@ void test_a_roadmap_design_is_refused_as_a_stated_half() {
 void test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated() {
     DroidBuildConfig before = {};
     droidBuildDefaults(&before);
-    configCacheApplyDroidBuild(before);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyDroidBuild(before);
+    }
 
     const WebRequestTestParam params[] = {
         {"domeDesign", "mk41"}, {"domeVariant", ""},

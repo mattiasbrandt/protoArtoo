@@ -165,6 +165,11 @@ void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided);
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
+//
+// This, configCacheApplyKeepingLive(), the Servo Output edit and Part-move
+// doors, and the Droid Build and Guided Setup writers above run inside a Write
+// Window after boot (include/config_write_window_check.h): each checks that its
+// caller holds the config write lock, and logs when it does not.
 void configCacheApply(const ConfigSnapshot& snap);
 
 // configCacheApplyKeepingLive: configCacheApply(), except that the fields RC

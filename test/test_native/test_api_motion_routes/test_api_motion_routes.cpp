@@ -34,6 +34,8 @@
 #include "web_admission.h"
 #include "web_request_test_backend.h"
 #include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
                                      // raw declaration into a shared header, now that
                                      // test_console_module.cpp needs it too
                                      // (include/web_server_test_hooks.h's own comment)
@@ -75,14 +77,20 @@ void setDriveConfig(int16_t speedLimitMax) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.drive.speedLimitMax = speedLimitMax;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 }
 
 void setDomeEnabled(bool enabled) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = enabled;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 }
 
 // Unity has no enum-class comparison, and a bare 0/1/2 in a failure line says
@@ -100,7 +108,10 @@ void setDomeWifiPeer(const char* ip) {
     configCacheRead(&snap);
     strncpy(snap.dome.dome_wifi_peer_ip, ip, sizeof(snap.dome.dome_wifi_peer_ip) - 1);
     snap.dome.dome_wifi_peer_ip[sizeof(snap.dome.dome_wifi_peer_ip) - 1] = '\0';
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 }
 
 // The next config save does not reach flash (#376).
@@ -161,9 +172,15 @@ void setUp() {
     // A failure scheduled by a test that never consumed it would otherwise fire
     // in the next one.
     g_test_config_prefs.failNextStringWrites(0);
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // -----------------------------------------------------------------------------

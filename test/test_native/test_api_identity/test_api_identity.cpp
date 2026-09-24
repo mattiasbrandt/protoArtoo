@@ -16,6 +16,8 @@
 #include "config.h"
 #include "config_cache.h"
 #include "web_request_test_backend.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 
 namespace {
 
@@ -58,16 +60,25 @@ void applyIdentity(const char* name, bool mdnsUseName) {
     configCacheRead(&snap);
     snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "%s", name);
     snap.system.mdns_use_name = mdnsUseName;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 }
 
 }  // namespace
 
 void setUp() {
     applyIdentity("artoo", false);
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 void test_get_returns_identity_json() {

@@ -12,6 +12,7 @@
 #include "config.h"
 #include "config_serializer.h"
 #include "config_nvsio.h"
+#include "config_write_window_check.h"  // every config writer below checks it runs in a Write Window
 #include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
@@ -426,6 +427,7 @@ void configCacheReadDroidBuild(DroidBuildConfig* out) {
 // declare. Nothing on the boot path may call it: configLoadDroidBuild() has
 // read the stored answer there, and pushing over the top would undo it.
 void configCacheApplyDroidBuild(const DroidBuildConfig& build) {
+    configWriteWindowExpectHeld("configCacheApplyDroidBuild");
     taskENTER_CRITICAL(&configCacheMux);
     droidBuildCache = build;
     taskEXIT_CRITICAL(&configCacheMux);
@@ -449,6 +451,7 @@ void configCacheReadGuidedSetup(GuidedSetupConfig* out) {
 // Nothing on the boot path may call it - configLoadGuidedSetup() has read the
 // stored record there, and pushing over the top would undo it.
 void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided) {
+    configWriteWindowExpectHeld("configCacheApplyGuidedSetup");
     taskENTER_CRITICAL(&configCacheMux);
     guidedSetupCache = guided;
     taskEXIT_CRITICAL(&configCacheMux);
@@ -500,6 +503,7 @@ bool configCacheReadServoOutput(uint8_t index, ServoOutputRow* out) {
 // so a value changing under a builder is said in one voice wherever it happens.
 ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* edits,
                                                          size_t count) {
+    configWriteWindowExpectHeld("configCacheApplyServoOutputEdits");
     ServoOutputRepairReport report = {};
     if (edits == nullptr) {
         return report;
@@ -577,6 +581,7 @@ bool configCacheReadServoOutputNarrowedFrom(ServoOutputDriver driver, uint8_t ch
 // table size and the slot count, with no allocation and no I/O, the same
 // argument configCacheApplyServoOutputEdits() makes for its own pass.
 ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move) {
+    configWriteWindowExpectHeld("configCacheMoveServoOutputPart");
     taskENTER_CRITICAL(&configCacheMux);
     const ServoPartMoveOutcome outcome = servoOutputTableMovePart(&servoOutputCache, move);
     taskEXIT_CRITICAL(&configCacheMux);
@@ -881,6 +886,7 @@ void configCacheApply(const ConfigSnapshot& snap) {
 // See declaration comment in config_cache.h.
 void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStated,
                                  bool stationaryStated) {
+    configWriteWindowExpectHeld("configCacheApplyKeepingLive");
     taskENTER_CRITICAL(&configCacheMux);
     const int16_t liveLimit = configCache.drive.speedLimitMax;
     const SpeedPresetId livePreset = configCache.drive.speedPresetActive;
@@ -1058,6 +1064,7 @@ const char* configAudioCategoryCompanionKey(const char* key) {
 
 bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
                                 uint16_t awakeplus) {
+    configWriteWindowExpectHeld("configUpdateAudioMoodMasks");
     if (configValidate(ConfigKey::SND_MOODCAT_QUIET, quiet) != ConfigValidationResult::OK ||
         configValidate(ConfigKey::SND_MOODCAT_MID, mid) != ConfigValidationResult::OK ||
         configValidate(ConfigKey::SND_MOODCAT_FULL, full) != ConfigValidationResult::OK ||
@@ -1193,6 +1200,7 @@ void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report) {
 }
 
 bool configSaveDroidBuild(Preferences& prefs) {
+    configWriteWindowExpectHeld("configSaveDroidBuild");
     PrefsWriter writer(prefs);
     DroidBuildConfig build = {};
     configCacheReadDroidBuild(&build);
@@ -1207,6 +1215,7 @@ void configLoadGuidedSetup(Preferences& prefs, GuidedSetupRepairReport* report) 
 }
 
 bool configSaveGuidedSetup(Preferences& prefs) {
+    configWriteWindowExpectHeld("configSaveGuidedSetup");
     PrefsWriter writer(prefs);
     GuidedSetupConfig guided = {};
     configCacheReadGuidedSetup(&guided);
@@ -1227,6 +1236,7 @@ static bool removeKeys(Preferences& prefs, const char* const* keys, size_t count
 }
 
 bool configSaveServoOutputs(Preferences& prefs) {
+    configWriteWindowExpectHeld("configSaveServoOutputs");
     PrefsWriter writer(prefs);
     const uint8_t count = configCacheServoOutputCount();
     bool ok = configSerializeServoOutputCount(count, writer);
@@ -1311,6 +1321,7 @@ static bool removeRetiredLightKeys(Preferences& prefs) {
 }
 
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
+    configWriteWindowExpectHeld("configSave");
     PrefsWriter writer(prefs);
     bool ok = configSerialize(snapshot, writer);
     if (ok) {
@@ -1321,26 +1332,31 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
 }
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
+    configWriteWindowExpectHeld("configSaveDrive");
     PrefsWriter writer(prefs);
     return configSerializeDrive(config, writer);
 }
 
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config) {
+    configWriteWindowExpectHeld("configSaveAudio");
     PrefsWriter writer(prefs);
     return configSerializeAudio(config, writer);
 }
 
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
+    configWriteWindowExpectHeld("configSaveDome");
     PrefsWriter writer(prefs);
     return configSerializeDome(config, writer);
 }
 
 bool configSaveWifi(Preferences& prefs, const WifiConfig& config) {
+    configWriteWindowExpectHeld("configSaveWifi");
     PrefsWriter writer(prefs);
     return configSerializeWifi(config, writer);
 }
 
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
+    configWriteWindowExpectHeld("configSaveSystem");
     PrefsWriter writer(prefs);
     bool ok = configSerializeSystem(config, writer);
 

@@ -32,3 +32,12 @@ inline void vTaskDelete(TaskHandle_t xTaskToDelete) {
     (void)xTaskToDelete;  // Unused
 }
 
+// The host harness is one thread, so every caller is the same task: one fixed,
+// non-null handle. That is what lets the config write lock's holder check
+// (src/config_write_lock.cpp) tell "inside a Write Window" from "outside one"
+// natively - the lock records this handle on take and clears it on give.
+inline TaskHandle_t xTaskGetCurrentTaskHandle(void) {
+    static int s_theHostTask = 0;
+    return (TaskHandle_t)&s_theHostTask;
+}
+

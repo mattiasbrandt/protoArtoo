@@ -22,6 +22,7 @@
 #include "config_store.h"
 #include "component_registry.h"
 #include "config_cache.h"
+#include "config_write_window_check.h"  // configWriteWindowArm()
 #include "console_module.h"
 #include "console_serial_output.h"
 #include "console_task.h"
@@ -551,6 +552,12 @@ void setup() {
     if (!auxLedTaskReady) {
         PA_LOG_ERROR("main", "aux LED task init failed; AUX LED API will report unavailable");
     }
+
+    // Every config write from here on runs in a Write Window (ADR 0011, amended
+    // 2026-09-24): the boot load above is done and no task that writes config
+    // has started yet, so the holder check starts counting now. A writer that
+    // misses its window is logged, never refused (config_write_window_check.h).
+    configWriteWindowArm(true);
 
     // Real-time / core pinning contract: see docs/failsafe.md "Real-Time / Core Pinning Contract".
     // Core 1 real-time (heap-allocation-free): DriveTask, RCInputTask, ServoTask, DomeTask, DomeLinkTask.
