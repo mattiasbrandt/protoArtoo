@@ -49,9 +49,10 @@
 #include "failsafe_gate.h"                // failsafeClearEstop() - the single
                                           // explicit-intent ESTOP release path
 #include "mood.h"                         // applyMood()
-#include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
+#include "config_cache.h"                 // ConfigSnapshot
 #include "api_helpers.h"                  // normalizeDroidName(), parseBoolValue()
-#include "api_identity.h"                 // identitySetCommitApplied(), IdentitySetCommitOutcome
+#include "api_identity.h"                 // identitySetWriteWindow(), IdentitySetCommitOutcome
+#include "api_drive.h"                    // saveCommandedMode() - the mode save's Write Window
 #include "config.h"                       // DROID_NAME_MAX_LEN
 #include "api_profiler.h"                 // profilerTraceStart()/profilerTraceStop() and
                                           // ProfilerTraceOutcome - the Tier 3 leak-trace cores
@@ -104,25 +105,15 @@ static void consoleExecuteDirectSetMode(uint32_t requestId, const char* operatio
     }
 
     commandedSetStationary(stationary, consoleCommandSourceFor(source));
-    // saveConfigToNvs() persists the whole cache (commandedSetStationary()
-    // already synced robotState.stationary into it) - the same call
-    // handleModePost makes. It checked the result here first and discarded it
-    // there; #376 settled the disagreement in this executor's favour, so the
-    // REST route now reports a failed write too (saveCommandedMode(),
-    // src/web/api_drive.cpp) and the two adapters for this one operation
-    // answer alike.
-    //
-    // The save runs inside the config write lock (#417): it reads the whole
-    // cache and writes it, and an unserialized one can store a snapshot from
-    // before another writer's commit over that commit. A lock that cannot be
-    // taken is a save that did not happen, answered like one.
-    bool persisted = false;
-    {
-        ConfigWriteLock guard;
-        if (guard.acquired()) {
-            persisted = saveConfigToNvs();
-        }
-    }  // guard released here, before the answer
+    // The mode save's Write Window (saveCommandedMode(), include/api_drive.h),
+    // the one POST /api/mode calls: it persists the whole cache
+    // (commandedSetStationary() already synced robotState.stationary into it).
+    // This executor checked the save's result first and the REST route
+    // discarded it; #376 settled that in this executor's favour, so the two
+    // adapters for this one operation answer alike. A busy lock and a failed
+    // write both come back false, and both are a save that did not happen,
+    // answered like one.
+    const bool persisted = saveCommandedMode();
     requestStatusBroadcastNow();
 
     if (sink->onRecordResult) {
@@ -309,21 +300,13 @@ static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* oper
         return;
     }
 
-    // Cache read through commit inside the config write lock, as the REST
-    // route takes it for the same Commit Step (#417).
+    // The Write Window POST /api/identity calls (include/api_identity.h).
     ConfigSnapshot working = {};
     IdentitySetCommitOutcome commit;
-    {
-        ConfigWriteLock guard;
-        if (!guard.acquired()) {
-            consoleAnswerConfigWriteBusy(requestId, sink);
-            return;
-        }
-        configCacheRead(&working);
-        snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-        working.system.mdns_use_name = mdnsUseName;
-        commit = identitySetCommitApplied(&working);
-    }  // guard released here, before the answer
+    if (!identitySetWriteWindow(normalized, mdnsUseName, &working, &commit)) {
+        consoleAnswerConfigWriteBusy(requestId, sink);
+        return;
+    }
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, commit.persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
                             commit.persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,

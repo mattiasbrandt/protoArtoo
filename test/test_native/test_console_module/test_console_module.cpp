@@ -115,6 +115,8 @@
                                      // real capture pipeline, driven the same way the
                                      // dispatcher task drives it (#221 remainder)
 #include "seq_last_run_json.h"      // populateSeqLastRunJson() - the JSON-builder leg of
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
                                      // dome.api.get-sequence-last-run's three-way field check
 
 // A drive command reaches the arbiter only through driveArbiterSubmit(), so
@@ -406,8 +408,15 @@ void setUp() {
     seqStoreIndexClear();
     g_test_seq_delete_ok = true;
     g_test_seq_delete_calls = 0;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
-void tearDown() {}
+void tearDown() {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
+}
 
 // =============================================================================
 // system.status.health
@@ -503,7 +512,10 @@ void test_dome_status_current_carries_real_state() {
     robotState.domeTargetSpeed = 0.5f;
     ConfigSnapshot snap = {};
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("dome.status.current");
 
@@ -841,14 +853,20 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
         move.toOutput = true;
         move.toDriver = SERVO_DRIVER_LEDC;
         move.toChannel = LEDC_CH_ARM1;
-        TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED, configCacheMoveServoOutputPart(move));
+        {
+            const ConfigWriteWindowForTest seed;
+            TEST_ASSERT_EQUAL_UINT8(SERVO_PART_MOVED, configCacheMoveServoOutputPart(move));
+        }
     }
     ServoOutputEdit micro = {};
     micro.driver = SERVO_DRIVER_LEDC;
     micro.channel = LEDC_CH_AUX2;
     micro.fields = SERVO_FIELD_COMPONENT;
     micro.component = SERVO_COMP_MG90S;
-    configCacheApplyServoOutputEdits(&micro, 1);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApplyServoOutputEdits(&micro, 1);
+    }
 
     const RobotState saved = robotState;
     robotState.servoCommanded[0] = {1620, 2000, true, 0};   // ARM1, part way through a move
@@ -1311,7 +1329,10 @@ void test_system_api_get_identity_carries_real_config_state() {
     configCacheRead(&snap);
     snprintf(snap.system.droid_name, sizeof(snap.system.droid_name), "%s", "Chopper");
     snap.system.mdns_use_name = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("system.api.get-identity");
 
@@ -1630,7 +1651,10 @@ void test_sound_get_mood_map_matches_the_config_row_for_the_same_state() {
     snap.audio.snd_moodcat_mid = 22;
     snap.audio.snd_moodcat_full = 33;
     snap.audio.snd_moodcat_awakeplus = 44;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("sound.api.get-mood-map");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
@@ -1999,7 +2023,10 @@ void test_action_dome_move_is_blocked_while_sleeping() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
     robotState.sleepMode = true;
 
     runQuery("dome.action.move speed=0.5");
@@ -2012,7 +2039,10 @@ void test_action_dome_move_is_refused_when_dome_output_is_disabled() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
 
@@ -2024,7 +2054,10 @@ void test_action_dome_move_queues_when_enabled() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
 
@@ -2302,7 +2335,10 @@ void test_action_executor_not_ready_count_report() {
 void test_component_toggle_read_reports_saved_and_active() {
     ConfigSnapshot saved = {};
     saved.system.enable_arm1 = true;
-    configCacheApply(saved);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(saved);
+    }
 
     // Active still reflects a boot where arm1 was off - the exact "staged,
     // not yet rebooted into" divergence ADR 0027 describes.
@@ -2439,7 +2475,10 @@ void test_component_toggle_table_paramkeys_match_config_apply() {
 void test_drive_speed_limit_read_and_write() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 250;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("drive.config.speed-limit");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_cap.outcome);
@@ -2649,10 +2688,11 @@ void test_scalar_config_write_rejects_an_unknown_argument() {
 // Cross-adapter serialization (#226 rework, defect 1): consoleWriteScalarConfigField()
 // is the sole reader/writer of s_consoleConfigApplyResult, and both Console
 // adapters (serial task, browser's psychic server task - both pinned to
-// Core 0) can call it concurrently. The config write lock (ConfigWriteLock,
-// include/api_config.h) serializes the whole configApply() -> error check ->
-// configCommitApplied() window, and since #269 the REST config routes take
-// the same one; these tests simulate another writer holding it via the native
+// Core 0) can call it concurrently. The config write lock
+// (include/config_write_lock.h), held by the config Write Window
+// configWriteWindow() since #418, serializes the whole configApply() -> error
+// check -> configCommitApplied() window, and the REST config route calls the
+// same window; these tests simulate another writer holding it via the native
 // mutex stub's exposed singleton (paStubMutexStorage()), which is what every
 // xSemaphoreCreateMutexStatic() returns natively, matching the precedent
 // test_console_serial_output.cpp already set for inspecting/driving
@@ -2764,7 +2804,10 @@ static void seedWifi(WifiMode mode, const char* staSsid, const char* staPassword
     snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "%s", staPassword);
     snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "%s", apSsid);
     snprintf(snap.wifi.ap_password, sizeof(snap.wifi.ap_password), "%s", apPassword);
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
 }
@@ -3253,7 +3296,10 @@ void test_drive_move_clamps_to_the_configured_speed_cap() {
     robotState.webControlEnabled = true;
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 200;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("drive.action.move speed=900 steer=-900");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
@@ -3261,7 +3307,10 @@ void test_drive_move_clamps_to_the_configured_speed_cap() {
     ConfigSnapshot raised = {};
     configCacheRead(&raised);
     raised.drive.speedLimitMax = 1000;
-    configCacheApply(raised);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(raised);
+    }
 
     const DriveOutput resolved = resolvedDriveOutput();
     TEST_ASSERT_EQUAL_INT16(200, resolved.speed);
@@ -3682,7 +3731,10 @@ void test_sound_status_names_the_picked_module_while_sound_is_off() {
     configCacheSetActiveAudioEnabled(false);
     ConfigSnapshot snap = {};
     snap.system.sound_member = componentPartById("mp3_trigger")->value;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("sound.status.current");
 
@@ -4746,7 +4798,10 @@ void test_reason_matrix_component_disabled_from_a_component_toggle_off() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
 
@@ -4771,7 +4826,10 @@ void test_reason_matrix_blocked_by_state_from_sleep() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
     robotState.sleepMode = true;
 
     runQuery("dome.action.move speed=0.5");
@@ -4847,7 +4905,10 @@ void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answe
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.system.enable_dome_esc = true;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runOperationsListing();
     const char* listed = listedOperationItem("dome.action.move");
@@ -4861,7 +4922,10 @@ void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answe
     // The operator turns the Dome ESC off after listing the catalog.
     configCacheRead(&snap);
     snap.system.enable_dome_esc = false;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("dome.action.move speed=0.5");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
@@ -4904,7 +4968,10 @@ static void seedAudioTrack(const char* key, uint16_t value) {
     configCacheRead(&snap);
     TEST_ASSERT_TRUE_MESSAGE(configAudioSetTrackByKey(&snap.audio, key, value),
                              "test seed used a key AUDIO_TRACK_KEYS does not declare");
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 }
 
 static uint16_t audioTrackValue(const char* key) {
@@ -5089,7 +5156,10 @@ void test_sound_config_mood_category_map_reads_the_four_masks() {
     snap.audio.snd_moodcat_mid = 0x012;
     snap.audio.snd_moodcat_full = 0x123;
     snap.audio.snd_moodcat_awakeplus = 0xFFF;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("sound.config.mood-category-map");
 
@@ -5150,7 +5220,10 @@ void test_sound_config_volume_reads_the_stored_default() {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     snap.audio.audioVolume = 17;
-    configCacheApply(snap);
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheApply(snap);
+    }
 
     runQuery("sound.config.volume");
 

@@ -35,9 +35,9 @@ void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyRe
 // with the new settings (Staged Network Switch, ADR 0015 - saved, not
 // hot-applied), and broadcast the new status. This is wifiApply()'s sibling,
 // extracted per #227 phase 1 ahead of the Controller Console's WiFi write
-// path (T11, #227 phase 2): the HTTP handler (handleWifiPost, api_config.cpp)
-// and the future Console adapter both call this instead of each carrying
-// their own copy of the sequence.
+// path (T11, #227 phase 2). wifiWriteWindow() below runs it for both
+// adapters - the HTTP handler (handleWifiPost, api_config.cpp) and the
+// Console's WiFi write - so neither carries its own copy of the sequence.
 //
 // `working` must already hold wifiApply()'s output (result->ok == true).
 // Kept beside wifiApply() rather than beside the handler (unlike the
@@ -65,3 +65,17 @@ struct WifiCommitOutcome {
     bool networkRecovery = false; // configCacheReadActiveWifiRecovery() at commit time
 };
 WifiCommitOutcome wifiCommitApplied(WifiConfig* working);
+
+// Write Window for a Device WiFi Settings write (ADR 0011, amended 2026-09-24;
+// CONTEXT.md "Write Window"): take the config write lock, read the current
+// settings into `*working`, run wifiApply(), and when it is ok run
+// wifiCommitApplied(), then release. The HTTP handler (handleWifiPost) and the
+// Console's WiFi write both call this and hold no lock of their own: the
+// Commit Step read-modify-writes the shared config-cache snapshot, so an
+// interleaved write on any adapter would otherwise lose one of the two.
+//
+// False -> busy: nothing read or written; `*result` and `*commit` untouched.
+// True -> `*result` holds wifiApply()'s answer, and when it is ok `*commit`
+// holds the Commit Step's outcome.
+bool wifiWriteWindow(const ConfigParamSource& params, WifiConfig* working, WifiApplyResult* result,
+                     WifiCommitOutcome* commit);

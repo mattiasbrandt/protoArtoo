@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "api_config.h"  // ConfigWriteLock - saveCommandedMode()'s window
+#include "config_write_lock.h"  // saveCommandedMode() is the mode save's Write Window
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "audio_task.h"
@@ -180,6 +180,25 @@ bool paramLowercase(WebRequest& req, const char* name, char* out, size_t outSize
     return true;
 }
 
+// POST /api/mode's two branches, which differ only in the mode they command.
+// The answer on a failed save reads the way POST /api/audio's volume branch
+// already words the same outcome ("volume applied but NVS save failed",
+// src/web/api_audio.cpp): applied is true, stored is not.
+void applyModeAndAnswer(WebRequest& req, bool stationary) {
+    commandedSetStationary(stationary, SRC_WEB_API);
+    const bool stored = saveCommandedMode();
+    requestStatusBroadcastNow();
+    PA_LOG_INFO(TAG, "[WEB] Mode set to %s (stored=%s)", stationary ? "stationary" : "driving",
+                stored ? "yes" : "no");
+    if (!stored) {
+        webSendJsonError(req, 500, "mode applied but NVS save failed");
+        return;
+    }
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
+}  // namespace
+
 // Store the mode the droid has just been put into, and say whether it reached
 // flash. saveConfigToNvs() writes the whole config cache, the new mode
 // included -- commandedSetStationary() has already synced it there.
@@ -207,9 +226,12 @@ bool paramLowercase(WebRequest& req, const char* name, char* out, size_t outSize
 // What "reported" looks like is the caller's to decide, because each surface
 // has its own vocabulary. What none of them may do is answer plain success.
 //
-// The save reads the whole cache and writes it, rows included, so it runs
-// inside the config write lock like every other config writer (#417); a lock
-// that cannot be taken is a save that did not happen, and is reported as one.
+// It is the mode save's Write Window (ADR 0011, amended 2026-09-24): the save
+// reads the whole cache and writes it, rows included, so it runs holding the
+// config write lock, and POST /api/mode, the manual command paths and the
+// Console's drive.action.set-mode all call it rather than taking the lock. A
+// lock that cannot be taken is a save that did not happen, and is reported as
+// one.
 bool saveCommandedMode() {
     ConfigWriteLock lock;
     if (!lock.acquired()) {
@@ -218,24 +240,6 @@ bool saveCommandedMode() {
     return saveConfigToNvs();
 }
 
-// POST /api/mode's two branches, which differ only in the mode they command.
-// The answer on a failed save reads the way POST /api/audio's volume branch
-// already words the same outcome ("volume applied but NVS save failed",
-// src/web/api_audio.cpp): applied is true, stored is not.
-void applyModeAndAnswer(WebRequest& req, bool stationary) {
-    commandedSetStationary(stationary, SRC_WEB_API);
-    const bool stored = saveCommandedMode();
-    requestStatusBroadcastNow();
-    PA_LOG_INFO(TAG, "[WEB] Mode set to %s (stored=%s)", stationary ? "stationary" : "driving",
-                stored ? "yes" : "no");
-    if (!stored) {
-        webSendJsonError(req, 500, "mode applied but NVS save failed");
-        return;
-    }
-    req.send(200, "application/json", "{\"ok\":true}");
-}
-
-}  // namespace
 
 ManualCommandResult executeManualCommand(const char* raw) {
     if (raw == nullptr || raw[0] == '\0') {

@@ -769,8 +769,16 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 584
 // Output by the running board's label, and onCliCommand's deepest route (from
 // consoleExecuteCommand) walks 7904 against 7888 at the pre-slice base; the
 // rule still lands on 10752, so the allocation does not move.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8368;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8368 -> 10460 -> 10752
+// Re-derived 2026-09-24 (#418): Console 8368 -> 8384. Every config write now
+// runs through a Write Window, and the deepest route goes
+// consoleWriteAudioTracksField -> audioTracksWriteWindow (48 B) ->
+// audioTracksCommitApplied -> configCacheApply -> the holder check's log line
+// for a write outside its window (configWriteWindowExpectHeld -> paLogLine ->
+// the snprintf/_dtoa_r tail). onCliCommand walks 7920 against the recorded
+// 7904; every other task walks within its constant. The rule still lands on
+// 10752, so the allocation does not move.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8384;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8384 -> 10480 -> 10752
 // Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
 // lit wire on its own (fa8eed74, e277d325), and the chain carries that through
 // the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.

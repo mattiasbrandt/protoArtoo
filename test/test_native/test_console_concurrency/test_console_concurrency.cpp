@@ -34,9 +34,10 @@
  *    below read the outer's answer after the interruption precisely so that
  *    would show.
  *  - The config-write critical section (`s_consoleConfigApplyResult` under
- *    the config write lock, ConfigWriteLock in include/api_config.h - the one
- *    every config writer takes since #269, this module's two adapters and the
- *    REST routes alike). The lock tests below drive it from BOTH Console
+ *    the config write lock, include/config_write_lock.h - the one every config
+ *    writer runs under since #269, and since #418 only inside the Write Window
+ *    this module's two adapters and the REST routes share). The lock tests
+ *    below drive it from BOTH Console
  *    sources, which the existing coverage in test_console_module.cpp does only
  *    from the serial one; test_config_write_lock.cpp drives the REST side.
  */
@@ -56,6 +57,7 @@
 #include "console_catalog.h"
 #include "console_module.h"
 #include "console_record.h"
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
 
 // =============================================================================
 // Capture: one per concurrent request, so the two answers can be compared
@@ -199,10 +201,16 @@ void setUp(void) {
     captureReset(&g_inner);
     memset(&g_plan, 0, sizeof(g_plan));
     g_active = nullptr;
+    // Armed after this setUp()'s own seeding: from here every config write
+    // must run inside a Write Window, as it must on the droid after boot (#418).
+    configWriteWindowArm(true);
 }
 
 void tearDown(void) {
+    const uint32_t misses = configWriteWindowMisses();
+    configWriteWindowArm(false);
     paStubMutexReset();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, misses, "a config write ran outside its Write Window");
 }
 
 // Every record a capture holds must carry that capture's own request ID.

@@ -2,7 +2,7 @@
 // src/web/api_wifi_apply.cpp
 //
 // Apply Core for POST /api/wifi (ADR 0011, ADR 0015), plus its ADR 0036
-// Commit Step. See api_wifi_apply.h.
+// Commit Step and Write Window. See api_wifi_apply.h.
 // =============================================================================
 
 #include "api_wifi_apply.h"
@@ -12,6 +12,7 @@
 #include <Preferences.h>
 
 #include "config.h"       // NVS_NAMESPACE
+#include "config_write_lock.h"  // wifiWriteWindow() is this Apply Core's Write Window
 #include "web_server.h"   // requestStatusBroadcastNow()
 
 namespace {
@@ -185,4 +186,19 @@ WifiCommitOutcome wifiCommitApplied(WifiConfig* working) {
     outcome.pendingApply = wifiConfigsDiffer(*working, activeWifi);
     outcome.networkRecovery = configCacheReadActiveWifiRecovery();
     return outcome;
+}
+
+// See include/api_wifi_apply.h for the full contract.
+bool wifiWriteWindow(const ConfigParamSource& params, WifiConfig* working, WifiApplyResult* result,
+                     WifiCommitOutcome* commit) {
+    ConfigWriteLock lock;
+    if (!lock.acquired()) {
+        return false;
+    }
+    configCacheReadWifi(working);
+    wifiApply(params, working, result);
+    if (result->ok) {
+        *commit = wifiCommitApplied(working);
+    }
+    return true;
 }
