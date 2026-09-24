@@ -81,6 +81,7 @@ S3 — Dome Control
 
 **Notes:**
 - GPIO 34 (S3 RX) and GPIO 35 (S2 RX) are ESP32 input-only pins — they cannot be used as outputs.
+- GPIO 35 has no internal pull-up (GPIO 34-39 have none), so S2 RX needs an external pull-up to 3.3 V for an unplugged MP3 Trigger to sit idle; floating, it fills the soft-UART RX with noise until the firmware switches that interrupt off for a backoff (#417).
 - SBUS1 (GPIO 15) and SBUS2 (GPIO 13) use the ESP32 RMT peripheral, not hardware UARTs,
   so SBUS costs no UART controller on this board.
 - **S2 and S3 are not simultaneous.** This chip has three HP UART controllers
