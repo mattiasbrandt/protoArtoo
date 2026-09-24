@@ -334,10 +334,11 @@ void test_the_other_rest_config_writers_wait_for_the_window(void) {
         {"quiet", "1"}, {"mid", "2"}, {"full", "3"}, {"awakeplus", "4"}};
     TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioMoodMapPost, moodMap, 4),
                                   "mood map");
-    const WebRequestTestParam tracks[] = {{"key", "snd_scream"}, {"track", "3"}};
+    const WebRequestTestParam tracks[] = {{"key", "scream"}, {"track", "3"}};
     TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioTracksPost, tracks, 2), "tracks");
-    const WebRequestTestParam range[] = {{"category", "scrm"}, {"lo", "1"}, {"hi", "2"}};
-    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioCategoryRangePost, range, 3),
+    const WebRequestTestParam range[] = {
+        {"lo_key", "snd_cat_gen_lo"}, {"hi_key", "snd_cat_gen_hi"}, {"lo", "10"}, {"hi", "20"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioCategoryRangePost, range, 4),
                                   "category range");
     const WebRequestTestParam identity[] = {{"droidName", "artoo"}};
     TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleIdentityPost, identity, 1), "identity");
@@ -346,8 +347,13 @@ void test_the_other_rest_config_writers_wait_for_the_window(void) {
     const WebRequestTestParam mode[] = {{"mode", "stationary"}};
     TEST_ASSERT_EQUAL_INT_MESSAGE(500, postWhileHeld(handleModePost, mode, 1), "mode");
 
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0, readSnapshot().audio.audioVolume,
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0, after.audio.audioVolume,
                                     "a refused volume write still reached the config cache");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, after.audio.snd_scream,
+                                     "a refused tracks write still reached the config cache");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, after.audio.snd_cat_gen_lo,
+                                     "a refused category range still reached the config cache");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "a refused writer took the window anyway");
     configCacheSetActiveAudioEnabled(false);
 }
