@@ -284,8 +284,9 @@
 
   // What this page has told each dome piece, by the Panel Intent target the
   // vendored map names it with. The dome reports nothing back, so this is the
-  // whole of what is known: a piece this page has not opened draws Closed, the
-  // way the dome picker on the Dashboard has always drawn it.
+  // whole of what is known: a piece this page has told draws what it was told,
+  // and one it has not told draws no state at all. Closed is a position, and
+  // nobody said it (#417).
   const domeTold = new Map();
 
   // What one Part looks like on the picture, from the Output rows the droid
@@ -313,14 +314,18 @@
   // and it is one shape, so it draws the state of the Part on it that
   // something drives, the panel before the light. A piece with no Output of
   // ours but a Panel Intent target is the dome's to move, and draws what this
-  // page last told it.
+  // page last told it, or nothing until it has told it anything.
   const markerMark = (markerId) => {
     const marker = drawing.markerOf(markerId);
     if (marker.panTilt) return {};
     const own = marker.parts.filter((id) => !kinds?.isLight(partById.get(id)));
     const wired = own.concat(marker.parts).find((id) => outputs !== null && outputOf(id) !== null);
     if (wired) return markFor(wired);
-    if (marker.target) return { mark: view.MARKS.OPENABLE, at: domeTold.get(marker.target) ? 1 : 0 };
+    if (marker.target) {
+      return domeTold.has(marker.target)
+        ? { mark: view.MARKS.OPENABLE, at: domeTold.get(marker.target) ? 1 : 0 }
+        : { mark: view.MARKS.UNKNOWN, said: "Not told yet" };
+    }
     return markFor(own[0] || marker.parts[0]);
   };
 
