@@ -20,10 +20,10 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./mini_dom.js";
-import { servoRow, freshOutputs, withParts, configOutputs, applyOutputSave } from "./fake_droid.js";
+import { servoRow, freshOutputs, withParts, configOutputs, applyOutputSave, statusFrame } from "./fake_droid.js";
 
 // The droid's Outputs are described once, in helpers/fake_droid.js (#415).
-export { freshOutputs, withParts };
+export { freshOutputs, withParts, statusFrame };
 export const output = servoRow;
 
 // mini_dom has no CSSStyleDeclaration, and the position marks are painted
@@ -68,19 +68,6 @@ const IDENTITY = {
 };
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// A status frame as buildStatusJson() sends one: its first unconditional chunk
-// carries these six fields together (src/web/web_server.cpp), so a real frame
-// has all of them or none. `changes` lands on top.
-export const statusFrame = (changes = {}) => ({
-  estop: false,
-  sbusHwFailsafe: false,
-  sbusSignalLost: false,
-  webDriveExpired: false,
-  webControlEnabled: false,
-  sleepMode: false,
-  ...changes,
-});
 
 // `components` replaces the GET /api/config Output entries configOutputs()
 // derives from the rows (every Output wired, carrying an MG996R), for a test
@@ -400,6 +387,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
+    "/live_reading.js": readData("live_reading.js"),
     "/droid_parts.js": readData("droid_parts.js"),
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/droid_build.js": readData("droid_build.js"),

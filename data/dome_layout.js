@@ -448,16 +448,18 @@
    * Refetch layout when transitioning INTO "connected" state.
    */
   function subscribeToStatusStream() {
-    if (statusStreamSubscribed || !window.PAStatusStream) {
+    if (statusStreamSubscribed || !window.PALiveReading) {
       return;
     }
 
-    window.PAStatusStream.subscribe((_eventType, payload) => {
-      if (payload?.dome_link?.state === undefined) {
+    // The dome link's state is a status field, so it is read off the Live
+    // Reading like every other (data/live_reading.js).
+    window.PALiveReading.subscribe((reading) => {
+      const newState = reading.status?.dome_link?.state;
+      if (newState === undefined) {
         return;
       }
 
-      const newState = payload.dome_link.state;
       // Refetch only when transitioning INTO connected
       if (lastDomeLinkState !== 'connected' && newState === 'connected') {
         resolveLayout();

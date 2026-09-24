@@ -14,7 +14,21 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { deriveHealthSignals } = require("../../data/health_signals.js");
+const vm = require("node:vm");
+const { readFileSync } = require("node:fs");
+const path = require("node:path");
+
+const { deriveHealthSignals: deriveWith } = require("../../data/health_signals.js");
+
+// The word for a field the frame does not carry is the Live Reading's, read
+// from the shipped module the way the Dashboard hands it over (data/app.js).
+const UNKNOWN = (() => {
+  const context = { window: {}, console };
+  vm.runInNewContext(readFileSync(path.join(__dirname, "../../data/live_reading.js"), "utf8"), context);
+  return context.window.PALiveReading.UNKNOWN;
+})();
+
+const deriveHealthSignals = (payload, options = {}) => deriveWith(payload, { unknown: UNKNOWN, ...options });
 
 const toSignalMap = (payload, options) => {
   const entries = deriveHealthSignals(payload, options).map((item) => [item.id, item]);
@@ -81,7 +95,7 @@ test("WiFi reads OK when the radio is serving and never amber when it is not", (
 
   const neverAsked = toSignalMap({});
   assert.equal(neverAsked["h-wifi"].state, "off");
-  assert.equal(neverAsked["h-wifi"].reason, "Not reporting");
+  assert.equal(neverAsked["h-wifi"].reason, UNKNOWN);
 });
 
 // -----------------------------------------------------------------------------
@@ -101,7 +115,7 @@ test("file system reads OK when mounted, FAIL when it said so, OFF when it did n
   // or refused, and nothing here has refused anything.
   const silent = toSignalMap({});
   assert.equal(silent["h-fs"].state, "off");
-  assert.equal(silent["h-fs"].reason, "Not reporting");
+  assert.equal(silent["h-fs"].reason, UNKNOWN);
 });
 
 // -----------------------------------------------------------------------------
@@ -125,7 +139,7 @@ test("memory keeps amber for a reported low number and reads OFF for no number",
 
   const noNumber = toSignalMap({});
   assert.equal(noNumber["h-heap"].state, "off");
-  assert.equal(noNumber["h-heap"].reason, "No data");
+  assert.equal(noNumber["h-heap"].reason, UNKNOWN);
 });
 
 // -----------------------------------------------------------------------------
@@ -171,12 +185,12 @@ test("protoR2link never seen, unrecognised or silent all read OFF", () => {
 
   const unknown = toSignalMap({ dome_link: { state: "handshaking" } });
   assert.equal(unknown["h-dome-link"].state, "off");
-  assert.equal(unknown["h-dome-link"].reason, "Unknown (handshaking)");
+  assert.equal(unknown["h-dome-link"].reason, `${UNKNOWN} (handshaking)`);
   assert.match(unknown["h-dome-link"].detail, /state=handshaking/);
 
   const noState = toSignalMap({ dome_link: { detail: "n/a" } });
   assert.equal(noState["h-dome-link"].state, "off");
-  assert.equal(noState["h-dome-link"].reason, "No status");
+  assert.equal(noState["h-dome-link"].reason, UNKNOWN);
 });
 
 // -----------------------------------------------------------------------------
@@ -227,11 +241,11 @@ test("a sound status that cannot be asked for reads OFF, and is still not a fail
 
   const unknown = toSignalMap({ audio: { state: "booting" } });
   assert.equal(unknown["h-sound"].state, "off");
-  assert.equal(unknown["h-sound"].reason, "Unknown (booting)");
+  assert.equal(unknown["h-sound"].reason, `${UNKNOWN} (booting)`);
 
   const noState = toSignalMap({ audio: { detail: "n/a" } });
   assert.equal(noState["h-sound"].state, "off");
-  assert.equal(noState["h-sound"].reason, "No state");
+  assert.equal(noState["h-sound"].reason, UNKNOWN);
 
   const malformed = toSignalMap({ audio: "idle" });
   assert.equal(malformed["h-sound"].state, "off");
@@ -267,12 +281,12 @@ test("dome esc reports OK for idle and spinning states", () => {
 test("dome esc reads OFF for a state it does not recognise, keeping the state in the detail", () => {
   const unknown = toSignalMap({ domeEnabled: true, domeEsc: { state: "paused" } });
   assert.equal(unknown["h-dome-esc"].state, "off");
-  assert.equal(unknown["h-dome-esc"].reason, "Unknown (paused)");
+  assert.equal(unknown["h-dome-esc"].reason, `${UNKNOWN} (paused)`);
   assert.match(unknown["h-dome-esc"].detail, /state=paused/);
 
   const missingState = toSignalMap({ domeEnabled: true });
   assert.equal(missingState["h-dome-esc"].state, "off");
-  assert.equal(missingState["h-dome-esc"].reason, "No status");
+  assert.equal(missingState["h-dome-esc"].reason, UNKNOWN);
 });
 
 // -----------------------------------------------------------------------------

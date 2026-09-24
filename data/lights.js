@@ -87,6 +87,10 @@
   // not an answer (include/api_aux_led.h) - and a surface shows no state
   // nobody reported (CONTEXT.md, Health Signal).
   let showing = null;
+  // What a wire with no reading says instead, in the Live Reading's words:
+  // Finding out before the droid has sent a frame, Unknown once frames
+  // arrive that do not carry this wire (data/live_reading.js).
+  let unheard = window.PALiveReading.FINDING_OUT;
 
   // Where a light sits, in the words a builder reads on the droid: a dome
   // light is IN the panel that carries it, by the Printed Droid shorthand
@@ -501,7 +505,7 @@
     const feedback = feedbackNode();
     const reported = heard(wire);
     if (!reported) {
-      node.appendChild(element("p", "light-state", "Not reported yet"));
+      node.appendChild(element("p", "light-state", unheard));
     } else if (reading?.available === false) {
       node.appendChild(element("p", "light-state", "Could not start"));
     }
@@ -646,11 +650,13 @@
   const readingOf = (led) => (led ? `${led.r},${led.g},${led.b}:${led.effect}:${led.available}` : "");
   const frameOf = (byId) => (byId === null ? "unheard" : Object.keys(byId).sort()
     .map((id) => `${id}=${readingOf(byId[id])}`).join("|"));
-  const renderStatus = (status) => {
-    const lights = status && typeof status === "object" ? status.lights : null;
+  const renderReading = (reading) => {
+    const lights = reading.status ? reading.status.lights : null;
     const next = lights && typeof lights === "object" && !Array.isArray(lights) ? lights : null;
-    const changed = frameOf(next) !== frameOf(showing);
+    const nextUnheard = reading.word("lights") || window.PALiveReading.UNKNOWN;
+    const changed = frameOf(next) !== frameOf(showing) || nextUnheard !== unheard;
     showing = next;
+    unheard = nextUnheard;
     // Remember the hue each wire is showing, so its brightness can put it back.
     Object.keys(showing || {}).forEach((id) => {
       const led = showing[id];
@@ -659,14 +665,6 @@
     // The stream repeats itself every few seconds. Redrawing on a frame that
     // says nothing new would take the plate out from under whoever is using it.
     if (changed) paint();
-  };
-
-  // Rethrows, so a section run or the surface poll can tell a read that landed
-  // from one that did not (#360).
-  const refreshLiveStatus = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatus(result.data);
   };
 
   paint();
@@ -687,23 +685,7 @@
     loadWires().catch((error) => console.warn("[lights] wires unavailable:", error));
   }
 
-  // SSE-first for what the strip was set to, with visibility-aware fallback
-  // polling the shell stops while another surface is on screen (ADR 0048).
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderStatus(payload);
-    });
-    const last = window.PAStatusStream.getLastStatus();
-    if (last) {
-      renderStatus(last);
-    } else {
-      refreshLiveStatus().catch((error) => console.warn("[lights] status read failed:", error));
-    }
-  } else {
-    window.PASurface?.poll(refreshLiveStatus, {
-      cadenceMs: 5000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
-  }
+  // What the strip was set to rides the Live Reading, which owns the stream
+  // or the one fallback poll for the whole shell (data/live_reading.js).
+  window.PALiveReading.subscribe(renderReading);
 })();

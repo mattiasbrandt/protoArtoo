@@ -1,128 +1,70 @@
 // =============================================================================
 // test/test_web/test_dashboard_fallback_poll.js
 //
-// Integration test for #165: Dashboard SSE-fallback polling uses
-// createBackgroundPoll with proper single-flight guarding, correct cadence,
-// and proper teardown.
+// The Dashboard with no event stream (#165, #419).
 //
-// Loads the REAL data/app.js module and verifies that:
-// - refreshFromFallback returns its promise (so single-flight works)
-// - Only one concurrent /api/status request is in flight at a time
-// - Cadence is 3000ms
-// - Interval and listener are removed on beforeunload
+// It used to run its own 3 s /api/status poll, beside Foot Drive's, Sound's and
+// the shell's. Each spent one of the controller's three client slots asking
+// what another had just asked. Now the Live Reading's single poll is the only
+// status reader on this path, and the Dashboard paints what it hands over.
+//
+// Runs the REAL data/app.js with the real status stream and Live Reading
+// (helpers/page_module_env.js), and asserts on requests and rendering:
+// - the Dashboard installs no poll of its own
+// - the shared poll keeps one /api/status in flight at a time
+// - what the poll hears is what the Dashboard shows
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// =============================================================================
-// Single-flight carrying assertion: all three mutations must be KILLED
-// =============================================================================
-
-test("Dashboard fallback path: real app.js single-flight and teardown", async (t) => {
+test("with no stream the Dashboard polls nothing itself, and the shell's one poll feeds it one read at a time", async () => {
   const callLog = [];
-  const statusDelay = 400; // Make /api/status slow so overlaps are detectable
+  const statusDelay = 400; // Slow enough that overlapping reads are measurable
+  let latched = false;
 
-  // Load the real app.js module
   const env = loadPageModule("app.js", {
     respond: (path) => {
-      if (path === "/api/status") {
-        // Track every /api/status call
-        const id = callLog.length;
-        callLog.push({ id, start: Date.now() });
-
-        // Return a promise that resolves after the delay
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            callLog[id].end = Date.now();
-            resolve({ data: { estop: false, sleepMode: false } });
-          }, statusDelay);
-        });
-      }
-      return { data: {} };
+      if (path !== "/api/status") return { data: {} };
+      const id = callLog.length;
+      callLog.push({ id, start: Date.now() });
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          callLog[id].end = Date.now();
+          resolve({ data: statusFrame({ estop: latched }) });
+        }, statusDelay);
+      });
     },
   });
-
-  // Settle initial load
   await env.settle();
 
-  // Verify the fallback path was taken (no SSE)
-  assert.ok(
-    !env.window.PAStatusStream.isSupported(),
-    "fallback path must be active (SSE disabled)"
-  );
+  assert.ok(!env.window.PAStatusStream.isSupported(), "the fallback path is the one under test");
+  assert.equal(env.intervals.length, 1, "one poll: the Live Reading's, and none of the Dashboard's own");
+  const [poll] = env.intervals;
 
-  // Verify interval was created
-  assert.ok(
-    env.intervals.length > 0,
-    "fallback path must create a polling interval"
-  );
-
-  const fallbackInterval = env.intervals[env.intervals.length - 1];
-
-  // =========================================================================
-  // MUTATION 1 (m1.patch): Mutation removes `return` from refreshFromFallback
-  // Without it, inFlight clears before request settles, allowing overlaps
-  // Must kill this test by showing overlaps
-  // =========================================================================
-  // Fire interval 3 times, staggered
-  // Each call takes 400ms, so if single-flight works, only 1 concurrent call
-  // If single-flight is broken (no return), 3 concurrent calls
-  callLog.length = 0;
+  // Three ticks while a slow read is still out: the poll must wait for its own
+  // answer rather than stacking reads on the controller.
+  latched = true;
   for (let i = 0; i < 3; i += 1) {
-    env.fireInterval(fallbackInterval.id);
+    poll.fn();
     await sleep(100);
   }
+  await sleep(600);
 
-  await sleep(600); // Wait for all calls to settle
-
-  // Count max concurrent calls
   let maxConcurrent = 0;
-  for (let i = 0; i < callLog.length; i += 1) {
-    let concurrent = 1;
-    for (let j = 0; j < callLog.length; j += 1) {
-      if (i !== j && callLog[j].start < callLog[i].end && callLog[j].start >= callLog[i].start) {
-        concurrent++;
-      }
-    }
-    maxConcurrent = Math.max(maxConcurrent, concurrent);
+  for (const call of callLog) {
+    const overlapping = callLog.filter((other) => other.start < call.end && other.end > call.start).length;
+    maxConcurrent = Math.max(maxConcurrent, overlapping);
   }
+  assert.equal(maxConcurrent, 1, `one status read in flight at a time. Call log: ${JSON.stringify(callLog)}`);
 
-  // m1 mutation must be KILLED: without return, maxConcurrent should be 3
   assert.equal(
-    maxConcurrent,
-    1,
-    `single-flight broken: max concurrent was ${maxConcurrent}, expected 1. ` +
-    `This kills m1.patch (removes return). Call log: ${JSON.stringify(callLog)}`
-  );
-
-  // =========================================================================
-  // MUTATION 2 (c1-cadence.patch): Mutation changes cadence from 3000 to 30000
-  // This test verifies the cadence was set to 3000ms
-  // Must kill this test by showing cadence is NOT 30000
-  // =========================================================================
-  assert.equal(
-    fallbackInterval.ms,
-    3000,
-    `cadence must be 3000ms (production value), got ${fallbackInterval.ms}. ` +
-    `This kills c1-cadence.patch (changes cadence to 30000)`
-  );
-
-  // =========================================================================
-  // MUTATION 3 (c2-teardown.patch): Mutation deletes beforeunload teardown
-  // This test verifies the interval is cleared on beforeunload
-  // Must kill this test by showing the interval is NOT cleared
-  // =========================================================================
-  const intervalIdBeforeTeardown = fallbackInterval.id;
-  env.emit("window", "beforeunload");
-  await env.settle();
-
-  assert.ok(
-    env.cleared.intervals.includes(intervalIdBeforeTeardown),
-    `beforeunload must clear the fallback interval. ` +
-    `This kills c2-teardown.patch (deletes the beforeunload listener)`
+    env.element("estop-clear").disabled,
+    false,
+    "the latch the poll heard is the one the Dashboard offers to release",
   );
 });

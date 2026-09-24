@@ -184,7 +184,6 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
         windowMock.PABootstrap._retryCalls.push(name);
       },
     },
-    PAStatusStream: { isSupported: () => false, getLastStatus: () => null, subscribe() {} },
     PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
     // data/page_bootstrap.js publishes window.PASurface in the browser; this
     // context hand-rolls its globals, so it has to carry it too (#360).
@@ -233,8 +232,11 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
   mockDocument.elements.set("identity-actions", identityActions);
   mockDocument.body.appendChild(identityActions);
 
-  // Load shell.js first
-  vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
+  // Load the shell's own chain first: the status stream and the Live Reading
+  // it starts, then shell.js.
+  for (const file of ["status_stream.js", "live_reading.js", "shell.js"]) {
+    vm.runInNewContext(readFileSync(`data/${file}`, "utf8"), context, { filename: file });
+  }
 
   // Then the surface's own chain: the resolver both surfaces share, and the
   // surface whose identity card carries the retry.

@@ -56,6 +56,10 @@
   let holdTimer = null;
   let driveHardwareEnabled = true;
   let webControlEnabled = false;
+  // The Live Reading's answers about the estop (data/live_reading.js): the
+  // feet's acts are live only on a heard, clear one, and Clear is offered only
+  // on a heard latch.
+  let moveActsLive = false;
   let estopLatched = false;
   let saveInFlight = false;
   let saveQueued = false;
@@ -90,10 +94,11 @@
   const formatFailsafeSource = (source) => {
     const parsed = Number(source);
     if (Number.isFinite(parsed)) {
-      const label = FAILSAFE_SOURCE_LABELS[parsed] || "Unknown";
+      const label = FAILSAFE_SOURCE_LABELS[parsed] || window.PALiveReading.UNKNOWN;
       return `${label} (${parsed})`;
     }
-    if (source === undefined || source === null || source === "") return "--";
+    // In the section head's subtitle, which is written in lower case.
+    if (source === undefined || source === null || source === "") return window.PALiveReading.UNKNOWN.toLowerCase();
     return String(source);
   };
 
@@ -173,7 +178,7 @@
   };
 
   const updateDriveControlsEnabled = () => {
-    const driveEnabled = driveHardwareEnabled && webControlEnabled && !estopLatched;
+    const driveEnabled = driveHardwareEnabled && webControlEnabled && moveActsLive;
     window.PAApi.gateControls(Array.from(driveButtons), driveEnabled);
     window.PAApi.gateControls(Array.from(presetButtons), driveEnabled);
 
@@ -369,15 +374,25 @@
     if (hbCurrent) hbCurrent.textContent = `L ${safeCurrentL.toFixed(1)} A / R ${safeCurrentR.toFixed(1)} A`;
   };
 
-  const renderStatus = (payload) => {
-    // The shell decides what a frame says about the latch, for every reader
-    // (data/shell.js estopIsLatched, published as window.PAEstop). This page
-    // used to answer it with `!!payload.estop`, which is a different question:
-    // a field that did not arrive must not answer it at all (#346, #359).
-    estopLatched = window.PAEstop.isLatched(payload);
+  const renderReading = (reading) => {
+    // The Live Reading decides the latch for every reader. This page used to
+    // answer it with a truthy read of the frame's own field, which is a
+    // different question: a field that did not arrive must not answer it at
+    // all, and a lost link is not a clear estop either (#346, #359, #419).
+    moveActsLive = reading.moveActsLive;
+    estopLatched = reading.estopLatched;
     if (clearEstopButton) clearEstopButton.disabled = !estopLatched;
+    const payload = reading.status;
+    if (payload === null) {
+      updateDriveControlsEnabled();
+      return;
+    }
     webControlEnabled = !!payload.webControlEnabled;
-    updateDriveControlsEnabled();
+    // /api/status omits the "drive" key entirely when the peripheral is
+    // disabled. Key presence = enabled; absence = disabled. This differs from
+    // renderConfig() which reads components.drive.enabled explicitly.
+    // setDriveHardwareEnabled() re-gates the controls.
+    setDriveHardwareEnabled(Boolean(payload.drive));
     if (statusFailsafeLabel) statusFailsafeLabel.textContent = formatFailsafeSource(payload.failsafeSource);
     const driveSpeed = Number(payload.driveSpeed);
     const driveSteer = Number(payload.driveSteer);
@@ -459,16 +474,6 @@
     }
   };
 
-  const refreshStatusOnce = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatus(result.data);
-    // /api/status omits the "drive" key entirely when the peripheral is
-    // disabled. Key presence = enabled; absence = disabled. This differs from
-    // renderConfig() which reads components.drive.enabled explicitly.
-    setDriveHardwareEnabled(Boolean(result.data.drive));
-  };
-
   clearEstopButton?.addEventListener("click", () => postCommand("/api/estop/clear", "Estop clear"));
   enableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/enable", "Web control enable"));
   disableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/disable", "Web control disable"));
@@ -502,31 +507,10 @@
   speedPresetNormal?.addEventListener("input", presetInputHandler);
   speedPresetTurbo?.addEventListener("input", presetInputHandler);
   webDriveTimeout?.addEventListener("input", debouncedSave);
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderStatus(payload);
-    });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch((error) => {
-        window.PAUtils.showFeedback(controlFeedback, `Status load failed: ${window.PAApi?.messageFor(error) || "request failed"}`, "error");
-      });
-    }
-  } else {
-    // Owned by this surface: the shell stops it when the operator leaves Drive
-    // and starts it again on the way back (ADR 0048, #360). This is a READ of
-    // the droid's status; the hold loop above is a command loop and is
-    // deliberately not owned by the shell -- see startHoldLoop().
-    //
-    // A failed read is not caught here: PASurface.poll() reports it and leaves
-    // the surface showing what it last read, where a catch at this site would
-    // report a refresh that never landed as current (#360).
-    window.PASurface.poll(refreshStatusOnce, {
-      cadenceMs: 2000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
-  }
+  // The feet's live state rides the Live Reading, which owns the stream or the
+  // one fallback poll for the whole shell (data/live_reading.js). The hold
+  // loop above is a command loop, not a read, and is deliberately not its.
+  window.PALiveReading.subscribe(renderReading);
 
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
@@ -547,6 +531,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/drive.js": "drive control",
       "/footer.js": "page footer",

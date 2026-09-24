@@ -2307,7 +2307,11 @@
     return moodMapLoaded;
   };
 
-  const renderStatus = (data) => {
+  const renderReading = (reading) => {
+    const data = reading.status;
+    // Nothing is known about the module until the droid has sent a frame, so
+    // nothing is drawn from one: the badge keeps what the page last showed.
+    if (data === null) return;
     const s2Enabled = Boolean(data.audio);
     setSoundHardwareEnabled(s2Enabled);
     if (!soundStateBadge) return;
@@ -2339,12 +2343,6 @@
     }
   };
 
-  const refreshStatusOnce = async () => {
-    if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
-    renderStatus(result.data);
-  };
-
   buildNamedSoundRows();
   buildCategorySoundRows();
   buildMoodMapRows();
@@ -2360,27 +2358,10 @@
   loadMoodMap();
   syncVolumeLabel();
 
-  if (window.PAStatusStream?.isSupported()) {
-    window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderStatus(payload);
-    });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch(() => {
-        // Retry via next SSE event.
-      });
-    }
-  } else {
-    // Owned by this surface: the shell stops it when the operator leaves Sound
-    // and starts it again on the way back (ADR 0048, #360). A failed read goes
-    // to PASurface.poll(), which retries next cycle and keeps the surface
-    // showing what it last read rather than reporting it as current (#360).
-    window.PASurface.poll(refreshStatusOnce, {
-      cadenceMs: 2000,
-      runOnStart: true,
-      refreshOnReturn: true,
-    }).start();
-  }
+  // Whether a module is fitted, and whether it answers, ride the Live Reading,
+  // which owns the stream or the one fallback poll for the whole shell
+  // (data/live_reading.js). The module's own poll above is not a status read.
+  window.PALiveReading.subscribe(renderReading);
 
   namedSoundFilterInput?.addEventListener("input", () => {
     applyNamedSoundFilter();
@@ -2615,6 +2596,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/web_api.js": "Body Controller connection",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/sound.js": "audio control",
       "/footer.js": "page footer",

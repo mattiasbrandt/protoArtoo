@@ -5,6 +5,9 @@
 // - Explicit state semantics (CONTEXT.md "Status Color"): ok=nominal,
 //   warn=degraded and the builder can do something about it, fail=hard fault,
 //   off=not reporting, never asked, not fitted
+// - A field the status frame does not carry reads the Live Reading's Unknown
+//   (CONTEXT.md "Live Reading"). The word is handed in by the caller rather
+//   than written here, so this model and every surface say the same one
 // - A reading we do not have is off, never warn: amber promises a next move,
 //   and "we have not heard" offers none (#402)
 // - Staleness is not a health state. A stale row keeps the state the
@@ -30,10 +33,10 @@
   ]);
 
   const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-  const boolText = (value) => (value === true ? "true" : value === false ? "false" : "unknown");
+  const boolText = (value, unknown) => (value === true ? "true" : value === false ? "false" : unknown);
   const healthSignal = (state, reason = "", detail = reason) => ({ state, reason, detail });
 
-  const evaluateSbus = (payload) => {
+  const evaluateSbus = (payload, unknown) => {
     const anyRcEnabled = RC_CHANNEL_KEYS.some((key) => hasOwnKey(payload, key));
     if (!anyRcEnabled) {
       return healthSignal(
@@ -46,20 +49,20 @@
       return healthSignal(
         "fail",
         "HW failsafe",
-        `sbusHwFailsafe=true, sbusSignalLost=${boolText(payload.sbusSignalLost)}`
+        `sbusHwFailsafe=true, sbusSignalLost=${boolText(payload.sbusSignalLost, unknown)}`
       );
     }
     if (payload.sbusSignalLost === true) {
       return healthSignal(
         "fail",
         "Signal lost",
-        `sbusSignalLost=true, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe)}`
+        `sbusSignalLost=true, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe, unknown)}`
       );
     }
     return healthSignal(
       "ok",
       "Frames ok",
-      `sbusSignalLost=${boolText(payload.sbusSignalLost)}, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe)}`
+      `sbusSignalLost=${boolText(payload.sbusSignalLost, unknown)}, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe, unknown)}`
     );
   };
 
@@ -69,30 +72,30 @@
   // carries no measure of a join that exists and is unhealthy (wifiRssi is 0
   // whenever the station is not connected - deriveWiFiConnectivityFields,
   // src/web/api_status_serializers.cpp), and no threshold is defined for it.
-  const evaluateWifi = (payload) => {
+  const evaluateWifi = (payload, unknown) => {
     const reported = hasOwnKey(payload, "wifiConnected") || hasOwnKey(payload, "wifiClientConnected");
     const connected = payload.wifiConnected === true || payload.wifiClientConnected === true;
     const wifiRssi = Number(payload.wifiRssi);
-    const rssiText = Number.isFinite(wifiRssi) ? `${wifiRssi} dBm` : "unknown";
-    const detail = `wifiConnected=${boolText(payload.wifiConnected)}, wifiClientConnected=${boolText(payload.wifiClientConnected)}, wifiRssi=${rssiText}`;
+    const rssiText = Number.isFinite(wifiRssi) ? `${wifiRssi} dBm` : unknown;
+    const detail = `wifiConnected=${boolText(payload.wifiConnected, unknown)}, wifiClientConnected=${boolText(payload.wifiClientConnected, unknown)}, wifiRssi=${rssiText}`;
     if (connected) return healthSignal("ok", "Connected", detail);
     if (reported) return healthSignal("off", "Not joined", detail);
-    return healthSignal("off", "Not reporting", detail);
+    return healthSignal("off", unknown, detail);
   };
 
   // A payload that never carried littleFsReady has not told us the mount
   // failed; it has told us nothing. Red is "stopped or refused", and claiming
   // it for a key we were never sent is the same defect as claiming amber.
-  const evaluateFilesystem = (payload) => {
+  const evaluateFilesystem = (payload, unknown) => {
     if (!hasOwnKey(payload, "littleFsReady")) {
-      return healthSignal("off", "Not reporting", "littleFsReady absent from payload");
+      return healthSignal("off", unknown, "littleFsReady absent from payload");
     }
     return payload.littleFsReady === true
       ? healthSignal("ok", "Mounted", "littleFsReady=true")
-      : healthSignal("fail", "Not ready", `littleFsReady=${boolText(payload.littleFsReady)}`);
+      : healthSignal("fail", "Not ready", `littleFsReady=${boolText(payload.littleFsReady, unknown)}`);
   };
 
-  const evaluateHeap = (payload) => {
+  const evaluateHeap = (payload, unknown) => {
     const heapBytes = Number(payload.heapFree);
     const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
 
@@ -117,8 +120,8 @@
     if (!Number.isFinite(heapBytes) || heapBytes < 0) {
       return healthSignal(
         "off",
-        "No data",
-        `heapFree=${String(payload.heapFree ?? "missing")} (expected non-negative bytes)`
+        unknown,
+        `heapFree=${String(payload.heapFree ?? unknown)} (expected non-negative bytes)`
       );
     }
 
@@ -130,7 +133,7 @@
     return healthSignal("fail", "Critical", detail);
   };
 
-  const evaluateDomeLink = (payload) => {
+  const evaluateDomeLink = (payload, unknown) => {
     if (!payload.dome_link || typeof payload.dome_link !== "object") {
       return healthSignal("off", "Disabled", "dome_link block absent from payload");
     }
@@ -174,14 +177,14 @@
     if (typeof linkState === "string" && linkState.length > 0) {
       return healthSignal(
         "off",
-        `Unknown (${linkState})`,
+        `${unknown} (${linkState})`,
         `state=${linkState}, detail=${linkDetail}`
       );
     }
-    return healthSignal("off", "No status", `state=missing, detail=${linkDetail}`);
+    return healthSignal("off", unknown, `state=${unknown}, detail=${linkDetail}`);
   };
 
-  const evaluateSound = (payload) => {
+  const evaluateSound = (payload, unknown) => {
     if (!hasOwnKey(payload, "audio")) {
       return healthSignal("off", "Disabled", "audio block absent from payload");
     }
@@ -213,7 +216,7 @@
       return healthSignal(
         "fail",
         "No module response",
-        `link_ok=false, state=${soundState}, rx_status=${soundRxStatus ?? "unknown"}`
+        `link_ok=false, state=${soundState}, rx_status=${soundRxStatus ?? unknown}`
       );
     }
 
@@ -226,19 +229,19 @@
     if (typeof soundState === "string" && soundState.length > 0) {
       return healthSignal(
         "off",
-        `Unknown (${soundState})`,
+        `${unknown} (${soundState})`,
         `state=${soundState}, detail=${soundDetail}`
       );
     }
-    return healthSignal("off", "No state", `state=missing, detail=${soundDetail}`);
+    return healthSignal("off", unknown, `state=${unknown}, detail=${soundDetail}`);
   };
 
-  const evaluateDomeEsc = (payload) => {
+  const evaluateDomeEsc = (payload, unknown) => {
     if (payload.domeEnabled !== true) {
       return healthSignal(
         "off",
         "Disabled",
-        `domeEnabled=${boolText(payload.domeEnabled)}`
+        `domeEnabled=${boolText(payload.domeEnabled, unknown)}`
       );
     }
 
@@ -260,14 +263,14 @@
     if (typeof domeState === "string" && domeState.length > 0) {
       return healthSignal(
         "off",
-        `Unknown (${domeState})`,
+        `${unknown} (${domeState})`,
         `domeEnabled=true, state=${domeState}, detail=${domeDetail}`
       );
     }
     return healthSignal(
       "off",
-      "No status",
-      "domeEnabled=true, dome block missing state"
+      unknown,
+      `domeEnabled=true, state=${unknown}`
     );
   };
 
@@ -281,11 +284,17 @@
     "h-dome-esc": evaluateDomeEsc,
   });
 
-  const deriveHealthSignals = (payload) => {
+  // `unknown` is the Live Reading's word for a field the frame does not carry
+  // (window.PALiveReading.UNKNOWN). Required: a model that fell back to a word
+  // of its own is exactly the drift the Live Reading exists to stop.
+  const deriveHealthSignals = (payload, { unknown } = {}) => {
+    if (typeof unknown !== "string" || unknown === "") {
+      throw new TypeError("deriveHealthSignals needs the Live Reading's word for an unknown field");
+    }
     const safePayload = payload && typeof payload === "object" ? payload : {};
 
     return Object.entries(HEALTH_EVALUATORS).map(([id, evaluate]) => {
-      const signal = evaluate(safePayload);
+      const signal = evaluate(safePayload, unknown);
       const resolved = signal && typeof signal === "object"
         ? signal
         : healthSignal("off", "Invalid state", "Health evaluator returned invalid shape");

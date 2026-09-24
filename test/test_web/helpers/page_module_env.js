@@ -26,6 +26,13 @@ const bootstrapFile = readFileSync(join(dataDir, "page_bootstrap.js"), "utf-8");
 const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
 const bootstrapPart1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
 
+// The status stream and the Live Reading every surface reads the droid's state
+// from, run for real rather than stubbed: a stub here once answered "no stream,
+// nothing cached" to every surface, so no test through this harness could see
+// what a surface did with a frame (#419).
+const statusStreamSrc = readFileSync(join(dataDir, "status_stream.js"), "utf-8");
+const liveReadingSrc = readFileSync(join(dataDir, "live_reading.js"), "utf-8");
+
 // A stub element that answers any property access with something plausible, so
 // module-level wiring never crashes on an element this test does not care
 // about. Writes are accepted and discarded.
@@ -181,19 +188,6 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       refreshSections: () => {},
       getState: () => ({}),
     },
-    PAStatusStream: {
-      isSupported: () => false,
-      subscribe: () => () => {},
-      getLastStatus: () => null,
-    },
-    // The Operator Shell publishes this and every surface reads it, so a
-    // surface run on its own needs it the way it needs PAApi or PABootstrap
-    // (data/shell.js, estopIsLatched). It is stated here rather than lifted,
-    // because shell.js is an IIFE that needs a whole frame to evaluate -- and
-    // test_shell_estop.js holds this copy to the shipped one by booting
-    // the real shell and comparing both against the same frames, so the pair
-    // cannot drift silently.
-    PAEstop: { isLatched: (status) => status.estop === true },
     setInterval: (fn, ms) => addTimer(intervals, fn, ms),
     clearInterval: (id) => cleared.intervals.push(id),
     setTimeout: (fn, ms) => addTimer(timeouts, fn, ms),
@@ -275,12 +269,21 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   // A browser resolves every window property as a bare global, so what a test
   // hands in as an override (a FileReader, a published module) is mirrored the
   // same way the four built-in objects are.
-  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream", ...Object.keys(overrides)]) {
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", ...Object.keys(overrides)]) {
     context[key] = windowMock[key];
   }
 
   // Load PART 1 of page_bootstrap.js first to populate window.PageBootstrap
   vm.runInNewContext(bootstrapPart1Src, context);
+  // Then the chain every document loads ahead of a surface: the stream (unless
+  // a test hands in its own) and the Live Reading, started the way the
+  // Operator Shell starts it. This context has no EventSource, so the Live
+  // Reading runs its one fallback poll, recorded like every other timer.
+  if (!overrides.PAStatusStream) vm.runInNewContext(statusStreamSrc, context, { filename: "status_stream.js" });
+  context.PAStatusStream = windowMock.PAStatusStream;
+  vm.runInNewContext(liveReadingSrc, context, { filename: "live_reading.js" });
+  context.PALiveReading = windowMock.PALiveReading;
+  windowMock.PALiveReading.start();
   // Then load the page module itself
   vm.runInNewContext(source, context, { filename: file });
 
@@ -334,6 +337,9 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       matching.forEach(({ handler }) => handler(event));
     },
     pathsRequested: () => requests.map((r) => r.path),
+    // A status frame reaching the page the way the Operator Shell's read hands
+    // one over: through the real stream, into the real Live Reading.
+    pushStatus: (frame) => windowMock.PAStatusStream.seed(frame),
   };
 };
 

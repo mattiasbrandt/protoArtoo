@@ -18,7 +18,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
-import { servoRow, configOutputs, outputsModule } from "./helpers/fake_droid.js";
+import { servoRow, configOutputs, outputsModule, statusFrame } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -89,38 +89,26 @@ test("a WiFi signal nothing measured is not printed as a very strong one", async
   // station (deriveWiFiConnectivityFields). Zero dBm would be the strongest
   // reading the scale has, so printing it is the readout lying loudest.
   const joined = dashboard({ wifiRssi: -54 });
-  await joined.runSection("app-initial-status");
+  await joined.window.PALiveReading.read();
   await joined.settle();
   assert.equal(joined.element("readout-wifi").innerHTML, "-54<small>dBm</small>");
   assert.match(joined.element("readout-wifi-detail").textContent, /joined/);
 
   const alone = dashboard({ wifiRssi: 0 });
-  await alone.runSection("app-initial-status");
+  await alone.window.PALiveReading.read();
   await alone.settle();
   assert.equal(alone.element("readout-wifi").innerHTML, "--", "nothing measured prints as nothing");
   assert.match(alone.element("readout-wifi-detail").textContent, /Nothing to measure/);
 });
 
-// A Dashboard fed by the stream alone, so a frame can simply leave a field out.
+// A Dashboard fed whole frames through the stream and the Live Reading, so a
+// frame can leave a field out.
 const mountDashboard = () => {
-  let deliver = null;
-  const env = loadPageModule("app.js", {
-    respond: () => ({ data: {} }),
-    overrides: {
-      PAStatusStream: {
-        isSupported: () => true,
-        subscribe: (handler) => {
-          deliver = handler;
-          return () => {};
-        },
-        getLastStatus: () => null,
-      },
-    },
-  });
-  return { env, send: (payload) => deliver("status", payload) };
+  const env = loadPageModule("app.js", { respond: () => ({ data: {} }) });
+  return { env, send: (changes) => env.pushStatus(statusFrame(changes)), unknown: env.window.PALiveReading.UNKNOWN };
 };
 
-test("a mood the droid has not reported reads Not reported, not mood zero", () => {
+test("a mood the droid has not reported is not printed as mood zero", () => {
   const known = mountDashboard();
   known.send({ activeMood: 13 });
   assert.equal(known.env.element("snapshot-mood").textContent, "Mid-Awake");
@@ -130,16 +118,16 @@ test("a mood the droid has not reported reads Not reported, not mood zero", () =
   silent.send({});
   assert.equal(
     silent.env.element("snapshot-mood").textContent,
-    "Not reported",
+    silent.unknown,
     "a frame that carried no mood is not a droid reporting mood zero",
   );
-  assert.equal(silent.env.element("mood-now").textContent, "Not reported");
+  assert.equal(silent.env.element("mood-now").textContent, silent.unknown);
 
   // A number this surface has no name for is not printed either: a raw
   // identifier reaches an operator only through the mapping table (ADR 0059).
   const unknown = mountDashboard();
   unknown.send({ activeMood: 77 });
-  assert.equal(unknown.env.element("snapshot-mood").textContent, "Not reported");
+  assert.equal(unknown.env.element("snapshot-mood").textContent, unknown.unknown);
   assert.doesNotMatch(unknown.env.element("snapshot-mood").textContent, /77/);
 });
 
@@ -157,7 +145,7 @@ test("the component card names Outputs as the firmware reported them, and no oth
     { [id]: { state: "ready", detail: "Target 1500 us" }, aux1: { state: "ready", detail: "Servo channel enabled" } },
     { config },
   );
-  await env.runSection("app-initial-status");
+  await env.window.PALiveReading.read();
   await env.runSection("app-log-level");
   await env.settle();
 

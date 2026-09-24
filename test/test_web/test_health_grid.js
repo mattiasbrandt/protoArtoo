@@ -28,6 +28,7 @@ import assert from "node:assert";
 import { createRequire } from "node:module";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { statusFrame } from "./helpers/fake_droid.js";
 
 const require = createRequire(import.meta.url);
 // The shipped model, executed for real - not a stand-in for it.
@@ -49,28 +50,25 @@ const HEALTHY_FRAME = Object.freeze({
   domeEsc: { state: "idle" },
   estop: false,
   sleepMode: false,
+  webDriveExpired: false,
+  webControlEnabled: false,
 });
 
 // Mounts the Dashboard on the SSE path and hands back the stream callback, so
 // a test can deliver a frame and then break the stream the way the browser
 // does. Pass `model: null` to mount a page whose health module never loaded.
+// The Dashboard as it runs under the shell: frames reach it through the real
+// status stream and Live Reading. This harness has no EventSource, so the
+// droid going quiet is the Live Reading's one fallback poll being refused.
 const mountDashboard = ({ model = healthSignals } = {}) => {
-  let deliver = null;
+  let answering = true;
   const env = loadPageModule("app.js", {
-    respond: () => ({ data: {} }),
-    overrides: {
-      PAHealthSignals: model,
-      PAStatusStream: {
-        isSupported: () => true,
-        subscribe: (handler) => {
-          deliver = handler;
-          return () => {};
-        },
-        getLastStatus: () => null,
-      },
+    respond: (path) => {
+      if (path === "/api/status" && !answering) throw new Error("no response from controller");
+      return { data: {} };
     },
+    overrides: { PAHealthSignals: model },
   });
-  assert.ok(deliver, "app.js must subscribe to the status stream when it is supported");
   return {
     env,
     stateOf: (id) => String(env.element(id).className).replace("indicator ", ""),
@@ -86,14 +84,20 @@ const mountDashboard = ({ model = healthSignals } = {}) => {
     decoyIntact: () =>
       env.element("status-stale-banner").style.display === "DECOY" &&
       env.element("status-stale-banner").textContent === "DECOY",
-    send: (type, payload) => deliver(type, payload),
+    send: (payload) => env.pushStatus(payload),
+    loseContact: async () => {
+      answering = false;
+      env.intervals.forEach((timer) => timer.fn());
+      await env.settle();
+    },
   };
 };
 
 test("a Dashboard that has heard nothing lights nothing", () => {
   const dash = mountDashboard();
 
-  dash.send("status", {});
+  // A whole frame that says nothing about any subsystem.
+  dash.send(statusFrame());
 
   ROW_IDS.forEach((id) => {
     assert.equal(dash.stateOf(id), "off", `${id} must be unlit when the payload said nothing`);
@@ -101,18 +105,18 @@ test("a Dashboard that has heard nothing lights nothing", () => {
   assert.equal(dash.summary(), "7 signals · 7 not reporting");
 });
 
-test("a stream that drops leaves every row on the state the controller reported", () => {
+test("a lost link leaves every row on the state the controller reported", async () => {
   const dash = mountDashboard();
   dash.plantDecoy();
 
-  dash.send("status", HEALTHY_FRAME);
+  dash.send(HEALTHY_FRAME);
   ROW_IDS.forEach((id) => assert.equal(dash.stateOf(id), "ok", `${id} should start nominal`));
   assert.equal(dash.summary(), "7 signals · 7 ok");
   assert.ok(dash.decoyIntact(), "a good frame wrote to the retired stale banner");
 
-  dash.send("stream_error", "");
+  await dash.loseContact();
 
-  // The stream breaking is the Status Plate's one freshness line to report, and
+  // The link breaking is the Status Plate's one freshness line to report, and
   // this surface adds nothing to it. The rows keep the state the controller
   // last sent, say nothing about age, and change no color.
   assert.ok(
@@ -136,13 +140,10 @@ test("a fallback poll that keeps failing writes no freshness claim either", asyn
       path === "/api/status"
         ? Promise.reject(new Error("no response from controller"))
         : { data: {} },
-    overrides: {
-      PAHealthSignals: healthSignals,
-      PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
-    },
+    overrides: { PAHealthSignals: healthSignals },
   });
   await env.settle();
-  assert.ok(env.intervals.length > 0, "app.js must install a fallback poll when the stream is unsupported");
+  assert.ok(env.intervals.length > 0, "the Live Reading installs its fallback poll when the stream is unsupported");
   env.element("status-stale-banner").style.display = "DECOY";
 
   for (let round = 0; round < 3; round += 1) {
@@ -160,7 +161,7 @@ test("a fallback poll that keeps failing writes no freshness claim either", asyn
 test("a health module that never loaded reads not-reporting, not degraded", () => {
   const dash = mountDashboard({ model: null });
 
-  dash.send("status", HEALTHY_FRAME);
+  dash.send(HEALTHY_FRAME);
 
   ROW_IDS.forEach((id) => {
     assert.equal(dash.stateOf(id), "off", `${id} must be unlit when nothing evaluated it`);
@@ -173,7 +174,7 @@ test("a degraded reading the controller did send still lights amber", () => {
 
   // Largest allocatable block between the warn and fail floors: reported,
   // degraded, and something the builder can act on.
-  dash.send("status", { ...HEALTHY_FRAME, heapLargest8bit: 13000 });
+  dash.send({ ...HEALTHY_FRAME, heapLargest8bit: 13000 });
 
   assert.equal(dash.stateOf("h-heap"), "warn");
   assert.equal(dash.textOf("h-heap"), "Low");

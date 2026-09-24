@@ -454,6 +454,12 @@
       `${action} in <a class="setup-link" href="${componentHome.doc}">${componentHome.name}</a>`;
   }
 
+  // What the droid has reported, as the Live Reading answers it
+  // (data/live_reading.js, CONTEXT.md "Live Reading"). The plate, the estop and
+  // the notice read it the way every surface does; this file decides nothing
+  // about a frame on its own account, and it is the one thing that starts it.
+  const LIVE = window.PALiveReading;
+
   // ---------------------------------------------------------------------------
   // The Latching Estop: what its label says, in every state
   //
@@ -464,7 +470,7 @@
   // src/js/app/hud.js:188).
   // ---------------------------------------------------------------------------
   const ESTOP_STATE_TEXT = {
-    unknown: "Estop: finding out",
+    "finding-out": `Estop: ${LIVE.FINDING_OUT.toLowerCase()}`,
     clear: "Estop: clear",
     latched: "Estop: latched",
   };
@@ -498,77 +504,29 @@
   // one field and this table cannot drift from what the nav says (#288).
   // ---------------------------------------------------------------------------
 
-  // Before the droid has said anything. One word, the same one the estop's
-  // own state line uses, and no chip ever returns to it once a frame has
-  // arrived: the values are then kept and it is the PLATE that says how old
-  // they are. That is the difference between this and a per-chip freshness
-  // marker, which #324 rejected.
-  const CHIP_UNKNOWN = "FINDING OUT";
+  // The Live Reading's two words, in the plate's caps. Finding out is the
+  // state before the droid has said anything, and no chip returns to it once a
+  // frame has arrived -- except ESTOP, which goes back to it when contact with
+  // the droid is lost. The other values are kept and it is the PLATE that says
+  // how old they are. That is the difference between this and a per-chip
+  // freshness marker, which #324 rejected. Unknown is a field the frames that
+  // do arrive never carry.
+  const CHIP_FINDING_OUT = LIVE.FINDING_OUT.toUpperCase();
+  const CHIP_UNKNOWN = LIVE.UNKNOWN.toUpperCase();
 
   const hasKey = (payload, key) =>
     payload !== null && typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, key);
 
-  // The fields a chip reads with no unknown branch of its own. Each is tested
-  // for `=== true`, so a frame that does not carry one does not read as
-  // "unknown" -- it reads as the OTHER value, and for the four failsafe
-  // mirrors that value is "nothing is holding the feet". A Codex review fed
-  // the controller's own error shape through the shipped stream and got
-  // LATCHED -> CLEAR, DRIVE -> OFF, CONTROL -> OFF, over "just now" (#346).
-  //
-  // They are read here rather than defended one chip at a time because that is
-  // the honest shape of it: the plate makes ONE reading of ONE frame, so the
-  // frame is either one a reading may be made from or it is not. A chip-level
-  // guard would also be unreachable, and an unreachable guard is a comfort
-  // rather than a check.
-  //
-  // All six come from the first unconditional chunk of buildStatusJson()
-  // (src/web/web_server.cpp), so a real frame from any firmware that has ever
-  // shipped carries all six or none of them.
-  const VERIFIABLE_STATUS_FIELDS = [
-    "estop",
-    "sbusHwFailsafe",
-    "sbusSignalLost",
-    "webDriveExpired",
-    "webControlEnabled",
-    "sleepMode",
-  ];
-
-  // A frame the droid built, complete enough to read. The envelope half of the
-  // question is the transport's (data/status_stream.js, isStatusFrame): an
-  // {"ok":false} payload never reaches a subscriber as a status at all, so it
-  // is not re-tested here.
-  const isVerifiedStatus = (payload) =>
-    payload !== null &&
-    typeof payload === "object" &&
-    VERIFIABLE_STATUS_FIELDS.every((field) => hasKey(payload, field));
-
   // ---------------------------------------------------------------------------
-  // Is it latched, and are the feet held: asked once each
+  // Are the feet held: asked once
   //
-  // Wave 1 answers the first question four different ways -- `=== true` on the
-  // plate, `!!payload.estop` in this file's own chrome and on Foot Drive,
-  // truthy on Dashboard -- and the set of things that hold the feet was
-  // hand-copied between the DRIVE chip and the notice's row for the same
-  // thing. Two readers of one fact drift, and a set copied by hand drifts the
-  // moment a fifth input can hold the feet and only one copy hears about it.
-  // So the shell asks once, here, and the chip, the chrome's state line and
-  // the notice all read the answer.
-  //
-  // `=== true` and never truthiness: a field that did not arrive must not
-  // answer this question at all, which is what isVerifiedStatus() above is for
-  // (#346).
-  const estopIsLatched = (status) => status.estop === true;
-
-  // Published, because two readers of one fact drift and Wave 1 has already
-  // proved it: Foot Drive and the Dashboard each decided a latch their own way
-  // (`!!payload.estop` and a truthy read) while this file decided it here
-  // (#346, #359). They call this. Exposed rather than moved somewhere shared:
-  // the decision belongs to the frame that holds the status, and a fourth file
-  // holding one predicate would be a new drift surface, not a cure for the old
-  // one. A surface only ever runs inside this shell, so it is always here by
-  // the time one asks.
-  window.PAEstop = window.PAEstop || {};
-  window.PAEstop.isLatched = estopIsLatched;
+  // The set of things that hold the feet was hand-copied between the DRIVE
+  // chip and the notice's row for the same thing, and a set copied by hand
+  // drifts the moment a fifth input can hold the feet and only one copy hears
+  // about it. So the shell asks once, here, and the chip and the notice both
+  // read the answer. Whether the estop itself is latched is the Live
+  // Reading's question, asked once for every reader (#346, #419).
+  // ---------------------------------------------------------------------------
 
   // The inputs OTHER than the estop that make DriveTask emit zero frames
   // (src/drive_arbiter.cpp, failsafeIsActive() || webTimedOut). Split out
@@ -583,8 +541,10 @@
   // Everything that can hold the feet, the estop included. The DRIVE chip
   // reads this: a chip that watched one of the five would sit dark while the
   // droid was held still, which is the reference's shipped Bug 2 exactly
-  // (r2d2-astromech-simulator v1.79.0, src/js/app/hud.js:203).
-  const feetAreHeld = (status) => estopIsLatched(status) || feetHeldBesidesEstop(status);
+  // (r2d2-astromech-simulator v1.79.0, src/js/app/hud.js:203). It reads the
+  // latch out of the frame, like the other four, so a lost link leaves DRIVE
+  // showing the value it last had rather than inventing one.
+  const feetAreHeld = (status) => LIVE.latchedIn(status) || feetHeldBesidesEstop(status);
 
   // The two RC receivers. rcCh3..rcCh6 are further channels of the same
   // receiver and only ever report "ready" or "standby", so they carry no link
@@ -608,8 +568,13 @@
       // The single cell that acts rather than routes, so it carries no page.
       page: null,
       affordance: "Cuts all movement",
-      read: (status) =>
-        estopIsLatched(status) ? chipState("stopped", "LATCHED") : chipState("live", "CLEAR"),
+      // The Live Reading's three-valued estop, not the frame's field: when
+      // contact is lost the latch is not known any more, and this chip says so.
+      read: (_status, reading) => {
+        if (reading.estopLatched) return chipState("stopped", "LATCHED");
+        if (reading.moveActsLive) return chipState("live", "CLEAR");
+        return chipState("", CHIP_FINDING_OUT);
+      },
     },
     {
       id: "drive",
@@ -765,7 +730,7 @@
     // value is what the needle says (ADR 0066).
     const inner =
       `<span class="status-chip-label">${chip.label}</span>` +
-      `<span class="status-chip-value"><span class="status-chip-dot"></span>${CHIP_UNKNOWN}</span>`;
+      `<span class="status-chip-value"><span class="status-chip-dot"></span>${CHIP_FINDING_OUT}</span>`;
     const shared = `class="status-chip" id="chip-${chip.id}" data-chip="${chip.id}" title="${chipAffordance(chip)}"`;
     return chip.page === null
       ? `<button type="button" ${shared}>${inner}</button>`
@@ -864,7 +829,7 @@
               ${icon("stop-circle-outline")}<span class="shell-estop-action">STOP</span>
             </button>
             <div class="shell-estop-lines">
-              <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">${ESTOP_STATE_TEXT.unknown}</div>
+              <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">${ESTOP_STATE_TEXT["finding-out"]}</div>
               <div class="shell-estop-consequence">Cuts all movement</div>
               <div class="shell-estop-feedback feedback compact-feedback" id="shell-estop-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             </div>
@@ -884,7 +849,7 @@
     shellNav.innerHTML = `
       ${navHtml}
       <div class="rail-foot status-bar" id="conn-status">
-        <div class="status-subline" id="fw-meta">Loading firmware info...</div>
+        <div class="status-subline" id="fw-meta">${LIVE.FINDING_OUT}</div>
       </div>
     `;
   }
@@ -892,8 +857,8 @@
   // The plate is chrome by the same rule as the estop above: written once,
   // then repainted in place. It rides on the status the session already holds
   // and asks the droid for nothing of its own -- the one /api/status read and
-  // the one stream are the estop's, and a second reader would spend one of the
-  // controller's three client slots to say what the first already knows.
+  // the one stream are the Live Reading's, and a second reader would spend one
+  // of the controller's three client slots to say what the first already knows.
   const shellStatus = document.getElementById("shell-status");
   if (shellStatus) {
     // The notice sits ABOVE the plate rather than in it: the eight positions are
@@ -926,38 +891,25 @@
   // Not one per chip: everything on the plate arrives on one stream, so its age
   // is one fact and saying it eight times repeats that fact seven times (#324).
   //
-  // It sits here, above everything that writes it, because that is the defect
-  // this block exists to close. It used to be a single boolean set in exactly
-  // one place -- the `stream_error` branch of the SSE subscription -- and a
-  // browser with no EventSource never reaches that branch at all, so a
-  // fallback poll could be refused all afternoon while the plate read "live".
-  // There are three ways to stop hearing a verified reading and they are three
-  // CALLS into one writer, so the next one is a call rather than a new flag.
+  // Why the plate is not showing a verified reading, and how old the one it
+  // shows is, are the Live Reading's to say (reading.notHearing,
+  // reading.receivedAt): there are three ways to stop hearing the droid -- the
+  // stream dropping, a refused fallback poll, a failed resync read -- and one
+  // way for what arrives not to be a reading, and all of them are decided
+  // there, once, for every reader. A browser with no EventSource never reaches
+  // a `stream_error` at all, which is how a fallback poll was once refused all
+  // afternoon under a plate reading "live" (#346).
   //
   // The age is read from the browser's own clock, not from the droid's
   // uptimeMs, and that is the point: the droid's clock is the thing that stops
   // advancing exactly when this readout starts to matter. It is the other half
   // of the reference's "wall clock, not simulated time" rule
-  // (r2d2-astromech-simulator v1.79.0, src/js/input/pad-ui.js:165).
+  // (r2d2-astromech-simulator v1.79.0, src/js/input/pad-ui.js:165). A frame
+  // handed out again on a reconnect keeps the age it was measured at, at
+  // precisely the moment #324 says an operator meets a stale plate most often.
   // ---------------------------------------------------------------------------
   const plateRegion = document.getElementById("status-plate-region");
   const plateFreshness = document.getElementById("status-plate-freshness");
-
-  // The last frame the shell verified, and when it ARRIVED -- which the
-  // transport supplies, so a frame handed out again on a reconnect keeps the
-  // age it was measured at rather than claiming a reading nobody took, at
-  // precisely the moment #324 says an operator meets a stale plate most often.
-  let plateFrame = null;
-  let plateFrameAt = 0;
-
-  // Why the plate is not showing a verified reading, or null while it is.
-  // "link": nothing is arriving -- the stream dropped, or the fallback poll
-  // was refused. "frame": something arrived and was not a reading -- the
-  // controller could not build a status, or the frame did not carry the fields
-  // a reading is made from. The two are told apart on screen because the
-  // operator's next move differs: one is waiting, the other is a droid that
-  // answered.
-  let plateNotHearing = null;
 
   const plateAgeText = (elapsedMs) => {
     if (elapsedMs < 1500) return "just now";
@@ -968,32 +920,24 @@
     return "over an hour ago";
   };
 
-  const renderPlateFreshness = () => {
+  const renderPlateFreshness = (reading) => {
     if (!plateRegion || !plateFreshness) return;
-    if (plateFrame === null) {
+    if (reading.status === null) {
       plateRegion.dataset.freshness = "finding-out";
       plateFreshness.textContent = "Still finding out what the droid is doing.";
       return;
     }
-    const heard = `Last heard from the droid ${plateAgeText(Date.now() - plateFrameAt)}.`;
+    const heard = `Last heard from the droid ${plateAgeText(Date.now() - reading.receivedAt)}.`;
     // Never amber, and the values are never blanked: the operator cannot act
     // on a reconnect that is already running, and a blank plate would be the
     // presentation they meet most often (#324, #327).
-    plateRegion.dataset.freshness = plateNotHearing === null ? "live" : "finding-out";
-    if (plateNotHearing === "frame") {
+    plateRegion.dataset.freshness = reading.notHearing === null ? "live" : "finding-out";
+    if (reading.notHearing === "frame") {
       plateFreshness.textContent = `${heard} The droid could not report its status - these are the values it last sent.`;
       return;
     }
     plateFreshness.textContent =
-      plateNotHearing === "link" ? `${heard} Reconnecting - these are the values it last sent.` : heard;
-  };
-
-  // The one writer. Every path that can leave the plate without a verified
-  // reading calls it: the stream dropping, a refused fallback poll, a failed
-  // resync read, and a frame that is not one a reading may be made from.
-  const notePlateRefreshFailed = (reason) => {
-    plateNotHearing = reason;
-    renderPlateFreshness();
+      reading.notHearing === "link" ? `${heard} Reconnecting - these are the values it last sent.` : heard;
   };
 
   applyIdentityName(identityName);
@@ -1025,29 +969,23 @@
   // move again must not be one press from every screen (ADR 0048).
   // ---------------------------------------------------------------------------
 
-  // Fallback cadence when the browser has no EventSource. The mounted surface's
-  // own poll cannot serve this control: the point of it is that it outlives the
-  // surface. Matches the Dashboard's fallback cadence so a no-stream session
-  // asks at one rate rather than two.
-  const ESTOP_POLL_MS = 3000;
-
   const estopButton = document.getElementById("shell-estop-button");
   const estopStateLine = document.getElementById("shell-estop-state");
   const estopFeedback = document.getElementById("shell-estop-feedback");
 
-  // null until the droid has said something. Three answers, three texts: see
-  // ESTOP_STATE_TEXT above for why there is no blank one.
-  let estopLatched = null;
-
-  const renderEstopState = () => {
+  // Three answers, three texts: see ESTOP_STATE_TEXT above for why there is no
+  // blank one. The answer is the Live Reading's, so a frame that never
+  // mentioned the estop cannot print "Estop: clear" beside a release control
+  // that same frame has disabled (#346), and a lost link says it is finding
+  // out rather than repeating what the droid said before it went quiet.
+  const renderEstopState = (reading) => {
     if (!estopStateLine) return;
-    const key = estopLatched === null ? "unknown" : estopLatched ? "latched" : "clear";
-    estopStateLine.textContent = ESTOP_STATE_TEXT[key];
+    estopStateLine.textContent = ESTOP_STATE_TEXT[reading.estop];
     // Red is "something is stopped or refused" and nothing else colors for
     // state (#327), so the state line takes it only while the latch is set.
     // The button's own face is red at all times: that is the control's
     // identity, not a readout.
-    estopStateLine.classList.toggle("is-latched", estopLatched === true);
+    estopStateLine.classList.toggle("is-latched", reading.estopLatched);
   };
 
   const showEstopFeedback = (message, level = "") => {
@@ -1058,29 +996,9 @@
       : "shell-estop-feedback feedback compact-feedback";
   };
 
-  // A reading is made from a field that arrived, and from nothing else.
-  // `!!payload.estop` on a frame that never mentioned the estop is "Estop:
-  // clear" printed beside a release control the same frame has disabled -- the
-  // plate's own defect, in the one control that matters most (#346, and the
-  // same rule #402 settled for the Dashboard's health signals). The line keeps
-  // what the droid last said instead, which is a fact rather than a guess.
-  const applyEstopStatus = (payload) => {
-    if (!hasKey(payload, "estop")) return;
-    estopLatched = estopIsLatched(payload);
-    renderEstopState();
-  };
-
-  // The one status read the shell owns. It hands what came back to
-  // PAStatusStream rather than keeping it, so the session's last status has one
-  // home and a consumer that asks later is answered from it instead of
-  // fetching again.
-  const readStatusOnce = async ({ handle = null } = {}) => {
-    const api = handle || window.PAApi;
-    if (!api) return;
-    const result = await api.get("/api/status", { cache: "no-store" });
-    if (window.PAStatusStream?.seed) window.PAStatusStream.seed(result.data);
-    else applyEstopStatus(result.data);
-  };
+  // Started here, before anything reads it: the stream or the one fallback
+  // poll, for every surface this shell will mount (data/live_reading.js).
+  LIVE.start();
 
   // The device pushes a status event when something calls
   // requestStatusBroadcastNow() and at no other time -- a state change, or a
@@ -1089,15 +1007,12 @@
   // what would send the next reader looking for a poll that does not exist,
   // instead of for the call site that does (#346).
   //
-  // This read still closes the boot gap on its own account: the shell asks
-  // once so the chrome has a frame even before the stream is up, and every
-  // later change arrives on the stream.
+  // So the shell reads once at boot, as a section the bootstrap can retry, and
+  // the chrome has a frame even before the stream is up; every later change
+  // arrives on the stream.
   const loadInitialStatus = async ({ handle = null } = {}) => {
-    if (window.PAStatusStream?.getLastStatus?.()) {
-      applyEstopStatus(window.PAStatusStream.getLastStatus());
-      return;
-    }
-    await readStatusOnce({ handle });
+    if (LIVE.current().status !== null) return;
+    await LIVE.read({ handle });
   };
 
   // Deliberately unguarded against a second press while the first is in
@@ -1125,7 +1040,7 @@
     }
     showEstopFeedback("Stop sent", "success");
     try {
-      await readStatusOnce();
+      await LIVE.read();
     } catch (error) {
       // The stop already succeeded; only the confirmation read failed. The
       // firmware broadcasts the new status itself, so the state line catches
@@ -1136,43 +1051,16 @@
 
   if (estopButton) {
     estopButton.addEventListener("click", requestStop);
+    // Pushed or fetched, a status reaches the control by this one path.
+    LIVE.subscribe(renderEstopState);
+  }
 
-    // Subscribed in both modes: the stream is where a change arrives, and it
-    // is also what readStatusOnce() hands its answer to, so this is the one
-    // path into the control whether the status was pushed or fetched.
-    window.PAStatusStream?.subscribe((eventType, payload) => {
-      if (eventType === "status") applyEstopStatus(payload);
+  if (window.PABootstrap) {
+    window.PABootstrap.registerSection("shell-status", loadInitialStatus, {
+      label: "droid status",
     });
-
-    if (!window.PAStatusStream?.isSupported()) {
-      // Chrome, so deliberately NOT a surface-owned poll (#360): the estop
-      // never unmounts and its liveness must not follow whatever screen
-      // happens to be open. window.PASurface.poll() is for surfaces only.
-      window.PageBootstrap?.createBackgroundPoll(
-        () =>
-          readStatusOnce().then(
-            () => true,
-            (error) => {
-              console.warn("[shell] estop status poll failed:", error);
-              // On this path there is no stream to drop, so this is the only
-              // place that can say the droid has stopped answering. Leaving it
-              // in the console left the plate reading "live" through any
-              // number of refused polls (#346).
-              notePlateRefreshFailed("link");
-              return false;
-            }
-          ),
-        { cadenceMs: ESTOP_POLL_MS, refreshOnReturn: true }
-      ).start();
-    }
-
-    if (window.PABootstrap) {
-      window.PABootstrap.registerSection("shell-status", loadInitialStatus, {
-        label: "droid status",
-      });
-    } else {
-      loadInitialStatus();
-    }
+  } else {
+    loadInitialStatus().catch((error) => console.warn("[shell] status unavailable:", error));
   }
 
   // ---------------------------------------------------------------------------
@@ -1194,36 +1082,24 @@
   // (the reference's chip(), r2d2-astromech-simulator v1.79.0,
   // src/js/app/hud.js:188). The class is REWRITTEN rather than toggled, so a
   // state class cannot survive a repaint that no longer wants it.
-  const paintPlate = (status) => {
+  const paintPlate = (reading) => {
     PLATE_CHIPS.forEach((chip) => {
       const cell = plateCells.get(chip.id);
       if (!cell) return;
-      const painted = status ? chip.read(status) : chipState("", CHIP_UNKNOWN);
+      const painted = reading.status ? chip.read(reading.status, reading) : chipState("", CHIP_FINDING_OUT);
       cell.node.className = painted.state ? `status-chip status-chip-${painted.state}` : "status-chip";
       if (cell.value) cell.value.textContent = painted.value;
     });
   };
 
-  const notePlateStatus = (payload, meta) => {
-    // Not a reading. The values on screen are the last ones that WERE, and
-    // keeping them beside "the droid could not report its status" is the whole
-    // of "values, not exceptions" under a failure: a plate that blanks or
-    // resets cannot be told from one that has stopped updating (#324).
-    if (!isVerifiedStatus(payload)) {
-      notePlateRefreshFailed("frame");
-      return;
-    }
-    plateFrame = payload;
-    // The transport says when this frame arrived, so a replay keeps the age of
-    // the measurement instead of taking the age of the replay.
-    plateFrameAt = typeof meta?.receivedAt === "number" ? meta.receivedAt : Date.now();
-    // Only a frame the droid has just sent is evidence that we are hearing it.
-    // A replay is the session's own cache handed back -- it proves the browser
-    // still has a copy, which is not the same claim and was the one being made.
-    if (!meta?.cached) plateNotHearing = null;
-    paintPlate(payload);
-    renderPlateFreshness();
-    releaseSettledCauses(payload);
+  // A frame that is not a reading changes nothing here but the freshness line:
+  // the Live Reading keeps the values that WERE a reading, and keeping them
+  // beside "the droid could not report its status" is the whole of "values,
+  // not exceptions" under a failure (#324).
+  const notePlateReading = (reading) => {
+    paintPlate(reading);
+    renderPlateFreshness(reading);
+    releaseSettledCauses(reading);
   };
 
   // ---------------------------------------------------------------------------
@@ -1278,7 +1154,9 @@
       chip: "estop",
       page: "drive",
       says: "The estop is latched",
-      active: estopIsLatched,
+      // The Live Reading's answer, so a lost link does not name a latch
+      // nobody has heard since.
+      active: (_status, reading) => reading.estopLatched,
     },
     {
       id: "feet",
@@ -1343,8 +1221,9 @@
   const reportIgnoredInput = () => {
     // Nothing has arrived yet, so there is nothing to name. The plate's own
     // freshness state is already saying so.
-    if (plateFrame === null) return;
-    const cause = IGNORED_INPUT_CAUSES.find((candidate) => candidate.active(plateFrame));
+    const reading = LIVE.current();
+    if (reading.status === null) return;
+    const cause = IGNORED_INPUT_CAUSES.find((candidate) => candidate.active(reading.status, reading));
     // A control switched off for a reason this plate does not carry is not
     // this notice's business: it would otherwise name whatever happened to be
     // off, which is a guess dressed as a fact.
@@ -1361,9 +1240,10 @@
   // back does not buy a second of silence. And the notice comes down with it,
   // because the door it was holding open has closed
   // (r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:878).
-  const releaseSettledCauses = (status) => {
+  const releaseSettledCauses = (reading) => {
+    if (reading.status === null) return;
     IGNORED_INPUT_CAUSES.forEach((cause) => {
-      if (cause.active(status)) return;
+      if (cause.active(reading.status, reading)) return;
       noticeShownAt.delete(cause.id);
       if (noticeCause === cause.id) hideNotice();
     });
@@ -1444,34 +1324,13 @@
   // ---------------------------------------------------------------------------
   // Wiring the plate and its notice
   //
-  // One site, and it comes after both are fully declared: PAStatusStream hands
-  // a new subscriber the last status it saw straight away, so a subscription
-  // opened above this line could reach the notice's own reader before it
-  // exists.
+  // One site, and it comes after both are fully declared: the Live Reading
+  // hands a new subscriber the current reading straight away, so a
+  // subscription opened above this line could reach the notice's own reader
+  // before it exists.
   // ---------------------------------------------------------------------------
   if (plateRegion) {
-    window.PAStatusStream?.subscribe((eventType, payload, meta) => {
-      if (eventType === "status") notePlateStatus(payload, meta);
-      // The controller answered and could not build a status, or sent one this
-      // browser could not parse. Either way a refresh was attempted and
-      // produced no reading.
-      else if (eventType === "status_error") notePlateRefreshFailed("frame");
-      else if (eventType === "stream_error") notePlateRefreshFailed("link");
-      else if (eventType === "stream_resync") {
-        // The stream came back. What it replays is the frame from before it
-        // went away, so the only way to learn what happened while we were not
-        // listening is to have the state re-sent. The controller now does that
-        // itself on admission (src/web/api_events.cpp), which covers every
-        // page on the stream; this asks as well, because it is the shell that
-        // knows a resync is outstanding and the two answers are the same
-        // frame. The session's one status read, reused: no second reader, and
-        // no second route.
-        readStatusOnce().catch((error) => {
-          console.warn("[shell] status resync after reconnect failed:", error);
-          notePlateRefreshFailed("link");
-        });
-      }
-    });
+    LIVE.subscribe(notePlateReading);
 
     // A display tick, not a poll: it asks the droid for nothing and rewrites
     // one line of text. Skipped while the tab is hidden, where there is nobody
@@ -1479,7 +1338,7 @@
     const PLATE_TICK_MS = 1000;
     window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
-      renderPlateFreshness();
+      renderPlateFreshness(LIVE.current());
     }, PLATE_TICK_MS);
 
     // The one cell that acts instead of routing, wired to the same function

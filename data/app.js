@@ -215,7 +215,7 @@
       return;
     }
 
-    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload);
+    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { unknown: window.PALiveReading.UNKNOWN });
     signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
     renderHealthSummary(signals);
   };
@@ -367,10 +367,10 @@
     // A mood this surface has no name for is not mood zero. The fallback used
     // to print `Mood ${payload.activeMood || 0}`, so a frame that carried no
     // mood at all - the state a page is in before the first one arrives - read
-    // "Mood 0" beside two readouts that say "Not reported" for the same thing.
+    // "Mood 0" beside two readouts that say Unknown for the same thing.
     // It is also the only place on this surface a raw number would reach the
     // operator, which ADR 0059 keeps behind the mapping table above.
-    const moodText = MOOD_LABELS[payload.activeMood] || "Not reported";
+    const moodText = MOOD_LABELS[payload.activeMood] || window.PALiveReading.UNKNOWN;
     const sleepText = payload.sleepMode ? "asleep" : "awake";
 
     setText(snapshotMode, modeText);
@@ -413,7 +413,7 @@
   const renderIdentityPlate = (payload) => {
     const firmware = String(payload.firmwareVersion || "").trim();
     const assets = String(payload.fsVersion || "").trim();
-    setText(buildFirmware, firmware || "Not reported");
+    setText(buildFirmware, firmware || window.PALiveReading.UNKNOWN);
     // Firmware and web assets are built and flashed separately, so the one
     // thing worth saying about the pair is whether they came from the same
     // build. A mismatch is how a surface ends up talking to an API that moved.
@@ -427,7 +427,7 @@
     );
 
     const uptime = uptimeText(payload.uptimeMs);
-    setText(buildUptime, uptime || "Not reported");
+    setText(buildUptime, uptime || window.PALiveReading.UNKNOWN);
     const reason = String(payload.resetReason || "").trim();
     setText(buildUptimeDetail, reason ? `since a ${reason.toLowerCase()} reset` : "");
   };
@@ -464,7 +464,7 @@
     const free = kilobytes(payload.heapFree);
     if (readoutHeap) {
       readoutHeap.innerHTML = free === null
-        ? "Not reported"
+        ? window.PALiveReading.UNKNOWN
         : `${free}<small>kB</small>`;
     }
     // The largest allocatable block, not the total, because that is the number
@@ -496,8 +496,24 @@
     );
   };
 
-  const applyStatus = (payload) => {
+  // Before the droid has sent a frame, every readout that waits on one says
+  // so in the Live Reading's words, rather than in a placeholder of its own.
+  const FINDING_OUT_READOUTS = [
+    buildFirmware, buildUptime, snapshotMode, snapshotMood, snapshotSleep,
+    opmodeNow, moodNow, sleepNow, readoutHeap, readoutWifi,
+  ];
+
+  const applyReading = (reading) => {
+    const payload = reading.status;
     lastStatus = payload;
+    // The Clear control is live only on a latch the droid has reported: the
+    // Live Reading's answer, so a lost link or a frame that never mentioned
+    // the estop cannot offer to release one (#346, #359, #419).
+    setEstopUi(reading.estopLatched);
+    if (payload === null) {
+      FINDING_OUT_READOUTS.forEach((node) => setText(node, window.PALiveReading.FINDING_OUT));
+      return;
+    }
     renderHealth(payload);
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
@@ -505,24 +521,13 @@
     renderReadouts(payload);
     renderOpMode(payload);
     renderActiveMood(payload);
-    // One place decides a latch, and it is not this one: data/shell.js's
-    // estopIsLatched, published as window.PAEstop (#346, #359). The truthy
-    // read this replaces answered a different question - a frame missing the
-    // field could not say "latched", and must not be allowed to say "clear"
-    // either.
-    setEstopUi(window.PAEstop.isLatched(payload));
     setSleepUi(!!payload.sleepMode);
   };
 
-  const refreshStatusOnce = async ({ handle } = {}) => {
-    if (!window.PAApi) return;
-    // When called as a section loader, handle is always present and carries the
-    // section's deadline. When called from non-section contexts (fallback polling),
-    // handle is absent and we use PAApi directly (which uses DEFAULT_TIMEOUT_MS).
-    const api = handle || window.PAApi;
-    const result = await api.get("/api/status", { cache: "no-store" });
-    applyStatus(result.data);
-  };
+  // Asks the droid once, after an act that changed something. The answer is
+  // not kept here: it arrives through the Live Reading like every frame, and
+  // this surface paints it from there (data/live_reading.js).
+  const refreshStatusOnce = () => window.PALiveReading.read();
 
   const toggleSleepWake = async (forceWake = false) => {
     if (!window.PAApi || sleepPending) return;
@@ -562,7 +567,7 @@
       showFeedback(estopFeedback, "Estop clear", "success");
     } catch (error) {
       showFeedback(estopFeedback, `Clearing estop failed: ${window.PAApi.messageFor(error)}`, "error");
-      if (lastStatus) setEstopUi(window.PAEstop.isLatched(lastStatus));
+      setEstopUi(window.PALiveReading.current().estopLatched);
     } finally {
       estopClearPending = false;
       renderEstopClear();
@@ -1468,21 +1473,7 @@
   // can show recovery state if any fetch fails.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
 
-  // Initial status fetch: loads the current state when the stream is cold.
-  // This is registered as a section so the bootstrap can show recovery state
-  // if the fetch fails. For the stream-supported case, this section only runs
-  // if the stream has no cached value. For the fallback case, it ensures the
-  // page shows data before polling begins.
-  const loadInitialStatus = async ({ handle = null } = {}) => {
-    const hasStream = window.PAStatusStream?.isSupported();
-    const hasCachedStatus = hasStream && window.PAStatusStream?.getLastStatus();
-    if (!hasStream || !hasCachedStatus) {
-      await refreshStatusOnce({ handle });
-    }
-  };
-
   const SECTIONS = [
-    ["app-initial-status", loadInitialStatus, "initial status"],
     ["app-recent-logs", loadRecentLogs, "recent logs"],
     ["app-log-level", loadLogLevel, "log level setting"],
     ["app-console-catalog", loadConsoleCatalog, "console commands"],
@@ -1499,6 +1490,7 @@
       "/web_api.js": "Body Controller connection",
       "/diagnostics.js": "diagnostics constants",
       "/status_stream.js": "live updates",
+      "/live_reading.js": "live updates",
       "/shell.js": "page layout",
       "/health_signals.js": "health indicator logic",
       "/dome_command_map.js": "dome command map",
@@ -1515,56 +1507,30 @@
   };
 
   // The state to paint before the droid has said anything. It has to be
-  // written BEFORE the subscribe below: PAStatusStream hands a new subscriber
-  // the frame it already holds, synchronously, and the Operator Shell seeds
-  // that frame from its own boot read (ADR 0048). Running these two after the
-  // subscription overwrote a seeded LATCHED with "clear", which disabled Clear
-  // on a droid that was stopped -- and loadInitialStatus() skips its fetch
-  // when a cached frame exists, so nothing repaired it until the droid emitted
-  // a status, which a quiet latched droid never does. The shell's own copy
-  // sends the operator here to clear it.
+  // written BEFORE the subscribe below: the Live Reading hands a new
+  // subscriber the reading it already holds, synchronously, and the Operator
+  // Shell seeds that from its own boot read (ADR 0048). Running these two after
+  // the subscription overwrote a seeded LATCHED with "clear", which disabled
+  // Clear on a droid that was stopped -- and nothing repaired it until the
+  // droid emitted a status, which a quiet latched droid never does. The
+  // shell's own copy sends the operator here to clear it.
   setEstopUi(false);
   setSleepUi(false);
 
   startPageLoad();
 
+  // Every status this surface paints rides the Live Reading, which owns the
+  // stream or the one fallback poll for the whole shell (data/live_reading.js).
+  window.PALiveReading.subscribe(applyReading);
+
+  // The log lines are the stream's own events, not the status, so they are
+  // read off the stream directly; with no stream there are none to read.
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") {
-        applyStatus(payload);
-      }
       if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
       if (eventType === "stream_error") {
         appendLogLine(LOG_UNREACHABLE_TEXT);
       }
-    });
-  } else {
-    // Fallback polling for pages without stream support
-    // A failed poll is reported to the Console and nowhere else. The Status
-    // Plate's own freshness line is what tells the operator the readings have
-    // aged, and the bootstrap owns the retry; the failure count this used to
-    // keep existed only to raise the banner this surface no longer carries.
-    //
-    // Owned by this surface: the shell stops it when the operator leaves the
-    // Dashboard and starts it again on the way back (ADR 0048, #360). The
-    // beforeunload teardown below stays -- it is the other end of the same
-    // poll's life, and a closing tab is not a navigation the shell sees.
-    //
-    // The reporting is PASurface.poll()'s, which is why nothing is caught
-    // here: a catch at this site would hand the registry a fulfilled promise
-    // for a read that never landed, and the Dashboard would come back saying
-    // it was current (#360).
-    const fallbackPoll = window.PASurface.poll(
-      refreshStatusOnce,
-      {
-        cadenceMs: 3000,
-        refreshOnReturn: true,
-      }
-    );
-    fallbackPoll.start();
-
-    window.addEventListener("beforeunload", () => {
-      fallbackPoll.stop();
     });
   }
 })();

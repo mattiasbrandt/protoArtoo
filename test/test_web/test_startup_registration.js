@@ -45,12 +45,15 @@ test("shell.js registers its identity load as a bootstrap section", (t) => {
   );
 });
 
-test("app.js registers its initial status load as a bootstrap section", (t) => {
-  const env = loadPageModule("app.js", { respond: quiet });
+// The droid's first status read is the shell's, for every surface (the Live
+// Reading, #419), and it goes through the bootstrap so a refused one is retried
+// and shown rather than lost.
+test("shell.js registers the session's first status read as a bootstrap section", (t) => {
+  const env = loadPageModule("shell.js", { respond: quiet });
 
   assert.ok(
-    env.sectionNames().includes("app-initial-status"),
-    `app.js must register app-initial-status, registered: ${env.sectionNames().join(", ") || "(none)"}`
+    env.sectionNames().includes("shell-status"),
+    `shell.js must register shell-status, registered: ${env.sectionNames().join(", ") || "(none)"}`
   );
 });
 

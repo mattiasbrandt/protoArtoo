@@ -35,6 +35,7 @@ const part1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part
 const part3Src = bootstrapFile.substring(part3Marker);
 const shellSrc = readData("shell.js");
 const statusStreamSrc = readData("status_stream.js");
+const liveReadingSrc = readData("live_reading.js");
 
 const IDENTITY = {
   droidName: "artoo",
@@ -231,7 +232,7 @@ const boot = async ({ status = null, stream = true } = {}) => {
   if (stream) context.EventSource = FakeEventSource;
   context.globalThis = context;
 
-  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc };
+  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc, "/live_reading.js": liveReadingSrc };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
     const src = node.src;
@@ -261,7 +262,7 @@ const boot = async ({ status = null, stream = true } = {}) => {
   // to deliver something that is not a status object at all.
   env.pushRaw = (text) => env.source()?.deliver("status", { data: text });
   // Run every interval registered at this cadence, once. The shell's fallback
-  // poll is the 3000 ms one (ESTOP_POLL_MS, data/shell.js).
+  // poll is the Live Reading's 5000 ms one (POLL_MS, data/live_reading.js).
   env.fireInterval = (ms) => env.intervals.filter((entry) => entry.ms === ms).forEach((entry) => entry.fn());
   env.statusReads = () => env.requests.filter((path) => path === "/api/status").length;
 
@@ -465,11 +466,16 @@ test("a dropped stream keeps the values and says it is reconnecting", async () =
   assert.equal(env.freshnessState(), "finding-out");
   assert.match(env.freshness(), /Reconnecting/);
   assert.match(env.freshness(), /the values it last sent/);
-  assert.equal(env.chipValue("estop"), "LATCHED", "the values are kept: a blank plate is the worse lie");
+  assert.equal(env.chipValue("drive"), "STOPPED", "the values are kept: a blank plate is the worse lie");
+  assert.equal(env.chipValue("control"), "ON");
+  // Except the estop's: once contact is lost nobody knows it is still latched
+  // or still clear, and a move act is live only on a heard, clear one (#419).
+  assert.equal(env.chipValue("estop"), "FINDING OUT", "the estop goes back to finding out");
 
   env.pushStatus({ estop: true });
   await sleep(5);
   assert.equal(env.freshnessState(), "live", "a frame arriving is the stream working again");
+  assert.equal(env.chipValue("estop"), "LATCHED", "and the droid has said its estop again");
 });
 
 test("a replayed frame does not restamp the age", async () => {
@@ -516,7 +522,7 @@ test("the plate reads the status the session already holds and opens no second s
     1,
     "one read for the session -- the plate rides the estop's, it does not add its own",
   );
-  assert.equal(env.document.getElementById("fw-meta")?.textContent, "Loading firmware info...",
+  assert.equal(env.document.getElementById("fw-meta")?.textContent, "Finding out",
     "and the firmware line the footer owns is still in the container the plate moved into");
 });
 
@@ -715,7 +721,8 @@ test("a replayed cache is not confirmed connectivity", async () => {
     "live",
     "the cached frame came back, not the droid: nothing has been confirmed yet",
   );
-  assert.equal(env.chipValue("estop"), "LATCHED", "and the values are still kept");
+  assert.equal(env.chipValue("drive"), "STOPPED", "and the values are still kept");
+  assert.equal(env.chipValue("estop"), "FINDING OUT", "but a replay is not the droid saying its estop");
 });
 
 test("a reconnect asks the droid rather than trusting the cache", async () => {
@@ -740,11 +747,12 @@ test("a failed fallback poll reaches the plate, not only the console", async () 
   assert.equal(env.chipValue("estop"), "LATCHED");
 
   env.statusFails = true;
-  env.fireInterval(3000);
+  env.fireInterval(5000);
   await sleep(20);
 
   assert.notEqual(env.freshnessState(), "live", "a poll that is refused is the link not answering");
-  assert.equal(env.chipValue("estop"), "LATCHED", "the values are kept here too");
+  assert.equal(env.chipValue("drive"), "STOPPED", "the values are kept here too");
+  assert.equal(env.chipValue("estop"), "FINDING OUT", "and the estop is not known");
 });
 
 test("the plate stops reading live from every path that can fail, not one", async () => {
@@ -762,7 +770,7 @@ test("the plate stops reading live from every path that can fail, not one", asyn
 
   const polled = await boot({ status: { ...HEALTHY }, stream: false });
   polled.statusFails = true;
-  polled.fireInterval(3000);
+  polled.fireInterval(5000);
   await sleep(20);
   assert.notEqual(polled.freshnessState(), "live", "the fallback poll was refused");
 });

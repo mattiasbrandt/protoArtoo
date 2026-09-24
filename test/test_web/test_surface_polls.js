@@ -334,16 +334,16 @@ test("a hold that throws does not trap the operator on the screen", () => {
 // These run without a shell, so the registry has heard no surface name when the
 // module loads and the poll it creates is owned by nobody -- which is exactly
 // the state a page opened on its own is in, and why it polls at all.
+//
+// The droid's status is not one of them: no surface polls it any more. The
+// Live Reading's one fallback poll is chrome and outlives every surface
+// (data/live_reading.js, #419), which "the Live Reading's poll is chrome"
+// below holds.
 // =============================================================================
 
 const SURFACE_POLLS = [
-  { file: "dome.js", cadenceMs: 5000, what: "the dome's status" },
-  { file: "drive.js", cadenceMs: 2000, what: "the drive status" },
   { file: "servo.js", cadenceMs: 1000, what: "the outputs", overrides: partsGlobals },
-  { file: "sound.js", cadenceMs: 2000, what: "the sound status" },
-  { file: "maintenance.js", cadenceMs: 5000, what: "the serial status", overrides: withAvailability },
-  { file: "configuration.js", cadenceMs: 5000, what: "the live status", overrides: withAvailability },
-  { file: "app.js", cadenceMs: 3000, what: "the dashboard status" },
+  { file: "sound.js", cadenceMs: 2000, what: "the sound module's status" },
   { file: "rc.js", cadenceMs: 1000, what: "the RC diagnostics" },
 ];
 
@@ -377,14 +377,9 @@ for (const { file, cadenceMs, what, overrides = () => ({}) } of SURFACE_POLLS) {
 // =============================================================================
 
 const STALE_AFTER_A_FAILED_REFRESH = [
-  { file: "app.js", what: "the Dashboard" },
-  { file: "dome.js", what: "Dome" },
-  { file: "drive.js", what: "Drive" },
   { file: "rc.js", what: "RC diagnostics" },
   { file: "servo.js", what: "Servos", overrides: partsGlobals },
   { file: "parts.js", what: "Parts", overrides: partsGlobals },
-  { file: "maintenance.js", what: "Maintenance", overrides: withAvailability },
-  { file: "configuration.js", what: "Configuration", overrides: withAvailability },
 ];
 
 for (const { file, what, overrides = () => ({}) } of STALE_AFTER_A_FAILED_REFRESH) {
@@ -419,36 +414,9 @@ for (const { file, what, overrides = () => ({}) } of STALE_AFTER_A_FAILED_REFRES
   });
 }
 
-// Sound owns two polls -- the status fallback and the audio module's own -- and
-// isStale() answers for a surface rather than for one poll of it. Each is
-// therefore failed on its own, with the other answering: a surface is current
-// only when everything it asks for has been answered, and a swallow left at
-// either site has to show up somewhere.
-test("sound.js: a failed status read leaves Sound showing what it last read", async () => {
-  let answering = true;
-  const env = loadPageModule("sound.js", {
-    respond: (path) => {
-      if (path === "/api/status" && !answering) throw new ApiError("the controller did not answer");
-      return {};
-    },
-  });
-  await env.settle();
-
-  env.window.PASurface.showing("some-other-surface");
-  assert.equal(env.window.PASurface.isStale(null), true, "Sound is left showing what it last read");
-
-  answering = false;
-  env.window.PASurface.showing(null);
-  env.emit("document", "visibilitychange", {});
-  await env.settle(8);
-
-  assert.equal(
-    env.window.PASurface.isStale(null),
-    true,
-    "the status read never landed, so Sound must not report itself as current",
-  );
-});
-
+// Sound's own poll is the audio module's. Its status fallback went to the Live
+// Reading (#419), so a failed module read is the one way Sound can be left
+// showing what it last read.
 test("sound.js: a module that did not answer leaves Sound showing what it last read", async () => {
   let answering = true;
   const env = loadPageModule("sound.js", {
@@ -587,6 +555,7 @@ test("maintenance.js: the memory profiler stops asking when the operator reads a
   env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.settle();
 
+  const intervalsBefore = env.intervals.length;
   availability.setIdentity({
     board: "artoo_esp32",
     board_capabilities: { PA_CAP_NATIVE_WIFI: true },
@@ -594,8 +563,10 @@ test("maintenance.js: the memory profiler stops asking when the operator reads a
   });
   await env.settle();
 
-  const profilerPolls = env.intervals.filter((timer) => timer.ms === 5000);
-  assert.equal(profilerPolls.length, 2, "the serial status fallback plus the profiler's own cadence");
+  // Only what the manifest switched on: the Live Reading's poll, installed
+  // before it, is chrome and is not the profiler's.
+  const profilerPolls = env.intervals.slice(intervalsBefore).filter((timer) => timer.ms === 5000);
+  assert.equal(profilerPolls.length, 1, "the profiler's own cadence");
 
   const before = env.requests.filter((request) => request.path === "/api/profiler").length;
   env.window.PASurface.showing("rc");
@@ -768,7 +739,11 @@ const boot = async ({ hash = "", withEventSource = true } = {}) => {
     };
   }
 
-  const REAL_SCRIPTS = { "/shell.js": readData("shell.js"), "/status_stream.js": readData("status_stream.js") };
+  const REAL_SCRIPTS = {
+    "/shell.js": readData("shell.js"),
+    "/status_stream.js": readData("status_stream.js"),
+    "/live_reading.js": readData("live_reading.js"),
+  };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
     const src = node.src;
@@ -922,21 +897,21 @@ test("a surface with two polls keeps its note up until both have answered", asyn
   module.handle.stop();
 });
 
-test("the estop's own poll is chrome: navigating never stops it", async () => {
+test("the Live Reading's poll is chrome: navigating never stops it", async () => {
   const env = await boot({ withEventSource: false });
-  const estopRequests = () => env.requests.filter((path) => path === "/api/status").length;
+  const statusReads = () => env.requests.filter((path) => path === "/api/status").length;
   const before = env.liveIntervals.size;
-  assert.ok(before > 0, "with no stream the shell polls for the estop's state");
+  assert.ok(before > 0, "with no stream the shell polls for the droid's status");
 
   env.navigate("#wifi");
   await sleep(140);
   env.navigate("#rc");
   await sleep(140);
 
-  assert.ok(env.liveIntervals.size > 0, "the estop's poll survived two navigations");
-  const seen = estopRequests();
+  assert.ok(env.liveIntervals.size > 0, "the status poll survived two navigations");
+  const seen = statusReads();
   await sleep(0);
-  assert.ok(seen >= 1, `the estop kept reading status (${seen} reads)`);
+  assert.ok(seen >= 1, `the shell kept reading status (${seen} reads)`);
 });
 
 test("opening RC, leaving, and opening the profiler leaves one surface asking, not three", async () => {

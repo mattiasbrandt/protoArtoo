@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { statusFrame } = require("./helpers/fake_droid.js");
 
 const root = path.resolve(__dirname, "../..");
 
@@ -121,9 +122,12 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
     },
     DomeLayoutRender: { renderPicker: () => '<svg class="live"></svg>' },
     DomeCommandMap: { decodeCommandToElement: () => null },
-    // The session's last status, as the Operator Shell seeds it. Absent means
-    // the droid has not said yet.
-    PAStatusStream: { getLastStatus: () => status || null },
+    // A browser has one; it never opens here, and the droid's status reaches
+    // the Live Reading the way the Operator Shell's boot read hands it over.
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
     PAApi: {
       postForm: (route, form) => {
         posts.push({ route, form });
@@ -141,6 +145,13 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  // The chain every document loads ahead of a surface: the stream and the
+  // Live Reading, started as the shell starts it. Absent means the droid has
+  // not said yet.
+  vm.runInContext(read("status_stream.js"), sandbox);
+  vm.runInContext(read("live_reading.js"), sandbox);
+  sandbox.PALiveReading.start();
+  if (status) sandbox.PAStatusStream.seed(status);
   vm.runInContext(read("dome_control.js"), sandbox);
 
   // A press on the built-in map's panel with this Panel Intent target, the
@@ -190,7 +201,11 @@ test("a builder on another design is not shown a drawing of somebody else's droi
 // 2026-09-19, #372). A panel press on this card went straight to the dome
 // whatever the estop said.
 test("a dome panel press sends nothing while the estop is latched or not yet known", async () => {
-  for (const status of [{ estop: true }, null]) {
+  const withoutEstop = statusFrame();
+  delete withoutEstop.estop;
+  // Latched; nothing heard yet; and a frame that never mentioned the estop,
+  // which is not a droid saying it is clear (#419).
+  for (const status of [statusFrame({ estop: true }), null, withoutEstop]) {
     const page = renderCard({ domeDesign: "mk4", domeVariant: "complex", status });
     await page.expand();
     await page.press("07");
@@ -198,7 +213,7 @@ test("a dome panel press sends nothing while the estop is latched or not yet kno
     assert.match(page.feedback.textContent, /estop latched|stopped/i, "and the card says why");
   }
 
-  const clear = renderCard({ domeDesign: "mk4", domeVariant: "complex", status: { estop: false } });
+  const clear = renderCard({ domeDesign: "mk4", domeVariant: "complex", status: statusFrame() });
   await clear.expand();
   await clear.press("07");
   assert.deepEqual(
