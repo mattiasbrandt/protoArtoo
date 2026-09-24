@@ -155,6 +155,13 @@ static bool dispatchBodyMove(const SeqAction& act) {
 // It is sent even when the table shrank under the run, because the Output it
 // names was already driven.
 //
+// Every command a run sends is SRC_SEQ, whoever pressed and whether or not
+// anybody did: expanding the press, or the power-up, into moves is the
+// Coordinator acting, and SRC_SEQ is what ServoTask refuses in Sleep Mode. So
+// a move still on servoCmdQueue when Sleep Mode ends the run is dropped there
+// rather than driving an Output the droid has just let go of. `run.src` names
+// who asked, in the line that reports the run done.
+//
 // The cursor is what says whether the turn is over: every path that dealt with
 // the row advances it, and the one path that could not - a full servoCmdQueue -
 // leaves it alone, so the same row comes round again on the next tick, exactly
@@ -180,7 +187,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
             ServoCommand cmd = {};
             cmd.armId = run.awaitArm;
             cmd.type = SERVO_CMD_RELEASE;
-            cmd.source = (CommandSource)run.src;
+            cmd.source = SRC_SEQ;
             cmd.timestampMs = now;
             if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
                 return;  // owed still: it comes round again on the next tick
@@ -223,7 +230,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     cmd.armId = plan.armId;
     cmd.type = SERVO_CMD_POSITION;
     cmd.positionUs = plan.targetUs;
-    cmd.source = (CommandSource)run.src;
+    cmd.source = SRC_SEQ;
     cmd.timestampMs = now;
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         return;  // the cursor stays put: this row's turn comes round again
@@ -663,8 +670,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         if (sequenceBulkCentreRowDue(centreRun, now)) {
             centreOneOutput(centreRun, now);
             if (!centreRun.active) {
-                PA_LOG_INFO(TAG, "%s done - %u centred, %u skipped", bulkCentreName(centreRun),
-                            (unsigned)centreRun.centred, (unsigned)centreRun.skipped);
+                PA_LOG_INFO(TAG, "[%s] %s done - %u centred, %u skipped",
+                            commandSourceToString((CommandSource)centreRun.src),
+                            bulkCentreName(centreRun), (unsigned)centreRun.centred,
+                            (unsigned)centreRun.skipped);
             }
         }
 

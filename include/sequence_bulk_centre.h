@@ -119,7 +119,8 @@ inline bool sequenceBulkCentreHasTravel(const ServoOutputRow& row) {
 //
 // `nextRow` is the index of the row whose turn it is, `dueMs` the earliest it
 // may start, and the two counters are what the Coordinator reports when the
-// sweep ends. `src` is who pressed, kept so the log line can say. `kind` is
+// sweep ends. `src` is who asked, kept so the log line can say; the commands
+// the run sends are the Coordinator's own, SRC_SEQ. `kind` is
 // which of the two acts this is.
 //
 // `awaitArm` is the Output the last started row moved. The next row waits for
@@ -250,8 +251,9 @@ inline void sequenceBulkCentreStart(SeqBulkCentreRun* run, uint32_t nowMs, uint8
 // rule a pressed back-to-centre already keeps under either halt: refused, not
 // queued.
 //
-// The source is SRC_INTERNAL, the one CommandSource that names the firmware
-// acting on its own at boot. Returns whether the pass started.
+// Who asked is SRC_INTERNAL, the one CommandSource that names the firmware
+// acting on its own at boot; the moves themselves go as SRC_SEQ, like every
+// run's. Returns whether the pass started.
 // -----------------------------------------------------------------------------
 inline bool sequenceBootPassStart(SeqBulkCentreRun* run, uint32_t nowMs, bool estopLatched,
                                   bool sleepMode) {
