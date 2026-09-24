@@ -732,7 +732,9 @@
   // it, and the firmware -- not this page -- bounds that hold two ways: it lets
   // go a few seconds after these commands stop arriving, and ten minutes after
   // it took the Output whatever keeps arriving. This page can refresh the
-  // first and can move neither.
+  // first and can move neither. Only a press takes the Output: opening the
+  // dial, take it again, a test sweep. Everything else this page sends is a
+  // refresh, which the firmware drops once the hold has gone (#417).
   //
   // REVERSE IS A SWAP, READ BACK FROM THE NUMBERS. Nothing here stores an
   // invert flag and nothing may: the droid swaps the two ends on the row and
@@ -880,11 +882,16 @@
     }
   };
 
-  // Every hold command carries the width the dial is standing at. The first one
-  // takes the Output and starts both bounds; the rest refresh the short expiry.
-  const sendHold = () => sendServo("hold", { positionUs: String(dial === null ? 0 : dial.us) });
+  // Every hold command carries the width the dial is standing at. A press takes
+  // the Output and starts both bounds; a refresh - the keepalive, and every
+  // move of the dial - keeps a standing hold and takes nothing (#417).
+  const sendHold = ({ refresh }) =>
+    sendServo("hold", {
+      positionUs: String(dial === null ? 0 : dial.us),
+      ...(refresh ? { refresh: "1" } : {}),
+    });
   const sendHoldSoon = window.PAUtils.debounce(() => {
-    if (dial !== null && !dial.sweeping) sendHold();
+    if (dial !== null && !dial.sweeping) sendHold({ refresh: true });
   }, HOLD_CHANGE_MS);
 
   let holdTimer = null;
@@ -893,17 +900,29 @@
     window.clearInterval(holdTimer);
     holdTimer = null;
   };
-  // The keepalive refreshes the hold only while the droid still says it HAS the
-  // Output. The moment one of the firmware's two bounds lets go, this stops
-  // asking and waits for the builder to press: a page that kept asking would
-  // take the Output afresh and restart the ceiling, holding a servo for as long
-  // as the tab was open - the one thing ADR 0064 says it must not be able to do.
+  // The keepalive only refreshes, so however late this page learns that a
+  // bound, the estop or pulses off let go, what it sends in the meantime takes
+  // nothing: the firmware drops a refresh with no hold standing, and only the
+  // builder's press takes the Output back (ADR 0064). It stops on the estop,
+  // and while the tab is hidden, where nobody is watching the part and the
+  // few-second expiry is what ends the hold.
   const startKeepalive = () => {
     stopKeepalive();
+    if (document.visibilityState === "hidden") return;
     holdTimer = window.setInterval(() => {
-      if (dial !== null && dial.holding && !dial.sweeping) sendHold();
+      if (dial !== null && dial.holding && !dial.sweeping) sendHold({ refresh: true });
     }, HOLD_KEEPALIVE_MS);
   };
+  // A press: take the Output, and keep asking for it from here on.
+  const takeHold = () => {
+    dial.holding = true;
+    startKeepalive();
+    return sendHold({ refresh: false });
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") stopKeepalive();
+    else if (dial !== null && dial.holding) startKeepalive();
+  });
 
   const closeDial = ({ release = true } = {}) => {
     if (dial === null) return;
@@ -941,8 +960,7 @@
     };
     dialPanel.hidden = false;
     setNote("");
-    sendHold();
-    startKeepalive();
+    takeHold();
     paint();
   };
 
@@ -1003,8 +1021,7 @@
       if (dial === null || !dial.sweeping) return;
       dial.us = target;
       paint();
-      dial.holding = true;
-      if (!(await sendHold())) break;
+      if (!(await takeHold())) break;
       await new Promise((resolve) => window.setTimeout(resolve, SWEEP_DWELL_MS));
     }
     if (dial === null) return;
@@ -1139,8 +1156,7 @@
     }
     if (button === dialResume) {
       // One press re-takes the Output, which restarts both firmware bounds.
-      dial.holding = true;
-      started(sendHold());
+      started(takeHold());
       setNote("Holding it again.", "success");
       return;
     }
@@ -1263,10 +1279,12 @@
       endRun(`The estop stopped the run. ${partLabel(partId)} stays ${NOT_WIRED}.`, "error");
     }
     // A latched estop has released every enabled Output (ADR 0043), so a dial
-    // that was holding one is no longer holding anything. The panel stays open
-    // and says so.
+    // that was holding one is no longer holding anything, and stops asking.
+    // The panel stays open and says so; take it again is the way back.
     if (payload.estop === true && dial !== null) {
       dial.sweeping = false;
+      dial.holding = false;
+      stopKeepalive();
       setNote("The estop let go of every output. Clear it, then press take it again.", "error");
     }
     // And it ends a back-to-centre sweep wherever it had got to (#365): no
