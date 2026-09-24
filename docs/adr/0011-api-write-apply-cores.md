@@ -196,7 +196,7 @@ Recorded after the architecture review grilling of 2026-09-24. The 2026-09-04
 amendment put one config write lock "beside `configCommitApplied`, ... taken by
 every adapter", and rejected a locked read-modify-write as "more than the defect
 needs". #417 (8a949e14) then had to add the lock, and the cache read inside it,
-to every Core 0 writer one by one: 17 take sites across 8 files, most of them
+to every Core 0 writer one by one: 19 take sites across 8 files, most of them
 the same window written twice, once in the REST handler and once in the Console.
 A writer that forgets the lock compiles and silently loses another's write. The
 rejection's two reasons have both expired: the Commanded Mode setters became
