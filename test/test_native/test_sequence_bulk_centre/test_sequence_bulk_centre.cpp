@@ -346,7 +346,7 @@ void test_nothing_moves_at_boot_when_estop_is_latched() {
 // the pass owed goes with it: the estop has already let go of every Output.
 void test_an_estop_during_the_boot_pass_ends_it_and_owes_nothing() {
     SeqBulkCentreRun run = bootPass(0);
-    sequenceBulkCentreOweRelease(&run, 2);
+    sequenceBulkCentreAwait(&run, 2, /*release=*/true);
     sequenceBulkCentreAdvance(&run, 5, 0, true, 800);
 
     sequenceBulkCentreEnd(&run);
@@ -354,7 +354,7 @@ void test_an_estop_during_the_boot_pass_ends_it_and_owes_nothing() {
     TEST_ASSERT_FALSE(run.active);
     ServoCommandedPosition settled = {};
     settled.pulsing = true;
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 90000, settled));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 90000, settled));
 }
 
 // "Go home and release" on an overshoot row: the move outlasts one full throw,
@@ -366,7 +366,7 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
     row.easing = SERVO_EASE_OVERSHOOT;
     const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
     TEST_ASSERT_TRUE(step.releaseAfter);
-    sequenceBulkCentreOweRelease(&run, 2);
+    sequenceBulkCentreAwait(&run, 2, /*release=*/true);
     sequenceBulkCentreAdvance(&run, 1, 0, true, row.throw_ms);
     TEST_ASSERT_TRUE(run.active);  // the last row, but a release is still owed
 
@@ -375,13 +375,13 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
     at.moving = true;
     at.nowUs = 1560;  // passing through its target on the way out to the aim
     at.targetUs = 1560;
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 799, at));
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 800, at));
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, 1400, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 799, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 800, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 1400, at));
 
     at.moving = false;  // settled back onto the centre
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_SEND, sequenceBulkCentreReleaseCheck(run, 1420, at));
-    sequenceBulkCentreReleaseSent(&run, 1);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_RELEASE, sequenceBulkCentreAwaitCheck(run, 1420, at));
+    sequenceBulkCentreAwaitOver(&run, 1);
     TEST_ASSERT_FALSE(run.active);
 }
 
@@ -389,27 +389,57 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
 // full-throw time: that is the earliest check, a snap included.
 void test_a_release_is_never_earlier_than_the_floored_throw() {
     SeqBulkCentreRun run = bootPass(0);
-    sequenceBulkCentreOweRelease(&run, 0);
+    sequenceBulkCentreAwait(&run, 0, /*release=*/true);
     sequenceBulkCentreAdvance(&run, 5, 0, true, 200);
 
     ServoCommandedPosition settled = {};
     settled.pulsing = true;
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_WAIT, sequenceBulkCentreReleaseCheck(run, SEQ_CADENCE_FLOOR_MS - 1, settled));
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_SEND, sequenceBulkCentreReleaseCheck(run, SEQ_CADENCE_FLOOR_MS, settled));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, SEQ_CADENCE_FLOOR_MS - 1, settled));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_RELEASE, sequenceBulkCentreAwaitCheck(run, SEQ_CADENCE_FLOOR_MS, settled));
 }
 
 // An Output ServoTask never drove - switched off, or carrying a light - has no
 // pulse to take off: the release is dropped, not sent, and the pass goes on.
 void test_a_release_on_an_output_with_no_pulse_is_dropped() {
     SeqBulkCentreRun run = bootPass(0);
-    sequenceBulkCentreOweRelease(&run, 3);
+    sequenceBulkCentreAwait(&run, 3, /*release=*/true);
     sequenceBulkCentreAdvance(&run, 5, 0, true, 500);
 
     const ServoCommandedPosition limp = {};
-    TEST_ASSERT_EQUAL_UINT8(SEQ_RELEASE_DROP, sequenceBulkCentreReleaseCheck(run, 500, limp));
-    sequenceBulkCentreReleaseSent(&run, 5);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_DROP, sequenceBulkCentreAwaitCheck(run, 500, limp));
+    sequenceBulkCentreAwaitOver(&run, 5);
     TEST_ASSERT_TRUE(run.active);
-    TEST_ASSERT_EQUAL_UINT8(SEQ_BULK_CENTRE_NO_RELEASE, run.releaseArm);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BULK_CENTRE_NO_AWAIT, run.awaitArm);
+}
+
+// One servo actuating at a time (#417). An overshoot row outlasts its floored
+// throw - it goes out to its aim and settles back - and the next row waits for
+// it to settle rather than starting beside it. A row that owes no release is
+// waited on exactly as one that does.
+void test_the_next_row_waits_for_an_output_still_moving() {
+    SeqBulkCentreRun run = {};
+    sequenceBulkCentreStart(&run, 0, SRC_WEB_API);
+    ServoOutputRow row = servoRow(LEDC_CH_ARM1, 1500, 800);
+    row.easing = SERVO_EASE_OVERSHOOT;
+    const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
+    TEST_ASSERT_TRUE(step.centre);
+    TEST_ASSERT_FALSE(step.releaseAfter);
+    sequenceBulkCentreAwait(&run, sequenceBodyCentrePlan(row).armId, step.releaseAfter);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, row.throw_ms);
+
+    ServoCommandedPosition at = {};
+    at.pulsing = true;
+    at.moving = true;
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 799, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 800, at));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_WAIT, sequenceBulkCentreAwaitCheck(run, 1400, at));
+
+    at.moving = false;  // settled back onto its centre
+    TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_DONE, sequenceBulkCentreAwaitCheck(run, 1420, at));
+    sequenceBulkCentreAwaitOver(&run, 5);
+    TEST_ASSERT_TRUE(run.active);
+    TEST_ASSERT_EQUAL_UINT8(SEQ_BULK_CENTRE_NO_AWAIT, run.awaitArm);
+    TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, 1420));
 }
 
 int main() {
@@ -442,5 +472,6 @@ int main() {
     RUN_TEST(test_a_release_waits_for_an_overshoot_to_settle);
     RUN_TEST(test_a_release_is_never_earlier_than_the_floored_throw);
     RUN_TEST(test_a_release_on_an_output_with_no_pulse_is_dropped);
+    RUN_TEST(test_the_next_row_waits_for_an_output_still_moving);
     return UNITY_END();
 }

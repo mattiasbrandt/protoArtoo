@@ -145,13 +145,15 @@ static bool dispatchBodyMove(const SeqAction& act) {
 // row with travel on a press, and on the boot pass only the rows whose boot
 // behaviour sends them home.
 //
-// A release the boot pass owes goes first. Its full-throw time (floored) is the
-// earliest it is looked at; it goes only once ServoTask reports the Output's
-// move over, so an overshoot is never cut mid-settle
-// (sequenceBulkCentreReleaseCheck()), and the next row waits behind it. The
-// drive comes off through ServoTask's own SERVO_CMD_RELEASE, the one path a
-// pulse comes off a pin by. It is sent even when the table shrank under the
-// run, because the Output it names was already driven.
+// The Output the last started row moved goes first. Its full-throw time
+// (floored) is the earliest the next row is looked at, and the next row starts
+// only once ServoTask reports that Output's move over, so no two Outputs are in
+// motion together and an overshoot is never cut mid-settle
+// (sequenceBulkCentreAwaitCheck()). A release the boot pass owes goes then,
+// and the next row waits behind it too. The drive comes off through
+// ServoTask's own SERVO_CMD_RELEASE, the one path a pulse comes off a pin by.
+// It is sent even when the table shrank under the run, because the Output it
+// names was already driven.
 //
 // The cursor is what says whether the turn is over: every path that dealt with
 // the row advances it, and the one path that could not - a full servoCmdQueue -
@@ -163,30 +165,30 @@ static bool dispatchBodyMove(const SeqAction& act) {
 static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     const uint8_t rowCount = configCacheServoOutputCount();
 
-    if (run.releaseArm != SEQ_BULK_CENTRE_NO_RELEASE) {
+    if (run.awaitArm != SEQ_BULK_CENTRE_NO_AWAIT) {
         ServoCommandedPosition at = {};
-        if (run.releaseArm < SERVO_ARM_COUNT) {
+        if (run.awaitArm < SERVO_ARM_COUNT) {
             taskENTER_CRITICAL(&robotStateMux);
-            at = robotState.servoCommanded[run.releaseArm];
+            at = robotState.servoCommanded[run.awaitArm];
             taskEXIT_CRITICAL(&robotStateMux);
         }
-        const SeqBulkCentreRelease release = sequenceBulkCentreReleaseCheck(run, now, at);
-        if (release == SEQ_RELEASE_WAIT) {
-            return;  // still settling: looked at again on the next tick
+        const SeqBulkCentreAwait awaited = sequenceBulkCentreAwaitCheck(run, now, at);
+        if (awaited == SEQ_AWAIT_WAIT) {
+            return;  // still moving: looked at again on the next tick
         }
-        if (release == SEQ_RELEASE_SEND) {
+        if (awaited == SEQ_AWAIT_RELEASE) {
             ServoCommand cmd = {};
-            cmd.armId = run.releaseArm;
+            cmd.armId = run.awaitArm;
             cmd.type = SERVO_CMD_RELEASE;
             cmd.source = (CommandSource)run.src;
             cmd.timestampMs = now;
             if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
                 return;  // owed still: it comes round again on the next tick
             }
-        } else {
-            PA_LOG_INFO(TAG, "arm%u has no pulse left to release", (unsigned)run.releaseArm + 1);
+        } else if (awaited == SEQ_AWAIT_DROP) {
+            PA_LOG_INFO(TAG, "arm%u has no pulse left to release", (unsigned)run.awaitArm + 1);
         }
-        sequenceBulkCentreReleaseSent(&run, rowCount);
+        sequenceBulkCentreAwaitOver(&run, rowCount);
         if (!run.active) {
             return;
         }
@@ -226,9 +228,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         return;  // the cursor stays put: this row's turn comes round again
     }
-    if (step.releaseAfter) {
-        sequenceBulkCentreOweRelease(&run, plan.armId);
-    }
+    sequenceBulkCentreAwait(&run, plan.armId, step.releaseAfter);
     sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms);
 }
 
@@ -406,7 +406,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     // measured stack chain (ADR 0040).
     static SeqBulkCentreRun centreRun;
     centreRun = SeqBulkCentreRun{};
-    centreRun.releaseArm = SEQ_BULK_CENTRE_NO_RELEASE;
+    centreRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
 
     // Power-up: each body Output does what its boot behaviour says (ADR 0052),
     // paced by the Cadence Floor like any sweep this task generates. The estop
