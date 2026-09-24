@@ -602,8 +602,12 @@ A pure module behind a write path: it reads parameters through a Param Source (a
 _Avoid_: handler helper, inline lambda validation, validation util, handler-owned side effects
 
 **Commit Step**:
-The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), owning the serialization of that operation so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0036; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
+The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function), run inside that operation's **Write Window** so two adapters cannot interleave a write, and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy of the effects or of the lock (ADR 0036; ADR 0011 amended 2026-09-04). It answers with a plain outcome and refreshes the caller's Working Snapshot rather than returning a second one.
 _Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function, adapter-held lock, snapshot-returning outcome
+
+**Write Window**:
+The one guarded span of a config write: the lock taken, the cache read into the **Working Snapshot**, the **Apply Core** run, the **Commit Step** run, the lock released - all before the answer is rendered. One per write operation, kept beside its Apply Core and called by every adapter, so no adapter holds the lock and a writer that skips the window is caught rather than silently losing another writer's change. The one-field writes Core 1 makes are outside it by design (ADR 0011, amended 2026-09-24).
+_Avoid_: lock scope, adapter-held lock, config transaction, global write function
 
 **Working Snapshot**:
 The one per-request copy of the configuration that a write acts on: the Apply Core validates and applies onto it, the Commit Step commits it and refreshes it with the committed state, and the adapter renders from it. A write makes exactly one; nothing below the seam makes another. Distinct from a Zone Snapshot, which is a read of live state (ADR 0011).
