@@ -130,6 +130,7 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
   - `400` `{"ok":false,"error":"mdnsUseName must be true/false or 1/0"}`
   - `500` `{"ok":false,"error":"failed to persist identity"}`
+  - `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request
 
@@ -292,6 +293,7 @@ Sets operation mode.
 - `400` `{"ok":false,"error":"missing mode parameter"}`
 - `400` `{"ok":false,"error":"invalid mode - use 'stationary' or 'driving'"}`
 - `500` `{"ok":false,"error":"mode applied but NVS save failed"}`
+  (also the answer when another config writer held the config write window for over a second: the mode is applied, the save waits for the next write)
 
 The `500` means the droid IS in the requested mode now, and only the store
 missed: it comes back up in the previous mode after a reboot. The mode is not
@@ -321,6 +323,7 @@ Applies persisted speed preset.
 - `400` `{"ok":false,"error":"missing preset"}`
 - `400` `{"ok":false,"error":"invalid preset - use slow, normal, or turbo"}`
 - `500` `{"ok":false,"error":"failed to persist speed preset"}`
+  (also the answer when another config writer held the config write window for over a second; the preset was not changed)
 - `500` `{"ok":false,"error":"speed preset response overflow"}`
 
 #### Example request
@@ -848,6 +851,7 @@ Action endpoint.
   when audio output is off this boot (every action)
 - `503` `{"ok":false,"error":"audio command queue full"}`
 - `500` `{"ok":false,"error":"volume applied but NVS save failed"}`
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; the volume was not changed (`action=volume`)
 
 #### Example request (play)
 
@@ -960,6 +964,7 @@ Updates one persisted key.
 - invalid CHIRP arguments
 - `404` when CHIRP mapping requested on non-catalog backend
 - `500` on NVS write failure
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request (non-CHIRP)
 
@@ -1005,6 +1010,7 @@ Atomically updates one category low/high pair.
 - invalid CHIRP binding arguments
 - `404` when CHIRP binding operation requested on non-catalog backend
 - `500` on NVS write failure
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request
 
@@ -1052,6 +1058,7 @@ Sets mood category masks.
 - JSON parse failure
 - invalid range/type
 - `500` on NVS write failure
+- `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
 #### Example request (form)
 

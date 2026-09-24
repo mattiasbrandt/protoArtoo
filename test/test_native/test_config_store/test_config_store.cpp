@@ -1312,6 +1312,35 @@ void test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty() {
                               "a stationary toggle marked the RC mapping dirty");
 }
 
+// The RC speed preset's write (#417): the preset and the limit it names, and
+// nothing else - it runs on Core 1, and a whole-snapshot write there is what
+// put a config POST's fields back. It does mark the RC mapping dirty, unlike
+// stationary: the mapping caches the limit as its maxOut.
+void test_configCacheSelectSpeedPreset_writes_only_the_speed_pair() {
+    ConfigSnapshot seeded = {};
+    configSnapshotDefaults(&seeded);
+    seeded.drive.speedPresetSlow = 150;
+    seeded.drive.speedPresetNormal = 300;
+    seeded.drive.speedPresetTurbo = 600;
+    seeded.drive.speedPresetActive = SpeedPresetId::Normal;
+    seeded.drive.speedLimitMax = 300;
+    seeded.audio.audioVolume = 17;
+    configCacheApply(seeded);
+    robotState.rcConfigDirty = false;
+
+    TEST_ASSERT_EQUAL_INT(150, configCacheSelectSpeedPreset(SpeedPresetId::Slow));
+
+    ConfigSnapshot expected = seeded;
+    expected.drive.speedLimitMax = 150;
+    expected.drive.speedPresetActive = SpeedPresetId::Slow;
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, memcmp(&expected, &after, sizeof(ConfigSnapshot)),
+                                  "the speed preset setter touched something else");
+    TEST_ASSERT_TRUE_MESSAGE(robotState.rcConfigDirty,
+                             "the RC mapping would keep driving at the old limit");
+}
+
 void test_config_domain_load_functions_are_independently_callable() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 550;
@@ -1885,6 +1914,7 @@ int main() {
     RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);
     RUN_TEST(test_configCacheSetStationary_writes_only_that_field);
     RUN_TEST(test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty);
+    RUN_TEST(test_configCacheSelectSpeedPreset_writes_only_the_speed_pair);
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
     RUN_TEST(test_config_domain_round_trip_matrix);

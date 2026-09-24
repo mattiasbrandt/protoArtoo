@@ -1825,8 +1825,6 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
     }
 
     ConfigSnapshot working = {};
-    configCacheRead(&working);
-    const bool domeEnabledBefore = working.system.enable_dome_esc;
 
     ScalarConfigArg adapter{&parsedArgs, fieldKey};
     ConfigParamSource params;
@@ -1839,6 +1837,11 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
     // releases as soon as this module's last read of
     // s_consoleConfigApplyResult is done, in configCommitApplied(), rather
     // than being held any longer than the shared state needs protecting.
+    //
+    // The cache read is inside the lock, not before it (#417): a snapshot read
+    // before another writer's commit and written back after it reverts that
+    // writer's fields - the lost update the lock exists to stop, one statement
+    // earlier (include/api_config.h).
     bool applyHadError = false;
     ConfigCommitOutcome commit = {};
     {
@@ -1853,6 +1856,8 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
             return;
         }
 
+        configCacheRead(&working);
+        const bool domeEnabledBefore = working.system.enable_dome_esc;
         configApply(params, &working, domeEnabledBefore, &s_consoleConfigApplyResult);
         applyHadError = s_consoleConfigApplyResult.error.hasError;
         if (!applyHadError) {

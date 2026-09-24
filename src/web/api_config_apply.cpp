@@ -393,7 +393,9 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         setError(result, "stationary must be true/false or 1/0");
         return;
     }
-    (void)stationaryProvided;  // stationary release cue stays in the shell (ADR 0012)
+    // The stationary release cue stays in the shell (ADR 0012); the shell also
+    // needs to know whether this request is the one deciding the mode.
+    result->stationaryStated = stationaryProvided;
 
     if (configParamHas(params, "logLevel")) {
         int16_t lvl = 0;
@@ -1092,6 +1094,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     }
 
     working->drive.speedPresetActive = activePresetAfter;
+    result->speedLimitStated = speedLimitMaxProvided || speedPresetValuesProvided;
     result->actions.playDomeOnCue = !domeEnabledBefore && working->system.enable_dome_esc;
 
     return;

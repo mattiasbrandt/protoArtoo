@@ -1015,7 +1015,11 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
     }
 
-    configCacheApply(*working);
+    // Not configCacheApply(): the speed group and stationary are also written
+    // at runtime by RC input on Core 1, which cannot take the config write lock
+    // this commit holds, so `working` may carry a value from before one landed.
+    // Whichever of them the request did not state keeps its live value (#417).
+    configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
 
     // The endpoints a builder just changed still arrive as arm1OpenUs and its
     // nine siblings, and the Apply Core that validated them is pure, so this is
@@ -1082,13 +1086,14 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         configCacheApplyGuidedSetup(guided);
     }
 
-    // Sync stationary mode with edge detection and drive-on cue. Safe to call
-    // unconditionally: when the request omits "stationary", configApply() left
-    // working->system.stationary at the cache value read before the call, which
-    // always matches robotState.stationary (commandedSetStationary is the only
-    // runtime writer of both, keeping them in lockstep) - so the edge-detect
-    // inside it is a no-op and no cue fires.
-    commandedSetStationary(working->system.stationary, source);
+    // Sync stationary mode with edge detection and drive-on cue - only when the
+    // request stated it. When it did not, `working` holds the value read at the
+    // start of the request, and an RC toggle since (commandedSetStationary() on
+    // Core 1, which keeps robotState and the cache in lockstep) would be undone
+    // here and its cue replayed; the apply above has kept the live value (#417).
+    if (result.stationaryStated) {
+        commandedSetStationary(working->system.stationary, source);
+    }
 
     if (result.actions.playDomeOnCue) {
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);

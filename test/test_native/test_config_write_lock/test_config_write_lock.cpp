@@ -39,7 +39,10 @@
                               // real take/give accounting of the config write
                               // lock in src/web/api_config.cpp
 
+#include "api_audio.h"
 #include "api_config.h"
+#include "api_drive.h"
+#include "api_identity.h"
 #include "config_cache.h"
 #include "console_module.h"
 #include "console_record.h"
@@ -242,11 +245,120 @@ void test_alternating_rest_and_console_writes_both_land_with_balanced_locking(vo
     TEST_ASSERT_EQUAL_INT_MESSAGE(m->takeCount, m->giveCount, "takes and gives are not balanced");
 }
 
+// =============================================================================
+// Core 1's two fields, and the Core 0 writers that used to skip the lock (#417)
+// =============================================================================
+
+// RCInputTask sets the speed preset and stationary on Core 1, by field and
+// without the lock - it must never block there. Staged at the point a real
+// scheduler could run it: after the POST read the cache, before it commits.
+static void rcLandsMidPost() {
+    configCacheSelectSpeedPreset(SpeedPresetId::Turbo);
+    configCacheSetStationary(true);
+}
+
+static void seedSpeedPresets() {
+    ConfigSnapshot snap = readSnapshot();
+    snap.drive.speedPresetSlow = 150;
+    snap.drive.speedPresetNormal = 300;
+    snap.drive.speedPresetTurbo = 600;
+    snap.drive.speedPresetActive = SpeedPresetId::Normal;
+    snap.drive.speedLimitMax = 300;
+    snap.system.stationary = false;
+    configCacheApply(snap);
+}
+
+/**
+ * A config POST replaces the whole snapshot from the copy it read, and RC
+ * input cannot take the lock the POST holds. Before the Commit Step kept the
+ * live values, a POST about something else put the old speed limit and the
+ * old mode straight back - the droid kept driving at Normal after the stick
+ * said Turbo. What the request did state still wins.
+ */
+void test_an_rc_change_landing_mid_post_is_not_reverted(void) {
+    seedSpeedPresets();
+
+    const WebRequestTestParam unrelated[] = {{"webDriveTimeoutMs", "750"}};
+    WebRequestTestBackend backend;
+    backend.params = unrelated;
+    backend.paramCount = 1;
+    backend.onFirstParamRead = rcLandsMidPost;
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_EQUAL_UINT32(750, after.drive.webDriveTimeoutMs);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(600, after.drive.speedLimitMax, "the RC preset was reverted");
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Turbo, (uint8_t)after.drive.speedPresetActive);
+    TEST_ASSERT_TRUE_MESSAGE(after.system.stationary, "the RC stationary toggle was reverted");
+
+    seedSpeedPresets();
+    const WebRequestTestParam stated[] = {{"speedLimitMax", "80"}, {"stationary", "false"}};
+    WebRequestTestBackend statedBackend;
+    statedBackend.params = stated;
+    statedBackend.paramCount = 2;
+    statedBackend.onFirstParamRead = rcLandsMidPost;
+    WebRequest statedReq(&statedBackend);
+    handleConfigPost(statedReq);
+
+    TEST_ASSERT_EQUAL_INT(200, statedBackend.sentCode);
+    after = readSnapshot();
+    TEST_ASSERT_EQUAL_INT(80, after.drive.speedLimitMax);
+    TEST_ASSERT_FALSE(after.system.stationary);
+}
+
+static int postWhileHeld(void (*handler)(WebRequest&), const WebRequestTestParam* params,
+                         size_t count) {
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = count;
+    WebRequest req(&backend);
+    handler(req);
+    return backend.sentCode;
+}
+
+/**
+ * Every other REST route that writes the config cache or saves it whole takes
+ * the same window, so it is refused rather than run beside a write that holds
+ * it. Each of these used to run straight through.
+ */
+void test_the_other_rest_config_writers_wait_for_the_window(void) {
+    configCacheSetActiveAudioEnabled(true);
+    struct PaStubMutex* m = paStubMutexStorage();
+    m->held = 1;
+
+    const WebRequestTestParam volume[] = {{"action", "volume"}, {"level", "12"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioPost, volume, 2), "volume");
+    const WebRequestTestParam moodMap[] = {
+        {"quiet", "1"}, {"mid", "2"}, {"full", "3"}, {"awakeplus", "4"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioMoodMapPost, moodMap, 4),
+                                  "mood map");
+    const WebRequestTestParam tracks[] = {{"key", "snd_scream"}, {"track", "3"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioTracksPost, tracks, 2), "tracks");
+    const WebRequestTestParam range[] = {{"category", "scrm"}, {"lo", "1"}, {"hi", "2"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleAudioCategoryRangePost, range, 3),
+                                  "category range");
+    const WebRequestTestParam identity[] = {{"droidName", "artoo"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(503, postWhileHeld(handleIdentityPost, identity, 1), "identity");
+    // The mode is a state the droid is already in, so it is applied and the
+    // save is what is refused - answered as a save that did not happen.
+    const WebRequestTestParam mode[] = {{"mode", "stationary"}};
+    TEST_ASSERT_EQUAL_INT_MESSAGE(500, postWhileHeld(handleModePost, mode, 1), "mode");
+
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(0, readSnapshot().audio.audioVolume,
+                                    "a refused volume write still reached the config cache");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->takeCount, "a refused writer took the window anyway");
+    configCacheSetActiveAudioEnabled(false);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_a_console_write_interleaved_into_a_rest_write_is_never_silently_reverted);
     RUN_TEST(test_a_rest_config_write_is_refused_while_the_window_is_held);
     RUN_TEST(test_the_rc_map_and_wifi_routes_are_refused_while_the_window_is_held);
     RUN_TEST(test_alternating_rest_and_console_writes_both_land_with_balanced_locking);
+    RUN_TEST(test_an_rc_change_landing_mid_post_is_not_reverted);
+    RUN_TEST(test_the_other_rest_config_writers_wait_for_the_window);
     return UNITY_END();
 }

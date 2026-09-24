@@ -111,7 +111,18 @@ static void consoleExecuteDirectSetMode(uint32_t requestId, const char* operatio
     // REST route now reports a failed write too (saveCommandedMode(),
     // src/web/api_drive.cpp) and the two adapters for this one operation
     // answer alike.
-    const bool persisted = saveConfigToNvs();
+    //
+    // The save runs inside the config write lock (#417): it reads the whole
+    // cache and writes it, and an unserialized one can store a snapshot from
+    // before another writer's commit over that commit. A lock that cannot be
+    // taken is a save that did not happen, answered like one.
+    bool persisted = false;
+    {
+        ConfigWriteLock guard;
+        if (guard.acquired()) {
+            persisted = saveConfigToNvs();
+        }
+    }  // guard released here, before the answer
     requestStatusBroadcastNow();
 
     if (sink->onRecordResult) {
@@ -298,12 +309,21 @@ static void consoleExecuteDirectSetIdentity(uint32_t requestId, const char* oper
         return;
     }
 
+    // Cache read through commit inside the config write lock, as the REST
+    // route takes it for the same Commit Step (#417).
     ConfigSnapshot working = {};
-    configCacheRead(&working);
-    snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
-    working.system.mdns_use_name = mdnsUseName;
-
-    IdentitySetCommitOutcome commit = identitySetCommitApplied(&working);
+    IdentitySetCommitOutcome commit;
+    {
+        ConfigWriteLock guard;
+        if (!guard.acquired()) {
+            consoleAnswerConfigWriteBusy(requestId, sink);
+            return;
+        }
+        configCacheRead(&working);
+        snprintf(working.system.droid_name, sizeof(working.system.droid_name), "%s", normalized);
+        working.system.mdns_use_name = mdnsUseName;
+        commit = identitySetCommitApplied(&working);
+    }  // guard released here, before the answer
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, commit.persisted ? CONSOLE_STATUS_OK : CONSOLE_STATUS_ERR,
                             commit.persisted ? CONSOLE_OUTCOME_APPLIED : CONSOLE_OUTCOME_INTERNAL_ERROR,

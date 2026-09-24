@@ -167,6 +167,39 @@ void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided);
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);
 
+// configCacheApplyKeepingLive: configCacheApply(), except that the fields RC
+// input also writes at runtime keep their live value unless the writer stated
+// them (#417). The config POST's Commit Step replaces the whole snapshot from
+// a copy it read when it took the config write lock; an RC speed preset or
+// stationary toggle that landed on Core 1 since - which never takes that lock,
+// and must not - would otherwise be reverted by a request that said nothing
+// about it. The live values are read inside the same configCacheMux section
+// that writes the snapshot, so nothing can land between the two.
+void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStated,
+                                 bool stationaryStated);
+
+// configCacheSelectSpeedPreset: make `preset` the active speed preset and the
+// drive limit the value it names, both in one configCacheMux section, from the
+// three preset values the cache holds at that moment. Returns the limit.
+//
+// The RC speed preset's write, and safe where that runs: RCInputTask, Core 1
+// (src/rc_dispatcher_helpers.cpp). It used to be a whole-snapshot read, two
+// field edits and configCacheApply() across two critical sections - 944 B of
+// snapshot on the real-time task's stack, and a write that replaced every
+// other field with what it had read, so a config POST landing between the two
+// sections lost its fields (#417). No mutex is taken, ever: a blocking take on
+// Core 1 is the thing ConfigWriteLock's own contract forbids.
+//
+// Marks RobotState.rcConfigDirty, unlike configCacheSetStationary() below: the
+// RC mapping caches the drive limit as its maxOut (src/tasks/rc_input.cpp), so
+// it has to rebuild to drive at the new one.
+int16_t configCacheSelectSpeedPreset(SpeedPresetId preset);
+
+// configCacheSetSpeedLimit: the same two fields, set to a pair the caller
+// already holds - the revert applySpeedPresetPersisted() makes when its save
+// fails. One section, rcConfigDirty marked, for the reasons above.
+void configCacheSetSpeedLimit(int16_t speedLimitMax, SpeedPresetId preset);
+
 // configCacheSetStationary: write the one field the Commanded Mode setters
 // mirror into the cache, by field.
 //

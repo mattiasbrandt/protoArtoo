@@ -12,6 +12,7 @@
 #include "config.h"
 #include "config_serializer.h"
 #include "config_nvsio.h"
+#include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
 #include "rc_mapping.h"
@@ -867,15 +868,62 @@ uint8_t configCacheReadSoundMember() {
 // is not acceptable.
 static volatile uint8_t s_liveLogLevel = 0;
 
-void configCacheApply(const ConfigSnapshot& snap) {
-    taskENTER_CRITICAL(&configCacheMux);
-    configCache = snap;
-    taskEXIT_CRITICAL(&configCacheMux);
-    s_liveLogLevel = snap.system.logLevel;
-
+static void markRcConfigDirty() {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.rcConfigDirty = true;
     taskEXIT_CRITICAL(&robotStateMux);
+}
+
+void configCacheApply(const ConfigSnapshot& snap) {
+    configCacheApplyKeepingLive(snap, true, true);
+}
+
+// See declaration comment in config_cache.h.
+void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStated,
+                                 bool stationaryStated) {
+    taskENTER_CRITICAL(&configCacheMux);
+    const int16_t liveLimit = configCache.drive.speedLimitMax;
+    const SpeedPresetId livePreset = configCache.drive.speedPresetActive;
+    const bool liveStationary = configCache.system.stationary;
+    configCache = snap;
+    if (!speedLimitStated) {
+        configCache.drive.speedLimitMax = liveLimit;
+        configCache.drive.speedPresetActive = livePreset;
+    }
+    if (!stationaryStated) {
+        configCache.system.stationary = liveStationary;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    s_liveLogLevel = snap.system.logLevel;
+
+    markRcConfigDirty();
+}
+
+// See declaration comment in config_cache.h. The three preset values are
+// held to the drive cap here as well as on load and at the config door: this
+// is the value DriveTask is about to drive at, and the clamp costs nothing.
+int16_t configCacheSelectSpeedPreset(SpeedPresetId preset) {
+    taskENTER_CRITICAL(&configCacheMux);
+    DriveConfig& drive = configCache.drive;
+    const int16_t limit = speedPresetValueForId(
+        preset, constrain(drive.speedPresetSlow, (int16_t)0, (int16_t)SPEED_LIMIT_MAX),
+        constrain(drive.speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX),
+        constrain(drive.speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX));
+    drive.speedLimitMax = limit;
+    drive.speedPresetActive = preset;
+    taskEXIT_CRITICAL(&configCacheMux);
+
+    markRcConfigDirty();
+    return limit;
+}
+
+void configCacheSetSpeedLimit(int16_t speedLimitMax, SpeedPresetId preset) {
+    taskENTER_CRITICAL(&configCacheMux);
+    configCache.drive.speedLimitMax = speedLimitMax;
+    configCache.drive.speedPresetActive = preset;
+    taskEXIT_CRITICAL(&configCacheMux);
+
+    markRcConfigDirty();
 }
 
 // See declaration comment in config_cache.h. Deliberately NOT a call to

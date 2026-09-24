@@ -93,8 +93,18 @@ struct ConfigCommitOutcome {
 // A blocking FreeRTOS mutex, not a portMUX critical section: the held window
 // performs an NVS write (several ms of flash I/O), and holding interrupts
 // disabled for that long is unacceptable even confined to Core 0. Blocking
-// one non-realtime adapter task while another's write finishes is fine - no
-// Core 1 task (DriveTask, RCInputTask, ...) ever writes config.
+// one non-realtime adapter task while another's write finishes is fine, and
+// no Core 1 task (DriveTask, RCInputTask, ...) ever takes this lock: a blocking
+// take in a real-time loop is not allowed.
+//
+// Core 1 does write config, by field and never to NVS: RCInputTask sets the
+// speed preset (configCacheSelectSpeedPreset()) and stationary
+// (configCacheSetStationary(), via commandedSetStationary()), each inside one
+// configCacheMux section. Those two fields are therefore the ones a holder of
+// this lock cannot keep still, and the Commit Step keeps their live value
+// whenever its request did not state them (configCacheApplyKeepingLive(),
+// #417). Every Core 0 writer - a whole-snapshot write, a saveConfigToNvs(),
+// or both - takes this lock, cache read included.
 //
 // A take that cannot acquire within its bound reports unavailable rather
 // than proceeding: the failure this exists to prevent is silent corruption,
