@@ -23,6 +23,7 @@
 #include "output_wire.h"  // which wires LEDC must stay off (#416)
 #include "robot_state.h"
 #include "servo_component_helpers.h"  // servoCompTypeToString, for the clamp note
+#include "servo_halt.h"         // when estop and Sleep Mode each let go (ADR 0043)
 #include "servo_helpers.h"
 #include "servo_hold.h"         // the dial's hold and its two bounds (ADR 0064)
 #include "servo_motion_ramp.h"  // a move planned in time from the Output's profile (ADR 0052)
@@ -986,7 +987,7 @@ void servoTask(void* pvParameters) {
 
     ServoCommand cmd;
     bool hwmLogged = false;
-    bool halted = false;
+    ServoHaltFlags prevHalt = {false, false};
 
     while (true) {
         if (!hwmLogged) {
@@ -998,20 +999,22 @@ void servoTask(void* pvParameters) {
         // Entering estop or Sleep Mode stops every move where it is, before a
         // command or a frame can carry one further, and then releases every
         // enabled output (ADR 0043): nothing is driven, so nothing can grind
-        // and nothing can brown out. On the edge only: a direct command is
-        // still accepted in Sleep Mode, and it must be able to move. Both
-        // flags are read in one critical section so the reason recorded is the
-        // one that fired.
+        // and nothing can brown out. Each halt on its own edge
+        // (include/servo_halt.h): a direct command is still accepted in Sleep
+        // Mode and must be able to move, so an estop entered while asleep has
+        // to let go of what it moved. Both flags are read in one critical
+        // section so the reason recorded is the one that fired.
+        ServoHaltFlags haltNow = {};
         taskENTER_CRITICAL(&robotStateMux);
-        const bool estopNow = robotState.estop;
-        const bool sleepNow = robotState.sleepMode;
+        haltNow.estop = robotState.estop;
+        haltNow.sleep = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
-        const bool haltNow = estopNow || sleepNow;
-        if (haltNow && !halted) {
+        const ServoHaltEdge haltEdge = servoHaltEdge(prevHalt, haltNow);
+        if (haltEdge.release) {
             stopAllMoves("estop or sleep mode entered");
-            releaseAllOutputs(estopNow ? SERVO_LIMP_ESTOP : SERVO_LIMP_SLEEP);
+            releaseAllOutputs(haltEdge.reason);
         }
-        halted = haltNow;
+        prevHalt = haltNow;
 
         // Process any pending commands (non-blocking)
         while (xQueueReceive(servoCmdQueue, &cmd, 0) == pdTRUE) {
