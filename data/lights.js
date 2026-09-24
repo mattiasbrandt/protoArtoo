@@ -81,9 +81,12 @@
   };
 
   // What the controller last set each lit wire to, by the Output id the
-  // firmware keys its status frame with. Empty until a frame arrives, which
-  // reads as "no wire is showing anything" and is the honest start.
-  let showing = {};
+  // firmware keys its status frame with. null until a frame says, and a wire
+  // the frame does not name has not reported: neither is Off. The firmware
+  // keeps the two apart on purpose - {} is "no lights", a missing answer is
+  // not an answer (include/api_aux_led.h) - and a surface shows no state
+  // nobody reported (CONTEXT.md, Health Signal).
+  let showing = null;
 
   // Where a light sits, in the words a builder reads on the droid: a dome
   // light is IN the panel that carries it, by the Printed Droid shorthand
@@ -442,7 +445,8 @@
   // What one wire is showing, as the droid last reported it. Keyed by the
   // Output id the firmware keys its own status frame with, so a reading and a
   // wire are matched by the droid's own identifier rather than by position.
-  const readingFor = (wire) => showing[wire.id] || null;
+  const heard = (wire) => showing !== null && Object.hasOwn(showing, wire.id);
+  const readingFor = (wire) => (heard(wire) ? showing[wire.id] || null : null);
   const stripColor = (wire) => {
     const led = readingFor(wire);
     return {
@@ -495,7 +499,10 @@
     const color = stripColor(wire);
     const reading = readingFor(wire);
     const feedback = feedbackNode();
-    if (reading?.available === false) {
+    const reported = heard(wire);
+    if (!reported) {
+      node.appendChild(element("p", "light-state", "Not reported yet"));
+    } else if (reading?.available === false) {
       node.appendChild(element("p", "light-state", "Could not start"));
     }
 
@@ -503,7 +510,7 @@
     // dome's modes wear.
     const doing = element("div");
     doing.appendChild(element("div", "light-pick-label", "Light"));
-    doing.appendChild(pills(`${part.name} light`, EFFECTS, wordFor(reading?.effect), (id) => {
+    doing.appendChild(pills(`${part.name} light`, EFFECTS, reported ? wordFor(reading?.effect) : null, (id) => {
       const choice = EFFECTS.find((each) => each.id === id);
       ask("/api/aux-led/effect", wire, { effect: choice.effect }, feedback,
         `Asked for ${choice.label.toLowerCase()}`);
@@ -529,7 +536,10 @@
 
     // How far, as a light hears it. A slider because brightness is continuous
     // and a chip cannot say 40%; dressed to sit beside the chips above.
+    // Hidden until the wire has reported: a slider always sits somewhere, and
+    // at 0 it would say Off.
     const level = element("div", "light-level");
+    level.hidden = !reported;
     level.appendChild(element("div", "light-pick-label", "Brightness"));
     const slider = document.createElement("input");
     slider.type = "range";
@@ -634,14 +644,15 @@
   // so does this: matching a reading to a wire by position would put one
   // wire's color on another's plate the moment the set changes.
   const readingOf = (led) => (led ? `${led.r},${led.g},${led.b}:${led.effect}:${led.available}` : "");
-  const frameOf = (byId) => Object.keys(byId).sort()
-    .map((id) => `${id}=${readingOf(byId[id])}`).join("|");
+  const frameOf = (byId) => (byId === null ? "unheard" : Object.keys(byId).sort()
+    .map((id) => `${id}=${readingOf(byId[id])}`).join("|"));
   const renderStatus = (status) => {
-    const next = (status && typeof status.lights === "object" && status.lights) || {};
+    const lights = status && typeof status === "object" ? status.lights : null;
+    const next = lights && typeof lights === "object" && !Array.isArray(lights) ? lights : null;
     const changed = frameOf(next) !== frameOf(showing);
     showing = next;
     // Remember the hue each wire is showing, so its brightness can put it back.
-    Object.keys(showing).forEach((id) => {
+    Object.keys(showing || {}).forEach((id) => {
       const led = showing[id];
       if (led && (led.r || led.g || led.b)) tints.set(id, { r: led.r, g: led.g, b: led.b });
     });
