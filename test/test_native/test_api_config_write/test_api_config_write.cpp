@@ -12,9 +12,12 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "api_config.h"
+#include "component_registry.h"
 #include "config_cache.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
@@ -221,6 +224,133 @@ void test_config_post_syncs_stationary_and_broadcasts_status() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_TRUE(g_test_commanded_stationary);
     TEST_ASSERT_GREATER_THAN(0, g_test_status_broadcast_count);
+}
+
+// --- the round trip: what GET reads, POST takes back (ADR 0068, #423) -------
+
+namespace {
+
+std::string readConfigBody() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleConfigGet(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    return std::string(backend.sentBody, backend.sentBodyLength);
+}
+
+// Every scalar POST /api/config sets, each moved off the value setUp() leaves,
+// plus the Droid Build and Guided Setup's record that travel with a backup. A
+// field GET reports and POST cannot take back stays at its setUp() value, and
+// the comparison after the round trip finds it.
+struct Configuration {
+    ConfigSnapshot snap;
+    DroidBuildConfig build;
+    GuidedSetupConfig guided;
+};
+
+Configuration readConfiguration() {
+    Configuration now = {};
+    configCacheRead(&now.snap);
+    configCacheReadDroidBuild(&now.build);
+    configCacheReadGuidedSetup(&now.guided);
+    return now;
+}
+
+void applyConfiguration(const Configuration& config) {
+    const ConfigWriteWindowForTest window;
+    configCacheApply(config.snap);
+    configCacheApplyDroidBuild(config.build);
+    configCacheApplyGuidedSetup(config.guided);
+}
+
+Configuration configurationUnlikeSetUp(const Configuration& base) {
+    Configuration want = base;
+    DriveConfig& drive = want.snap.drive;
+    drive.speedPresetSlow = 120;
+    drive.speedPresetNormal = 340;
+    drive.speedPresetTurbo = 560;
+    drive.speedLimitMax = 560;
+    drive.speedPresetActive = SpeedPresetId::Turbo;  // what POST derives from 560
+    drive.webDriveTimeoutMs = 750;
+    drive.sbusTimeoutMs = 333;
+
+    SystemConfig& system = want.snap.system;
+    system.stationary = true;
+    system.single_sbus_use_ch2 = true;
+    system.rc_input_mode = RC_INPUT_ELRS;
+    system.rc_member = componentPartById("rc_transmitter_elrs")->value;
+    system.sound_member = componentPartById("mp3_trigger")->value;
+    system.logLevel = 4;
+    system.enable_dome_esc = true;
+    system.enable_rc_ch1 = true;
+    system.enable_rc_ch2 = true;
+    system.enable_rc_ch3 = true;
+    system.enable_rc_ch4 = true;
+    system.enable_rc_ch5 = true;
+    system.enable_rc_ch6 = true;
+    system.enable_drive = true;
+    system.enable_audio = true;
+    system.enable_protor2link = true;
+
+    DomeConfig& dome = want.snap.dome;
+    dome.dome_neutral_us = 1490;
+    dome.dome_min_pulse_us = 1100;
+    dome.dome_max_pulse_us = 1900;
+    dome.dome_speed_limit_pct = 70;
+    dome.dome_rnd_enable = true;
+    dome.dome_rnd_speed_pct = 40;
+    dome.dome_rnd_pause_min = 7;
+    dome.dome_rnd_pause_max = 33;
+    dome.dome_rnd_move_ms = 2500;
+    snprintf(dome.dome_wifi_peer_ip, sizeof(dome.dome_wifi_peer_ip), "%s", "10.1.2.3");
+
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&want.build.dome, "mk4", "basic"));
+    TEST_ASSERT_TRUE(droidDesignChoiceSet(&want.build.body, "own", ""));
+    droidFittedPartsClear(&want.build.fitted);
+    TEST_ASSERT_TRUE(droidFittedPartsFit(&want.build.fitted, "utilUp"));
+    TEST_ASSERT_TRUE(droidFittedPartsFit(&want.build.fitted, "gripArm"));
+
+    want.guided.run = GUIDED_SETUP_COMPLETED;
+    want.guided.recorded = true;
+    want.guided.summaryDone = true;
+    guidedSetupVisitedSet(&want.guided, "drive,sound");
+    return want;
+}
+
+void assertSameConfiguration(const Configuration& want, const Configuration& got) {
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&want.snap, &got.snap, sizeof(ConfigSnapshot),
+                                     "a scalar GET reported did not come back through POST");
+    TEST_ASSERT_EQUAL_STRING(want.build.dome.design, got.build.dome.design);
+    TEST_ASSERT_EQUAL_STRING(want.build.dome.variant, got.build.dome.variant);
+    TEST_ASSERT_EQUAL_STRING(want.build.body.design, got.build.body.design);
+    TEST_ASSERT_EQUAL_STRING(want.build.body.variant, got.build.body.variant);
+    TEST_ASSERT_EQUAL_MEMORY(&want.build.fitted, &got.build.fitted, sizeof(DroidFittedParts));
+    TEST_ASSERT_EQUAL_UINT8(want.guided.run, got.guided.run);
+    TEST_ASSERT_EQUAL(want.guided.recorded, got.guided.recorded);
+    TEST_ASSERT_EQUAL(want.guided.summaryDone, got.guided.summaryDone);
+    TEST_ASSERT_EQUAL_STRING(want.guided.visited, got.guided.visited);
+}
+
+}  // namespace
+
+// The restore is the reader that matters most (ADR 0068): a Configuration read
+// through GET and posted back, unchanged, through POST /api/config must come back
+// equal. Drop any one field's POST handling - its entry in the GET shape, or its
+// check - and that field stays at the setUp() value and this goes red.
+void test_a_configuration_read_by_get_comes_back_whole_through_post() {
+    const Configuration base = readConfiguration();
+    const Configuration want = configurationUnlikeSetUp(base);
+    applyConfiguration(want);
+    const std::string backup = readConfigBody();
+
+    applyConfiguration(base);
+    WebRequestTestBackend backend;
+    backend.body = backup.c_str();
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
+    assertSameConfiguration(want, readConfiguration());
 }
 
 // --- GET/POST /api/rc/map ---------------------------------------------------
@@ -829,6 +959,7 @@ int main() {
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
     RUN_TEST(test_config_post_refuses_clashing_speed_presets_as_a_conflict);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
+    RUN_TEST(test_a_configuration_read_by_get_comes_back_whole_through_post);
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);
     RUN_TEST(test_config_commit_leaves_working_agreeing_with_the_config_cache);
     RUN_TEST(test_config_post_body_matches_a_read_of_the_committed_config);

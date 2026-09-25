@@ -1658,10 +1658,21 @@ Updates supported config fields and persists to NVS.
   be sent together: a Part this build models, and each end an Output Address or
   none"}`.
 
-- Supported JSON body fields:
-- `rc.sbusTimeoutMs` (50..5000)
-- `rc.sbus.recvCh2` (boolean)
-- `protoR2link.wifiPeerIp` (string, empty or IPv4)
+- A JSON body is the **GET shape** (ADR 0068): every setting above that
+  `GET /api/config` reports can be sent back where GET puts it, so a restore
+  posts back what a backup holds. `drive.speedLimitMax`, `rc.member`,
+  `rc.sbus.recvCh2`, `components.audio.member`, `components.domeEsc.enabled`,
+  `domeEsc.rndMoveMs`, `protoR2link.wifiPeerIp`, `system.logLevel`,
+  `droidBuild.fitted` (an array of Part ids), `guidedSetup.visited` (an array of
+  step keys) and the rest each reach **the same check** as their form name, so a
+  value is refused in the same words and names the form field
+  (`"field":"sbusTimeoutMs"`) whichever door it came in by. A key GET carries
+  that is a reading rather than a setting - `wifi`, `activeToggles`,
+  `drive.speedPreset`, `rc.activeInputMode`, a `label`, `activeMember`,
+  `guidedSetup.recorded` - is ignored, so a whole GET answer can be posted back
+  as it stands. A number or a boolean may arrive as JSON or as the text a form
+  would carry; an object or list where one value belongs is refused. When a
+  field arrives both on the form and in the body, the form's value wins.
 
 - Success: `200` returns full updated config JSON (same shape as GET /api/config).
   When the write stored an endpoint at a different number than it was sent,
@@ -1710,6 +1721,12 @@ curl -s -X POST http://artoo.local/api/config \
 
 ```json
 {"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"}}
+```
+
+#### Example response (json, refused)
+
+```json
+{"ok":false,"error":"sbusTimeoutMs must be 50..5000","field":"sbusTimeoutMs","reason":"out-of-range","accepts":"50..5000"}
 ```
 
 ### GET /api/rc/map

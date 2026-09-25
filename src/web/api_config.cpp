@@ -1000,6 +1000,9 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     for (size_t i = 0; i < result.applied.count; ++i) {
         PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
     }
+    if (result.applied.dropped > 0) {
+        PA_LOG_INFO(TAG, "[CFG] and %u more field(s) updated", (unsigned)result.applied.dropped);
+    }
 
     // Not configCacheApply(): the speed group and stationary are also written
     // at runtime by RC input on Core 1, which cannot take the config write lock

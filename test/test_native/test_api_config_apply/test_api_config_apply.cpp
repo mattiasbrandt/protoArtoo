@@ -8,6 +8,7 @@
 // =============================================================================
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 #include "board_outputs.h"
 #include <map>
@@ -417,13 +418,34 @@ void test_configApply_json_body_sbusTimeoutMs_updates(void) {
     TEST_ASSERT_EQUAL_UINT32(777, snap.drive.sbusTimeoutMs);
 }
 
-void test_configApply_json_body_sbusTimeoutMs_out_of_range_rejected(void) {
+// A value in the GET shape reaches the same check as its form name, so it is
+// refused in the same words, about the same field (ADR 0068): there is one range
+// per field, not one per door.
+void test_configApply_json_body_is_refused_by_the_form_fields_own_check(void) {
     std::map<std::string, std::string> m = {{"plain", "{\"rc\":{\"sbusTimeoutMs\":10}}"}};
     ConfigSnapshot snap = makeDefaultSnap();
+    const uint32_t before = snap.drive.sbusTimeoutMs;
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("rc.sbusTimeoutMs must be 50..5000", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs must be 50..5000", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("50..5000", result.error.refusal.accepts);
+    TEST_ASSERT_EQUAL_UINT32(before, snap.drive.sbusTimeoutMs);
+}
+
+// A value no form field could hold - an object where a peer IP belongs - is
+// refused, never read as the empty string that would clear the stored address.
+void test_configApply_json_body_object_where_a_value_belongs_is_refused(void) {
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"protoR2link\":{\"wifiPeerIp\":{\"ip\":\"10.0.0.2\"}}}"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    snprintf(snap.dome.dome_wifi_peer_ip, sizeof(snap.dome.dome_wifi_peer_ip), "%s", "10.0.0.9");
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("protoR2linkWifiPeerIp", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.9", snap.dome.dome_wifi_peer_ip);
 }
 
 void test_configApply_json_body_invalid_json_rejected(void) {
@@ -717,7 +739,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_dome_enable_transition_queues_dome_on_cue);
     RUN_TEST(test_configApply_dome_already_enabled_no_cue);
     RUN_TEST(test_configApply_json_body_sbusTimeoutMs_updates);
-    RUN_TEST(test_configApply_json_body_sbusTimeoutMs_out_of_range_rejected);
+    RUN_TEST(test_configApply_json_body_is_refused_by_the_form_fields_own_check);
+    RUN_TEST(test_configApply_json_body_object_where_a_value_belongs_is_refused);
     RUN_TEST(test_configApply_json_body_invalid_json_rejected);
     RUN_TEST(test_configApply_led_count_out_of_range_names_its_output);
     RUN_TEST(test_configApply_multiple_fields_record_applied_lines_in_order);

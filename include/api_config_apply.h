@@ -11,6 +11,12 @@
 //   bounded applied-fields log record for the shell to replay, and
 //   plain-data actions.
 //
+// Two doors, one check per field (ADR 0068): a field arrives under its form
+// name (`rcMember`), which the pages and the Controller Console send, or in a
+// JSON body in the shape GET /api/config reads it (`rc.member`), which is what
+// a restore posts back. The body is read once, at the top, and every check
+// reads its field by form name whichever door it came in by.
+//
 // ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) -
 // too large to return by value on an 8 KB web server task stack (see
 // api_seq.cpp's SeqRunEvidence for the same constraint). It is an
@@ -89,15 +95,20 @@ struct ConfigApplyActions {
 
 // Bounded record of pre-formatted "[CFG] ..." log lines, in apply order.
 // The core does not log (ADR 0002 purity discipline) - the shell replays
-// these via PA_LOG_INFO. kMaxLines covers the largest single-request field
-// count today (~29: 4 speed-group lines + 5 scalar lines + 15 boolFields +
-// 5 dome-random lines) with headroom; kLineWidth covers the longest
-// formatted line with margin.
+// these via PA_LOG_INFO. kMaxLines covers an ordinary form save many times
+// over; kLineWidth covers the longest formatted line with margin.
+//
+// A whole Configuration posted back in the GET shape (ADR 0068) - a restore -
+// logs more lines than that. The record is not grown for it: the result is a
+// static on two adapters, and BSS is the scarcest budget on this target. The
+// lines past the bound are counted in `dropped` instead, and the shell says how
+// many it could not show rather than letting the log look complete.
 struct ConfigAppliedFields {
     static constexpr size_t kMaxLines = 32;
     static constexpr size_t kLineWidth = 80;
     char lines[kMaxLines][kLineWidth];
     size_t count = 0;
+    size_t dropped = 0;
 };
 
 // What the request asked of the addressed Servo Output rows (ADR 0041).

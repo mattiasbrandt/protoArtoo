@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "api_helpers.h"
@@ -27,6 +28,7 @@ constexpr uint16_t kServoPulseMaxUs = 2500;
 
 void appendApplied(ConfigAppliedFields* applied, const char* fmt, ...) {
     if (applied->count >= ConfigAppliedFields::kMaxLines) {
+        applied->dropped++;
         return;
     }
     va_list args;
@@ -326,11 +328,230 @@ bool paramBool(const ConfigParamSource& params, const char* name, bool* out) {
     return parseBoolValue(raw, out);
 }
 
+// -----------------------------------------------------------------------------
+// The Configuration in the shape GET /api/config reads it (ADR 0068, #423)
+//
+// A JSON body is the GET shape, so a restore posts back what a backup holds and
+// nothing in the browser flattens it first. Each entry below says where GET
+// /api/config puts a field this core reads, beside the form name the pages and
+// the Controller Console send it under. Both doors reach the SAME check further
+// down: a value found here is answered under its form name, so each range is
+// written once and a refusal reads the same whichever door the value came in by.
+//
+// A key GET carries that no entry names is a reading, not a setting - `wifi`,
+// `activeToggles`, `drive.speedPreset`, a label - and is ignored rather than
+// refused, so a whole GET answer can be posted back as it stands.
+// -----------------------------------------------------------------------------
+struct GetShapeField {
+    const char* param;    // the form name, which is what the checks below read
+    const char* path[3];  // where GET /api/config has it; unused trailing keys are nullptr
+};
+
+const GetShapeField kGetShapeFields[] = {
+    {"speedLimitMax", {"drive", "speedLimitMax"}},
+    {"speedPresetSlow", {"drive", "speedPresetSlow"}},
+    {"speedPresetNormal", {"drive", "speedPresetNormal"}},
+    {"speedPresetTurbo", {"drive", "speedPresetTurbo"}},
+    {"stationary", {"drive", "stationary"}},
+    {"webDriveTimeoutMs", {"drive", "webDriveTimeoutMs"}},
+    {"sbusTimeoutMs", {"rc", "sbusTimeoutMs"}},
+    {"sbusRecvCh2", {"rc", "sbus", "recvCh2"}},
+    {"rcInputMode", {"rc", "inputMode"}},
+    {"rcMember", {"rc", "member"}},
+    {"soundMember", {"components", "audio", "member"}},
+    {"logLevel", {"system", "logLevel"}},
+    {"protoR2linkWifiPeerIp", {"protoR2link", "wifiPeerIp"}},
+    {"domeEscNeutralUs", {"domeEsc", "neutralUs"}},
+    {"domeEscMinPulseUs", {"domeEsc", "minPulseUs"}},
+    {"domeEscMaxPulseUs", {"domeEsc", "maxPulseUs"}},
+    {"domeEscSpeedLimitPct", {"domeEsc", "speedLimitPct"}},
+    {"domeEscRndEnable", {"domeEsc", "rndEnable"}},
+    {"domeEscRndSpeedPct", {"domeEsc", "rndSpeedPct"}},
+    {"domeEscRndPauseMin", {"domeEsc", "rndPauseMin"}},
+    {"domeEscRndPauseMax", {"domeEsc", "rndPauseMax"}},
+    {"domeEscRndMoveMs", {"domeEsc", "rndMoveMs"}},
+    // The Component Toggles that are not an Output. An Output's wired tick is
+    // a field of its row (the `outputs` rows below), not of components{}.
+    {"enableDomeEsc", {"components", "domeEsc", "enabled"}},
+    {"enableRcCh1", {"components", "rcCh1", "enabled"}},
+    {"enableRcCh2", {"components", "rcCh2", "enabled"}},
+    {"enableRcCh3", {"components", "rcCh3", "enabled"}},
+    {"enableRcCh4", {"components", "rcCh4", "enabled"}},
+    {"enableRcCh5", {"components", "rcCh5", "enabled"}},
+    {"enableRcCh6", {"components", "rcCh6", "enabled"}},
+    {"enableDrive", {"components", "drive", "enabled"}},
+    {"enableAudio", {"components", "audio", "enabled"}},
+    {"enableProtoR2link", {"components", "protoR2link", "enabled"}},
+    // The Droid Build and Guided Setup's record travel with a backup like any
+    // other config key (operator, 2026-09-17 on #371). The two lists are JSON
+    // arrays on GET and are read as the comma-joined list the form takes.
+    {"domeDesign", {"droidBuild", "domeDesign"}},
+    {"domeVariant", {"droidBuild", "domeVariant"}},
+    {"bodyDesign", {"droidBuild", "bodyDesign"}},
+    {"bodyVariant", {"droidBuild", "bodyVariant"}},
+    {"fittedParts", {"droidBuild", "fitted"}},
+    {"guidedSetupRun", {"guidedSetup", "run"}},
+    {"guidedSetupVisited", {"guidedSetup", "visited"}},
+    {"guidedSetupSummaryDone", {"guidedSetup", "summaryDone"}},
+};
+
+// What a JSON value that no form field could ever hold reads as: an object
+// where a number belongs, or a list with something other than words in it. It
+// is a value no check below takes, so the field is refused with its own
+// sentence rather than dropped - an object sent as a peer IP must not read as
+// the empty string that clears it.
+constexpr const char kNotAFieldValue[] = "(not a value)";
+
+// The leaf a path names, or a null variant when any key on the way is absent.
+// Read-only: a lookup never adds a member to the body.
+JsonVariantConst getShapeLeaf(JsonObjectConst body, const char* const* path) {
+    JsonVariantConst at = body;
+    for (size_t i = 0; i < 3 && path[i] != nullptr; ++i) {
+        at = at[path[i]];
+        if (at.isNull()) {
+            break;
+        }
+    }
+    return at;
+}
+
+// Turns one leaf into the text a form would have carried: a number or a bool
+// as JSON writes it, a list of words comma-joined, anything else the value no
+// check takes. Strings stay as they are. The text is copied into the body's
+// own pool, so every pointer this core reads out of it lives as long as the
+// request does - the lifetime ConfigParamSource promises.
+//
+// False only when the body could not hold the text, which the caller refuses:
+// a field that silently fell out of a restore is the failure ADR 0068 exists
+// to end.
+bool normaliseLeaf(JsonVariant leaf) {
+    if (leaf.isNull() || leaf.is<const char*>()) {
+        return true;
+    }
+    if (leaf.is<JsonArrayConst>()) {
+        JsonArrayConst list = leaf.as<JsonArrayConst>();
+        size_t needed = 1;
+        for (JsonVariantConst item : list) {
+            if (!item.is<const char*>()) {
+                return leaf.set(kNotAFieldValue);
+            }
+            needed += strlen(item.as<const char*>()) + 1;
+        }
+        char* joined = static_cast<char*>(malloc(needed));
+        if (joined == nullptr) {
+            return false;
+        }
+        size_t used = 0;
+        joined[0] = '\0';
+        for (JsonVariantConst item : list) {
+            used += (size_t)snprintf(joined + used, needed - used, "%s%s", used == 0 ? "" : ",",
+                                     item.as<const char*>());
+        }
+        const bool stored = leaf.set(joined);  // char*, so the body copies it
+        free(joined);
+        return stored;
+    }
+    if (leaf.is<JsonObjectConst>()) {
+        return leaf.set(kNotAFieldValue);
+    }
+    // A number or a bool, written the way JSON wrote it: 1.5 stays 1.5 and is
+    // refused by an integer field's own parse, rather than truncated to 1.
+    char text[24] = {};
+    const size_t length = serializeJson(leaf, text, sizeof(text));
+    if (length == 0 || length >= sizeof(text)) {
+        return leaf.set(kNotAFieldValue);
+    }
+    return leaf.set(text);  // char[], so the body copies it
+}
+
+// The walk normaliseLeaf() needs: the parent of the leaf as a writable object,
+// found without adding anything. A path whose parent is not an object names
+// nothing, and nothing is written.
+bool normaliseGetShapeField(JsonDocument& body, const GetShapeField& field) {
+    JsonObject parent = body.as<JsonObject>();
+    size_t depth = 0;
+    while (depth + 1 < 3 && field.path[depth + 1] != nullptr) {
+        parent = parent[field.path[depth]].as<JsonObject>();
+        if (parent.isNull()) {
+            return true;
+        }
+        ++depth;
+    }
+    if (parent.isNull() || !parent[field.path[depth]].is<JsonVariantConst>()) {
+        return true;
+    }
+    return normaliseLeaf(parent[field.path[depth]].as<JsonVariant>());
+}
+
+// A config request: the form it came as, and, when it came with a JSON body,
+// that body in the GET shape. It is the ConfigParamSource every check below
+// reads, so a check never knows which door its value came in by.
+struct ConfigRequest {
+    const ConfigParamSource* form;
+    JsonObjectConst body;
+};
+
+const char* configRequestGet(void* ctx, const char* name) {
+    const ConfigRequest* request = static_cast<const ConfigRequest*>(ctx);
+    // A field named on the form wins over the body. No page sends both, and a
+    // form field is the more specific statement when one does.
+    const char* value = configParamGet(*request->form, name);
+    if (value != nullptr || request->body.isNull()) {
+        return value;
+    }
+    for (const GetShapeField& field : kGetShapeFields) {
+        if (strcmp(field.param, name) != 0) {
+            continue;
+        }
+        JsonVariantConst leaf = getShapeLeaf(request->body, field.path);
+        if (leaf.isNull()) {
+            return nullptr;
+        }
+        return leaf.is<const char*>() ? leaf.as<const char*>() : kNotAFieldValue;
+    }
+    return nullptr;
+}
+
+// Read a JSON body into `body` and make every field it carries readable as
+// text. False, with the refusal set, when it cannot be: a body that is not
+// JSON, or one the controller could not hold whole once its numbers were
+// written out as text.
+bool readGetShapeBody(const char* raw, JsonDocument* body, ConfigApplyResult* result) {
+    if (deserializeJson(*body, raw)) {
+        setError(result, "invalid json body", ApplyRefusalReason::MalformedArgument, "plain");
+        return false;
+    }
+    bool whole = true;
+    for (const GetShapeField& field : kGetShapeFields) {
+        whole = whole && normaliseGetShapeField(*body, field);
+    }
+    if (!whole || body->overflowed()) {
+        setError(result, "json body too large to read whole", ApplyRefusalReason::MalformedArgument,
+                 "plain");
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
-void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
+void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
                   bool domeEnabledBefore, ConfigApplyResult* result) {
     *result = ConfigApplyResult{};
+
+    // A JSON body is read once, here, into the GET shape; every field below is
+    // then read through `params`, whichever door it came in by.
+    JsonDocument body;
+    ConfigRequest request{&form, JsonObjectConst()};
+    if (configParamHas(form, "plain")) {
+        if (!readGetShapeBody(configParamGet(form, "plain"), &body, result)) {
+            return;
+        }
+        request.body = body.as<JsonObjectConst>();
+    }
+    ConfigParamSource params;
+    params.ctx = &request;
+    params.get = configRequestGet;
 
     bool speedLimitMaxProvided = false;
     bool speedPresetValuesProvided = false;
@@ -676,62 +897,6 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         setError(result, "sbusRecvCh2 must be true/false or 1/0", ApplyRefusalReason::OutOfRange,
                  "sbusRecvCh2", kBoolAccepts);
         return;
-    }
-
-    if (configParamHas(params, "plain")) {
-        JsonDocument bodyDoc;
-        DeserializationError jsonErr = deserializeJson(bodyDoc, configParamGet(params, "plain"));
-        if (jsonErr) {
-            setError(result, "invalid json body", ApplyRefusalReason::MalformedArgument, "plain");
-            return;
-        }
-
-        JsonVariantConst rcBody = bodyDoc["rc"];
-        if (!rcBody.isNull()) {
-            if (rcBody["sbusTimeoutMs"].is<uint32_t>()) {
-                uint32_t parsedSbusTimeout = rcBody["sbusTimeoutMs"].as<uint32_t>();
-                if (parsedSbusTimeout < 50 || parsedSbusTimeout > 5000) {
-                    setRangeError(result, "rc.sbusTimeoutMs must be 50..5000", "rc.sbusTimeoutMs", 50,
-                                  5000);
-                    return;
-                }
-                working->drive.sbusTimeoutMs = parsedSbusTimeout;
-                result->changed = true;
-            } else if (!rcBody["sbusTimeoutMs"].isNull()) {
-                setRangeError(result, "rc.sbusTimeoutMs must be integer", "rc.sbusTimeoutMs", 50, 5000);
-                return;
-            }
-        }
-
-        JsonVariantConst rcSbus = rcBody["sbus"];
-        if (!rcSbus.isNull()) {
-            if (rcSbus["recvCh2"].is<bool>()) {
-                working->system.single_sbus_use_ch2 = rcSbus["recvCh2"].as<bool>();
-                result->changed = true;
-            } else if (!rcSbus["recvCh2"].isNull()) {
-                setError(result, "rc.sbus.recvCh2 must be boolean", ApplyRefusalReason::OutOfRange,
-                         "rc.sbus.recvCh2", "true,false");
-                return;
-            }
-        }
-
-        JsonVariantConst protoR2linkCfg = bodyDoc["protoR2link"];
-        if (!protoR2linkCfg.isNull()) {
-            if (protoR2linkCfg["wifiPeerIp"].is<const char*>()) {
-                if (!parseDomeWifiPeerIp(protoR2linkCfg["wifiPeerIp"].as<const char*>(),
-                                        working->dome.dome_wifi_peer_ip,
-                                        sizeof(working->dome.dome_wifi_peer_ip))) {
-                    setError(result, "protoR2link.wifiPeerIp must be empty or a valid IPv4 address",
-                             ApplyRefusalReason::OutOfRange, "protoR2link.wifiPeerIp");
-                    return;
-                }
-                result->changed = true;
-            } else if (!protoR2linkCfg["wifiPeerIp"].isNull()) {
-                setError(result, "protoR2link.wifiPeerIp must be a string",
-                         ApplyRefusalReason::OutOfRange, "protoR2link.wifiPeerIp");
-                return;
-            }
-        }
     }
 
     struct BoolCfgField {
