@@ -42,7 +42,7 @@
 #include "console_module.h"               // ConsoleCommandSource, ConsoleRecordSink
 #include "console_args.h"                 // ConsoleArgs, consoleArgsFind()
 #include "console_catalog.h"              // ConsoleCatalogEntry, consoleCatalogFindByName()
-#include "robot_state.h"                  // robotState, robotStateMux, CommandSource, saveConfigToNvs()
+#include "robot_state.h"                  // robotState, robotStateMux, CommandSource
 #include "commanded_modes.h"              // commandedSetStationary/Sleep/WebControl()
 #include "drive_arbiter.h"                // driveArbiterSubmit(), DriveSource
 #include "web_server.h"                   // requestStatusBroadcastNow()

@@ -15,7 +15,8 @@
 // Notes:
 // - This route is the sole web entrypoint for config writes.
 // - Hardware access is not performed here; values are validated, written to
-//   the config cache, and persisted via configSave().
+//   the config cache, and persisted through the config store's saves
+//   (configPersist(), configPersistSystem()).
 // =============================================================================
 
 #include "api_config.h"
@@ -48,8 +49,6 @@
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
 #include "servo_component_helpers.h"
 #include "web_server.h"
-
-#include <Preferences.h>
 
 static const char* TAG = "WebServer";
 
@@ -810,24 +809,6 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
     webSendJsonDocument(req, doc, kConfigResponseCeiling, TAG);
 }
 
-// WebRequest-free per ADR 0036's Consequences ("persistSystemConfig(WebRequest&,
-// ...), which sends its own HTTP error today, is the first such extraction"):
-// the caller renders its own failure, so this stays reachable from a future
-// non-web caller without a request object in scope. rcMapWriteWindow() is the
-// only caller today.
-bool persistSystemConfig(const SystemConfig& system) {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
-        return false;
-    }
-    if (!configSaveSystem(prefs, system)) {
-        prefs.end();
-        return false;
-    }
-    prefs.end();
-    return true;
-}
-
 // Write Window for POST /api/rc/map (ADR 0011, amended 2026-09-24). The route
 // read-modify-writes the same config cache and the same NVS namespace the
 // config write does, so it is guarded the same way. False -> busy, nothing
@@ -845,9 +826,11 @@ bool rcMapWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
     if (result->ok) {
         configCacheApply(*working);
         // Re-read what the cache actually holds, then persist from that - one
-        // snapshot on the caller's stack, not two.
+        // snapshot on the caller's stack, not two. WebRequest-free, as ADR
+        // 0036's Consequences asked of the persistSystemConfig(WebRequest&,
+        // ...) this once was: the caller renders its own failure.
         configCacheRead(working);
-        *persisted = persistSystemConfig(working->system);
+        *persisted = configPersistSystem(working->system);
     }
     return true;
 }
@@ -975,51 +958,24 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // inside ConfigCommitOutcome and be copied again into the caller's local.
     configCacheRead(working);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    // What this request changed is the Commit Step's to say; the order it
+    // lands in is the store's (include/config_store.h, "Store-opened saves").
+    //
+    // The Droid Build and guided Setup's record only where the request said
+    // something about them: an absent Fitted Parts record is what tells the
+    // next boot that nobody has answered yet, and an absent visited record
+    // that guided Setup has never been drawn on this controller. Writing
+    // either on every config POST would spend that distinction on a request
+    // that was about the log level.
+    ConfigSaveExtras extras;
+    extras.droidBuild = result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
+                        result.droidBuild.fittedChanged;
+    extras.guidedSetup = result.guidedSetup.runChanged || result.guidedSetup.visitedChanged ||
+                         result.guidedSetup.summaryDoneChanged;
+    if (!configPersist(*working, extras)) {
         outcome.persisted = false;
         return outcome;
     }
-    // Rows first, and the fixed field sets only once the rows are down. While
-    // both forms are stored, the fixed sets are the copy of what is about to be
-    // replaced, and a failed save has to stop the replace: a row write that
-    // fails here leaves both stores holding the same older value, which is
-    // recoverable, where the other order would leave the rows stale and winning
-    // over a field set that already carried the new number (#286, ADR 0056).
-    if (!configSaveServoOutputs(prefs)) {
-        prefs.end();
-        outcome.persisted = false;
-        return outcome;
-    }
-    if (!configSave(prefs, *working)) {
-        prefs.end();
-        outcome.persisted = false;
-        return outcome;
-    }
-    // Only where the request said something about it: an absent Fitted Parts
-    // record is what tells the next boot that nobody has answered yet, and
-    // writing one on every config POST would spend that distinction on a
-    // request that was about the log level.
-    if ((result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
-         result.droidBuild.fittedChanged) &&
-        !configSaveDroidBuild(prefs)) {
-        prefs.end();
-        outcome.persisted = false;
-        return outcome;
-    }
-    // Only where the request said something about it, for the reason the Droid
-    // Build above is written only then: an absent visited record is what tells
-    // the next boot that guided Setup has never been drawn on this controller,
-    // and writing one on every config POST would spend that distinction on a
-    // request that was about the log level.
-    if ((result.guidedSetup.runChanged || result.guidedSetup.visitedChanged ||
-         result.guidedSetup.summaryDoneChanged) &&
-        !configSaveGuidedSetup(prefs)) {
-        prefs.end();
-        outcome.persisted = false;
-        return outcome;
-    }
-    prefs.end();
 
     requestStatusBroadcastNow();
     outcome.persisted = true;

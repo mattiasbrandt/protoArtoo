@@ -16,6 +16,8 @@
 #include <cstring>
 #include <string>
 
+#include <Preferences.h>
+
 #include "api_config.h"
 #include "component_registry.h"
 #include "config_nvsio.h"
@@ -47,6 +49,9 @@ void setUp() {
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
     g_test_status_broadcast_count = 0;
+    // The NVS double keeps its keys per namespace for the whole binary, as
+    // flash does; every test here starts from an erased partition.
+    Preferences::eraseFlash();
     // Armed after this setUp()'s own seeding: from here every config write
     // must run inside a Write Window, as it must on the droid after boot (#418).
     configWriteWindowArm(true);
@@ -538,11 +543,38 @@ void test_rc_map_post_applies_an_empty_map_and_persists() {
 
     handleRcMapPost(req);
 
-    // persistSystemConfig() (ADR 0036, WebRequest-free since #226) reports its
+    // configPersistSystem() (ADR 0036, WebRequest-free since #226) reports its
     // own failure through this success path unchanged: 200 on a valid empty
     // map, matching the async-era handler's success shape.
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+}
+
+// The RC Map save lands in the config namespace. It opens its own handle, so
+// until the NVS double kept its keys per namespace no test could see what it
+// wrote (#424). A log level no controller can hold, seeded there, is what the
+// system field set the save writes must replace.
+void test_rc_map_post_lands_in_the_config_namespace() {
+    const uint8_t kUnheldLogLevel = 0xEE;
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, false);
+    nvs.putUChar("log_level", kUnheldLogLevel);
+    nvs.end();
+
+    const WebRequestTestParam params[] = {{"plain", "{\"map\":[]}"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+    handleRcMapPost(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    TEST_ASSERT_NOT_EQUAL(kUnheldLogLevel, snap.system.logLevel);
+    nvs.begin(NVS_NAMESPACE, true);
+    TEST_ASSERT_EQUAL_UINT8(snap.system.logLevel, nvs.getUChar("log_level", kUnheldLogLevel));
+    nvs.end();
 }
 
 void test_rc_map_post_rejects_a_bad_entry_with_the_cores_message() {
@@ -1075,10 +1107,8 @@ void test_a_part_a_row_states_comes_off_the_output_it_was_on() {
 
 // A move lands on both rows it touches and runs the Commit Step to its end.
 // The status broadcast is the last thing that step does, after the rows are
-// written, so seeing it is seeing a commit that did not stop short. (The
-// Preferences double keeps each instance's store to itself, so a reload through
-// a second instance cannot observe the write; the row record the save writes is
-// test_servo_output_row's.)
+// written, so seeing it is seeing a commit that did not stop short. (The row
+// record the save writes is test_servo_output_row's.)
 void test_a_part_move_takes_it_off_one_output_and_is_committed() {
     seedUnwiredServoOutputRows();
 
@@ -1156,6 +1186,7 @@ int main() {
     RUN_TEST(test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated);
     RUN_TEST(test_rc_map_get_returns_the_map_shape);
     RUN_TEST(test_rc_map_post_applies_an_empty_map_and_persists);
+    RUN_TEST(test_rc_map_post_lands_in_the_config_namespace);
     RUN_TEST(test_rc_map_post_rejects_a_bad_entry_with_the_cores_message);
     RUN_TEST(test_wifi_post_stages_settings_without_leaking_the_password);
     RUN_TEST(test_wifi_post_rejects_invalid_settings);

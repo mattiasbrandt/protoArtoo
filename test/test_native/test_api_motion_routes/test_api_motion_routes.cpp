@@ -21,10 +21,9 @@
 #include "api_drive.h"
 #include "api_estop.h"
 #include "api_servo.h"
+#include <Preferences.h>  // the NVS double: per namespace, as the store's own save sees it
+
 #include "config_cache.h"
-#include "config_save_test_hooks.h"  // g_test_config_prefs - the Preferences double
-                                     // saveConfigToNvs()'s native stand-in writes
-                                     // through (src/native_test_stubs.cpp)
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
@@ -124,15 +123,23 @@ const char* const kUnstorablePeerIp = "10.0.0.7";
 
 void failTheNextConfigSave() {
     setDomeWifiPeer(kUnstorablePeerIp);
-    g_test_config_prefs.failNextStringWrites(1);
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, false);
+    nvs.failNextStringWrites(1);
+    nvs.end();
 }
 
-// What the NVS double holds for a key, or "" when nothing ever wrote it. The
-// map is the double's own, so the returned pointer stays valid.
+// What the config namespace holds for a key, or "" when nothing ever wrote it.
+// The map is the double's own and outlives the handle, so the returned pointer
+// stays valid.
 const char* storedValue(const char* key) {
-    const auto& data = g_test_config_prefs.getData();
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, true);
+    const auto& data = nvs.getData();
     const auto it = data.find(key);
-    return it == data.end() ? "" : it->second.c_str();
+    const char* value = it == data.end() ? "" : it->second.c_str();
+    nvs.end();
+    return value;
 }
 
 // The scheduled failure landed on the write it was aimed at. Without this an
@@ -169,9 +176,9 @@ void setUp() {
     g_test_dome_layout_status = {};
     g_test_dome_layout_payload = "";
     g_test_dome_layout_refresh_requests = 0;
-    // A failure scheduled by a test that never consumed it would otherwise fire
-    // in the next one.
-    g_test_config_prefs.failNextStringWrites(0);
+    // Empty storage for every test: what one test's save wrote, or a failure
+    // it scheduled and never consumed, would otherwise be there in the next.
+    Preferences::eraseFlash();
     // Armed after this setUp()'s own seeding: from here every config write
     // must run inside a Write Window, as it must on the droid after boot (#418).
     configWriteWindowArm(true);
