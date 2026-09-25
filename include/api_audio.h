@@ -78,12 +78,14 @@ void captureAudioStatusSnapshot(AudioStatusSnapshot* out);
 // can carry today -- the output field answering "off" (15, #370), the full
 // product name "CHIRP Audio Trigger" (19), capabilities 255 (3), "false" twice
 // (10), "unknown" play state (7), "unknown" device (8), three 65535 counters
-// (15), the "blocked_by_dome_uart" token (20) and its detail "Status
-// unavailable: DomeLink is using UART" (41). That is 296 bytes plus the
-// terminator, against the 256-byte buffer this endpoint used to carry: the
-// blocked-RX answer for a CHIRP lost its closing brace at 257 bytes and, once
-// the Driver row carried the full product name, was cut inside the detail
-// string at 271.
+// (15), and the longest RX pair, the "no_response" token (11) and its detail
+// "Sound module did not respond on RX" (34). That is 279 bytes plus the
+// terminator, measured by test_worst_case_every_field_still_fits, against the
+// 256-byte buffer this endpoint used to carry: the blocked-RX answer for a
+// CHIRP lost its closing brace at 257 bytes and, once the Driver row carried
+// the full product name, was cut inside the detail string at 271. Its detail
+// was then "Status unavailable: DomeLink is using UART" (41), the longest
+// pair; it is the table's "Held by protoR2link" (19) since #422.
 //
 // 320 still leaves headroom above that figure after the output field took 15
 // of it, and formatAudioStatusJson() reports what it actually needed, so an

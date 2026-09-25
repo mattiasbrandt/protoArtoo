@@ -436,7 +436,7 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
         case AUDIO_RX_AVAILABLE:
             return "Sound module RX is available";
         case AUDIO_RX_BLOCKED_BY_DOME_UART:
-            return "Status unavailable: DomeLink is using UART";
+            return "Held by protoR2link";
         case AUDIO_RX_NO_RESPONSE:
             return "Sound module did not respond on RX";
         case AUDIO_RX_UNKNOWN:

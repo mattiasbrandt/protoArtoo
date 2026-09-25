@@ -26,12 +26,16 @@ static constexpr uint8_t CAPS_DY_SV5W = 0x0F;
 // with itself while disagreeing with the registry's 0x3F.
 static constexpr uint8_t CAPS_CHIRP = componentPartCapabilities("chirp");
 
-// The longest values every field of this response can carry today. The blocked
-// RX pair is the real one AudioTask sends (src/tasks/audio_task.cpp
-// audioRxStatusToken/audioRxStatusDetail).
+// The longest values every field of this response can carry today. Both RX
+// pairs are the real ones AudioTask sends (src/tasks/audio_task.cpp
+// audioRxStatusToken/audioRxStatusDetail). The blocked pair is the #397 case;
+// since its detail became the table's "Held by protoR2link" (#422) the
+// no-response pair is the longer of the two, so the size tests use that.
 static const char* kFullDriverName = "CHIRP Audio Trigger";
 static const char* kBlockedRxToken = "blocked_by_dome_uart";
-static const char* kBlockedRxDetail = "Status unavailable: DomeLink is using UART";
+static const char* kBlockedRxDetail = "Held by protoR2link";
+static const char* kLongestRxToken = "no_response";
+static const char* kLongestRxDetail = "Sound module did not respond on RX";
 
 static int formatAudioStatusJsonDefault(char* buf, size_t bufSize, const char* driverName,
                                         uint8_t capabilities, bool linkOk, bool active,
@@ -161,7 +165,7 @@ void test_rx_diagnostics_fields_present() {
     formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false, 0xFF, 0x03,
                           0, 0, 0, kBlockedRxToken, kBlockedRxDetail);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_status\":\"blocked_by_dome_uart\""));
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Status unavailable: DomeLink is using UART\""));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Held by protoR2link\""));
 }
 
 
@@ -171,8 +175,8 @@ void test_rx_diagnostics_fields_present() {
 
 void test_blocked_rx_answer_parses_and_fits() {
     char buf[AUDIO_STATUS_JSON_BUF_SIZE];
-    // The case reproduced on #397: RX blocked by the dome link, so link_ok and
-    // active are both false and the detail is the long sentence.
+    // The case reproduced on #397: RX blocked by protoR2link, so link_ok and
+    // active are both false. Its detail was then the longest one AudioTask sent.
     int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false,
                                        0xFF, 0x03, 24, 0, 0, kBlockedRxToken, kBlockedRxDetail);
 
@@ -187,13 +191,15 @@ void test_blocked_rx_answer_parses_and_fits() {
     TEST_ASSERT_EQUAL_STRING("Flash+SD", doc["device"]);
     TEST_ASSERT_EQUAL_STRING(kBlockedRxToken, doc["rx_status"]);
     TEST_ASSERT_EQUAL_STRING_MESSAGE(kBlockedRxDetail, doc["rx_detail"],
-                                     "the detail is where the old buffer cut the response");
+                                     "the detail is where the old buffer cut the #397 response");
 }
 
 void test_the_old_256_byte_buffer_was_too_small_and_says_so() {
     char buf[256];
-    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, true, CAPS_CHIRP, false, false,
-                                       0xFF, 0x03, 24, 0, 0, kBlockedRxToken, kBlockedRxDetail);
+    // The worst case below: the #397 answer itself fits 256 bytes once its
+    // detail is the short table word, but the longest answer still does not.
+    int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, false, 0xFF, false, false, 0xFF,
+                                       0xFE, 65535, 65535, 65535, kLongestRxToken, kLongestRxDetail);
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT_MESSAGE(
         sizeof(buf), (unsigned)needed,
@@ -208,8 +214,8 @@ void test_worst_case_every_field_still_fits() {
     char buf[AUDIO_STATUS_JSON_BUF_SIZE];
     // Sound off answers "off", the longer of the two output words.
     int needed = formatAudioStatusJson(buf, sizeof(buf), kFullDriverName, false, 0xFF, false, false, 0xFF,
-                                       0xFE, 65535, 65535, 65535, kBlockedRxToken,
-                                       kBlockedRxDetail);
+                                       0xFE, 65535, 65535, 65535, kLongestRxToken,
+                                       kLongestRxDetail);
 
     TEST_ASSERT_LESS_THAN_UINT(AUDIO_STATUS_JSON_BUF_SIZE, (unsigned)needed);
     TEST_ASSERT_GREATER_THAN_UINT_MESSAGE(

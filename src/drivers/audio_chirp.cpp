@@ -673,7 +673,7 @@ bool AudioDriverChirp::begin(uint8_t vol) {
         domeUartRelease(DOME_UART_AUDIO);
     } else {
         PA_LOG_INFO(TAG,
-                    "CHIRP RX catalog discovery skipped: DomeLink is using UART2; playback commands remain available");
+                    "CHIRP RX catalog discovery skipped: protoR2link holds the serial line; playback commands remain available");
     }
 
     PA_LOG_INFO(TAG, "init - vol=%u Bank1 sounds=%u banks=%u link=%s", (unsigned)vol,
