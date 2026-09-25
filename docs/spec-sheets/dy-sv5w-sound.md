@@ -1235,8 +1235,8 @@ And Section 7.3 is why a corrupted frame is not always a rejected one.
 Every query in `audio_task.cpp` is wrapped in `audioUartClaim()` /
 `audioUartRelease()`. A denied claim -- DomeLink is on serial and holding the
 controller -- is reported as **`AUDIO_RX_BLOCKED_BY_DOME_UART`**, which the UI
-renders as *"Status unavailable: DomeLink is using UART"* rather than as a dead
-module. That distinction is the whole point of the arbiter.
+renders as *"Held by protoR2link"*, in grey, rather than as a dead module
+(#422). That distinction is the whole point of the arbiter.
 
 > [!NOTE]
 > **`AudioDriverDySv5w` does not override `classifyRxStatus()`, and it does not
