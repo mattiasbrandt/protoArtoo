@@ -38,6 +38,7 @@
 
 #include <cstring>
 
+#include <Preferences.h>       // failNextIntegerWrites() - an audio save that fails
 #include <freertos/semphr.h>  // paStubMutexReset()/paStubMutexStorage() - the
                               // singleton every xSemaphoreCreateMutexStatic()
                               // returns natively, so a test can inspect the
@@ -48,6 +49,7 @@
 #include "api_config.h"
 #include "api_drive.h"
 #include "api_identity.h"
+#include "config.h"  // NVS_NAMESPACE
 #include "config_cache.h"
 #include "console_module.h"
 #include "console_record.h"
@@ -100,7 +102,7 @@ static ConfigSnapshot readSnapshot() {
 void setUp(void) {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 100;
-    configCacheApply(snap);
+    configCacheReplace(snap);
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
     consoleModuleInit();  // idempotent
@@ -280,7 +282,7 @@ static void seedSpeedPresets() {
     snap.system.stationary = false;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 }
 
@@ -322,6 +324,63 @@ void test_an_rc_change_landing_mid_post_is_not_reverted(void) {
     after = readSnapshot();
     TEST_ASSERT_EQUAL_INT(80, after.drive.speedLimitMax);
     TEST_ASSERT_FALSE(after.system.stationary);
+}
+
+/**
+ * The RC Map window replaces the whole snapshot the same way, from a copy it
+ * read before it parsed the map, and a map can state neither RC field. So an
+ * RC change landing during the parse keeps its live value (#420). Before
+ * configCacheApply() kept the live fields, the map's write-back put the old
+ * limit and the old mode back.
+ */
+void test_an_rc_change_landing_mid_rc_map_write_is_not_reverted(void) {
+    seedSpeedPresets();
+
+    const WebRequestTestParam map[] = {{"plain", "{\"map\":[]}"}};
+    WebRequestTestBackend backend;
+    backend.params = map;
+    backend.paramCount = 1;
+    backend.onFirstParamRead = rcLandsMidPost;
+    WebRequest req(&backend);
+    handleRcMapPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(600, after.drive.speedLimitMax, "the RC preset was reverted");
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Turbo, (uint8_t)after.drive.speedPresetActive);
+    TEST_ASSERT_TRUE_MESSAGE(after.system.stationary, "the RC stationary toggle was reverted");
+}
+
+/**
+ * An audio tracks write whose save fails rolls the track back through the
+ * cache, and the rollback writes a whole snapshot too. The RC change lands
+ * after the window read the cache, the save's first integer write fails, and
+ * the Commit Step both applies and rolls back: neither may take the RC fields
+ * with it (#420).
+ */
+void test_an_rc_change_landing_mid_audio_write_survives_its_rollback(void) {
+    configCacheSetActiveAudioEnabled(true);
+    seedSpeedPresets();
+    Preferences nvs;
+    nvs.begin(NVS_NAMESPACE, false);
+    nvs.failNextIntegerWrites(1);  // configSaveAudio()'s first write, so the save fails
+    nvs.end();
+
+    const WebRequestTestParam tracks[] = {{"key", "scream"}, {"track", "3"}};
+    WebRequestTestBackend backend;
+    backend.params = tracks;
+    backend.paramCount = 2;
+    backend.onFirstParamRead = rcLandsMidPost;
+    WebRequest req(&backend);
+    handleAudioTracksPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(500, backend.sentCode, "the failed save did not answer 500");
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, after.audio.snd_scream, "the track was not rolled back");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(600, after.drive.speedLimitMax, "the RC preset was reverted");
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Turbo, (uint8_t)after.drive.speedPresetActive);
+    TEST_ASSERT_TRUE_MESSAGE(after.system.stationary, "the RC stationary toggle was reverted");
+    configCacheSetActiveAudioEnabled(false);
 }
 
 static int postRequest(void (*handler)(WebRequest&), const WebRequestTestParam* params,
@@ -388,7 +447,7 @@ void test_the_other_rest_config_writers_wait_for_the_window(void) {
 void test_a_config_write_outside_any_write_window_is_counted_and_still_lands(void) {
     ConfigSnapshot snap = readSnapshot();
     snap.drive.speedLimitMax = 42;
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, configWriteWindowMisses(),
                                      "a write outside every Write Window was not counted");
@@ -398,7 +457,7 @@ void test_a_config_write_outside_any_write_window_is_counted_and_still_lands(voi
     {
         const ConfigWriteWindowForTest window;
         snap.drive.speedLimitMax = 43;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, configWriteWindowMisses(),
                                      "a write inside a Write Window was counted as a miss");
@@ -502,6 +561,8 @@ int main() {
     RUN_TEST(test_the_rc_map_and_wifi_routes_are_refused_while_the_window_is_held);
     RUN_TEST(test_alternating_rest_and_console_writes_both_land_with_balanced_locking);
     RUN_TEST(test_an_rc_change_landing_mid_post_is_not_reverted);
+    RUN_TEST(test_an_rc_change_landing_mid_rc_map_write_is_not_reverted);
+    RUN_TEST(test_an_rc_change_landing_mid_audio_write_survives_its_rollback);
     RUN_TEST(test_the_other_rest_config_writers_wait_for_the_window);
     RUN_TEST(test_a_config_write_outside_any_write_window_is_counted_and_still_lands);
     RUN_TEST(test_the_console_sound_actions_wait_for_the_window);

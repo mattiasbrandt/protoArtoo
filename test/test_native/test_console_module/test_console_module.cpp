@@ -322,7 +322,7 @@ static std::vector<std::string> jsonTopLevelKeys(const char* json) {
 void setUp() {
     robotState = RobotState{};
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
     g_test_dispatch_action_calls = 0;
     g_test_last_dispatch_target = ROBOT_ACTION_NONE;
     g_test_last_dispatch_source = SRC_NONE;
@@ -396,7 +396,7 @@ void setUp() {
     ConfigSnapshot driveDefaults = {};
     configCacheRead(&driveDefaults);
     driveDefaults.drive.speedLimitMax = 300;
-    configCacheApply(driveDefaults);
+    configCacheReplace(driveDefaults);
 
     // #259: dome.action.dome-sequence/test-sequence submit through the REAL
     // sequenceStart()/sequenceQueue, matching test_api_seq_routes.cpp's own
@@ -514,7 +514,7 @@ void test_dome_status_current_carries_real_state() {
     snap.system.enable_dome_esc = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("dome.status.current");
@@ -1331,7 +1331,7 @@ void test_system_api_get_identity_carries_real_config_state() {
     snap.system.mdns_use_name = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("system.api.get-identity");
@@ -1653,7 +1653,7 @@ void test_sound_get_mood_map_matches_the_config_row_for_the_same_state() {
     snap.audio.snd_moodcat_awakeplus = 44;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("sound.api.get-mood-map");
@@ -2025,7 +2025,7 @@ void test_action_dome_move_is_blocked_while_sleeping() {
     snap.system.enable_dome_esc = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
     robotState.sleepMode = true;
 
@@ -2041,7 +2041,7 @@ void test_action_dome_move_is_refused_when_dome_output_is_disabled() {
     snap.system.enable_dome_esc = false;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("dome.action.move speed=0.5");
@@ -2056,7 +2056,7 @@ void test_action_dome_move_queues_when_enabled() {
     snap.system.enable_dome_esc = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("dome.action.move speed=0.5");
@@ -2337,7 +2337,7 @@ void test_component_toggle_read_reports_saved_and_active() {
     saved.system.enable_arm1 = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(saved);
+        configCacheReplace(saved);
     }
 
     // Active still reflects a boot where arm1 was off - the exact "staged,
@@ -2480,7 +2480,7 @@ void test_drive_speed_limit_read_and_write() {
     snap.drive.speedLimitMax = 250;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("drive.config.speed-limit");
@@ -2829,7 +2829,7 @@ static void seedWifi(WifiMode mode, const char* staSsid, const char* staPassword
     snprintf(snap.wifi.ap_password, sizeof(snap.wifi.ap_password), "%s", apPassword);
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
@@ -3321,7 +3321,7 @@ void test_drive_move_clamps_to_the_configured_speed_cap() {
     snap.drive.speedLimitMax = 200;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("drive.action.move speed=900 steer=-900");
@@ -3332,7 +3332,7 @@ void test_drive_move_clamps_to_the_configured_speed_cap() {
     raised.drive.speedLimitMax = 1000;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(raised);
+        configCacheReplace(raised);
     }
 
     const DriveOutput resolved = resolvedDriveOutput();
@@ -3756,7 +3756,7 @@ void test_sound_status_names_the_picked_module_while_sound_is_off() {
     snap.system.sound_member = componentPartById("mp3_trigger")->value;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("sound.status.current");
@@ -4826,7 +4826,7 @@ void test_reason_matrix_component_disabled_from_a_component_toggle_off() {
     snap.system.enable_dome_esc = false;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("dome.action.move speed=0.5");
@@ -4854,7 +4854,7 @@ void test_reason_matrix_blocked_by_state_from_sleep() {
     snap.system.enable_dome_esc = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
     robotState.sleepMode = true;
 
@@ -4933,7 +4933,7 @@ void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answe
     snap.system.enable_dome_esc = true;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runOperationsListing();
@@ -4950,7 +4950,7 @@ void test_a_component_toggle_flipped_after_discovery_changes_the_execution_answe
     snap.system.enable_dome_esc = false;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("dome.action.move speed=0.5");
@@ -4996,7 +4996,7 @@ static void seedAudioTrack(const char* key, uint16_t value) {
                              "test seed used a key AUDIO_TRACK_KEYS does not declare");
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 }
 
@@ -5184,7 +5184,7 @@ void test_sound_config_mood_category_map_reads_the_four_masks() {
     snap.audio.snd_moodcat_awakeplus = 0xFFF;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("sound.config.mood-category-map");
@@ -5248,7 +5248,7 @@ void test_sound_config_volume_reads_the_stored_default() {
     snap.audio.audioVolume = 17;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     runQuery("sound.config.volume");

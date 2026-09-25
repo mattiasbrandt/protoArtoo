@@ -71,7 +71,7 @@ inline bool boardOutputIsWired(const SystemConfig& system, size_t index) {
 //
 // Only where the loader actually adopted - the same gate as the row half, so a
 // wire whose row already carries the builder's own answer is not ticked behind
-// their back. Before configCacheApply(), so the tick is in the snapshot the
+// their back. Before configCacheReplace(), so the tick is in the snapshot the
 // first save writes; configSave() removes the retired keys only once that has
 // landed.
 // -----------------------------------------------------------------------------

@@ -25,14 +25,16 @@
 
 class Preferences {
 private:
-    // One NVS namespace: its keys, and how many more putString() calls into it
-    // must report a failed write. See failNextStringWrites() at the bottom for
-    // what the counter stands in for. It lives with the namespace rather than
+    // One NVS namespace: its keys, and how many more putString() calls - and,
+    // separately, integer put*() calls - into it must report a failed write.
+    // See failNextStringWrites() and failNextIntegerWrites() at the bottom for
+    // what the counters stand in for. They live with the namespace rather than
     // the handle for the reason the keys do: the handle that meets the failure
     // is usually one the code under test opened, not the test's.
     struct Namespace {
         std::map<std::string, std::string> data;
         unsigned failStringWrites = 0;
+        unsigned failIntegerWrites = 0;
     };
 
     // The flash itself. A function-local static in an inline member, so every
@@ -54,6 +56,16 @@ private:
             return false;
         }
         ns->failStringWrites--;
+        return true;
+    }
+
+    // The same for an nvs_set_i8/u8/i16/u16/i32/u32: one scheduled failure,
+    // consumed, nothing stored.
+    bool consumeIntegerWriteFailure() {
+        if (ns->failIntegerWrites == 0) {
+            return false;
+        }
+        ns->failIntegerWrites--;
         return true;
     }
 
@@ -169,42 +181,49 @@ public:
     // Setters — return size written (or 0 for failure for API compatibility)
     size_t putBool(const char* key, bool value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = value ? "1" : "0";
         return 1;
     }
 
     size_t putChar(const char* key, int8_t value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 1;
     }
 
     size_t putUChar(const char* key, uint8_t value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 1;
     }
 
     size_t putShort(const char* key, int16_t value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 2;
     }
 
     size_t putUShort(const char* key, uint16_t value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 2;
     }
 
     size_t putInt(const char* key, int32_t value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 4;
     }
 
     size_t putUInt(const char* key, uint32_t value) {
         if (!isOpen()) return 0;
+        if (consumeIntegerWriteFailure()) return 0;
         ns->data[key] = std::to_string(value);
         return 4;
     }
@@ -286,6 +305,25 @@ public:
     void failNextStringWrites(unsigned count) {
         requireOpen("failNextStringWrites");
         ns->failStringWrites = count;
+    }
+
+    // Make the next `count` integer writes into this handle's namespace fail:
+    // putChar/putUChar/putShort/putUShort/putInt/putUInt, and putBool,
+    // putLong and putULong, which the vendor routes through putUChar, putInt
+    // and putUInt (framework-arduinoespressif32 libraries/Preferences/src/
+    // Preferences.cpp). Each of those is an nvs_set_<int>() then an
+    // nvs_commit(), and either fails on a full partition just as the string
+    // write does - real NVS has this failure too, the stub had only the string
+    // one. configSerializeAudio() and the CHIRP bindings write integers only,
+    // which is what left the audio Commit Steps' rollbacks unreachable from a
+    // native test (#420).
+    //
+    // A counter on the namespace like failNextStringWrites(), and independent
+    // of it: a string write does not consume an integer failure, nor the other
+    // way round. putFloat()/putDouble() are blobs on the device and not counted.
+    void failNextIntegerWrites(unsigned count) {
+        requireOpen("failNextIntegerWrites");
+        ns->failIntegerWrites = count;
     }
 
     // Every namespace gone, and every scheduled failure with it: a freshly

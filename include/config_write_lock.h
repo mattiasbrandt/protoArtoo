@@ -29,9 +29,9 @@
 // speed preset (configCacheSelectSpeedPreset()) and stationary
 // (configCacheSetStationary(), via commandedSetStationary()), each inside one
 // configCacheMux section. Those two fields are therefore the ones a holder of
-// this lock cannot keep still, and the config Commit Step keeps their live
-// value whenever its request did not state them (configCacheApplyKeepingLive(),
-// #417).
+// this lock cannot keep still, so every Write Window keeps their live value:
+// configCacheApply() keeps both (#420), and the config Commit Step keeps
+// whichever its request did not state (configCacheApplyKeepingLive(), #417).
 //
 // A take that cannot acquire within its bound reports unavailable rather
 // than proceeding: the failure this exists to prevent is silent corruption,

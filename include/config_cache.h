@@ -167,25 +167,47 @@ void configCacheApplyDroidBuild(const DroidBuildConfig& build);
 void configCacheReadGuidedSetup(GuidedSetupConfig* out);
 void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided);
 
-// configCacheApply: Replace the live config cache with a full snapshot.
+// configCacheApply: write a full snapshot into the live config cache, except
+// the fields RC input also writes at runtime - the speed group
+// (drive.speedLimitMax, drive.speedPresetActive) and system.stationary - which
+// keep their live value. It is configCacheApplyKeepingLive(snap, false, false).
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 //
-// This, configCacheApplyKeepingLive(), the Servo Output edit and Part-move
-// doors, and the Droid Build and Guided Setup writers above run inside a Write
-// Window after boot (include/config_write_window_check.h): each checks that its
-// caller holds the config write lock, and logs when it does not.
+// The write every Write Window after boot makes (#420). Each one writes back a
+// whole snapshot it read when it took the config write lock, and RC input on
+// Core 1 never takes that lock, so an RC speed preset or stationary toggle can
+// land in between. None of those windows can state either field, so keeping
+// both is always their answer, and it is the default rather than a flag each
+// caller has to remember. The config POST, the one writer that can state them,
+// calls configCacheApplyKeepingLive() below with what its request stated.
+//
+// This, configCacheApplyKeepingLive(), configCacheReplace(), the Servo Output
+// edit and Part-move doors, and the Droid Build and Guided Setup writers above
+// run inside a Write Window after boot (include/config_write_window_check.h):
+// each checks that its caller holds the config write lock, and logs when it
+// does not.
 void configCacheApply(const ConfigSnapshot& snap);
 
-// configCacheApplyKeepingLive: configCacheApply(), except that the fields RC
-// input also writes at runtime keep their live value unless the writer stated
-// them (#417). The config POST's Commit Step replaces the whole snapshot from
-// a copy it read when it took the config write lock; an RC speed preset or
-// stationary toggle that landed on Core 1 since - which never takes that lock,
-// and must not - would otherwise be reverted by a request that said nothing
-// about it. The live values are read inside the same configCacheMux section
-// that writes the snapshot, so nothing can land between the two.
+// configCacheApplyKeepingLive: configCacheApply(), except that the writer says
+// which of the RC live fields it stated, and a stated one takes the snapshot's
+// value (#417). For the config POST's Commit Step, whose request can set the
+// speed limit and stationary; whichever it did not state keeps its live value,
+// as in configCacheApply(). The live values are read inside the same
+// configCacheMux section that writes the snapshot, so nothing can land between
+// the two.
 void configCacheApplyKeepingLive(const ConfigSnapshot& snap, bool speedLimitStated,
                                  bool stationaryStated);
+
+// configCacheReplace: replace the live config cache with a full snapshot, the
+// RC live fields included. configCacheApplyKeepingLive(snap, true, true).
+//
+// Only where replacing everything is the point: the boot load
+// (src/main.cpp loadConfigToState(), before RC input exists) and a native
+// test seeding known state. Never from a Write Window after boot: its
+// snapshot was read before RC input on Core 1 could change the speed group or
+// stationary, and replacing them would revert a change the window never
+// stated (#420). The same holder check as configCacheApply().
+void configCacheReplace(const ConfigSnapshot& snap);
 
 // configCacheSelectSpeedPreset: make `preset` the active speed preset and the
 // drive limit the value it names, both in one configCacheMux section, from the

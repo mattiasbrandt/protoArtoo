@@ -355,7 +355,7 @@ portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 //
 // Zero-initialised like configCache above, and filled by configLoadServoOutputs()
 // from main's boot path before any task starts -- the same boot-order contract
-// configCacheApply() already relies on. A reader that runs before that sees a
+// configCacheReplace() already relies on. A reader that runs before that sees a
 // count of zero, which is the truthful answer at that point rather than a
 // guessed row.
 static ServoOutputTable servoOutputCache = {};
@@ -894,7 +894,13 @@ static void markRcConfigDirty() {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
+// See declaration comment in config_cache.h.
 void configCacheApply(const ConfigSnapshot& snap) {
+    configCacheApplyKeepingLive(snap, false, false);
+}
+
+// See declaration comment in config_cache.h.
+void configCacheReplace(const ConfigSnapshot& snap) {
     configCacheApplyKeepingLive(snap, true, true);
 }
 

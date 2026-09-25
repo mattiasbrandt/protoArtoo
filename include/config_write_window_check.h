@@ -19,7 +19,7 @@
 //
 // Armed by setup() once the boot load is done and before any task that writes
 // config starts, so the boot load is exempt. In native tests it starts
-// disarmed, so a suite seeding state with configCacheApply() is unchanged; the
+// disarmed, so a suite seeding state with configCacheReplace() is unchanged; the
 // adapter and route suites arm it in setUp() and assert in tearDown() that
 // nothing missed its window.
 // =============================================================================

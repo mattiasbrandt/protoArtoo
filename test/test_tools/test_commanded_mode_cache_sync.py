@@ -37,10 +37,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMMANDED_MODES = REPO_ROOT / "src" / "commanded_modes.cpp"
 
-# The whole-snapshot cache calls. configCacheSetStationary() and the other
-# by-field accessors are deliberately absent: they are the shape this rule
-# asks for.
-SNAPSHOT_CACHE_CALLS = ("configCacheRead", "configCacheApply")
+# The whole-snapshot cache calls: the read, and every write that takes a whole
+# ConfigSnapshot (include/config_cache.h). configCacheSetStationary() and the
+# other by-field accessors are deliberately absent: they are the shape this
+# rule asks for.
+SNAPSHOT_CACHE_CALLS = (
+    "configCacheRead",
+    "configCacheApply",
+    "configCacheApplyKeepingLive",
+    "configCacheReplace",
+)
 SNAPSHOT_CALL_RE = re.compile(r"\b(" + "|".join(SNAPSHOT_CACHE_CALLS) + r")\s*\(")
 
 # Deliberate exceptions, keyed "<function>:<call>" and valued with the reason.

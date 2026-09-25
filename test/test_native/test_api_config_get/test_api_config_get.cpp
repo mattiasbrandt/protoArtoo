@@ -38,7 +38,7 @@ ConfigSnapshot readSnapshot() {
 
 void setUp() {
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
 }
@@ -85,7 +85,7 @@ void test_pending_apply_is_true_when_staged_differs_from_active() {
     // so only the handler can report it.
     ConfigSnapshot staged = readSnapshot();
     snprintf(staged.wifi.sta_ssid, sizeof(staged.wifi.sta_ssid), "%s", "bench-net");
-    configCacheApply(staged);
+    configCacheReplace(staged);
 
     WifiConfig active = {};
     configCacheSetActiveWifi(active);
@@ -110,7 +110,7 @@ void test_the_booted_toggles_and_receiver_differ_from_a_staged_save() {
     booted.system.enable_drive = false;
     booted.system.enable_rc_ch1 = true;
     booted.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
-    configCacheApply(booted);
+    configCacheReplace(booted);
     configCacheSetActiveComponentToggles(booted.system);
     configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(booted.system));
 
@@ -119,7 +119,7 @@ void test_the_booted_toggles_and_receiver_differ_from_a_staged_save() {
     staged.system.enable_drive = true;
     staged.system.enable_rc_ch1 = false;
     staged.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
-    configCacheApply(staged);
+    configCacheReplace(staged);
 
     WebRequestTestBackend backend;
     WebRequest req(&backend);
@@ -158,7 +158,7 @@ void test_every_output_is_read_whole_from_its_row_and_not_from_the_config() {
     ConfigSnapshot snap = readSnapshot();
     snap.system.enable_aux1 = false;
     snap.system.enable_aux2 = true;
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     WebRequestTestBackend rowsBackend;
     WebRequest rowsReq(&rowsBackend);
@@ -212,7 +212,7 @@ void test_worst_case_config_fits_the_response_buffer() {
     memset(snap.wifi.sta_password, 'P', sizeof(snap.wifi.sta_password) - 1);
     memset(snap.wifi.ap_password, 'Q', sizeof(snap.wifi.ap_password) - 1);
     memset(snap.dome.dome_wifi_peer_ip, '9', sizeof(snap.dome.dome_wifi_peer_ip) - 1);
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     WebRequestTestBackend backend;
     WebRequest req(&backend);
@@ -323,7 +323,7 @@ void test_the_worst_case_config_still_fits_the_response_buffer() {
     snap.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
     snap.system.rc_member = 6;      // rc_transmitter_elrs, the longest radio id
     snap.system.sound_member = 21;  // dfplayer_mini, the longest sound id
-    configCacheApply(snap);
+    configCacheReplace(snap);
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveSoundMember(21);
     configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(snap.system));

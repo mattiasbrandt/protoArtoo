@@ -194,7 +194,7 @@ static void runInto(Capture* cap, ConsoleCommandSource source, const char* comma
 
 void setUp(void) {
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
     consoleModuleInit();  // idempotent
     paStubMutexReset();
     captureReset(&g_outer);
