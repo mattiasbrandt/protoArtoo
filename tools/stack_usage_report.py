@@ -336,6 +336,8 @@ class Image:
         # static function's name is not unique in the image.
         self.data_bodies: set[int] = set()
         self.recovered_bodies: set[int] = set()
+        # (caller, callee) edges `drop_infeasible_calls()` removed.
+        self.dropped_calls: list[tuple[str, str]] = []
         # Data objects by name, read on the first `table_entries()` call only:
         # a walk that stitches no table does not pay for a second symbol read.
         self._objdump = objdump
@@ -604,6 +606,46 @@ class Image:
             for target in targets:
                 fn.calls.append((target.addr, f"stitched via {pointer}", None))
         return sorted(callers, key=lambda f: f.addr)
+
+    def drop_infeasible_calls(self, caller: str, callees: list[str]) -> list[tuple[str, str]]:
+        """Remove the call edges from `caller` to each of `callees`.
+
+        For a call the listing shows but that cannot execute, which the walk
+        has no way to tell from one that can: a log statement behind a check
+        its only caller always passes. ESP-IDF's esp_cache_get_alignment()
+        opens with ESP_RETURN_ON_FALSE(out_alignment, ..., "null pointer")
+        (esp_cache_msync.c:281), and every caller in the linked images -
+        esp_heap_adjust_alignment_to_hw() (heap_align_hw.c:54), and on the
+        ESP32-P4 sdmmc_host_check_buffer_alignment() too - passes the address
+        of a local. The log call behind it is reachable from every
+        malloc in the image, and with the IDF log hook stitched it put the
+        hook on eleven of twelve artoo-esp32 chains (#430). The recipe that
+        names an edge carries that evidence beside it.
+
+        Every named edge must exist: a callee this caller no longer calls
+        raises Fatal, so an entry that has gone stale fails loudly rather than
+        pruning nothing and reading as a fact. Raises KeyError naming an absent
+        symbol. Returns the (caller, callee) pairs removed.
+        """
+        callers = self.by_name(caller)
+        if not callers:
+            raise KeyError(caller)
+        dropped: list[tuple[str, str]] = []
+        for name in callees:
+            targets = {fn.addr for fn in self.by_name(name)}
+            if not targets:
+                raise KeyError(name)
+            removed = 0
+            for fn in callers:
+                kept = [call for call in fn.calls if call[0] not in targets]
+                removed += len(fn.calls) - len(kept)
+                fn.calls = kept
+            if not removed:
+                raise Fatal(f"{caller} no longer calls {name} in {self.elf}; "
+                            "the infeasible-call entry is stale")
+            dropped.append((caller, name))
+        self.dropped_calls.extend(dropped)
+        return dropped
 
     def adopt_archive_bodies(self, names: list[str], archives: "ArchiveBodies",
                              pointer_tables: dict[str, str] | None = None) -> list[str]:
@@ -1868,6 +1910,11 @@ def main(argv=None) -> int:
                          "time: CALLEE becomes a callee of each function that loads "
                          "POINTER and calls indirectly (repeatable; the 'pointer_calls' "
                          "of task_stack_recipes.json)")
+    ap.add_argument("--drop-call", action="append", default=[],
+                    metavar="CALLER=CALLEE",
+                    help="remove a call edge that cannot execute (repeatable; the "
+                         "'infeasible_calls' of task_stack_recipes.json, with the "
+                         "evidence it cannot run)")
     ap.add_argument("--archive-body", action="append", default=[], metavar="FUNCTION",
                     help="walk an undecoded body from its archive member (repeatable; "
                          "the 'archive_bodies' of a task_stack_recipes.json arm)")
@@ -1922,6 +1969,14 @@ def main(argv=None) -> int:
         except KeyError as exc:
             raise Fatal(f"--stitch-pointer {spec}: {exc.args[0]} is not in the image") from exc
         pointer_callers.append((pointer, callee, [fn.name for fn in callers]))
+    for spec in args.drop_call:
+        caller, sep, callee = spec.partition("=")
+        if not sep or not caller or not callee:
+            raise Fatal(f"--drop-call wants CALLER=CALLEE, got {spec!r}")
+        try:
+            img.drop_infeasible_calls(caller, [callee])
+        except KeyError as exc:
+            raise Fatal(f"--drop-call {spec}: {exc.args[0]} is not in the image") from exc
 
     ver = subprocess.run([str(objdump), "--version"], capture_output=True, text=True,
                          check=True).stdout.splitlines()[0]
@@ -1939,6 +1994,8 @@ def main(argv=None) -> int:
     for pointer, callee, callers in pointer_callers:
         print(f"  stitched every call through {pointer} -> {callee}"
               f" (from {', '.join(callers)})")
+    for caller, callee in img.dropped_calls:
+        print(f"  dropped {caller} -> {callee} (cannot execute)")
     print("=" * 78)
 
     status = 0

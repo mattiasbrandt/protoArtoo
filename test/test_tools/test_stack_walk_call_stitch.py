@@ -14,6 +14,9 @@ and, through relocations, everything its literal pool loads.
 to its rows (through `pointer_tables` when the program only sets the pointer at
 run time), and undecoded callees adopted the same way. A table that cannot be
 read stops the walk rather than dropping its rows unannounced (#430).
+
+The opposite edit: `Image.drop_infeasible_calls()` removes an edge the listing
+shows but that cannot execute, and refuses an entry whose edge is gone (#430).
 """
 
 import sys
@@ -190,6 +193,43 @@ class AnUndecodedBodyIsWalkedFromItsArchiveMember(unittest.TestCase):
 
         self.image.adopt_archive_bodies(["closed_stop"], InBss())
         self.assertEqual(self.image.funcs[CLOSED].calls, [])
+
+
+class AnEdgeThatCannotExecuteIsDropped(unittest.TestCase):
+    def setUp(self):
+        self.image = ShutdownImage("fake", Path("fake.elf"), Path("objdump"), "xtensa")
+        self.image.stitch_calls("esp_restart", ["sync_timers", "osi_take"])
+
+    def test_the_named_edge_goes_and_the_other_stays(self):
+        dropped = self.image.drop_infeasible_calls("esp_restart", ["osi_take"])
+        self.assertEqual(dropped, [("esp_restart", "osi_take")])
+        walker = sur.Walker([self.image], sur.DEFAULT_PRUNE)
+        total, chain, _ = walker.depth(self.image, self.image.funcs[RESTART])
+        self.assertEqual(total, HANDLER_FRAME)
+        self.assertEqual([step[0] for step in chain], ["sync_timers"])
+
+    def test_a_stale_entry_is_refused(self):
+        with self.assertRaises(sur.Fatal):
+            self.image.drop_infeasible_calls("esp_restart", ["closed_inner"])
+
+    def test_an_absent_symbol_is_reported(self):
+        with self.assertRaises(KeyError):
+            self.image.drop_infeasible_calls("esp_restart", ["renamed_log"])
+
+    def test_the_gate_row_fails_on_a_stale_entry(self):
+        import check_task_stack_chains as checker
+
+        recipes = {"infeasible_calls": [
+            {"caller": "esp_restart", "callees": ["osi_take", "closed_inner"],
+             "chips": ["esp32"]},
+        ]}
+        dropped, failures = checker.drop_infeasible_calls(self.image, recipes, "esp32")
+        self.assertEqual(dropped, [("esp_restart", "osi_take")])
+        self.assertEqual(len(failures), 1)
+        self.assertIn("closed_inner", failures[0])
+        # An entry for the other chip is not applied here.
+        self.assertEqual(checker.drop_infeasible_calls(self.image, recipes, "esp32p4"),
+                         ([], []))
 
 
 if __name__ == "__main__":
