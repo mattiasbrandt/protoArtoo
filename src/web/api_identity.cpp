@@ -37,10 +37,11 @@ void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // IDENTITY_JSON_MAX_BYTES = 512 B; usable JSON is 511 B (1 byte for NUL).
     // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (false is 5 chars, true is 4). With today's
-    // manifest -- 4 capabilities, 3 flags, 3 Board Lanes -- that worst case is
-    // 461 B of JSON, leaving 511 - 461 = 50 B of headroom. Both Board Variants
-    // reach the same 461 B: every lane's UART index is one digit and every lane
-    // pin is two on both boards.
+    // manifest -- 4 capabilities, 3 flags, 3 Board Lanes, and the Learned
+    // Sequence cap -- that worst case is 487 B of JSON on firebeetle2, leaving
+    // 511 - 487 = 24 B of headroom; the artoo-esp32 is one byte shorter, its cap
+    // being one digit (5) where firebeetle2's is two (10). Every lane's UART
+    // index is one digit and every lane pin is two on both boards.
     // A capability or flag row emits ,"<name>":false, so it costs name_len + 9
     // bytes at worst (name_len + 8 for the first row in an object, which has no
     // leading comma). A Board Lane row emits

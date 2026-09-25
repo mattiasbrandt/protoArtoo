@@ -21,8 +21,11 @@
 
 namespace {
 
+// learned_sequence_cap is written out, not composed from SEQ_STORE_CAP: it is
+// the board fact the Sequences page reads (ADR 0065, amended 2026-09-25), and
+// the native env builds the artoo-esp32, which stores five.
 constexpr const char* kCapabilities =
-    ",\"board\":\"artoo_esp32\",\"board_capabilities\":{"
+    ",\"board\":\"artoo_esp32\",\"learned_sequence_cap\":5,\"board_capabilities\":{"
     "\"PA_CAP_NATIVE_WIFI\":true,\"PA_CAP_HOSTED_WIFI\":false,"
     "\"PA_CAP_DRIVE_BACKEND_HOVERBOARD\":true,"
     "\"PA_CAP_DEDICATED_AUDIO_UART\":false}";
@@ -171,7 +174,9 @@ void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
 // 10-character one, so it would keep passing with 22 bytes less headroom than
 // the comment claims. Adding a fourth board capability (#254) spent 36 of the
 // 85 bytes that arithmetic had; the three Board Lanes (#339) then spent 127 of
-// what a 512 B budget carries, leaving 50. Assert the worst case directly: the
+// what a 512 B budget carries, leaving 50, and the Learned Sequence cap
+// (#426) spent 26 of those, leaving 24 on firebeetle2 (25 on the artoo-esp32,
+// whose cap is one digit). Assert the worst case directly: the
 // next manifest row must not be able to overflow at 32 characters while a
 // short name still fits.
 void test_identity_manifest_fits_with_longest_droid_name() {
@@ -182,6 +187,12 @@ void test_identity_manifest_fits_with_longest_droid_name() {
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), longName, false));
     TEST_ASSERT_LESS_OR_EQUAL_UINT(sizeof(body) - 1, strlen(body));
+    // Measured exactly, so the headroom src/web/api_identity.cpp hands the next
+    // manifest row is the real one. This build reports three manifest values
+    // true (NATIVE_WIFI, DRIVE_BACKEND_HOVERBOARD, ADMISSION_TRACE), each a byte
+    // shorter than false, so it is 3 B under that comment's all-false worst
+    // case of 486 B for the artoo-esp32.
+    TEST_ASSERT_EQUAL_UINT(483, strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"PA_CAP_DEDICATED_AUDIO_UART\":false"));
     // The last Board Lane row is the first thing an overflow would eat, and a
     // truncated payload must not reach the browser as a shorter valid one.

@@ -20,7 +20,8 @@
 // Availability manifest from board_capabilities.inc and build_flags.inc, and
 // the Board Lanes from board_lanes.inc -- where the running firmware routes
 // each signal, so no operator surface keeps its own copy of one board's wiring
-// (CONTEXT.md "Board Lane").
+// (CONTEXT.md "Board Lane"). It also carries the board's Learned Sequence
+// save cap, learned_sequence_cap (SEQ_STORE_CAP, include/seq_store_util.h).
 // Returns false if the payload does not fit in buf.
 bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool mdnsUseName);
 
@@ -61,7 +62,7 @@ void handleIdentityPost(WebRequest& req);
 // It is identity's payload -- firmware is the runtime source of the lineup and
 // the `data/` copy is only a fallback (ADR 0042 as amended 2026-09-09) -- but
 // not identity's response: the manifest above is bounded at
-// IDENTITY_JSON_MAX_BYTES with roughly 50 B spare, and the lineup runs to
+// IDENTITY_JSON_MAX_BYTES with roughly 24 B spare, and the lineup runs to
 // around 3 KB. It streams by offset instead, so no backend holds it whole.
 // -----------------------------------------------------------------------------
 
