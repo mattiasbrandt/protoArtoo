@@ -61,6 +61,15 @@ static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
 static RcInputProcessor s_rcProcessor = {};
 static RcInputStepState s_rcStepState = {};
 
+// The RC processor's dispatch scratch (#428): what one dispatch hands
+// rcInputProcessorTick() and what it gets back. Both dispatch paths below run
+// only on RCInputTask, one after the other and never nested, so one input and
+// one output serve them all; the processor config is built straight into the
+// input. Static rather than stack, to keep ~1.5 KB off a Core 1 real-time
+// task's stack, and never heap: Core 1 allocates nothing after setup().
+static RcProcessorInput s_dispatchInput = {};
+static RcProcessorOutput s_dispatchOutput = {};
+
 static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6]) {
     bool anyValid = false;
     uint32_t now = millis();
@@ -356,22 +365,18 @@ static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {
     snap.mode  = RC_INPUT_STANDARD_PWM;
     for (int i = 0; i < 6; ++i) snap.channels[i] = (int16_t)pulses[i];
 
-    static RcProcessorConfig cfg_proc = {};
-    buildRcProcessorConfig(active, &cfg_proc);
-    cfg_proc.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
+    RcProcessorInput& input = s_dispatchInput;
+    buildRcProcessorConfig(active, &input.config);
+    input.config.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
     // PWM mode has no Tier 2 SBUS triggers  --  clear count so processor skips the loop
-    cfg_proc.triggerCount = 0;
-
-    static RcProcessorInput input = {};
+    input.config.triggerCount = 0;
     input.channels     = snap;
-    input.config       = cfg_proc;
     input.nowMs        = millis();
     input.randomSeed   = (uint32_t)esp_random();
     input.sourceFilter = RC_BINDING_PWM;
 
-    static RcProcessorOutput output = {};
-    rcInputProcessorTick(&s_rcProcessor, input, &output);
-    dispatchProcessorOutput(output, cfg_proc.mapping, cfg_proc.triggers);
+    rcInputProcessorTick(&s_rcProcessor, input, &s_dispatchOutput);
+    dispatchProcessorOutput(s_dispatchOutput, input.config.mapping, input.config.triggers);
 }
 
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
@@ -384,20 +389,16 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     snap.channels[16] = data.ch17 ? 1811 : 172;
     snap.channels[17] = data.ch18 ? 1811 : 172;
 
-    static RcProcessorConfig cfg = {};
-    buildRcProcessorConfig(active, &cfg);
-    cfg.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
-
-    static RcProcessorInput input = {};
+    RcProcessorInput& input = s_dispatchInput;
+    buildRcProcessorConfig(active, &input.config);
+    input.config.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
     input.channels     = snap;
-    input.config       = cfg;
     input.nowMs        = millis();
     input.randomSeed   = (uint32_t)esp_random();
     input.sourceFilter = source;
 
-    static RcProcessorOutput output = {};
-    rcInputProcessorTick(&s_rcProcessor, input, &output);
-    dispatchProcessorOutput(output, cfg.mapping, cfg.triggers);
+    rcInputProcessorTick(&s_rcProcessor, input, &s_dispatchOutput);
+    dispatchProcessorOutput(s_dispatchOutput, input.config.mapping, input.config.triggers);
 }
 
 
