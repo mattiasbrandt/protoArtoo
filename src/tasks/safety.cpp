@@ -84,9 +84,9 @@ static void restartIfRequested() {
     // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
     // ESP-IDF refuses the deinit while any task is still subscribed
     // (task_wdt.c: "Tasks/users still subscribed"), and DriveTask, ServoTask
-    // and SeqDisp always are, so the watchdog usually stays on; they go on
-    // feeding it through the delay below, and esp_restart() resets with
-    // ESP_RST_SW either way. The refusal is logged rather than dropped.
+    // and SeqDisp always are, so the watchdog stays on; they go on feeding it
+    // through the delay below, and esp_restart() resets with ESP_RST_SW
+    // either way. The refusal is logged rather than dropped.
     const esp_err_t twdtDeinit = esp_task_wdt_deinit();
     if (twdtDeinit != ESP_OK) {
         PA_LOG_WARN(TAG, "task watchdog still running at restart: %s",
