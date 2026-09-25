@@ -38,48 +38,9 @@
 
 #include "api_apply_refusal.h"
 #include "api_param_source.h"
-#include "board_outputs.h"  // BOARD_OUTPUT_ID_MAX_LEN - the longest stored Output id
 #include "config_cache.h"
 #include "droid_build.h"
 #include "guided_setup.h"
-#include "servo_legacy_field_sets.h"  // SERVO_LEGACY_FIELD_SET_COUNT
-
-// -----------------------------------------------------------------------------
-// The fields that save how an Output moves (ADR 0052, #414)
-//
-// Its Motion Profile - time to full throw, time to get up to speed and the
-// ease - and what it does at power-up, per Output, named from its stored config
-// id: arm1ThrowMs, arm1AccelMs, arm1Ease, arm1Boot. The rule lives here and
-// nowhere else, so the Apply Core that reads the four and GET /api/config,
-// which hands each Output's names to the browser in components{} (throwField,
-// accelField, easeField, bootField), cannot come to disagree - and a page never
-// composes one (data/outputs.js saves by the name it read).
-// -----------------------------------------------------------------------------
-enum ConfigMotionField : uint8_t {
-    CONFIG_MOTION_THROW = 0,
-    CONFIG_MOTION_ACCEL,
-    CONFIG_MOTION_EASE,
-    CONFIG_MOTION_BOOT,
-    CONFIG_MOTION_FIELD_COUNT,
-};
-
-// "ThrowMs" is the longest suffix; sizeof counts its terminator.
-constexpr size_t CONFIG_MOTION_FIELD_NAME_MAX = BOARD_OUTPUT_ID_MAX_LEN + sizeof("ThrowMs");
-
-inline bool configMotionFieldName(char* buf, size_t bufSize, const char* outputId,
-                                  ConfigMotionField field) {
-    static const char* const kSuffix[CONFIG_MOTION_FIELD_COUNT] = {"ThrowMs", "AccelMs", "Ease", "Boot"};
-    if (buf == nullptr || bufSize == 0 || outputId == nullptr ||
-        field >= CONFIG_MOTION_FIELD_COUNT) {
-        return false;
-    }
-    const int written = snprintf(buf, bufSize, "%s%s", outputId, kSuffix[field]);
-    return written > 0 && (size_t)written < bufSize;
-}
-
-// A Motion Profile field is the longest field name a refusal can carry.
-static_assert(CONFIG_MOTION_FIELD_NAME_MAX <= APPLY_REFUSAL_FIELD_MAX,
-              "a Motion Profile field name must fit a refusal's field");
 
 struct ConfigApplyError {
     bool hasError = false;
@@ -113,21 +74,19 @@ struct ConfigAppliedFields {
 
 // What the request asked of the addressed Servo Output rows (ADR 0041).
 //
-// Endpoints and component types still arrive in the five fixed field sets'
-// parameter names -- arm1OpenUs, arm1Type and their siblings -- because the
-// pages that send them are not rebuilt onto the rows until the C1 wave. The
-// Apply Core is pure and cannot reach the live table, so it validates the
-// numbers and records them here, addressed, and the Commit Step applies them
-// through configCacheApplyServoOutputEdits(). Nothing stores an endpoint on the
-// way: since #345 the row is the only place one lives.
+// An Output's settings arrive as rows, in the shape GET /api/servo/outputs
+// reads them (ADR 0068), and its capture and reverse as acts. The Apply Core
+// is pure and cannot reach the live table, so it validates the numbers and
+// records them here, addressed, and the Commit Step applies them through
+// configCacheApplyServoOutputEdits(). Nothing stores an endpoint on the way:
+// since #345 the row is the only place one lives.
 //
 // One typed entry per Output Address the request named, so a POST that
-// carries one arm changes one row. `count` is zero on a request that named
-// none. The row door (ADR 0068) can name every row a table holds, the five
-// legacy field sets can each add an address of their own, and a request may
-// carry a capture and a reverse besides (#364) -- each addressed at any Output.
+// carries one row changes one row. `count` is zero on a request that named
+// none. The row door can name every row a table holds, and a request may carry
+// a capture and a reverse besides (#364) -- each addressed at any Output.
 struct ConfigServoOutputEdits {
-    ServoOutputEdit edits[SERVO_OUTPUT_ROW_MAX + SERVO_LEGACY_FIELD_SET_COUNT + 2];
+    ServoOutputEdit edits[SERVO_OUTPUT_ROW_MAX + 2];
     size_t count = 0;
 };
 

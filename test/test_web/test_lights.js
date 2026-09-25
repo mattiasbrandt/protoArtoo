@@ -38,12 +38,11 @@ test("Lights names no Output the firmware reported, and no pin, label or address
   const shown = env.text();
 
   // Everything the droid called its Outputs, and the words the operator ruled
-  // off this surface, read from the answer rather than restated. The field
-  // names are in here too: this page now SAVES one of them - a light's LED
-  // count - so it holds a string it must not print.
-  const names = Object.values(answer.config.components)
-    .flatMap((entry) => [entry.label, entry.address, entry.enabledField, entry.typeField,
-                         entry.ledCountField])
+  // off this surface, read from the answer rather than restated. The stored
+  // ids are in here too: this page saves a light's LED count on the Output's
+  // row, so it holds the row it must not print.
+  const names = answer.outputs
+    .flatMap((row) => [row.name, row.address, row.id])
     .filter(Boolean);
   for (const name of [...names, "AUX", "aux_led_pin"]) {
     assert.ok(!shown.includes(name), `Lights shows "${name}", which is Wiring's answer and not this page's`);

@@ -9,8 +9,8 @@
 // the line it drives.
 //
 // THIS FILE DRAWS; data/outputs.js KNOWS. Which Outputs the droid has, what
-// each is called, whether it is wired, what is on its wire and which fields
-// save it are data/outputs.js's answer (#415), and a plate is drawn per Output
+// each is called, whether it is wired, what is on its wire and what it can
+// save are data/outputs.js's answer (#415), and a plate is drawn per Output
 // in the order it gives them. An Output is called by what its board prints
 // (CONTEXT.md "Output Address"), never by a name this file could have made
 // up, and never split into kinds.
@@ -207,9 +207,9 @@
   };
 
   const render = (view) => {
-    // A plate saves the config's answer, so it waits for that answer: a servo
-    // table read alone would draw every Output as wired with no switch.
-    if (!OUTPUTS.known().config) {
+    // A plate saves what the Output's row says, so it waits for the rows: until
+    // they have answered there is no Output to draw.
+    if (!OUTPUTS.known().table) {
       view.body.replaceChildren(element("p", "hint", "Reading the outputs from the droid…"));
       return;
     }

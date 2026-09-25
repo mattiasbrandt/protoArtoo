@@ -82,34 +82,6 @@ const char* firstMissing(const ConfigParamSource& params, const char* const* nam
     return nullptr;
 }
 
-// The typed edit this request is already making to the Output at an address,
-// or a new one for it. A setting MERGES into the edit already made for the same
-// Output Address rather than adding one beside it, which is what keeps the list
-// inside its bound: one typed edit per address. nullptr only if the list is
-// full, and the caller refuses the request rather than writing past it.
-ServoOutputEdit* typedEditFor(ConfigServoOutputEdits* edits, ServoOutputDriver driver,
-                              uint8_t channel) {
-    for (size_t e = 0; e < edits->count; ++e) {
-        ServoOutputEdit& candidate = edits->edits[e];
-        if (candidate.driver == driver && candidate.channel == channel &&
-            candidate.kind == SERVO_EDIT_TYPED) {
-            return &candidate;
-        }
-    }
-    if (edits->count >= sizeof(edits->edits) / sizeof(edits->edits[0])) {
-        return nullptr;
-    }
-    ServoOutputEdit* edit = &edits->edits[edits->count++];
-    *edit = ServoOutputEdit{};
-    edit->driver = driver;
-    edit->channel = channel;
-    return edit;
-}
-
-ServoOutputEdit* typedEditFor(ConfigServoOutputEdits* edits, uint8_t ledcChannel) {
-    return typedEditFor(edits, SERVO_DRIVER_LEDC, ledcChannel);
-}
-
 const char* rcModeToString(RcInputMode mode) {
     switch (mode) {
         case RC_INPUT_STANDARD_PWM:
@@ -852,21 +824,25 @@ bool applyOutputRows(JsonObjectConst body, ConfigApplyResult* result) {
         }
         seen[seenCount++] = key;
 
-        ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, driver, channel);
-        if (edit == nullptr) {
-            setRowError(result, address, "address", "is one Output setting too many for one request",
-                        ApplyRefusalReason::OutOfRange);
-            return false;
-        }
+        // Read whole before it joins the list, so a refused row leaves nothing
+        // of itself behind. One row per address (checked above), so a row is
+        // one typed edit and there is nothing to merge.
+        ServoOutputEdit edit = {};
+        edit.driver = driver;
+        edit.channel = channel;
         const BoardOutput* board =
             driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(channel) : nullptr;
-        if (!readOutputRow(row, address, board, statedParts, edit, result)) {
+        if (!readOutputRow(row, address, board, statedParts, &edit, result)) {
             return false;
         }
-        if (edit->fields != 0) {
-            appendApplied(&result->applied, "[CFG] output %s updated", address);
-            result->changed = true;
+        if (edit.fields == 0) {
+            continue;
         }
+        // Rows come first and number at most SERVO_OUTPUT_ROW_MAX (checked
+        // above), which the list holds with room for a capture and a reverse.
+        result->servoOutputs.edits[result->servoOutputs.count++] = edit;
+        appendApplied(&result->applied, "[CFG] output %s updated", address);
+        result->changed = true;
     }
     return true;
 }
@@ -1398,216 +1374,9 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         return;
     }
 
-    // The five fixed field sets, taken as edits to the rows that replaced them
-    // (#345, ADR 0041). One pass per Output Address, so the three parameters
-    // that name the same output arrive as one edit and the component type is
-    // settled against the pair it will clamp rather than by parameter order.
-    //
-    // The bounds here are still 500..2500, the widest a servo takes, and they
-    // are not the authoritative clamp: that is the fitted component's band, and
-    // it is applied on the row, where it can report having moved a number. A
-    // 500 us arriving for an MG996R is a legal request this core accepts and
-    // the Commit Step answers with a warning naming the part.
-    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
-        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
-        ServoOutputEdit edit = {};
-        edit.driver = SERVO_DRIVER_LEDC;
-        edit.channel = set.channel;
-        edit.fields = 0;
-
-        struct EndpointParam {
-            const char* param;
-            uint16_t ServoOutputEdit::*member;
-            uint16_t bit;
-        };
-        const EndpointParam kEndpoints[] = {
-            {set.openField, &ServoOutputEdit::open_us, SERVO_FIELD_OPEN},
-            {set.closeField, &ServoOutputEdit::close_us, SERVO_FIELD_CLOSE},
-        };
-        for (size_t e = 0; e < sizeof(kEndpoints) / sizeof(kEndpoints[0]); ++e) {
-            if (!configParamHas(params, kEndpoints[e].param)) {
-                continue;
-            }
-            uint16_t pulseUs = 0;
-            if (!paramUint16(params, kEndpoints[e].param, kServoPulseMinUs, kServoPulseMaxUs,
-                             &pulseUs)) {
-                char err[192];
-                snprintf(err, sizeof(err), "%s must be 500..2500", kEndpoints[e].param);
-                setRangeError(result, err, kEndpoints[e].param, kServoPulseMinUs, kServoPulseMaxUs);
-                return;
-            }
-            edit.*(kEndpoints[e].member) = pulseUs;
-            edit.fields |= kEndpoints[e].bit;
-        }
-
-        if (configParamHas(params, set.typeParam)) {
-            const char* raw = configParamGet(params, set.typeParam);
-            ServoComponentType parsed = SERVO_COMP_NONE;
-            if (strcmp(raw, "0") == 0 || strcmp(raw, "1") == 0 || strcmp(raw, "2") == 0 ||
-                strcmp(raw, "3") == 0) {
-                parsed = (ServoComponentType)atoi(raw);
-            } else {
-                parsed = parseServoCompType(raw);
-            }
-
-            if (!isValidServoCompType((uint8_t)parsed)) {
-                char err[180];
-                snprintf(err, sizeof(err), "%s must be none/mg996r/mg90s/rgb", set.typeParam);
-                setError(result, err, ApplyRefusalReason::OutOfRange, set.typeParam,
-                         "none,mg996r,mg90s,rgb");
-                return;
-            }
-
-            edit.component = parsed;
-            edit.fields |= SERVO_FIELD_COMPONENT;
-        }
-
-        if (edit.fields == 0) {
-            continue;
-        }
-        result->servoOutputs.edits[result->servoOutputs.count++] = edit;
-        result->changed = true;
-    }
-
-    // A light's settings, one per Output that can carry one: how many LEDs are
-    // on that wire (ADR 0067, #413). The field names are BOARD_OUTPUTS'
-    // `ledCountField`, NOT one of the five legacy sets above - this is a new
-    // per-Output answer, and it outlives the fixed names the loop above exists
-    // to keep reading.
-    //
-    // It MERGES into the edit that loop may already have made for the same
-    // Output Address (typedEditFor()).
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        const BoardOutput& output = BOARD_OUTPUTS[i];
-        if (output.ledCountField == nullptr || !configParamHas(params, output.ledCountField)) {
-            continue;
-        }
-        uint8_t ledCount = 0;
-        if (!paramUint8(params, output.ledCountField, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX,
-                        &ledCount)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be %u..%u", output.ledCountField,
-                     (unsigned)SERVO_LIGHT_LEDS_MIN, (unsigned)SERVO_LIGHT_LEDS_MAX);
-            setRangeError(result, err, output.ledCountField, SERVO_LIGHT_LEDS_MIN,
-                          SERVO_LIGHT_LEDS_MAX);
-            return;
-        }
-
-        ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
-        if (edit == nullptr) {
-            setError(result, "too many Output settings in one request",
-                     ApplyRefusalReason::OutOfRange, output.ledCountField);
-            return;
-        }
-        edit->led_count = ledCount;
-        edit->fields |= SERVO_FIELD_LED_COUNT;
-        result->changed = true;
-    }
-
-    // Each Output's Motion Profile (ADR 0052, #414): time to full throw, time
-    // to get up to speed and the ease, and what it does at power-up, under the
-    // names configMotionFieldName() gives them. A value outside what the stored row takes is REFUSED with the
-    // field and the range, never clamped: the bounds are the NVS parser's own
-    // (servoOutputRowNormalise(), SERVO_THROW_MS_MIN and the rest), so a number
-    // this door takes is exactly one the row keeps, and a number it refuses is
-    // one the builder hears about instead of finding a different one saved.
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        const BoardOutput& output = BOARD_OUTPUTS[i];
-        char throwField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        char accelField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        char easeField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        char bootField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        if (!configMotionFieldName(throwField, sizeof(throwField), output.id, CONFIG_MOTION_THROW) ||
-            !configMotionFieldName(accelField, sizeof(accelField), output.id, CONFIG_MOTION_ACCEL) ||
-            !configMotionFieldName(easeField, sizeof(easeField), output.id, CONFIG_MOTION_EASE) ||
-            !configMotionFieldName(bootField, sizeof(bootField), output.id, CONFIG_MOTION_BOOT)) {
-            // The buffers are sized from the longest stored id, so this is a
-            // build whose table outgrew CONFIG_MOTION_FIELD_NAME_MAX: refuse,
-            // rather than read a truncated name as some other field.
-            // No field to name: the name is exactly what did not fit.
-            setError(result, "an Output's Motion Profile field name does not fit",
-                     ApplyRefusalReason::OutOfRange, nullptr);
-            return;
-        }
-        const bool hasThrow = configParamHas(params, throwField);
-        const bool hasAccel = configParamHas(params, accelField);
-        const bool hasEase = configParamHas(params, easeField);
-        const bool hasBoot = configParamHas(params, bootField);
-        if (!hasThrow && !hasAccel && !hasEase && !hasBoot) {
-            continue;
-        }
-
-        uint16_t throwMs = 0;
-        if (hasThrow &&
-            !paramUint16(params, throwField, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, &throwMs)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be %u..%u ms", throwField,
-                     (unsigned)SERVO_THROW_MS_MIN, (unsigned)SERVO_THROW_MS_MAX);
-            setRangeError(result, err, throwField, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX);
-            return;
-        }
-        uint16_t accelMs = 0;
-        if (hasAccel &&
-            !paramUint16(params, accelField, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, &accelMs)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be %u..%u ms", accelField,
-                     (unsigned)SERVO_ACCEL_MS_MIN, (unsigned)SERVO_ACCEL_MS_MAX);
-            setRangeError(result, err, accelField, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX);
-            return;
-        }
-        ServoEasing easing = SERVO_EASE_NONE;
-        if (hasEase && !servoParseEasing(configParamGet(params, easeField), &easing)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be none, soft or overshoot", easeField);
-            setError(result, err, ApplyRefusalReason::OutOfRange, easeField, "none,soft,overshoot");
-            return;
-        }
-        // Limp is what a row nobody configured does; a value that is not one of
-        // the three is refused rather than read as limp, so a typo can never
-        // quietly take a Part off its power-up home or put one on it.
-        ServoBootBehaviour boot = SERVO_BOOT_LIMP;
-        if (hasBoot && !servoParseBootBehaviour(configParamGet(params, bootField), &boot)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be limp, home-hold or home-release", bootField);
-            setError(result, err, ApplyRefusalReason::OutOfRange, bootField,
-                     "limp,home-hold,home-release");
-            return;
-        }
-
-        ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
-        if (edit == nullptr) {
-            setError(result, "too many Output settings in one request",
-                     ApplyRefusalReason::OutOfRange,
-                     hasThrow ? throwField : hasAccel ? accelField : hasEase ? easeField : bootField);
-            return;
-        }
-        if (hasThrow) {
-            edit->throw_ms = throwMs;
-            edit->fields |= SERVO_FIELD_THROW_MS;
-            appendApplied(&result->applied, "[CFG] %s updated to %u", throwField, (unsigned)throwMs);
-        }
-        if (hasAccel) {
-            edit->accel_ms = accelMs;
-            edit->fields |= SERVO_FIELD_ACCEL_MS;
-            appendApplied(&result->applied, "[CFG] %s updated to %u", accelField, (unsigned)accelMs);
-        }
-        if (hasEase) {
-            edit->easing = easing;
-            edit->fields |= SERVO_FIELD_EASING;
-            appendApplied(&result->applied, "[CFG] %s updated to %s", easeField,
-                          servoEasingToString(easing));
-        }
-        if (hasBoot) {
-            edit->boot = boot;
-            edit->fields |= SERVO_FIELD_BOOT;
-            appendApplied(&result->applied, "[CFG] %s updated to %s", bootField,
-                          servoBootBehaviourToString(boot));
-        }
-        result->changed = true;
-    }
-
-    // The row door. After the per-field doors above, so a row names the whole
-    // Output and wins where one request carries both.
+    // The row door: an Output's settings, one row per Output (ADR 0068). The
+    // only door onto them - pages, the Console and a restore all send rows -
+    // beside the capture, reverse and Part-move acts below and above.
     if (!request.body.isNull() && !applyOutputRows(request.body, result)) {
         return;
     }

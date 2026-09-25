@@ -2549,6 +2549,21 @@ void test_aux_led_count_is_one_outputs_own() {
     TEST_ASSERT_EQUAL_STRING("1", capturedValue("value"));
 }
 
+// The count goes through the row door (ADR 0068), whose refusal names the row's
+// field (`ledc:3.ledCount`) - a name no Console builder typed. The refusal is
+// pinned on `value`, the argument they did type, and the range the row check
+// holds comes back with it.
+void test_aux_led_count_refused_through_the_row_door_names_value() {
+    char write[64] = {};
+    snprintf(write, sizeof(write), "aux.config.led-count target=%s value=0",
+             boardOutputLabel(*firstLightCapableOutput()));
+    runQuery(write);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("1..255", capturedValue("accepts"));
+}
+
 // An Output that cannot carry a light has no count to read or write, and says
 // so rather than answering for a neighbour.
 void test_aux_led_count_refuses_an_output_that_cannot_be_lit() {
@@ -5564,6 +5579,7 @@ int main(int, char**) {
     RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
     RUN_TEST(test_aux_led_count_read_and_write_names_its_output);
     RUN_TEST(test_aux_led_count_is_one_outputs_own);
+    RUN_TEST(test_aux_led_count_refused_through_the_row_door_names_value);
     RUN_TEST(test_aux_led_count_refuses_an_output_that_cannot_be_lit);
     RUN_TEST(test_rc_mode_read_and_write);
     RUN_TEST(test_rc_mode_rejects_an_unknown_mode_string);

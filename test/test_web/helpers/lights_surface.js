@@ -23,7 +23,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
-import { servoRow, configOutputs, applyOutputSave, statusFrame } from "./fake_droid.js";
+import { servoRow, describe, applyRowSave, statusFrame } from "./fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
@@ -54,25 +54,24 @@ const rootTokens = () => {
 
 // A droid whose Outputs are named nothing like the bench's, wired so one wire
 // carries a light and a Part sits on it. Its Outputs come from the one fake
-// droid (helpers/fake_droid.js), whose ids and save fields follow no pattern
-// tied to a label or an address.
+// droid (helpers/fake_droid.js), whose ids follow no pattern tied to a label
+// or an address.
 //
-// `idOf(address)` is the Output id GET /api/config names an Output by, which
-// is how the firmware keys its own status frame.
+// `idOf(address)` is the stored id an Output's row carries, which is how the
+// firmware keys its own status frame.
 export const droid = () => {
-  const outputs = [
+  const outputs = describe([
     servoRow("ledc:7", "GPIO 49", { parts: ["utilUp"] }),
-    servoRow("ledc:9", "ARM4", { parts: ["dataPanel"], component: "rgb" }),
-    servoRow("ledc:4", "GPIO 5", { component: "none" }),
-  ];
-  const components = configOutputs(outputs, {
+    servoRow("ledc:9", "ARM4", { parts: ["dataPanel"] }),
+    servoRow("ledc:4", "GPIO 5"),
+  ], {
     "ledc:9": { lightCapable: true, ledCount: 16, type: "rgb" },
-    "ledc:4": { lightCapable: true, enabled: false, type: "none" },
+    "ledc:4": { lightCapable: true, wired: false, type: "none" },
   });
-  const idOf = (address) => Object.keys(components).find((id) => components[id].address === address);
+  const idOf = (address) => outputs.find((row) => row.address === address).id;
   return {
     config: {
-      components: { ...components, domeEsc: { enabled: true, label: "DOME" } },
+      components: { domeEsc: { enabled: true, label: "DOME" } },
       droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: ["dataPanel", "psiFront"] },
     },
     outputs,
@@ -87,11 +86,11 @@ export const droid = () => {
 // against its own.
 export const droidWithTwoLitWires = () => {
   const answer = droid();
-  const second = answer.config.components[answer.idOf("ledc:4")];
-  second.enabled = true;
-  second.type = "rgb";
+  const second = answer.outputs[2];
+  second.wired = true;
+  second.component = "rgb";
   second.ledCount = 4;
-  answer.outputs[2].parts = ["cbi"];
+  second.parts = ["cbi"];
   answer.config.droidBuild.fitted.push("cbi");
   answer.status.lights[answer.idOf("ledc:4")] = { r: 255, g: 0, b: 0, effect: "blink", available: true };
   return answer;
@@ -137,7 +136,12 @@ export const boot = ({ answer = droid() } = {}) => {
       },
       postForm: async (path, body) => {
         posts.push({ path, body });
-        if (path === "/api/config") applyOutputSave(answer.config.components, body);
+        return { ok: true, data: answer.config };
+      },
+      // An Output's settings, as its row (ADR 0068).
+      postJson: async (path, body) => {
+        posts.push({ path, body });
+        if (path === "/api/config") applyRowSave(answer.outputs, body);
         return { ok: true, data: answer.config };
       },
     },

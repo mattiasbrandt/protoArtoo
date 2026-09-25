@@ -640,17 +640,15 @@ void test_wifi_post_commit_step_persists_and_reports_runtime_state() {
 
 // --- the calibration write reaches the addressed rows (#342) ----------------
 
-// A builder's endpoints still arrive as arm1OpenUs and its siblings, and every
-// reader of them is now the row. Drop configCacheApplyServoCalibration() from
-// the Commit Step and this goes red: the write lands in the snapshot, the droid
-// keeps driving to the old number, and the next read hands the old one back.
+// A builder's endpoints arrive as a row (ADR 0068), and every reader of them is
+// the row. Drop configCacheApplyServoOutputEdits() from the Commit Step and this
+// goes red: the droid keeps driving to the old number, and the next read hands
+// the old one back.
 void test_a_calibration_write_lands_on_the_addressed_row() {
     seedServoOutputRows();
 
-    const WebRequestTestParam params[] = {{"arm1OpenUs", "1750"}, {"arm1CloseUs", "1250"}};
     WebRequestTestBackend backend;
-    backend.params = params;
-    backend.paramCount = 2;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:0\",\"openUs\":1750,\"closeUs\":1250}]}";
     WebRequest req(&backend);
 
     handleConfigPost(req);
@@ -665,17 +663,17 @@ void test_a_calibration_write_lands_on_the_addressed_row() {
     TEST_ASSERT_EQUAL_UINT16(1500, row.centre_us);
 }
 
-// The old form let any output take 500-2500 us. The row's component type
+// Any end within what a servo takes is legal to send. The row's component type
 // governs the clamp (#286), so a value an MG996R cannot reach does not reach
 // it - and the write still succeeds rather than being refused, because clamping
-// is not refusing (ADR 0044).
+// is not refusing (ADR 0044), and a restored end may have been recorded before
+// the band narrowed (ADR 0068).
 void test_a_write_the_component_band_cannot_take_is_moved_not_refused() {
     seedServoOutputRows();
 
-    const WebRequestTestParam params[] = {{"aux1Type", "mg996r"}, {"aux1OpenUs", "2500"}};
     WebRequestTestBackend backend;
-    backend.params = params;
-    backend.paramCount = 2;
+    backend.body =
+        "{\"outputs\":[{\"address\":\"ledc:3\",\"component\":\"mg996r\",\"openUs\":2500}]}";
     WebRequest req(&backend);
 
     handleConfigPost(req);
@@ -691,15 +689,14 @@ void test_a_write_the_component_band_cannot_take_is_moved_not_refused() {
 }
 
 // What comes back has to be what the droid will do. The row holds the clamped
-// number, so the echo does too - a response that repeated the request back
-// would tell a builder their 500 us landed while the arm moved to 1000.
+// number, so the answer names it - an answer that let the request stand would
+// tell a builder their 500 us landed while the arm moved to 1000.
 void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
     seedServoOutputRows();
 
-    const WebRequestTestParam params[] = {{"arm1Type", "mg996r"}, {"arm1OpenUs", "500"}};
     WebRequestTestBackend backend;
-    backend.params = params;
-    backend.paramCount = 2;
+    backend.body =
+        "{\"outputs\":[{\"address\":\"ledc:0\",\"component\":\"mg996r\",\"openUs\":500}]}";
     WebRequest req(&backend);
 
     handleConfigPost(req);
@@ -707,7 +704,7 @@ void test_the_echo_reports_what_the_row_holds_not_what_was_asked() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
-    TEST_ASSERT_EQUAL_INT(1000, doc["arm1OpenUs"].as<int>());
+    TEST_ASSERT_EQUAL_INT(1000, doc["clamped"]["ledc:0"]["openUs"] | 0);
 
     ServoOutputRow row = {};
     TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
@@ -752,18 +749,14 @@ void test_the_answer_names_every_end_the_band_moved() {
     TEST_ASSERT_EQUAL_INT(1000, aux2["closeUs"] | 0);
 }
 
-// An Output's Motion Profile goes out and comes back under the names GET
-// /api/config gave it (#414): the page saves by the field it read, and the
-// echo is what the row now holds, so the two agree by construction.
-void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
+// An Output's Motion Profile goes out on its row and comes back on it (#414,
+// ADR 0068), and GET /api/servo/outputs reads what the row now holds.
+void test_a_motion_profile_round_trips_on_its_row() {
     seedServoOutputRows();
 
-    const WebRequestTestParam params[] = {
-        {"arm2ThrowMs", "800"}, {"arm2AccelMs", "150"}, {"arm2Ease", "overshoot"},
-        {"arm2Boot", "home-release"}};
     WebRequestTestBackend backend;
-    backend.params = params;
-    backend.paramCount = 4;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:1\",\"throwMs\":800,\"accelMs\":150,"
+                   "\"ease\":\"overshoot\",\"boot\":\"home-release\"}]}";
     WebRequest req(&backend);
 
     handleConfigPost(req);
@@ -778,24 +771,24 @@ void test_a_motion_profile_round_trips_under_the_names_the_config_reports() {
     TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_OVERSHOOT, row.easing);
     TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_HOME_RELEASE, row.boot);
 
+    WebRequestTestBackend rowsBackend;
+    WebRequest rowsReq(&rowsBackend);
+    handleServoOutputsGet(rowsReq);
     JsonDocument doc;
-    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
-    JsonObject arm2Entry = doc["components"]["arm2"];
-    TEST_ASSERT_EQUAL_STRING("arm2ThrowMs", arm2Entry["throwField"] | "");
-    TEST_ASSERT_EQUAL_STRING("arm2AccelMs", arm2Entry["accelField"] | "");
-    TEST_ASSERT_EQUAL_STRING("arm2Ease", arm2Entry["easeField"] | "");
-    TEST_ASSERT_EQUAL_STRING("arm2Boot", arm2Entry["bootField"] | "");
-    TEST_ASSERT_EQUAL_STRING("home-release", arm2Entry["boot"] | "");
-    TEST_ASSERT_EQUAL_UINT(800, arm2Entry["throwMs"].as<unsigned>());
-    TEST_ASSERT_EQUAL_UINT(150, arm2Entry["accelMs"].as<unsigned>());
+    TEST_ASSERT_FALSE(deserializeJson(doc, rowsBackend.sentBody));
+    JsonObject arm2Row = doc["outputs"][arm2];
+    TEST_ASSERT_EQUAL_STRING("home-release", arm2Row["boot"] | "");
+    TEST_ASSERT_EQUAL_UINT(800, arm2Row["throwMs"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT(150, arm2Row["accelMs"].as<unsigned>());
     // The builder's choice, not the ease that runs: this row is unmeasured, so
     // it moves as `none`, and the page is the one that says so.
-    TEST_ASSERT_EQUAL_STRING("overshoot", arm2Entry["ease"] | "");
+    TEST_ASSERT_EQUAL_STRING("overshoot", arm2Row["ease"] | "");
     // A neighbour nobody touched still reports its own defaults.
-    TEST_ASSERT_EQUAL_UINT(SERVO_THROW_MS_DEFAULT, doc["components"]["arm1"]["throwMs"].as<unsigned>());
-    TEST_ASSERT_EQUAL_STRING("none", doc["components"]["arm1"]["ease"] | "");
+    JsonObject arm1Row = doc["outputs"][0];
+    TEST_ASSERT_EQUAL_UINT(SERVO_THROW_MS_DEFAULT, arm1Row["throwMs"].as<unsigned>());
+    TEST_ASSERT_EQUAL_STRING("none", arm1Row["ease"] | "");
     // Limp is the default, and a neighbour nobody set stays limp.
-    TEST_ASSERT_EQUAL_STRING("limp", doc["components"]["arm1"]["boot"] | "");
+    TEST_ASSERT_EQUAL_STRING("limp", arm1Row["boot"] | "");
 }
 
 // Out of range is refused with the field and its range, never clamped into it:
@@ -804,31 +797,34 @@ void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
     seedServoOutputRows();
 
     const struct {
-        const char* field;
+        const char* key;
         const char* value;
     } kRefused[] = {
-        {"arm1ThrowMs", "5"},       // under one ServoTask frame
-        {"arm1ThrowMs", "20000"},   // over SERVO_THROW_MS_MAX
-        {"arm1AccelMs", "0"},       // no time at all to get up to speed
-        {"arm1Ease", "wobble"},     // not one of the three
-        {"arm1Boot", "home"},       // not one of the three boot modes
+        {"throwMs", "5"},         // under one ServoTask frame
+        {"throwMs", "20000"},     // over SERVO_THROW_MS_MAX
+        {"accelMs", "0"},         // no time at all to get up to speed
+        {"ease", "\"wobble\""},   // not one of the three
+        {"boot", "\"home\""},     // not one of the three boot modes
     };
     for (const auto& refused : kRefused) {
         // A good ease rides along with every bad value, so a refusal that let
         // the rest of the request land would show up on the row.
-        const bool easeRefused = strcmp(refused.field, "arm1Ease") == 0;
-        const WebRequestTestParam params[] = {
-            {refused.field, refused.value},
-            {easeRefused ? "arm1ThrowMs" : "arm1Ease", easeRefused ? "700" : "soft"}};
+        const bool easeRefused = strcmp(refused.key, "ease") == 0;
+        char body[160] = {};
+        snprintf(body, sizeof(body), "{\"outputs\":[{\"address\":\"ledc:0\",\"%s\":%s,%s}]}",
+                 refused.key, refused.value, easeRefused ? "\"throwMs\":700" : "\"ease\":\"soft\"");
         WebRequestTestBackend backend;
-        backend.params = params;
-        backend.paramCount = 2;
+        backend.body = body;
         WebRequest req(&backend);
 
         handleConfigPost(req);
 
         TEST_ASSERT_EQUAL_INT_MESSAGE(400, backend.sentCode, refused.value);
-        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(backend.sentBody, refused.field), backend.sentBody);
+        char field[32] = {};
+        snprintf(field, sizeof(field), "ledc:0.%s", refused.key);
+        JsonDocument doc;
+        TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(field, doc["field"] | "", backend.sentBody);
         ServoOutputRow row = {};
         TEST_ASSERT_TRUE(configCacheReadServoOutput(0, &row));
         TEST_ASSERT_EQUAL_UINT16(SERVO_THROW_MS_DEFAULT, row.throw_ms);
@@ -1150,7 +1146,7 @@ int main() {
     RUN_TEST(test_a_write_the_component_band_cannot_take_is_moved_not_refused);
     RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
     RUN_TEST(test_the_answer_names_every_end_the_band_moved);
-    RUN_TEST(test_a_motion_profile_round_trips_under_the_names_the_config_reports);
+    RUN_TEST(test_a_motion_profile_round_trips_on_its_row);
     RUN_TEST(test_a_motion_profile_out_of_range_is_refused_not_clamped);
     RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);
     RUN_TEST(test_a_restored_legacy_variant_lands_as_the_variant_it_became);

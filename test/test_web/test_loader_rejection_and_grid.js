@@ -55,6 +55,8 @@ const healthyResponder = (path, opts = {}) => {
   // the media type the real transport now reports.
   if (path === "/api/logs") return { data: OK_LOGS, contentType: "text/plain" };
   if (path === "/api/config") return { data: OK_CONFIG };
+  // The Outputs are their rows (ADR 0068), which the shell reads for their names.
+  if (path === "/api/servo/outputs") return { data: { outputs: [] } };
   if (path === "/api/console" && opts.body?.command === "operations") return { data: OK_OPERATIONS };
   if (path === "/api/status") return { data: {} };
   return { data: {} };

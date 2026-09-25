@@ -8,9 +8,11 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "api_config_snapshot.h"
+#include "board_outputs.h"
 #include "rc_mapping.h"
 
 
@@ -188,7 +190,6 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(rc["triggers"].isNull());
     TEST_ASSERT_TRUE(rc["sbus"]["recvCh2"].is<bool>());
     TEST_ASSERT_FALSE(rc["sbus"]["recvCh2"].as<bool>());
-    TEST_ASSERT_TRUE(components["arm1"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["drive"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["audio"]["enabled"].is<bool>());
     TEST_ASSERT_TRUE(components["protoR2link"]["enabled"].is<bool>());
@@ -204,25 +205,6 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(!domeEsc["rndMoveMs"].isNull());
     TEST_ASSERT_TRUE(!protoR2link["wifiPeerIp"].isNull());
     TEST_ASSERT_TRUE(!system["logLevel"].isNull());
-    // The ten endpoint fields and the five component types are deliberately
-    // absent here. A ConfigSnapshot has carried neither since #345 - both live
-    // on an addressed Servo Output row - and this builder is pure, so it cannot
-    // reach the live table. handleConfigGet() adds them from the rows, and
-    // test_api_config_get is where that is proved. If one ever reappears in
-    // this document it is a second source for an endpoint, which is the whole
-    // defect ADR 0041 removed.
-    TEST_ASSERT_TRUE(doc["arm1OpenUs"].isNull());
-    TEST_ASSERT_TRUE(doc["arm1CloseUs"].isNull());
-    TEST_ASSERT_TRUE(doc["aux3OpenUs"].isNull());
-    TEST_ASSERT_TRUE(doc["aux3CloseUs"].isNull());
-    TEST_ASSERT_TRUE(components["arm1"]["type"].isNull());
-    TEST_ASSERT_TRUE(components["aux3"]["type"].isNull());
-    // A light's LED count is on the same row and is absent here for the same
-    // reason (#413). Which Outputs COULD carry one is a board fact this pure
-    // builder does know, so that much is here.
-    TEST_ASSERT_TRUE(components["aux3"]["ledCount"].isNull());
-    TEST_ASSERT_TRUE(!components["aux3"]["ledCountField"].isNull());
-    TEST_ASSERT_TRUE(components["arm1"]["ledCountField"].isNull());
 }
 
 // --- Test 4 ---
@@ -303,70 +285,29 @@ void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(voi
 }
 
 // --- Test 8 ---
-// A wire on Wiring is named first by what the board prints beside it (#411,
-// CONTEXT.md "Wiring"), and the Artoo PCB prints its three AUX Outputs ARM3,
-// ARM4 and ARM5 (docs/pin_map.md, the traced board). This inventory shipped
-// them as AUX1-AUX3 - protoArtoo's word - so every sheet named those three
-// wires by a legend printed nowhere on the board in a builder's hand.
-void test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen(void) {
-    ConfigSnapshot snap = makeDefaultSnap();
-    JsonDocument doc;
-    TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
-
-    JsonObject components = doc["components"].as<JsonObject>();
-    TEST_ASSERT_EQUAL_STRING("ARM3", components["aux1"]["label"] | "");
-    TEST_ASSERT_EQUAL_STRING("ARM4", components["aux2"]["label"] | "");
-    TEST_ASSERT_EQUAL_STRING("ARM5", components["aux3"]["label"] | "");
-}
-
-// --- Test 9 ---
-// The browser knows no Output (#411): Wiring and Servos draw one plate per
-// Output GET /api/config reports, and save it under the fields it names. So
-// every Output this controller drives - the rows servoOutputTableDefaults()
-// seeds - must be in that answer, with the words the board prints beside it,
-// its address, and both of its fields. An Output left out is one no page can
-// draw; one without a label is one a builder cannot find on the board.
-void test_populateConfigJson_reports_every_output_with_its_label(void) {
+// An Output is read whole from its row on GET /api/servo/outputs and written
+// back the same way (ADR 0068), so /api/config carries none of it: no Output
+// entry under components{}, and none of the legacy end names. One that came
+// back here would be a second place a row field is read - the drift the round
+// trip exists to prevent, and the reason a restore once had four doors.
+void test_populateConfigJson_carries_no_output_and_no_row_field(void) {
     ConfigSnapshot snap = makeDefaultSnap();
     snap.system.enable_aux2 = true;
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+
     JsonObject components = doc["components"].as<JsonObject>();
-
-    ServoOutputTable table = {};
-    servoOutputTableDefaults(&table);
-    size_t reported = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        TEST_ASSERT_TRUE_MESSAGE(components[output.id].isNull(), output.id);
+        char name[24] = {};
+        snprintf(name, sizeof(name), "%sOpenUs", output.id);
+        TEST_ASSERT_TRUE_MESSAGE(doc[name].isNull(), name);
+        snprintf(name, sizeof(name), "%sCloseUs", output.id);
+        TEST_ASSERT_TRUE_MESSAGE(doc[name].isNull(), name);
+    }
     for (JsonPair entry : components) {
-        if (!entry.value()["address"].is<const char*>()) continue;
-        ++reported;
-        TEST_ASSERT_TRUE(strlen(entry.value()["label"] | "") > 0);
-        TEST_ASSERT_TRUE(strlen(entry.value()["enabledField"] | "") > 0);
-        TEST_ASSERT_TRUE(strlen(entry.value()["typeField"] | "") > 0);
+        TEST_ASSERT_TRUE_MESSAGE(entry.value()["address"].isNull(), entry.key().c_str());
     }
-    TEST_ASSERT_EQUAL_UINT(table.count, reported);
-
-    uint8_t stripPins = 0;
-    for (uint8_t i = 0; i < table.count; ++i) {
-        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
-        TEST_ASSERT_TRUE(servoOutputFormatAddress(address, sizeof(address), table.rows[i].driver,
-                                                  table.rows[i].channel));
-        bool found = false;
-        for (JsonPair entry : components) {
-            if (strcmp(entry.value()["address"] | "", address) != 0) continue;
-            found = true;
-            stripPins += entry.value()["lightCapable"].as<bool>() ? 1 : 0;
-        }
-        TEST_ASSERT_TRUE_MESSAGE(found, address);
-    }
-    // Three wires can carry a light (include/board_outputs.h lightCapable).
-    TEST_ASSERT_EQUAL_UINT(3u, stripPins);
-    // The enabled flag is read from the Output's own field, not a neighbour's.
-    TEST_ASSERT_TRUE(components["aux2"]["enabled"].as<bool>());
-    TEST_ASSERT_FALSE(components["aux1"]["enabled"].as<bool>());
-    TEST_ASSERT_EQUAL_STRING("enableAux2", components["aux2"]["enabledField"] | "");
-    TEST_ASSERT_EQUAL_STRING("ledc:4", components["aux2"]["address"] | "");
-    TEST_ASSERT_TRUE(components["aux2"]["lightCapable"].as<bool>());
-    TEST_ASSERT_EQUAL_STRING("aux2LedCount", components["aux2"]["ledCountField"] | "");
 }
 
 int main(void) {
@@ -378,7 +319,6 @@ int main(void) {
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
     RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);
-    RUN_TEST(test_populateConfigJson_artoo_aux_outputs_carry_their_silkscreen);
-    RUN_TEST(test_populateConfigJson_reports_every_output_with_its_label);
+    RUN_TEST(test_populateConfigJson_carries_no_output_and_no_row_field);
     return UNITY_END();
 }

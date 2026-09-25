@@ -629,17 +629,17 @@
   // made here or on Wiring.
   OUTPUTS.onChange(() => paint());
 
-  // Which wire drives which Part is the droid's own table, and the same read
+  // Which wire drives which Part, what each wire carries and how long its strip
+  // is are the droid's own table - each Output's row (ADR 0068), the same read
   // Parts and Servos make.
   const loadWires = ({ handle = null } = {}) => OUTPUTS.refresh({ handle });
 
-  // What each wire carries, and how long its strip is, come from the config
-  // through data/outputs.js; the Droid Build a light reads "Not on your droid"
-  // from is adopted from the same answer rather than fetched again - which is
-  // what DroidBuild.adopt() exists for.
+  // The Droid Build a light reads "Not on your droid" from is the config's,
+  // adopted from the answer rather than fetched again - which is what
+  // DroidBuild.adopt() exists for. The config says nothing about a wire.
   const loadConfig = async ({ handle = null } = {}) => {
-    const { config } = await OUTPUTS.load({ handle, rows: false });
-    window.DroidBuild?.adopt?.(config);
+    const answer = await (handle || window.PAApi).get("/api/config");
+    window.DroidBuild?.adopt?.(answer?.data);
     paint();
   };
 

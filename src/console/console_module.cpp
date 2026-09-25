@@ -1812,15 +1812,84 @@ static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fi
     return true;
 }
 
+// A config write that is one JSON body: the row door's (ADR 0068). The body is
+// the request's `plain`, and nothing else is on it.
+struct RowDoorBody {
+    const char* body;
+};
+
+static const char* consoleRowDoorParamGet(void* ctx, const char* name) {
+    const RowDoorBody* door = static_cast<const RowDoorBody*>(ctx);
+    return strcmp(name, "plain") == 0 ? door->body : nullptr;
+}
+
+// The config write every Console config op shares: the config Write Window,
+// shared with the REST route - it reads the cache, runs configApply() and
+// commits under the one config write lock, and releases it before anything
+// below emits the answer. `refusalField` is the core's name for the field this
+// write carries, and `argument` the Console argument a refusal about it is
+// pinned on: the builder typed `value=` or the field's own key, never the
+// core's name.
+static void consoleWriteConfig(uint32_t requestId, const char* operationName,
+                               const ConfigParamSource& params, const char* refusalField,
+                               const char* argument, ConsoleCommandSource source,
+                               ConsoleOutcome successOutcome, const ConsoleRecordSink* sink) {
+    ConfigSnapshot working = {};
+
+    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
+    // The verdict comes back from inside the window: s_consoleConfigApplyResult
+    // is shared with this module's other adapter, which may overwrite it as
+    // soon as the lock is released, so nothing below reads it.
+    ConfigCommitOutcome commit = {};
+    ApplyRefusal refused;
+    const ConfigWriteWindowAnswer answer =
+        configWriteWindow(params, &working, &s_consoleConfigApplyResult, src, &commit, &refused);
+    if (answer == ConfigWriteWindowAnswer::Busy) {
+        // Another writer is mid-write - report busy rather than
+        // proceeding unserialized into the shared config path.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
+        }
+        return;
+    }
+
+    if (answer == ConfigWriteWindowAnswer::Refused) {
+        // A refusal about some other field - none today, since each write
+        // carries exactly one - is named as the core gave it rather than
+        // pinned on an argument that was not at fault.
+        const char* named = strcmp(refused.field, refusalField) == 0 ? argument : refused.field;
+        consoleEmitApplyRefusal(requestId, operationName, named, refused, sink);
+        return;
+    }
+
+    if (!commit.persisted) {
+        // "a failed NVS write is an explicit error" (criterion 3) - status=err
+        // with the module's existing catch-all outcome; no dedicated
+        // persistence-failure reason exists in the hand-maintained
+        // ConsoleReason set (include/console_module.h), and none is added
+        // here for these call sites alone.
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, successOutcome, CONSOLE_REASON_NONE);
+    }
+}
+
 // Shared write path for a single-field scalar config write through
 // configApply() + configCommitApplied() - the tokenize/validate/apply/
 // commit sequence every scalar config write shares regardless of which
 // outcome a clean write reports (Component Toggles below always answer
-// staged-until-reboot per ADR 0027; the four non-toggle scalar fields this
-// ticket also wires - drive.config.speed-limit, aux.config.led-count,
-// rc.config.mode - answer applied, matching how their owning
-// task already reads config_cache live, the same as every other non-toggle
-// configApply field REST already exposes).
+// staged-until-reboot per ADR 0027; the non-toggle scalar fields this module
+// also wires - drive.config.speed-limit, rc.config.mode and the log level -
+// answer applied, matching how their owning task already reads config_cache
+// live, the same as every other non-toggle configApply field REST already
+// exposes).
 static void consoleWriteScalarConfigField(uint32_t requestId, const char* operationName,
                                           const char* fieldKey, char* rawArgs,
                                           ConsoleCommandSource source, ConsoleOutcome successOutcome,
@@ -1845,65 +1914,17 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
         return;
     }
 
-    ConfigSnapshot working = {};
-
     ScalarConfigArg adapter{&parsedArgs, fieldKey};
     ConfigParamSource params;
     params.ctx = &adapter;
     params.get = consoleScalarConfigParamGet;
 
-    // The config Write Window, shared with the REST route: it reads the cache,
-    // runs configApply() and commits under the one config write lock, and
-    // releases it before anything below emits the answer.
-    CommandSource src = (source == CONSOLE_SOURCE_SERIAL) ? SRC_SERIAL_CONSOLE : SRC_WEB_CONSOLE;
-    // The verdict comes back from inside the window: s_consoleConfigApplyResult
-    // is shared with this module's other adapter, which may overwrite it as
-    // soon as the lock is released, so nothing below reads it.
-    ConfigCommitOutcome commit = {};
-    ApplyRefusal refused;
-    const ConfigWriteWindowAnswer answer =
-        configWriteWindow(params, &working, &s_consoleConfigApplyResult, src, &commit, &refused);
-    if (answer == ConfigWriteWindowAnswer::Busy) {
-        // Another writer is mid-write - report busy rather than
-        // proceeding unserialized into the shared config path.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
-                                CONSOLE_REASON_TEMPORARILY_UNAVAILABLE);
-        }
-        return;
-    }
-
-    if (answer == ConfigWriteWindowAnswer::Refused) {
-        // The refusal names the core's field (the POST field, `speedLimitMax`),
-        // which no Console builder types: they typed `value=` or the field's
-        // own key, and that is the argument named back. A refusal about some
-        // other field - none today, since this write carries exactly one - is
-        // named as the core gave it rather than pinned on an argument that was
-        // not at fault.
-        const char* argument = refused.field;
-        if (strcmp(refused.field, fieldKey) == 0) {
-            argument = consoleArgsFind(parsedArgs, "value") != nullptr ? "value" : fieldKey;
-        }
-        consoleEmitApplyRefusal(requestId, operationName, argument, refused, sink);
-        return;
-    }
-
-    if (!commit.persisted) {
-        // "a failed NVS write is an explicit error" (criterion 3) - status=err
-        // with the module's existing catch-all outcome; no dedicated
-        // persistence-failure reason exists in the hand-maintained
-        // ConsoleReason set (include/console_module.h), and none is added
-        // here for these call sites alone.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INTERNAL_ERROR,
-                                CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, successOutcome, CONSOLE_REASON_NONE);
-    }
+    // The refusal names the core's field (the POST field, `speedLimitMax`),
+    // which no Console builder types: they typed `value=` or the field's own
+    // key, and that is the argument named back.
+    const char* argument = consoleArgsFind(parsedArgs, "value") != nullptr ? "value" : fieldKey;
+    consoleWriteConfig(requestId, operationName, params, fieldKey, argument, source, successOutcome,
+                       sink);
 }
 
 // system.config.enable_* (Component Toggles, ADR 0027/0033): a read with no
@@ -1996,9 +2017,9 @@ static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatal
 //
 // A light's settings are one per Output since #413 (ADR 0067), so this op names
 // the Output first and the number second. With no value it reads that Output's
-// count; with one it writes it, through the same configApply() field the web
-// save uses - include/board_outputs.h's `ledCountField` for that Output, which
-// is where the per-board field name is written down once.
+// count; with one it writes it through the row door the pages save through: a
+// one-row JSON body naming the Output by its address (ADR 0068), checked by the
+// same row check in configApply().
 //
 // aux.config.led-pin went with the single stored pin. Which Output carries a
 // light is that Output's own stored type now, and a droid may have several.
@@ -2033,7 +2054,7 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
     }
 
     const BoardOutput* output = boardOutputForWord(target);
-    if (output == nullptr || output->ledCountField == nullptr) {
+    if (output == nullptr || !output->lightCapable) {
         // Either this board has no such Output, or it has one that cannot carry
         // a light. Both are "that is not an answer here", which is what
         // OUT_OF_RANGE says for a named value.
@@ -2059,13 +2080,43 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
         return;
     }
 
-    // The scalar write path takes one `value=` pair, so the target is spent
-    // here and only the number travels on. Wide enough for the longest value a
-    // uint8 param takes; a longer one fails the field's own range check.
-    char writeArgs[32] = {};
-    snprintf(writeArgs, sizeof(writeArgs), "value=%s", value);
-    consoleWriteScalarConfigField(requestId, entry->name, output->ledCountField, writeArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
+    // The row: its address, and the count as the text it was typed, so the
+    // row check refuses anything but a number in range - the same answer a
+    // page's save gets. The value is a JSON string, escaped where it has to be.
+    char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+    servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, output->channel);
+    char body[112] = {};
+    int used = snprintf(body, sizeof(body), "{\"outputs\":[{\"address\":\"%s\",\"ledCount\":\"",
+                        address);
+    for (const char* c = value; *c != '\0' && used > 0 && (size_t)used < sizeof(body); ++c) {
+        const unsigned char ch = (unsigned char)*c;
+        if (ch == '"' || ch == '\\') {
+            used += snprintf(body + used, sizeof(body) - (size_t)used, "\\%c", ch);
+        } else if (ch < 0x20) {
+            used += snprintf(body + used, sizeof(body) - (size_t)used, "\\u%04x", ch);
+        } else {
+            used += snprintf(body + used, sizeof(body) - (size_t)used, "%c", ch);
+        }
+    }
+    if (used > 0 && (size_t)used < sizeof(body)) {
+        used += snprintf(body + used, sizeof(body) - (size_t)used, "\"}]}");
+    }
+    if (used <= 0 || (size_t)used >= sizeof(body)) {
+        // Longer than the row can carry here. A count is at most three digits,
+        // so a value this long is out of range whatever it says, and cutting it
+        // short to send would be sending something the builder did not type.
+        consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+
+    RowDoorBody door{body};
+    ConfigParamSource params;
+    params.ctx = &door;
+    params.get = consoleRowDoorParamGet;
+    char refusalField[APPLY_REFUSAL_FIELD_MAX] = {};
+    snprintf(refusalField, sizeof(refusalField), "%s.ledCount", address);
+    consoleWriteConfig(requestId, entry->name, params, refusalField, "value", source,
+                       CONSOLE_OUTCOME_APPLIED, sink);
 }
 
 // rc.config.mode: value=standard_pwm|single_sbus|dual_sbus|elrs (rcInputMode).

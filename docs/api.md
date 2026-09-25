@@ -72,8 +72,10 @@ The settings writes - `POST /api/config`, `POST /api/wifi`,
 route says so) with three more keys beside `error`:
 
 - `"field"`: the request field the refusal is about, by the name it was sent
-  under. Absent when no one field is to blame (a request that sent nothing
-  usable).
+  under - a form name, the form name of a field sent in the GET shape
+  (`sbusTimeoutMs` for `rc.sbusTimeoutMs`), or `<address>.<key>` for a field of
+  an Output row (`ledc:3.ledCount`). Absent when no one field is to blame (a
+  request that sent nothing usable).
 - `"reason"`: why, always present. One of `out-of-range` (not a value this field
   takes), `missing-argument` (a field this write needs was not sent - `field`
   names the missing one), `conflict` (the value is fine on its own and clashes
@@ -658,11 +660,14 @@ curl -s -X POST http://artoo.local/api/servo/centre
 
 ### GET /api/servo/outputs
 
-Every live Servo Output row, the Parts each one drives, and where each has been
-told to be (ADR 0041, ADR 0050). Both projections of the mapping read this one
-answer — which Output moves a Part (Parts), and what an Output moves (Servos) —
-so they cannot disagree. Read-only: a Part is moved with `movePart` on
-`POST /api/config`.
+Every live Servo Output row: everything a builder sets on each Output, the
+Parts each one drives, and where each has been told to be (ADR 0041, ADR 0050).
+**An Output is its row** (ADR 0068): this is the one place an Output is read -
+`GET /api/config` carries none of it - and `POST /api/config` takes the same
+rows back, in this shape, as `outputs` (the row door). Both projections of the
+mapping read this one answer — which Output moves a Part (Parts), and what an
+Output moves (Servos) — so they cannot disagree. A page moves a Part with the
+`movePart` act on `POST /api/config`; a restore states the Part lists whole.
 
 It is also Servos' and Parts' bench feed: each page reads it once a second while
 it is on screen and stops when you leave, so a commanded position reaches the
@@ -680,6 +685,22 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     or `""` for an address no board labels, such as an expander's row (which
     `POST /api/servo` cannot move). Join a row to anything by its `address`,
     never by this name.
+  - `id`: the Output's stored config id (`arm1`..`aux3`) where the board has
+    one - the key the status frame reports the Output under. Never shown to a
+    builder. Absent for an expander's row.
+  - `switchable`: whether the Output has a wired tick. `wired`: whether that
+    tick is on; an Output with no tick - an expander's - reports `true`, since
+    nothing could have switched it off. Read once at start (ADR 0027).
+  - `lightCapable`: whether a Light Type may go on this wire (ADR 0067), and
+    `ledCount`, how many LEDs its light has - present exactly where a light can
+    go, which is also exactly where it can be saved.
+  - `throwMs`, `accelMs`, `ease`: its **Motion Profile** (ADR 0052, #414) -
+    time to full throw, time to get up to speed, and `none`, `soft` or
+    `overshoot`. `ease` is the builder's choice as stored: an Output that is not
+    `calibrated` moves by none of the three - it jumps, and an `overshoot` there
+    runs as `none` - until somebody records its ends.
+  - `boot`: what it does at power-up - `limp` (the default), `home-hold` or
+    `home-release` (ADR 0052). Calibrating never changes it.
   - `parts`: the Part ids this Output drives, from `data/droid_parts.js`. Empty
     when it drives nothing. More than one is a ganged wire: every Part listed
     moves when the Output does. A Part appears on at most one Output.
@@ -700,8 +721,8 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     min and max of the two if you need an ordering; never sort them into
     storage.
   - `calibrated`: whether somebody has measured this Output against its linkage
-    by capturing a position on it (`POST /api/config` `captureOutput`). Typing
-    endpoint numbers into a form does **not** set it. While it is false there
+    by capturing a position on it (`POST /api/config` `captureOutput`), or a
+    restored row said so. Sending endpoint numbers does **not** set it. While it is false there
     are no recorded ends to work within, so overshoot easing degrades to `none`
     and a test sweep has nowhere sane to sweep between.
   - `narrowedFrom`: `{"openUs":2200,"closeUs":2100}` when the pair this Output
@@ -745,11 +766,11 @@ curl -s http://artoo.local/api/servo/outputs
 #### Example response (an Artoo PCB, fresh, with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 let go with pulses off after a nudge, and ARM5 released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"ARM4","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
 ```
 
 ### POST /api/aux-led/color
@@ -1479,31 +1500,17 @@ Returns current config snapshot.
   droid started with switched on (#371). Every toggle is read once at start
   (ADR 0027), so an entry whose saved `enabled` differs from its membership here
   is a change still waiting for the droid. A page compares against this, never
-  against what it happened to read first.
-- `components`: enabled flags and servo type metadata, and `label`, the Board
-  Component Label (`include/component_labels.inc`) where the board has one.
-  The body controller's **Outputs** come first, in the order a page draws
-  them, and are the entries that carry an `address` (#411): the Output Address
-  that joins the entry to its `GET /api/servo/outputs` row (`ledc:3`), the
-  `label` it is called by on screen (`ARM3`, `GPIO 4`), `enabledField` and
-  `typeField` - the `POST /api/config` fields that save it - and, on an Output
-  a light may go on, `lightCapable: true`, `ledCountField` (the
-  `POST /api/config` field that saves its light's settings) and `ledCount`
-  (how many LEDs are on it). `type` is what is on the wire in either
-  vocabulary: a servo's model, or a **Light Type** where it lights something
-  (ADR 0067). Every Output also carries its **Motion Profile** (ADR 0052,
-  #414): `throwMs` (time to full throw), `accelMs` (time to get up to speed)
-  and `ease` (`none`, `soft` or `overshoot`), with `throwField`, `accelField`
-  and `easeField` naming the `POST /api/config` fields that save each. `ease`
-  is the builder's choice as stored: an Output that is not `calibrated` (see
-  `GET /api/servo/outputs`) moves by none of the three - it jumps, and an
-  `overshoot` there runs as `none` - until somebody records its ends. Every
-  Output also carries `boot`, what it does at power-up (`limp`, `home-hold`
-  or `home-release`, ADR 0052), with `bootField` naming the field that saves
-  it; `limp` is the default and calibrating never changes it. A page
-  iterates these entries and keeps no list of Outputs of its own.
+  against what it happened to read first. An Output's wired tick is not here:
+  it is on the Output's row.
+- `components`: the Component Toggles that are not an Output - `domeEsc`,
+  `rcCh1`..`rcCh6`, `drive`, `audio`, `protoR2link` - each with `enabled` and
+  `label`, the Board Component Label (`include/component_labels.inc`) where the
+  board has one; `audio` also carries `member` and `activeMember`.
+- **No Output.** An Output - its wired tick, what is on its wire, its light's
+  LED count, its Motion Profile and boot behaviour, its ends and its Parts - is
+  read whole from its row on `GET /api/servo/outputs` and written back the same
+  way (ADR 0068). There are no `arm1OpenUs`-style end names here any more.
 - `dome`: pulse calibration, speed limit, random movement config, wifi peer IP
-- top-level servo calibration fields (`arm*OpenUs`, `aux*CloseUs`, etc.)
 - `system.logLevel`
 - `droidBuild`: the Droid Build (ADR 0047) — `domeDesign`, `domeVariant`,
   `bodyDesign`, `bodyVariant` (design ids from `data/droid_parts.js`'s
@@ -1534,7 +1541,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"arm1":{"enabled":true,"label":"ARM1","address":"ledc:0","enabledField":"enableArm1","typeField":"arm1Type","throwField":"arm1ThrowMs","accelField":"arm1AccelMs","easeField":"arm1Ease","bootField":"arm1Boot","type":"mg996r","throwMs":1000,"accelMs":250,"ease":"soft","boot":"limp"},"aux1":{"enabled":false,"label":"ARM3","address":"ledc:3","lightCapable":true,"enabledField":"enableAux1","typeField":"aux1Type","ledCountField":"aux1LedCount","type":"none","ledCount":16},"domeEsc":{"enabled":true,"label":"DOME"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2},"arm1OpenUs":1000,"arm1CloseUs":2000}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2}}
 ```
 
 ### POST /api/config
@@ -1545,7 +1552,7 @@ Updates supported config fields and persists to NVS.
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - system: `logLevel(1..4)` — 1 Error, 2 Warning, 3 Info, 4 Debug. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
-- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`
+- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`. The first five are the Outputs' wired ticks - the Controller Console's form names for them - and an Output row's `wired` (below) reaches the same check
 - components (Component Member): `soundMember` — a Component Registry part id
   (`dy_sv5w`, `mp3_trigger`, `chirp`), from the `sound` category of
   `GET /api/identity/components`. Only a `supported` sound part this image
@@ -1594,7 +1601,6 @@ Updates supported config fields and persists to NVS.
     out of order by an older firmware loads as `1000`/`1500`/`2000`.
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
-- servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`. The accepted range is what a servo can take; what an output *keeps* is bounded by the component type fitted to it, so an `mg996r` output holds 1000..2000 and a value outside that is moved into range rather than refused. The response echoes what was stored, which is what the droid will drive to.
 - servo capture (ADR 0064, the calibration dial): `captureOutput`,
   `captureEnd`, `captureUs` — sent together or not at all. `captureOutput` is
   an Output Address exactly as `GET /api/servo/outputs` spells it (`ledc:3`);
@@ -1619,31 +1625,47 @@ Updates supported config fields and persists to NVS.
   change the travel between them. Sending it again is a real undo: the stored
   state **is** the pair, and there is no invert flag anywhere. A bad address is
   `400` `{"ok":false,"error":"reverseOutput must be an Output Address"}`.
-- what is on an Output's wire: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in
-  `none|mg996r|mg90s|rgb`. `rgb` is a **Light Type**, not a servo model
-  (ADR 0067): naming it on an Output is what says that wire carries a light,
-  and several Outputs may carry one at once
-- a light's settings, one per Output that can carry one:
-  `aux1LedCount|aux2LedCount|aux3LedCount` (1..255), under the name that
-  Output's `ledCountField` gives. Read once when the strip starts
-- an Output's Motion Profile (ADR 0052, #414), under the names its
-  `components` entry gives (`arm1ThrowMs`, `arm1AccelMs`, `arm1Ease`, and the
-  same for every Output): time to full throw `20..10000` ms, time to get up to
-  speed `1..10000` ms, and the ease `none|soft|overshoot`. These are the stored
-  row's own bounds, and a value outside them is **refused, never clamped**:
-  `400` `{"ok":false,"error":"arm1ThrowMs must be 20..10000 ms"}` (and
-  `... must be none, soft or overshoot` for an ease), with nothing in the
-  request applied. Takes effect on the next move; no command carries a time or
-  a shape (ADR 0049)
-- what an Output does at power-up (ADR 0052, #414), under the name its
-  `components` entry gives (`arm1Boot`, and the same for every Output):
-  `limp` (no pulse; the Part stays where it was left - the default),
-  `home-hold` (to its recorded centre, and held) or `home-release` (to its
-  recorded centre, then the drive comes off once the move has settled).
-  Anything else is refused: `400` `{"ok":false,"error":"arm1Boot must be limp,
-  home-hold or home-release"}`. Takes effect at the next power-up, where the
-  home Outputs go one at a time, paced by the Cadence Floor; a droid that powers
-  up with the estop latched (a watchdog reset) moves none of them
+- **An Output's settings: the row door** (ADR 0068). In a JSON body,
+  `outputs` is a list of rows in the shape `GET /api/servo/outputs` reads them,
+  one per Output, each named by its `address`; every key a row can set is
+  set, and the rest of a row - `name`, `id`, the band, where it was told to be -
+  is a reading and is ignored, so a row read by GET can be posted back as it
+  stands. This is the one door onto an Output's settings: pages, the Controller
+  Console's `aux.config.led-count` and a restore all send rows.
+  - `wired`: its wired tick (the same check as `enableArm1` and its siblings);
+    an Output with no tick takes only `true`.
+  - `component`: what is on the wire, `none|mg996r|mg90s|rgb`. `rgb` is a
+    **Light Type**, not a servo model (ADR 0067): naming it on an Output is
+    what says that wire carries a light, and several Outputs may carry one.
+  - `ledCount`: `1..255`, only on an Output where a light can go. Read once
+    when the strip starts.
+  - `throwMs` (`20..10000`), `accelMs` (`1..10000`), `ease`
+    (`none|soft|overshoot`) and `boot` (`limp|home-hold|home-release`): the
+    stored row's own bounds. Takes effect on the next move, and `boot` at the
+    next power-up.
+  - `openUs`, `centreUs`, `closeUs`: `500..2500`, what any servo takes. What an
+    Output **keeps** is bounded by the component fitted to it, so an `mg996r`
+    holds 1000..2000 and a width outside that is **clamped** into it, not
+    refused - the band can narrow after the ends were recorded, and refusing
+    would throw a calibration away. The answer names what it moved
+    (`clamped`, below). Without `centreUs`, an unmeasured Output's centre
+    follows the midpoint of its ends.
+  - `calibrated`: whether the ends were measured, set as stated. A restore is
+    the one write that says so; a page records a measurement with the capture
+    act.
+  - `parts`: the whole Part list, at most four ids this build models,
+    replacing the Output's list. A Part a row names comes off the Output it was
+    on. One Part named by two rows is refused `conflict`: a Part is on at most
+    one Output.
+  - Any other row field out of range is refused, with nothing in the request
+    applied: `400` `{"ok":false,"error":"ledc:0.throwMs must be 20..10000 ms",
+    "field":"ledc:0.throwMs","reason":"out-of-range","accepts":"20..10000"}`.
+    A row's field is named `<address>.<key>`. Two rows for one address are
+    refused `conflict`; a row with no usable address is refused on `address`.
+  - A row for an address this droid has no row for changes nothing.
+  - The rows and every other field in the body land in **one Write Window**:
+    a refused row leaves the scalars beside it unwritten, and a restore of the
+    Configuration lands whole or not at all.
 - Part moves (ADR 0050): `movePart`, `movePartFrom`, `movePartTo` — sent
   together or not at all. `movePart` is a Part id this build models;
   `movePartFrom` is the Output the Part is on **now** and `movePartTo` the one
@@ -1675,9 +1697,10 @@ Updates supported config fields and persists to NVS.
   field arrives both on the form and in the body, the form's value wins.
 
 - Success: `200` returns full updated config JSON (same shape as GET /api/config).
-  When the write stored an endpoint at a different number than it was sent,
-  the answer also carries `clamped`: each such field and the number it holds
-  now, `{"aux2OpenUs":2000,"aux2CloseUs":1000}`. A type change that pulls ends
+  When the write stored a recorded width at a different number than it was
+  sent, the answer also carries `clamped`: each such Output by its address, and
+  under it each width by its row key with the number it holds now,
+  `{"ledc:4":{"openUs":2000,"closeUs":1000}}`. A type change that pulls ends
   the request did not name into the new component's band lists those too.
   Absent when nothing was clamped, and never on `GET /api/config`.
   `components.audio` carries `member` (the saved choice) and `activeMember` (the
@@ -1691,6 +1714,9 @@ Updates supported config fields and persists to NVS.
   read the outputs again, then move it"`), the destination already drives as
   many Parts as it can, or no Output is addressed at `movePartTo`. **Nothing in
   the request was applied**, including any other field sent beside the move.
+- `413` `{"ok":false,"error":"payload too large"}` — a body over 12 KB, which
+  the droid does not buffer. A restore's body is the config and each Output's
+  settings, well inside it.
 - `500` failed persistence or response build/alloc failure
 - `503` `{"ok":false,"error":"config write busy"}` — another config writer (the
   Controller Console, or another form POST) held the config write window for
@@ -1706,7 +1732,7 @@ curl -s -X POST http://artoo.local/api/config \
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500},"protoR2link":{"wifiPeerIp":""}}
+{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500},"protoR2link":{"wifiPeerIp":""}}
 ```
 
 #### Example request (json)
@@ -1714,7 +1740,7 @@ curl -s -X POST http://artoo.local/api/config \
 ```bash
 curl -s -X POST http://artoo.local/api/config \
   -H 'Content-Type: application/json' \
-  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"}}'
+  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"outputs":[{"address":"ledc:4","component":"rgb","ledCount":24}]}'
 ```
 
 #### Example response (abridged)

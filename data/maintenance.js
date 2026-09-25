@@ -290,222 +290,84 @@
     }
   };
 
-  // ---- RESTORE: the Outputs' own settings, from the backup ----
-  // Which Outputs this droid has, and which fields save each, are
-  // data/outputs.js's answer from the running firmware (#415). A backup is
-  // matched to it by the Output's stored id, so a backup made before the
-  // firmware reported any save fields restores the same way, and this page
-  // lists no Output of its own (ADR 0033 Amendment 2026-09-19). What an Output
-  // cannot save - a light's count on one that cannot carry a light - is not
-  // asked for.
-  const outputChanges = (cfg, outputs) => {
-    const components = cfg?.components || {};
-    const changes = {};
+  // ---- RESTORE: the Configuration, in the shape it was read (ADR 0068) ----
+  // A backup is GET /api/config and GET /api/servo/outputs as the droid answered
+  // them, and POST /api/config takes the two back in one body: the config as it
+  // was read, and each Output's row as `outputs`. One request and one Write
+  // Window, so the Configuration lands whole or not at all, and a restore
+  // replaces the part it writes (ADR 0056) - the Part map included.
+  //
+  // THE ONE PLACE THAT KNOWS AN OLDER BACKUP. Until an Output was read whole
+  // from its row, /api/config carried its settings too: under components[<id>]
+  // (enabled, type, ledCount, throwMs, accelMs, ease, boot) and as top-level
+  // <id>OpenUs / <id>CloseUs. A backup made then is folded into rows here, once,
+  // matched by the stored id the droid's own row carries; where the backup's
+  // rows say something too, the row wins. Nothing else in the browser or the
+  // firmware knows that shape.
+  const ROW_SETTINGS = [
+    'wired', 'component', 'ledCount', 'throwMs', 'accelMs', 'ease', 'boot',
+    'openUs', 'centreUs', 'closeUs', 'calibrated', 'parts',
+  ];
+  const OLDER_SETTINGS = [
+    ['enabled', 'wired'], ['type', 'component'], ['ledCount', 'ledCount'],
+    ['throwMs', 'throwMs'], ['accelMs', 'accelMs'], ['ease', 'ease'], ['boot', 'boot'],
+  ];
+
+  const olderRow = (cfg, id) => {
+    const row = {};
+    const saved = cfg?.components?.[id];
+    if (saved && typeof saved === 'object') {
+      OLDER_SETTINGS.forEach(([from, to]) => {
+        if (saved[from] !== undefined) row[to] = saved[from];
+      });
+    }
+    if (cfg?.[`${id}OpenUs`] !== undefined) row.openUs = cfg[`${id}OpenUs`];
+    if (cfg?.[`${id}CloseUs`] !== undefined) row.closeUs = cfg[`${id}CloseUs`];
+    return row;
+  };
+
+  // The settings the backup holds for each Output this droid has, as rows. A
+  // row's readings - its name, its band, where it was told to be - stay behind:
+  // they are not settings, and the body stays inside what the droid buffers.
+  // An Output the backup names and this droid does not have is not sent, and
+  // the receipt says so.
+  const rowsToRestore = (backup, outputs) => {
+    const settings = new Map();
+    const names = new Map();
     outputs.forEach((output) => {
-      const saved = components[output.id];
-      if (!saved) return;
-      const patch = {};
-      if (output.switchable) {
-        if (saved.enabled !== undefined) patch.wired = Boolean(saved.enabled);
-        if (saved.type !== undefined) patch.type = saved.type;
-      }
-      // A light's settings, one per Output. The droid-wide aux_led_pin /
-      // aux_led_count this replaced could only carry one answer, and a restore
-      // dropped every other lit wire (#413).
-      if (output.ledCountSettable && saved.ledCount !== undefined) patch.ledCount = saved.ledCount;
-      // How it moves (ADR 0052, #414). A backup from before the firmware
-      // reported these carries none, and the droid keeps what it has.
-      if (output.motionSettable) {
-        if (saved.throwMs !== undefined) patch.throwMs = saved.throwMs;
-        if (saved.accelMs !== undefined) patch.accelMs = saved.accelMs;
-        if (saved.ease !== undefined) patch.ease = saved.ease;
-      }
-      // What it does at power-up, the same way: an older backup carries none.
-      if (output.bootSettable && saved.boot !== undefined) patch.boot = saved.boot;
-      if (Object.keys(patch).length > 0) changes[output.address] = patch;
+      if (!output.id) return;
+      const row = olderRow(backup.config, output.id);
+      if (Object.keys(row).length > 0) settings.set(output.address, row);
     });
-    return changes;
+    const saved = backup.servo_outputs?.outputs;
+    (Array.isArray(saved) ? saved : []).forEach((row) => {
+      if (!row || typeof row.address !== 'string') return;
+      const into = settings.get(row.address) || {};
+      ROW_SETTINGS.forEach((key) => {
+        if (row[key] !== undefined) into[key] = row[key];
+      });
+      settings.set(row.address, into);
+      names.set(row.address, row.name || row.address);
+    });
+    const here = new Set(outputs.map((output) => output.address));
+    const rows = [];
+    const missing = [];
+    settings.forEach((row, address) => {
+      if (here.has(address)) rows.push({ address, ...row });
+      else missing.push(names.get(address) || address);
+    });
+    return { rows, missing };
   };
 
-  // ---- RESTORE: centre, `calibrated` and the Part map (#417) ----
-  // The typed save above writes the ends and nothing that says a human measured
-  // them, and it moves an unmeasured centre to the midpoint. So the rows the
-  // file says were measured get their centre CAPTURED back - a capture is the
-  // one write that sets `calibrated`, records a number and commands no motion -
-  // and only those: capturing an unmeasured row would claim a measurement
-  // nobody made. One POST per Output, since the apply takes one capture.
-  //
-  // The Part map REPLACES what the droid has (ADR 0056), against a fresh read:
-  // every Part the file puts somewhere else, or nowhere, comes off first, and
-  // only then does each Part go onto the Output the file names. Freeing first
-  // is what keeps a destination from being full of Parts that are leaving it.
-  //
-  // Returns what did not land, in a few words each; empty when it all did.
-  const restoreServoOutputs = async (saved) => {
-    const gaps = [];
-    let fresh;
-    try {
-      const res = await window.PAApi.get('/api/servo/outputs', { timeoutMs: 10000 });
-      fresh = Array.isArray(res.data?.outputs) ? res.data.outputs : null;
-    } catch {
-      fresh = null;
-    }
-    if (fresh === null) return ['centre, calibration and Part map'];
-
-    const live = new Map(fresh.map((row) => [row.address, row]));
-    const nameOf = (address) => live.get(address)?.name || address;
-    const rows = saved.filter((row) => row && typeof row.address === 'string');
-
-    for (const row of rows) {
-      const here = live.get(row.address);
-      const partsOn = Array.isArray(row.parts) ? row.parts : [];
-      if (!here) {
-        if (row.calibrated === true || partsOn.length > 0) gaps.push(`${row.name || row.address} not on this droid`);
-        continue;
-      }
-      if (row.calibrated === true) {
-        try {
-          await window.PAApi.postForm('/api/config',
-            { captureOutput: row.address, captureEnd: 'centre', captureUs: String(row.centreUs) },
-            { timeoutMs: 5000 });
-        } catch {
-          gaps.push(`${nameOf(row.address)} centre`);
-        }
-      } else if (here.calibrated === true) {
-        // Nothing clears `calibrated` but a new row, so a measured Output the
-        // file says was not measured stays measured, and the receipt says so.
-        gaps.push(`${nameOf(row.address)} still marked measured`);
-      }
-    }
-
-    const want = new Map();
-    rows.forEach((row) => {
-      if (!live.has(row.address) || !Array.isArray(row.parts)) return;
-      row.parts.forEach((part) => want.set(part, row.address));
-    });
-    const where = new Map();
-    fresh.forEach((row) => (row.parts || []).forEach((part) => where.set(part, row.address)));
-    const move = async (part, to) => {
-      const from = where.get(part) || 'none';
-      try {
-        await window.PAApi.postForm('/api/config',
-          { movePart: part, movePartFrom: from, movePartTo: to }, { timeoutMs: 5000 });
-        if (to === 'none') where.delete(part);
-        else where.set(part, to);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    for (const [part, address] of Array.from(where)) {
-      if (want.get(part) !== address && !(await move(part, 'none'))) gaps.push(`part ${part}`);
-    }
-    for (const [part, address] of want) {
-      if (where.get(part) !== address && !(await move(part, address)) && !gaps.includes(`part ${part}`)) {
-        gaps.push(`part ${part}`);
-      }
-    }
+  const restoreConfiguration = async (backup) => {
+    const { outputs } = await window.PAOutputs.load();
+    const { rows, missing } = rowsToRestore(backup, outputs);
+    await window.PAApi.postJson('/api/config', { ...backup.config, outputs: rows }, { timeoutMs: 10000 });
+    const gaps = missing.map((name) => `${name} not on this droid`);
+    // A file from before backups carried the Outputs' rows has no centre,
+    // calibration or Part map to give back.
+    if (!Array.isArray(backup.servo_outputs?.outputs)) gaps.push('no centre, calibration or Part map in this file');
     return gaps;
-  };
-
-  // ---- RESTORE: flatten GET /api/config nested JSON to POST form params ----
-  // Everything but the Outputs' own settings, which data/outputs.js adds to
-  // the same request.
-  const configToFormParams = (cfg, outputs) => {
-    const p = new URLSearchParams();
-    const d = cfg?.drive || {};
-    const rc = cfg?.rc || {};
-    const components = cfg?.components || {};
-    const domeEsc = cfg?.domeEsc || {};
-    const protoR2link = cfg?.protoR2link || {};
-    const sys = cfg?.system || {};
-
-    if (d.speedLimitMax !== undefined) p.set('speedLimitMax', d.speedLimitMax);
-    if (d.speedPresetSlow !== undefined) p.set('speedPresetSlow', d.speedPresetSlow);
-    if (d.speedPresetNormal !== undefined) p.set('speedPresetNormal', d.speedPresetNormal);
-    if (d.speedPresetTurbo !== undefined) p.set('speedPresetTurbo', d.speedPresetTurbo);
-    if (d.stationary !== undefined) p.set('stationary', d.stationary ? 'true' : 'false');
-    if (d.webDriveTimeoutMs !== undefined) p.set('webDriveTimeoutMs', d.webDriveTimeoutMs);
-
-    if (rc.sbusTimeoutMs !== undefined) p.set('sbusTimeoutMs', rc.sbusTimeoutMs);
-    if (rc.inputMode !== undefined) p.set('rcInputMode', rc.inputMode);
-    // The RC Radio, the Radio Controller's Component Member (#369).
-    if (rc.member !== undefined) p.set('rcMember', rc.member);
-    if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
-
-    outputs.forEach(({ id }) => {
-      if (!id) return;
-      // The recorded ends, under the field names /api/config speaks for them.
-      for (const end of ['OpenUs', 'CloseUs']) {
-        if (cfg[`${id}${end}`] !== undefined) p.set(`${id}${end}`, cfg[`${id}${end}`]);
-      }
-    });
-
-    [
-      ['domeEsc', 'enableDomeEsc'],
-      ['rcCh1', 'enableRcCh1'], ['rcCh2', 'enableRcCh2'], ['rcCh3', 'enableRcCh3'],
-      ['rcCh4', 'enableRcCh4'], ['rcCh5', 'enableRcCh5'], ['rcCh6', 'enableRcCh6'],
-      ['drive', 'enableDrive'],
-      ['audio', 'enableAudio'],
-      ['protoR2link', 'enableProtoR2link'],
-    ].forEach(([key, param]) => {
-      if (components[key]?.enabled !== undefined) {
-        p.set(param, components[key].enabled ? 'true' : 'false');
-      }
-    });
-
-    if (domeEsc.neutralUs !== undefined) p.set('domeEscNeutralUs', domeEsc.neutralUs);
-    if (domeEsc.minPulseUs !== undefined) p.set('domeEscMinPulseUs', domeEsc.minPulseUs);
-    if (domeEsc.maxPulseUs !== undefined) p.set('domeEscMaxPulseUs', domeEsc.maxPulseUs);
-    if (domeEsc.speedLimitPct !== undefined) p.set('domeEscSpeedLimitPct', domeEsc.speedLimitPct);
-    if (domeEsc.rndEnable !== undefined) p.set('domeEscRndEnable', domeEsc.rndEnable ? 'true' : 'false');
-    if (domeEsc.rndSpeedPct !== undefined) p.set('domeEscRndSpeedPct', domeEsc.rndSpeedPct);
-    if (domeEsc.rndPauseMin !== undefined) p.set('domeEscRndPauseMin', domeEsc.rndPauseMin);
-    if (domeEsc.rndPauseMax !== undefined) p.set('domeEscRndPauseMax', domeEsc.rndPauseMax);
-    if (domeEsc.rndMoveMs !== undefined) p.set('domeEscRndMoveMs', domeEsc.rndMoveMs);
-    if (protoR2link.wifiPeerIp !== undefined) p.set('protoR2linkWifiPeerIp', protoR2link.wifiPeerIp);
-
-    if (sys.logLevel !== undefined) p.set('logLevel', sys.logLevel);
-
-    // The Sound Component Member: which module is actually fitted. The saved
-    // choice, not `activeMember`, which is the one the droid booted with and is
-    // not a setting anybody chose (src/web/api_config.cpp).
-    if (components.audio?.member !== undefined) p.set('soundMember', components.audio.member);
-
-    // The Droid Build (ADR 0047). Each half goes as a PAIR, because a variant
-    // means nothing against another design and the controller refuses a request
-    // that sends one without the other. The Fitted Parts go as the id list the
-    // write side takes; an empty one is a real answer - a droid with nothing
-    // fitted yet - and is sent as such.
-    const build = cfg?.droidBuild || {};
-    if (build.domeDesign !== undefined && build.domeVariant !== undefined) {
-      p.set('domeDesign', build.domeDesign);
-      p.set('domeVariant', build.domeVariant);
-    }
-    if (build.bodyDesign !== undefined && build.bodyVariant !== undefined) {
-      p.set('bodyDesign', build.bodyDesign);
-      p.set('bodyVariant', build.bodyVariant);
-    }
-    if (Array.isArray(build.fitted)) p.set('fittedParts', build.fitted.join(','));
-
-    // Guided Setup's record travels with the backup like any other config key
-    // (operator, 2026-09-17 on #371). A configured backup restored without it
-    // would read as "never asked" for every category, which is the exact untruth
-    // the record exists to prevent - and a pre-Setup backup restoring a droid
-    // that guided Setup then offers itself to is honest rather than a surprise.
-    // No exclusion list, and one rule decides it: Setup appears when the droid is
-    // not set up.
-    const guided = cfg?.guidedSetup || {};
-    if (guided.run !== undefined) p.set('guidedSetupRun', guided.run);
-    if (Array.isArray(guided.visited)) {
-      // A run that showed nothing is a real answer and is written as the
-      // sentinel; an empty form value would not survive the round trip as one.
-      p.set('guidedSetupVisited', guided.visited.length > 0 ? guided.visited.join(',') : '-');
-    }
-    // Whether the ended run's summary was dismissed (#371) is the same record.
-    if (typeof guided.summaryDone === 'boolean') p.set('guidedSetupSummaryDone', String(guided.summaryDone));
-
-    return p;
   };
 
   // ---- RESTORE: audio tracks (one POST per key) ----
@@ -581,27 +443,14 @@
     const chkMoodMap = document.getElementById('restore-chk-mood-map');
 
     if (chkConfig?.checked && parsedBackup.config) {
-      let saved = false;
       try {
-        // One save, as it always was: the Outputs' settings go through
-        // data/outputs.js with the rest of the config riding along.
-        const { outputs } = await window.PAOutputs.load({ rows: false });
-        await window.PAOutputs.saveAll(outputChanges(parsedBackup.config, outputs), {
-          alongside: configToFormParams(parsedBackup.config, outputs),
-          timeoutMs: 10000,
-        });
-        saved = true;
-      } catch (err) {
-        lines.push(`Core config: FAILED — ${window.PAApi.messageFor(err)}`);
-      }
-      if (saved) {
-        // "restored" only when all of it landed: a file from before backups
-        // carried the Outputs' rows has no centre, calibration or Part map.
-        const rows = parsedBackup.servo_outputs?.outputs;
-        const gaps = Array.isArray(rows)
-          ? await restoreServoOutputs(rows)
-          : ['no centre, calibration or Part map in this file'];
+        // "restored" only when all of it landed.
+        const gaps = await restoreConfiguration(parsedBackup);
         lines.push(gaps.length === 0 ? 'Core config: restored' : `Core config: partial — ${gaps.join(', ')}`);
+      } catch (err) {
+        // A refusal about an Output's row is worded by the module that knows
+        // the Outputs; anything else is said as the droid said it.
+        lines.push(`Core config: FAILED — ${window.PAApi.messageFor(window.PAOutputs.sayRefusal(err))}`);
       }
     }
 

@@ -104,11 +104,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/servo_output_row.h:220 - uint8_t led_count, on the addressed Servo Output row
-  - include/board_outputs.h:100 - ledCountField, the POST /api/config field per Output
-  - src/web/api_config_apply.cpp:855 - paramUint8 parsing that Output's ledCountField
-  - src/web/api_config_apply.cpp:880 - SERVO_FIELD_LED_COUNT recorded on the addressed edit
-  - include/config_store.h:517 - bool configSaveServoOutputs (Commit Step)
+  - include/servo_output_row.h:222 - uint8_t led_count, on the addressed Servo Output row
+  - include/board_outputs.h:95 - lightCapable, which Outputs a light (and its count) may go on
+  - src/web/api_config_apply.cpp:711 - the row door's ledCount, checked 1..255 on a light-capable Output (ADR 0068)
+  - src/web/api_config_apply.cpp:723 - SERVO_FIELD_LED_COUNT recorded on the addressed edit
+  - include/config_store.h:522 - bool configSaveServoOutputs (Commit Step)
   executor_or_core: configApply
   missing_metadata: []
   notes: 'No NVS key of its own since #413: a light''s settings live on the Servo

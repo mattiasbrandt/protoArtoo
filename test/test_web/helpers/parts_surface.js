@@ -20,7 +20,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./mini_dom.js";
-import { servoRow, freshOutputs, withParts, configOutputs, applyOutputSave, statusFrame } from "./fake_droid.js";
+import { servoRow, freshOutputs, withParts, describe, applyRowSave, statusFrame } from "./fake_droid.js";
 
 // The droid's Outputs are described once, in helpers/fake_droid.js (#415).
 export { freshOutputs, withParts, statusFrame };
@@ -69,16 +69,16 @@ const IDENTITY = {
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// `components` replaces the GET /api/config Output entries configOutputs()
-// derives from the rows (every Output wired, carrying an MG996R), for a test
-// that needs an Output unwired or carrying the strip.
+// `say` changes what the rows hold, by address, in fake_droid's describe()
+// words (every Output is otherwise wired, carrying an MG996R), for a test that
+// needs an Output unwired or carrying the strip.
 // `decoys` is markup placed in the document before the surface mounts: a test
 // that asserts something is gone writes a decoy where it used to be and
 // checks nothing reads or writes it (test/test_web/README.md).
 // `frame` replaces the whole status the droid answers with, for a test about a
 // frame that is missing something; otherwise the droid answers a whole frame
 // with `estop` set.
-const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, frame = null, components = null, decoys = [] } = {}) => {
+const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, frame = null, say = null, decoys = [] } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -90,9 +90,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
 
   const env = {
     document,
-    outputs,
-    // What the config says about each Output, held so a save lands on it.
-    components: components || configOutputs(outputs),
+    outputs: say ? describe(outputs, say) : outputs,
     status: frame || statusFrame({ estop }),
     posts: [],       // every POST: { path, form }
     gets: new Map(), // GET path -> count
@@ -171,10 +169,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
         // reads it once per page and the body view's "add it to the build" act
         // writes it back through POST /api/config.
         if (path === "/api/config") {
-          return {
-            ok: true,
-            data: { droidBuild: structuredClone(env.droidBuild), components: structuredClone(env.components) },
-          };
+          return { ok: true, data: { droidBuild: structuredClone(env.droidBuild) } };
         }
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
         throw new Error(`unexpected request ${path}`);
@@ -262,11 +257,6 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
             row.closeUs = wasOpen;
             return { ok: true, status: 200, data: {} };
           }
-          // An Output's own settings, under the fields its entry named; the
-          // answer is the config the droid now holds.
-          if (applyOutputSave(env.components, form)) {
-            return { ok: true, status: 200, data: { droidBuild: structuredClone(env.droidBuild), components: structuredClone(env.components) } };
-          }
           // The Fitted Parts go whole, because they are a set and there is no
           // partial form of one (data/droid_build.js).
           if (typeof form.fittedParts === "string") {
@@ -284,6 +274,20 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
         // A dome panel press: the droid relays it over the dome link and
         // answers at once. Nothing comes back about where the panel is.
         if (path === "/api/dome/cmd") return { ok: true, status: 200, data: { ok: true } };
+        throw new Error(`unexpected POST ${path}`);
+      },
+      // An Output's own settings go as its row through POST /api/config's
+      // `outputs` (ADR 0068); the answer is the config the droid now holds.
+      postJson: async (path, json) => {
+        env.posts.push({ path, json: structuredClone(json) });
+        if (path === "/api/config" && applyRowSave(env.outputs, json)) {
+          if (env.configFails) {
+            const error = env.configFails;
+            env.configFails = null;
+            throw error;
+          }
+          return { ok: true, status: 200, data: { droidBuild: structuredClone(env.droidBuild) } };
+        }
         throw new Error(`unexpected POST ${path}`);
       },
       estopPostForm: async (path) => {
@@ -444,7 +448,10 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // on the path alone would count a hold or a release as a nudge.
   env.nudges = () =>
     env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "nudge");
-  env.moves = () => env.posts.filter((post) => post.path === "/api/config");
+  // The acts POST /api/config takes as a form - a move, and the Fitted Parts -
+  // and not an Output's settings, which go as a row.
+  env.moves = () => env.posts.filter((post) => post.path === "/api/config" && post.form !== undefined);
+  env.rowSaves = () => env.posts.filter((post) => post.path === "/api/config" && post.json !== undefined);
   // The builder picks the Part and presses Find by moving.
   env.pressFind = (id) => {
     env.findPick().value = id;
@@ -475,8 +482,8 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   };
   env.holds = () => env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "hold");
   env.releases = () => env.posts.filter((post) => post.path === "/api/servo" && post.form.action === "release");
-  env.captures = () => env.posts.filter((post) => post.path === "/api/config" && post.form.captureOutput);
-  env.reverses = () => env.posts.filter((post) => post.path === "/api/config" && post.form.reverseOutput);
+  env.captures = () => env.posts.filter((post) => post.path === "/api/config" && post.form?.captureOutput);
+  env.reverses = () => env.posts.filter((post) => post.path === "/api/config" && post.form?.reverseOutput);
   // Back to centre (#365): the act above the rows, its one line of answer, and
   // the requests it made. One request per press and no more - the pace is the
   // controller's, so a page that sent a second one would be pacing.

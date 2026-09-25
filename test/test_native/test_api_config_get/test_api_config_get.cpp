@@ -20,6 +20,7 @@
 #include "config_cache.h"
 #include "config_nvsio.h"
 #include "config_serializer.h"
+#include "board_output_enabled.h"
 #include "console_config_fields.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
@@ -141,49 +142,64 @@ void test_the_booted_toggles_and_receiver_differ_from_a_staged_save() {
     TEST_ASSERT_EQUAL_STRING("standard_pwm", doc["rc"]["activeInputMode"] | "");
 }
 
-// The five fixed field sets are gone from the schema, not from the browser:
-// data/servo.js still reads arm1OpenUs and its nine siblings, and
-// components.arm1.type beside them, until the C1 wave rebuilds those pages onto
-// the rows. The handler answers them FROM the rows, so what a surface renders
-// is what the droid will drive to - and there is still exactly one place the
-// number is stored (#345, ADR 0041).
-void test_the_old_field_names_are_answered_from_the_rows() {
+// An Output is read in one place, its row (ADR 0068): every Output this
+// controller drives is on GET /api/servo/outputs with what the board prints
+// beside it, its stored id, its OWN wired tick, whether a light can go on it,
+// and every setting a builder saves - and none of it is on GET /api/config. An
+// Output left off the rows is one no page can draw; a tick read from a
+// neighbour is a wire reported live that is switched off.
+void test_every_output_is_read_whole_from_its_row_and_not_from_the_config() {
     Preferences prefs;
     prefs.begin("proto", false);
     prefs.clear();
     ServoOutputRepairReport report = {};
     configLoadServoOutputs(prefs, &report);
     prefs.end();
+    ConfigSnapshot snap = readSnapshot();
+    snap.system.enable_aux1 = false;
+    snap.system.enable_aux2 = true;
+    configCacheApply(snap);
 
-    // Move one row, addressed, the only way an endpoint can change now.
-    ServoOutputEdit edit = {};
-    edit.driver = SERVO_DRIVER_LEDC;
-    edit.channel = LEDC_CH_ARM1;
-    edit.fields = SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE | SERVO_FIELD_COMPONENT;
-    edit.open_us = 1850;
-    edit.close_us = 1150;
-    edit.component = SERVO_COMP_MG996R;
-    configCacheApplyServoOutputEdits(&edit, 1);
+    WebRequestTestBackend rowsBackend;
+    WebRequest rowsReq(&rowsBackend);
+    handleServoOutputsGet(rowsReq);
+    TEST_ASSERT_EQUAL_INT(200, rowsBackend.sentCode);
+    JsonDocument rows;
+    TEST_ASSERT_FALSE(deserializeJson(rows, rowsBackend.sentBody));
 
-    WebRequestTestBackend backend;
-    WebRequest req(&backend);
-    handleConfigGet(req);
+    size_t lightCapable = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, output.channel);
+        JsonObject row;
+        for (JsonObject each : rows["outputs"].as<JsonArray>()) {
+            if (strcmp(each["address"] | "", address) == 0) row = each;
+        }
+        TEST_ASSERT_FALSE_MESSAGE(row.isNull(), address);
+        TEST_ASSERT_EQUAL_STRING(output.id, row["id"] | "");
+        TEST_ASSERT_TRUE(strlen(row["name"] | "") > 0);
+        TEST_ASSERT_TRUE(row["switchable"] | false);
+        TEST_ASSERT_EQUAL(snap.system.*BOARD_OUTPUT_ENABLED[&output - BOARD_OUTPUTS].enabled,
+                          row["wired"].as<bool>());
+        TEST_ASSERT_EQUAL(output.lightCapable, row["lightCapable"] | false);
+        TEST_ASSERT_EQUAL(output.lightCapable, row["ledCount"].is<unsigned>());
+        lightCapable += output.lightCapable ? 1 : 0;
+        TEST_ASSERT_TRUE(row["throwMs"].is<unsigned>());
+        TEST_ASSERT_TRUE(row["accelMs"].is<unsigned>());
+        TEST_ASSERT_TRUE(row["ease"].is<const char*>());
+        TEST_ASSERT_TRUE(row["boot"].is<const char*>());
+    }
+    TEST_ASSERT_EQUAL_UINT(3u, lightCapable);
 
-    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    JsonDocument doc;
-    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
-
-    TEST_ASSERT_EQUAL_UINT(1850, doc["arm1OpenUs"].as<unsigned>());
-    TEST_ASSERT_EQUAL_UINT(1150, doc["arm1CloseUs"].as<unsigned>());
-    TEST_ASSERT_EQUAL_STRING("mg996r", doc["components"]["arm1"]["type"] | "");
-
-    // Every set the default table addresses is answered, not just the one that
-    // was edited - a page that asks for all ten still gets all ten.
-    TEST_ASSERT_FALSE(doc["arm2OpenUs"].isNull());
-    TEST_ASSERT_FALSE(doc["aux1OpenUs"].isNull());
-    TEST_ASSERT_FALSE(doc["aux2CloseUs"].isNull());
-    TEST_ASSERT_FALSE(doc["aux3CloseUs"].isNull());
-    TEST_ASSERT_EQUAL_STRING("none", doc["components"]["aux3"]["type"] | "");
+    WebRequestTestBackend configBackend;
+    WebRequest configReq(&configBackend);
+    handleConfigGet(configReq);
+    JsonDocument config;
+    TEST_ASSERT_FALSE(deserializeJson(config, configBackend.sentBody));
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        TEST_ASSERT_TRUE_MESSAGE(config["components"][output.id].isNull(), output.id);
+    }
+    TEST_ASSERT_TRUE(config["arm1OpenUs"].isNull());
 }
 
 void test_worst_case_config_fits_the_response_buffer() {
@@ -346,10 +362,11 @@ void test_the_worst_case_config_still_fits_the_response_buffer() {
     handleConfigGet(req);
 
     // A 500 here is the overflow branch, which is what this test exists to
-    // catch before a builder meets it as a blank config page.
+    // catch before a builder meets it as a blank config page. The payload was
+    // past the old 3072 B static buffer until #423 took the Outputs off it
+    // (ADR 0068): 2530 B measured, the worst case a restore posts back.
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    // Past 3072 on purpose: the payload the old static buffer could not carry.
-    TEST_ASSERT_GREATER_THAN_UINT32(3072u, (uint32_t)strlen(backend.sentBody));
+    TEST_ASSERT_GREATER_THAN_UINT32(2048u, (uint32_t)strlen(backend.sentBody));
     TEST_ASSERT_LESS_THAN_UINT32(6144u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
@@ -357,9 +374,9 @@ void test_the_worst_case_config_still_fits_the_response_buffer() {
                              (uint32_t)doc["droidBuild"]["fitted"].as<JsonArray>().size());
     TEST_ASSERT_EQUAL_UINT32((uint32_t)GUIDED_SETUP_STEP_MAX,
                              (uint32_t)doc["guidedSetup"]["visited"].as<JsonArray>().size());
-    TEST_ASSERT_EQUAL_UINT32((uint32_t)kComponentToggleFieldCount,
+    // Every toggle but an Output's: an Output's tick is on its row.
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)(kComponentToggleFieldCount - BOARD_OUTPUT_COUNT),
                              (uint32_t)doc["activeToggles"].as<JsonArray>().size());
-    TEST_ASSERT_EQUAL_STRING("mg996r", doc["components"]["aux3"]["type"] | "");
 }
 
 // --- GET /api/servo/outputs (ADR 0050, #347) --------------------------------
@@ -643,7 +660,7 @@ int main() {
     RUN_TEST(test_get_returns_config_json);
     RUN_TEST(test_the_booted_toggles_and_receiver_differ_from_a_staged_save);
     RUN_TEST(test_pending_apply_is_false_when_staged_matches_active);
-    RUN_TEST(test_the_old_field_names_are_answered_from_the_rows);
+    RUN_TEST(test_every_output_is_read_whole_from_its_row_and_not_from_the_config);
     RUN_TEST(test_pending_apply_is_true_when_staged_differs_from_active);
     RUN_TEST(test_worst_case_config_fits_the_response_buffer);
     RUN_TEST(test_the_droid_build_reaches_the_config_payload);

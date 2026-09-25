@@ -1,0 +1,338 @@
+{
+  "schema": 1,
+  "generated": "2026-09-25T09:00:00.000Z",
+  "fw_version": "v1.9.0+epic/operator-experience",
+  "config": {
+    "drive": {
+      "speedLimitMax": 300,
+      "speedPresetSlow": 150,
+      "speedPresetNormal": 300,
+      "speedPresetTurbo": 600,
+      "speedPreset": "normal",
+      "webDriveTimeoutMs": 500,
+      "stationary": false
+    },
+    "rc": {
+      "inputMode": "dual_sbus",
+      "sbusTimeoutMs": 300,
+      "member": "hotrc_ds650",
+      "sbus": {
+        "recvCh2": false
+      },
+      "activeInputMode": "dual_sbus"
+    },
+    "components": {
+      "arm1": {
+        "enabled": true,
+        "label": "ARM1",
+        "address": "ledc:0",
+        "enabledField": "enableArm1",
+        "typeField": "arm1Type",
+        "throwField": "arm1ThrowMs",
+        "accelField": "arm1AccelMs",
+        "easeField": "arm1Ease",
+        "bootField": "arm1Boot",
+        "type": "mg996r",
+        "throwMs": 800,
+        "accelMs": 150,
+        "ease": "soft",
+        "boot": "home-hold"
+      },
+      "arm2": {
+        "enabled": false,
+        "label": "ARM2",
+        "address": "ledc:1",
+        "enabledField": "enableArm2",
+        "typeField": "arm2Type",
+        "throwField": "arm2ThrowMs",
+        "accelField": "arm2AccelMs",
+        "easeField": "arm2Ease",
+        "bootField": "arm2Boot",
+        "type": "mg90s",
+        "throwMs": 1000,
+        "accelMs": 250,
+        "ease": "none",
+        "boot": "limp"
+      },
+      "aux1": {
+        "enabled": true,
+        "label": "ARM3",
+        "address": "ledc:3",
+        "lightCapable": true,
+        "enabledField": "enableAux1",
+        "typeField": "aux1Type",
+        "ledCountField": "aux1LedCount",
+        "throwField": "aux1ThrowMs",
+        "accelField": "aux1AccelMs",
+        "easeField": "aux1Ease",
+        "bootField": "aux1Boot",
+        "type": "rgb",
+        "ledCount": 24,
+        "throwMs": 1000,
+        "accelMs": 250,
+        "ease": "none",
+        "boot": "limp"
+      },
+      "aux2": {
+        "enabled": true,
+        "label": "ARM4",
+        "address": "ledc:4",
+        "lightCapable": true,
+        "enabledField": "enableAux2",
+        "typeField": "aux2Type",
+        "ledCountField": "aux2LedCount",
+        "throwField": "aux2ThrowMs",
+        "accelField": "aux2AccelMs",
+        "easeField": "aux2Ease",
+        "bootField": "aux2Boot",
+        "type": "mg90s",
+        "ledCount": 1,
+        "throwMs": 1200,
+        "accelMs": 300,
+        "ease": "overshoot",
+        "boot": "home-release"
+      },
+      "aux3": {
+        "enabled": false,
+        "label": "ARM5",
+        "address": "ledc:5",
+        "lightCapable": true,
+        "enabledField": "enableAux3",
+        "typeField": "aux3Type",
+        "ledCountField": "aux3LedCount",
+        "throwField": "aux3ThrowMs",
+        "accelField": "aux3AccelMs",
+        "easeField": "aux3Ease",
+        "bootField": "aux3Boot",
+        "type": "none",
+        "ledCount": 8,
+        "throwMs": 1000,
+        "accelMs": 250,
+        "ease": "none",
+        "boot": "limp"
+      },
+      "domeEsc": {
+        "enabled": true,
+        "label": "DOME"
+      },
+      "rcCh1": {
+        "enabled": true,
+        "label": "CH1"
+      },
+      "rcCh2": {
+        "enabled": true,
+        "label": "CH2"
+      },
+      "rcCh3": {
+        "enabled": true,
+        "label": "CH3"
+      },
+      "rcCh4": {
+        "enabled": true,
+        "label": "CH4"
+      },
+      "rcCh5": {
+        "enabled": false,
+        "label": "CH5"
+      },
+      "rcCh6": {
+        "enabled": false,
+        "label": "CH6"
+      },
+      "drive": {
+        "enabled": true,
+        "label": "S1"
+      },
+      "audio": {
+        "enabled": true,
+        "label": "S2",
+        "member": "dy_sv5w",
+        "activeMember": "dy_sv5w"
+      },
+      "protoR2link": {
+        "enabled": false,
+        "label": "S3"
+      }
+    },
+    "domeEsc": {
+      "neutralUs": 1500,
+      "minPulseUs": 1000,
+      "maxPulseUs": 2000,
+      "speedLimitPct": 100,
+      "rndEnable": false,
+      "rndSpeedPct": 30,
+      "rndPauseMin": 5,
+      "rndPauseMax": 20,
+      "rndMoveMs": 1500
+    },
+    "protoR2link": {
+      "wifiPeerIp": ""
+    },
+    "system": {
+      "logLevel": 2
+    },
+    "wifi": {
+      "provisioned": true,
+      "mode": "client",
+      "staSsid": "bench-net",
+      "staPasswordSet": true,
+      "apSsid": "artoo",
+      "apPasswordSet": true,
+      "pendingApply": false,
+      "networkRecovery": false
+    },
+    "arm1OpenUs": 1800,
+    "arm1CloseUs": 1200,
+    "arm2OpenUs": 600,
+    "arm2CloseUs": 2400,
+    "aux1OpenUs": 2000,
+    "aux1CloseUs": 1000,
+    "aux2OpenUs": 2300,
+    "aux2CloseUs": 700,
+    "aux3OpenUs": 2000,
+    "aux3CloseUs": 1000,
+    "activeToggles": [
+      "arm1",
+      "aux1",
+      "aux2",
+      "domeEsc",
+      "rcCh1",
+      "rcCh2",
+      "rcCh3",
+      "rcCh4",
+      "drive",
+      "audio"
+    ],
+    "droidBuild": {
+      "domeDesign": "mk4",
+      "domeVariant": "complex",
+      "bodyDesign": "mk4",
+      "bodyVariant": "complex",
+      "fitted": [
+        "doorFL",
+        "utilUp",
+        "gripArm"
+      ]
+    },
+    "guidedSetup": {
+      "run": "completed",
+      "recorded": true,
+      "summaryDone": true,
+      "visited": [
+        "drive",
+        "sound"
+      ]
+    }
+  },
+  "servo_outputs": {
+    "outputs": [
+      {
+        "address": "ledc:0",
+        "name": "ARM1",
+        "parts": [
+          "doorFL",
+          "utilUp"
+        ],
+        "bandLoUs": 1000,
+        "bandHiUs": 2000,
+        "component": "mg996r",
+        "openUs": 1800,
+        "centreUs": 1550,
+        "closeUs": 1200,
+        "calibrated": true,
+        "narrowedFrom": null,
+        "commandedUs": null,
+        "targetUs": null,
+        "held": false,
+        "limp": "off",
+        "nudgesDone": 0
+      },
+      {
+        "address": "ledc:1",
+        "name": "ARM2",
+        "parts": [],
+        "bandLoUs": 500,
+        "bandHiUs": 2500,
+        "component": "mg90s",
+        "openUs": 600,
+        "centreUs": 1500,
+        "closeUs": 2400,
+        "calibrated": false,
+        "narrowedFrom": null,
+        "commandedUs": null,
+        "targetUs": null,
+        "held": false,
+        "limp": "off",
+        "nudgesDone": 0
+      },
+      {
+        "address": "ledc:3",
+        "name": "ARM3",
+        "parts": [],
+        "bandLoUs": 1000,
+        "bandHiUs": 2000,
+        "component": "rgb",
+        "openUs": 2000,
+        "centreUs": 1500,
+        "closeUs": 1000,
+        "calibrated": false,
+        "narrowedFrom": null,
+        "commandedUs": null,
+        "targetUs": null,
+        "held": false,
+        "limp": "off",
+        "nudgesDone": 0
+      },
+      {
+        "address": "ledc:4",
+        "name": "ARM4",
+        "parts": [
+          "gripArm"
+        ],
+        "bandLoUs": 500,
+        "bandHiUs": 2500,
+        "component": "mg90s",
+        "openUs": 2300,
+        "centreUs": 1400,
+        "closeUs": 700,
+        "calibrated": true,
+        "narrowedFrom": null,
+        "commandedUs": null,
+        "targetUs": null,
+        "held": false,
+        "limp": "off",
+        "nudgesDone": 0
+      },
+      {
+        "address": "ledc:5",
+        "name": "ARM5",
+        "parts": [],
+        "bandLoUs": 1000,
+        "bandHiUs": 2000,
+        "component": "none",
+        "openUs": 2000,
+        "centreUs": 1500,
+        "closeUs": 1000,
+        "calibrated": false,
+        "narrowedFrom": null,
+        "commandedUs": null,
+        "targetUs": null,
+        "held": false,
+        "limp": "off",
+        "nudgesDone": 0
+      }
+    ]
+  },
+  "rc_map": {
+    "mode": "dual_sbus",
+    "map": [],
+    "capacity": {
+      "total": 14,
+      "used": 0
+    }
+  },
+  "audio_tracks": {
+    "volume": 20
+  },
+  "audio_mood_map": {}
+}
