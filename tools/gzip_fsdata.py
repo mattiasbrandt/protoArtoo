@@ -335,8 +335,21 @@ def main():
     set_count = 0
     src_bytes = 0
     out_bytes = 0
+    # Staged in sorted order, because the order files are created in the stage
+    # is the order they are written into the image, and that moves the block
+    # count. The builder (littlefs-python, in the platform's build_fs_image)
+    # walks the stage with Path.rglob, which lists a directory in readdir
+    # order, and btrfs - like a small ext4 directory - returns entries in
+    # creation order. Unsorted, os.walk hands back data/ in ITS readdir order,
+    # which is whatever order git happened to create those files in in this
+    # worktree: the same commit imaged as 112 blocks in one worktree and 114 in
+    # another. Measured on one stage written in 300 random orders: 112 blocks
+    # 297 times, 113 twice, 114 once (#429). Sorted, the count is a function of
+    # the commit alone.
     for walk_src, in_set in roots:
-        for root, _dirs, files in os.walk(walk_src):
+        for root, dirs, files in os.walk(walk_src):
+            dirs.sort()
+            files.sort()
             rel = os.path.relpath(root, walk_src)
             # The set directories are staged by their own pass, never as part of
             # the common tree -- otherwise every build would carry every set.
