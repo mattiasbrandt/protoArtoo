@@ -777,8 +777,15 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 584
 // the snprintf/_dtoa_r tail). onCliCommand walks 7920 against the recorded
 // 7904; every other task walks within its constant. The rule still lands on
 // 10752, so the allocation does not move.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8384;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8384 -> 10480 -> 10752
+// Re-derived 2026-09-25 (#425): Console 8384 -> 8464. Every Apply Core refusal
+// now carries its field, reason and accepts (an 81 B ApplyRefusal), and the
+// AudioTracksApplyResult on consoleWriteAudioTracksField's frame (1248 B) holds
+// one. Same deepest route as #418's; onCliCommand walks 8000 against the
+// recorded 7920, the stitched frames are unchanged, and every other task walks
+// within its constant. The rule still lands on 10752, so the allocation does
+// not move.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8464;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 10752;  // rule: 8464 -> 10580 -> 10752
 // Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
 // lit wire on its own (fa8eed74, e277d325), and the chain carries that through
 // the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.
@@ -876,8 +883,16 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4432 -> 554
 // Sequence Coordinator where it used to queue a ServoCommand. The rule moves the
 // stack one step, 9216 -> 9728, which is heap on this board; declining it on
 // #248's reason (keep 9216, which still covers the chain) is the alternative.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7376;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // rule: 7376 -> 9220 -> 9728
+// Re-derived 2026-09-25 (#425): 7376 -> 7456. Every Apply Core refusal now
+// carries its field, reason and accepts (an 81 B ApplyRefusal), and the
+// AudioTracksApplyResult on consoleWriteAudioTracksField's frame (1248 B) holds
+// one. The deepest route is now consoleWriteAudioTracksField ->
+// audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> the
+// holder check's log line -> the snprintf/_dtoa_r tail; onCliCommand walks
+// 7056 against the recorded 6976, and the two stitched frames are unchanged.
+// The rule still lands on 9728, so the allocation does not move.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7456;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // rule: 7456 -> 9320 -> 9728
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
 // holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
