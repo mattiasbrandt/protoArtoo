@@ -13,23 +13,17 @@ deepest one.
 
 WHAT IT MEASURES
 ----------------
-Two independent sources, both reported so they can be compared:
+The linked image (what actually ships). Every function's frame comes from its
+prologue's stack-pointer adjustment -- ``entry a1, N`` on Xtensa, ``addi
+sp,sp,-N`` on RISC-V -- and the call graph from its direct call instructions.
+This covers framework, newlib and ROM code as well, which is where the
+``printf`` chain lives.
 
-1. ``-fstack-usage`` (the compiler's declaration). Emitted for project code
-   only, by building with the flag in ``PLATFORMIO_BUILD_SRC_FLAGS`` -- see
-   USAGE below. Written by GCC next to each object file as ``<name>.su``.
-   This covers ``src/`` and nothing else.
-
-2. The linked image (what actually ships). Every function's frame comes from
-   its prologue's stack-pointer adjustment, and the call graph from its
-   direct call instructions. This covers framework, newlib and ROM code as
-   well, which is where the ``printf`` chain lives and which ``-fstack-usage``
-   cannot see at all.
-
-Source 2 is the one the worst-case chain is computed from, because it is the
-only one that reaches libc. Source 1 is printed beside it as the compiler's
-declaration for the same functions; a disagreement is reported, never netted
-out.
+No frame comes from ``-fstack-usage``. When the build left ``.su`` files
+(GCC writes them next to each object file when ``-fstack-usage`` is in
+``PLATFORMIO_BUILD_SRC_FLAGS``, for ``src/`` only), the forty largest records
+are printed after the chains as the compiler's own declaration, for reading by
+eye. Nothing compares them with the walk, and the walk does not need them.
 
 WHERE A FUNCTION BODY ENDS
 --------------------------
@@ -102,6 +96,34 @@ the one before this check existed.
 Misframed decodes are counted in the coverage report, and any that decoded as a
 direct call onto a real entry -- the fabricated edges -- are listed by name.
 
+WHICH BYTES ARE CODE AT ALL
+---------------------------
+Xtensa only. The linker keeps an instruction/literal property table,
+``.xt.prop``, and ``objdump -d`` decides from it whether a stretch of bytes is
+code or literal data. binutils' ``xtensa_find_table_entry()``
+(opcodes/xtensa-dis.c) answers for an address with the record containing it,
+OR THE NEXT RECORD AFTER IT, so an address in a gap between records takes the
+next record's flags; when that record is a literal, the bytes print as literal
+words. The artoo-esp32 image keeps only part of its per-object tables -- the
+map lists a thousand per-object ``.xt.prop`` sections among the discarded
+input sections -- and at 0e005614 objdump printed 2,563 of its 7,127 function
+bodies wholly as data: ESP-IDF's lwIP, wpa_supplicant and mDNS, the closed
+WiFi libraries, a few ``src/`` functions (#430). Each such body had a frame of
+0 and no calls, so every chain through one was cut there.
+
+``Image._recover_data_bodies()`` disassembles a copy of the image with
+``.xt.prop`` and ``.xt.lit`` removed, where objdump has no table to consult and
+decodes every byte as an instruction, and takes from that listing ONLY the
+bodies the product listing printed as data. Stripping the tables for the whole
+image would be wrong: where they mark data inside a body correctly, the
+stripped listing decodes it as instructions, and 24 bodies that decode
+normally would misframe and lose real calls. A recovered body goes through the
+symbol-size bound and the framing fixpoint below like any other body. The
+coverage report counts the bodies recovered and the ones still printed as
+data.
+
+The ESP32-P4 image carries no property table and decodes whole.
+
 WHAT IT CANNOT SEE, AND SAYS SO
 -------------------------------
 - Indirect calls (``callx*`` on Xtensa through a register that was not loaded
@@ -131,8 +153,10 @@ WHAT IT CANNOT SEE, AND SAYS SO
 
 USAGE
 -----
-Build the environment with the flag first (no platformio.ini edit needed --
-PlatformIO exposes build_src_flags as an environment variable)::
+Build the environment (``make build BUILD_ENV=firebeetle2_profiler``). To have
+the compiler's ``.su`` records printed beside the walk as well, build with the
+flag -- no platformio.ini edit needed, PlatformIO exposes build_src_flags as an
+environment variable::
 
     export PATH="$HOME/.platformio/penv/bin:$PATH"
     PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage" \
@@ -161,6 +185,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -294,19 +319,28 @@ class Image:
         self.misframed_funcs: set[str] = set()
         self.unvalidated_bodies: set[str] = set()
         self.suppressed_calls: list[tuple[str, int, int, str | None]] = []
+        # Entries of the bodies the listing printed with no instruction at all
+        # (see `_read_body()`), and of the ones `_recover_data_bodies()` then
+        # read from a listing that decodes them. Entries rather than names: a
+        # static function's name is not unique in the image.
+        self.data_bodies: set[int] = set()
+        self.recovered_bodies: set[int] = set()
         # Data objects by name, read on the first `table_entries()` call only:
         # a walk that stitches no table does not pay for a second symbol read.
         self._objdump = objdump
         self._objects: dict[str, list[tuple[int, int]]] | None = None
         self._disassemble(objdump)
+        if self.arch == "xtensa" and self.data_bodies:
+            self._recover_data_bodies(objdump)
         self._starts = sorted(self.funcs)
         self._drop_internal_branches()
         for fn in self.funcs.values():
             if fn.decoded == 0:
                 # objdump emitted this body as raw words rather than
-                # instructions. A frame of 0 here means "not read", not "leaf",
-                # and treating the two alike would silently drop a whole
-                # subtree. See the Xtensa .xt.prop note in the module docstring.
+                # instructions, even after `_recover_data_bodies()`. A frame of
+                # 0 here means "not read", not "leaf", and treating the two
+                # alike would silently drop a whole subtree. See "WHICH BYTES
+                # ARE CODE AT ALL" in the module docstring.
                 fn.frame_kind = "undecoded"
 
     def _drop_internal_branches(self) -> None:
@@ -493,26 +527,30 @@ class Image:
 
     def adopt_archive_bodies(self, names: list[str], archives: "ArchiveBodies",
                              pointer_tables: dict[str, str] | None = None) -> list[str]:
-        """Walk undecodable bodies from the archive members they were linked from.
+        """Walk bodies the product listing printed as data from their archive members.
 
         objdump emits some Xtensa bodies in the linked image as data (see the
-        module docstring), so their frame reads 0 and their calls are invisible:
-        a closed library's function is the usual case. The archive member the
-        linker took it from still carries what the image lost - the `entry a1, N`
-        that is its frame, and relocations naming everything its literal pool
-        loads. For each named function, and every undecoded function reached
-        from it that way, this takes the frame from the member and makes every
-        function the member's relocations name a callee.
+        module docstring). `_recover_data_bodies()` decodes nearly all of them
+        from a stripped copy, but a decode only resolves a call whose target a
+        literal names: a closed library calling its OS adapter through a
+        pointer the program sets at run time is still an indirect call there.
+        The archive member the linker took the body from records more - the
+        `entry a1, N` that is its frame, and relocations naming everything its
+        literal pool loads, table pointers included. For each named function,
+        and every function reached from it that way whose body the product
+        listing also printed as data, this takes the frame from the member and
+        makes every function the member's relocations name a callee.
 
         A relocation naming a data object stands for a call through a table of
         pointers: every function entry that object holds in the image becomes a
         callee. `pointer_tables` maps a pointer the program sets at run time
         (so the image holds no address in it) to the table it is set to point
         at. Both over-approximate - every row, whether or not that path calls
-        it - which is the safe direction for a floor.
+        it, and every function a relocation names, whether it is called or only
+        has its address taken - which is the safe direction for a floor.
 
         Returns the names adopted. Raises Fatal when a named function is absent,
-        decodes normally, or has no archive body.
+        was decoded by the product listing, or has no archive body.
         """
         pointer_tables = pointer_tables or {}
         adopted: list[str] = []
@@ -524,9 +562,9 @@ class Image:
             for fn in found:
                 if fn.frame_kind == "archive":
                     continue  # already adopted, through another recipe arm
-                if fn.frame_kind != "undecoded":
-                    raise Fatal(f"archive body {name}: the image decodes it ({fn.frame_kind}); "
-                                "walk the image instead")
+                if not self._printed_as_data(fn):
+                    raise Fatal(f"archive body {name}: the product listing decodes it "
+                                f"({fn.frame_kind}); walk the image instead")
                 if archives.body(fn.name) is None:
                     raise Fatal(f"archive body {name}: no archive member defines it")
                 queue.append(fn)
@@ -554,12 +592,66 @@ class Image:
                             targets = []
                 for target in targets:
                     fn.calls.append((target.addr, "archive reloc", None))
-                    if target.frame_kind == "undecoded" and target.addr not in seen:
+                    if self._printed_as_data(target) and target.addr not in seen:
                         queue.append(target)
             adopted.append(fn.name)
         return adopted
 
-    def _disassemble(self, objdump: Path) -> None:
+    def _printed_as_data(self, fn: Function) -> bool:
+        """Whether the product listing printed this body as data, recovered or not."""
+        return fn.frame_kind == "undecoded" or fn.addr in self.recovered_bodies
+
+    # The linked image's Xtensa property tables. `.xt.lit` goes with `.xt.prop`
+    # because objdump reads literal extents from it the same way; the spike on
+    # #430 stripped both, and that is the copy these figures were measured on.
+    XTENSA_PROPERTY_SECTIONS = (".xt.prop", ".xt.lit")
+
+    def _recover_data_bodies(self, objdump: Path) -> None:
+        """Read the bodies objdump printed as data from a copy without .xt.prop.
+
+        Xtensa only; see "WHICH BYTES ARE CODE AT ALL" in the module docstring
+        for why objdump prints real code as literal words in this image. With
+        the property tables removed it has nothing to consult and decodes every
+        byte as an instruction, so those bodies read in full.
+
+        Only the bodies the product listing printed as data are taken from the
+        stripped listing. The rest keep what the product listing gave them,
+        because stripping the tables also costs something: where they marked
+        data inside a body correctly, the stripped listing decodes that data as
+        instructions, and on the artoo-esp32 image 24 bodies that decode
+        normally misframe there and lose one or two real calls
+        (`servoOutputDrivesPart` among them, #430). A recovered body goes
+        through the same symbol-size bound and framing fixpoint as any other,
+        and those can only drop an edge, never add one.
+
+        A body the stripped listing still prints as data stays in
+        `data_bodies`, and is labelled undecoded like before.
+        """
+        hidden = set(self.data_bodies)
+        before = {addr: self.funcs[addr] for addr in hidden}
+        objcopy = objdump.with_name(objdump.name.replace("objdump", "objcopy"))
+        with tempfile.TemporaryDirectory(prefix="stack_walk_") as tmp:
+            stripped = Path(tmp) / "no-xt-prop.elf"
+            argv = [str(objcopy)]
+            for section in self.XTENSA_PROPERTY_SECTIONS:
+                argv.append(f"--remove-section={section}")
+            # _run() raises Fatal on a non-zero exit; objcopy prints nothing on
+            # success, so there is nothing to read from it.
+            for _line in self._run(argv + [str(self.elf), str(stripped)]):
+                pass
+            self.data_bodies = set()
+            self._disassemble(objdump, stripped, hidden)
+        for addr in hidden:
+            fn = self.funcs[addr]
+            if fn is before[addr]:
+                # The stripped listing carried no header here, so this body was
+                # not read again: it is still the data the first read found.
+                self.data_bodies.add(addr)
+            elif addr not in self.data_bodies:
+                self.recovered_bodies.add(addr)
+
+    def _disassemble(self, objdump: Path, elf: Path | None = None,
+                     only: set[int] | None = None) -> None:
         """Read the listing into one Function per symbol, body by body.
 
         Each body is buffered and then handed to `_read_body()` whole, rather
@@ -567,20 +659,31 @@ class Image:
         framing check `_read_body()` performs needs every instruction in the
         body before it can say which of them are real, and an instruction's own
         branch target can lie either side of it.
+
+        `elf` and `only` are for `_recover_data_bodies()`: read another listing
+        of this same image, and replace just the bodies at the entries in
+        `only`, leaving every other body as the first read left it.
         """
         cur: Function | None = None
         cur_end: int | None = None
         srcline: str | None = None
         body: list[tuple[int, int, str, str, str | None, str]] = []
 
-        for line in self._run([str(objdump), "-d", "-l", "-C", str(self.elf)]):
+        for line in self._run([str(objdump), "-d", "-l", "-C", str(elf or self.elf)]):
             if not line:
                 continue
             m = FUNC_HEADER_RE.match(line)
             if m:
                 if cur is not None:
                     self._read_body(cur, cur_end, body)
-                cur = Function(int(m.group(1), 16), m.group(2))
+                addr = int(m.group(1), 16)
+                if only is not None and addr not in only:
+                    # Not a body this read replaces: skip its lines, which the
+                    # `cur is None` test below does for every line up to the
+                    # next header.
+                    cur = None
+                    continue
+                cur = Function(addr, m.group(2))
                 body = []
                 # The definition site is the first line marker AFTER the header;
                 # the one before it belongs to the previous function.
@@ -897,6 +1000,16 @@ class Image:
                 body_bytes[pc + offset] = value
             if not mnem.startswith(".") and self._insn_len(octets[0]) != nbytes:
                 length_rule_holds = False
+
+        if not any(not insns[pc][1].startswith(".") for pc in order):
+            # objdump printed this body as data, or printed nothing for it:
+            # there is no instruction here whose framing could be checked, no
+            # frame and no call. It is recorded as such rather than counted as
+            # an unvalidated body, so that `_recover_data_bodies()` can read it
+            # again from another listing without leaving this read's
+            # bookkeeping behind.
+            self.data_bodies.add(fn.addr)
+            return
 
         hi = end if end is not None else (max(order) + insns[max(order)][0]
                                           if order else fn.addr)
@@ -1679,7 +1792,11 @@ def main(argv=None) -> int:
             print(f"      {name} @0x{pc:08x} -> 0x{target:08x}"
                   f" {owner.name if owner else '?'}{where}")
     undec = [f for f in img.funcs.values() if f.frame_kind == "undecoded"]
-    print(f"  function bodies objdump emitted as data, frame unknown: {len(undec)}"
+    if img.recovered_bodies:
+        print(f"  function bodies the product listing printed as data, decoded from a"
+              f" copy without {'/'.join(Image.XTENSA_PROPERTY_SECTIONS)}:"
+              f" {len(img.recovered_bodies)}")
+    print(f"  function bodies still emitted as data, frame unknown: {len(undec)}"
           f" of {len(img.funcs)}")
     print(f"  bodies bounded by their symbol size: {len(img.funcs) - len(img.unsized)}"
           f" of {len(img.funcs)}; {len(img.unsized)} carry no size and are bounded"

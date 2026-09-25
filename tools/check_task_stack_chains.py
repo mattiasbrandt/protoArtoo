@@ -63,10 +63,12 @@ chip (ADR 0040, amendment of 2026-09-25, #429) - see `judge_arm()`:
   walked by a coordinator's post-merge run rather than by the slice that moves
   it, so failing on drift there failed whichever slice came next.
 
-The Xtensa walk is a floor, not a bound: objdump emits a large share of that
-image's function bodies as data, so a chain crossing one is truncated. This
-check can therefore MISS growth and cannot report FALSE growth, which is what
-makes it safe to fail a build on (ADR 0040).
+Every walk is a floor, not a bound: an indirect call that is not stitched is
+not followed, a call-graph cycle is cut, and on artoo-esp32 a body objdump
+still prints as data after `stack_usage_report`'s recovery pass reads as a
+frame of 0 with no calls - the header line counts both the recovered bodies and
+the ones left. This check can therefore MISS growth and cannot report FALSE
+growth, which is what makes it safe to fail a build on (ADR 0040).
 
 Two conditions fail beyond an exceedance, because both mean the recorded recipe
 no longer describes the image and a silent pass would be the drift this exists
@@ -316,9 +318,10 @@ class ImageChains:
         return max(fn.frame for fn in cands), notes
 
 
-def undecoded_share(img: sur.Image) -> tuple[int, int]:
+def undecoded_share(img: sur.Image) -> tuple[int, int, int]:
+    """(bodies still printed as data, bodies recovered from the stripped copy, all)."""
     undec = sum(1 for f in img.funcs.values() if f.frame_kind == "undecoded")
-    return undec, len(img.funcs)
+    return undec, len(img.recovered_bodies), len(img.funcs)
 
 
 def main(argv=None) -> int:
@@ -373,13 +376,17 @@ def main(argv=None) -> int:
             adopted.extend(image.adopt_archive_bodies(
                 arm["archive_bodies"], arm.get("pointer_tables", {})))
 
-    undec, total_funcs = undecoded_share(image.img)
+    undec, recovered, total_funcs = undecoded_share(image.img)
     print(f"check_task_stack_chains  env={args.env}  chip={chip}  arch={image.arch}")
     print(f"  image  {image.elf.relative_to(ROOT)}")
     print(f"  recipe {RECIPES.relative_to(ROOT)}  ({len(recipes['tasks'])} tasks)")
+    if recovered:
+        print(f"  function bodies the product listing printed as data, decoded from"
+              f" a copy without .xt.prop: {recovered}")
     print(
-        f"  function bodies objdump emitted as data: {undec} of {total_funcs}"
-        f" -- every chain below is a LOWER bound"
+        f"  function bodies still emitted as data: {undec} of {total_funcs}"
+        f" -- every chain below is a floor: an unstitched indirect call, a cut"
+        f" cycle or such a body is not walked"
     )
     for (caller, table), count in sorted(stitched.items()):
         print(f"  stitched {caller} -> every row of {table} ({count} functions)")
