@@ -125,3 +125,36 @@ which falls for ordinary reasons and would cry wolf.
   are corrected when the budget row lands.
 - A budget set from `main`'s numbers trips when `epic/operator-experience` merges,
   by 24,576 B of blocks. That is the ratchet working; the raise names the growth.
+
+## Amended 2026-09-25: the artoo-esp32 stores five Learned Sequences
+
+Recorded after #423 (`1067afc0`) left the artoo-esp32's filesystem image at its
+budget exactly: 466,944 B, 114 of 114 blocks, 0 B headroom. #421 and #422 both
+grow `data/`. The budget is not a ratchet here; it is what the 160-block partition
+can give the web image while the builder's **Learned Sequences** still fit
+(`tools/build_budgets.json`, #382). The image and the sequences compete for the
+same blocks.
+
+**Decided by the operator:** the artoo-esp32 stores **five** Learned Sequences,
+and every other board keeps ten. This is the first thing a builder can do that
+depends on which board they bought, and so the first breach of this ADR's
+"nothing a builder can do depends on which board they bought". The ADR's own
+trigger names this case, and this amendment records it rather than absorbing it.
+
+- **The cap is a board fact the droid reports.** The page learns it from the
+  droid rather than from a constant of its own, so a surface never promises the
+  firebeetle2's ten on an artoo-esp32.
+- **The budget is re-derived from the new cap** with the same method: 160 blocks,
+  minus four full sequences as littlefs-python actually stores them, minus the
+  free space the fifth save demands. It is measured, not estimated.
+- **Everything else in this ADR stands.** Same surfaces, same choices, same
+  behaviour: the Sequences surface on an artoo-esp32 is the same surface, and it
+  says five where another board says ten.
+
+Considered and rejected:
+
+- **Five on every board.** It keeps this ADR unamended, but it takes five slots
+  from firebeetle2 builders to pay for a partition they do not have.
+- **Win the blocks back and keep ten.** It was offered and not chosen. The image
+  has shrunk before (#382, 113 to 77 blocks) and grown back to its ceiling within
+  two weeks.
