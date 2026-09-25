@@ -326,7 +326,8 @@ never carries one. The tokens are stable — safe to match on in a script:
 | `unknown-operation` | Not a name or alias the firmware recognises |
 | `unknown-argument` | An argument key this operation doesn't take |
 | `missing-argument` | A required argument key wasn't supplied |
-| `out-of-range` | A supplied value is outside what this argument accepts |
+| `out-of-range` | A supplied value is outside what this argument accepts. The answer's `accepts` field says what it takes, where that is a range or a list of words |
+| `conflict` | The value is fine on its own but clashes with another one, sent or already saved: speed presets that aren't distinct, a range whose low end is above its high end |
 | `malformed-argument` | The line didn't parse into `key=value` pairs at all — a bare word, bad quoting, or invalid text in a quoted value |
 | `not-executable` | This entry is not something you run — an event, or one of the [motion commands not yet wired](#what-doesnt-work-here-yet) |
 | `executor-not-ready` | Recognised, but the firmware doesn't have a way to run it yet |

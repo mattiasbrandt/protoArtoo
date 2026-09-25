@@ -278,6 +278,9 @@ never type an ID.
   `secret-not-settable`, `read-only` (the operation reads, but nothing in the
   firmware writes the value it names - section 4.2), `unknown-operation`,
   `unknown-argument`, `missing-argument`, `out-of-range`,
+  `conflict` (the value is fine on its own and clashes with another one, sent
+  or saved - speed presets that are not distinct, a range whose `lo` is above
+  its `hi`; it names the argument that was sent and carries no `accepts`),
   `malformed-argument` (a quoted value's escaping/quoting/UTF-8 did not parse,
   or a bare word appeared where `key=value` was required - section 1.2/1.3),
   `not-executable` (an event), and during development only
@@ -405,6 +408,19 @@ and a rename is a protocol break for a readability problem.
 - Grouped settings are validated as one configuration: `wifi.config.settings`
   rejects a `mode=client` without a usable SSID as a whole, naming the failing
   field, exactly as the WiFi page does.
+- A refused write answers in the shape a refused `target=` has (section 3.3):
+  the argument the builder typed, never the field the firmware saves it under;
+  the reason the validation gave; and `accepts=` with what the argument takes,
+  where a range or a set of words applies. All three come from the refusal the
+  shared validation returns as data, never from its sentence:
+
+  ```text
+  > drive.config.speed-limit value=9999
+  < id=1 type=begin operation=drive.config.speed-limit
+  < id=1 type=field name=argument value=value
+  < id=1 type=field name=accepts value=0..600
+  < id=1 type=end status=err outcome=invalid reason=out-of-range
+  ```
 - A write reports `applied`, `staged-until-reboot`, or an explicit persistence
   failure; a restart-required condition is reported, never assumed.
 - There is no raw key/value escape hatch into the settings store.

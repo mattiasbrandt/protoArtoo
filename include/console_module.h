@@ -110,6 +110,12 @@ typedef enum {
     // of the Servo Output table at execution, every time
     // (droidPartAvailabilityFromRow(), include/droid_part_availability.h).
     CONSOLE_REASON_PART_NOT_ASSIGNED = 17,
+    // The value is fine on its own and clashes with another one, sent or
+    // saved - speed presets that are not distinct, dome pulses out of order
+    // (ADR 0011 amended 2026-09-25, #425). Distinct from OUT_OF_RANGE because
+    // nothing is out of range, and no `accepts=` can say what would be taken.
+    // Names the argument that was sent.
+    CONSOLE_REASON_CONFLICT = 18,
 } ConsoleReason;
 
 // =============================================================================

@@ -206,14 +206,32 @@ void test_reason_is_present_for_every_real_reason_and_absent_for_none(void) {
     // enum's values are contiguous from NONE, so the only thing to keep in step
     // is the last enumerator, and getting that wrong is visible: a reason with
     // no string renders "unknown", which is asserted below.
-    for (int reason = CONSOLE_REASON_NONE + 1; reason <= CONSOLE_REASON_PART_NOT_ASSIGNED;
-         ++reason) {
+    for (int reason = CONSOLE_REASON_NONE + 1; reason <= CONSOLE_REASON_CONFLICT; ++reason) {
         const ConsoleReason real = (ConsoleReason)reason;
         TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(real),
                                  "a real reason must render a reason field");
         TEST_ASSERT_TRUE_MESSAGE(strcmp(consoleReasonString(real), "unknown") != 0,
                                  "every reason in the enum needs its own token");
     }
+}
+
+// An Apply Core's refusal reason reaches the Console as a ConsoleReason, and
+// HTTP spells it with applyRefusalReasonToken(). One refusal must read the same
+// on both (ADR 0011 amended 2026-09-25, #425), so every core reason - conflict
+// included - maps to a real Console reason whose token is the HTTP token.
+// Walked to Count, so a reason added to the core without a Console answer fails
+// here rather than rendering a record with no reason.
+void test_every_apply_refusal_reason_maps_to_the_console_token_http_uses(void) {
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_NONE, consoleReasonFromApplyRefusal(ApplyRefusalReason::None));
+    for (int raw = (int)ApplyRefusalReason::None + 1; raw < (int)ApplyRefusalReason::Count; ++raw) {
+        const ApplyRefusalReason reason = (ApplyRefusalReason)raw;
+        const ConsoleReason console = consoleReasonFromApplyRefusal(reason);
+        TEST_ASSERT_TRUE_MESSAGE(consoleReasonIsPresent(console),
+                                 "a refusal reason must reach the Console as a real reason");
+        TEST_ASSERT_EQUAL_STRING(applyRefusalReasonToken(reason), consoleReasonString(console));
+    }
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT,
+                      consoleReasonFromApplyRefusal(ApplyRefusalReason::Conflict));
 }
 
 // A synchronously answered query reports completed, not queued.
@@ -296,6 +314,7 @@ int main(void) {
     RUN_TEST(test_outcome_string_internal_error);
 
     // Reason tests
+    RUN_TEST(test_every_apply_refusal_reason_maps_to_the_console_token_http_uses);
     RUN_TEST(test_reason_string_not_in_this_build);
     RUN_TEST(test_reason_string_not_on_this_board);
     RUN_TEST(test_reason_string_component_disabled);

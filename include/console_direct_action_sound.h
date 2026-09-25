@@ -20,8 +20,9 @@
 //
 // NOT a standalone compilation unit: #include'd from src/console/
 // console_module.cpp only, at the point these executors used to live, so
-// their bodies can see that file's own `static` consoleEmitArgFailure() and
-// consoleCommandSourceFor() by ordinary same-translation-unit visibility.
+// their bodies can see that file's own `static` consoleEmitArgFailure(),
+// consoleEmitApplyRefusal() and consoleCommandSourceFor() by ordinary
+// same-translation-unit visibility.
 // Not included, and must not be included, from anywhere else.
 // =============================================================================
 #pragma once
@@ -570,12 +571,10 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
     audioMoodMapApply(consoleArgsAsParamSource(args), &result);
     if (result.error.hasError) {
         // Unreachable after schema validation above (see header comment) -
-        // still a real status=err answer, not swallowed, matching every
-        // other apply-core error path in this module.
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
-                                CONSOLE_REASON_OUT_OF_RANGE);
-        }
+        // still a real status=err answer, not swallowed, answered from the
+        // core's refusal like every other apply-core error path in this module.
+        consoleEmitApplyRefusal(requestId, operationName, result.error.refusal.field,
+                                result.error.refusal, sink);
         return;
     }
 
@@ -607,11 +606,9 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
 // exactly as extracted for this purpose. The registry declares no range on
 // lo/hi (docs/action-registry.yaml), so the apply core's own 0-999/lo<=hi
 // and category-key-pair validation is the real gate here, not the schema -
-// its failure (any of: bad key pair, out-of-range value, lo>hi) is answered
-// as a single undifferentiated "invalid", the same OUT_OF_RANGE catch-all
-// consoleWriteScalarConfigField() already uses for any Apply Core rejection
-// (src/console/console_module.cpp), since there is no one attributable
-// argument key for a multi-field range check.
+// and its refusal names which argument and why (a bad key pair, a bound out
+// of range, a lo above hi is a `conflict`), which consoleEmitApplyRefusal()
+// answers as it does every Apply Core refusal (src/console/console_module.cpp).
 //
 // bank/page/clear_binding (REST's optional CHIRP-binding extension to this
 // same route) are deliberately NOT in this row's registry schema, so
@@ -651,10 +648,11 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
         return;
     }
     if (result.error.hasError) {
-        if (sink->onRecordResult) {
-            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID,
-                                CONSOLE_REASON_OUT_OF_RANGE);
-        }
+        // The core names the argument and why - these are its own parameter
+        // names - so a bad key pair, a bound out of range and a lo above hi
+        // each read as what they are.
+        consoleEmitApplyRefusal(requestId, operationName, result.error.refusal.field,
+                                result.error.refusal, sink);
         return;
     }
 
