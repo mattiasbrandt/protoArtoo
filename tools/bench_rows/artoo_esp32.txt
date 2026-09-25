@@ -188,7 +188,7 @@ send sound.action.play-track track=1
 # therefore GET /api/config at a pause.
 #
 # system.action.set-mode is the SAVE. It calls saveConfigToNvs(), which runs
-# configSaveServoOutputs() before configSave() (src/main.cpp), so an ordinary
+# configSaveServoOutputs() before configSave() (src/config_store.cpp), so an ordinary
 # mode change IS a full config save and is what performs the migration. That is
 # why "don't touch servo settings yet" is not sufficient guidance to a bench
 # operator: the first save of ANY kind migrates.
