@@ -30,32 +30,30 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDocument } from "./helpers/mini_dom.js";
-import { servoRow, configOutputs, applyOutputSave } from "./helpers/fake_droid.js";
+import { servoRow, describe, applyRowSave } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 
 // An Artoo PCB: two Outputs that carry only a servo, three that may carry a
 // light. ARM2 and ARM3 are not wired; ARM4 carries the LED strip.
-const ROWS = () => [
+const ROWS = () => describe([
   servoRow("ledc:0", "ARM1"),
   servoRow("ledc:1", "ARM2"),
   servoRow("ledc:3", "ARM3"),
   servoRow("ledc:4", "ARM4"),
   servoRow("ledc:5", "ARM5"),
-];
-const CONFIG = (rows = ROWS()) => ({
-  components: configOutputs(rows, {
-    "ledc:1": { enabled: false, type: "mg90s" },
-    "ledc:3": { lightCapable: true, enabled: false, type: "none" },
-    "ledc:4": { lightCapable: true, type: "rgb" },
-    "ledc:5": { lightCapable: true },
-  }),
+], {
+  "ledc:1": { wired: false, type: "mg90s" },
+  "ledc:3": { lightCapable: true, wired: false, type: "none" },
+  "ledc:4": { lightCapable: true, type: "rgb" },
+  "ledc:5": { lightCapable: true },
 });
+const CONFIG = () => ({ drive: { speedLimitMax: 300 } });
 
 // Wiring's and Servos' hosts, each reading the droid the way the surface does
 // (data/outputs.js load()) and mounting its view of the plates.
-const boot = async ({ rows = ROWS(), config = CONFIG(rows) } = {}) => {
+const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
   const document = new MiniDocument();
   for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-feedback"]) {
     const node = document.createElement("div");
@@ -73,10 +71,11 @@ const boot = async ({ rows = ROWS(), config = CONFIG(rows) } = {}) => {
         assert.equal(path, "/api/servo/outputs");
         return { ok: true, data: { outputs: structuredClone(rows) } };
       },
-      postForm: async (path, form) => {
-        posts.push({ path, form: { ...form } });
-        // Answer the way the firmware does: the config it now holds.
-        applyOutputSave(config.components, form);
+      postJson: async (path, json) => {
+        posts.push({ path, json: structuredClone(json) });
+        // Answer the way the firmware does: the rows take the save, and the
+        // answer is the config it now holds.
+        applyRowSave(rows, json);
         return { ok: true, data: structuredClone(config) };
       },
     },
@@ -105,7 +104,7 @@ const boot = async ({ rows = ROWS(), config = CONFIG(rows) } = {}) => {
     document.getElementById(host).querySelectorAll("[data-output]").find((node) => node.getAttribute("data-output") === address);
   return {
     posts,
-    config,
+    rows,
     // The debounce, fired by hand rather than waited for.
     flush: async () => {
       timers.splice(0).forEach((fn) => fn());
@@ -117,9 +116,8 @@ const boot = async ({ rows = ROWS(), config = CONFIG(rows) } = {}) => {
     // Wiring's in-use press is the plate's head button.
     inUse: (address) => plate("wiring-outputs-body", address).querySelector("[aria-pressed]"),
     option: (root, value) => root.querySelectorAll("[data-value]").find((node) => node.getAttribute("data-value") === value),
-    // The config field an Output's setting is saved under, read off the fake
-    // droid's own answer rather than restated.
-    field: (address, setting) => Object.values(config.components).find((entry) => entry.address === address)[setting],
+    // What the fake droid's row for an Output now holds.
+    row: (address) => rows.find((each) => each.address === address),
   };
 };
 
@@ -134,8 +132,8 @@ test("what Wiring marks in use, Servos shows at once, and the save carries only 
   await env.flush();
   assert.equal(env.posts.length, 1);
   assert.equal(env.posts[0].path, "/api/config");
-  assert.deepEqual(env.posts[0].form, { [env.field("ledc:3", "enabledField")]: "true" },
-    "the one field the firmware named for what the builder changed, and nothing else");
+  assert.deepEqual(env.posts[0].json, { outputs: [{ address: "ledc:3", wired: true }] },
+    "the one setting the builder changed, on its Output's row, and nothing else");
   assert.equal(env.servos("ledc:3").classList.contains("is-on"), true, "the droid's answer keeps it in use");
 });
 
@@ -152,10 +150,9 @@ test("a second wire can carry a light without taking it off the first", async ()
   env.option(env.wiring("ledc:5"), "rgb").fire("click", {});
   await env.flush();
 
-  const form = env.posts.at(-1).form;
-  assert.deepEqual(form, { [env.field("ledc:5", "typeField")]: "rgb" },
+  assert.deepEqual(env.posts.at(-1).json, { outputs: [{ address: "ledc:5", component: "rgb" }] },
     "the wire the builder just gave a light carries one, and no other wire is sent anything");
-  assert.equal(env.field("ledc:4", "type"), "rgb", "and the one that already did still does");
+  assert.equal(env.row("ledc:4").component, "rgb", "and the one that already did still does");
   assert.equal(env.option(env.wiring("ledc:4"), "rgb").classList.contains("active"), true);
 });
 

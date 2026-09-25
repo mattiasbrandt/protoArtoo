@@ -156,10 +156,6 @@ void test_servo_and_led_config_available() {
                                          BOARD_OUTPUTS[i].channel == LEDC_CH_AUX2 ||
                                          BOARD_OUTPUTS[i].channel == LEDC_CH_AUX3;
         TEST_ASSERT_EQUAL_INT(stripCapableChannel ? 1 : 0, BOARD_OUTPUTS[i].lightCapable ? 1 : 0);
-        // And an Output that can carry one names the field that saves its
-        // settings, which is what a surface reads to draw the control at all.
-        TEST_ASSERT_EQUAL_INT(stripCapableChannel ? 1 : 0,
-                              BOARD_OUTPUTS[i].ledCountField != nullptr ? 1 : 0);
     }
 }
 

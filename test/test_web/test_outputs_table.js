@@ -90,12 +90,11 @@ test("a firmware that reports no position is not shown as an Output with no puls
 // has measured moves by none of it: its first move is a jump whatever its
 // profile says. So its row can send no shape and no time - not from a control
 // it hides, and not from an event that reaches the table anyway - while a
-// measured Output's row saves under the field the firmware named for it.
-test("an Output nobody has measured cannot send a shape, and a measured one saves it under the firmware's field", async () => {
+// measured Output's row saves it, through the row door (ADR 0068).
+test("an Output nobody has measured cannot send a shape, and a measured one saves it on its row", async () => {
   const outputs = freshOutputs();
   outputs[0].calibrated = true;
   const env = await bootServos({ outputs });
-  const entry = (address) => Object.values(env.components).find((each) => each.address === address);
   const pickEase = (address, ease) =>
     env.region().fire("click", { target: env.row(address).querySelector(`[data-ease="${ease}"]`) });
   const typeThrow = (address, ms) => {
@@ -107,30 +106,29 @@ test("an Output nobody has measured cannot send a shape, and a measured one save
   pickEase("ledc:1", "overshoot");
   typeThrow("ledc:1", 800);
   await sleep(20);
-  assert.equal(env.moves().length, 0, "the unmeasured Output asked the droid for nothing");
+  assert.equal(env.rowSaves().length, 0, "the unmeasured Output asked the droid for nothing");
 
   pickEase("ledc:0", "overshoot");
   await sleep(20);
   typeThrow("ledc:0", 800);
   await sleep(20);
-  assert.deepEqual(env.moves().map((post) => post.form), [
-    { [entry("ledc:0").easeField]: "overshoot" },
-    { [entry("ledc:0").throwField]: "800" },
+  assert.deepEqual(env.rowSaves().map((post) => post.json), [
+    { outputs: [{ address: "ledc:0", ease: "overshoot" }] },
+    { outputs: [{ address: "ledc:0", throwMs: 800 }] },
   ]);
 });
 
 // What an Output does at power-up is set on the same row (ADR 0052, #414), and
 // unlike how it moves it is NOT fenced by calibration: the two are separate
 // decisions, and calibrating never changes it. So an unmeasured Output's row
-// saves it, under the field the firmware named - never one the page made up.
-test("what an Output does at power-up saves under the firmware's field, measured or not", async () => {
+// saves it, through the row door (ADR 0068).
+test("what an Output does at power-up saves on its row, measured or not", async () => {
   const env = await bootServos({ outputs: freshOutputs() });
-  const entry = (address) => Object.values(env.components).find((each) => each.address === address);
 
   env.region().fire("click", { target: env.row("ledc:1").querySelector('[data-boot="home-hold"]') });
   await sleep(20);
 
-  assert.deepEqual(env.moves().map((post) => post.form), [{ [entry("ledc:1").bootField]: "home-hold" }]);
+  assert.deepEqual(env.rowSaves().map((post) => post.json), [{ outputs: [{ address: "ledc:1", boot: "home-hold" }] }]);
 });
 
 // An upgrade can narrow an Output's recorded ends into what its part takes, and

@@ -229,9 +229,18 @@
 
   const runHasEnded = () => runState !== RUN_NOT_RUN || grandfathered;
 
-  const configuredBeforeTheRecordExisted = (config) => {
+  // Anything switched on counts: a Component Toggle, or an Output ticked as
+  // wired. An Output's tick is on its row (ADR 0068), not in the config's
+  // components, so the rows are read too - only for a droid with no record,
+  // which is the only droid this question is asked of.
+  const configuredBeforeTheRecordExisted = async (config) => {
     const components = config?.components || {};
-    return Object.values(components).some((entry) => entry && entry.enabled === true);
+    if (Object.values(components).some((entry) => entry && entry.enabled === true)) return true;
+    const answer = await window.PAApi.get("/api/servo/outputs", { timeoutMs: 5000 });
+    const rows = Array.isArray(answer?.data?.outputs) ? answer.data.outputs : [];
+    // A row with no tick (an expander's) is wired because nobody could say
+    // otherwise, not because anybody configured it, so it does not count.
+    return rows.some((row) => row && row.switchable === true && row.wired === true);
   };
 
   // ---------------------------------------------------------------------------
@@ -845,7 +854,7 @@
 
     runState = typeof guided.run === "string" ? guided.run : RUN_NOT_RUN;
     summaryDone = guided.summaryDone === true;
-    grandfathered = guided.recorded === false && configuredBeforeTheRecordExisted(config);
+    grandfathered = guided.recorded === false && (await configuredBeforeTheRecordExisted(config));
     (Array.isArray(guided.visited) ? guided.visited : []).forEach((key) => visited.add(String(key)));
 
     renderWifiStep(config);

@@ -8,6 +8,7 @@
 #include "config_cache.h"
 
 #include "audio_dollar_parser.h"
+#include "board_output_enabled.h"  // boardOutputIsWired() - configCacheOutputIsWired()
 #include "component_registry.h"  // the Sound Component Member's only source of valid values
 #include "config.h"
 #include "config_serializer.h"
@@ -512,6 +513,9 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
     // count, does no allocation and no I/O, and a half-applied table is a table
     // a reader could catch mid-edit.
     taskENTER_CRITICAL(&configCacheMux);
+    // A Part a stated list names comes off the row it is on now first, so no
+    // reader - and no edit below - ever sees it on two Outputs (ADR 0050).
+    (void)servoOutputTableReleaseStatedParts(&servoOutputCache, edits, count);
     for (size_t i = 0; i < count; ++i) {
         const uint8_t index =
             servoOutputTableFindByAddress(servoOutputCache, edits[i].driver, edits[i].channel);
@@ -536,6 +540,9 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
         }
         if ((repaired & SERVO_FIELD_CLOSE) != 0) {
             report.closeMovedRows |= (uint32_t)1u << index;
+        }
+        if ((repaired & SERVO_FIELD_CENTRE) != 0 && edits[i].kind == SERVO_EDIT_TYPED) {
+            report.centreMovedRows |= (uint32_t)1u << index;
         }
         if (report.rowsRepaired == 0) {
             report.firstRow = index;
@@ -720,6 +727,14 @@ uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t cha
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return ledCount;
+}
+
+bool configCacheOutputIsWired(size_t boardOutputIndex) {
+    bool wired;
+    taskENTER_CRITICAL(&configCacheMux);
+    wired = boardOutputIsWired(configCache.system, boardOutputIndex);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return wired;
 }
 
 bool configCacheServoAnyEnabled() {

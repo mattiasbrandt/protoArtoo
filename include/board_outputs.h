@@ -18,8 +18,8 @@
 // the browser.
 //
 // The ids (arm1..aux3), the component keys (enable_arm1..enable_aux3) and the
-// config field names are stored identifiers - config keys, NVS keys, the
-// components{} JSON keys, RC tokens - and are never a name a builder reads.
+// wired ticks' form names are stored identifiers - config keys, NVS keys, the
+// rows' `id`, RC tokens - and are never a name a builder reads.
 //
 // HEADER-ONLY and constexpr, the way include/component_registry.h reads its own
 // manifest: the lookup takes the board as a parameter, so a native test asks
@@ -83,7 +83,7 @@ constexpr const char* boardComponentLabel(const char* board, const char* compone
 // bridge), which is why the table is not sorted by anything a reader sees.
 // -----------------------------------------------------------------------------
 struct BoardOutput {
-    const char* id;            // stored config key, the components{} key; never shown
+    const char* id;            // stored config key, its row's `id`; never shown
     const char* component;     // its key in include/component_labels.inc
     uint8_t channel;           // the LEDC channel this image drives it on
     // Whether a Light Type may go on this wire at all (ADR 0067). It is a board
@@ -93,20 +93,19 @@ struct BoardOutput {
     // one per wire. It replaced a single aux_led_pin slot number, which was a
     // second store of the same fact and could only ever name one (#413).
     bool lightCapable;
-    const char* enabledField;  // the POST /api/config field that saves it as wired
-    const char* typeField;     // the POST /api/config field that saves what it carries
-    // The POST /api/config field that saves the Light Type's settings - how
-    // many LEDs the wire carries. nullptr where a light cannot go, so an Output
-    // that could never be lit reports no field for it and no surface draws one.
-    const char* ledCountField;
+    // The POST /api/config form name that saves it as wired - the Component
+    // Toggle the Controller Console writes. Its row's `wired` reaches the same
+    // check under this name (ADR 0068); every other setting of an Output is a
+    // field of its row and has no form name.
+    const char* enabledField;
 };
 
 inline constexpr BoardOutput BOARD_OUTPUTS[] = {
-    {"arm1", "enable_arm1", LEDC_CH_ARM1, false, "enableArm1", "arm1Type", nullptr},
-    {"arm2", "enable_arm2", LEDC_CH_ARM2, false, "enableArm2", "arm2Type", nullptr},
-    {"aux1", "enable_aux1", LEDC_CH_AUX1, true, "enableAux1", "aux1Type", "aux1LedCount"},
-    {"aux2", "enable_aux2", LEDC_CH_AUX2, true, "enableAux2", "aux2Type", "aux2LedCount"},
-    {"aux3", "enable_aux3", LEDC_CH_AUX3, true, "enableAux3", "aux3Type", "aux3LedCount"},
+    {"arm1", "enable_arm1", LEDC_CH_ARM1, false, "enableArm1"},
+    {"arm2", "enable_arm2", LEDC_CH_ARM2, false, "enableArm2"},
+    {"aux1", "enable_aux1", LEDC_CH_AUX1, true, "enableAux1"},
+    {"aux2", "enable_aux2", LEDC_CH_AUX2, true, "enableAux2"},
+    {"aux3", "enable_aux3", LEDC_CH_AUX3, true, "enableAux3"},
 };
 
 inline constexpr size_t BOARD_OUTPUT_COUNT = sizeof(BOARD_OUTPUTS) / sizeof(BOARD_OUTPUTS[0]);

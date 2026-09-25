@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "api_helpers.h"
@@ -27,6 +28,7 @@ constexpr uint16_t kServoPulseMaxUs = 2500;
 
 void appendApplied(ConfigAppliedFields* applied, const char* fmt, ...) {
     if (applied->count >= ConfigAppliedFields::kMaxLines) {
+        applied->dropped++;
         return;
     }
     va_list args;
@@ -78,31 +80,6 @@ const char* firstMissing(const ConfigParamSource& params, const char* const* nam
         }
     }
     return nullptr;
-}
-
-// The typed edit this request is already making to the Output on `channel`, or
-// a new one for it. A per-Output setting MERGES into the edit the five field
-// sets may already have made for the same Output Address rather than adding one
-// beside it, which is what keeps the list inside its bound: every BOARD_OUTPUTS
-// channel is one of the five those sets cover, so the typed edits never number
-// more than five. nullptr only if that stopped being true, and the caller
-// refuses the request rather than writing past the list.
-ServoOutputEdit* typedEditFor(ConfigServoOutputEdits* edits, uint8_t channel) {
-    for (size_t e = 0; e < edits->count; ++e) {
-        ServoOutputEdit& candidate = edits->edits[e];
-        if (candidate.driver == SERVO_DRIVER_LEDC && candidate.channel == channel &&
-            candidate.kind == SERVO_EDIT_TYPED) {
-            return &candidate;
-        }
-    }
-    if (edits->count >= sizeof(edits->edits) / sizeof(edits->edits[0])) {
-        return nullptr;
-    }
-    ServoOutputEdit* edit = &edits->edits[edits->count++];
-    *edit = ServoOutputEdit{};
-    edit->driver = SERVO_DRIVER_LEDC;
-    edit->channel = channel;
-    return edit;
 }
 
 const char* rcModeToString(RcInputMode mode) {
@@ -326,11 +303,569 @@ bool paramBool(const ConfigParamSource& params, const char* name, bool* out) {
     return parseBoolValue(raw, out);
 }
 
+// -----------------------------------------------------------------------------
+// The Configuration in the shape GET /api/config reads it (ADR 0068, #423)
+//
+// A JSON body is the GET shape, so a restore posts back what a backup holds and
+// nothing in the browser flattens it first. Each entry below says where GET
+// /api/config puts a field this core reads, beside the form name the pages and
+// the Controller Console send it under. Both doors reach the SAME check further
+// down: a value found here is answered under its form name, so each range is
+// written once and a refusal reads the same whichever door the value came in by.
+//
+// A key GET carries that no entry names is a reading, not a setting - `wifi`,
+// `activeToggles`, `drive.speedPreset`, a label - and is ignored rather than
+// refused, so a whole GET answer can be posted back as it stands.
+// -----------------------------------------------------------------------------
+struct GetShapeField {
+    const char* param;    // the form name, which is what the checks below read
+    const char* path[3];  // where GET /api/config has it; unused trailing keys are nullptr
+};
+
+const GetShapeField kGetShapeFields[] = {
+    {"speedLimitMax", {"drive", "speedLimitMax"}},
+    {"speedPresetSlow", {"drive", "speedPresetSlow"}},
+    {"speedPresetNormal", {"drive", "speedPresetNormal"}},
+    {"speedPresetTurbo", {"drive", "speedPresetTurbo"}},
+    {"stationary", {"drive", "stationary"}},
+    {"webDriveTimeoutMs", {"drive", "webDriveTimeoutMs"}},
+    {"sbusTimeoutMs", {"rc", "sbusTimeoutMs"}},
+    {"sbusRecvCh2", {"rc", "sbus", "recvCh2"}},
+    {"rcInputMode", {"rc", "inputMode"}},
+    {"rcMember", {"rc", "member"}},
+    {"soundMember", {"components", "audio", "member"}},
+    {"logLevel", {"system", "logLevel"}},
+    {"protoR2linkWifiPeerIp", {"protoR2link", "wifiPeerIp"}},
+    {"domeEscNeutralUs", {"domeEsc", "neutralUs"}},
+    {"domeEscMinPulseUs", {"domeEsc", "minPulseUs"}},
+    {"domeEscMaxPulseUs", {"domeEsc", "maxPulseUs"}},
+    {"domeEscSpeedLimitPct", {"domeEsc", "speedLimitPct"}},
+    {"domeEscRndEnable", {"domeEsc", "rndEnable"}},
+    {"domeEscRndSpeedPct", {"domeEsc", "rndSpeedPct"}},
+    {"domeEscRndPauseMin", {"domeEsc", "rndPauseMin"}},
+    {"domeEscRndPauseMax", {"domeEsc", "rndPauseMax"}},
+    {"domeEscRndMoveMs", {"domeEsc", "rndMoveMs"}},
+    // The Component Toggles that are not an Output. An Output's wired tick is
+    // a field of its row (the `outputs` rows below), not of components{}.
+    {"enableDomeEsc", {"components", "domeEsc", "enabled"}},
+    {"enableRcCh1", {"components", "rcCh1", "enabled"}},
+    {"enableRcCh2", {"components", "rcCh2", "enabled"}},
+    {"enableRcCh3", {"components", "rcCh3", "enabled"}},
+    {"enableRcCh4", {"components", "rcCh4", "enabled"}},
+    {"enableRcCh5", {"components", "rcCh5", "enabled"}},
+    {"enableRcCh6", {"components", "rcCh6", "enabled"}},
+    {"enableDrive", {"components", "drive", "enabled"}},
+    {"enableAudio", {"components", "audio", "enabled"}},
+    {"enableProtoR2link", {"components", "protoR2link", "enabled"}},
+    // The Droid Build and Guided Setup's record travel with a backup like any
+    // other config key (operator, 2026-09-17 on #371). The two lists are JSON
+    // arrays on GET and are read as the comma-joined list the form takes.
+    {"domeDesign", {"droidBuild", "domeDesign"}},
+    {"domeVariant", {"droidBuild", "domeVariant"}},
+    {"bodyDesign", {"droidBuild", "bodyDesign"}},
+    {"bodyVariant", {"droidBuild", "bodyVariant"}},
+    {"fittedParts", {"droidBuild", "fitted"}},
+    {"guidedSetupRun", {"guidedSetup", "run"}},
+    {"guidedSetupVisited", {"guidedSetup", "visited"}},
+    {"guidedSetupSummaryDone", {"guidedSetup", "summaryDone"}},
+};
+
+// What a JSON value that no form field could ever hold reads as: an object
+// where a number belongs, or a list with something other than words in it. It
+// is a value no check below takes, so the field is refused with its own
+// sentence rather than dropped - an object sent as a peer IP must not read as
+// the empty string that clears it.
+constexpr const char kNotAFieldValue[] = "(not a value)";
+
+// The leaf a path names, or a null variant when any key on the way is absent.
+// Read-only: a lookup never adds a member to the body.
+JsonVariantConst getShapeLeaf(JsonObjectConst body, const char* const* path) {
+    JsonVariantConst at = body;
+    for (size_t i = 0; i < 3 && path[i] != nullptr; ++i) {
+        at = at[path[i]];
+        if (at.isNull()) {
+            break;
+        }
+    }
+    return at;
+}
+
+// Turns one leaf into the text a form would have carried: a number or a bool
+// as JSON writes it, a list of words comma-joined, anything else the value no
+// check takes. Strings stay as they are. The text is copied into the body's
+// own pool, so every pointer this core reads out of it lives as long as the
+// request does - the lifetime ConfigParamSource promises.
+//
+// False only when the body could not hold the text, which the caller refuses:
+// a field that silently fell out of a restore is the failure ADR 0068 exists
+// to end.
+bool normaliseLeaf(JsonVariant leaf) {
+    if (leaf.isNull() || leaf.is<const char*>()) {
+        return true;
+    }
+    if (leaf.is<JsonArrayConst>()) {
+        JsonArrayConst list = leaf.as<JsonArrayConst>();
+        size_t needed = 1;
+        for (JsonVariantConst item : list) {
+            if (!item.is<const char*>()) {
+                return leaf.set(kNotAFieldValue);
+            }
+            needed += strlen(item.as<const char*>()) + 1;
+        }
+        char* joined = static_cast<char*>(malloc(needed));
+        if (joined == nullptr) {
+            return false;
+        }
+        size_t used = 0;
+        joined[0] = '\0';
+        for (JsonVariantConst item : list) {
+            used += (size_t)snprintf(joined + used, needed - used, "%s%s", used == 0 ? "" : ",",
+                                     item.as<const char*>());
+        }
+        const bool stored = leaf.set(joined);  // char*, so the body copies it
+        free(joined);
+        return stored;
+    }
+    if (leaf.is<JsonObjectConst>()) {
+        return leaf.set(kNotAFieldValue);
+    }
+    // A number or a bool, written the way JSON wrote it: 1.5 stays 1.5 and is
+    // refused by an integer field's own parse, rather than truncated to 1.
+    char text[24] = {};
+    const size_t length = serializeJson(leaf, text, sizeof(text));
+    if (length == 0 || length >= sizeof(text)) {
+        return leaf.set(kNotAFieldValue);
+    }
+    return leaf.set(text);  // char[], so the body copies it
+}
+
+// The walk normaliseLeaf() needs: the parent of the leaf as a writable object,
+// found without adding anything. A path whose parent is not an object names
+// nothing, and nothing is written.
+bool normaliseGetShapeField(JsonDocument& body, const GetShapeField& field) {
+    JsonObject parent = body.as<JsonObject>();
+    size_t depth = 0;
+    while (depth + 1 < 3 && field.path[depth + 1] != nullptr) {
+        parent = parent[field.path[depth]].as<JsonObject>();
+        if (parent.isNull()) {
+            return true;
+        }
+        ++depth;
+    }
+    if (parent.isNull() || !parent[field.path[depth]].is<JsonVariantConst>()) {
+        return true;
+    }
+    return normaliseLeaf(parent[field.path[depth]].as<JsonVariant>());
+}
+
+// -----------------------------------------------------------------------------
+// The Output rows (ADR 0068, #423)
+//
+// A JSON body's `outputs` is the row door: one row per Output, keyed by its
+// Output Address, in the shape GET /api/servo/outputs reads it. Every key a
+// row can set is listed here and read as text like any other field; the rest
+// of a row - its name, its band, where it has been told to be - is a reading
+// and is ignored, so a row read by GET can be posted back as it stands.
+// -----------------------------------------------------------------------------
+const char* const kOutputRowKeys[] = {
+    "address", "wired", "component", "ledCount", "throwMs", "accelMs",
+    "ease", "boot", "openUs", "centreUs", "closeUs", "calibrated",
+};
+
+// The text of one key of a row, as configRequestGet() answers a field: nullptr
+// when absent, the text when it is one, kNotAFieldValue otherwise.
+const char* rowText(JsonObjectConst row, const char* key) {
+    JsonVariantConst value = row[key];
+    if (value.isNull()) {
+        return nullptr;
+    }
+    return value.is<const char*>() ? value.as<const char*>() : kNotAFieldValue;
+}
+
+// The row a body carries for an address, or a null object.
+JsonObjectConst rowAt(JsonObjectConst body, ServoOutputDriver driver, uint8_t channel) {
+    for (JsonVariantConst item : body["outputs"].as<JsonArrayConst>()) {
+        JsonObjectConst row = item.as<JsonObjectConst>();
+        ServoOutputDriver rowDriver = SERVO_DRIVER_LEDC;
+        uint8_t rowChannel = 0;
+        if (!row.isNull() && servoOutputParseAddress(rowText(row, "address"), &rowDriver, &rowChannel) &&
+            rowDriver == driver && rowChannel == channel) {
+            return row;
+        }
+    }
+    return JsonObjectConst();
+}
+
+// A config request: the form it came as, and, when it came with a JSON body,
+// that body in the GET shape. It is the ConfigParamSource every check below
+// reads, so a check never knows which door its value came in by.
+struct ConfigRequest {
+    const ConfigParamSource* form;
+    JsonObjectConst body;
+};
+
+const char* configRequestGet(void* ctx, const char* name) {
+    const ConfigRequest* request = static_cast<const ConfigRequest*>(ctx);
+    // A field named on the form wins over the body. No page sends both, and a
+    // form field is the more specific statement when one does.
+    const char* value = configParamGet(*request->form, name);
+    if (value != nullptr || request->body.isNull()) {
+        return value;
+    }
+    for (const GetShapeField& field : kGetShapeFields) {
+        if (strcmp(field.param, name) != 0) {
+            continue;
+        }
+        JsonVariantConst leaf = getShapeLeaf(request->body, field.path);
+        if (leaf.isNull()) {
+            return nullptr;
+        }
+        return leaf.is<const char*>() ? leaf.as<const char*>() : kNotAFieldValue;
+    }
+    // An Output's wired tick is its row's `wired`, answered under the form name
+    // that saves it (BOARD_OUTPUTS' `enabledField`), so the Component Toggle
+    // check reads it whichever door it came in by.
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        if (strcmp(output.enabledField, name) != 0) {
+            continue;
+        }
+        JsonObjectConst row = rowAt(request->body, SERVO_DRIVER_LEDC, output.channel);
+        return row.isNull() ? nullptr : rowText(row, "wired");
+    }
+    return nullptr;
+}
+
+// Read a JSON body into `body` and make every field it carries readable as
+// text. False, with the refusal set, when it cannot be: a body that is not
+// JSON, or one the controller could not hold whole once its numbers were
+// written out as text.
+bool readGetShapeBody(const char* raw, JsonDocument* body, ConfigApplyResult* result) {
+    if (deserializeJson(*body, raw)) {
+        setError(result, "invalid json body", ApplyRefusalReason::MalformedArgument, "plain");
+        return false;
+    }
+    bool whole = true;
+    for (const GetShapeField& field : kGetShapeFields) {
+        whole = whole && normaliseGetShapeField(*body, field);
+    }
+    // A row's keys the same way, in place. `parts` stays a list: the row door
+    // reads it as one.
+    for (JsonVariant item : (*body)["outputs"].as<JsonArray>()) {
+        JsonObject row = item.as<JsonObject>();
+        for (const char* key : kOutputRowKeys) {
+            if (!row.isNull() && row[key].is<JsonVariantConst>()) {
+                whole = whole && normaliseLeaf(row[key].as<JsonVariant>());
+            }
+        }
+    }
+    if (!whole || body->overflowed()) {
+        setError(result, "json body too large to read whole", ApplyRefusalReason::MalformedArgument,
+                 "plain");
+        return false;
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// The row door (ADR 0068, #423)
+//
+// Each row is one Output, named by its Output Address, and a field it carries
+// is set. A refusal about a row's field names both, `<address>.<key>`
+// (`ledc:4.ledCount`), with the canonical address - at most 8 characters, so
+// the name always fits a refusal's field.
+//
+// The ends and the centre are checked against what any servo takes, 500..2500,
+// and nothing narrower: the fitted component's band is applied on the row by
+// the Commit Step, which CLAMPS into it and names what it moved in the answer,
+// because the band can narrow after the ends were recorded and refusing would
+// throw a calibration away (ADR 0068). Every other field is refused when it is
+// out of range, with its field, reason and accepts (#425).
+// -----------------------------------------------------------------------------
+void setRowError(ConfigApplyResult* result, const char* address, const char* key,
+                 const char* says, ApplyRefusalReason reason, const char* accepts = nullptr) {
+    char field[APPLY_REFUSAL_FIELD_MAX];
+    snprintf(field, sizeof(field), "%s.%s", address, key);
+    char message[sizeof(ConfigApplyError::message)];
+    snprintf(message, sizeof(message), "%s %s", field, says);
+    setError(result, message, reason, field, accepts);
+}
+
+void setRowRangeError(ConfigApplyResult* result, const char* address, const char* key, long lo,
+                      long hi, const char* unit = "") {
+    char field[APPLY_REFUSAL_FIELD_MAX];
+    snprintf(field, sizeof(field), "%s.%s", address, key);
+    char message[sizeof(ConfigApplyError::message)];
+    snprintf(message, sizeof(message), "%s must be %ld..%ld%s", field, lo, hi, unit);
+    setRangeError(result, message, field, lo, hi);
+}
+
+bool textUint16(const char* raw, uint16_t lo, uint16_t hi, uint16_t* out) {
+    uint32_t value = 0;
+    if (raw == nullptr || !parseUint32Value(raw, &value) || value < lo || value > hi) {
+        return false;
+    }
+    *out = (uint16_t)value;
+    return true;
+}
+
+// One row's Part list, as stated: at most SERVO_OUTPUT_PART_SLOTS ids this
+// build models. `stated` is every Part an earlier row in this request named;
+// naming one of those again puts a Part on two Outputs, which the glossary's
+// Part forbids, and is refused `conflict`.
+bool readRowParts(JsonVariantConst value, const char* address, uint32_t* stated,
+                  ServoOutputEdit* edit, ConfigApplyResult* result) {
+    if (!value.is<JsonArrayConst>()) {
+        setRowError(result, address, "parts", "must be a list of Part ids",
+                    ApplyRefusalReason::OutOfRange);
+        return false;
+    }
+    JsonArrayConst list = value.as<JsonArrayConst>();
+    if (list.size() > SERVO_OUTPUT_PART_SLOTS) {
+        setRowRangeError(result, address, "parts", 0, SERVO_OUTPUT_PART_SLOTS, " Parts");
+        return false;
+    }
+    edit->partCount = 0;
+    for (JsonVariantConst item : list) {
+        const char* id = item.as<const char*>();
+        if (id == nullptr || id[0] == '\0' || !servoOutputPartIdIsValid(id)) {
+            setRowError(result, address, "parts", "names a Part this build does not model",
+                        ApplyRefusalReason::OutOfRange);
+            return false;
+        }
+        const uint8_t index = (uint8_t)droidPartIndexOf(id);
+        bool onThisRow = false;
+        for (uint8_t i = 0; i < edit->partCount; ++i) {
+            onThisRow = onThisRow || edit->parts[i] == index;
+        }
+        if (onThisRow) {
+            continue;  // the same Part twice on one wire is the same wire
+        }
+        const uint32_t bit = (uint32_t)1u << (index % 32);
+        if ((stated[index / 32] & bit) != 0) {
+            setRowError(result, address, "parts",
+                        "names a Part another row names too: a Part is on at most one Output",
+                        ApplyRefusalReason::Conflict);
+            return false;
+        }
+        stated[index / 32] |= bit;
+        edit->parts[edit->partCount++] = index;
+    }
+    edit->fields |= SERVO_FIELD_PARTS;
+    return true;
+}
+
+// One row of the row door, onto the edit for its address. False, with the
+// refusal set, on the first field it cannot take.
+bool readOutputRow(JsonObjectConst row, const char* address, const BoardOutput* board,
+                   uint32_t* stated, ServoOutputEdit* edit, ConfigApplyResult* result) {
+    const char* raw = nullptr;
+
+    // An Output with a wired tick has it read under its form name, through the
+    // Component Toggle check (configRequestGet()). One with none - an
+    // expander's - is always wired, and saying otherwise is refused.
+    if (board == nullptr && (raw = rowText(row, "wired")) != nullptr) {
+        bool wired = false;
+        if (!parseBoolValue(raw, &wired) || !wired) {
+            setRowError(result, address, "wired", "is always true: this Output has no wired tick",
+                        ApplyRefusalReason::OutOfRange, "true");
+            return false;
+        }
+    }
+
+    if ((raw = rowText(row, "component")) != nullptr) {
+        const ServoComponentType component = parseServoCompType(raw);
+        if (strcmp(servoCompTypeToString(component), raw) != 0) {
+            setRowError(result, address, "component", "must be none, mg996r, mg90s or rgb",
+                        ApplyRefusalReason::OutOfRange, "none,mg996r,mg90s,rgb");
+            return false;
+        }
+        edit->component = component;
+        edit->fields |= SERVO_FIELD_COMPONENT;
+    }
+
+    if ((raw = rowText(row, "ledCount")) != nullptr) {
+        if (board == nullptr || !board->lightCapable) {
+            setRowError(result, address, "ledCount", "cannot be set: no light can go on this Output",
+                        ApplyRefusalReason::OutOfRange);
+            return false;
+        }
+        uint16_t ledCount = 0;
+        if (!textUint16(raw, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX, &ledCount)) {
+            setRowRangeError(result, address, "ledCount", SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX);
+            return false;
+        }
+        edit->led_count = (uint8_t)ledCount;
+        edit->fields |= SERVO_FIELD_LED_COUNT;
+    }
+
+    // The Motion Profile's bounds are the stored row's own (servoOutputRowNormalise()),
+    // so a number this door takes is exactly one the row keeps.
+    if ((raw = rowText(row, "throwMs")) != nullptr) {
+        if (!textUint16(raw, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, &edit->throw_ms)) {
+            setRowRangeError(result, address, "throwMs", SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, " ms");
+            return false;
+        }
+        edit->fields |= SERVO_FIELD_THROW_MS;
+    }
+    if ((raw = rowText(row, "accelMs")) != nullptr) {
+        if (!textUint16(raw, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, &edit->accel_ms)) {
+            setRowRangeError(result, address, "accelMs", SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, " ms");
+            return false;
+        }
+        edit->fields |= SERVO_FIELD_ACCEL_MS;
+    }
+    if ((raw = rowText(row, "ease")) != nullptr) {
+        if (!servoParseEasing(raw, &edit->easing)) {
+            setRowError(result, address, "ease", "must be none, soft or overshoot",
+                        ApplyRefusalReason::OutOfRange, "none,soft,overshoot");
+            return false;
+        }
+        edit->fields |= SERVO_FIELD_EASING;
+    }
+    // Limp is what a row nobody configured does; a word that is not one of the
+    // three is refused rather than read as limp, so a typo can never quietly
+    // take a Part off its power-up home or put one on it.
+    if ((raw = rowText(row, "boot")) != nullptr) {
+        if (!servoParseBootBehaviour(raw, &edit->boot)) {
+            setRowError(result, address, "boot", "must be limp, home-hold or home-release",
+                        ApplyRefusalReason::OutOfRange, "limp,home-hold,home-release");
+            return false;
+        }
+        edit->fields |= SERVO_FIELD_BOOT;
+    }
+
+    struct Width {
+        const char* key;
+        uint16_t ServoOutputEdit::*member;
+        uint16_t bit;
+    };
+    static const Width kWidths[] = {
+        {"openUs", &ServoOutputEdit::open_us, SERVO_FIELD_OPEN},
+        {"centreUs", &ServoOutputEdit::centre_us, SERVO_FIELD_CENTRE},
+        {"closeUs", &ServoOutputEdit::close_us, SERVO_FIELD_CLOSE},
+    };
+    for (const Width& width : kWidths) {
+        if ((raw = rowText(row, width.key)) == nullptr) {
+            continue;
+        }
+        if (!textUint16(raw, kServoPulseMinUs, kServoPulseMaxUs, &(edit->*width.member))) {
+            setRowRangeError(result, address, width.key, kServoPulseMinUs, kServoPulseMaxUs);
+            return false;
+        }
+        edit->fields |= width.bit;
+    }
+
+    if ((raw = rowText(row, "calibrated")) != nullptr) {
+        if (!parseBoolValue(raw, &edit->calibrated)) {
+            setRowError(result, address, "calibrated", "must be true or false",
+                        ApplyRefusalReason::OutOfRange, kBoolAccepts);
+            return false;
+        }
+        edit->fields |= SERVO_FIELD_CALIBRATED;
+    }
+
+    JsonVariantConst parts = row["parts"];
+    if (!parts.isNull() && !readRowParts(parts, address, stated, edit, result)) {
+        return false;
+    }
+    return true;
+}
+
+// The whole row set: at most one row per Output, at most one Output per Part.
+// Every row is read and checked before any lands - the Commit Step applies the
+// edits only when this and every other field in the request have passed, so a
+// refused row leaves the scalars beside it unwritten too (ADR 0068, one Write
+// Window).
+bool applyOutputRows(JsonObjectConst body, ConfigApplyResult* result) {
+    JsonVariantConst value = body["outputs"];
+    if (value.isNull()) {
+        return true;
+    }
+    if (!value.is<JsonArrayConst>()) {
+        setError(result, "outputs must be a list of Output rows", ApplyRefusalReason::OutOfRange,
+                 "outputs");
+        return false;
+    }
+    JsonArrayConst rows = value.as<JsonArrayConst>();
+    if (rows.size() > SERVO_OUTPUT_ROW_MAX) {
+        setRangeError(result, "outputs holds at most one row per Output", "outputs", 0,
+                      SERVO_OUTPUT_ROW_MAX);
+        return false;
+    }
+
+    uint32_t statedParts[(DROID_PART_COUNT + 31) / 32] = {};
+    uint16_t seen[SERVO_OUTPUT_ROW_MAX] = {};
+    size_t seenCount = 0;
+    for (JsonVariantConst item : rows) {
+        JsonObjectConst row = item.as<JsonObjectConst>();
+        ServoOutputDriver driver = SERVO_DRIVER_LEDC;
+        uint8_t channel = 0;
+        const char* rawAddress = row.isNull() ? nullptr : rowText(row, "address");
+        if (rawAddress == nullptr) {
+            setError(result, "every Output row must carry its address",
+                     ApplyRefusalReason::MissingArgument, "address");
+            return false;
+        }
+        if (!servoOutputParseAddress(rawAddress, &driver, &channel)) {
+            setError(result, "an Output row's address must be an Output Address, such as ledc:3",
+                     ApplyRefusalReason::OutOfRange, "address");
+            return false;
+        }
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        servoOutputFormatAddress(address, sizeof(address), driver, channel);
+
+        const uint16_t key = (uint16_t)(((uint16_t)driver << 8) | channel);
+        for (size_t i = 0; i < seenCount; ++i) {
+            if (seen[i] == key) {
+                setRowError(result, address, "address", "is named by two rows: one row per Output",
+                            ApplyRefusalReason::Conflict);
+                return false;
+            }
+        }
+        seen[seenCount++] = key;
+
+        // Read whole before it joins the list, so a refused row leaves nothing
+        // of itself behind. One row per address (checked above), so a row is
+        // one typed edit and there is nothing to merge.
+        ServoOutputEdit edit = {};
+        edit.driver = driver;
+        edit.channel = channel;
+        const BoardOutput* board =
+            driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(channel) : nullptr;
+        if (!readOutputRow(row, address, board, statedParts, &edit, result)) {
+            return false;
+        }
+        if (edit.fields == 0) {
+            continue;
+        }
+        // Rows come first and number at most SERVO_OUTPUT_ROW_MAX (checked
+        // above), which the list holds with room for a capture and a reverse.
+        result->servoOutputs.edits[result->servoOutputs.count++] = edit;
+        appendApplied(&result->applied, "[CFG] output %s updated", address);
+        result->changed = true;
+    }
+    return true;
+}
+
 }  // namespace
 
-void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
+void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
                   bool domeEnabledBefore, ConfigApplyResult* result) {
     *result = ConfigApplyResult{};
+
+    // A JSON body is read once, here, into the GET shape; every field below is
+    // then read through `params`, whichever door it came in by.
+    JsonDocument body;
+    ConfigRequest request{&form, JsonObjectConst()};
+    if (configParamHas(form, "plain")) {
+        if (!readGetShapeBody(configParamGet(form, "plain"), &body, result)) {
+            return;
+        }
+        request.body = body.as<JsonObjectConst>();
+    }
+    ConfigParamSource params;
+    params.ctx = &request;
+    params.get = configRequestGet;
 
     bool speedLimitMaxProvided = false;
     bool speedPresetValuesProvided = false;
@@ -678,62 +1213,6 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         return;
     }
 
-    if (configParamHas(params, "plain")) {
-        JsonDocument bodyDoc;
-        DeserializationError jsonErr = deserializeJson(bodyDoc, configParamGet(params, "plain"));
-        if (jsonErr) {
-            setError(result, "invalid json body", ApplyRefusalReason::MalformedArgument, "plain");
-            return;
-        }
-
-        JsonVariantConst rcBody = bodyDoc["rc"];
-        if (!rcBody.isNull()) {
-            if (rcBody["sbusTimeoutMs"].is<uint32_t>()) {
-                uint32_t parsedSbusTimeout = rcBody["sbusTimeoutMs"].as<uint32_t>();
-                if (parsedSbusTimeout < 50 || parsedSbusTimeout > 5000) {
-                    setRangeError(result, "rc.sbusTimeoutMs must be 50..5000", "rc.sbusTimeoutMs", 50,
-                                  5000);
-                    return;
-                }
-                working->drive.sbusTimeoutMs = parsedSbusTimeout;
-                result->changed = true;
-            } else if (!rcBody["sbusTimeoutMs"].isNull()) {
-                setRangeError(result, "rc.sbusTimeoutMs must be integer", "rc.sbusTimeoutMs", 50, 5000);
-                return;
-            }
-        }
-
-        JsonVariantConst rcSbus = rcBody["sbus"];
-        if (!rcSbus.isNull()) {
-            if (rcSbus["recvCh2"].is<bool>()) {
-                working->system.single_sbus_use_ch2 = rcSbus["recvCh2"].as<bool>();
-                result->changed = true;
-            } else if (!rcSbus["recvCh2"].isNull()) {
-                setError(result, "rc.sbus.recvCh2 must be boolean", ApplyRefusalReason::OutOfRange,
-                         "rc.sbus.recvCh2", "true,false");
-                return;
-            }
-        }
-
-        JsonVariantConst protoR2linkCfg = bodyDoc["protoR2link"];
-        if (!protoR2linkCfg.isNull()) {
-            if (protoR2linkCfg["wifiPeerIp"].is<const char*>()) {
-                if (!parseDomeWifiPeerIp(protoR2linkCfg["wifiPeerIp"].as<const char*>(),
-                                        working->dome.dome_wifi_peer_ip,
-                                        sizeof(working->dome.dome_wifi_peer_ip))) {
-                    setError(result, "protoR2link.wifiPeerIp must be empty or a valid IPv4 address",
-                             ApplyRefusalReason::OutOfRange, "protoR2link.wifiPeerIp");
-                    return;
-                }
-                result->changed = true;
-            } else if (!protoR2linkCfg["wifiPeerIp"].isNull()) {
-                setError(result, "protoR2link.wifiPeerIp must be a string",
-                         ApplyRefusalReason::OutOfRange, "protoR2link.wifiPeerIp");
-                return;
-            }
-        }
-    }
-
     struct BoolCfgField {
         const char* param;
         bool* field;
@@ -895,212 +1374,11 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         return;
     }
 
-    // The five fixed field sets, taken as edits to the rows that replaced them
-    // (#345, ADR 0041). One pass per Output Address, so the three parameters
-    // that name the same output arrive as one edit and the component type is
-    // settled against the pair it will clamp rather than by parameter order.
-    //
-    // The bounds here are still 500..2500, the widest a servo takes, and they
-    // are not the authoritative clamp: that is the fitted component's band, and
-    // it is applied on the row, where it can report having moved a number. A
-    // 500 us arriving for an MG996R is a legal request this core accepts and
-    // the Commit Step answers with a warning naming the part.
-    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
-        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
-        ServoOutputEdit edit = {};
-        edit.driver = SERVO_DRIVER_LEDC;
-        edit.channel = set.channel;
-        edit.fields = 0;
-
-        struct EndpointParam {
-            const char* param;
-            uint16_t ServoOutputEdit::*member;
-            uint16_t bit;
-        };
-        const EndpointParam kEndpoints[] = {
-            {set.openField, &ServoOutputEdit::open_us, SERVO_FIELD_OPEN},
-            {set.closeField, &ServoOutputEdit::close_us, SERVO_FIELD_CLOSE},
-        };
-        for (size_t e = 0; e < sizeof(kEndpoints) / sizeof(kEndpoints[0]); ++e) {
-            if (!configParamHas(params, kEndpoints[e].param)) {
-                continue;
-            }
-            uint16_t pulseUs = 0;
-            if (!paramUint16(params, kEndpoints[e].param, kServoPulseMinUs, kServoPulseMaxUs,
-                             &pulseUs)) {
-                char err[192];
-                snprintf(err, sizeof(err), "%s must be 500..2500", kEndpoints[e].param);
-                setRangeError(result, err, kEndpoints[e].param, kServoPulseMinUs, kServoPulseMaxUs);
-                return;
-            }
-            edit.*(kEndpoints[e].member) = pulseUs;
-            edit.fields |= kEndpoints[e].bit;
-        }
-
-        if (configParamHas(params, set.typeParam)) {
-            const char* raw = configParamGet(params, set.typeParam);
-            ServoComponentType parsed = SERVO_COMP_NONE;
-            if (strcmp(raw, "0") == 0 || strcmp(raw, "1") == 0 || strcmp(raw, "2") == 0 ||
-                strcmp(raw, "3") == 0) {
-                parsed = (ServoComponentType)atoi(raw);
-            } else {
-                parsed = parseServoCompType(raw);
-            }
-
-            if (!isValidServoCompType((uint8_t)parsed)) {
-                char err[180];
-                snprintf(err, sizeof(err), "%s must be none/mg996r/mg90s/rgb", set.typeParam);
-                setError(result, err, ApplyRefusalReason::OutOfRange, set.typeParam,
-                         "none,mg996r,mg90s,rgb");
-                return;
-            }
-
-            edit.component = parsed;
-            edit.fields |= SERVO_FIELD_COMPONENT;
-        }
-
-        if (edit.fields == 0) {
-            continue;
-        }
-        result->servoOutputs.edits[result->servoOutputs.count++] = edit;
-        result->changed = true;
-    }
-
-    // A light's settings, one per Output that can carry one: how many LEDs are
-    // on that wire (ADR 0067, #413). The field names are BOARD_OUTPUTS'
-    // `ledCountField`, NOT one of the five legacy sets above - this is a new
-    // per-Output answer, and it outlives the fixed names the loop above exists
-    // to keep reading.
-    //
-    // It MERGES into the edit that loop may already have made for the same
-    // Output Address (typedEditFor()).
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        const BoardOutput& output = BOARD_OUTPUTS[i];
-        if (output.ledCountField == nullptr || !configParamHas(params, output.ledCountField)) {
-            continue;
-        }
-        uint8_t ledCount = 0;
-        if (!paramUint8(params, output.ledCountField, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX,
-                        &ledCount)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be %u..%u", output.ledCountField,
-                     (unsigned)SERVO_LIGHT_LEDS_MIN, (unsigned)SERVO_LIGHT_LEDS_MAX);
-            setRangeError(result, err, output.ledCountField, SERVO_LIGHT_LEDS_MIN,
-                          SERVO_LIGHT_LEDS_MAX);
-            return;
-        }
-
-        ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
-        if (edit == nullptr) {
-            setError(result, "too many Output settings in one request",
-                     ApplyRefusalReason::OutOfRange, output.ledCountField);
-            return;
-        }
-        edit->led_count = ledCount;
-        edit->fields |= SERVO_FIELD_LED_COUNT;
-        result->changed = true;
-    }
-
-    // Each Output's Motion Profile (ADR 0052, #414): time to full throw, time
-    // to get up to speed and the ease, and what it does at power-up, under the
-    // names configMotionFieldName() gives them. A value outside what the stored row takes is REFUSED with the
-    // field and the range, never clamped: the bounds are the NVS parser's own
-    // (servoOutputRowNormalise(), SERVO_THROW_MS_MIN and the rest), so a number
-    // this door takes is exactly one the row keeps, and a number it refuses is
-    // one the builder hears about instead of finding a different one saved.
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        const BoardOutput& output = BOARD_OUTPUTS[i];
-        char throwField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        char accelField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        char easeField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        char bootField[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-        if (!configMotionFieldName(throwField, sizeof(throwField), output.id, CONFIG_MOTION_THROW) ||
-            !configMotionFieldName(accelField, sizeof(accelField), output.id, CONFIG_MOTION_ACCEL) ||
-            !configMotionFieldName(easeField, sizeof(easeField), output.id, CONFIG_MOTION_EASE) ||
-            !configMotionFieldName(bootField, sizeof(bootField), output.id, CONFIG_MOTION_BOOT)) {
-            // The buffers are sized from the longest stored id, so this is a
-            // build whose table outgrew CONFIG_MOTION_FIELD_NAME_MAX: refuse,
-            // rather than read a truncated name as some other field.
-            // No field to name: the name is exactly what did not fit.
-            setError(result, "an Output's Motion Profile field name does not fit",
-                     ApplyRefusalReason::OutOfRange, nullptr);
-            return;
-        }
-        const bool hasThrow = configParamHas(params, throwField);
-        const bool hasAccel = configParamHas(params, accelField);
-        const bool hasEase = configParamHas(params, easeField);
-        const bool hasBoot = configParamHas(params, bootField);
-        if (!hasThrow && !hasAccel && !hasEase && !hasBoot) {
-            continue;
-        }
-
-        uint16_t throwMs = 0;
-        if (hasThrow &&
-            !paramUint16(params, throwField, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, &throwMs)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be %u..%u ms", throwField,
-                     (unsigned)SERVO_THROW_MS_MIN, (unsigned)SERVO_THROW_MS_MAX);
-            setRangeError(result, err, throwField, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX);
-            return;
-        }
-        uint16_t accelMs = 0;
-        if (hasAccel &&
-            !paramUint16(params, accelField, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, &accelMs)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be %u..%u ms", accelField,
-                     (unsigned)SERVO_ACCEL_MS_MIN, (unsigned)SERVO_ACCEL_MS_MAX);
-            setRangeError(result, err, accelField, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX);
-            return;
-        }
-        ServoEasing easing = SERVO_EASE_NONE;
-        if (hasEase && !servoParseEasing(configParamGet(params, easeField), &easing)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be none, soft or overshoot", easeField);
-            setError(result, err, ApplyRefusalReason::OutOfRange, easeField, "none,soft,overshoot");
-            return;
-        }
-        // Limp is what a row nobody configured does; a value that is not one of
-        // the three is refused rather than read as limp, so a typo can never
-        // quietly take a Part off its power-up home or put one on it.
-        ServoBootBehaviour boot = SERVO_BOOT_LIMP;
-        if (hasBoot && !servoParseBootBehaviour(configParamGet(params, bootField), &boot)) {
-            char err[192];
-            snprintf(err, sizeof(err), "%s must be limp, home-hold or home-release", bootField);
-            setError(result, err, ApplyRefusalReason::OutOfRange, bootField,
-                     "limp,home-hold,home-release");
-            return;
-        }
-
-        ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
-        if (edit == nullptr) {
-            setError(result, "too many Output settings in one request",
-                     ApplyRefusalReason::OutOfRange,
-                     hasThrow ? throwField : hasAccel ? accelField : hasEase ? easeField : bootField);
-            return;
-        }
-        if (hasThrow) {
-            edit->throw_ms = throwMs;
-            edit->fields |= SERVO_FIELD_THROW_MS;
-            appendApplied(&result->applied, "[CFG] %s updated to %u", throwField, (unsigned)throwMs);
-        }
-        if (hasAccel) {
-            edit->accel_ms = accelMs;
-            edit->fields |= SERVO_FIELD_ACCEL_MS;
-            appendApplied(&result->applied, "[CFG] %s updated to %u", accelField, (unsigned)accelMs);
-        }
-        if (hasEase) {
-            edit->easing = easing;
-            edit->fields |= SERVO_FIELD_EASING;
-            appendApplied(&result->applied, "[CFG] %s updated to %s", easeField,
-                          servoEasingToString(easing));
-        }
-        if (hasBoot) {
-            edit->boot = boot;
-            edit->fields |= SERVO_FIELD_BOOT;
-            appendApplied(&result->applied, "[CFG] %s updated to %s", bootField,
-                          servoBootBehaviourToString(boot));
-        }
-        result->changed = true;
+    // The row door: an Output's settings, one row per Output (ADR 0068). The
+    // only door onto them - pages, the Console and a restore all send rows -
+    // beside the capture, reverse and Part-move acts below and above.
+    if (!request.body.isNull() && !applyOutputRows(request.body, result)) {
+        return;
     }
 
     // A capture: the builder drove the Part until it looked right and pressed

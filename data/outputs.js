@@ -5,30 +5,25 @@
 // Servos, Parts, Lights, Backup and the Dashboard ask this module and none of
 // them works the answer out again.
 //
-// THE OUTPUT ARRIVES IN TWO HALVES, KEYED TWO WAYS, and this is the one place
-// they are joined:
-//
-//   GET /api/config        components{} entries that carry an `address`, keyed
-//                          by the stored config id: what the board prints, the
-//                          wired tick, what is on the wire, and the fields that
-//                          save each (src/web/api_config.cpp).
-//   GET /api/servo/outputs the Servo Output rows, keyed by Output Address: the
-//                          Parts on each wire, and where it has been told to be
-//                          (docs/api.md).
-//
-// They are joined by Output Address (CONTEXT.md "Output Address"), never by a
-// name and never by position.
+// AN OUTPUT IS ITS ROW (ADR 0068). GET /api/servo/outputs answers one row per
+// Output, keyed by its Output Address (CONTEXT.md "Output Address"), with
+// everything a builder sets on it - its wired tick, what is on the wire, its
+// light's LED count, its Motion Profile and boot behaviour, its ends and the
+// Parts on it - and what each row can save, as data: `switchable`,
+// `lightCapable`. POST /api/config takes the same rows back, in the same shape,
+// as `outputs`: that is the one door every Output save goes through, and this
+// module is what sends it. GET /api/config carries no Output at all.
 //
 // THIS FILE KNOWS NO OUTPUT (ADR 0065). It relays what the running firmware
 // reports - which Outputs exist, in its order, what each is called, which can
-// carry a light and which fields save it - and never lists an id, a count or a
+// carry a light and what each can save - and never lists an id, a count or a
 // board label of its own (operator, 2026-09-19 on #411: "the outputs is
 // supposed to be dynamic").
 //
-// ONE WIRED RULE. An Output the config describes is wired when its tick says
-// so. An Output only the servo table knows - an expander's channel - has no
-// tick anybody could have turned off, so it reads as wired, has no wired
-// switch, and is called by its address (operator, 2026-09-23 on #415).
+// ONE WIRED RULE. An Output with a wired tick is wired when its tick says so.
+// An Output with none - an expander's channel - has no tick anybody could have
+// turned off, so it reads as wired, has no wired switch, and is called by its
+// address (operator, 2026-09-23 on #415).
 //
 // WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (CONTEXT.md "Output",
 // ADR 0067): a servo's model where the wire drives a servo, a Light Type where
@@ -37,10 +32,9 @@
 // nowhere else in data/.
 //
 // HOW A SERVO MOVES is its Motion Profile (ADR 0052, #414): time to full
-// throw, time to get up to speed and the ease. The config reports each on the
-// Output's entry with the field that saves it, and the ease words are listed
-// here beside the other two vocabularies. What it does at power-up - its boot
-// behaviour - is reported and saved the same way, and its words live here too.
+// throw, time to get up to speed and the ease. What it does at power-up - its
+// boot behaviour - rides the same row, and the ease and boot words live here
+// beside the other two vocabularies.
 //
 // DATA ONLY. Nothing here touches the page: the plates are drawn by
 // data/output_settings.js from what this module holds.
@@ -87,10 +81,6 @@
   let config = null; // GET /api/config's whole answer, or the last save's
   let rows = null; // GET /api/servo/outputs rows, read by readRow()
   let outputs = Object.freeze([]);
-  // The config fields each Output is saved under, by address. Kept here and
-  // never handed out: a surface says what it wants saved, and this module
-  // names the fields (POST /api/config).
-  let saveFields = new Map();
   // What each Output was first reported with this session: its wired tick,
   // its Light Type and its LED count. All three are read once when the droid
   // starts (ADR 0027, src/tasks/aux_led.cpp), so a later answer that differs
@@ -98,29 +88,41 @@
   const started = new Map();
   const listeners = new Set();
 
-  // One GET /api/servo/outputs row, in the shape every surface reads. `name`
-  // is kept apart as `printed`: it is folded into the Output's label below.
+  const number = (value) => (typeof value === "number" ? value : null);
+
+  // One GET /api/servo/outputs row, in the shape every surface reads.
   const readRow = (row) => ({
     address: String(row.address),
+    // What the board prints beside it; "" for an address no board prints.
     printed: text(row.name),
+    // The stored config id, where the board has one. Never shown.
+    id: text(row.id),
+    switchable: row.switchable === true,
+    wiredTick: row.wired === true,
+    lightCapable: row.lightCapable === true,
+    ledCount: number(row.ledCount),
+    throwMs: number(row.throwMs),
+    accelMs: number(row.accelMs),
+    ease: text(row.ease),
+    boot: text(row.boot),
     parts: Array.isArray(row.parts) ? row.parts.map(String) : [],
     // A firmware older than the output-first table reports no position at
     // all, which is not the same as an Output with no pulse.
     reported: "commandedUs" in row,
     bandLoUs: Number(row.bandLoUs) || 0,
     bandHiUs: Number(row.bandHiUs) || 0,
-    commandedUs: typeof row.commandedUs === "number" ? row.commandedUs : null,
-    targetUs: typeof row.targetUs === "number" ? row.targetUs : null,
+    commandedUs: number(row.commandedUs),
+    targetUs: number(row.targetUs),
     // How many nudges have ended on this Output (#363); null from a firmware
     // that does not say, which a run must refuse rather than wait on.
-    nudgesDone: typeof row.nudgesDone === "number" ? row.nudgesDone : null,
+    nudgesDone: number(row.nudgesDone),
     // What the calibration dial reads (#364). The three widths are the
     // recorded positions, directional: openUs is whichever end the builder
     // recorded as open, so nothing here sorts the pair.
     component: text(row.component),
-    openUs: typeof row.openUs === "number" ? row.openUs : null,
-    centreUs: typeof row.centreUs === "number" ? row.centreUs : null,
-    closeUs: typeof row.closeUs === "number" ? row.closeUs : null,
+    openUs: number(row.openUs),
+    centreUs: number(row.centreUs),
+    closeUs: number(row.closeUs),
     calibrated: row.calibrated === true,
     // The pair this Output held before the upgrade, when its part's range
     // could not take it and the droid moved it in (#417); null otherwise, and
@@ -135,109 +137,69 @@
     limp: typeof row.limp === "string" ? row.limp : "off",
   });
 
-  // What an Output with no servo table row reads as: nothing on it, and no
-  // position reported.
-  const NO_ROW = Object.freeze(readRow({ address: "", parts: [] }));
-
-  // One Output, from whichever halves describe it.
+  // One Output, from its row.
   //
-  //   address          its Output Address: the join, and what a command names
-  //   id               its components{} key, the stored config id; "" where
-  //                    the config does not describe it. Never shown.
+  //   address          its Output Address: what a command and a save name
+  //   id               the stored config id, where the board has one; "" for
+  //                    an expander's channel. Never shown.
   //   label            what the board prints beside it, or "" where no board
   //                    prints anything; also the word POST /api/servo moves it
   //                    by (ADR 0033 Amendment 2026-09-19)
   //   name             what a builder calls it: the label, else its address
-  //   fromConfig       GET /api/config describes it
-  //   fromTable        GET /api/servo/outputs has a row for it
-  //   switchable       the config names the fields its wired tick and type
-  //                    save under, so a page may offer them
+  //   fromConfig       the board declares it: it has a stored id, a label and
+  //                    a wired tick (the name dates from when its settings
+  //                    were read from GET /api/config)
+  //   fromTable        GET /api/servo/outputs has a row for it - every Output
+  //   switchable       it has a wired tick, so a page may offer one
   //   wired            the one wired rule (header)
   //   canLight         a Light Type may go on this wire at all
   //   type             the stored token: a servo model or a Light Type
   //   light, servo     that token as a Light Type or as a servo model, or null
   //   ledCount         how many LEDs its light has
-  //   ledCountSettable the config names a field that saves ledCount
-  //   throwMs, accelMs its Motion Profile's two times, or null where the
-  //   ease             config reports none; the ease as the builder chose it
-  //   motionSettable   the config names the fields that save all three
+  //   ledCountSettable its row carries an LED count, which it does exactly
+  //                    where a light can go
+  //   throwMs, accelMs its Motion Profile's two times, or null where the row
+  //   ease             reports none; the ease as the builder chose it
+  //   motionSettable   its row carries all three
   //   boot             what it does at power-up, as the builder chose it
-  //   bootSettable     the config names the field that saves boot
+  //   bootSettable     its row carries one
   //   started          what it was first reported with (above), or null
-  //   parts ...        its servo table row, read by readRow()
-  const outputOf = (address, id, entry, row) => {
-    const { printed, ...table } = row || NO_ROW;
-    const canLight = Boolean(entry?.lightCapable);
-    const type = entry ? String(entry.type || (canLight ? NO_SERVO.id : SERVO_MODELS[0].id)) : "";
-    // The config and the row are named from one lookup (include/board_outputs.h
-    // boardOutputLabel()), so they agree; the config's is the one read first.
-    const label = text(entry?.label) || printed;
+  //   parts ...        the rest of its row, read by readRow()
+  const outputOf = (row) => {
+    const { printed, wiredTick, lightCapable, ...table } = row;
+    const type = table.component || (lightCapable ? NO_SERVO.id : SERVO_MODELS[0].id);
     const output = {
       ...table,
-      address,
-      id,
-      label,
-      name: label || address,
-      fromConfig: entry !== null,
-      fromTable: row !== null,
-      switchable: Boolean(entry && text(entry.enabledField) && text(entry.typeField)),
-      wired: entry ? entry.enabled === true : true,
-      canLight,
+      label: printed,
+      name: printed || table.address,
+      fromConfig: table.id !== "",
+      fromTable: true,
+      wired: table.switchable ? wiredTick : true,
+      canLight: lightCapable,
       type,
       light: lightType(type),
       servo: servoModel(type),
-      ledCount: Number(entry?.ledCount) || 1,
-      ledCountSettable: Boolean(entry && text(entry.ledCountField)),
-      throwMs: typeof entry?.throwMs === "number" ? entry.throwMs : null,
-      accelMs: typeof entry?.accelMs === "number" ? entry.accelMs : null,
-      ease: text(entry?.ease),
-      motionSettable: Boolean(entry && text(entry.throwField) && text(entry.accelField) && text(entry.easeField)),
-      boot: text(entry?.boot),
-      bootSettable: Boolean(entry && text(entry.bootField)),
+      ledCount: table.ledCount || 1,
+      ledCountSettable: lightCapable && table.ledCount !== null,
+      motionSettable: table.throwMs !== null && table.accelMs !== null && table.ease !== "",
+      bootSettable: table.boot !== "",
     };
-    if (entry && !started.has(address)) {
-      started.set(address, Object.freeze({
+    if (output.fromConfig && !started.has(output.address)) {
+      started.set(output.address, Object.freeze({
         wired: output.wired,
         light: output.light ? output.light.id : null,
         ledCount: output.ledCount,
       }));
     }
-    output.started = started.get(address) || null;
+    output.started = started.get(output.address) || null;
     output.parts = Object.freeze(output.parts.slice());
     return Object.freeze(output);
   };
 
-  // The join. The Outputs the config describes come first, in its order
-  // (include/board_outputs.h BOARD_OUTPUTS), then any the servo table alone
-  // knows, in the table's order.
+  // The Outputs, in the firmware's order (include/board_outputs.h BOARD_OUTPUTS
+  // first, then any the table alone holds).
   const join = () => {
-    const components = config && config.components && typeof config.components === "object"
-      ? config.components : {};
-    const byAddress = new Map((rows || []).map((row) => [row.address, row]));
-    const described = new Set();
-    const fields = new Map();
-    const list = [];
-    Object.keys(components).forEach((id) => {
-      const entry = components[id];
-      const address = text(entry?.address);
-      if (address === "" || described.has(address)) return;
-      described.add(address);
-      fields.set(address, {
-        wired: text(entry.enabledField),
-        type: text(entry.typeField),
-        ledCount: text(entry.ledCountField),
-        throwMs: text(entry.throwField),
-        accelMs: text(entry.accelField),
-        ease: text(entry.easeField),
-        boot: text(entry.bootField),
-      });
-      list.push(outputOf(address, id, entry, byAddress.get(address) || null));
-    });
-    (rows || []).forEach((row) => {
-      if (!described.has(row.address)) list.push(outputOf(row.address, "", null, row));
-    });
-    outputs = Object.freeze(list);
-    saveFields = fields;
+    outputs = Object.freeze((rows || []).map(outputOf));
   };
 
   const publish = () => {
@@ -265,21 +227,25 @@
   };
 
   /**
-   * Read the droid: its config and, unless `rows` is false, its servo table,
-   * as one snapshot. A surface that needs the config for anything else - its
+   * Read the droid: its servo table, which is the Outputs, and its config, as
+   * one snapshot. A surface that needs the config for anything else - its
    * lanes, the Droid Build, the log level - takes it from the answer rather
    * than reading GET /api/config a second time.
    *
+   * Both are always read. There used to be a `rows: false` for a surface that
+   * wanted the config alone, while the Outputs' settings were on the config;
+   * an Output is its row now (ADR 0068), so a read without the table has no
+   * Outputs in it, and the option is ignored.
+   *
    * @param {object} [opts]
    * @param {object} [opts.handle] - the section's request handle, or PAApi
-   * @param {boolean} [opts.rows=true] - also read GET /api/servo/outputs
    * @returns {Promise<{config: object, outputs: object[]}>}
    */
-  const load = async ({ handle = null, rows: withRows = true } = {}) => {
+  const load = async ({ handle = null } = {}) => {
     const api = apiFor(handle);
     // Both answers land before either is taken, so a half-answered read never
     // publishes a join of a new half with an old one.
-    const table = withRows ? await readTable(api) : rows;
+    const table = await readTable(api);
     const answer = await readConfig(api);
     rows = table;
     config = answer;
@@ -301,34 +267,44 @@
     return outputs;
   };
 
-  // The config fields for a set of changes, keyed by the Output's address.
-  // What a surface may ask for is exactly what an Output names a field for,
-  // and asking for anything else is refused rather than dropped.
+  // What a surface may ask to save, and the row key each is saved under
+  // (POST /api/config `outputs`, docs/api.md). Each is offered only where the
+  // Output's row says it can be saved, and asking for anything else is refused
+  // rather than dropped.
   const PATCH_FIELDS = {
-    wired: (value) => (value ? "true" : "false"),
-    type: (value) => String(value),
-    ledCount: (value) => String(value),
-    throwMs: (value) => String(value),
-    accelMs: (value) => String(value),
-    ease: (value) => String(value),
-    boot: (value) => String(value),
+    wired: { key: "wired", can: (output) => output.switchable, value: (v) => v === true },
+    type: { key: "component", can: () => true, value: String },
+    ledCount: { key: "ledCount", can: (output) => output.ledCountSettable },
+    throwMs: { key: "throwMs", can: (output) => output.motionSettable },
+    accelMs: { key: "accelMs", can: (output) => output.motionSettable },
+    ease: { key: "ease", can: (output) => output.motionSettable, value: String },
+    boot: { key: "boot", can: (output) => output.bootSettable, value: String },
   };
 
-  // What each setting is called on screen. The droid refuses a value by the
-  // name it saves it under (`"field":"arm2ThrowMs"`), and that name is wire
-  // vocabulary that must never reach a builder (#414).
+  // A number goes as a number; anything else as the text it is, so the droid
+  // refuses it by its own check rather than this module guessing.
+  const asSent = (value) => (typeof value === "number" && Number.isFinite(value) ? value : String(value));
+
+  // What each row key is called on screen. The droid refuses a value by the
+  // row key it saves it under (`"field":"ledc:1.throwMs"`), and that name is
+  // wire vocabulary that must never reach a builder (#414).
   const SETTING_WORDS = {
     wired: "wired tick",
-    type: "what is on the wire",
+    component: "what is on the wire",
     ledCount: "LED count",
     throwMs: "time to full throw",
     accelMs: "time to get up to speed",
     ease: "ease",
     boot: "power-up setting",
+    openUs: "open end",
+    centreUs: "centre",
+    closeUs: "close end",
+    calibrated: "calibration",
+    parts: "parts",
   };
 
   // The unit a setting's number is in, where it has one.
-  const SETTING_UNITS = { throwMs: " ms", accelMs: " ms" };
+  const SETTING_UNITS = { throwMs: " ms", accelMs: " ms", openUs: " µs", centreUs: " µs", closeUs: " µs" };
 
   // What a setting takes, from the refusal's `accepts`: `20..10000` is a range,
   // anything else the words it takes, comma-separated.
@@ -339,40 +315,74 @@
     return words.length > 1 ? `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}` : words[0];
   };
 
-  // A refusal naming one of the fields this save sent, put in the page's words:
-  // the Output's name and the setting's, and what it takes. Read from the keys
-  // the droid answers beside its sentence (docs/api.md "Refusals from a
-  // settings write"), never from the sentence, which the firmware may reword.
-  // Anything else is left exactly as it came, for web_api.js's messageFor().
-  const sayRefusal = (error, sent) => {
+  const at = (address) => outputs.find((output) => output.address === address) || null;
+
+  // The Part a refused row shares with another row that was sent, by the name
+  // the catalog gives it (data/droid_parts.js), or "" when the rows sent do not
+  // show one - the droid's refusal names the row, never the Part, and this page
+  // holds what it posted. Never the id: that is wire vocabulary too.
+  const sharedPartName = (address, sentRows) => {
+    const rowsSent = Array.isArray(sentRows) ? sentRows : [];
+    const refused = rowsSent.find((row) => row && row.address === address);
+    const listed = (row) => (row && Array.isArray(row.parts) ? row.parts : []);
+    const shared = listed(refused).find((part) =>
+      rowsSent.some((row) => row !== refused && listed(row).includes(part)));
+    const catalog = window.DroidParts && Array.isArray(window.DroidParts.parts) ? window.DroidParts.parts : [];
+    const entry = catalog.find((part) => part.id === shared);
+    return entry && typeof entry.name === "string" ? entry.name : "";
+  };
+
+  /**
+   * A refusal about one of an Output row's fields, put in the page's words: the
+   * Output's name and the setting's, and what it takes. Read from the keys the
+   * droid answers beside its sentence (docs/api.md "Refusals from a settings
+   * write") - `field` is `<address>.<key>` - never from the sentence, which the
+   * firmware may reword. Anything else is left exactly as it came, for
+   * web_api.js's messageFor().
+   *
+   * @param {Error} error - what PAApi threw
+   * @param {object[]} [sentRows] - the `outputs` rows the refused request sent,
+   *   so a Part the droid refused on two Outputs can be named
+   * @returns {Error} the same error, reworded where it was about a row
+   */
+  const sayRefusal = (error, sentRows = []) => {
     const field = typeof error?.field === "string" ? error.field : "";
-    if (!Object.hasOwn(sent, field)) return error;
-    const { address, key } = sent[field];
+    const dot = field.lastIndexOf(".");
+    const address = dot > 0 ? field.slice(0, dot) : "";
+    const key = field.slice(dot + 1);
+    if (!address || !Object.hasOwn(SETTING_WORDS, key)) return error;
     const output = at(address);
-    const setting = `${output ? output.name : address}'s ${SETTING_WORDS[key]}`;
+    const name = output ? output.name : address;
+    // A Part is on at most one Output (CONTEXT.md "Part"): a row set that puts
+    // one on two is refused as a conflict, and says so in a sentence of its own,
+    // naming the Part when the rows sent show which one it is.
+    if (error.reason === "conflict" && key === "parts") {
+      const part = sharedPartName(address, sentRows);
+      error.message = part
+        ? `${part} is on ${name} and another output`
+        : `${name} and another output list the same part`;
+      return error;
+    }
+    const setting = `${name}'s ${SETTING_WORDS[key]}`;
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
     error.message = accepts ? `${setting} must be ${sayAccepts(accepts, key)}` : `${setting} was not saved`;
     return error;
   };
 
-  // The form for a set of changes, and which Output and setting each field in
-  // it saves, so a refusal can be said in words.
-  const formFor = (changes) => {
-    const form = {};
-    const sent = {};
-    Object.keys(changes).forEach((address) => {
-      const fields = saveFields.get(address);
-      if (!fields) throw new Error(`${address} is not an Output this droid saves settings for`);
-      const patch = changes[address];
-      Object.keys(patch).forEach((key) => {
-        if (!PATCH_FIELDS[key]) throw new Error(`an Output has no setting called ${key}`);
-        if (!fields[key]) throw new Error(`${address} names no field to save ${key} under`);
-        form[fields[key]] = PATCH_FIELDS[key](patch[key]);
-        sent[fields[key]] = { address, key };
-      });
+  // The rows for a set of changes, in the shape POST /api/config takes them.
+  const rowsFor = (changes) => Object.keys(changes).map((address) => {
+    const output = at(address);
+    if (!output) throw new Error(`${address} is not an Output this droid saves settings for`);
+    const patch = changes[address];
+    const row = { address };
+    Object.keys(patch).forEach((key) => {
+      const field = PATCH_FIELDS[key];
+      if (!field) throw new Error(`an Output has no setting called ${key}`);
+      if (!field.can(output)) throw new Error(`${address} cannot save ${key}`);
+      row[field.key] = (field.value || asSent)(patch[key]);
     });
-    return { form, sent };
-  };
+    return row;
+  });
 
   // Saves go out one at a time, in the order they were asked for, so a later
   // answer is never overtaken by an earlier one.
@@ -380,43 +390,38 @@
 
   /**
    * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
-   * accelMs, ease, boot } }`, any of them per Output. The droid's answer becomes what
+   * accelMs, ease, boot } }`, any of them per Output, through the row door
+   * (POST /api/config `outputs`, ADR 0068). The droid's answer becomes what
    * this module holds.
    *
    * @param {object} changes
    * @param {object} [opts]
-   * @param {object|URLSearchParams} [opts.alongside] - other POST /api/config
-   *   fields that must land in the same request (a Backup restore)
    * @param {number} [opts.timeoutMs=5000]
    * @returns {Promise<object[]>} the Outputs as the droid now holds them
    */
-  const saveAll = (changes, { alongside = null, timeoutMs = 5000 } = {}) => {
+  const saveAll = (changes, { timeoutMs = 5000 } = {}) => {
     const run = queue.then(async () => {
       const api = apiFor(null);
-      // A request carrying other fields goes as the form those came in, and an
-      // Output-only save as a plain one.
-      const { form: fields, sent } = formFor(changes);
-      let form = fields;
-      if (alongside) {
-        form = new URLSearchParams(alongside);
-        Object.keys(fields).forEach((key) => form.set(key, fields[key]));
-      }
+      const body = { outputs: rowsFor(changes) };
       try {
-        const result = await api.postForm("/api/config", form, { timeoutMs });
+        const result = await api.postJson("/api/config", body, { timeoutMs });
         // The droid answers a save with the config it now holds
-        // (sendConfigSnapshot()); an answer without one is read again.
+        // (sendConfigSnapshot()); the rows are read again, since the Outputs
+        // are theirs.
         const answer = result?.data;
-        config = answer && typeof answer === "object" && answer.components ? answer : await readConfig(api);
+        config = answer && typeof answer === "object" && answer.drive ? answer : await readConfig(api);
+        rows = await readTable(api);
       } catch (error) {
         // What the droid holds, not the answer it refused - it may have taken
         // a save whose answer never arrived.
         try {
+          rows = await readTable(api);
           config = await readConfig(api);
           publish();
         } catch (reloadError) {
-          console.error("[outputs] reading the config after a failed save failed:", reloadError);
+          console.error("[outputs] reading the outputs after a failed save failed:", reloadError);
         }
-        throw sayRefusal(error, sent);
+        throw sayRefusal(error, body.outputs);
       }
       publish();
       return outputs;
@@ -434,10 +439,9 @@
   // list a surface is painting from, where it holds one.
   const forPart = (partId, among = outputs) => among.find((output) => output.parts.includes(partId)) || null;
 
-  const at = (address) => outputs.find((output) => output.address === address) || null;
-
-  // Which halves the droid has answered this session. A plate that saves a
-  // wired tick needs the config; a table of Parts needs only the rows.
+  // Which reads the droid has answered this session. A plate that saves a
+  // wired tick needs the table; a surface that reads the lanes needs the
+  // config.
   const known = () => ({ config: config !== null, table: rows !== null });
 
   /**
@@ -467,6 +471,7 @@
     known,
     save,
     saveAll,
+    sayRefusal,
     onChange,
   });
 })();

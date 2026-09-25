@@ -70,7 +70,7 @@ void webRegisterSeamRoutes() {
 
     // Config, RC-map and WiFi writes. Their decision logic stays in the
     // ADR 0011 apply cores; these routes only carry values across.
-    webRegisterRoute("/api/config", WebMethod::kPost, handleConfigPost);
+    webRegisterRoute("/api/config", WebMethod::kPost, handleConfigPost, kConfigPostMaxBodyBytes);
     webRegisterRoute("/api/rc/map", WebMethod::kGet, handleRcMapGet);
     webRegisterRoute("/api/rc/map", WebMethod::kPost, handleRcMapPost);
     webRegisterRoute("/api/wifi", WebMethod::kGet, handleWifiGet);

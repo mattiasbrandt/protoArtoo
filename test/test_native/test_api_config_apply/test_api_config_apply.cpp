@@ -8,6 +8,7 @@
 // =============================================================================
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 #include "board_outputs.h"
 #include <map>
@@ -159,12 +160,10 @@ void test_configApply_protoR2linkWifiPeerIp_empty_clears(void) {
     TEST_ASSERT_EQUAL_STRING("", snap.dome.dome_wifi_peer_ip);
 }
 
-// Note: parseServoCompType() maps any unrecognized string to SERVO_COMP_NONE
-// (a valid value), so the "%s must be none/mg996r/mg90s/rgb" reject branch is
-// unreachable via the string parser today — this pins the named-value path
-// instead, matching what the legacy handler actually validated.
+// What is on an Output's wire arrives as its row's `component` (ADR 0068).
 void test_configApply_servoType_named_value_updates(void) {
-    std::map<std::string, std::string> m = {{"arm1Type", "mg90s"}};
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"outputs\":[{\"address\":\"ledc:0\",\"component\":\"mg90s\"}]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
@@ -178,12 +177,13 @@ void test_configApply_servoType_named_value_updates(void) {
     TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_MG90S, result.servoOutputs.edits[0].component);
 }
 
-// One Output Address, one edit, however many of its three parameters the
-// request carried - the component type has to be settled against the pair it
-// will clamp, not by whichever parameter the form happened to send first.
+// One Output Address, one edit, however many of its fields the row carried -
+// the component type has to be settled against the pair it will clamp, not by
+// whichever key the row happened to list first.
 void test_configApply_servo_endpoints_and_type_become_one_addressed_edit(void) {
     std::map<std::string, std::string> m = {
-        {"aux1OpenUs", "1800"}, {"aux1CloseUs", "1200"}, {"aux1Type", "mg90s"}};
+        {"plain", "{\"outputs\":[{\"address\":\"ledc:3\",\"openUs\":1800,"
+                  "\"closeUs\":1200,\"component\":\"mg90s\"}]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
@@ -203,7 +203,8 @@ void test_configApply_servo_endpoints_and_type_become_one_addressed_edit(void) {
 // A request that names one end names one field, and the row keeps the other.
 // The mask is what says so, so an absent parameter cannot arrive as a zero.
 void test_configApply_one_endpoint_edits_only_that_field(void) {
-    std::map<std::string, std::string> m = {{"arm2OpenUs", "1750"}};
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"outputs\":[{\"address\":\"ledc:1\",\"openUs\":1750}]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
@@ -305,10 +306,11 @@ void test_configApply_an_unknown_captured_end_is_refused(void) {
     TEST_ASSERT_TRUE(result.error.hasError);
 }
 
-// A capture and the five legacy field sets can ride one request without
-// colliding: the capture is the sixth edit slot, addressed at any Output.
-void test_configApply_a_capture_rides_beside_a_legacy_endpoint_edit(void) {
-    std::map<std::string, std::string> m = {{"arm1OpenUs", "1900"},
+// A capture and a row can ride one request without colliding: the capture is
+// an edit of its own, addressed at any Output.
+void test_configApply_a_capture_rides_beside_a_row_edit(void) {
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"outputs\":[{\"address\":\"ledc:0\",\"openUs\":1900}]}"},
                                             {"captureOutput", "ledc:5"},
                                             {"captureEnd", "close"},
                                             {"captureUs", "1050"}};
@@ -417,13 +419,34 @@ void test_configApply_json_body_sbusTimeoutMs_updates(void) {
     TEST_ASSERT_EQUAL_UINT32(777, snap.drive.sbusTimeoutMs);
 }
 
-void test_configApply_json_body_sbusTimeoutMs_out_of_range_rejected(void) {
+// A value in the GET shape reaches the same check as its form name, so it is
+// refused in the same words, about the same field (ADR 0068): there is one range
+// per field, not one per door.
+void test_configApply_json_body_is_refused_by_the_form_fields_own_check(void) {
     std::map<std::string, std::string> m = {{"plain", "{\"rc\":{\"sbusTimeoutMs\":10}}"}};
     ConfigSnapshot snap = makeDefaultSnap();
+    const uint32_t before = snap.drive.sbusTimeoutMs;
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("rc.sbusTimeoutMs must be 50..5000", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs must be 50..5000", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("sbusTimeoutMs", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("50..5000", result.error.refusal.accepts);
+    TEST_ASSERT_EQUAL_UINT32(before, snap.drive.sbusTimeoutMs);
+}
+
+// A value no form field could hold - an object where a peer IP belongs - is
+// refused, never read as the empty string that would clear the stored address.
+void test_configApply_json_body_object_where_a_value_belongs_is_refused(void) {
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"protoR2link\":{\"wifiPeerIp\":{\"ip\":\"10.0.0.2\"}}}"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    snprintf(snap.dome.dome_wifi_peer_ip, sizeof(snap.dome.dome_wifi_peer_ip), "%s", "10.0.0.9");
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("protoR2linkWifiPeerIp", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.9", snap.dome.dome_wifi_peer_ip);
 }
 
 void test_configApply_json_body_invalid_json_rejected(void) {
@@ -435,25 +458,49 @@ void test_configApply_json_body_invalid_json_rejected(void) {
     TEST_ASSERT_EQUAL_STRING("invalid json body", result.error.message);
 }
 
-// A light's LED count is one per Output (#413), saved under that Output's own
-// field name. A value outside the band says which field it was about, because a
-// request carrying three of them needs to know which one it got wrong.
-void test_configApply_led_count_out_of_range_names_its_output(void) {
-    const BoardOutput* lit = nullptr;
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        if (BOARD_OUTPUTS[i].ledCountField != nullptr) {
-            lit = &BOARD_OUTPUTS[i];
-            break;
-        }
-    }
-    TEST_ASSERT_NOT_NULL(lit);
+// An empty list is an answer, not an absence (#351, #371): a run that has shown
+// nothing yet, or a droid with nothing fitted. In the GET shape it arrives as
+// `[]`, and a restore that read it as "not sent" would leave the droid claiming
+// steps it was never shown and Parts nobody fitted.
+void test_configApply_an_empty_get_shape_list_is_an_answer(void) {
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"guidedSetup\":{\"visited\":[]},\"droidBuild\":{\"fitted\":[]}}"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_TRUE(result.guidedSetup.visitedChanged);
+    TEST_ASSERT_TRUE(result.guidedSetup.visited.recorded);
+    TEST_ASSERT_EQUAL_STRING("", result.guidedSetup.visited.visited);
+    TEST_ASSERT_TRUE(result.droidBuild.fittedChanged);
+    TEST_ASSERT_EQUAL_size_t(0, droidFittedPartsCount(result.droidBuild.fitted));
+}
 
-    std::map<std::string, std::string> m = {{lit->ledCountField, "0"}};
+// A light's LED count is one per Output (#413), a field of its row. A value
+// outside the band says which Output it was about, because a restore carrying
+// three of them needs to know which one it got wrong.
+void test_configApply_led_count_out_of_range_names_its_output(void) {
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"outputs\":[{\"address\":\"ledc:4\",\"ledCount\":0}]}"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_NOT_NULL(strstr(result.error.message, lit->ledCountField));
+    TEST_ASSERT_EQUAL_STRING("ledc:4.ledCount", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("1..255", result.error.refusal.accepts);
+}
+
+// A word that is not one of the four is refused, not read as `none`: a typo
+// must never quietly take a servo off a wire.
+void test_configApply_an_unknown_component_word_is_refused(void) {
+    std::map<std::string, std::string> m = {
+        {"plain", "{\"outputs\":[{\"address\":\"ledc:0\",\"component\":\"mg995\"}]}"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("ledc:0.component", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_size_t(0, result.servoOutputs.count);
 }
 
 // --- applied-fields record ---
@@ -707,7 +754,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_a_capture_at_a_non_servo_address_is_refused);
     RUN_TEST(test_configApply_a_capture_outside_what_a_servo_takes_is_refused);
     RUN_TEST(test_configApply_an_unknown_captured_end_is_refused);
-    RUN_TEST(test_configApply_a_capture_rides_beside_a_legacy_endpoint_edit);
+    RUN_TEST(test_configApply_a_capture_rides_beside_a_row_edit);
     RUN_TEST(test_configApply_reverse_is_one_addressed_act_with_no_widths);
     RUN_TEST(test_configApply_reverse_at_a_non_address_is_refused);
     RUN_TEST(test_configApply_speed_presets_must_be_distinct);
@@ -717,9 +764,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_dome_enable_transition_queues_dome_on_cue);
     RUN_TEST(test_configApply_dome_already_enabled_no_cue);
     RUN_TEST(test_configApply_json_body_sbusTimeoutMs_updates);
-    RUN_TEST(test_configApply_json_body_sbusTimeoutMs_out_of_range_rejected);
+    RUN_TEST(test_configApply_json_body_is_refused_by_the_form_fields_own_check);
+    RUN_TEST(test_configApply_json_body_object_where_a_value_belongs_is_refused);
     RUN_TEST(test_configApply_json_body_invalid_json_rejected);
+    RUN_TEST(test_configApply_an_empty_get_shape_list_is_an_answer);
     RUN_TEST(test_configApply_led_count_out_of_range_names_its_output);
+    RUN_TEST(test_configApply_an_unknown_component_word_is_refused);
     RUN_TEST(test_configApply_multiple_fields_record_applied_lines_in_order);
     RUN_TEST(test_configApply_droid_build_records_both_halves_and_the_parts);
     RUN_TEST(test_configApply_a_mixed_droid_saves_without_complaint);

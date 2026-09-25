@@ -311,6 +311,10 @@ struct ServoOutputRepairReport {
     // name. 32 bits hold SERVO_OUTPUT_ROW_MAX rows.
     uint32_t openMovedRows;
     uint32_t closeMovedRows;
+    // The same for a centre a typed edit left outside the band: a restored
+    // row's own centre, or one a type change pulled in (ADR 0068). A capture's
+    // centre following a captured end is not here - nobody sent that centre.
+    uint32_t centreMovedRows;
 };
 
 // One table, so no surface types a field name (#286: machine vocabulary
@@ -971,9 +975,16 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 // request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
 // SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE, SERVO_FIELD_COMPONENT,
 // SERVO_FIELD_LED_COUNT, the Motion Profile's SERVO_FIELD_THROW_MS,
-// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, and SERVO_FIELD_BOOT, and a
-// field not in it keeps what the row had. That is the partial-edit door
-// servoOutputRowNormalise() describes, given a shape a pure caller can fill.
+// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, SERVO_FIELD_BOOT,
+// SERVO_FIELD_CALIBRATED and SERVO_FIELD_PARTS, and a field not in it keeps
+// what the row had. That is the partial-edit door servoOutputRowNormalise()
+// describes, given a shape a pure caller can fill.
+//
+// A typed edit that names the centre, `calibrated` or the Part list is a row
+// posted back whole in the shape GET /api/servo/outputs reads it (ADR 0068):
+// a restore, saying what was measured and which Parts were where. No page
+// types one of those three; a page captures, reverses and moves a Part, and
+// those stay acts.
 //
 // It carries every act on a row, not only a typed value -- one door, not three
 // (#364). `kind` says which act, and that is the whole difference between them.
@@ -1004,12 +1015,17 @@ enum ServoOutputEditKind : uint8_t {
     SERVO_EDIT_REVERSE,
 };
 
+// How many Parts an edit's list names. The Part list is carried as indices into
+// the compiled catalog (include/droid_parts.h) rather than as ids: 4 B a row
+// instead of 52, on an edit list sized for a whole table.
+static_assert(DROID_PART_COUNT < 0xFF, "an edit names a Part by a one-byte catalog index");
+
 struct ServoOutputEdit {
     ServoOutputDriver driver;      // Output Address, half one
     uint8_t channel;               // Output Address, half two
     uint16_t fields;               // which of the widths below the request carried
     uint16_t open_us;
-    uint16_t centre_us;            // captures only; a typed edit never names it
+    uint16_t centre_us;            // a capture's, or a restored row's (ADR 0068)
     uint16_t close_us;
     ServoComponentType component;
     uint8_t led_count;             // the Light Type's setting, when the mask names it
@@ -1018,6 +1034,11 @@ struct ServoOutputEdit {
     uint16_t throw_ms;
     uint16_t accel_ms;
     ServoBootBehaviour boot;       // what it does at power-up, when the mask names it
+    bool calibrated;               // when the mask names it: a restored row's bit
+    // The whole Part list, when the mask names it: `partCount` catalog indices,
+    // in the order stated. It replaces the row's list.
+    uint8_t partCount;
+    uint8_t parts[SERVO_OUTPUT_PART_SLOTS];
 };
 
 // -----------------------------------------------------------------------------
@@ -1118,9 +1139,30 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     if ((edit.fields & SERVO_FIELD_CLOSE) != 0) {
         row->close_us = edit.close_us;
     }
-    if (!row->calibrated && (edit.fields & (SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE)) != 0) {
+    // A restored row says whether anybody measured it, and that is taken as
+    // said: a restore replaces what the droid holds (ADR 0056), and it is the
+    // one write that may say "not measured" of an Output that was. Settled
+    // before the centre, because the centre rule below asks it.
+    if ((edit.fields & SERVO_FIELD_CALIBRATED) != 0) {
+        row->calibrated = edit.calibrated;
+    }
+    if ((edit.fields & SERVO_FIELD_CENTRE) != 0) {
+        // A stated centre is the builder's number, measured or not, and nothing
+        // is computed over it.
+        row->centre_us = edit.centre_us;
+    } else if (!row->calibrated &&
+               (edit.fields & (SERVO_FIELD_OPEN | SERVO_FIELD_CLOSE)) != 0) {
         row->centre_us =
             (uint16_t)(((uint32_t)row->open_us + (uint32_t)row->close_us) / 2u);
+    }
+    // The list as stated, replacing the row's. A Part it names that another
+    // row drove has already been taken off that row
+    // (servoOutputTableReleaseStatedParts()), so ownership holds.
+    if ((edit.fields & SERVO_FIELD_PARTS) != 0) {
+        servoOutputClearParts(row);
+        for (uint8_t i = 0; i < edit.partCount && i < SERVO_OUTPUT_PART_SLOTS; ++i) {
+            (void)servoOutputAddPart(row, droidPartIdAt(edit.parts[i]));
+        }
     }
     return servoOutputRowNormalise(row, before);
 }
@@ -1563,6 +1605,57 @@ inline ServoPartMoveOutcome servoOutputTableMovePart(ServoOutputTable* table,
         (void)servoOutputAddPart(&table->rows[destination], move.part);
     }
     return SERVO_PART_MOVED;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputTableReleaseStatedParts()
+// The half of a stated Part list that reaches past its own row (ADR 0068).
+//
+// A row posted whole names every Part on it, and a Part is on at most one
+// Output (ADR 0050). So before the edits land, every Part a stated list names
+// comes off whichever OTHER live row drives it now - assigning a Part elsewhere
+// moves it. The edits themselves then write each list (servoOutputApplyEdit()).
+//
+// Only edits addressed at a live row count: an edit for an address no row has
+// changes nothing (configCacheApplyServoOutputEdits()), and a Part it names
+// must not be taken off the Output it is really on for a row that does not
+// exist. Two lists naming one Part are refused before this runs, by the Apply
+// Core, so the order edits are taken in cannot matter.
+//
+// Returns a bitmask of the rows that lost a Part, bit i for row i.
+// -----------------------------------------------------------------------------
+inline uint32_t servoOutputTableReleaseStatedParts(ServoOutputTable* table,
+                                                   const ServoOutputEdit* edits, size_t count) {
+    if (table == nullptr || edits == nullptr) {
+        return 0;
+    }
+    uint32_t affected = 0;
+    for (size_t e = 0; e < count; ++e) {
+        const ServoOutputEdit& edit = edits[e];
+        if (edit.kind != SERVO_EDIT_TYPED || (edit.fields & SERVO_FIELD_PARTS) == 0) {
+            continue;
+        }
+        const uint8_t target = servoOutputTableFindByAddress(*table, edit.driver, edit.channel);
+        if (target >= SERVO_OUTPUT_ROW_MAX) {
+            continue;
+        }
+        for (uint8_t i = 0; i < edit.partCount && i < SERVO_OUTPUT_PART_SLOTS; ++i) {
+            const char* id = droidPartIdAt(edit.parts[i]);
+            const uint8_t holder = servoOutputTableFindPart(*table, id);
+            if (holder >= SERVO_OUTPUT_ROW_MAX || holder == target) {
+                continue;
+            }
+            const uint8_t held = servoOutputPartCount(table->rows[holder]);
+            for (uint8_t slot = 0; slot < held; ++slot) {
+                if (strcmp(table->rows[holder].parts[slot], id) == 0) {
+                    servoOutputRemovePartAt(&table->rows[holder], slot);
+                    affected |= (uint32_t)1u << holder;
+                    break;
+                }
+            }
+        }
+    }
+    return affected;
 }
 
 // -----------------------------------------------------------------------------

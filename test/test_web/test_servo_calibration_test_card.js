@@ -26,7 +26,6 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { bootServos, output, sleep } from "./helpers/parts_surface.js";
-import { configOutputs } from "./helpers/fake_droid.js";
 
 // A FireBeetle 2: its labels carry a space.
 const FIREBEETLE = () => [
@@ -36,20 +35,20 @@ const FIREBEETLE = () => [
   output("ledc:4", "GPIO 5", { commandedUs: 1500, targetUs: 1500 }),
 ];
 
-// GET /api/config's Output entries, as the firmware reports them: GPIO 4
-// carries the LED strip and GPIO 50 is not wired.
-const COMPONENTS = configOutputs(FIREBEETLE(), {
-  "ledc:1": { enabled: false },
+// What the rows hold, as the firmware reports them: GPIO 4 carries the LED
+// strip and GPIO 50 is not wired.
+const SAY = {
+  "ledc:1": { wired: false },
   "ledc:3": { lightCapable: true, type: "rgb" },
   "ledc:4": { lightCapable: true, type: "mg90s" },
-});
+};
 
 const drive = (env, address, action) =>
   env.row(address).querySelectorAll(".outputs-go").find((node) => node.dataset.action === action);
 const servoPosts = (env) => env.posts.filter((post) => post.path === "/api/servo").map((post) => post.form);
 
 test("a typed width and open go out under the board's own word, space and all, and write no config", async () => {
-  const env = await bootServos({ outputs: FIREBEETLE(), components: COMPONENTS });
+  const env = await bootServos({ outputs: FIREBEETLE(), say: SAY });
   await sleep(20);
 
   env.row("ledc:4").querySelector(".outputs-width").value = "1720";
@@ -69,7 +68,7 @@ test("a typed width and open go out under the board's own word, space and all, a
 });
 
 test("an Output carrying the LED strip, or not wired, offers no drive at all", async () => {
-  const env = await bootServos({ outputs: FIREBEETLE(), components: COMPONENTS });
+  const env = await bootServos({ outputs: FIREBEETLE(), say: SAY });
   await sleep(20);
   const offered = (address) => env.cell(address, "outputs-drive-acts").hidden === false;
 
@@ -83,7 +82,7 @@ test("an Output carrying the LED strip, or not wired, offers no drive at all", a
 // reports three draws three rows, in its order, and no fourth from a list of
 // this page's own.
 test("the page draws the Outputs the firmware reported, and only those", async () => {
-  const env = await bootServos({ outputs: FIREBEETLE().slice(0, 3), components: COMPONENTS });
+  const env = await bootServos({ outputs: FIREBEETLE().slice(0, 3), say: SAY });
 
   assert.deepStrictEqual(
     env.rows().map((node) => node.dataset.output),

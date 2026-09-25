@@ -32,7 +32,7 @@
 #include "api_status.h"  // captureServoOutputCommanded(), shared with the Console
 #include "api_wifi_apply.h"
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
-#include "board_output_enabled.h"  // boardOutputIsWired() - which stored tick says a wire is in
+#include "board_output_enabled.h"  // BOARD_OUTPUTS indices, which configCacheOutputIsWired() takes
 #include "web_param_source.h"
 #include "drive_speed_preset.h"
 #include "audio_task.h"
@@ -47,7 +47,6 @@
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
 #include "servo_component_helpers.h"
-#include "servo_legacy_field_sets.h"  // the field names /api/config still speaks
 #include "web_server.h"
 
 #include <Preferences.h>
@@ -423,25 +422,6 @@ const char* getComponentLabel(const char* componentName) {
     return boardComponentLabel(runningBoardName(), componentName);
 }
 
-// -----------------------------------------------------------------------------
-// The body controller's Outputs, as GET /api/config reports them.
-//
-// The browser knows no Output (operator, 2026-09-19 on #411: "the outputs is
-// supposed to be dynamic, thats the whole point of the wiring and mapping we
-// have"). Which Outputs this board has, what the board prints beside each,
-// where each is addressed, which one can carry the LED strip and which config
-// fields save it all arrive in this answer, and every page draws one plate or
-// row per entry, in this order, saved under the field names given here. A
-// board that grows an Output grows a row, and no page changes.
-//
-// Those facts are BOARD_OUTPUTS (include/board_outputs.h), the table the
-// Console and POST /api/servo read too. What differs between boards is what
-// they print, and that stays in include/component_labels.inc. The one fact a
-// config answer adds beside them is which SystemConfig field holds each
-// Output's wired tick, and that pairing now lives in
-// include/board_output_enabled.h, where the strip driver reads it too.
-// -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 // populateConfigJson()
 //
@@ -475,40 +455,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject rcSbus = rc["sbus"].to<JsonObject>();
     rcSbus["recvCh2"] = snap.system.single_sbus_use_ch2;
 
+    // The Component Toggles that are not an Output, each with its Board
+    // Component Label. An Output is not here: it is read whole from its row on
+    // GET /api/servo/outputs, wired tick included, and written back the same
+    // way (ADR 0068).
     JsonObject components = doc["components"].to<JsonObject>();
-    // The Outputs first and in table order: an entry carrying an `address` IS
-    // an Output, and that order is the order every page draws them in.
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        const BoardOutput& entry = BOARD_OUTPUTS[i];
-        JsonObject output = components[entry.id].to<JsonObject>();
-        output["enabled"] = boardOutputIsWired(snap.system, i);
-        if (const char* label = boardOutputLabel(entry)) output["label"] = label;
-        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
-        if (servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, entry.channel)) {
-            output["address"] = address;
-        }
-        // Whether a Light Type may go on this wire at all, and the field that
-        // saves its settings. Both are absent on an Output that cannot carry
-        // one, so a surface draws the light controls for exactly the Outputs
-        // the firmware says can have them and never counts them itself.
-        if (entry.lightCapable) output["lightCapable"] = true;
-        output["enabledField"] = entry.enabledField;
-        output["typeField"] = entry.typeField;
-        if (entry.ledCountField != nullptr) output["ledCountField"] = entry.ledCountField;
-        // The fields that save its Motion Profile and its boot behaviour
-        // (#414). Their values are the live table's, added by
-        // addServoOutputFields(); the names are configMotionFieldName()'s, the
-        // one rule the Apply Core reads them by.
-        static const char* const kMotionKeys[CONFIG_MOTION_FIELD_COUNT] = {
-            "throwField", "accelField", "easeField", "bootField"};
-        for (uint8_t field = 0; field < CONFIG_MOTION_FIELD_COUNT; ++field) {
-            char name[CONFIG_MOTION_FIELD_NAME_MAX] = {};
-            if (configMotionFieldName(name, sizeof(name), entry.id, (ConfigMotionField)field)) {
-                output[kMotionKeys[field]] = name;
-            }
-        }
-    }
-
     components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
     if (const char* label = getComponentLabel("enable_dome_esc")) components["domeEsc"]["label"] = label;
 
@@ -553,11 +504,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
     if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
-    // The ten calibration fields, the five component types data/servo.js reads
-    // and each lit wire's LED count are NOT built here. Since #345 an endpoint lives on an addressed
-    // Servo Output row and nowhere else, and this builder is pure -- it cannot
-    // reach the live table. addServoOutputFields() adds them in
-    // sendConfigSnapshot(), the same seam "pendingApply" uses.
     JsonObject domeEsc = doc["domeEsc"].to<JsonObject>();
     domeEsc["neutralUs"] = snap.dome.dome_neutral_us;
     domeEsc["minPulseUs"] = snap.dome.dome_min_pulse_us;
@@ -599,8 +545,8 @@ namespace {
 // two differ exactly while a member change is staged and the droid has not
 // rebooted, which is the state an operator surface has to be able to show.
 //
-// Out here for the same reason addServoOutputFields() is: the boot-latched
-// value is runtime state a pure snapshot serializer cannot see.
+// Out here rather than in populateConfigJson(): the boot-latched value is
+// runtime state a pure snapshot serializer cannot see.
 void addAudioMemberFields(JsonDocument& doc) {
     JsonObject components = doc["components"];
     if (components.isNull()) {
@@ -629,9 +575,11 @@ void addAudioMemberFields(JsonDocument& doc) {
 // page load reads.
 //
 // The id is the payload's own component key: the param name without its
-// "enable" and with the first letter lowered (enableDomeEsc -> domeEsc,
-// enableArm1 -> arm1), so the list names exactly the entries under
-// "components" and nothing keeps a second spelling of them.
+// "enable" and with the first letter lowered (enableDomeEsc -> domeEsc), so the
+// list names exactly the entries under "components" and nothing keeps a second
+// spelling of them. An Output's tick is left out for the same reason: an Output
+// is not under "components" but on its row (ADR 0068), and a page reads what
+// it was first reported with from there.
 // -----------------------------------------------------------------------------
 void addActiveFields(JsonDocument& doc) {
     static constexpr char kPrefix[] = "enable";
@@ -654,89 +602,15 @@ void addActiveFields(JsonDocument& doc) {
         }
         memcpy(id, param + kPrefixLen, len - kPrefixLen);
         id[0] = (char)tolower((unsigned char)id[0]);
+        if (boardOutputById(id) != nullptr) {
+            continue;
+        }
         toggles.add(id);
     }
 
     RcInputActiveConfig activeRc = {};
     configCacheReadActiveRcInput(&activeRc);
     doc["rc"]["activeInputMode"] = rcModeToString(static_cast<RcInputMode>(activeRc.mode));
-}
-
-// -----------------------------------------------------------------------------
-// addServoOutputFields()
-// The five fixed field sets, answered from the rows that replaced them.
-//
-// Backup and Restore (data/maintenance.js) still carry arm1OpenUs and its nine
-// siblings - a backup is this payload, and a restore posts them back - and
-// Wiring and Servos reads components.arm1.type beside them
-// (data/output_settings.js). So the names stay, and the numbers come from the
-// row addressed to each set's channel, so what is backed up is what the droid
-// will actually drive to (#345, ADR 0041).
-//
-// It sits here rather than in populateConfigJson() because the live table is
-// exactly the runtime state a pure snapshot serializer cannot see -- the same
-// reason "pendingApply" and "networkRecovery" are added out here.
-//
-// An Output Address with no live row is left out of the document rather than
-// given a stand-in number: a field that is absent is one data/servo.js falls
-// back on its own default for, where an invented 2000 would read as a
-// calibration nobody made.
-void addServoOutputFields(JsonDocument& doc) {
-    JsonObject components = doc["components"];
-    for (size_t i = 0; i < SERVO_LEGACY_FIELD_SET_COUNT; ++i) {
-        const ServoLegacyFieldSet& set = SERVO_LEGACY_FIELD_SETS[i];
-        uint16_t openUs = 0;
-        uint16_t closeUs = 0;
-        if (!configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, set.channel, &openUs,
-                                                 &closeUs)) {
-            continue;
-        }
-        doc[set.openField] = openUs;
-        doc[set.closeField] = closeUs;
-
-        if (!components.isNull()) {
-            const ServoComponentType component =
-                configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, set.channel);
-            components[set.componentKey]["type"] = servoCompTypeToString(component);
-            // The Light Type's settings, beside the type that says there is
-            // one: how many LEDs this wire carries (ADR 0067). Reported for
-            // every Output that could carry a light, not only the ones that do,
-            // so a builder who names a Light Type sees the number they last
-            // saved rather than a default the surface invented.
-            const BoardOutput* output = boardOutputOnChannel(set.channel);
-            if (output != nullptr && output->lightCapable) {
-                components[set.componentKey]["ledCount"] =
-                    configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, set.channel);
-            }
-        }
-    }
-
-    // Each Output's Motion Profile and boot behaviour as the builder set them
-    // (ADR 0052, #414), under the components{} entry that names the fields
-    // saving them. The ease is the stored one: an overshoot on an Output nobody
-    // has measured is reported as the builder's choice, beside the `calibrated`
-    // bit GET /api/servo/outputs carries, and the surface says it is off until
-    // the Output is calibrated. The boot behaviour has no such fence: it is
-    // independent of calibration by design (include/servo_output_row.h).
-    if (components.isNull()) {
-        return;
-    }
-    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        const BoardOutput& output = BOARD_OUTPUTS[i];
-        uint16_t throwMs = 0;
-        uint16_t accelMs = 0;
-        ServoEasing easing = SERVO_EASE_NONE;
-        ServoBootBehaviour boot = SERVO_BOOT_LIMP;
-        if (!configCacheReadServoOutputMotionSettings(SERVO_DRIVER_LEDC, output.channel, &throwMs,
-                                                      &accelMs, &easing, &boot)) {
-            continue;
-        }
-        JsonObject entry = components[output.id];
-        entry["throwMs"] = throwMs;
-        entry["accelMs"] = accelMs;
-        entry["ease"] = servoEasingToString(easing);
-        entry["boot"] = servoBootBehaviourToString(boot);
-    }
 }
 
 // -----------------------------------------------------------------------------
@@ -849,38 +723,44 @@ void addGuidedSetupFields(JsonDocument& doc) {
     }
 }
 
-// The endpoints this write stored at a different number than it was sent,
-// under the field the request names each by and holding the number the row
-// now has (#417). The component band's clamp is deliberate (#286 decision 5):
-// an MG996R cannot take 2200 us however it arrives, and a type-only edit pulls
-// the ends it did not name into the new band. Refusing would break a type
-// change and a restore from an older backup, so the write stands; this is
-// what makes it not silent. Only on a write that clamped something, and only
-// the write route passes a commit here, so a read never carries it.
+// The recorded widths this write stored at a different number than it was
+// sent, as rows: keyed by Output Address, each under the row key the request
+// names it by and holding the number the row now has (#417, ADR 0068). The
+// component band's clamp is deliberate (#286 decision 5): an MG996R cannot take
+// 2200 us however it arrives, the band can narrow after the ends were recorded,
+// and a type-only edit pulls the ends it did not name into the new band.
+// Refusing would break a type change and throw a restored calibration away, so
+// the write stands; this is what makes it not silent. Only on a write that
+// clamped something, and only the write route passes a commit here, so a read
+// never carries it.
 void addClampedEndpointFields(JsonDocument& doc, const ConfigCommitOutcome& commit) {
-    if (commit.openClampedRows == 0 && commit.closeClampedRows == 0) {
+    const uint32_t moved = commit.openClampedRows | commit.closeClampedRows | commit.centreClampedRows;
+    if (moved == 0) {
         return;
     }
     JsonObject clamped = doc["clamped"].to<JsonObject>();
     const uint8_t count = configCacheServoOutputCount();
     for (uint8_t i = 0; i < count; ++i) {
         const uint32_t bit = (uint32_t)1u << i;
-        if (((commit.openClampedRows | commit.closeClampedRows) & bit) == 0) {
-            continue;
-        }
         ServoOutputRow row = {};
-        if (!configCacheReadServoOutput(i, &row) || row.driver != SERVO_DRIVER_LEDC) {
+        if ((moved & bit) == 0 || !configCacheReadServoOutput(i, &row)) {
             continue;
         }
-        const size_t set = servoLegacyFieldSetForChannel(row.channel);
-        if (set >= SERVO_LEGACY_FIELD_SET_COUNT) {
-            continue;  // no POST field names this row's ends
+        // A mutable buffer, so ArduinoJson copies the key rather than keeping a
+        // pointer into a frame that is gone by the time the answer serializes.
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        if (!servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel)) {
+            continue;
         }
+        JsonObject at = clamped[address].to<JsonObject>();
         if ((commit.openClampedRows & bit) != 0) {
-            clamped[SERVO_LEGACY_FIELD_SETS[set].openField] = row.open_us;
+            at["openUs"] = row.open_us;
+        }
+        if ((commit.centreClampedRows & bit) != 0) {
+            at["centreUs"] = row.centre_us;
         }
         if ((commit.closeClampedRows & bit) != 0) {
-            clamped[SERVO_LEGACY_FIELD_SETS[set].closeField] = row.close_us;
+            at["closeUs"] = row.close_us;
         }
     }
 }
@@ -889,11 +769,10 @@ void addClampedEndpointFields(JsonDocument& doc, const ConfigCommitOutcome& comm
 // echo. Both must return the same shape for the same device state, so they
 // build it the same way rather than twice.
 //
-// pendingApply, networkRecovery and the servo output fields are added on top of
+// pendingApply, networkRecovery and the rest are added on top of
 // populateConfigJson(): they are runtime state (is a Staged Network Switch
 // outstanding, was Network Recovery Mode the posture actually entered at boot,
-// what do the addressed Servo Output rows hold) that a pure snapshot serializer
-// cannot see.
+// what did the droid start with) that a pure snapshot serializer cannot see.
 void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
                         const ConfigCommitOutcome* commit = nullptr) {
     JsonDocument doc;
@@ -901,7 +780,6 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
         webSendJsonError(req, 500, "config json build failed");
         return;
     }
-    addServoOutputFields(doc);
     if (commit != nullptr) {
         addClampedEndpointFields(doc, *commit);
     }
@@ -1000,6 +878,9 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     for (size_t i = 0; i < result.applied.count; ++i) {
         PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
     }
+    if (result.applied.dropped > 0) {
+        PA_LOG_INFO(TAG, "[CFG] and %u more field(s) updated", (unsigned)result.applied.dropped);
+    }
 
     // Not configCacheApply(): the speed group and stationary are also written
     // at runtime by RC input on Core 1, which cannot take the config write lock
@@ -1007,12 +888,12 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // Whichever of them the request did not state keeps its live value (#417).
     configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
 
-    // The endpoints a builder just changed still arrive as arm1OpenUs and its
-    // nine siblings, and the Apply Core that validated them is pure, so this is
+    // An Output's settings arrive as rows (ADR 0068) and as the capture and
+    // reverse acts, and the Apply Core that validated them is pure, so this is
     // where they reach the addressed rows the firmware reads (#286, ADR 0041).
     // A pulse width the component band moved is said out loud rather than
-    // quietly applied -- an MG996R output cannot take the old form's legal
-    // 500 us, and a builder who typed it is owed the reason.
+    // quietly applied -- an MG996R output cannot take 500 us, and a builder
+    // who sent it is owed the reason.
     const ServoOutputRepairReport servoOutputRepair = configCacheApplyServoOutputEdits(
         result.servoOutputs.edits, result.servoOutputs.count);
     if (servoOutputRepair.rowsRepaired > 0) {
@@ -1029,6 +910,7 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     }
     outcome.openClampedRows = servoOutputRepair.openMovedRows;
     outcome.closeClampedRows = servoOutputRepair.closeMovedRows;
+    outcome.centreClampedRows = servoOutputRepair.centreMovedRows;
 
     // The Droid Build the request stated, onto the live answer (ADR 0047). A
     // half the request did not name is left exactly as it stood: a builder
@@ -1238,6 +1120,12 @@ void handleRcMapPost(WebRequest& req) {
 
 // POST /api/config - the sole web entrypoint for config writes.
 void handleConfigPost(WebRequest& req) {
+    // A body past the route's bound is not buffered, and without this it would
+    // read as a request that sent nothing: say what happened instead.
+    if (req.contentLength() > kConfigPostMaxBodyBytes) {
+        webSendJsonError(req, 413, "payload too large");
+        return;
+    }
     ConfigParamSource params = webParamSource(req);
 
     ConfigSnapshot working;
@@ -1310,6 +1198,36 @@ void handleServoOutputsGet(WebRequest& req) {
         servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
         output["address"] = address;
         output["name"] = servoOutputAddressName(row.driver, row.channel);
+
+        // Everything a builder sets on an Output, in the shape POST /api/config
+        // takes it back as a row (ADR 0068): this answer is the row door's own
+        // read. `id` is the Output's stored config id where the board has one,
+        // never shown; the flags say what the row can save as data, so no
+        // surface works it out from a form name.
+        const BoardOutput* board =
+            row.driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(row.channel) : nullptr;
+        if (board != nullptr) {
+            output["id"] = board->id;
+        }
+        // An Output with a wired tick can be switched off; one with none - an
+        // expander's - is always wired, and says so.
+        output["switchable"] = board != nullptr;
+        output["wired"] =
+            board == nullptr || configCacheOutputIsWired((size_t)(board - BOARD_OUTPUTS));
+        // Whether a Light Type may go on this wire (ADR 0067), and its light's
+        // LED count only where one can: the count is settable exactly there.
+        output["lightCapable"] = board != nullptr && board->lightCapable;
+        if (board != nullptr && board->lightCapable) {
+            output["ledCount"] = row.led_count;
+        }
+        // How it moves and what it does at power-up (ADR 0052), as the builder
+        // set them: the ease is the stored one, and `calibrated` below says
+        // whether it runs yet.
+        output["throwMs"] = row.throw_ms;
+        output["accelMs"] = row.accel_ms;
+        output["ease"] = servoEasingToString(row.easing);
+        output["boot"] = servoBootBehaviourToString(row.boot);
+
         JsonArray parts = output["parts"].to<JsonArray>();
         const uint8_t partCount = servoOutputPartCount(row);
         for (uint8_t slot = 0; slot < partCount; ++slot) {
@@ -1398,15 +1316,19 @@ void handleServoOutputsGet(WebRequest& req) {
     // a per-request malloc, so the spend is transient rather than BSS, and 8192
     // leaves the same kind of headroom 4096 left over 3589. `narrowedFrom`
     // (#417) took the measured answer to 6800 B, and 6920 B with a pair on all
-    // five rows that can carry one.
+    // five rows that can carry one. The row became the one place an Output is
+    // read (ADR 0068, #423): its wired tick, what it can save, its light's LED
+    // count and its Motion Profile and boot behaviour took the answer to
+    // 9536 B, about 9660 B with those five pairs. Raised to 12288 for that, on
+    // the same reasoning as 8192: a per-request bound, not BSS.
     //
     // What that worst case is NOT is what this controller sends. Twenty-four
     // rows is the expander nobody has fitted; the five LEDC outputs answer in
-    // 1219 B, and that is what the Parts page's one-second bench feed carries.
-    // A fitted expander would also be the moment to ask whether calibration
-    // fields belong on a feed that repeats them every second - they change only
-    // when somebody edits one (#364).
-    webSendJsonDocument(req, doc, 8192, TAG);
+    // 1948 B (1219 B before #423), and that is what the Parts page's one-second
+    // bench feed carries. A fitted expander would also be the moment to ask
+    // whether calibration fields belong on a feed that repeats them every
+    // second - they change only when somebody edits one (#364).
+    webSendJsonDocument(req, doc, 12288, TAG);
 }
 
 // POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).

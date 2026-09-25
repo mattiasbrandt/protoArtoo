@@ -80,11 +80,6 @@ const surfaceDocument = (html) => {
 // fitted" is a claim nobody made.
 const freshConfig = () => ({
   components: {
-    arm1: { enabled: false, type: "mg996r" },
-    arm2: { enabled: false, type: "mg996r" },
-    aux1: { enabled: false, type: "none" },
-    aux2: { enabled: false, type: "none" },
-    aux3: { enabled: false, type: "none" },
     domeEsc: { enabled: false },
     rcCh1: { enabled: false },
     rcCh2: { enabled: false },
@@ -97,8 +92,6 @@ const freshConfig = () => ({
     protoR2link: { enabled: false },
   },
   system: { logLevel: 3 },
-  aux_led_pin: 0,
-  aux_led_count: 1,
   wifi: {
     provisioned: true,
     mode: "client",
@@ -142,7 +135,16 @@ const makeStub = () => ({
   click() {},
 });
 
-const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = null } = {}) => {
+// The droid's Outputs as GET /api/servo/outputs answers them (ADR 0068): its
+// board's own, each with a wired tick, none ticked, and an expander channel,
+// which has no tick and so is always wired.
+const freshRows = () => [
+  { address: "ledc:0", name: "ARM1", id: "arm1", switchable: true, wired: false },
+  { address: "ledc:1", name: "ARM2", id: "arm2", switchable: true, wired: false },
+  { address: "pca:0", name: "", switchable: false, wired: true },
+];
+
+const boot = ({ config = freshConfig(), rows = freshRows(), surface = "configuration", domeLayout = null } = {}) => {
   const parsed = surfaceDocument(SURFACES[surface].html);
   const posts = [];
   const gets = [];
@@ -180,6 +182,7 @@ const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = 
       get: async (path) => {
         gets.push(path);
         if (path === "/api/config") return { ok: true, data: config };
+        if (path === "/api/servo/outputs") return { ok: true, data: { outputs: rows } };
         // A dome on the WiFi link answers with its layout; with none given,
         // the controller's own answer for a dome it cannot reach (docs/api.md).
         if (path === "/api/dome/layout") {
@@ -212,6 +215,12 @@ const boot = ({ config = freshConfig(), surface = "configuration", domeLayout = 
           config.guidedSetup.recorded = true;
           config.guidedSetup.visited = seen === "-" ? [] : seen.split(",");
         }
+        return { data: config };
+      },
+      // A restore: the Configuration in the shape it was read, in one body
+      // (ADR 0068).
+      postJson: async (path, body) => {
+        posts.push({ path, body, json: true });
         return { data: config };
       },
     },
@@ -386,9 +395,28 @@ test("a droid configured before the record existed is not walked through a first
   assert.deepEqual(env.posts, [], "and reading the page writes nothing to the controller");
 });
 
+// An Output ticked as wired is the same answer a Component Toggle is, and it
+// lives on the Output's row (ADR 0068), not in the config's components - so a
+// droid whose only configured answer is a wired Output is still one somebody set
+// up, and is not walked through a first run.
+test("a droid whose only answer is a wired Output is not walked through a first run", async () => {
+  const config = freshConfig();
+  config.guidedSetup = { run: "not-run", recorded: false, visited: [] };
+  const rows = freshRows();
+  rows[1].wired = true;
+
+  const env = boot({ config, rows });
+  await env.runSection();
+  env.flushTimers();
+
+  assert.equal(env.shown(env.id("wizard-head")), false, "no run opens");
+  assert.deepEqual(env.posts, [], "and reading the page writes nothing to the controller");
+});
+
 test("an inert droid with no record is a first run, not a grandfathered one", async () => {
-  // The other side of the rule above: nothing is switched on, so there is
-  // nothing to grandfather and this really is a fresh flash.
+  // The other side of the rule above: nothing is switched on - the expander
+  // row is wired only because it has no tick anybody could turn off - so there
+  // is nothing to grandfather and this really is a fresh flash.
   const config = freshConfig();
   config.guidedSetup = { run: "not-run", recorded: false, visited: [] };
   const env = boot({ config });
@@ -396,9 +424,9 @@ test("an inert droid with no record is a first run, not a grandfathered one", as
   assert.equal(env.shown(env.id("wizard-head")), true);
 });
 
-// Choose a backup file, tick Core config, press Restore - and hand back the form
-// the controller was actually asked for. Shared by the two tests below, because
-// a key dropped on the way back in is the same defect whichever key it is.
+// Choose a backup file, tick Core config, press Restore - and hand back the body
+// the controller was actually sent. Shared by the tests below, because a key
+// dropped on the way back in is the same defect whichever key it is.
 const restoreParamsFor = async (patch) => {
   const env = boot({ surface: "maintenance" });
   const backup = { schema: 1, config: { ...freshConfig(), ...patch } };
@@ -415,37 +443,35 @@ const restoreParamsFor = async (patch) => {
   env.click("backup-restore-btn");
   // The restore reads the Outputs before it saves (data/outputs.js, #415).
   for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-  const restore = env.posts.filter((post) => post.body instanceof URLSearchParams).at(-1);
+  const restore = env.posts.filter((post) => post.json && post.path === "/api/config").at(-1);
   assert.ok(restore, "the restore must have reached the controller at all");
   return restore.body;
 };
 
 test("Backup and Restore carries the run's record like any other config key", async () => {
-  // The restore path flattens a backup's GET /api/config body into POST form
-  // params by hand, so a key it does not name is silently dropped on the way
-  // back in - and a configured backup restored without this one would read as
-  // never asked for every category (operator, 2026-09-17 on #371).
+  // The restore used to flatten a backup's GET /api/config body into POST form
+  // params by hand, and a key it did not name was silently dropped on the way
+  // back in - a configured backup restored without this one would read as
+  // never asked for every category (operator, 2026-09-17 on #371). It posts
+  // back what the backup holds now (ADR 0068); this is the record surviving it.
   const configured = await restoreParamsFor({
     guidedSetup: { run: "completed", recorded: true, visited: ["wifi", "drive"] },
   });
-  assert.equal(configured.get("guidedSetupRun"), "completed");
-  assert.equal(configured.get("guidedSetupVisited"), "wifi,drive");
+  assert.equal(configured.guidedSetup.run, "completed");
+  assert.deepEqual(configured.guidedSetup.visited, ["wifi", "drive"]);
 
   // Done on the ended run's summary is the same record, and travels the same
   // way: a restored droid whose builder dismissed it does not show it again.
   const dismissed = await restoreParamsFor({
     guidedSetup: { run: "completed", recorded: true, visited: ["wifi"], summaryDone: true },
   });
-  assert.equal(dismissed.get("guidedSetupSummaryDone"), "true");
+  assert.equal(dismissed.guidedSetup.summaryDone, true);
 
+  // A run that showed nothing is an answer, and goes back as one.
   const showedNothing = await restoreParamsFor({
     guidedSetup: { run: "skipped", recorded: true, visited: [] },
   });
-  assert.equal(
-    showedNothing.get("guidedSetupVisited"),
-    "-",
-    "a run that showed nothing is an answer, and an empty form value would not survive as one",
-  );
+  assert.deepEqual(showedNothing.guidedSetup.visited, []);
 });
 
 // Riding along: the same flattener was already dropping two answers a builder
@@ -461,15 +487,16 @@ test("a restore puts back the sound module and the droid build, which it used to
     },
   });
 
-  // The SAVED choice, never the one the droid happens to have booted with.
-  assert.equal(restored.get("soundMember"), "mp3_trigger");
+  // The SAVED choice goes back where GET put it; the firmware reads it and
+  // never `activeMember`, the one the droid happens to have booted with.
+  assert.equal(restored.components.audio.member, "mp3_trigger");
 
   // Each half as a pair: the controller refuses a design without its variant.
-  assert.equal(restored.get("domeDesign"), "mk4");
-  assert.equal(restored.get("domeVariant"), "complex");
-  assert.equal(restored.get("bodyDesign"), "mk3");
-  assert.equal(restored.get("bodyVariant"), "simple");
-  assert.equal(restored.get("fittedParts"), "domePie1,bodyDoorL");
+  assert.deepEqual(restored.droidBuild, {
+    domeDesign: "mk4", domeVariant: "complex",
+    bodyDesign: "mk3", bodyVariant: "simple",
+    fitted: ["domePie1", "bodyDoorL"],
+  });
 });
 
 // The radio a builder holds is the Radio Controller's Component Member (#369),
@@ -477,8 +504,8 @@ test("a restore puts back the sound module and the droid build, which it used to
 // back on the default radio while the builder's receiver setting came back.
 test("a restore puts back which RC Radio the droid is driven with", async () => {
   const restored = await restoreParamsFor({ rc: { member: "rc_radio", inputMode: "standard_pwm" } });
-  assert.equal(restored.get("rcMember"), "rc_radio");
-  assert.equal(restored.get("rcInputMode"), "standard_pwm");
+  assert.equal(restored.rc.member, "rc_radio");
+  assert.equal(restored.rc.inputMode, "standard_pwm");
 });
 
 // Which picture a design card shows is the catalog's to say (docs/droid-parts.yaml
