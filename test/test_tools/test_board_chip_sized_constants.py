@@ -116,10 +116,13 @@ EXPECTED_BY_BOARD = {
         # WebEvents 5776 -> 7680 (stack unchanged); Console 8320 -> 10752.
         # #428: the Console walk follows every executor table it dispatches
         # through, 8464 -> 9696, and the rule raises it 10752 -> 12288.
-        "rc_input_stack": 8192,
-        "audio_stack": 6656,
-        "web_events_stack": 7680,
-        "console_stack": 12288,
+        # #430: the walk follows the IDF log hook on this full-newlib chip.
+        # RCInput 5568 -> 7168 (down the rule); Audio 7104 -> 9216;
+        # WebEvents 7264 -> 9216; Console 11504 -> 14848.
+        "rc_input_stack": 7168,
+        "audio_stack": 9216,
+        "web_events_stack": 9216,
+        "console_stack": 14848,
     },
 }
 

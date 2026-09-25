@@ -711,6 +711,16 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 #if defined(PA_CHIP_TARGET_ESP32P4)
 // Every arm below is exactly the rule applied to its own chain.
 //
+// Re-derived 2026-09-26 (#430), every arm: the walk now follows the IDF log
+// print hook (paLogIdfVprintf) from every ESP-IDF log call, and this chip keeps
+// full newlib, so the hook's vsnprintf carries the float formatting tail on
+// every task that can reach an ESP-IDF log. ESP-IDF's impossible null-pointer
+// log in esp_cache_get_alignment() is no longer walked. The product and
+// profiler images walk alike. Operator decision 2026-09-26: raise by the rule.
+// Nine stacks go up (+16896 B); RCInputTask's chain fell 6544 -> 5568, so its
+// stack follows the rule down, 8192 -> 7168 (-1024 B); net +15872 B. The
+// dated notes below give the figures each arm had before.
+//
 // Re-walked 2026-09-13 (#256 reopen) on firebeetle2 at 569ff095. Ten of
 // thirteen chains had gone stale: writeFrameCounted() reaches
 // consoleCdcProbeLog() on the USB-CDC drop path (this chip only), and that
@@ -720,10 +730,10 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // console_serial_output.cpp:462. DomeLink, WebEvents and ArduinoOTA do not
 // take that path; their chain figures are the fresh walk, stacks unchanged.
 // SafetyMonitor still records the deeper profiler image (4064 vs product 3888).
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4832;
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6144;  // rule: 4832 -> 6040 -> 6144
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 6544;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 8192;  // rule: 6544 -> 8180 -> 8192
+constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 5088;
+constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6656;  // rule: 5088 -> 6360 -> 6656
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5568;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5568 -> 6960 -> 7168
 // Re-derived 2026-09-17: 4000 -> 4016, and this one is NOT #365's -- it is C1d
 // (#364, 075cf487) surfacing on the first ESP32-P4 walk since. That slice
 // rewrote 295 lines of servo_task.cpp and re-derived no chain; its gate builds
@@ -735,23 +745,23 @@ constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 8192;  // rule: 6544 -> 8180 -> 8
 // line. #365 does not touch servo_task.cpp; it only ran the both-chip walk its
 // own re-derivation owed and found this. The rule lands on the step the stack
 // already is; the floor holds by 1104 B.
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 4016;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 5120;  // rule: 4016 -> 5020 -> 5120
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3984;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 5120;  // rule: 3984 -> 4980 -> 5120
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 5040;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6656;  // rule: 5040 -> 6300 -> 6656
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 4464;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5632;  // rule: 4464 -> 5580 -> 5632
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7296;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7296 -> 9120 -> 9216
+constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3824;
+constexpr uint32_t SERVO_TASK_STACK_BYTES = 5120;  // rule: 3824 -> 4780 -> 5120
+constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 4096;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 5120;  // rule: 4096 -> 5120 -> 5120
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 7104;
+constexpr uint32_t AUDIO_TASK_STACK_BYTES = 9216;  // rule: 7104 -> 8880 -> 9216
+constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 5456;
+constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 7168;  // rule: 5456 -> 6820 -> 7168
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 9712;
+constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 12288;  // rule: 9712 -> 12140 -> 12288
 // Walked again 2026-09-25 (#428) with the requested restart's shutdown handlers
 // stitched under esp_restart() (tools/task_stack_recipes.json): the restart
 // branch is 800 B - esp_sync_timekeeping_timers 784, ESP-Hosted's esp_wifi_stop
 // 528 - under the 3888 B the product image already walks, with or without the
 // IDF log print hook. The figure does not move.
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 4064;
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 5120
+constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3824;
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 3824 -> 4780 -> 5120
 // Re-derived 2026-09-17 (#365): 4576 -> 4656. sequenceDispatcherTask()'s OWN
 // frame went 544 -> 624 B when the bulk centre landed. centreOneOutput() is a
 // single-caller static and the compiler inlines it, so the 70-byte
@@ -766,8 +776,8 @@ constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 
 // and from the same cause: the boot pass's owed-release check copies the
 // Output's ServoCommandedPosition onto the inlined root frame. The rule lands
 // on the step the stack already is, so the allocation does not move.
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4672;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 5840 -> 6144
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 5776;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 7680;  // rule: 5776 -> 7220 -> 7680
 // Re-derived 2026-09-18 (#369): Console 8320 -> 8352 and WebEvents 5776 ->
 // 5792. ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member,
 // the Radio Controller's Component Member, and both chains carry a snapshot by
@@ -801,8 +811,8 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 6144;  // rule: 4672 -> 584
 // frames (368 + 96) are unchanged. Judged by allocation (ADR 0040, 2026-09-25
 // amendment) the rule, 9696 -> 12120 -> 12288, no longer fits 10752, so the
 // stack is raised to it.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 9696;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 12288;  // rule: 9696 -> 12120 -> 12288
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11504;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // rule: 11504 -> 14380 -> 14848
 // Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
 // lit wire on its own (fa8eed74, e277d325), and the chain carries that through
 // the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.
@@ -811,17 +821,17 @@ constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 12288;  // rule: 9696 -> 12120 -> 
 // Re-derived 2026-09-25 (#428): WebEvents 6000 -> 6048. buildStatusJson() is
 // now a capture step and formatStatusJson() on this task, one frame deeper; the
 // firebeetle2 walk at aa8a81cd gives 6048. The rule still lands on 7680.
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 6048;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 7680;  // rule: 6048 -> 7560 -> 7680
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 4000;
-constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 7264;
+constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 9216;  // rule: 7264 -> 9080 -> 9216
+constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 6416;
+constexpr uint32_t OTA_TASK_STACK_BYTES = 8192;  // rule: 6416 -> 8020 -> 8192
 // HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this
 // chip alone (src/web/web_network_manager_hosted.cpp is whole-file guarded on
 // it), so its pair is declared on this arm only. A future board on another chip
 // that turns the capability on fails at the static_assert below rather than
 // inheriting a number measured on someone else's silicon.
-constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 4480;
-constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 5632;  // rule: 4480 -> 5600 -> 5632
+constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 4560;
+constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 6144;  // rule: 4560 -> 5700 -> 6144
 #elif defined(PA_CHIP_TARGET_ESP32)
 // Every chain in this arm was re-derived 2026-09-26 (#430) from a walk that
 // changed three ways at once, and the older notes below give the figures they
