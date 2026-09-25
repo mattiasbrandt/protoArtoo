@@ -68,17 +68,17 @@ struct TaskStackArm {
 // test/test_tools/test_task_stack_recipes.py asserts the two agree.
 static const TaskStackArm kArms[] = {
     {"DriveTask", 4080U, 5632U, RULE_ABOVE},
-    {"RCInputTask", 4944U, 6656U, RULE_APPLIED},
-    {"ServoTask", 3216U, 4096U, RULE_APPLIED},
-    {"DomeTask", 3264U, 4096U, RULE_APPLIED},
-    {"AudioTask", 5280U, 6144U, RULE_DECLINED},
-    {"AuxLedTask", 3504U, 4096U, RULE_DECLINED},
-    {"DomeLinkTask", 5904U, 6144U, RULE_DECLINED},
-    {"SafetyMonitor", 3088U, 4096U, RULE_APPLIED},
-    {"SeqDisp", 4432U, 5632U, RULE_APPLIED},
-    {"Console", 8688U, 11264U, RULE_APPLIED},
-    {"WebEvents", 5904U, 6144U, RULE_DECLINED},
-    {"ArduinoOTA", 3904U, 4096U, RULE_DECLINED},
+    {"RCInputTask", 5152U, 6656U, RULE_APPLIED},
+    {"ServoTask", 3184U, 4096U, RULE_APPLIED},
+    {"DomeTask", 3200U, 4096U, RULE_APPLIED},
+    {"AudioTask", 4240U, 6144U, RULE_ABOVE},
+    {"AuxLedTask", 2752U, 4096U, RULE_ABOVE},
+    {"DomeLinkTask", 6112U, 6144U, RULE_DECLINED},
+    {"SafetyMonitor", 3280U, 4608U, RULE_APPLIED},
+    {"SeqDisp", 3888U, 5120U, RULE_APPLIED},
+    {"Console", 8896U, 11264U, RULE_APPLIED},
+    {"WebEvents", 4992U, 6144U, RULE_DECLINED},
+    {"ArduinoOTA", 3440U, 4096U, RULE_DECLINED},
 };
 static const size_t kArmCount = sizeof(kArms) / sizeof(kArms[0]);
 
@@ -90,8 +90,8 @@ static const TaskStackArm kDeclared[] = {
     {"RCInputTask", RC_INPUT_TASK_MEASURED_CHAIN_BYTES, RC_INPUT_TASK_STACK_BYTES, RULE_APPLIED},
     {"ServoTask", SERVO_TASK_MEASURED_CHAIN_BYTES, SERVO_TASK_STACK_BYTES, RULE_APPLIED},
     {"DomeTask", DOME_TASK_MEASURED_CHAIN_BYTES, DOME_TASK_STACK_BYTES, RULE_APPLIED},
-    {"AudioTask", AUDIO_TASK_MEASURED_CHAIN_BYTES, AUDIO_TASK_STACK_BYTES, RULE_DECLINED},
-    {"AuxLedTask", AUX_LED_TASK_MEASURED_CHAIN_BYTES, AUX_LED_TASK_STACK_BYTES, RULE_DECLINED},
+    {"AudioTask", AUDIO_TASK_MEASURED_CHAIN_BYTES, AUDIO_TASK_STACK_BYTES, RULE_ABOVE},
+    {"AuxLedTask", AUX_LED_TASK_MEASURED_CHAIN_BYTES, AUX_LED_TASK_STACK_BYTES, RULE_ABOVE},
     {"DomeLinkTask", DOME_LINK_TASK_MEASURED_CHAIN_BYTES, DOME_LINK_TASK_STACK_BYTES,
      RULE_DECLINED},
     {"SafetyMonitor", SAFETY_MONITOR_MEASURED_CHAIN_BYTES, SAFETY_MONITOR_STACK_BYTES,
@@ -179,10 +179,11 @@ void test_every_task_stack_is_a_whole_512_byte_step() {
 //
 // A floor that fails is not the margin question #248 declined, so this arm pays
 // the rule. Putting it back to 3072 fails config.h's own static_assert before
-// this test runs.
+// this test runs. #430 re-derived the profiler walk to 3280, and the rule took
+// the stack one step up, 4096 -> 4608.
 void test_safety_monitor_was_raised_because_its_floor_failed() {
-    TEST_ASSERT_EQUAL_UINT32(3088U, SAFETY_MONITOR_MEASURED_CHAIN_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(4096U, SAFETY_MONITOR_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(3280U, SAFETY_MONITOR_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(4608U, SAFETY_MONITOR_STACK_BYTES);
     TEST_ASSERT_GREATER_THAN_UINT32(3072U, SAFETY_MONITOR_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(stackByTheRule(SAFETY_MONITOR_MEASURED_CHAIN_BYTES),
                              SAFETY_MONITOR_STACK_BYTES);
@@ -198,9 +199,10 @@ void test_the_previously_unmeasured_tasks_now_carry_chains() {
     // Xtensa frame step on setArmPosition(). The stack did not move with it --
     // the rule takes 3216 to the same 4096 the arm already held, which is the
     // arithmetic test_every_arm_follows_the_derivation_it_claims re-does.
-    TEST_ASSERT_EQUAL_UINT32(3216U, SERVO_TASK_MEASURED_CHAIN_BYTES);
+    // #430 re-derived both chains on the nano, log-hook walk: 3184 and 3440.
+    TEST_ASSERT_EQUAL_UINT32(3184U, SERVO_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, SERVO_TASK_STACK_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(3904U, OTA_TASK_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(3440U, OTA_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, OTA_TASK_STACK_BYTES);
     // artoo-esp32 declares no HostedRecovery pair at all - the task is in no
     // image this board builds, so a chain for it here would be invented. That
@@ -230,14 +232,15 @@ void test_p4_reopen_derivations_follow_the_rule() {
 // The thinnest floor in the block, stated so it is a recorded exposure rather
 // than a number nobody looked at. DomeTask held it until #430, with 80 B between
 // its stack and a chain the fuller walk then put 192 B past that stack; it was
-// raised to the rule. The ArduinoOTA task now holds it: 192 B between its stack
-// and its measured chain, on a walk that excludes interrupt frames entirely --
-// less headroom than one interrupt entry costs. #248's tight-heap argument is
-// why its decline stands; if it is ever raised, this test is where the decision
-// is recorded.
-void test_the_thinnest_declined_floor_is_the_ota_task_on_this_board() {
-    const uint32_t headroom = OTA_TASK_STACK_BYTES - OTA_TASK_MEASURED_CHAIN_BYTES;
-    TEST_ASSERT_EQUAL_UINT32(192U, headroom);
+// raised to the rule. The ArduinoOTA task held it next, at 192 B. Since the
+// walk followed the IDF log hook (#430) DomeLinkTask holds it: 32 B between its
+// stack and its measured chain, on a walk that excludes interrupt frames
+// entirely -- less headroom than one interrupt entry costs. #248's tight-heap
+// argument is why its decline stands; if it is ever raised, this test is where
+// the decision is recorded.
+void test_the_thinnest_declined_floor_is_the_dome_link_task_on_this_board() {
+    const uint32_t headroom = DOME_LINK_TASK_STACK_BYTES - DOME_LINK_TASK_MEASURED_CHAIN_BYTES;
+    TEST_ASSERT_EQUAL_UINT32(32U, headroom);
     for (size_t i = 0; i < kArmCount; ++i) {
         TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
             headroom, kDeclared[i].stack - kDeclared[i].chain, kDeclared[i].task);
@@ -254,6 +257,6 @@ int main() {
     RUN_TEST(test_safety_monitor_was_raised_because_its_floor_failed);
     RUN_TEST(test_the_previously_unmeasured_tasks_now_carry_chains);
     RUN_TEST(test_p4_reopen_derivations_follow_the_rule);
-    RUN_TEST(test_the_thinnest_declined_floor_is_the_ota_task_on_this_board);
+    RUN_TEST(test_the_thinnest_declined_floor_is_the_dome_link_task_on_this_board);
     return UNITY_END();
 }

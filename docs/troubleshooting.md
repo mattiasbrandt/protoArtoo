@@ -524,6 +524,24 @@ This caveat was checked against the pinned pioarduino platform `55.03.37`
 (arduino-esp32 `3.3.7`). Re-check Arduino core `log_printf` locking and
 `HardwareSerial` debug-output behavior when changing the platform/framework pin.
 
+**A few framework log lines read `lu` or `zu` where a number belongs
+(artoo-esp32 only).** The artoo-esp32 firmware is built with the smaller
+newlib "nano" printf (the Framework Envelope in `platformio.ini`, #430). It
+formats everything this firmware's own log lines use, floats included, but not
+a size or 64-bit length modifier, so a handful of third-party error lines print
+the letters instead of the value. They are rare error paths, and none of them
+can crash: no text argument follows the number in any of them. Found in the
+image by scanning its read-only strings on 2026-09-26:
+
+| Where it comes from | The line | What you see |
+|---|---|---|
+| WiFi driver (wpa_supplicant) | `CCMP replay detected: A1=... A2=... PN=%llu, RSC=%llu seq=%u` | `PN=lu, RSC=lu` and a wrong `seq` |
+| Web server (PsychicHttp) | `Unable to allocate %zu bytes to send chunk` | `Unable to allocate zu bytes` |
+| Web server (PsychicHttp) | `Request body too large : %zu bytes` | `Request body too large : zu bytes` |
+| C++ runtime (libstdc++) | `__pos (which is %zu) > this->size() (which is %zu)` and `... > __size ...` | `zu` for both numbers; this is an out-of-range assertion's text |
+
+The ESP32-P4 firmware keeps the full printf and prints these normally.
+
 ---
 
 ## 4. Estop-clear dome resync (expected ring "park" — not a crash)

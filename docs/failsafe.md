@@ -159,9 +159,9 @@ ESP32-P4 value, and the measured call chain each one is sized from, are in
 | Task | Priority | Stack | Chip-Specific? | Rationale |
 |------|----------|-------|---|---|
 | **AudioTask** | 3 | 6144 B | Yes | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:350-351`). Conditional on enable_audio. |
-| **SequenceDispatcherTask** | 3 | 5632 B | Yes | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
+| **SequenceDispatcherTask** | 3 | 5120 B | Yes | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
 | **AuxLedTask** | 2 | 4096 B | Yes | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
-| **SafetyMonitorTask** | 2 | 4096 B | Yes | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
+| **SafetyMonitorTask** | 2 | 4608 B | Yes | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
 | **WebEvents** | 1 | 6144 B | Yes | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
 | **ArduinoOTA** | 1 | 4096 B | Yes | OTA firmware/filesystem updates. Started from WiFi event callback, runs in background. |
 

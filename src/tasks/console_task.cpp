@@ -425,8 +425,8 @@ void consoleTask(void* pvParameters) {
     // this cannot fail unless the four assignments above stop matching it.
     uint16_t requiredSize = embeddedCliRequiredSize(embeddedCliConfig);
     if (requiredSize > sizeof(embeddedCliBuffer)) {
-        PA_LOG_ERROR(TAG, "embedded-cli buffer too small: need %u bytes, have %zu",
-                     requiredSize, sizeof(embeddedCliBuffer));
+        PA_LOG_ERROR(TAG, "embedded-cli buffer too small: need %u bytes, have %u",
+                     requiredSize, (unsigned)sizeof(embeddedCliBuffer));
         vTaskDelete(nullptr);
         return;
     }

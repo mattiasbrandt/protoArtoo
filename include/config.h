@@ -823,6 +823,15 @@ constexpr uint32_t OTA_TASK_STACK_BYTES = 5120;  // rule: 4000 -> 5000 -> 5120
 constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 4480;
 constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 5632;  // rule: 4480 -> 5600 -> 5632
 #elif defined(PA_CHIP_TARGET_ESP32)
+// Every chain in this arm was re-derived 2026-09-26 (#430) from a walk that
+// changed three ways at once, and the older notes below give the figures they
+// replaced: the image links newlib nano printf (the Framework Envelope in
+// platformio.ini), about 430 B shallower on every worst chain; the walk follows
+// the IDF log print hook (paLogIdfVprintf) from every ESP-IDF log call, up to
+// about 1.2 KB deeper where one is reachable; and ESP-IDF's impossible
+// null-pointer log in esp_cache_get_alignment(), which sat under every malloc,
+// is no longer walked (tools/task_stack_recipes.json "infeasible_calls"). Each
+// figure is the deeper of the artoo_esp32 and artoo_esp32_profiler walks.
 constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
 // above rule (5120): #250 raised the 50 Hz drive loop on both chips rather than
 // only where an overrun is provable, because this figure is the floor of an
@@ -841,8 +850,9 @@ constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
 // (loadTier2TriggerBindings, the PWM signal check, the RC watchdog), so the walk
 // fell by 672 B. Operator decision 2026-09-25: the stack follows the rule down,
 // full margin kept, and the 512 B goes back to the heap.
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 4944;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 6656;  // rule: 4944 -> 6180 -> 6656
+// Re-derived 2026-09-26 (#430): 4944 -> 5152. The rule stays on 6656.
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5152;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 6656;  // rule: 5152 -> 6440 -> 6656
 // Re-derived 2026-09-11 (#342): 3200 -> 3216. One Xtensa frame step on
 // setArmPosition(), spent on the ADR 0041 drive-command clamp -- the door that
 // stops servo.action.set-position driving a fitted part past what its component
@@ -854,8 +864,9 @@ constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 6656;  // rule: 4944 -> 6180 -> 6
 // headroom at all, so any byte added to this frame tripped it whoever added it.
 // The stack does not move with it -- the rule takes 3216 -> 4020 -> 4096, the
 // 4096 this arm already held, leaving 880 B spare.
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3216;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
+// Re-derived 2026-09-26 (#430): 3216 -> 3184. The rule stays on 4096.
+constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3184;
+constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3184 -> 3980 -> 4096
 // Re-derived 2026-09-25 (#430): 2992 -> 3264. The walk now decodes the function
 // bodies objdump used to print as data, and this chain runs through one of them:
 // __wrap_log_printf (esp_diagnostics, a 128 B frame), reached from real
@@ -863,23 +874,33 @@ constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
 // the rule on #248's tight-heap reason with an 80 B floor, and the fuller walk
 // puts the chain 192 B OVER it. Operator decision 2026-09-25: raise to the rule,
 // paid from the heap #428 freed.
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3264;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 4096;  // rule: 3264 -> 4080 -> 4096
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 5280;
-// rule declined (6656, +512 B): #248's tight-heap reason. The chain grew 608 B
+// Re-derived again 2026-09-26 (#430): 3264 -> 3200. The rule stays on 4096.
+constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3200;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 4096;  // rule: 3200 -> 4000 -> 4096
+// Re-derived 2026-09-26 (#430): 5280 -> 4240, both images alike. The tail that
+// made the profiler image deeper, described below, was the impossible
+// null-pointer log under esp_cache_get_alignment(), and it is no longer walked.
+// The rule is now 5632, so the 6144 stack sits ABOVE it rather than declining
+// it; the stack is not lowered here (#430 changes no stack for heap).
+constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4240;
+// Before #430: rule declined (6656, +512 B): #248's tight-heap reason. The chain grew 608 B
 // when #226 wave 10 landed, and the growth is the walk seeing further rather
 // than this task running deeper -- the extra frames are an ESP-IDF log/queue
 // tail below esp_cache_get_alignment() that the product image still reports as
 // 4528 because a body on the way is emitted as data. Floor holds by 864 B.
 constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3504;
-// rule declined (4608, +512 B): #248's tight-heap reason. Floor holds by 592 B.
+// Re-derived 2026-09-26 (#430): 3504 -> 2752. The rule is now 3584, so the 4096
+// stack sits ABOVE it; it was declined (4608) on #248's tight-heap reason. The
+// stack is not lowered here.
+constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 2752;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 5904;
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 6112;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #250. Floor
-// holds by 240 B. Re-derived 2026-09-25 (#430) from 5872: the walk decodes the
-// bodies objdump used to print as data, and the chain gains 32 B through
-// __wrap_log_printf; the decline stands (operator decision 2026-09-25).
+// holds by 32 B, the thinnest declined floor in the block. Re-derived
+// 2026-09-25 (#430) from 5872: the walk decodes the bodies objdump used to
+// print as data, and the chain gains 32 B through __wrap_log_printf; the
+// decline stands (operator decision 2026-09-25). Re-derived again 2026-09-26
+// (#430) from 5904: the chain still fits, so the decline stands.
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
 // Walked again 2026-09-25 (#428): since #428 this task runs esp_restart(), and
 // with it every registered shutdown handler. The recipe stitches the two this
@@ -889,8 +910,11 @@ constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
 // in every other chain in this file: the IDF log print hook (paLogIdfVprintf),
 // which esp_wifi_stop's error paths reach; with it the branch is 3616 B, and
 // the rule, 3616 -> 4520 -> 4608, would not fit this 4096 B stack. Reported on
-// #428 for an allocation decision; the stack is not changed here.
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
+// #428 for an allocation decision; the stack is not changed here. Since #430
+// the hook is walked, and nano formatting shortens what it calls: see below.
+// Re-derived 2026-09-26 (#430): 3088 -> 3280, from the profiler image (the
+// product image walks 3088). The rule now lands one step up, 3280 -> 4100 ->
+// 4608, so the stack is raised: this arm follows the rule. It was:
 // rule: 3088 -> 3860 -> 4096. Raised from 3072 by #271, and this is the one arm
 // in the block where the floor did NOT already hold: the artoo profiler image
 // (PA_LOG_LEVEL=4, PA_HEAP_PROFILE=1 -- the image you flash when the board is
@@ -898,7 +922,8 @@ constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 // the constant is compiled into both. #245 sized the ESP32-P4 arm from the same
 // deeper image for the same reason. A floor that fails is not the margin
 // question #248 declined; it is an overrun, so the rule is paid.
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
+constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3280;
+constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4608;  // rule: 3280 -> 4100 -> 4608
 // Re-derived 2026-09-17 (#365): 4336 -> 4416, the same +80 B as the ESP32-P4
 // arm and from the same cause -- sequenceDispatcherTask()'s own frame goes
 // 528 -> 608 B because the inlined centreOneOutput()'s 70-byte ServoOutputRow
@@ -913,8 +938,12 @@ constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4096;
 // Output's ServoCommandedPosition - lands on the same inlined root frame,
 // 608 -> 624 B. The 3808 B below the root is unchanged. The rule lands on the
 // step the stack already is; the floor holds by 1200 B.
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 4432;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4432 -> 5540 -> 5632
+// Re-derived 2026-09-26 (#430): 4432 -> 3888. The walk's deepest route was the
+// snprintf float tail under the Learned Sequence load; nano formatting and the
+// dropped null-pointer log take 544 B off it. This arm follows the rule, so the
+// stack follows it down one step, 5632 -> 5120, and 512 B goes back to the heap.
+constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 3888;
+constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5120;  // rule: 3888 -> 4860 -> 5120
 // Re-derived 2026-09-12 (#354): 7360 -> 7376, the deepest branch now running
 // consoleExecuteCommand -> dispatchRcTriggerActionTest -> ... ->
 // handleSequenceCommand -> sequenceStart() -> domeQueueTx -> logQueueDrop:
@@ -940,18 +969,20 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4432 -> 554
 // unchanged. Operator decision 2026-09-25: raise to the rule, full margin, since
 // #428 freed 26.8 KB of static RAM and this is the task that saves config to
 // flash.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8688;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // rule: 8688 -> 10860 -> 11264
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
-// rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
-// holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
+// Re-derived 2026-09-26 (#430): 8688 -> 8896. The rule stays on 11264.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8896;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // rule: 8896 -> 11120 -> 11264
+constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 4992;
+// rule declined (6656, +512 B): #248's tight-heap reason, named on #256. Floor
+// holds by 1152 B. Re-derived 2026-09-26 (#430) from 5904; the rule was 7680
+// and the floor 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
 // the deepest in this chain, and publishing failedAllocs and queueOverflowCount
 // grew it 16 B. Xtensa only -- the ESP32-P4 arm re-walked unchanged.
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3904;
-// rule declined (5120, +1024 B): #248's tight-heap reason, applied to this
-// task's first measurement (#271). Floor holds by 192 B, the thinnest declined
-// floor in the block. Re-derived 2026-09-25 (#430) from 3696: the walk decodes
+constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3440;
+// rule declined (4608, +512 B): #248's tight-heap reason, applied to this
+// task's first measurement (#271). Floor holds by 656 B. Re-derived 2026-09-26
+// (#430) from 3904, when the rule was 5120 and the floor 192 B. Re-derived 2026-09-25 (#430) from 3696: the walk decodes
 // the bodies objdump used to print as data, and the chain gains 208 B through
 // __wrap_log_printf; the decline stands (operator decision 2026-09-25).
 constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;

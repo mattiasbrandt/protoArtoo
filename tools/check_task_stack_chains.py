@@ -53,10 +53,10 @@ caller always passes - each with its reason and the sites that prove it
 before the first walk. An entry whose edge is no longer in the image fails the
 row, like an absent root, so a stale entry cannot hide anything.
 
-The recipe file does not carry the log-hook entry yet. Stitched, it moves
-eleven of twelve artoo-esp32 chains past their recorded constants, and the
-stack raises that would follow cost more heap than #430 may spend without an
-operator decision; the measured entry and figures are on #430.
+The log-hook entry is on for artoo-esp32 only. That image links newlib nano
+printf, which is what makes every chain fit its stack with the hook walked; on
+the ESP32-P4 the hook-on walk needs raises that are an operator decision, and
+the entry's own reason carries the figure (#430).
 
 The chain is
 
