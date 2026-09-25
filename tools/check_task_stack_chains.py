@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-walk every task's Measured Chain recipe and fail when one exceeds its constant.
+"""Re-walk every task's Measured Chain recipe and fail when one outgrows its chip's rule.
 
 WHY THIS EXISTS
 ---------------
@@ -28,11 +28,21 @@ which is exactly what the two `tools/stack_usage_report.py` invocations in
 
 WHAT IT CHECKS, AND WHAT IT DELIBERATELY DOES NOT
 -------------------------------------------------
-Covered arms are the ones whose recorded environment matches `--env`. For each,
-the freshly walked chain must be <= the `include/config.h` constant for that
-chip. Arms recorded against a different environment (the ESP32-P4 product
-image, or a profiler image substituted because the product image's body is
-emitted as data) are listed as not covered and are not guessed at.
+Covered arms are the ones whose recorded environment matches `--env`. Arms
+recorded against a different environment (the other chip's product image, or a
+profiler image substituted because the product image's body is emitted as data)
+are listed as not covered and are not guessed at. A covered arm is judged per
+chip (ADR 0040, amendment of 2026-09-25, #429) - see `judge_arm()`:
+
+- artoo-esp32 is byte-exact: the freshly walked chain must be <= the
+  `*_MEASURED_CHAIN_BYTES` constant. It is the scarce chip, and every byte of
+  growth should stop a slice.
+- ESP32-P4 is judged by allocation: an arm fails only when ADR 0040's rule
+  applied to the walk, ceil512(ceil(chain x 1.25)), exceeds its
+  `*_STACK_BYTES`. A walk that has merely moved from its recorded figure is a
+  note, and the figure is re-derived when the task is next touched. The P4 is
+  walked by a coordinator's post-merge run rather than by the slice that moves
+  it, so failing on drift there failed whichever slice came next.
 
 The Xtensa walk is a floor, not a bound: objdump emits a large share of that
 image's function bodies as data, so a chain crossing one is truncated. This
@@ -47,8 +57,8 @@ to catch:
 - a covered root's body is emitted as data in the very image the recipe names,
   so the walk that produced the recorded figure cannot be reproduced.
 
-Exit codes: 0 = every covered chain is within its constant; 1 = an input was
-missing or unreadable; 2 = at least one covered recipe failed.
+Exit codes: 0 = every covered chain passes its chip's judgement; 1 = an input
+was missing or unreadable; 2 = at least one covered recipe failed.
 """
 
 from __future__ import annotations
@@ -58,6 +68,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # Sibling module in tools/, which is on sys.path for both entry points: this
 # script run directly, and the tooling tests that import it.
@@ -89,6 +100,63 @@ CONSTEXPR_RE = re.compile(
 
 class Fatal(Exception):
     """An input this check cannot be produced without."""
+
+
+# How a re-walked chain is judged, per chip (ADR 0040's 2026-09-25 amendment).
+# A chip in neither set is refused rather than defaulted: which way a new chip
+# is judged is a decision, and the looser default would be the silent one.
+BYTE_EXACT_CHIPS = frozenset({"esp32"})
+ALLOCATION_RULE_CHIPS = frozenset({"esp32p4"})
+
+
+def rule_stack(chain: int) -> int:
+    """ADR 0040's sizing rule: ceil512(ceil(chain x 1.25)), in integers."""
+    need = (chain * 5 + 3) // 4
+    return ((need + 511) // 512) * 512
+
+
+class Verdict(NamedTuple):
+    failure: str | None  # why this arm fails the check; None when it passes
+    detail: str          # the row's status column
+    note: str | None     # printed under the table; never fails the check
+
+
+def judge_arm(chip: str, walked: int, chain_name: str, chain: int,
+              stack_name: str, stack: int) -> Verdict:
+    """Judge one re-walked arm against its recorded chain and its stack."""
+    if chip in BYTE_EXACT_CHIPS:
+        if walked > chain:
+            return Verdict(
+                f"chain {walked} B exceeds {chain_name} = {chain} B by "
+                f"{walked - chain} B -- re-measure and re-derive the stack on "
+                "both chips, with the reason",
+                f"OVER {chain_name}={chain}", None)
+        return Verdict(
+            None, f"within {chain_name}={chain} (headroom {chain - walked} B)", None)
+    if chip in ALLOCATION_RULE_CHIPS:
+        need = rule_stack(walked)
+        drift = None
+        if walked != chain:
+            drift = (
+                f"walked {walked} B against the recorded {chain_name} = {chain} B"
+                f" ({walked - chain:+d} B); {stack_name} still covers it by the"
+                " rule - re-derive the figure when this task is next touched"
+            )
+        if need > stack:
+            return Verdict(
+                f"the rule on the walked chain, {walked} -> {need} B, exceeds "
+                f"{stack_name} = {stack} B by {need - stack} B -- re-derive the "
+                "chain and raise the stack by the rule, with the reason",
+                f"OVER {stack_name}={stack} (rule {walked} -> {need})", None)
+        return Verdict(
+            None,
+            f"within {stack_name}={stack} (rule {walked} -> {need};"
+            f" recorded {chain_name}={chain})",
+            drift)
+    raise Fatal(
+        f"no judgement recorded for chip '{chip}': ADR 0040 decides per chip "
+        "whether a chain is byte-exact or judged by its allocation"
+    )
 
 
 def parse_chip_constants() -> dict[str, dict[str, int]]:
@@ -262,13 +330,19 @@ def main(argv=None) -> int:
             )
             continue
         constant_name = task["chain_constant"]
-        constant = constants[chip].get(constant_name)
-        if constant is None:
-            failures.append(
-                f"{name}: {constant_name} is not declared in config.h's {chip} arm"
+        stack_name = task["stack_constant"]
+        undeclared = [
+            n for n in (constant_name, stack_name) if n not in constants[chip]
+        ]
+        if undeclared:
+            failures.extend(
+                f"{name}: {n} is not declared in config.h's {chip} arm"
+                for n in undeclared
             )
-            rows.append((name, "?", f"{constant_name} missing from config.h"))
+            rows.append((name, "?", f"{', '.join(undeclared)} missing from config.h"))
             continue
+        constant = constants[chip][constant_name]
+        stack = constants[chip][stack_name]
 
         walked = 0
         row_notes: list[str] = []
@@ -306,18 +380,12 @@ def main(argv=None) -> int:
             continue
 
         covered += 1
-        if walked > constant:
-            failures.append(
-                f"{name}: chain {walked} B exceeds {constant_name} = {constant} B"
-                f" by {walked - constant} B -- re-measure and re-derive the stack"
-                " on both chips, with the reason"
-            )
-            rows.append((name, str(walked), f"OVER {constant_name}={constant}"))
-        else:
-            rows.append(
-                (name, str(walked), f"within {constant_name}={constant}"
-                 f" (headroom {constant - walked} B)")
-            )
+        verdict = judge_arm(chip, walked, constant_name, constant, stack_name, stack)
+        if verdict.failure is not None:
+            failures.append(f"{name}: {verdict.failure}")
+        if verdict.note is not None:
+            notes.append(f"{name}: {verdict.note}")
+        rows.append((name, str(walked), verdict.detail))
 
     width = max(len(r[0]) for r in rows) if rows else 4
     for task_name, walked, detail in rows:
@@ -335,7 +403,10 @@ def main(argv=None) -> int:
         for failure in failures:
             print(f"FAIL {failure}")
         return 2
-    print("every re-walked chain is within its recorded constant")
+    if chip in ALLOCATION_RULE_CHIPS:
+        print("every re-walked chain fits its stack by the rule")
+    else:
+        print("every re-walked chain is within its recorded constant")
     return 0
 
 

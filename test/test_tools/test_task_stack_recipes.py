@@ -396,5 +396,51 @@ class TaskStackRecipes(unittest.TestCase):
             sum(1 for e in self.recipes["tasks"] if "esp32p4" in e["chips"]), 13)
 
 
+class ChainJudgementIsPerChip(unittest.TestCase):
+    """ADR 0040's 2026-09-25 amendment (#429): the gate row judges each chip
+    its own way. artoo-esp32 fails on any byte past the recorded chain; an
+    ESP32-P4 arm fails only once the rule on the walk no longer fits its stack,
+    and a figure that merely drifted is a note.
+
+    The figures are the Console's on each chip. On the P4 its 10752 B stack
+    holds a chain of up to 8601 B by the rule (8601 -> 10752), and 8602 needs
+    11264.
+    """
+
+    def test_artoo_fails_on_one_byte_past_the_recorded_chain(self):
+        # 7472 -> 9340 -> 9728 still fits the stack; byte-exact fails it anyway.
+        verdict = checker.judge_arm(
+            "esp32", 7472, "CONSOLE_TASK_MEASURED_CHAIN_BYTES", 7456,
+            "CONSOLE_TASK_STACK_BYTES", 9728)
+        self.assertIsNotNone(verdict.failure)
+        self.assertIn("by 16 B", verdict.failure)
+        self.assertIsNone(checker.judge_arm(
+            "esp32", 7456, "CONSOLE_TASK_MEASURED_CHAIN_BYTES", 7456,
+            "CONSOLE_TASK_STACK_BYTES", 9728).failure)
+
+    def test_p4_drift_inside_the_allocation_is_a_note(self):
+        for walked in (8464 + 16, 8601, 8464 - 32):
+            with self.subTest(walked=walked):
+                verdict = checker.judge_arm(
+                    "esp32p4", walked, "CONSOLE_TASK_MEASURED_CHAIN_BYTES", 8464,
+                    "CONSOLE_TASK_STACK_BYTES", 10752)
+                self.assertIsNone(verdict.failure)
+                self.assertIsNotNone(verdict.note, "drift must still be printed")
+        self.assertIsNone(checker.judge_arm(
+            "esp32p4", 8464, "CONSOLE_TASK_MEASURED_CHAIN_BYTES", 8464,
+            "CONSOLE_TASK_STACK_BYTES", 10752).note)
+
+    def test_p4_fails_once_the_rule_outgrows_the_stack(self):
+        verdict = checker.judge_arm(
+            "esp32p4", 8602, "CONSOLE_TASK_MEASURED_CHAIN_BYTES", 8464,
+            "CONSOLE_TASK_STACK_BYTES", 10752)
+        self.assertIsNotNone(verdict.failure)
+        self.assertIn("8602 -> 11264", verdict.failure)
+
+    def test_a_chip_with_no_recorded_judgement_is_refused(self):
+        with self.assertRaises(checker.Fatal):
+            checker.judge_arm("esp32s3", 1000, "X_CHAIN", 1000, "X_STACK", 2048)
+
+
 if __name__ == "__main__":
     unittest.main()
