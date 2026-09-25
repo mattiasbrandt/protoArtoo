@@ -111,7 +111,21 @@ struct StatusJsonInputs {
 // The buffer both senders build the document in: GET /api/status in the web
 // request scratch (include/web_request_scratch.h) and the WebEvents "status"
 // event in that task's own body buffer (src/web/web_server.cpp).
-constexpr size_t STATUS_JSON_BUFFER_BYTES = 3072;
+//
+// Sized to the document's worst case - every component on and every value at
+// its longest, 4,153 B plus its terminator on artoo-esp32, which
+// test/test_native/test_status_json measures - rounded up to 4,160. The 3,072 B
+// it replaces held a fresh-boot droid with every component on (about 3,176 B)
+// only as an overflow answer (#381, #428). A board with ESP-Hosted also carries
+// the hostedLink block, which src/web/status_json.cpp formats into 256 B first,
+// so it adds at most 255; the native build cannot measure it, so it is added
+// rather than measured.
+#if PA_CAP_HOSTED_WIFI
+constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 255;
+#else
+constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 0;
+#endif
+constexpr size_t STATUS_JSON_BUFFER_BYTES = 4160 + STATUS_JSON_HOSTED_LINK_MAX;
 
 // Writes the status document into buffer. False when it did not fit, and then
 // buffer holds {"ok":false,"error":"status payload overflow"} instead - the
