@@ -1477,8 +1477,10 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         // Audio
         case ConfigKey::AUDIO_VOLUME:
             return (value >= 0 && value <= 30) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
+        // 1 (Error) .. 4 (Debug) since schema 2 (the migration in configLoad()).
         case ConfigKey::LOG_LEVEL:
-            return (value >= 1 && value <= 3) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
+            return (value >= PA_LOG_LEVEL_ERROR && value <= PA_LOG_LEVEL_DEBUG) ? ConfigValidationResult::OK
+                                                                              : ConfigValidationResult::INVALID_VALUE;
 
         // Audio tracks (uint16, 0..65535  --  accept all)
         case ConfigKey::SND_SCREAM:
@@ -1563,15 +1565,17 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         case ConfigKey::DOME_SPEED_LIMIT_PCT:
             return (value >= 0 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
 
+        // The random dome move's three ranges are the Apply Core's
+        // (src/web/api_config_apply.cpp), which is what a save is held to.
         case ConfigKey::DOME_RND_SPEED_PCT:
-            return (value >= 0 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
+            return (value >= 5 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
 
         case ConfigKey::DOME_RND_PAUSE_MIN:
         case ConfigKey::DOME_RND_PAUSE_MAX:
-            return (value >= 0 && value <= 255) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
+            return (value >= 1 && value <= 120) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
 
         case ConfigKey::DOME_RND_MOVE_MS:
-            return (value >= 100 && value <= 10000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
+            return (value >= 500 && value <= 10000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
 
         // Sequence timing
         case ConfigKey::SEQ_OPEN_MS:

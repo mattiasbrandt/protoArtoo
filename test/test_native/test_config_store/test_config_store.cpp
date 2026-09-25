@@ -758,6 +758,29 @@ void test_configValidate_dome_speed_pct() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
 }
 
+// Test: configValidate holds the four fields whose bounds had drifted from the
+// Apply Core's to the Apply Core's bounds, both edges of each.
+void test_configValidate_matches_apply_core_bounds() {
+    struct Bound {
+        ConfigKey key;
+        int32_t lo;
+        int32_t hi;
+    };
+    const Bound bounds[] = {
+        {ConfigKey::LOG_LEVEL, 1, 4},
+        {ConfigKey::DOME_RND_SPEED_PCT, 5, 100},
+        {ConfigKey::DOME_RND_PAUSE_MIN, 1, 120},
+        {ConfigKey::DOME_RND_PAUSE_MAX, 1, 120},
+        {ConfigKey::DOME_RND_MOVE_MS, 500, 10000},
+    };
+    for (const Bound& b : bounds) {
+        TEST_ASSERT_TRUE(configValidate(b.key, b.lo) == ConfigValidationResult::OK);
+        TEST_ASSERT_TRUE(configValidate(b.key, b.hi) == ConfigValidationResult::OK);
+        TEST_ASSERT_FALSE(configValidate(b.key, b.lo - 1) == ConfigValidationResult::OK);
+        TEST_ASSERT_FALSE(configValidate(b.key, b.hi + 1) == ConfigValidationResult::OK);
+    }
+}
+
 // Test: configValidate aux LED pin
 void test_configValidate_light_led_count() {
     ConfigValidationResult result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MIN);
@@ -1936,6 +1959,7 @@ int main() {
     RUN_TEST(test_configLoad_save_audio_tracks);
     RUN_TEST(test_configLoad_save_feature_toggles);
     RUN_TEST(test_configValidate_dome_speed_pct);
+    RUN_TEST(test_configValidate_matches_apply_core_bounds);
     RUN_TEST(test_configValidate_light_led_count);
     RUN_TEST(test_configValidate_sequence_timing);
     RUN_TEST(test_configValidate_rc_input_mode);
