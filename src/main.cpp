@@ -556,6 +556,9 @@ void setup() {
     xTaskCreatePinnedToCore(driveTask, "DriveTask", DRIVE_TASK_STACK_BYTES, nullptr, 5,
                             nullptr, 1);
     if (rcPlan.taskEnabled) {
+        // The SBUS decoders this boot's RC mode reads, and no others, here
+        // rather than in the task: nothing on Core 1 allocates after setup().
+        rcInputAllocateDecoders(rcPlan);
         // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES in include/config.h
         // carries the measured chain and the sizing rule on each chip.
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,

@@ -21,8 +21,11 @@
 // =============================================================================
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
+
+#include <new>
 
 #include "../../include/commanded_modes.h"
 #include "../../include/config.h"
@@ -36,6 +39,7 @@
 #include "../../include/queue_drop_tracker.h"
 #include "../../include/rc_channel_mapper.h"
 #include "../../include/rc_dispatcher_helpers.h"
+#include "../../include/rc_input.h"
 #include "../../include/rc_input_processor.h"
 #include "../../include/rc_input_step.h"
 #include "../../include/rc_mapping_cache.h"
@@ -53,8 +57,13 @@ static const char* TAG = "RCInputTask";
 // channel are derived from the chip's RMT geometry, not fixed at 3 -- see
 // include/sbus_rmt_budget.h (#255).
 // UART1 is now exclusively owned by DriveTask; UART2 by DomeLinkTask.
-static SbusDecoder sbus_drive;
-static SbusDecoder sbus_dome;
+//
+// Allocated by rcInputAllocateDecoders() from setup(), only for the boot RC
+// mode that reads them, and null otherwise: 1,664 B each on artoo-esp32, where
+// every static byte is a heap byte, and most droids run one receiver or none
+// (#428).
+static SbusDecoder* s_sbusDrive = nullptr;
+static SbusDecoder* s_sbusDome = nullptr;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
                                       PIN_RC_CH4, PIN_RC_CH5, PIN_RC_CH6};
 
@@ -69,6 +78,29 @@ static RcInputStepState s_rcStepState = {};
 // task's stack, and never heap: Core 1 allocates nothing after setup().
 static RcProcessorInput s_dispatchInput = {};
 static RcProcessorOutput s_dispatchOutput = {};
+
+// One decoder, for as long as the controller runs - the lifetime the static it
+// replaces had. Internal 8-bit RAM, never PSRAM: RMT's receive-done callback
+// runs in an ISR and writes this object's symbol buffers, and on the ESP32-P4
+// malloc can hand out PSRAM (CONFIG_SPIRAM_USE_MALLOC).
+static SbusDecoder* allocateSbusDecoder(const char* receiver) {
+    void* storage = heap_caps_malloc(sizeof(SbusDecoder), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (storage == nullptr) {
+        PA_LOG_ERROR(TAG, "no memory for the %s SBUS decoder (%u B)", receiver,
+                     (unsigned)sizeof(SbusDecoder));
+        return nullptr;
+    }
+    return new (storage) SbusDecoder();
+}
+
+void rcInputAllocateDecoders(const RcInputStartupPlan& plan) {
+    if (plan.driveSbusEnabled && s_sbusDrive == nullptr) {
+        s_sbusDrive = allocateSbusDecoder("drive");
+    }
+    if (plan.domeSbusEnabled && s_sbusDome == nullptr) {
+        s_sbusDome = allocateSbusDecoder("dome");
+    }
+}
 
 static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6]) {
     bool anyValid = false;
@@ -378,11 +410,14 @@ void rcInputTask(void* pvParameters) {
     const bool useCh2 = active.useCh2;
     const RcInputStartupPlan startupPlan = rcInputStepStartupPlan(active);
 
+    // A decoder setup() could not allocate stays off exactly as one whose RMT
+    // channel would not start: its receiver is logged as disabled, and the
+    // drive stays locked by the boot SBUS watchdog trigger (src/main.cpp).
     bool driveSbusEnabled = false;
-    if (startupPlan.driveSbusEnabled) {
+    if (startupPlan.driveSbusEnabled && s_sbusDrive != nullptr) {
         bool useDriveSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
         int sbusRxPin = useDriveSbus2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
-        if (!sbus_drive.begin(sbusRxPin)) {
+        if (!s_sbusDrive->begin(sbusRxPin)) {
             PA_LOG_ERROR(TAG, "RMT init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
                          sbusRxPin);
         } else {
@@ -391,8 +426,8 @@ void rcInputTask(void* pvParameters) {
     }
 
     bool domeSbusEnabled = false;
-    if (startupPlan.domeSbusEnabled) {
-        if (!sbus_dome.begin(PIN_SBUS2_RX)) {
+    if (startupPlan.domeSbusEnabled && s_sbusDome != nullptr) {
+        if (!s_sbusDome->begin(PIN_SBUS2_RX)) {
             PA_LOG_ERROR(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
         } else {
             domeSbusEnabled = true;
@@ -447,8 +482,8 @@ void rcInputTask(void* pvParameters) {
         }
 
         // --- Drive receiver (SBUS #1, or SBUS2 GPIO when single_sbus+useCh2) ---
-        if (driveSbusEnabled && sbus_drive.read()) {
-            SbusData data = sbus_drive.data();
+        if (driveSbusEnabled && s_sbusDrive->read()) {
+            SbusData data = s_sbusDrive->data();
 
             // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
             // Treat as SBUS2  --  store to sbus2 state and dispatch dome/aux bindings only.
@@ -607,7 +642,7 @@ void rcInputTask(void* pvParameters) {
                     bool rcDebug = robotState.rcDebugMode;
                     taskEXIT_CRITICAL(&robotStateMux);
                     if (rcDebug) {
-                        SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
+                        SbusDecoderDebugStats driveStats = s_sbusDrive->debugStats();
                         PA_LOG_DEBUG(
                             TAG,
                             "drive watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
@@ -642,8 +677,8 @@ void rcInputTask(void* pvParameters) {
         }
 
         // --- Dome-spin receiver (SBUS #2) ---
-        if (domeSbusEnabled && sbus_dome.read()) {
-            SbusData data = sbus_dome.data();
+        if (domeSbusEnabled && s_sbusDome->read()) {
+            SbusData data = s_sbusDome->data();
 
             taskENTER_CRITICAL(&robotStateMux);
             bool wasSbus2HwFailsafe = robotState.sbus2HwFailsafe;
@@ -711,7 +746,7 @@ void rcInputTask(void* pvParameters) {
                     bool rcDebug = robotState.rcDebugMode;
                     taskEXIT_CRITICAL(&robotStateMux);
                     if (rcDebug) {
-                        SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                        SbusDecoderDebugStats domeStats = s_sbusDome->debugStats();
                         PA_LOG_DEBUG(
                             TAG,
                             "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
@@ -771,9 +806,10 @@ void rcInputTask(void* pvParameters) {
                 if (waitingDome)
                     PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");
                 if (rcDebug) {
-                    SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
-                    SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                    // Each receiver's stats only while it is waiting: waiting
+                    // implies it started, so its decoder exists.
                     if (waitingDrive) {
+                        SbusDecoderDebugStats driveStats = s_sbusDrive->debugStats();
                         PA_LOG_DEBUG(TAG,
                                      "SBUS1 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
                                      "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
@@ -794,6 +830,7 @@ void rcInputTask(void* pvParameters) {
                                      (unsigned long)driveStats.maxSymbolCount);
                     }
                     if (waitingDome) {
+                        SbusDecoderDebugStats domeStats = s_sbusDome->debugStats();
                         PA_LOG_DEBUG(TAG,
                                      "SBUS2 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
                                      "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
