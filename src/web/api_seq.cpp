@@ -31,6 +31,7 @@
 #include "seq_store_index.h"
 #include "sequence_dispatcher.h"
 #include "sequence_run_evidence.h"  // GET /api/seq/last-run
+#include "web_request_scratch.h"
 
 static const char* TAG = "APISEQ";
 static constexpr size_t SEQ_TEST_BODY_MAX = 512;
@@ -360,11 +361,17 @@ void handleSeqTestPost(WebRequest& req) {
 // anything went wrong (body-local queue-full/retry counts). Lets agents diff
 // against the parity tables instead of the operator visually diffing every run.
 void handleSeqLastRunGet(WebRequest& req) {
-    // Snapshot target. Static rather than stack: the record is 2204 B on ESP32
-    // and 8284 B on ESP32-P4 (the ring is sized per chip target,
-    // sequence_run_evidence.h), and neither backend's server task has that to
-    // spare. This is the second of the two copies that header prices.
-    static SeqRunEvidence ev;
+    // Snapshot target. In the web request scratch rather than on the stack:
+    // the record is 2204 B on ESP32 and 8284 B on ESP32-P4 (the ring is sized
+    // per chip target, sequence_run_evidence.h), and neither backend's server
+    // task has that to spare. This is the second of the two copies that header
+    // prices; it holds its bytes only while a request is being answered (#428).
+    WebRequestScratch<SeqRunEvidence> scratch;
+    if (!scratch) {
+        sendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    SeqRunEvidence& ev = *scratch;
     const bool have = seqEvidenceSnapshot(ev);
 
     JsonDocument doc;

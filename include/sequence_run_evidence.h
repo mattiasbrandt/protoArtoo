@@ -22,10 +22,12 @@
 #include "protocol_check.h"   // PC_CMD_MAX, PC_MAX_STEPS -- the model's own ceilings
 #include "sequence_engine.h"  // SeqAction
 
-// Bounded buffers, sized per chip target. The record is held as TWO static
-// copies -- the live record on the dispatcher task (sequence_run_evidence.cpp)
-// and the snapshot GET /api/seq/last-run serializes from (api_seq.cpp) -- so
-// every byte here costs 2x static DRAM.
+// Bounded buffers, sized per chip target. The record is held twice -- the live
+// record on the dispatcher task (sequence_run_evidence.cpp), a static, and the
+// snapshot GET /api/seq/last-run serializes from (api_seq.cpp), in the web
+// request scratch (include/web_request_scratch.h, #428). Every byte here costs
+// static DRAM once, and a second time wherever this record is the largest
+// thing that scratch holds - on ESP32-P4 today.
 //
 // ESP32 (artoo-esp32): the operator-sanctioned minimum, unchanged. Steady-state
 // free heap is tight -- see the 2026-06-18 heap-exhaustion fix -- so the ring is

@@ -35,6 +35,7 @@
 #include "../../include/web_backend_psychic.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
+#include "../../include/web_request_scratch.h"
 #include "../../include/web_response_deadline.h"
 #include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
@@ -689,4 +690,18 @@ void initPsychicWebServer() {
         return;
     }
     PA_LOG_INFO(TAG, "PsychicHttp server listening on port 80");
+
+    // The web request scratch belongs to the task that runs every handler
+    // (include/web_request_scratch.h). httpd_queue_work() runs a function on
+    // exactly that task, so the scratch learns its owner from the owner itself
+    // rather than from a task name. Until the work item runs, a scratch claim
+    // is refused and its handler answers 500 - a request would have to arrive
+    // in the moment after begin() to see it.
+    err = httpd_queue_work(
+        s_server.server,
+        [](void*) { webRequestScratchBindOwner(xTaskGetCurrentTaskHandle()); }, nullptr);
+    if (err != ESP_OK) {
+        PA_LOG_ERROR(TAG, "web request scratch not bound (%s): scratch routes will answer 500",
+                     esp_err_to_name(err));
+    }
 }

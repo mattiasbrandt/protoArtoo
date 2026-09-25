@@ -542,7 +542,16 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
 #include <string.h>
 
 #include "web_request.h"
+#include "web_request_scratch.h"
 #include "web_request_test_backend.h"
+
+// The host harness is one task, and it stands in for the one the device
+// serves every web request on. Bound at static initialisation, so every suite
+// that drives a handler finds the web request scratch owned by the task it
+// runs on (include/web_request_scratch.h); the device binds the httpd task
+// once the server has started (src/web/web_request_psychic.cpp).
+[[maybe_unused]] static const bool s_webRequestScratchBound =
+    (webRequestScratchBindOwner(xTaskGetCurrentTaskHandle()), true);
 
 static const char* testParamLookup(const WebRequestTestBackend* b, const char* name) {
     // The staged preemption, if the test staged one. Cleared before the call

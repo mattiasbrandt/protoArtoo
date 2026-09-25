@@ -20,8 +20,9 @@
 // ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) -
 // too large to return by value on an 8 KB web server task stack (see
 // api_seq.cpp's SeqRunEvidence for the same constraint). It is an
-// out-parameter; callers keep their instance `static`, matching that
-// precedent, rather than a stack local.
+// out-parameter, never a stack local: POST /api/config keeps its instance in
+// the web request scratch (include/web_request_scratch.h) and the Console
+// module a static of its own.
 //
 // ConfigApplyActions intentionally has no playDriveOnCue: ADR 0012 moves
 // that rule to commandedSetStationary() (state-derived), once the later

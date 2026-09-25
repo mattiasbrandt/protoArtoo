@@ -108,6 +108,11 @@ struct StatusJsonInputs {
 #endif
 };
 
+// The buffer both senders build the document in: GET /api/status in the web
+// request scratch (include/web_request_scratch.h) and the WebEvents "status"
+// event in that task's own body buffer (src/web/web_server.cpp).
+constexpr size_t STATUS_JSON_BUFFER_BYTES = 3072;
+
 // Writes the status document into buffer. False when it did not fit, and then
 // buffer holds {"ok":false,"error":"status payload overflow"} instead - the
 // answer both senders have always given for an overflow.
