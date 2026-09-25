@@ -289,7 +289,17 @@
           "product_bytes": 3888,
           "profiler_bytes": 4064,
           "deeper_image": "firebeetle2_profiler - 4064 B against the product image's 3888 B. Same substitution as #271: the profiler image (PA_LOG_LEVEL=4) is the deeper walk, and the constant is compiled into both.",
-          "rule": "applied"
+          "rule": "applied",
+          "calls": [
+            {
+              "caller": "esp_restart",
+              "callees": [
+                "esp_sync_timekeeping_timers",
+                "esp_wifi_stop"
+              ]
+            }
+          ],
+          "stitch_reason": "As on artoo-esp32, esp_restart() runs every registered shutdown handler on this task since #428. This image registers esp_sync_timekeeping_timers (esp_timer_impl_init_system_time) and esp_wifi_stop (set_default_wifi_handlers, ESP-Hosted's esp_wifi_with_remote.c, which decodes in full). The firebeetle2 walk at f912e336 gives esp_restart 800 B (timekeeping 784, esp_wifi_stop 528), under the 3888 B product walk; the IDF log print hook is not reached on this path."
         }
       }
     },
