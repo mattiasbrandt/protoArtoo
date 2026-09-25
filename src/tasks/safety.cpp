@@ -100,7 +100,8 @@ void safetyMonitorTask(void* pvParameters) {
         profilerObserveOptionalSubsystems();
 
         // Heap health: warn on low free heap, high fragmentation, and log periodic metrics.
-        // Low-heap keeps watching the Arduino internal figure (unchanged behavior).
+        // freeHeap is the Arduino internal figure, kept only for the periodic log below
+        // beside data_free so the two can be compared.
         uint32_t freeHeap = ESP.getFreeHeap();
         // Fragmentation pair: both terms come from ONE capability mask, and the mask
         // that matters for safety is the internal 8-bit data heap. INTERNAL alone
@@ -114,12 +115,17 @@ void safetyMonitorTask(void* pvParameters) {
             (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         float fragRatio = heapFragRatio(dataHeapFree, largestBlock);
 
-        bool nowLowHeap = (freeHeap < 20480);
+        // Low heap reads the same data heap as the fragmentation pair. ESP.getFreeHeap()
+        // is heap_caps_get_free_size(MALLOC_CAP_INTERNAL), which on the classic ESP32
+        // (artoo-esp32) includes the IRAM heap - 42,392 B on the image #427 measured -
+        // that malloc cannot hand out for byte-addressable data. That alone kept the
+        // figure above this 20 KB threshold, so the warning could never fire there.
+        bool nowLowHeap = (dataHeapFree < 20480);
         if (nowLowHeap && !lastLowHeap) {
             PA_LOG_WARN(TAG, "low heap entered: %lu bytes free, largest block: %u bytes",
-                        (unsigned long)freeHeap, (unsigned)largestBlock);
+                        (unsigned long)dataHeapFree, (unsigned)largestBlock);
         } else if (!nowLowHeap && lastLowHeap) {
-            PA_LOG_INFO(TAG, "low heap recovered: %lu bytes free", (unsigned long)freeHeap);
+            PA_LOG_INFO(TAG, "low heap recovered: %lu bytes free", (unsigned long)dataHeapFree);
         }
         lastLowHeap = nowLowHeap;
 

@@ -168,3 +168,22 @@ void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
 // Copy the current record under lock for the API handler. Returns false (and an
 // out.valid==false record) when no run has been recorded yet.
 bool seqEvidenceSnapshot(SeqRunEvidence& out);
+
+// The scalar header of the record: the fields dome.api.get-sequence-last-run
+// emits, and nothing else. A caller that serializes only these reads them here
+// instead of taking a whole SeqRunEvidence, which is 8284 B on ESP32-P4 -
+// larger than that board's whole httpd stack (#427).
+struct SeqRunSummary {
+    bool          valid;                 // a run has been recorded
+    SeqRunOutcome outcome;
+    char          name[SEQ_EVID_NAME_LEN];
+    uint8_t       source;                // CommandSource of the trigger
+    char          reason[SEQ_EVID_REASON_LEN];
+    uint32_t      startMs;
+    uint32_t      endMs;                 // 0 while still running
+};
+
+// Copy the summary fields under the same lock seqEvidenceSnapshot() takes, so
+// they come from one consistent record. Returns false (and an out.valid==false
+// summary) when no run has been recorded yet.
+bool seqEvidenceSummary(SeqRunSummary& out);

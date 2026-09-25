@@ -31,6 +31,7 @@
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
+#include "../../include/web_body_ceiling.h"
 #include "../../include/web_backend_psychic.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
@@ -509,16 +510,13 @@ void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
 
 void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
                       size_t maxBodyBytes) {
-    // maxBodyBytes is the async backend's buffering bound; here the library
-    // does the buffering and enforces one server-wide ceiling
+    // The library does the buffering and enforces one server-wide ceiling
     // (PsychicHttpServer::maxRequestBodySize), so the per-route value only has
-    // to fit under it. Raising the server ceiling to the largest route's need
-    // keeps the two backends agreeing on which bodies arrive at all; the
-    // matching 413 comes from the handler reading contentLength(), which is
-    // where both backends already agree.
-    if (maxBodyBytes > s_server.maxRequestBodySize) {
-        s_server.maxRequestBodySize = maxBodyBytes;
-    }
+    // to fit under it. initPsychicWebServer() starts that ceiling at
+    // kDefaultMaxBodyBytes and each route raises it to its own bound, so it
+    // ends at the largest bound any route declares (include/web_body_ceiling.h).
+    // The matching 413 comes from the handler reading contentLength().
+    webBodyCeilingAdmitRoute(s_server.maxRequestBodySize, maxBodyBytes);
 
     http_method vendorMethod = HTTP_GET;
     if (method == WebMethod::kPost) {
@@ -633,6 +631,13 @@ void initPsychicWebServer() {
     // so the guard is what rejects an oversize image, in the JSON shape
     // data/firmware.js reads. See uploadContentLengthFits() in api_upload.h.
     s_server.maxUploadSize = kUploadTransportCeiling;
+
+    // PsychicWebHandler buffers every body up to maxRequestBodySize before a
+    // handler sees it, and the library starts it at 16 KB. Start it at the
+    // smallest route bound instead, before any route registers, so it ends at
+    // the largest bound a route declares on this board (#427). Must precede
+    // webRegisterSeamRoutes(): every webRegisterRoute() raises from here.
+    webBodyCeilingReset(s_server.maxRequestBodySize);
 
     webRegisterSeamRoutes();
 

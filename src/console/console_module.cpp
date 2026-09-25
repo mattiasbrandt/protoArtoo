@@ -107,9 +107,10 @@
                                    // own "retrained" check, both reused verbatim from
                                    // handleSeqBuiltinsGet()/handleSeqListGet() (src/web/api_seq.cpp)
 #include "seq_json.h"          // seqToggleGroupToString() - reused verbatim by both list executors
-#include "sequence_run_evidence.h"  // SeqRunEvidence, seqEvidenceSnapshot(), seqRunOutcomeName() -
-                                     // dome.api.get-sequence-last-run below, the same snapshot
-                                     // GET /api/seq/last-run serializes (src/seq_last_run_json.cpp)
+#include "sequence_run_evidence.h"  // SeqRunSummary, seqEvidenceSummary(), seqRunOutcomeName() -
+                                     // dome.api.get-sequence-last-run below, read under the same
+                                     // lock as the snapshot GET /api/seq/last-run serializes
+                                     // (src/seq_last_run_json.cpp)
 #include "api_profiler.h"           // ProfilerReading, profilerRead(), profilerRequestTrace*() -
                                      // the shared read GET /api/profiler renders as JSON and
                                      // system.api.get-profiler renders as records (#224). Included
@@ -920,9 +921,12 @@ static void consoleExecuteSystemStatusLogs(uint32_t requestId, const ConsoleReco
     }
 }
 
-// dome.api.get-sequence-last-run (#221 remainder): a plain snapshot copy
-// under lock (seqEvidenceSnapshot(), src/sequence_run_evidence.cpp), not a
-// paginated read - #223's field-based query shape fits directly. Field names
+// dome.api.get-sequence-last-run (#221 remainder): a plain copy under lock
+// (seqEvidenceSummary(), src/sequence_run_evidence.cpp), not a paginated
+// read - #223's field-based query shape fits directly. It copies only the
+// scalar header it emits, never a whole SeqRunEvidence: that record is
+// 8284 B on ESP32-P4, and on the stack here it took this op past the
+// 8,192 B httpd stack a web Console request runs on (#427). Field names
 // and their presence conditions are read straight off populateSeqLastRunJson()
 // (src/seq_last_run_json.cpp) for the eight scalar keys the registry's
 // fields: list claims (see that entry's own comment for why the nested
@@ -932,8 +936,8 @@ static void consoleExecuteSystemStatusLogs(uint32_t requestId, const ConsoleReco
 // been recorded (have == true) - the same "nothing to report yet" shape the
 // REST JSON's own early return uses.
 static void consoleExecuteDomeApiGetSequenceLastRun(uint32_t requestId, const ConsoleRecordSink* sink) {
-    SeqRunEvidence ev = {};
-    bool have = seqEvidenceSnapshot(ev);
+    SeqRunSummary ev = {};
+    bool have = seqEvidenceSummary(ev);
 
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "valid", have ? "true" : "false");
