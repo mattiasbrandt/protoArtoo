@@ -64,6 +64,36 @@ Example with hint and field:
 {"ok":false,"error":"missing password","hint":"POST /api/wifi to list networks","field":"password"}
 ```
 
+### Refusals from a settings write
+
+The settings writes - `POST /api/config`, `POST /api/wifi`,
+`POST /api/audio/tracks`, `POST /api/audio/category-range` and
+`POST /api/audio/mood-map` - answer a refused value (`400`, or `404` where a
+route says so) with three more keys beside `error`:
+
+- `"field"`: the request field the refusal is about, by the name it was sent
+  under. Absent when no one field is to blame (a request that sent nothing
+  usable).
+- `"reason"`: why, always present. One of `out-of-range` (not a value this field
+  takes), `missing-argument` (a field this write needs was not sent - `field`
+  names the missing one), `conflict` (the value is fine on its own and clashes
+  with another one, sent or saved), `malformed-argument` (a JSON body that did
+  not parse) or `not-in-this-build` (the fitted sound module has no catalog to
+  bind into). The tokens are the Controller Console's (docs/console-protocol.md
+  section 3.3).
+- `"accepts"`: what `field` would have taken, where a range or a set of words
+  applies: `0..600` for a number, the words comma-separated otherwise
+  (`none,soft,overshoot`). Absent where none does, and always absent on a
+  `conflict`.
+
+`error` stays the sentence it has always been. A client reads the three keys
+for what was wrong and never parses the sentence for them:
+
+```json
+{"ok":false,"error":"speedLimitMax must be 0..600","field":"speedLimitMax","reason":"out-of-range","accepts":"0..600"}
+{"ok":false,"error":"speed presets must be distinct values","field":"speedPresetSlow","reason":"conflict"}
+```
+
 ### Unknown routes
 
 A request that matches no endpoint and no static file gets the same shape, with
@@ -971,6 +1001,7 @@ Updates one persisted key.
 - invalid track range/type
 - invalid CHIRP arguments
 - `404` when CHIRP mapping requested on non-catalog backend
+- every refusal above carries `field`, `reason` and `accepts` (see "Refusals from a settings write")
 - `500` on NVS write failure
 - `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
@@ -1017,6 +1048,7 @@ Atomically updates one category low/high pair.
 - invalid range values
 - invalid CHIRP binding arguments
 - `404` when CHIRP binding operation requested on non-catalog backend
+- every refusal above carries `field`, `reason` and `accepts` (see "Refusals from a settings write"); a `lo` above its `hi` is `conflict`
 - `500` on NVS write failure
 - `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
@@ -1065,6 +1097,7 @@ Sets mood category masks.
 - invalid/missing fields
 - JSON parse failure
 - invalid range/type
+- every refusal above carries `field`, `reason` and `accepts` (see "Refusals from a settings write")
 - `500` on NVS write failure
 - `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window for over a second; nothing was applied
 
@@ -1640,7 +1673,8 @@ Updates supported config fields and persists to NVS.
   module running since the last boot). The two differ exactly while a member
   change is staged and the controller has not rebooted.
 - Errors:
-- `400` on invalid value/type or unsupported request with no accepted fields
+- `400` on invalid value/type or unsupported request with no accepted fields,
+  with `field`, `reason` and `accepts` (see "Refusals from a settings write")
 - `409` when a Part move cannot land on the table as it stands — the Part is
   not on `movePartFrom` (`"that Part is not on the Output movePartFrom names -
   read the outputs again, then move it"`), the destination already drives as
@@ -2095,7 +2129,7 @@ the end-to-end operator flow this endpoint backs.
 - `apSsid` is required (non-empty) once the resulting mode is `standalone_ap`
 - `apPassword` must be empty or 8..63 characters (ESP32 SoftAP/WPA2 requirement)
 - Success: `200` with `{"ok":true,"wifi":{...}}` (same password-safe `wifi` shape as `GET /api/config`'s `wifi` block) and marks the settings provisioned
-- Errors: `400` with `{"ok":false,"error":"..."}` on invalid/missing fields; `500` on persistence failure; `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window (nothing was applied)
+- Errors: `400` with `{"ok":false,"error":"...","field":"...","reason":"..."}` on invalid/missing fields (see "Refusals from a settings write"); `500` on persistence failure; `503` `{"ok":false,"error":"config write busy"}` when another config writer held the config write window (nothing was applied)
 
 #### Example request
 

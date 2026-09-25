@@ -101,9 +101,40 @@ void test_config_post_rejects_an_out_of_range_value_without_applying_it() {
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"ok\":false"));
-    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"error\":\""));
+    // The sentence is the one this route has always answered, and what it says
+    // rides beside it as keys a page reads instead of the sentence (#425).
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("speedLimitMax must be 0..600", doc["error"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("speedLimitMax", doc["field"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("out-of-range", doc["reason"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("0..600", doc["accepts"].as<const char*>());
     // The rejected value must not have reached the cache.
     TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+}
+
+// Presets that are each in range but not distinct clash with each other: that
+// is a conflict, not out-of-range, and there is no single value `accepts` could
+// name (ADR 0011 amended 2026-09-25).
+void test_config_post_refuses_clashing_speed_presets_as_a_conflict() {
+    const WebRequestTestParam params[] = {
+        {"speedPresetSlow", "300"}, {"speedPresetNormal", "300"}, {"speedPresetTurbo", "500"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 3;
+    WebRequest req(&backend);
+    const int slowBefore = readSnapshot().drive.speedPresetSlow;
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("speed presets must be distinct values", doc["error"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("speedPresetSlow", doc["field"].as<const char*>());
+    TEST_ASSERT_TRUE(doc["accepts"].isNull());
+    TEST_ASSERT_EQUAL_INT(slowBefore, readSnapshot().drive.speedPresetSlow);
 }
 
 void test_config_post_accepts_a_raw_json_body_under_the_plain_name() {
@@ -796,6 +827,7 @@ int main() {
     RUN_TEST(test_a_move_from_an_output_the_part_is_not_on_changes_nothing);
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
+    RUN_TEST(test_config_post_refuses_clashing_speed_presets_as_a_conflict);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);
     RUN_TEST(test_config_commit_leaves_working_agreeing_with_the_config_cache);

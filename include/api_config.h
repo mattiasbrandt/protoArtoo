@@ -84,21 +84,25 @@ struct ConfigCommitOutcome {
 // untouched; the REST route answers 503 and the Console
 // temporarily-unavailable.
 // Refused: configApply() refused the request; `*result` says why and nothing
-// was committed.
+// was committed. `*refused`, when the caller passes one, holds a copy of the
+// refusal's field, reason and accepts, taken inside the window.
 // Committed: `*commit` holds the Commit Step's outcome and `*working` the
 // post-commit snapshot.
 //
 // Three answers rather than a bool, because the verdict has to be taken
 // inside the window: the Console passes a ConfigApplyResult its two adapters
 // share (2.5 KB, too big for either task's stack), and the other adapter may
-// overwrite it the moment the lock is released.
+// overwrite it the moment the lock is released. For the same reason the
+// Console reads why a write was refused from `*refused` (81 B, on its own stack)
+// rather than from `*result`.
 //
 // The Working Snapshot is the caller's (944 B), as it was when each adapter
 // held the lock itself, so no adapter's stack moves for this.
 enum class ConfigWriteWindowAnswer : uint8_t { Busy, Refused, Committed };
 ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
                                           ConfigApplyResult* result, CommandSource source,
-                                          ConfigCommitOutcome* commit);
+                                          ConfigCommitOutcome* commit,
+                                          ApplyRefusal* refused = nullptr);
 
 // On return `*working` holds the post-apply, post-cache-resync snapshot - the
 // bytes the REST handler renders - whether or not persistence succeeded.

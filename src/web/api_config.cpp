@@ -1147,7 +1147,7 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
 // See include/api_config.h for the full contract.
 ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
                                           ConfigApplyResult* result, CommandSource source,
-                                          ConfigCommitOutcome* commit) {
+                                          ConfigCommitOutcome* commit, ApplyRefusal* refused) {
     ConfigWriteLock lock;
     if (!lock.acquired()) {
         return ConfigWriteWindowAnswer::Busy;
@@ -1156,6 +1156,9 @@ ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, Confi
     const bool domeEnabledBefore = working->system.enable_dome_esc;
     configApply(params, working, domeEnabledBefore, result);
     if (result->error.hasError) {
+        if (refused != nullptr) {
+            *refused = result->error.refusal;
+        }
         return ConfigWriteWindowAnswer::Refused;
     }
     *commit = configCommitApplied(working, *result, source);
@@ -1255,7 +1258,7 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
     if (answer == ConfigWriteWindowAnswer::Refused) {
-        webSendJsonError(req, 400, result.error.message);
+        webSendApplyRefusal(req, 400, result.error.message, result.error.refusal);
         return;
     }
     if (commit.refusal != nullptr) {
@@ -1424,7 +1427,7 @@ void handleWifiPost(WebRequest& req) {
         return;
     }
     if (!result.ok) {
-        webSendJsonError(req, 400, result.errorMessage);
+        webSendApplyRefusal(req, 400, result.errorMessage, result.refusal);
         return;
     }
     if (!commit.persisted) {

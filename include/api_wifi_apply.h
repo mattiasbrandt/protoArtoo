@@ -13,12 +13,16 @@
 // =============================================================================
 #pragma once
 
+#include "api_apply_refusal.h"
 #include "api_param_source.h"
 #include "config_cache.h"
 
 struct WifiApplyResult {
     bool ok = false;
     char errorMessage[192] = {0};
+    // What errorMessage says, as data (include/api_apply_refusal.h): set on
+    // every refusal, and the only thing an adapter reads to name the field.
+    ApplyRefusal refusal;
 };
 
 // `working` must already hold the currently persisted WifiConfig (caller

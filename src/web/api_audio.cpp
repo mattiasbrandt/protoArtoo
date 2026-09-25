@@ -183,11 +183,13 @@ bool parseChirpPage(const char* raw, char* pageOut) {
 }
 
 // Answer an apply core's rejection in the shape every write path in this file
-// shares: 400, or 404 when the core reports an unknown key. The three cores
-// carry their own error structs rather than a shared one, so the two fields
-// that matter are passed rather than the struct.
-void sendApplyError(WebRequest& req, const char* message, bool notFound) {
-    webSendJsonError(req, notFound ? 404 : 400, message);
+// shares: 400, or 404 when the core reports the fitted module has no catalog
+// to bind into. The three cores carry their own error structs, so the fields
+// that matter are passed rather than the struct; the refusal's field, reason
+// and accepts ride beside the sentence (webSendApplyRefusal()).
+void sendApplyError(WebRequest& req, const char* message, const ApplyRefusal& refusal,
+                    bool notFound) {
+    webSendApplyRefusal(req, notFound ? 404 : 400, message, refusal);
 }
 
 // -----------------------------------------------------------------------------
@@ -517,7 +519,7 @@ void handleAudioMoodMapPost(WebRequest& req) {
     audioMoodMapApply(params, &result);
     if (result.error.hasError) {
         // This core has no not-found case: an unknown field is a bad request.
-        sendApplyError(req, result.error.message, false);
+        sendApplyError(req, result.error.message, result.error.refusal, false);
         return;
     }
 
@@ -662,7 +664,8 @@ void handleAudioTracksPost(WebRequest& req) {
         return;
     }
     if (result.error.hasError) {
-        sendApplyError(req, result.error.message, result.error.notFound);
+        sendApplyError(req, result.error.message, result.error.refusal,
+                       result.error.notFound);
         return;
     }
     if (!commit.ok) {
@@ -775,7 +778,8 @@ void handleAudioCategoryRangePost(WebRequest& req) {
         return;
     }
     if (result.error.hasError) {
-        sendApplyError(req, result.error.message, result.error.notFound);
+        sendApplyError(req, result.error.message, result.error.refusal,
+                       result.error.notFound);
         return;
     }
     if (!commit.ok) {

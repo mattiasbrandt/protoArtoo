@@ -6,9 +6,10 @@
 // configApply(): pure function - no FreeRTOS, no request object, no
 //   logging, no NVS. Reads parameters through a ConfigParamSource, validates
 //   and mutates `working` in place, and writes a result carrying a
-//   field-level error (byte-identical to the legacy 400 bodies), a bounded
-//   applied-fields log record for the shell to replay, and plain-data
-//   actions.
+//   field-level error (the legacy 400 sentence word for word, plus the
+//   field, reason and accepts as data - ADR 0011 amended 2026-09-25), a
+//   bounded applied-fields log record for the shell to replay, and
+//   plain-data actions.
 //
 // ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) -
 // too large to return by value on an 8 KB web server task stack (see
@@ -29,6 +30,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "api_apply_refusal.h"
 #include "api_param_source.h"
 #include "board_outputs.h"  // BOARD_OUTPUT_ID_MAX_LEN - the longest stored Output id
 #include "config_cache.h"
@@ -69,9 +71,16 @@ inline bool configMotionFieldName(char* buf, size_t bufSize, const char* outputI
     return written > 0 && (size_t)written < bufSize;
 }
 
+// A Motion Profile field is the longest field name a refusal can carry.
+static_assert(CONFIG_MOTION_FIELD_NAME_MAX <= APPLY_REFUSAL_FIELD_MAX,
+              "a Motion Profile field name must fit a refusal's field");
+
 struct ConfigApplyError {
     bool hasError = false;
-    char message[192] = {0};  // byte-identical to the legacy error strings
+    char message[192] = {0};  // word for word the legacy error strings
+    // What the sentence says, as data: set on every error, never read out of
+    // `message` (include/api_apply_refusal.h).
+    ApplyRefusal refusal;
 };
 
 struct ConfigApplyActions {

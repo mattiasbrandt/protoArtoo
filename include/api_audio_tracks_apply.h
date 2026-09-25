@@ -7,8 +7,8 @@
 //   no NVS, no logging. Reads key/track and the optional bank/page through
 //   a ConfigParamSource, classifies the key (interval / banked / plain
 //   named-or-category track, with the zero-allowed exception list), and
-//   mutates `working` in place. Byte-identical error messages to the legacy
-//   handler.
+//   mutates `working` in place. Error messages word for word the legacy
+//   handler's, each with its field, reason and accepts as data.
 //
 // `catalogSupported` is a live input the shell must snapshot before calling
 // (audioCatalogSupported() queries the live AudioDriver), same reasoning as
@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 
+#include "api_apply_refusal.h"
 #include "api_param_source.h"
 #include "config_cache.h"
 
@@ -33,6 +34,7 @@ struct AudioTracksApplyError {
     bool hasError = false;
     bool notFound = false;  // true -> shell responds 404 instead of 400
     char message[128] = {0};
+    ApplyRefusal refusal;  // what `message` says, as data (include/api_apply_refusal.h)
 };
 
 struct AudioTracksApplyResult {
