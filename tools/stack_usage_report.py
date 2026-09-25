@@ -339,7 +339,8 @@ class Image:
         # Data objects by name, read on the first `table_entries()` call only:
         # a walk that stitches no table does not pay for a second symbol read.
         self._objdump = objdump
-        self._objects: dict[str, list[tuple[int, int]]] | None = None
+        self._objects: dict[str, list[tuple[int, int, str]]] | None = None
+        self._empty_sections: set[str] | None = None
         self._disassemble(objdump)
         if self.arch == "xtensa" and self.data_bodies:
             self._recover_data_bodies(objdump)
@@ -421,8 +422,8 @@ class Image:
         return sizes
 
     # -- dispatch tables ----------------------------------------------------
-    def _data_objects(self) -> dict[str, list[tuple[int, int]]]:
-        """Data objects in the image by name: [(address, size)], read once."""
+    def _data_objects(self) -> dict[str, list[tuple[int, int, str]]]:
+        """Data objects in the image by name: [(address, size, section)], read once."""
         if self._objects is None:
             self._objects = {}
             for line in self._run([str(self._objdump), "-t", "-C", str(self.elf)]):
@@ -437,8 +438,29 @@ class Image:
                     size = int(size_name[0], 16)
                 except (ValueError, IndexError):
                     continue
-                self._objects.setdefault(size_name[1].strip(), []).append((addr, size))
+                self._objects.setdefault(size_name[1].strip(), []).append(
+                    (addr, size, head.split()[-1]))
         return self._objects
+
+    def _sections_without_contents(self) -> set[str]:
+        """Sections the ELF allocates but stores no bytes for (.bss, .noinit).
+
+        `objdump -h` prints each section's flags on the line after it; one
+        without CONTENTS is zero, or uninitialised, until the program runs.
+        """
+        if self._empty_sections is None:
+            self._empty_sections = set()
+            name = None
+            for line in self._run([str(self._objdump), "-h", str(self.elf)]):
+                fields = line.split()
+                if len(fields) >= 7 and fields[0].isdigit():
+                    name = fields[1]
+                    continue
+                if name is not None and line.startswith(" "):
+                    if "CONTENTS" not in line:
+                        self._empty_sections.add(name)
+                    name = None
+        return self._empty_sections
 
     def table_entries(self, table: str) -> list[int]:
         """Function entries held by one data object in the image, in order.
@@ -460,7 +482,12 @@ class Image:
         if len(found) != 1:
             raise Fatal(f"{len(found)} data objects are named {table} in {self.elf}; "
                         "a stitched table must name one")
-        addr, size = found[0]
+        addr, size, section = found[0]
+        if section in self._sections_without_contents():
+            # A table in .bss holds nothing until the program fills it, so the
+            # image names no function in it; a pointer set at run time is what
+            # `pointer_tables` is for.
+            return []
         if addr % 4 or size % 4:
             raise Fatal(f"{table} at 0x{addr:08x} ({size} B) is not word-aligned; "
                         "it does not read as a table of pointers")
@@ -638,17 +665,31 @@ class Image:
                 targets = self.by_name(ref)
                 if not targets:
                     table = pointer_tables.get(ref, ref)
-                    if table in self._data_objects():
-                        try:
-                            targets = [self.funcs[a] for a in self.table_entries(table)]
-                        except Fatal:
-                            targets = []
+                    if self._could_be_pointer_table(table):
+                        # table_entries() raises on an ambiguous name or an
+                        # unreadable object; that propagates, because walking
+                        # on would drop this body's callees without saying so.
+                        targets = [self.funcs[a] for a in self.table_entries(table)]
                 for target in targets:
                     fn.calls.append((target.addr, "archive reloc", None))
                     if self._printed_as_data(target) and target.addr not in seen:
                         queue.append(target)
             adopted.append(fn.name)
         return adopted
+
+    def _could_be_pointer_table(self, name: str) -> bool:
+        """Whether a data object a relocation names can hold function pointers.
+
+        Only a word-aligned object of whole words can; a string, a byte buffer
+        or a packed struct a closed library's literal pool also names cannot,
+        and is not a table. Decided here rather than by catching
+        `table_entries()`'s refusal, so that its other refusals - an ambiguous
+        name, bytes objdump did not cover - still stop the walk.
+        """
+        found = self._data_objects().get(name)
+        if not found:
+            return False
+        return all(addr % 4 == 0 and size % 4 == 0 for addr, size, _section in found)
 
     def _printed_as_data(self, fn: Function) -> bool:
         """Whether the product listing printed this body as data, recovered or not."""
