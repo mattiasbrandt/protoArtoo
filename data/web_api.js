@@ -10,7 +10,10 @@
   const DEFAULT_TIMEOUT_MS = 6000;
 
   class ApiError extends Error {
-    constructor(message, { kind = "unknown", status = 0, cause = null, retryAfterMs = null } = {}) {
+    constructor(message, {
+      kind = "unknown", status = 0, cause = null, retryAfterMs = null,
+      field = null, reason = null, accepts = null,
+    } = {}) {
       super(message);
       this.name = "ApiError";
       this.kind = kind;
@@ -20,6 +23,13 @@
       // request as busy (ADR 0016), so callers honor the server's own interval
       // instead of guessing one.
       this.retryAfterMs = retryAfterMs;
+      // A settings write the droid refused says which field, why and what it
+      // would have taken as keys beside its sentence (docs/api.md "Refusals
+      // from a settings write"). A caller words the refusal from these and
+      // never reads them out of the message. null when the answer had none.
+      this.field = field;
+      this.reason = reason;
+      this.accepts = accepts;
     }
   }
 
@@ -185,11 +195,15 @@
         const payload = await parseResponse(response);
 
         if (!response.ok) {
-          const apiMessage = payload && typeof payload === "object" ? payload.error : "";
-          throw new ApiError(apiMessage || `HTTP ${response.status}`, {
+          const body = payload && typeof payload === "object" ? payload : {};
+          const key = (name) => (typeof body[name] === "string" ? body[name] : null);
+          throw new ApiError(key("error") || `HTTP ${response.status}`, {
             kind: "http",
             status: response.status,
             retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")),
+            field: key("field"),
+            reason: key("reason"),
+            accepts: key("accepts"),
           });
         }
 

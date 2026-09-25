@@ -315,8 +315,8 @@
   };
 
   // What each setting is called on screen. The droid refuses a value by the
-  // name it saves it under (`arm2ThrowMs must be 20..10000 ms`), and that name
-  // is wire vocabulary that must never reach a builder (#414).
+  // name it saves it under (`"field":"arm2ThrowMs"`), and that name is wire
+  // vocabulary that must never reach a builder (#414).
   const SETTING_WORDS = {
     wired: "wired tick",
     type: "what is on the wire",
@@ -327,17 +327,31 @@
     boot: "power-up setting",
   };
 
+  // The unit a setting's number is in, where it has one.
+  const SETTING_UNITS = { throwMs: " ms", accelMs: " ms" };
+
+  // What a setting takes, from the refusal's `accepts`: `20..10000` is a range,
+  // anything else the words it takes, comma-separated.
+  const sayAccepts = (accepts, key) => {
+    const range = /^(\d+)\.\.(\d+)$/.exec(accepts);
+    if (range) return `${range[1]} to ${range[2]}${SETTING_UNITS[key] || ""}`;
+    const words = accepts.split(",");
+    return words.length > 1 ? `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}` : words[0];
+  };
+
   // A refusal naming one of the fields this save sent, put in the page's words:
-  // the Output's name and the setting's, and a range read as one. Anything else
-  // is left exactly as it came, for web_api.js's messageFor() to say.
+  // the Output's name and the setting's, and what it takes. Read from the keys
+  // the droid answers beside its sentence (docs/api.md "Refusals from a
+  // settings write"), never from the sentence, which the firmware may reword.
+  // Anything else is left exactly as it came, for web_api.js's messageFor().
   const sayRefusal = (error, sent) => {
-    const message = typeof error?.message === "string" ? error.message : "";
-    const field = Object.keys(sent).find((name) => message.startsWith(`${name} `));
-    if (!field) return error;
+    const field = typeof error?.field === "string" ? error.field : "";
+    if (!Object.hasOwn(sent, field)) return error;
     const { address, key } = sent[field];
     const output = at(address);
-    const rest = message.slice(field.length).replace(/(\d+)\.\.(\d+)/g, "$1 to $2");
-    error.message = `${output ? output.name : address}'s ${SETTING_WORDS[key]}${rest}`;
+    const setting = `${output ? output.name : address}'s ${SETTING_WORDS[key]}`;
+    const accepts = typeof error.accepts === "string" ? error.accepts : "";
+    error.message = accepts ? `${setting} must be ${sayAccepts(accepts, key)}` : `${setting} was not saved`;
     return error;
   };
 
