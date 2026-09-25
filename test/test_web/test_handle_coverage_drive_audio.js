@@ -14,6 +14,11 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule, partsGlobals } from "./helpers/page_module_env.js";
+import { createRequire } from "node:module";
+
+// The sound link's word and light come from the health-signal model, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = createRequire(import.meta.url)("../../data/health_signals.js");
 import { outputsModule } from "./helpers/fake_droid.js";
 
 // Test payloads for each module
@@ -135,6 +140,7 @@ test("audio-status loader issues its request through the handle, not PAApi", asy
   };
 
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: () => ({ data: audioStatusPayloadNoCatalog }),
   });
   const { calls, handle } = makeRecordingHandle(audioStatusPayloadNoCatalog);
@@ -178,6 +184,7 @@ test("audio-catalog loader issues its request through the handle, not PAApi", as
   };
 
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: (path) => {
       if (path === "/api/audio") return { data: audioStatusWithCatalogCap };
       if (path === "/api/audio/catalog") return { data: AUDIO_CATALOG_PAYLOAD };

@@ -16,6 +16,11 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
+import { createRequire } from "node:module";
+
+// The sound link's word and light come from the health-signal model, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = createRequire(import.meta.url)("../../data/health_signals.js");
 
 // AudioDriver capability bits, mirroring audio_driver.h. Status query is the
 // baseline every backend reports; catalog is the one under test.
@@ -29,6 +34,7 @@ const CATALOG_PATH = "/api/audio/catalog";
 // capability handler kicked off, so each test starts from a quiet module.
 const soundPageWith = async ({ capabilities, catalog = () => ({ ready: true, banks: [], entries: [] }) }) => {
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: (path) => {
       if (path === MODULE_PATH) return { data: { capabilities, link_ok: true } };
       if (path === CATALOG_PATH) return { data: catalog() };

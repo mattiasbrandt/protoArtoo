@@ -561,6 +561,15 @@
   // droid's health and never a choice (#327 "Status Color").
   const chipState = (state, value) => ({ state, value });
 
+  // protoR2link and the sound link are the health-signal model's answer, not
+  // this file's (data/health_signals.js, #422): the word every page shows for
+  // them, in the plate's caps and short form, under the light the model gave.
+  // The plate reads no line owner and no rx_status of its own.
+  const LINKS = window.PAHealthSignals;
+  const LINK_WORDS = { unknown: LIVE.UNKNOWN, findingOut: LIVE.FINDING_OUT };
+  const LINK_CHIP_CLASSES = { ok: "live", fail: "stopped" };
+  const linkChip = ({ state, short }) => chipState(LINK_CHIP_CLASSES[state] || "", short.toUpperCase());
+
   const PLATE_CHIPS = [
     {
       id: "estop",
@@ -660,46 +669,15 @@
     },
     {
       id: "domelink",
-      label: "DOME LINK",
+      label: "protoR2link",
       page: "dome",
-      // The heartbeat state, and the UART owner, which is the second half.
-      // The dome shares a serial line with the sound module, and while sound
-      // holds it the heartbeat cannot arrive at all -- the firmware reports
-      // that as an ordinary "lost", so a chip reading only the state would say
-      // the dome link died when the truth is that nobody can ask. It said
-      // "SOUND HAS BUS" until the operator settled the wording on 2026-09-17:
-      // that named a UART to a maker who never wired one by that name.
-      read: (status) => {
-        const link = status.dome_link;
-        const linkState = link !== null && typeof link === "object" ? link.state : undefined;
-        if (linkState === "connected") return chipState("live", "OK");
-        if (linkState === "disabled") return chipState("", "OFF");
-        if (link !== null && typeof link === "object" && link.uart_owner === "audio") {
-          return chipState("", "HELD BY SOUND");
-        }
-        if (linkState === "lost") return chipState("stopped", "LOST");
-        if (linkState === "not_seen") return chipState("", "NO HEARTBEAT");
-        return chipState("", CHIP_UNKNOWN);
-      },
+      read: (status) => linkChip(LINKS.readProtoR2link(status, LINK_WORDS)),
     },
     {
       id: "soundlink",
       label: "SOUND LINK",
       page: "sound",
-      // link_ok is half the condition. A false link_ok means either the
-      // module did not answer or the dome owns the shared serial line and
-      // nobody could ask, and only rx_status tells the two apart
-      // (src/drivers/audio_chirp.cpp, classifyRxStatus). Reading link_ok alone
-      // reports a dead module for a line that is merely busy.
-      read: (status) => {
-        if (!hasKey(status, "audio")) return chipState("", "OFF");
-        const audio = status.audio;
-        if (audio === null || typeof audio !== "object") return chipState("", CHIP_UNKNOWN);
-        if (audio.rx_status === "blocked_by_dome_uart") return chipState("", "HELD BY DOME");
-        if (audio.link_ok === true) return chipState("live", "OK");
-        if (audio.rx_status === "no_response") return chipState("stopped", "NO ANSWER");
-        return chipState("", CHIP_UNKNOWN);
-      },
+      read: (status) => linkChip(LINKS.readSoundLink(status, LINK_WORDS)),
     },
   ];
 

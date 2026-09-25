@@ -7,7 +7,6 @@
 // =============================================================================
 (() => {
   const TRACK_MAX = 999;
-  const RX_STATUS_BLOCKED_BY_DOME = "blocked_by_dome_uart";
   const NAMED_SOUNDS = [
     { label: "Scream", cmd: "$S", key: "scream", editable: true },
     { label: "Short Circuit", cmd: "$F", key: "faint", editable: true },
@@ -149,6 +148,23 @@
   const moodMapFb = document.getElementById("mood-map-feedback");
   const moodMapSaveBtn = document.getElementById("btn-mood-map-save");
   const soundStateBadge = document.getElementById("sound-state-badge");
+
+  // The sound link is the health-signal model's word and light, the same ones
+  // the Status Plate, the Dashboard and Maintenance show (data/health_signals.js,
+  // #422). This page reads no rx_status of its own: it hands the model the
+  // module block, from the status frame or from GET /api/audio, and paints
+  // the answer. The light becomes the badge's data-state.
+  const SOUND_LINK_BADGE_STATES = { ok: "ok", fail: "error", off: "disabled" };
+  const readSoundLink = (audio) =>
+    window.PAHealthSignals.readSoundLink({ audio }, { unknown: window.PALiveReading.UNKNOWN });
+  const paintSoundLink = (el, link) => {
+    if (!el) return;
+    el.textContent = link.word;
+    el.dataset.state = SOUND_LINK_BADGE_STATES[link.state] || "disabled";
+  };
+  // Whether the Playback badge is showing the link's word rather than a play
+  // state, so a link that comes back asks the module for its play state again.
+  let badgeShowsLink = false;
   const soundDisabledCard = document.getElementById("sound-disabled-card");
   const mp3WireNote = document.getElementById("mp3-wire-note");
   const mp3MissingTrack = document.getElementById("mp3-missing-track");
@@ -481,16 +497,8 @@
       }
 
       if (modDriver) modDriver.textContent = d.driver ?? "—";
-      // Sound switched off at boot has no module to answer, so no answer is
-      // not a fault to paint red (#370): the link says it is off.
-      if (modLink && d.output === "off") {
-        modLink.textContent = "Sound is off";
-        modLink.dataset.state = "disabled";
-      } else if (modLink) {
-        const ok = Boolean(d.link_ok);
-        modLink.textContent = ok ? "OK" : "No response";
-        modLink.dataset.state = ok ? "ok" : "error";
-      }
+      const link = readSoundLink(d);
+      paintSoundLink(modLink, link);
       if (modDevice) modDevice.textContent = d.device ?? "—";
       if (modPlayState) modPlayState.textContent = d.play_state ?? "—";
       if (modTotalTracks) modTotalTracks.textContent = d.total_tracks ?? "—";
@@ -515,21 +523,13 @@
       }
       refreshMp3RangeWarning(isMp3);
 
-      // Update the badge with the real module-reported play state.
-      // Only override when the module is actually responding; if link_ok is
-      // false the user needs to see "No module response", not a stale "Idle".
+      // The badge carries the module's play state while the link is up, and
+      // the link's own word while it is not: a stale "Idle" beside a module
+      // that did not answer would say it is fine.
       if (soundStateBadge && soundHardwareEnabled) {
-        const linkOk = Boolean(d.link_ok);
-        if (d.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
-          soundStateBadge.textContent = "No status: the dome link holds the port";
-          soundStateBadge.dataset.state = "idle";
-          if (modLink) {
-            modLink.textContent = "protoR2link using UART";
-            modLink.dataset.state = "warn";
-          }
-        } else if (!linkOk) {
-          soundStateBadge.textContent = "No module response";
-          soundStateBadge.dataset.state = "error";
+        badgeShowsLink = link.state !== "ok";
+        if (badgeShowsLink) {
+          paintSoundLink(soundStateBadge, link);
         } else if (d.play_state === "playing") {
           soundStateBadge.textContent = "Playing";
           soundStateBadge.dataset.state = "playing";
@@ -2317,31 +2317,16 @@
     const s2Enabled = Boolean(data.audio);
     setSoundHardwareEnabled(s2Enabled);
     if (!soundStateBadge) return;
-    if (!s2Enabled) {
-      soundStateBadge.textContent = "Disabled";
-      soundStateBadge.dataset.state = "disabled";
-      return;
-    }
-    // Saved on, but off this boot: no module is behind it. The line is the
-    // firmware's ("<picked> picked · sound is off", #370), and a press below
-    // is refused with where to switch it on.
-    if (data.audio.output === "off") {
-      soundStateBadge.textContent = data.audio.detail;
-      soundStateBadge.dataset.state = "disabled";
-      return;
-    }
-    if (data.audio && typeof data.audio.link_ok === "boolean") {
-      if (data.audio.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
-        if (modLink) { modLink.textContent = "protoR2link using UART"; modLink.dataset.state = "warn"; }
-        soundStateBadge.textContent = "No status: the dome link holds the port";
-        soundStateBadge.dataset.state = "idle";
-      } else if (!data.audio.link_ok) {
-        if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
-        soundStateBadge.textContent = "No module response";
-        soundStateBadge.dataset.state = "error";
-      } else if (soundStateBadge.dataset.state === "error") {
-        updateModuleStatus().catch(() => {});
-      }
+    const link = readSoundLink(data.audio);
+    if (link.state !== "ok") {
+      paintSoundLink(modLink, link);
+      paintSoundLink(soundStateBadge, link);
+      badgeShowsLink = true;
+    } else if (badgeShowsLink) {
+      // The link is back: ask the module what it is doing rather than keep
+      // the word it had while it could not be asked.
+      badgeShowsLink = false;
+      updateModuleStatus().catch(() => {});
     }
   };
 

@@ -14,6 +14,11 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { createRequire } from "node:module";
+
+// The sound link's word and light come from the health-signal model, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = createRequire(import.meta.url)("../../data/health_signals.js");
 
 const AUDIO_STATUS_PAYLOAD = {
   driver: "I2S-simple",
@@ -41,6 +46,7 @@ test("single-flight: second caller joins the in-flight promise and waits for rea
   let rejectRequest = null;
 
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: (path) => {
       if (path === "/api/audio") return { data: AUDIO_STATUS_PAYLOAD };
       if (path === "/api/audio/catalog") {
@@ -130,6 +136,7 @@ test("single-flight: when the in-flight fetch fails, the joiner gets the rejecti
   let requestCount = 0;
 
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: (path) => {
       if (path === "/api/audio") return { data: AUDIO_STATUS_PAYLOAD };
       if (path === "/api/audio/catalog") {

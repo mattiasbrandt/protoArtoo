@@ -21,12 +21,15 @@ import { statusFrame } from "./helpers/fake_droid.js";
 
 const require = createRequire(import.meta.url);
 const { createFeatureAvailability } = require("../../data/feature_availability.js");
+// The Sound and protoR2link lanes are the health-signal model's answer, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = require("../../data/health_signals.js");
 
 // Maintenance fed whole frames through the stream and the Live Reading.
 const loadMaintenance = (config = {}, respond = null) => {
   const env = loadPageModule("maintenance.js", {
     respond: respond || (() => ({ data: config })),
-    overrides: { PAFeatureAvailability: createFeatureAvailability() },
+    overrides: { PAFeatureAvailability: createFeatureAvailability(), PAHealthSignals },
   });
   env.status = (changes) => env.pushStatus(statusFrame(changes));
   return env;
@@ -44,3 +47,17 @@ test("a lane nobody asked about reads grey, never green", () => {
   assert.equal(env.element("serial-s3-light").className, "indicator off");
 });
 
+
+// protoR2link is never held by sound: while sound holds the line protoR2link
+// runs on WiFi, so a lost there is a real loss and the lane says so in red,
+// in the model's word (#422).
+test("a protoR2link lost while sound holds the line reads lost on its lane", () => {
+  const env = loadMaintenance();
+  env.status({
+    ...HEAP_GOOD,
+    dome_link: { state: "lost", transport: "wifi", last_rx_ms: 9000, uart_owner: "audio", uart_owned_by_dome: false },
+  });
+
+  assert.equal(env.element("serial-s3-light").className, "indicator fail");
+  assert.match(env.element("serial-s3-state").textContent, /^Lost\b/);
+});

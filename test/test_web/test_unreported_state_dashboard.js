@@ -182,3 +182,23 @@ test("the log level still renders when the Outputs read fails", async () => {
   assert.equal(env.element("log-level-pill").textContent, "Info");
   await assert.rejects(env.runSection("app-output-names"), "the table read's own failure still reaches the bootstrap");
 });
+
+// The Components card's protoR2link and Audio rows say what the model says,
+// and never read who holds the shared line (#422).
+test("the component card names both links in the model's words", async () => {
+  const frame = {
+    dome_link: { state: "lost", transport: "wifi", uart_owner: "audio", uart_owned_by_dome: false },
+    protoR2link: { state: "lost", detail: "Heartbeat rx 3 / tx 9, last 9000 ms ago (transport wifi)" },
+    audio: { state: "idle", driver: "CHIRP Audio Trigger", output: "on", link_ok: false, rx_status: "blocked_by_dome_uart" },
+  };
+  const env = dashboard(frame);
+  await env.window.PALiveReading.read();
+  await env.settle();
+
+  const words = { unknown: env.window.PALiveReading.UNKNOWN };
+  const card = env.element("component-status-grid").innerHTML;
+  const model = MODELS.PAHealthSignals;
+  const payload = { ...HEALTHY, ...frame };
+  assert.match(card, new RegExp(`<dd id="state-protoR2link">${model.readProtoR2link(payload, words).word}</dd>`));
+  assert.match(card, new RegExp(`<dd id="state-audio">${model.readSoundLink(payload, words).word}</dd>`));
+});

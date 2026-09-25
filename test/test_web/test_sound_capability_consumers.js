@@ -26,6 +26,11 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { createRequire } from "node:module";
+
+// The sound link's word and light come from the health-signal model, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = createRequire(import.meta.url)("../../data/health_signals.js");
 import { statusFrame } from "./helpers/fake_droid.js";
 
 // AUDIO_CAP_* bits, from include/audio_driver.h.
@@ -68,6 +73,7 @@ const lastHiddenToggle = (toggles) => {
 
 const runAudioStatus = async (capabilities) => {
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: () => ({ data: audioStatus(capabilities) }),
   });
   const totalTracks = recordVisibility(env.element("mod-total-tracks-row"));
@@ -145,18 +151,23 @@ test("a module with no status query at all loses the Total tracks row too", asyn
 test("with sound switched off the page says so, naming the module that was picked", async () => {
   const offLine = "MP3 Trigger picked \u00b7 sound is off";
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: () => ({ data: audioStatus(CAP_STATUS_QUERY, { driver: "MP3 Trigger", output: "off", link_ok: false }) }),
   });
   // The droid's status, as the Live Reading hands it to the page.
   env.pushStatus(statusFrame({ audio: { state: "off", detail: offLine, driver: "MP3 Trigger", output: "off", link_ok: false } }));
   await env.settle();
 
+  // Off is the sound link's word for it, the same one every page shows
+  // (data/health_signals.js, #422), and it is grey.
   const badge = env.element("sound-state-badge");
-  assert.equal(badge.textContent, offLine);
+  assert.equal(badge.textContent, "Off");
   assert.equal(badge.dataset.state, "disabled");
 
-  // A module that is off does not answer, and that is not a fault to paint red.
+  // A module that is off does not answer, and that is not a fault to paint
+  // red. The Driver row still names the one that was picked.
   await env.runSection("audio-status", {});
   await env.settle();
   assert.equal(env.element("mod-link").dataset.state, "disabled");
+  assert.equal(env.element("mod-driver").textContent, "MP3 Trigger");
 });

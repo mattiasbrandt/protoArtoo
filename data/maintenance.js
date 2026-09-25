@@ -98,36 +98,34 @@
   };
 
   const renderSerialStatus = (d, receivedAt) => {
-    // The same four readings as before, on the same four states: what changed
-    // is that the light carries the color and the words carry the reading.
-    // "off" for a lane that is switched off is the grey CONTEXT.md "Health
-    // Signal" asks for - a thing never asked reads grey, never green.
+    // The light carries the color and the words carry the reading. "off" for
+    // a lane that is switched off is the grey CONTEXT.md "Health Signal" asks
+    // for - a thing never asked reads grey, never green.
     if (serialS1) {
       serialS1.textContent = !d.drive ? "Disabled"
         : d.drive.state === "commanding" ? "Active" : "Enabled / Idle";
       setLight(serialS1Light, d.drive ? "ok" : "off");
     }
+    // Sound and protoR2link are the health-signal model's word and light, the
+    // same ones every other page shows (data/health_signals.js, #422). The
+    // heartbeat counts and the last-seen time beside protoR2link's word are
+    // numbers, not a verdict, and stay this row's own.
+    const words = { unknown: window.PALiveReading.UNKNOWN };
     if (serialS2) {
-      serialS2.textContent = !d.audio ? "Disabled"
-        : d.audio.state === "playing" ? "Playing" : "Enabled / Idle";
-      setLight(serialS2Light, d.audio ? "ok" : "off");
+      const sound = window.PAHealthSignals.readSoundLink(d, words);
+      serialS2.textContent = sound.word;
+      setLight(serialS2Light, sound.state);
     }
     if (serialS3) {
+      const link = window.PAHealthSignals.readProtoR2link(d, words);
+      // Which numbers follow the word is the model's answer too: the counts
+      // while it is linked, and how long ago it was last heard once lost.
       const dl = d.dome_link;
-      const transport = typeof dl?.transport === "string" ? dl.transport.toUpperCase() : "N/A";
-      if (!dl || dl.state === "disabled") {
-        serialS3.textContent = "Disabled";
-        setLight(serialS3Light, "off");
-      } else if (dl.state === "connected") {
-        serialS3.textContent = `Connected (${transport}, hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
-        setLight(serialS3Light, "ok");
-      } else if (dl.state === "lost") {
-        serialS3.textContent = `Lost (${transport}) — last seen ${dl.last_rx_ms} ms ago`;
-        setLight(serialS3Light, "fail");
-      } else {
-        serialS3.textContent = `Waiting for dome heartbeat (${transport})`;
-        setLight(serialS3Light, "warn");
-      }
+      let counts = "";
+      if (link.state === "ok") counts = ` \u00b7 hb rx ${dl.hb_rx} / tx ${dl.hb_tx}`;
+      else if (link.state === "fail") counts = ` \u00b7 last seen ${dl.last_rx_ms} ms ago`;
+      serialS3.textContent = `${link.word}${counts}`;
+      setLight(serialS3Light, link.state);
     }
     // Uptime is telemetry, not a health signal: a number that has never been a
     // state carried a green of its own here until this slice took it off.
