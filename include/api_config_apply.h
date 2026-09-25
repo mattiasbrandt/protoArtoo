@@ -70,9 +70,9 @@ struct ConfigApplyActions {
 // many it could not show rather than letting the log look complete.
 struct ConfigAppliedFields {
     // Sixteen on artoo-esp32, where BSS is the heap, so a restore there counts
-    // more of its lines as `dropped` while its fields still apply in full.
-    // Back to 32 when that board has the static RAM to spare again (operator
-    // decision 2026-09-25, #428).
+    // more of its lines as `dropped` while its fields still apply in full. That
+    // is that board's size for good: the dropped count already says more
+    // changed (operator decision 2026-09-25, #428).
 #if defined(PA_CHIP_TARGET_ESP32)
     static constexpr size_t kMaxLines = 16;
 #else
