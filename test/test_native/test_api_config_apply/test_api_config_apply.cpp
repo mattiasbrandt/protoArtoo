@@ -515,6 +515,37 @@ void test_configApply_multiple_fields_record_applied_lines_in_order(void) {
     TEST_ASSERT_EQUAL_STRING("[CFG] sbusTimeoutMs updated to 200", result.applied.lines[1]);
 }
 
+// Every scalar a request sets leaves a line, the dome ESC set and the peer IP
+// included - they once changed the stored config without one.
+void test_configApply_every_scalar_records_an_applied_line(void) {
+    std::map<std::string, std::string> m = {
+        {"sbusRecvCh2", "true"},          {"domeEscNeutralUs", "1500"},
+        {"domeEscMinPulseUs", "1100"},    {"domeEscMaxPulseUs", "1900"},
+        {"domeEscSpeedLimitPct", "40"},   {"protoR2linkWifiPeerIp", "192.168.4.2"},
+    };
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL(6, result.applied.count);
+    TEST_ASSERT_EQUAL_STRING("[CFG] sbusRecvCh2 updated to true", result.applied.lines[0]);
+    TEST_ASSERT_EQUAL_STRING("[CFG] domeEscNeutralUs updated to 1500", result.applied.lines[1]);
+    TEST_ASSERT_EQUAL_STRING("[CFG] domeEscMinPulseUs updated to 1100", result.applied.lines[2]);
+    TEST_ASSERT_EQUAL_STRING("[CFG] domeEscMaxPulseUs updated to 1900", result.applied.lines[3]);
+    TEST_ASSERT_EQUAL_STRING("[CFG] domeEscSpeedLimitPct updated to 40", result.applied.lines[4]);
+    TEST_ASSERT_EQUAL_STRING("[CFG] protoR2linkWifiPeerIp updated to 192.168.4.2", result.applied.lines[5]);
+}
+
+void test_configApply_cleared_peer_ip_records_none(void) {
+    std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", ""}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL(1, result.applied.count);
+    TEST_ASSERT_EQUAL_STRING("[CFG] protoR2linkWifiPeerIp updated to (none)", result.applied.lines[0]);
+}
+
 // --- the Droid Build (ADR 0047) ---
 //
 // The Apply Core is the door a stated Droid Build comes through, and there are
@@ -771,6 +802,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_led_count_out_of_range_names_its_output);
     RUN_TEST(test_configApply_an_unknown_component_word_is_refused);
     RUN_TEST(test_configApply_multiple_fields_record_applied_lines_in_order);
+    RUN_TEST(test_configApply_every_scalar_records_an_applied_line);
+    RUN_TEST(test_configApply_cleared_peer_ip_records_none);
     RUN_TEST(test_configApply_droid_build_records_both_halves_and_the_parts);
     RUN_TEST(test_configApply_a_mixed_droid_saves_without_complaint);
     RUN_TEST(test_configApply_a_design_without_its_variant_is_refused);

@@ -1206,6 +1206,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
 
     if (paramBool(params, "sbusRecvCh2", &boolValue)) {
         working->system.single_sbus_use_ch2 = boolValue;
+        appendApplied(&result->applied, "[CFG] sbusRecvCh2 updated to %s", boolValue ? "true" : "false");
         result->changed = true;
     } else if (configParamHas(params, "sbusRecvCh2")) {
         setError(result, "sbusRecvCh2 must be true/false or 1/0", ApplyRefusalReason::OutOfRange,
@@ -1255,6 +1256,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     uint16_t domeU16;
     if (paramUint16(params, "domeEscNeutralUs", 1000, 2000, &domeU16)) {
         working->dome.dome_neutral_us = domeU16;
+        appendApplied(&result->applied, "[CFG] domeEscNeutralUs updated to %u", (unsigned)domeU16);
         result->changed = true;
     } else if (configParamHas(params, "domeEscNeutralUs")) {
         setRangeError(result, "domeEscNeutralUs must be 1000..2000", "domeEscNeutralUs", 1000, 2000);
@@ -1263,6 +1265,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
 
     if (paramUint16(params, "domeEscMinPulseUs", 1000, 2000, &domeU16)) {
         working->dome.dome_min_pulse_us = domeU16;
+        appendApplied(&result->applied, "[CFG] domeEscMinPulseUs updated to %u", (unsigned)domeU16);
         result->changed = true;
     } else if (configParamHas(params, "domeEscMinPulseUs")) {
         setRangeError(result, "domeEscMinPulseUs must be 1000..2000", "domeEscMinPulseUs", 1000, 2000);
@@ -1271,6 +1274,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
 
     if (paramUint16(params, "domeEscMaxPulseUs", 1000, 2000, &domeU16)) {
         working->dome.dome_max_pulse_us = domeU16;
+        appendApplied(&result->applied, "[CFG] domeEscMaxPulseUs updated to %u", (unsigned)domeU16);
         result->changed = true;
     } else if (configParamHas(params, "domeEscMaxPulseUs")) {
         setRangeError(result, "domeEscMaxPulseUs must be 1000..2000", "domeEscMaxPulseUs", 1000, 2000);
@@ -1305,6 +1309,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     uint8_t domePct;
     if (paramUint8(params, "domeEscSpeedLimitPct", 0, 100, &domePct)) {
         working->dome.dome_speed_limit_pct = domePct;
+        appendApplied(&result->applied, "[CFG] domeEscSpeedLimitPct updated to %u", (unsigned)domePct);
         result->changed = true;
     } else if (configParamHas(params, "domeEscSpeedLimitPct")) {
         setRangeError(result, "domeEscSpeedLimitPct must be 0..100", "domeEscSpeedLimitPct", 0, 100);
@@ -1319,6 +1324,9 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
                      ApplyRefusalReason::OutOfRange, "protoR2linkWifiPeerIp");
             return;
         }
+        appendApplied(&result->applied, "[CFG] protoR2linkWifiPeerIp updated to %s",
+                      working->dome.dome_wifi_peer_ip[0] != '\0' ? working->dome.dome_wifi_peer_ip
+                                                                 : "(none)");
         result->changed = true;
     }
 
