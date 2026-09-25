@@ -323,6 +323,23 @@ void test_formatLitWiresJson_small_buffer_fails() {
     TEST_ASSERT_FALSE(formatLitWiresJson(out, sizeof(out), wires, 1, nullptr));
 }
 
+// LIT_WIRES_JSON_MAX is the whole buffer both the status frame and the
+// aux-LED reply format into, so every light-capable Output lit at its widest
+// has to fit it. It did not while the bound counted {"r":255, as eight
+// characters: three wires whose driver had not started ran two bytes past it,
+// and the droid answered an overflow in place of its status (#428).
+void test_formatLitWiresJson_every_light_at_its_widest_fits_its_bound() {
+    LitWireReading wires[BOARD_OUTPUT_LIGHT_CAPABLE_COUNT] = {};
+    size_t count = 0;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        if (BOARD_OUTPUTS[i].lightCapable) {
+            wires[count++] = {BOARD_OUTPUTS[i].id, 255, 255, 255, "pulse", false};
+        }
+    }
+    char out[LIT_WIRES_JSON_MAX] = {};
+    TEST_ASSERT_TRUE(formatLitWiresJson(out, sizeof(out), wires, count, nullptr));
+}
+
 // trimAsciiWhitespace() replaced the Arduino String::trim() that the sequence
 // and action-test routes relied on before they took copied-out C strings across
 // the WebRequest seam. An operator who pastes a name with a trailing space has
@@ -404,6 +421,7 @@ int main() {
     RUN_TEST(test_formatLitWiresJson_no_wires_is_an_empty_object);
     RUN_TEST(test_formatLitWiresJson_null_effect_fails);
     RUN_TEST(test_formatLitWiresJson_small_buffer_fails);
+    RUN_TEST(test_formatLitWiresJson_every_light_at_its_widest_fits_its_bound);
     RUN_TEST(test_trimAsciiWhitespace_strips_both_ends);
     RUN_TEST(test_trimAsciiWhitespace_leaves_inner_spaces);
     RUN_TEST(test_trimAsciiWhitespace_all_whitespace_becomes_empty);
