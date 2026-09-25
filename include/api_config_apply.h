@@ -39,6 +39,7 @@
 
 #include "api_apply_refusal.h"
 #include "api_param_source.h"
+#include "config.h"  // PA_CHIP_TARGET_ESP32 - a presence macro, so it must be in scope
 #include "config_cache.h"
 #include "droid_build.h"
 #include "guided_setup.h"
@@ -66,7 +67,15 @@ struct ConfigApplyActions {
 // lines past the bound are counted in `dropped` instead, and the shell says how
 // many it could not show rather than letting the log look complete.
 struct ConfigAppliedFields {
+    // Sixteen on artoo-esp32, where BSS is the heap, so a restore there counts
+    // more of its lines as `dropped` while its fields still apply in full.
+    // Back to 32 when that board has the static RAM to spare again (operator
+    // decision 2026-09-25, #428).
+#if defined(PA_CHIP_TARGET_ESP32)
+    static constexpr size_t kMaxLines = 16;
+#else
     static constexpr size_t kMaxLines = 32;
+#endif
     static constexpr size_t kLineWidth = 80;
     char lines[kMaxLines][kLineWidth];
     size_t count = 0;
