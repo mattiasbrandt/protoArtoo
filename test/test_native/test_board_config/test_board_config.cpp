@@ -76,11 +76,12 @@ void test_safety_monitor_stack_covers_its_measured_chain_on_esp32() {
     TEST_ASSERT_EQUAL_UINT32(4096U, SAFETY_MONITOR_STACK_BYTES);
 }
 
-// Same guard for the two stacks #248 raised on the P4. Both ESP32 branches must
-// stay at the values the shipping artoo image has always had; that is what keeps
-// those changes off it.
+// Same guard for the two stacks #248 raised on the P4. Both ESP32 branches stay
+// at their own artoo values; that is what keeps those changes off it. DomeTask's
+// artoo arm moved on its own chain at #430, 3072 -> 4096 by the rule, when the
+// walk first decoded the bodies objdump printed as data; the P4 arm is 5120.
 void test_dome_and_aux_led_stacks_unchanged_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(3072U, DOME_TASK_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(4096U, DOME_TASK_STACK_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, AUX_LED_TASK_STACK_BYTES);
 }
 

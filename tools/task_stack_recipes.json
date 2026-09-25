@@ -8,7 +8,7 @@
       "loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini and is deliberately outside this table.",
       "chain = max over 'roots' of that root's total worst-case chain, plus the sum of the own frames named in 'frames'. A frame is stitched by hand only where the walker cannot follow the call that reaches it (an indirect call through a function pointer); 'stitch_reason' says which call and why. An indirect call BELOW a root, through a pointer read from a dispatch table, is stitched by 'tables': every function the named table holds in the image becomes a callee of 'caller', so the walk itself takes the deepest row and a row added later is walked without editing this file (#429).",
       "'env' is the image tools/check_task_stack_chains.py re-walks for that arm - always the product image for the chip. 'chain_bytes' is the recorded constant and equals the DEEPER of the product and profiler images, because include/config.h is compiled into both; 'deeper_image' records that substitution where the two differ.",
-      "Every figure is a LOWER bound: indirect calls that are not stitched are not followed, and call-graph cycles are cut. On artoo-esp32 objdump additionally emits ~37% of function bodies as data (.xt.prop) and counts their frames as zero; the ESP32-P4 image decodes whole. So a chain can be missed and cannot be overstated, which is what makes the re-walk safe to fail a build on.",
+      "Every figure is a floor: indirect calls that are not stitched are not followed, and call-graph cycles are cut. On artoo-esp32 objdump prints a third of the function bodies as data, because the linked image keeps only part of its .xt.prop property table and objdump decodes an address in a gap between records by the NEXT record's flags (#430); tools/stack_usage_report.py decodes those bodies from a copy of the image without .xt.prop/.xt.lit, taking only them from it, and the gate row counts the bodies recovered and any still printed as data, whose frames read as zero. The ESP32-P4 image decodes whole. So a chain can be missed and cannot be overstated, which is what makes the re-walk safe to fail a build on.",
       "Interrupt and exception frames are not counted: both ports spill some state to the interrupted task's stack before switching to the ISR stack. The rule's 25% is what covers that, so an arm that declines the rule has less cover for it than one that does not.",
       "Every figure here is from the BOUNDED walk (#271): tools/stack_usage_report.py reads each function body to its ELF symbol size rather than to the next symbol objdump prints. Before that, a literal-pool word decoding as a call to a real entry became a followed edge, and which words did so changed when the image was relinked - two builds of identical source returned WebEvents chains 688 B apart. Figures recorded by #245, #248, #250 and #256 predate the bound and were not necessarily reproducible; the chains here were re-derived and are identical across two builds whose ELF layouts differ.",
       "Measured at #271 against artoo_esp32 / artoo_esp32_profiler (Xtensa) and firebeetle2 / firebeetle2_profiler (RISC-V), each built with PLATFORMIO_BUILD_SRC_FLAGS=\"-Wall -Wextra -Werror -fstack-usage\"."
@@ -131,11 +131,11 @@
             "domeTask"
           ],
           "frames": [],
-          "chain_bytes": 2992,
-          "product_bytes": 2992,
-          "profiler_bytes": 2992,
-          "rule": "declined",
-          "reason": "#248's tight-heap reason: the rule (4096) costs +1024 B against ~42.7 KB of measured free heap, for margin the Xtensa walk cannot confirm. This is the thinnest floor in the table - 80 B, which is under the cost of one interrupt entry - and it is the pre-existing shipping value, recorded as a known exposure rather than raised by #271."
+          "chain_bytes": 3264,
+          "product_bytes": 3264,
+          "profiler_bytes": 3264,
+          "rule": "applied",
+          "note": "Re-derived 2026-09-25 (#430) from 2992: the walk decodes the function bodies objdump used to print as data (.xt.prop), and this chain runs through one of them, __wrap_log_printf (esp_diagnostics, 128 B frame), reached from real error-log paths. The artoo_esp32 walk gives 3264. The profiler image was not walked and is recorded equal to the product image. The rule had been declined on #248's tight-heap reason with an 80 B floor, the thinnest in the table, and the fuller walk put the chain 192 B over the 3072 stack. Operator decision 2026-09-25: raise to the rule, 3072 -> 4096 (3264 -> 4080 -> 4096), +1024 B of heap freed by #428."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -225,11 +225,12 @@
             "domeLinkTask"
           ],
           "frames": [],
-          "chain_bytes": 5872,
-          "product_bytes": 5872,
-          "profiler_bytes": 5872,
+          "chain_bytes": 5904,
+          "product_bytes": 5904,
+          "profiler_bytes": 5904,
           "rule": "declined",
-          "reason": "#248's tight-heap reason, named on #250: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 272 B."
+          "reason": "#248's tight-heap reason, named on #250: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 240 B.",
+          "note": "Re-derived 2026-09-25 (#430) from 5872: the walk decodes the bodies objdump used to print as data, and the chain gains 32 B through __wrap_log_printf. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: re-derive the figure only; the stack still covers the walk and the decline stands."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -508,12 +509,12 @@
             "otaServiceTask"
           ],
           "frames": [],
-          "chain_bytes": 3696,
-          "product_bytes": 3696,
-          "profiler_bytes": 3696,
+          "chain_bytes": 3904,
+          "product_bytes": 3904,
+          "profiler_bytes": 3904,
           "rule": "declined",
-          "reason": "#248's tight-heap reason applied to this task's first measurement: the rule (5120) costs +1024 B for margin the Xtensa walk cannot confirm. Floor holds by 400 B.",
-          "note": "The task entry was an anonymous lambda until #271. Its root symbol was then `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)`, which renumbers if a lambda is added above it in that function, and which no name-extracting scan of the xTaskCreatePinnedToCore() call site can reach past. Hoisted to a named static function so both this recipe and test/test_tools/test_profiler_task_list.py have something stable to read."
+          "reason": "#248's tight-heap reason applied to this task's first measurement: the rule (5120) costs +1024 B for margin the Xtensa walk cannot confirm. Floor holds by 192 B.",
+          "note": "The task entry was an anonymous lambda until #271. Its root symbol was then `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)`, which renumbers if a lambda is added above it in that function, and which no name-extracting scan of the xTaskCreatePinnedToCore() call site can reach past. Hoisted to a named static function so both this recipe and test/test_tools/test_profiler_task_list.py have something stable to read. Re-derived 2026-09-25 (#430) from 3696: the walk decodes the bodies objdump used to print as data, and the chain gains 208 B through __wrap_log_printf. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: re-derive the figure only; the stack still covers the walk and the decline stands."
         },
         "esp32p4": {
           "env": "firebeetle2",

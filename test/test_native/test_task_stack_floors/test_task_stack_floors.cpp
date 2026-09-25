@@ -70,15 +70,15 @@ static const TaskStackArm kArms[] = {
     {"DriveTask", 4080U, 5632U, RULE_ABOVE},
     {"RCInputTask", 4944U, 6656U, RULE_APPLIED},
     {"ServoTask", 3216U, 4096U, RULE_APPLIED},
-    {"DomeTask", 2992U, 3072U, RULE_DECLINED},
+    {"DomeTask", 3264U, 4096U, RULE_APPLIED},
     {"AudioTask", 5280U, 6144U, RULE_DECLINED},
     {"AuxLedTask", 3504U, 4096U, RULE_DECLINED},
-    {"DomeLinkTask", 5872U, 6144U, RULE_DECLINED},
+    {"DomeLinkTask", 5904U, 6144U, RULE_DECLINED},
     {"SafetyMonitor", 3088U, 4096U, RULE_APPLIED},
     {"SeqDisp", 4432U, 5632U, RULE_APPLIED},
     {"Console", 8688U, 11264U, RULE_APPLIED},
     {"WebEvents", 5904U, 6144U, RULE_DECLINED},
-    {"ArduinoOTA", 3696U, 4096U, RULE_DECLINED},
+    {"ArduinoOTA", 3904U, 4096U, RULE_DECLINED},
 };
 static const size_t kArmCount = sizeof(kArms) / sizeof(kArms[0]);
 
@@ -89,7 +89,7 @@ static const TaskStackArm kDeclared[] = {
     {"DriveTask", DRIVE_TASK_MEASURED_CHAIN_BYTES, DRIVE_TASK_STACK_BYTES, RULE_ABOVE},
     {"RCInputTask", RC_INPUT_TASK_MEASURED_CHAIN_BYTES, RC_INPUT_TASK_STACK_BYTES, RULE_APPLIED},
     {"ServoTask", SERVO_TASK_MEASURED_CHAIN_BYTES, SERVO_TASK_STACK_BYTES, RULE_APPLIED},
-    {"DomeTask", DOME_TASK_MEASURED_CHAIN_BYTES, DOME_TASK_STACK_BYTES, RULE_DECLINED},
+    {"DomeTask", DOME_TASK_MEASURED_CHAIN_BYTES, DOME_TASK_STACK_BYTES, RULE_APPLIED},
     {"AudioTask", AUDIO_TASK_MEASURED_CHAIN_BYTES, AUDIO_TASK_STACK_BYTES, RULE_DECLINED},
     {"AuxLedTask", AUX_LED_TASK_MEASURED_CHAIN_BYTES, AUX_LED_TASK_STACK_BYTES, RULE_DECLINED},
     {"DomeLinkTask", DOME_LINK_TASK_MEASURED_CHAIN_BYTES, DOME_LINK_TASK_STACK_BYTES,
@@ -200,7 +200,7 @@ void test_the_previously_unmeasured_tasks_now_carry_chains() {
     // arithmetic test_every_arm_follows_the_derivation_it_claims re-does.
     TEST_ASSERT_EQUAL_UINT32(3216U, SERVO_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, SERVO_TASK_STACK_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(3696U, OTA_TASK_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(3904U, OTA_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(4096U, OTA_TASK_STACK_BYTES);
     // artoo-esp32 declares no HostedRecovery pair at all - the task is in no
     // image this board builds, so a chain for it here would be invented. That
@@ -208,13 +208,6 @@ void test_the_previously_unmeasured_tasks_now_carry_chains() {
     TEST_ASSERT_EQUAL_INT(0, PA_CAP_HOSTED_WIFI);
 }
 
-// The thinnest floor in the block, stated so it is a recorded exposure rather
-// than a number nobody looked at. DomeTask is a 50 Hz Core 1 task with 80 B
-// between its stack and its measured chain, on a walk that is a lower bound and
-// that excludes interrupt frames entirely -- less headroom than one interrupt
-// entry costs. It is the pre-existing shipping value and #248's tight-heap
-// argument is why it stands; if it is ever raised, this test is where the
-// decision is recorded.
 // Native cannot compile the ESP32-P4 arm. The rule itself is chip-agnostic,
 // so the #256 reopen's P4 derivations are pinned here as arithmetic: an edit
 // that "simplifies" the rule would silently shrink those stacks.
@@ -234,9 +227,17 @@ void test_p4_reopen_derivations_follow_the_rule() {
     TEST_ASSERT_EQUAL_UINT32(5632U, stackByTheRule(4480U));   // HostedRecovery
 }
 
-void test_the_thinnest_declined_floor_is_dome_task_on_this_board() {
-    const uint32_t headroom = DOME_TASK_STACK_BYTES - DOME_TASK_MEASURED_CHAIN_BYTES;
-    TEST_ASSERT_EQUAL_UINT32(80U, headroom);
+// The thinnest floor in the block, stated so it is a recorded exposure rather
+// than a number nobody looked at. DomeTask held it until #430, with 80 B between
+// its stack and a chain the fuller walk then put 192 B past that stack; it was
+// raised to the rule. The ArduinoOTA task now holds it: 192 B between its stack
+// and its measured chain, on a walk that excludes interrupt frames entirely --
+// less headroom than one interrupt entry costs. #248's tight-heap argument is
+// why its decline stands; if it is ever raised, this test is where the decision
+// is recorded.
+void test_the_thinnest_declined_floor_is_the_ota_task_on_this_board() {
+    const uint32_t headroom = OTA_TASK_STACK_BYTES - OTA_TASK_MEASURED_CHAIN_BYTES;
+    TEST_ASSERT_EQUAL_UINT32(192U, headroom);
     for (size_t i = 0; i < kArmCount; ++i) {
         TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
             headroom, kDeclared[i].stack - kDeclared[i].chain, kDeclared[i].task);
@@ -253,6 +254,6 @@ int main() {
     RUN_TEST(test_safety_monitor_was_raised_because_its_floor_failed);
     RUN_TEST(test_the_previously_unmeasured_tasks_now_carry_chains);
     RUN_TEST(test_p4_reopen_derivations_follow_the_rule);
-    RUN_TEST(test_the_thinnest_declined_floor_is_dome_task_on_this_board);
+    RUN_TEST(test_the_thinnest_declined_floor_is_the_ota_task_on_this_board);
     return UNITY_END();
 }
