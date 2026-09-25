@@ -125,3 +125,22 @@ one this ticket needed to take.
 of 2026-09-09 - limitations are presented and explained, never simply disallowed
 - and because it would discard the sequences too, which have nothing to do with
 the board.
+
+## Amended 2026-09-25: a restore can hold more Sequences than the droid stores
+
+The Decision says restoring Sequences "makes them exactly the file's" and that the
+cap "can therefore never be exceeded, because the file was itself a valid droid".
+That held while every droid stored the same number. ADR 0065's 2026-09-25
+amendment gives the artoo-esp32 five Learned Sequences and every other board ten,
+so a firebeetle2 backup restored onto an artoo-esp32 can carry more Sequences than
+the droid stores. The Sequences are board-independent, so a cross-board restore
+writes them.
+
+**Decided by the operator:** the restore **keeps the first Sequences in file order,
+up to the droid's cap, and names on the receipt each Sequence it left out.** It
+still replaces rather than merges: what the droid ends up with is exactly the
+file's first N.
+
+Considered and rejected: **refusing the whole Sequences part** when the file holds
+more than the droid stores. It is safer against a silent choice, but it restores
+nothing, where the builder would rather have five and be told which are missing.
