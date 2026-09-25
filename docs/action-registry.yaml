@@ -829,8 +829,10 @@ entries:
   # #221 remainder: item-indexed (seqStoreIndexAt(uint8_t)), the same
   # no-fields:/is_query:-true shape system.status.logs established (#239) for
   # an answer that is a sequence of item records, not scalar JSON keys - the
-  # store's own SEQ_STORE_MAX (16 entries, include/seq_store_index.h) bounds
-  # it by construction, so no separate paging protocol is needed either.
+  # index's own SEQ_INDEX_CAPACITY (10 entries on every board,
+  # include/seq_store_index.h) bounds it by construction, so no separate paging
+  # protocol is needed either. It lists everything held, which on an
+  # artoo-esp32 over its save cap of five can be more than five (ADR 0065).
   executor: seqStoreIndexAt
   is_query: true
 - name: dome.api.list-builtin-sequences
@@ -1173,7 +1175,7 @@ entries:
   # `field` + repeated `item` composition docs/console-protocol.md s.3.1 already
   # defines, not a new record type. AUDIO_CATALOG_MAX_ENTRIES (300,
   # include/audio_driver.h) bounds the answer by construction, the same way
-  # SEQ_STORE_MAX bounds dome.api.list-sequences, so no paging protocol is needed.
+  # SEQ_INDEX_CAPACITY bounds dome.api.list-sequences, so no paging protocol is needed.
   # The bank directory stays REST-only: a documented subset, like
   # dome.api.get-sequence-last-run's.
   fields:

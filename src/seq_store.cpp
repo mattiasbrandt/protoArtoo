@@ -389,7 +389,8 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
         return pcFail("name", "store busy");
     }
 
-    // Capacity: 16-file cap (new names only), per-file size, free-space floor.
+    // Capacity: the board's store cap (new names only), per-file size,
+    // free-space floor -- seqStoreCapacityCheck(), include/seq_store_util.h.
     const bool isNew = (seqStoreIndexFind(d.name) == nullptr);
     const size_t freeBytes = LittleFS.totalBytes() - LittleFS.usedBytes();
     ProtocolCheckResult cap =

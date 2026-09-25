@@ -10,6 +10,7 @@
 
 #include "component_registry.h"
 #include "config.h"
+#include "seq_store_util.h"  // SEQ_STORE_CAP
 #include "web_json_slice_writer.h"
 
 #include <cstdarg>
@@ -69,9 +70,14 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
     }
 
     IdentityJsonWriter writer(buf, bufSize);
+    // learned_sequence_cap is the board's Learned Sequence save cap (ADR 0065,
+    // amended 2026-09-25), reported here because it is a board fact beside
+    // `board`, and the shell already fetches this payload once for every page.
+    // The Sequences page reads it rather than keeping a number of its own.
     writer.append("{\"droidName\":\"%s\",\"mdnsUseName\":%s,\"board\":\"%s\","
-                  "\"board_capabilities\":{",
-                  droidName, mdnsUseName ? "true" : "false", boardVariantId());
+                  "\"learned_sequence_cap\":%u,\"board_capabilities\":{",
+                  droidName, mdnsUseName ? "true" : "false", boardVariantId(),
+                  (unsigned)SEQ_STORE_CAP);
 
     bool first = true;
 #define PA_BOARD_CAPABILITY(name)                                                \
@@ -114,7 +120,7 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 // no name to put in front of a builder.
 //
 // It gets its own route rather than a key in GET /api/identity: that payload is
-// bounded at IDENTITY_JSON_MAX_BYTES (512 B) with ~50 B of headroom, and the
+// bounded at IDENTITY_JSON_MAX_BYTES (512 B) with ~24 B of headroom, and the
 // lineup is roughly 3 KB. Written by offset through JsonSliceWriter for the
 // same reason GET /api/actions is, so no backend holds the body whole.
 // -----------------------------------------------------------------------------

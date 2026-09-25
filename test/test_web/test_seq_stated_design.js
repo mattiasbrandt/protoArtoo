@@ -87,6 +87,9 @@ function makeElement() {
 // The dome itself answers 503, which is the state tier 3 exists for.
 function newPage(config, domeResponse) {
   const requests = [];
+  // Window events, so a page that listens for the shell's identity outcome
+  // hears it the way it would in a browser.
+  const windowListeners = {};
   const elements = new Map();
   const elementById = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement());
@@ -191,8 +194,14 @@ function newPage(config, domeResponse) {
       addEventListener() {},
       removeEventListener() {},
     },
-    addEventListener() {},
+    addEventListener(name, fn) {
+      (windowListeners[name] = windowListeners[name] || []).push(fn);
+    },
     removeEventListener() {},
+    dispatchEvent(event) {
+      (windowListeners[event.type] || []).forEach((fn) => fn(event));
+      return true;
+    },
     alert() {},
     confirm: () => false,
     setTimeout,
@@ -212,7 +221,15 @@ function newPage(config, domeResponse) {
 
   return {
     window: sandbox.window,
+    seam,
+    elementById,
     requests,
+    // What the shell does once GET /api/identity answers: publish it, then
+    // tell every surface (data/shell.js publishIdentity()).
+    reportIdentity(identity) {
+      sandbox.window.PAIdentity = identity;
+      sandbox.window.dispatchEvent({ type: "pa:identity-available", detail: identity });
+    },
     // Open a sequence in the editor with one step expanded, the way a builder
     // clicking a step card does, and return that step's fields markup.
     openEditor(sequence, expandedStep = 0) {
@@ -319,4 +336,43 @@ test("an unsupported schema no longer claims a drawing it is not showing", async
   assert.doesNotMatch(html, /dome-svg-picker/);
   assert.match(html, /schema 99 not supported/);
   assert.doesNotMatch(html, /Showing the built-in MK4 map/);
+});
+
+// How many Learned Sequences a droid stores is a board fact the droid reports:
+// five on the artoo-esp32, ten elsewhere (ADR 0065, amended 2026-09-25). The
+// page used to carry its own ten, which an artoo-esp32 would have contradicted
+// at the sixth save. It must say whatever the droid says, and follow it when
+// the droid says something else - never a number of its own.
+const held = (count) =>
+  Array.from({ length: count }, (_, i) => ({
+    name: `DM:HELD${i}`,
+    suppressMs: 8000,
+    toggleGroup: "none",
+    valid: true,
+  }));
+
+test("the Sequences list names the cap the droid reports, and follows it", () => {
+  const page = newPage({});
+  const capacity = () => page.elementById("seq-capacity-display").textContent;
+  const list = () => page.elementById("seq-cards-container").innerHTML;
+
+  // A droid reporting five, holding seven after a firmware-only update: all
+  // seven are still listed, and the page does not claim room it does not have.
+  page.reportIdentity({ board: "artoo_esp32", learned_sequence_cap: 5 });
+  page.seam.renderListWithMocks(held(7), []);
+  assert.match(capacity(), /\/ 5 /);
+  for (let i = 0; i < 7; i += 1) assert.match(list(), new RegExp(`DM:HELD${i}<`));
+  assert.match(list(), /seq-over-cap/, "an over-cap droid did not say new saves wait");
+
+  // The same page, told ten: the droid's word replaces the old one on the
+  // screen without a reload, and seven of ten is not over anything.
+  page.reportIdentity({ board: "firebeetle2", learned_sequence_cap: 10 });
+  assert.match(capacity(), /\/ 10 /);
+  assert.doesNotMatch(list(), /seq-over-cap/);
+});
+
+test("a droid that has not reported its cap is promised none", () => {
+  const page = newPage({});
+  page.seam.renderListWithMocks(held(3), []);
+  assert.doesNotMatch(page.elementById("seq-capacity-display").textContent, /\//);
 });

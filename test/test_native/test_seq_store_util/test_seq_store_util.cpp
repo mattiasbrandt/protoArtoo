@@ -17,7 +17,7 @@
 
 #include <unity.h>
 
-#include "seq_store_index.h"  // SEQ_STORE_MAX
+#include "seq_store_index.h"  // SEQ_INDEX_CAPACITY
 #include "seq_store_util.h"
 
 void setUp()    {}
@@ -61,7 +61,7 @@ static void test_capacity_ok_when_room() {
 
 static void test_capacity_new_when_full_rejected() {
     ProtocolCheckResult r =
-        seqStoreCapacityCheck(true, SEQ_STORE_MAX, 2000, BIG_FREE);
+        seqStoreCapacityCheck(true, SEQ_STORE_CAP, 2000, BIG_FREE);
     TEST_ASSERT_FALSE(r.ok);
     TEST_ASSERT_EQUAL_STRING("name", r.field);
 }
@@ -69,13 +69,13 @@ static void test_capacity_new_when_full_rejected() {
 static void test_capacity_update_when_full_allowed() {
     // Overwriting an existing name does not consume a new slot.
     ProtocolCheckResult r =
-        seqStoreCapacityCheck(false, SEQ_STORE_MAX, 2000, BIG_FREE);
+        seqStoreCapacityCheck(false, SEQ_STORE_CAP, 2000, BIG_FREE);
     TEST_ASSERT_TRUE(r.ok);
 }
 
 static void test_capacity_last_slot_allowed() {
     ProtocolCheckResult r =
-        seqStoreCapacityCheck(true, (uint8_t)(SEQ_STORE_MAX - 1), 2000, BIG_FREE);
+        seqStoreCapacityCheck(true, (uint8_t)(SEQ_STORE_CAP - 1), 2000, BIG_FREE);
     TEST_ASSERT_TRUE(r.ok);
 }
 
@@ -144,30 +144,51 @@ static void test_free_floor_leaves_room_for_the_outgoing_copy() {
     TEST_ASSERT_EQUAL_STRING("json", below.field);
 }
 
-static void test_store_holds_ten_learned_sequences() {
-    // Operator decision, 2026-09-13 (#382): ten, on both boards. Sixteen
-    // full-size sequences never fitted beside the artoo-esp32's web image, and
-    // data/seq.js shows this same number (test_seq_capacity.js).
-    TEST_ASSERT_EQUAL_UINT8(10, SEQ_STORE_MAX);
+static void test_artoo_esp32_refuses_a_sixth_new_save() {
+    // Operator decision, 2026-09-25 (ADR 0065 amendment): the artoo-esp32
+    // stores five Learned Sequences. The native env builds that board, so the
+    // fifth new save must pass and the sixth be refused. The counts are written
+    // out rather than derived from SEQ_STORE_CAP, so moving the constant cannot
+    // also move what this expects. firebeetle2's ten is proven by compiling this
+    // same function for that board (test_board_chip_sized_constants.py).
+    TEST_ASSERT_TRUE(seqStoreCapacityCheck(true, 4, 2000, BIG_FREE).ok);
+    ProtocolCheckResult sixth = seqStoreCapacityCheck(true, 5, 2000, BIG_FREE);
+    TEST_ASSERT_FALSE(sixth.ok);
+    TEST_ASSERT_EQUAL_STRING("name", sixth.field);
+}
+
+static void test_the_index_holds_ten_whatever_the_cap() {
+    // The cap refuses a save; the index capacity is what boots, lists and plays.
+    // They are two numbers on purpose: an artoo-esp32 updated from firmware that
+    // allowed ten keeps all ten after the cap drops to five (ADR 0065).
+    TEST_ASSERT_EQUAL_UINT8(10, SEQ_INDEX_CAPACITY);
+    TEST_ASSERT_TRUE(SEQ_STORE_CAP < SEQ_INDEX_CAPACITY);
+}
+
+static void test_an_over_cap_store_refuses_new_names_and_overwrites_old_ones() {
+    // Seven held on a five-cap board: every new name is refused, however far
+    // over it is, and overwriting one already held still saves.
+    TEST_ASSERT_FALSE(seqStoreCapacityCheck(true, 7, 2000, BIG_FREE).ok);
+    TEST_ASSERT_TRUE(seqStoreCapacityCheck(false, 7, 2000, BIG_FREE).ok);
 }
 
 static void test_store_full_message_names_the_enforced_cap() {
     // The refusal a builder reads must name the cap that refused them. The
-    // message is a literal and SEQ_STORE_MAX a constant, so this is what holds
-    // the two together: derive the expectation from the constant.
+    // message is stringified from the same macro as SEQ_STORE_CAP; derive the
+    // expectation from the constant so the two cannot drift apart.
     ProtocolCheckResult r =
-        seqStoreCapacityCheck(true, SEQ_STORE_MAX, 2000, BIG_FREE);
+        seqStoreCapacityCheck(true, SEQ_STORE_CAP, 2000, BIG_FREE);
     TEST_ASSERT_FALSE(r.ok);
     char expected[64];
     snprintf(expected, sizeof(expected), "store full (%u sequences max)",
-             (unsigned)SEQ_STORE_MAX);
+             (unsigned)SEQ_STORE_CAP);
     TEST_ASSERT_EQUAL_STRING(expected, r.message);
 }
 
 static void test_capacity_count_takes_precedence_over_size() {
     // A new, oversized save into a full store reports the slot error first.
     ProtocolCheckResult r = seqStoreCapacityCheck(
-        true, SEQ_STORE_MAX, SEQ_FILE_MAX_BYTES + 1, 0);
+        true, SEQ_STORE_CAP, SEQ_FILE_MAX_BYTES + 1, 0);
     TEST_ASSERT_FALSE(r.ok);
     TEST_ASSERT_EQUAL_STRING("name", r.field);
 }
@@ -190,7 +211,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_over_cap_message_names_the_enforced_cap);
     RUN_TEST(test_free_floor_leaves_room_for_the_outgoing_copy);
     RUN_TEST(test_capacity_count_takes_precedence_over_size);
-    RUN_TEST(test_store_holds_ten_learned_sequences);
+    RUN_TEST(test_artoo_esp32_refuses_a_sixth_new_save);
+    RUN_TEST(test_the_index_holds_ten_whatever_the_cap);
+    RUN_TEST(test_an_over_cap_store_refuses_new_names_and_overwrites_old_ones);
     RUN_TEST(test_store_full_message_names_the_enforced_cap);
     return UNITY_END();
 }

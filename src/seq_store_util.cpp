@@ -34,8 +34,11 @@ bool seqStoreNameToFile(const char* name, char* out, size_t cap) {
 
 ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
                                           size_t fileLen, size_t freeBytes) {
-    if (isNew && count >= SEQ_STORE_MAX) {
-        return ufail("name", "store full (10 sequences max)");
+    // The board's cap, not the index capacity: an over-cap droid (see the
+    // header) holds more than this, and `count >= cap` refuses a new name for
+    // as long as that lasts. An existing name is an overwrite and still saves.
+    if (isNew && count >= SEQ_STORE_CAP) {
+        return ufail("name", SEQ_STORE_FULL_MESSAGE);
     }
     if (fileLen > SEQ_FILE_MAX_BYTES) {
         // The size in the message comes from the same macro as the constant it

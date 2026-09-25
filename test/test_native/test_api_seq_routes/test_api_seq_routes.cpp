@@ -306,6 +306,73 @@ void test_delete_reports_a_store_failure_as_500() {
 }
 
 // -----------------------------------------------------------------------------
+// A droid over its cap (ADR 0065, amended 2026-09-25)
+// -----------------------------------------------------------------------------
+
+// A firmware-only update can boot an artoo-esp32 holding more Learned
+// Sequences than its cap of five. The native env builds that board. Everything
+// it holds must still index, list, load and play; only a new name is refused,
+// and overwriting one it holds still saves. seqStoreSave() itself needs real
+// LittleFS, so the refusal is asserted through the call it makes --
+// seqStoreCapacityCheck(isNew, seqStoreIndexCount(), ...), src/seq_store.cpp --
+// fed from the live index this test seeded.
+void test_an_over_cap_droid_keeps_everything_and_refuses_only_a_new_save() {
+    static const char* const kHeld[] = {
+        "DM:ONE", "DM:TWO", "DM:THREE", "DM:FOUR", "DM:FIVE", "DM:SIX", "DM:SEVEN",
+    };
+    const uint8_t held = (uint8_t)(sizeof(kHeld) / sizeof(kHeld[0]));
+    TEST_ASSERT_TRUE_MESSAGE(held > SEQ_STORE_CAP, "the premise: more than the cap");
+
+    // Boot: the scan indexes every file it finds, past the cap.
+    for (uint8_t i = 0; i < held; ++i) {
+        SeqIndexEntry e = {};
+        std::snprintf(e.name, sizeof(e.name), "%s", kHeld[i]);
+        std::snprintf(e.file, sizeof(e.file), "seq%u.json", (unsigned)i);
+        e.valid = true;
+        TEST_ASSERT_TRUE_MESSAGE(seqStoreIndexAdd(e), kHeld[i]);
+    }
+    TEST_ASSERT_EQUAL_UINT8(held, seqStoreIndexCount());
+
+    // List: every one is a row.
+    WebRequestTestBackend list;
+    WebRequest listReq(&list);
+    handleSeqListGet(listReq);
+    TEST_ASSERT_EQUAL_INT(200, list.sentCode);
+    for (uint8_t i = 0; i < held; ++i) {
+        char quoted[32];
+        std::snprintf(quoted, sizeof(quoted), "\"%s\"", kHeld[i]);
+        TEST_ASSERT_TRUE_MESSAGE(bodyContains(list, quoted), kHeld[i]);
+    }
+
+    g_test_seq_file_body = "{\"v\":1}";
+    for (uint8_t i = 0; i < held; ++i) {
+        // Load (the editor and Export read it back): streamed, not refused.
+        const WebRequestTestParam params[] = {{"name", kHeld[i]}};
+        WebRequestTestBackend get = paramBackend(params, 1);
+        WebRequest getReq(&get);
+        handleSeqGet(getReq);
+        TEST_ASSERT_TRUE_MESSAGE(get.sentChunked, kHeld[i]);
+
+        // Play: routed as a Learned Sequence, and the test route accepts it.
+        TEST_ASSERT_EQUAL_MESSAGE(SEQ_RUNTIME, sequenceLookup(kHeld[i]).kind, kHeld[i]);
+        WebRequestTestBackend play = paramBackend(params, 1);
+        WebRequest playReq(&play);
+        handleSeqTestPost(playReq);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(200, play.sentCode, kHeld[i]);
+    }
+
+    // Save: a new name is refused while over the cap; an existing one saves.
+    const char* newName = "DM:EIGHT";
+    ProtocolCheckResult fresh = seqStoreCapacityCheck(
+        seqStoreIndexFind(newName) == nullptr, seqStoreIndexCount(), 2000, 200 * 1024);
+    TEST_ASSERT_FALSE(fresh.ok);
+    TEST_ASSERT_EQUAL_STRING("name", fresh.field);
+    ProtocolCheckResult overwrite = seqStoreCapacityCheck(
+        seqStoreIndexFind(kHeld[6]) == nullptr, seqStoreIndexCount(), 2000, 200 * 1024);
+    TEST_ASSERT_TRUE(overwrite.ok);
+}
+
+// -----------------------------------------------------------------------------
 // Read-only listings and the idempotent stop
 // -----------------------------------------------------------------------------
 
@@ -401,6 +468,8 @@ int main(int, char**) {
     RUN_TEST(test_delete_removes_an_indexed_sequence);
     RUN_TEST(test_delete_of_an_unknown_name_is_404);
     RUN_TEST(test_delete_reports_a_store_failure_as_500);
+
+    RUN_TEST(test_an_over_cap_droid_keeps_everything_and_refuses_only_a_new_save);
 
     RUN_TEST(test_list_serializes_the_index);
     RUN_TEST(test_list_of_an_empty_store_is_an_empty_array);

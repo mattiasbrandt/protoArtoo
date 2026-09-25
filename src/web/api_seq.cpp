@@ -41,9 +41,12 @@ namespace {
 // each route can legitimately produce, not to a buffer -- nothing of this size
 // is reserved unless the route actually builds that much.
 //
-// A row-per-sequence listing tops out at SEQ_STORE_MAX (10) rows of roughly
-// 130 bytes, so 4 KB is comfortable headroom. A whole sequence with its steps
-// is bounded by the same per-file cap the store enforces on save.
+// A row-per-sequence listing tops out at SEQ_INDEX_CAPACITY (10) rows of
+// roughly 130 bytes, so 4 KB is comfortable headroom. That is the index
+// capacity on every board, not the board's save cap (SEQ_STORE_CAP, five on
+// the artoo-esp32): a droid over its cap still lists everything it holds. A
+// whole sequence with its steps is bounded by the same per-file cap the store
+// enforces on save.
 //
 // The Factory catalog listing is its own ceiling because it grows with the
 // catalog rather than with the store, and each row carries a purpose sentence.

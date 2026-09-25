@@ -23,10 +23,18 @@
     expanded: new Set(), // Slice 1: Set of step indices that are expanded (presentation-only)
   };
 
-  // How many Learned Sequences the controller stores. Mirrors SEQ_STORE_MAX in
-  // include/seq_store_index.h, which is what actually refuses the save;
-  // test/test_web/test_seq_capacity.js holds the two together (#382).
-  const LEARNED_SEQUENCE_CAP = 10;
+  // How many Learned Sequences this droid lets a builder save. It is a board
+  // fact the droid reports - five on the artoo-esp32, ten elsewhere (ADR 0065,
+  // amended 2026-09-25) - as learned_sequence_cap in GET /api/identity, which
+  // the shell fetches once per session and publishes as window.PAIdentity. The
+  // page keeps no number of its own, so it can never promise ten to a droid
+  // that stores five. Null until the droid has said, and then the page names
+  // no cap at all rather than guessing one; the firmware refuses the save
+  // either way.
+  const learnedSequenceCap = () => {
+    const cap = window.PAIdentity?.learned_sequence_cap;
+    return Number.isInteger(cap) && cap > 0 ? cap : null;
+  };
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
   let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen
@@ -277,7 +285,10 @@
 
   const renderListView = () => {
     // Update capacity (Learned sequences only)
-    els.capacityDisplay.textContent = `${sequences.length} / ${LEARNED_SEQUENCE_CAP} saved`;
+    const cap = learnedSequenceCap();
+    els.capacityDisplay.textContent = cap === null
+      ? `${sequences.length} saved`
+      : `${sequences.length} / ${cap} saved`;
 
     // Compute untuned Factory sequences (those without a Learned override)
     const learnedNames = new Set(sequences.map(s => s.name));
@@ -298,6 +309,12 @@
       // "Your sequences" section
       if (sequences.length > 0) {
         html += '<h3 class="seq-section-heading">Your sequences</h3>';
+        // A firmware-only update can leave a droid holding more than it now
+        // stores. Everything it holds still lists and plays; only a new save
+        // waits until the builder is under the cap (ADR 0065).
+        if (cap !== null && sequences.length > cap) {
+          html += `<p class="hint seq-over-cap"><b>This droid stores ${cap}.</b> Delete down to ${cap - 1} to save a new one.</p>`;
+        }
         html += sequences.map((seq) => renderSeqCard(seq)).join("");
       } else {
         html += '<h3 class="seq-section-heading">Your sequences</h3>';
@@ -2440,8 +2457,11 @@
       showEditorFeedback(validation.error || "Fix validation errors before saving.", "error");
       return;
     }
-    if (editorState.isNew && sequences.length >= LEARNED_SEQUENCE_CAP) {
-      showEditorFeedback(`Capacity limit: ${LEARNED_SEQUENCE_CAP} sequences on device. Delete one first.`, "error");
+    const cap = learnedSequenceCap();
+    if (editorState.isNew && cap !== null && sequences.length >= cap) {
+      // Over the cap, one delete is not enough: say how many it takes.
+      const toDelete = sequences.length - cap + 1;
+      showEditorFeedback(`Capacity limit: ${cap} sequences on this droid. Delete ${toDelete === 1 ? "one" : toDelete} first.`, "error");
       return;
     }
     const saveBtn = document.getElementById("seq-editor-save");
@@ -2891,6 +2911,10 @@
 
   const init = async () => {
     attachEventListeners();
+    // The cap arrives with the droid's identity, on its own schedule relative
+    // to the sequence list, and again if the shell replays it to a late mount.
+    window.addEventListener("pa:identity-available", () => renderListView());
+    window.addEventListener("pa:identity-unavailable", () => renderListView());
     startPageLoad();
     // Render the list after bootstrap sections are registered and may be loading.
     renderListView();
