@@ -99,3 +99,24 @@ short of its chain on both chips, and gave it the first compile-enforced floor:
   than this ADR.
 - Cross-epic: #182 is told before the surface is touched, per the standing
   contract on `platformio.ini`, `config.h` and the gate.
+
+## Amendment (2026-09-25, #429): the P4 walk is judged by allocation
+
+The walk above is applied the same way on both chips: a chain over its recorded
+constant fails. On the ESP32-P4 that turns every drift into a failure, and the
+P4 is walked only by a coordinator's post-merge run, so a drifted figure was
+found after the slice that moved it had merged (#381 rows 20 and 41).
+
+**We decided, per chip:**
+
+- **artoo_esp32 stays byte-exact.** A chain over its `*_MEASURED_CHAIN_BYTES`
+  fails. It is the scarce chip, and every byte of growth should stop a slice.
+- **An ESP32-P4 arm fails only on the allocation rule.**
+  `check_task_stack_chains.py` fails a P4 task when this ADR's rule applied to
+  the walk, `ceil512(ceil(chain x 1.25))`, exceeds that arm's `*_STACK_BYTES`.
+  A walk that has merely moved from its recorded figure is printed as a note,
+  and the figure is re-derived when the task is next touched.
+
+The gate still walks artoo only; the P4 is still walked at bench time and in the
+coordinator's post-merge run. The rule's 25% margin is what a P4 stack is sized
+by, so growth there is a failure only once it eats that margin.
