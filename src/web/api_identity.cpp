@@ -119,7 +119,7 @@ void handleComponentsGet(WebRequest& req) {
         webSendJsonError(req, 500, "response alloc failed");
         return;
     }
-    PA_LOG_DEBUG(TAG, "GET /api/identity/components (%zu parts)", COMPONENT_PART_COUNT);
+    PA_LOG_DEBUG(TAG, "GET /api/identity/components (%u parts)", (unsigned)COMPONENT_PART_COUNT);
 }
 
 void handleIdentityPost(WebRequest& req) {

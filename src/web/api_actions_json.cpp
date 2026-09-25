@@ -103,5 +103,5 @@ void handleActionsGet(WebRequest& req) {
         webSendJsonError(req, 500, "response alloc failed");
         return;
     }
-    PA_LOG_DEBUG(TAG, "GET /api/actions (%zu entries)", ACTION_REGISTRY_SIZE);
+    PA_LOG_DEBUG(TAG, "GET /api/actions (%u entries)", (unsigned)ACTION_REGISTRY_SIZE);
 }
