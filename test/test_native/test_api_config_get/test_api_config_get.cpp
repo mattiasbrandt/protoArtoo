@@ -592,15 +592,18 @@ void test_the_servo_outputs_answer_carries_what_the_dial_edits() {
 }
 
 // The largest answer the table can give: every row it can hold, each at the
-// longest address, holding every Part the catalog declares between them. The
-// route refuses a payload at its ceiling with a 500, so the bound is measured
-// here rather than argued about - the catalog grows, and this is where that
-// growth would first show.
+// longest address, holding as many of the Parts the catalog declares as its
+// slots take - every one of them, where the table has the slots for the whole
+// catalog. The route refuses a payload at its ceiling with a 500, so the bound
+// is measured here rather than argued about - the catalog grows, and this is
+// where that growth would first show.
 void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     ServoOutputTable table = {};
     servoOutputTableDefaults(&table);
     table.count = SERVO_OUTPUT_ROW_MAX;
-    for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
+    const size_t slots = (size_t)SERVO_OUTPUT_ROW_MAX * SERVO_OUTPUT_PART_SLOTS;
+    const size_t placed = DROID_PART_COUNT < slots ? DROID_PART_COUNT : slots;
+    for (size_t i = 0; i < placed; ++i) {
         TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[i / SERVO_OUTPUT_PART_SLOTS],
                                             droidPartIdAt(i)));
     }
@@ -633,9 +636,11 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     // save, its LED count, its Motion Profile and boot behaviour - and the
     // route refuses at 12288.
     //
-    // Twenty-four rows is the expander case nobody has fitted. The five this
-    // controller drives answer in 1948 B, which is what the Parts page's
-    // one-second bench feed actually carries.
+    // Twenty-four rows is the expander case nobody has fitted, and since #428
+    // artoo-esp32 - the chip this suite builds - holds five rows until an
+    // expander driver lands, so the 9536 B case is no longer built here: it is
+    // the ESP32-P4's. The five this controller drives answer in 1948 B, which
+    // is what the Parts page's one-second bench feed actually carries.
     TEST_ASSERT_LESS_THAN_UINT32(12288u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
@@ -645,7 +650,7 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     for (JsonObject output : outputs) {
         parts += output["parts"].as<JsonArray>().size();
     }
-    TEST_ASSERT_EQUAL_UINT32((uint32_t)DROID_PART_COUNT, (uint32_t)parts);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)placed, (uint32_t)parts);
 
     // Leave a controller nobody has wired for whatever runs next.
     seedUnwiredServoOutputRows();

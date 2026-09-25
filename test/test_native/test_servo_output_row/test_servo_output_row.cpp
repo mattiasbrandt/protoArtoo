@@ -73,15 +73,21 @@ void test_default_table_matches_the_five_fixed_outputs() {
     }
 }
 
+// Every row past the five this controller ships with. artoo-esp32 holds no
+// such row while LEDC is its only driver (SERVO_OUTPUT_ROW_MAX, #428), so on
+// that chip - which is the one the native suite builds - there is nothing past
+// the count to check; a chip that holds an expander's rows checks each.
 void test_rows_past_the_count_are_still_safe() {
     ServoOutputTable table = {};
     servoOutputTableDefaults(&table);
-    const ServoOutputRow& spare = table.rows[SERVO_OUTPUT_ROW_MAX - 1];
-
-    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_CHANNEL_UNSET, spare.channel);
-    TEST_ASSERT_FALSE(servoOutputChannelIsValid(spare.driver, spare.channel));
-    TEST_ASSERT_TRUE(spare.throw_ms > 0);
-    TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, spare.boot);
+    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, table.count);
+    for (uint8_t i = SERVO_OUTPUT_ROW_DEFAULT_COUNT; i < SERVO_OUTPUT_ROW_MAX; ++i) {
+        const ServoOutputRow& spare = table.rows[i];
+        TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_CHANNEL_UNSET, spare.channel);
+        TEST_ASSERT_FALSE(servoOutputChannelIsValid(spare.driver, spare.channel));
+        TEST_ASSERT_TRUE(spare.throw_ms > 0);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, spare.boot);
+    }
 }
 
 // --- reverse is the pair, never a flag ---------------------------------------
@@ -633,7 +639,15 @@ void test_every_field_round_trips_through_storage() {
 void test_a_row_added_without_an_address_is_reported() {
     ServoOutputTable saved = {};
     servoOutputTableDefaults(&saved);
-    saved.count = SERVO_OUTPUT_ROW_DEFAULT_COUNT + 1;  // a sixth row, as an expander adds
+    // A sixth row, as an expander adds - or, on a chip that holds only the
+    // five (artoo-esp32 while LEDC is its only driver, #428), the fifth row
+    // with its address taken off, which is the same row as far as the loader
+    // can tell: stored, and nobody has addressed it.
+    const uint8_t added = (SERVO_OUTPUT_ROW_MAX > SERVO_OUTPUT_ROW_DEFAULT_COUNT)
+                              ? SERVO_OUTPUT_ROW_DEFAULT_COUNT
+                              : (uint8_t)(SERVO_OUTPUT_ROW_DEFAULT_COUNT - 1);
+    saved.count = (uint8_t)(added + 1);
+    saved.rows[added].channel = SERVO_OUTPUT_CHANNEL_UNSET;
 
     MapWriter writer;
     TEST_ASSERT_TRUE(writeServoOutputTableForTest(saved, writer));
@@ -650,9 +664,9 @@ void test_a_row_added_without_an_address_is_reported() {
     // The row count is stored, so rows can be added without rewriting a field
     // set -- and a row nobody has addressed yet says so rather than reading as
     // channel zero.
-    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT + 1, loaded.count);
+    TEST_ASSERT_EQUAL_UINT8(added + 1, loaded.count);
     TEST_ASSERT_EQUAL_UINT8(1, report.rowsRepaired);
-    TEST_ASSERT_EQUAL_UINT8(SERVO_OUTPUT_ROW_DEFAULT_COUNT, report.firstRow);
+    TEST_ASSERT_EQUAL_UINT8(added, report.firstRow);
     TEST_ASSERT_TRUE((report.firstRowMask & SERVO_FIELD_CHANNEL) != 0);
 }
 
