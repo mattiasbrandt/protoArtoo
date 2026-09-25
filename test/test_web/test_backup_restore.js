@@ -138,6 +138,21 @@ test("a backup made before the Outputs were their rows restores every row settin
   assert.match(receipt, /Core config: restored/);
 });
 
+// A backup can name an Output this droid does not have - an expander that is
+// not fitted here. Its row is not sent (the droid would change nothing for it),
+// and "restored" is not said over it: the receipt names what did not land
+// (#417).
+test("an Output the backup names and this droid lacks is not sent, and the receipt names it", async () => {
+  const backup = structuredClone(OLDER_BACKUP);
+  backup.servo_outputs.outputs.push({ address: "pca:3", name: "", parts: [], calibrated: true, centreUs: 1500 });
+  const { posts, receipt } = await restore(backup);
+
+  const sent = posts("/api/config")[0].outputs.map((row) => row.address);
+  assert.ok(!sent.includes("pca:3"), "a row for an Output this droid lacks is not sent");
+  assert.equal(sent.length, 5, "and every Output it has is");
+  assert.match(receipt, /Core config: partial — pca:3 not on this droid/);
+});
+
 // "restored" is a claim that every part of the section landed. Before #417 it
 // was said over a file with no centre, calibration or Part map at all, and over
 // an audio restore that had quietly retried a refused CHIRP slot as a plain
