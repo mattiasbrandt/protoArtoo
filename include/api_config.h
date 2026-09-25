@@ -47,10 +47,10 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 // plain outcome, not the calling convention.
 //
 // It used to carry a whole ConfigSnapshot under a comment calling the struct
-// small. ConfigSnapshot measures 944 B (static_assert in config_store.h), so
-// that one by-value crossing put ~1892 B of snapshot copies on the serial
-// config-write path and helped overflow the Console task on both chips
-// (#226). `working` already holds a snapshot the caller owns; writing the
+// small. ConfigSnapshot measured 944 B then (916 B today, static_assert in
+// config_store.h), so that one by-value crossing put ~1892 B of snapshot
+// copies on the serial config-write path and helped overflow the Console task
+// on both chips (#226). `working` already holds a snapshot the caller owns; writing the
 // post-commit state back into it costs no second copy.
 struct ConfigCommitOutcome {
     bool persisted = false;  // false -> caller reports "failed to persist config"
@@ -92,12 +92,12 @@ struct ConfigCommitOutcome {
 //
 // Three answers rather than a bool, because the verdict has to be taken
 // inside the window: the Console passes a ConfigApplyResult its two adapters
-// share (2.5 KB, too big for either task's stack), and the other adapter may
-// overwrite it the moment the lock is released. For the same reason the
-// Console reads why a write was refused from `*refused` (81 B, on its own stack)
-// rather than from `*result`.
+// share (2,060 B on artoo-esp32, too big for either task's stack), and the
+// other adapter may overwrite it the moment the lock is released. For the
+// same reason the Console reads why a write was refused from `*refused` (81 B,
+// on its own stack) rather than from `*result`.
 //
-// The Working Snapshot is the caller's (944 B), as it was when each adapter
+// The Working Snapshot is the caller's (916 B), as it was when each adapter
 // held the lock itself, so no adapter's stack moves for this.
 enum class ConfigWriteWindowAnswer : uint8_t { Busy, Refused, Committed };
 ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,

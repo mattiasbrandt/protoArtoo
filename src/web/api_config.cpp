@@ -1099,7 +1099,7 @@ void handleConfigPost(WebRequest& req) {
 
     ConfigSnapshot working;
 
-    // ConfigApplyResult is 3,832 B on artoo-esp32 (dominated by the
+    // ConfigApplyResult is 2,060 B on artoo-esp32 (dominated by the
     // applied-fields log record) - too large for the server task's stack, so
     // it lives in the web request scratch (include/web_request_scratch.h), as
     // api_seq.cpp's SeqRunEvidence does. The Write Window's lock is about the

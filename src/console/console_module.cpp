@@ -1736,13 +1736,16 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // ConsoleArgs are reused verbatim, only the schema check is local).
 // =============================================================================
 
-// ConfigApplyResult is ~2.5 KB (include/api_config_apply.h) - too large for
-// the Console task's 5120 B stack (src/main.cpp), smaller than the 8 KB web
-// server task the header's own warning was written for (pin fact 3). The web
-// handler (api_config.cpp) already keeps its own static instance rather than
-// a stack local; sharing that ONE instance across the web server task and
-// this module's two adapter tasks would recreate exactly the shared-single-
-// caller-buffer hazard #239 rejected for the log ring. Unlike #239's case,
+// ConfigApplyResult is 2,060 B on artoo-esp32 (include/api_config_apply.h) -
+// more than a stack local should cost the Console task, whose stack is sized
+// against a measured chain (CONSOLE_TASK_STACK_BYTES, include/config.h), and
+// the web server task the header's own warning was written for (pin fact 3).
+// The web handler (api_config.cpp) keeps its instance in the web request
+// scratch (include/web_request_scratch.h) rather than a stack local, and that
+// scratch refuses any task but the web server's; sharing ONE instance across
+// the web server task and this module's two adapter tasks would recreate
+// exactly the shared-single-caller-buffer hazard #239 rejected for the log
+// ring. Unlike #239's case,
 // there is no "read the underlying source directly" alternative here:
 // configApply()'s only contract is to fill a ConfigApplyResult out-parameter,
 // so a second static instance - scoped to this module, never shared with
@@ -2866,7 +2869,7 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     params.ctx = &adapter;
     params.get = consoleAudioTracksParamGet;
 
-    // ~270 B, unlike ConfigApplyResult's ~2.5 KB - small enough to be an
+    // ~270 B, unlike ConfigApplyResult's 2,060 B - small enough to be an
     // ordinary local on the Console task's stack, so it needs neither a
     // module static nor the sharing hazard one would bring (pin fact 4).
     AudioTracksApplyResult result;

@@ -17,8 +17,10 @@
 // a restore posts back. The body is read once, at the top, and every check
 // reads its field by form name whichever door it came in by.
 //
-// ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) -
-// too large to return by value on an 8 KB web server task stack (see
+// ConfigApplyResult is 2,060 B on artoo-esp32 (the applied-fields log record
+// dominates, and that chip keeps fewer lines and rows) and larger where it
+// keeps 32 lines and 24 rows - too large to return by value on an 8 KB web
+// server task stack (see
 // api_seq.cpp's SeqRunEvidence for the same constraint). It is an
 // out-parameter, never a stack local: POST /api/config keeps its instance in
 // the web request scratch (include/web_request_scratch.h) and the Console
