@@ -230,12 +230,12 @@ class LengthRuleIsCheckedNotAssumed(unittest.TestCase):
     def test_a_body_whose_anchors_never_settle_is_not_validated(self):
         """The fixpoint is not monotone, so it can fail to settle.
 
-        Dropping an anchor lengthens the run before it, which can make
-        instructions real that were not, and those name anchors of their own.
-        On the artoo-esp32 image two of 7,019 bodies oscillate rather than
-        settle, both unsized pseudo-symbols. The round cap is what terminates
-        them, and what matters is where they land: unvalidated, with every edge
-        kept. Forced here by allowing no rounds at all, rather than by
+        Adding an anchor splits the run it lands in, which can take
+        instructions out of the real set that named anchors of their own. On
+        the artoo-esp32 image one of 7,123 bodies oscillates rather than
+        settles, an unsized pseudo-symbol (#429). The round cap is what
+        terminates it, and what matters is where it lands: unvalidated, with
+        every edge kept. Forced here by allowing no rounds at all, rather than by
         contriving a body that oscillates.
         """
 
@@ -285,9 +285,11 @@ class LengthRuleIsCheckedNotAssumed(unittest.TestCase):
 # body's byte stream, with the phantom's printed target moved to one byte
 # before a real `call8` so the same interval split happens at a readable scale.
 #
-# The fixpoint in `_framing()` is what settles it: anchors are re-collected
-# from only those instructions the framing says are real, and a phantom is
-# never one of them.
+# The fixpoint in `_framing()` is what settles it: anchors are grown from the
+# entry, and only an instruction the framing has reached from a proven boundary
+# may name one. A phantom that only phantoms reach is never admitted - the
+# section after this one is the case where pruning from every candidate
+# instead let a set of them keep each other.
 
 BOGUS_FN = 0x400E4000
 BOGUS_FN_SIZE = 0x1E
@@ -392,6 +394,216 @@ class APhantomBranchMustNotAnchorAnything(unittest.TestCase):
         total, chain, _ = walker.depth(self.image, self.fn)
         self.assertEqual(total, 32)
         self.assertEqual([entry[0] for entry in chain], ["indexOf"])
+
+
+# =============================================================================
+# Phantoms that name each other
+# =============================================================================
+# The fixpoint above used to START from every candidate anchor and drop the
+# unsupported ones. That removes a phantom anchor only if nothing real-looking
+# names it, and a desynchronised window can hold several phantoms that do
+# exactly that for each other: framing from one bogus anchor makes a phantom
+# branch "real", and that phantom names the bogus anchor back. Such a set
+# survives every round, and the run it seeds condemns real code behind it.
+#
+# Measured in `seqStorePrepare` in the artoo-esp32 image (#429). After the `j`
+# at 0x400fe6d5 there is one byte of padding; the real code resumes at
+# 0x400fe6d9, which the `beqz.n` at 0x400fe6b1 names. Framed from 0x400fe6da
+# instead - one byte on - the run lands on objdump's own phantoms: the
+# `bnez.n` at 0x400fe6e3, the `blt`s at 0x400fe6e7 and 0x400fe6ea and the
+# `bany` at 0x400fe6ed, which names 0x400fe6da again. The `blt` at 0x400fe6e7
+# names 0x400fe72d, one byte into a real `l32i`, and the run from there frames
+# 0x400fe72d, 0x400fe730, 0x400fe733... past the real 0x400fe735, 0x400fe74a,
+# 0x400fe753 and 0x400fe75e: the calls to seqJsonParseVariant, protocolCheck,
+# unlock and stagingFree (src/seq_store.cpp:276-281). SeqDisp walked 3,680 B
+# against its recorded 4,432 B, with growth under protocolCheck invisible.
+#
+# The fixture is that body's bytes at their real addresses, from the `beqz.n`
+# through the stagingFree call, with an `entry` in front and a `retw.n` after.
+# The call targets are fixture helpers; protocolCheck's frame is the large one,
+# so a dropped edge shows as depth.
+
+SEQ_FN = 0x400FE6AE
+SEQ_FN_SIZE = 0xB5
+SEQ_UNLOCK = 0x400E6000
+SEQ_PCFAIL = 0x400E6100
+SEQ_RMDTOR = 0x400E6200
+SEQ_STAGING_ALLOC = 0x400E6300
+SEQ_PARSE_VARIANT = 0x400E6400
+SEQ_PROTOCOL_CHECK = 0x400E6500
+SEQ_STAGING_FREE = 0x400E6600
+
+SEQ_REAL_RESUME = 0x400FE6D9        # after the pad; the `beqz.n` names it
+SEQ_SELF_ANCHOR = 0x400FE6DA        # the phantom anchor that names itself
+SEQ_CONDEMNING_ANCHOR = 0x400FE72D  # named from inside that phantom run
+SEQ_PHANTOM_BRANCHES = (0x400FE6E3, 0x400FE6E7, 0x400FE6EA, 0x400FE6ED)
+SEQ_HIDDEN_CALLS = {
+    0x400FE735: SEQ_PARSE_VARIANT,
+    0x400FE74A: SEQ_PROTOCOL_CHECK,
+    0x400FE753: SEQ_UNLOCK,
+    0x400FE75E: SEQ_STAGING_FREE,
+}
+SEQ_PROTOCOL_CHECK_FRAME = 2048
+
+SEQ_HELPERS = [
+    (SEQ_UNLOCK, "unlock()", 32),
+    (SEQ_PCFAIL, "pcFail(char const*, char const*)", 48),
+    (SEQ_RMDTOR, "ResourceManager::~ResourceManager()", 32),
+    (SEQ_STAGING_ALLOC, "stagingAlloc(SeqStaging&)", 64),
+    (SEQ_PARSE_VARIANT, "seqJsonParseVariant(SeqDraft&)", 96),
+    (SEQ_PROTOCOL_CHECK, "protocolCheck(SeqDraft&)", SEQ_PROTOCOL_CHECK_FRAME),
+    (SEQ_STAGING_FREE, "stagingFree(SeqStaging&)", 32),
+]
+
+SEQ_SYMBOLS = ["SYMBOL TABLE:",
+               f"{SEQ_FN:08x} g     F .flash.text\t{SEQ_FN_SIZE:08x} seqStorePrepare(char const*)"]
+SEQ_SYMBOLS += [f"{addr:08x} l     F .flash.text\t00000005 {name}"
+                for addr, name, _ in SEQ_HELPERS]
+
+
+def _seq(pc, raw, mnem, ops=""):
+    return f"{pc:08x}:\t{raw:<14}\t{mnem}\t{ops}".rstrip()
+
+
+def _seq_target(addr):
+    return f"{addr:08x} <seqStorePrepare(char const*)+0x{addr - SEQ_FN:x}>"
+
+
+SEQ_LISTING = [
+    "Disassembly of section .flash.text:",
+    "",
+    f"{SEQ_FN:08x} <seqStorePrepare(char const*)>:",
+    "/repo/src/seq_store.cpp:240",
+    _seq(SEQ_FN, "00b136", "entry", "a1, 88"),
+    _seq(0x400FE6B1, "44ac", "beqz.n", f"a4, {_seq_target(SEQ_REAL_RESUME)}"),
+    _seq(0x400FE6B3, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE6B6, "fe9ce5", "call8", f"{SEQ_UNLOCK:08x} <unlock()>"),
+    _seq(0x400FE6B9, "4ff781", "l32r", "a8, 400d2698 <_stext+0x2678>"),
+    _seq(0x400FE6BC, "a04480", "addx4", "a4, a4, a8"),
+    _seq(0x400FE6BF, "04c8", "l32i.n", "a12, a4, 0"),
+    _seq(0x400FE6C1, "5006b1", "l32r", "a11, 400d26dc <_stext+0x26bc>"),
+    _seq(0x400FE6C4, "02ad", "mov.n", "a10, a2"),
+    _seq(0x400FE6C6, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE6C9, "f97c25", "call8", f"{SEQ_PCFAIL:08x} <pcFail(char const*, char const*)>"),
+    _seq(0x400FE6CC, "40c1a2", "addi", "a10, a1, 64"),
+    _seq(0x400FE6CF, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE6D2, "d97765", "call8", f"{SEQ_RMDTOR:08x} <ResourceManager::~ResourceManager()>"),
+    _seq(0x400FE6D5, "ffe0c6", "j", "400fe65c <seqRetry()>"),
+    # --- one byte of padding at 0x400fe6d8; the real code resumes at 6d9 ---
+    _seq(0x400FE6D8, "c14200", "mul16u", "a4, a2, a0"),
+    _seq(0x400FE6DB, "c46240", "extui", "a6, a4, 2, 13"),
+    _seq(0x400FE6DE, "a238", "l32i.n", "a3, a2, 40"),
+    _seq(0x400FE6E0, "0caca0", "lsi", "f10, a12, 48"),
+    _seq(0x400FE6E3, "0ccc", "bnez.n", f"a12, {_seq_target(0x400FE6E7)}"),
+    _seq(0x400FE6E5, "620b", "addi.n", "a6, a2, -1"),
+    _seq(0x400FE6E7, "422967", "blt", f"a9, a6, {_seq_target(SEQ_CONDEMNING_ANCHOR)}"),
+    _seq(0x400FE6EA, "aa2a67", "blt", "a10, a6, 400fe698 <seqEarlier()>"),
+    _seq(0x400FE6ED, "e981a7", "bany", f"a1, a10, {_seq_target(SEQ_SELF_ANCHOR)}"),
+    _seq(0x400FE6F0, "e04c", "movi.n", "a0, 78"),
+    _seq(0x400FE6F2, "0008", "l32i.n", "a0, a0, 0"),
+    # --- objdump is back on a real boundary here -----------------------------
+    _seq(0x400FE6F4, "1cc1c2", "addi", "a12, a1, 28"),
+    _seq(0x400FE6F7, "06ad", "mov.n", "a10, a6"),
+    _seq(0x400FE6F9, "04bd", "mov.n", "a11, a4"),
+    _seq(0x400FE6FB, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE6FE, "fe90a5", "call8", f"{SEQ_STAGING_ALLOC:08x} <stagingAlloc(SeqStaging&)>"),
+    _seq(0x400FE701, "bacc", "bnez.n", f"a10, {_seq_target(0x400FE710)}"),
+    _seq(0x400FE703, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE706, "fe97e5", "call8", f"{SEQ_UNLOCK:08x} <unlock()>"),
+    _seq(0x400FE709, "4ff5c1", "l32r", "a12, 400d26e0 <_stext+0x26c0>"),
+    _seq(0x400FE70C, "ffec46", "j", _seq_target(0x400FE6C1)),
+    # --- one byte of padding at 0x400fe70f; the real code resumes at 710 ---
+    _seq(0x400FE70F, "a08200", "addx4", "a8, a2, a0"),
+    _seq(0x400FE712, "418af3", "lsip", "f15, a10, 0x104"),
+    _seq(0x400FE715, "80a082", "movi", "a8, 128"),
+    _seq(0x400FE718, "818a", "add.n", "a8, a1, a8"),
+    _seq(0x400FE71A, "1189", "s32i.n", "a8, a1, 4"),
+    _seq(0x400FE71C, "b50782", "l8ui", "a8, a7, 181"),
+    _seq(0x400FE71F, "04ad", "mov.n", "a10, a4"),
+    _seq(0x400FE721, "0189", "s32i.n", "a8, a1, 0"),
+    _seq(0x400FE723, "2c27f2", "l32i", "a15, a7, 176"),
+    _seq(0x400FE726, "b407e2", "l8ui", "a14, a7, 180"),
+    _seq(0x400FE729, "2b27d2", "l32i", "a13, a7, 172"),
+    _seq(0x400FE72C, "2927b2", "l32i", "a11, a7, 164"),
+    _seq(0x400FE72F, "2a27c2", "l32i", "a12, a7, 168"),
+    "/repo/src/seq_store.cpp:277",
+    _seq(0x400FE732, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE735, "fda1a5", "call8", f"{SEQ_PARSE_VARIANT:08x} <seqJsonParseVariant(SeqDraft&)>"),
+    _seq(0x400FE738, "000462", "l8ui", "a6, a4, 0"),
+    _seq(0x400FE73B, "011616", "beqz", f"a6, {_seq_target(0x400FE750)}"),
+    _seq(0x400FE73E, "80a082", "movi", "a8, 128"),
+    _seq(0x400FE741, "80b180", "add", "a11, a1, a8"),
+    _seq(0x400FE744, "20a440", "or", "a10, a4, a4"),
+    "/repo/src/seq_store.cpp:278",
+    _seq(0x400FE747, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE74A, "fa62a5", "call8", f"{SEQ_PROTOCOL_CHECK:08x} <protocolCheck(SeqDraft&)>"),
+    _seq(0x400FE74D, "000462", "l8ui", "a6, a4, 0"),
+    "/repo/src/seq_store.cpp:279",
+    _seq(0x400FE750, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE753, "fe9325", "call8", f"{SEQ_UNLOCK:08x} <unlock()>"),
+    _seq(0x400FE756, "a6dc", "bnez.n", "a6, 400fe774 <seqLater()>"),
+    _seq(0x400FE758, "1cc1a2", "addi", "a10, a1, 28"),
+    "/repo/src/seq_store.cpp:281",
+    _seq(0x400FE75B, "201110", "or", "a1, a1, a1"),
+    _seq(0x400FE75E, "fe88a5", "call8", f"{SEQ_STAGING_FREE:08x} <stagingFree(SeqStaging&)>"),
+    _seq(0x400FE761, "f01d", "retw.n"),
+]
+for _addr, _name, _frame in SEQ_HELPERS:
+    SEQ_LISTING += [
+        "",
+        f"{_addr:08x} <{_name}>:",
+        "/repo/src/helper.cpp:9",
+        _seq(_addr, f"{(_frame // 8) << 12 | 0x136:06x}", "entry", f"a1, {_frame}"),
+        _seq(_addr + 3, "f01d", "retw.n"),
+    ]
+
+
+class SeqStorePrepareImage(sur.Image):
+    def _run(self, argv):
+        return iter(SEQ_SYMBOLS if "-t" in argv else SEQ_LISTING)
+
+
+def _seq_body():
+    insns, body_bytes = {}, {}
+    for line in SEQ_LISTING:
+        got = sur.split_insn(line)
+        if got is None:
+            continue
+        pc, nbytes, mnem, ops, raw = got
+        if not SEQ_FN <= pc < SEQ_FN + SEQ_FN_SIZE:
+            continue
+        insns[pc] = (nbytes, mnem, ops)
+        octets = [int(raw[i:i + 2], 16) for i in range(0, len(raw), 2)][::-1]
+        for offset, value in enumerate(octets):
+            body_bytes[pc + offset] = value
+    return insns, body_bytes
+
+
+class PhantomsThatNameEachOtherAnchorNothing(unittest.TestCase):
+    def setUp(self):
+        self.image = SeqStorePrepareImage(
+            "fake", Path("fake.elf"), Path("objdump"), "xtensa")
+        self.fn = self.image.funcs[SEQ_FN]
+
+    def test_the_self_supporting_anchors_are_not_boundaries(self):
+        insns, body_bytes = _seq_body()
+        real = self.image._framing(SEQ_FN, SEQ_FN + SEQ_FN_SIZE, insns, body_bytes)
+        self.assertIsNotNone(real)
+        self.assertIn(SEQ_REAL_RESUME, real)
+        for bogus in (SEQ_SELF_ANCHOR, SEQ_CONDEMNING_ANCHOR) + SEQ_PHANTOM_BRANCHES:
+            self.assertNotIn(bogus, real, f"0x{bogus:08x} is a phantom boundary")
+        for pc in SEQ_HIDDEN_CALLS:
+            self.assertIn(pc, real, f"the real call at 0x{pc:08x} was condemned")
+
+    def test_the_four_calls_behind_the_window_are_followed(self):
+        edges = {(target, insn) for target, insn, _ in self.fn.calls}
+        for target in SEQ_HIDDEN_CALLS.values():
+            self.assertIn((target, "call8"), edges)
+        self.assertEqual(self.image.suppressed_calls, [])
+        walker = sur.Walker([self.image], sur.DEFAULT_PRUNE)
+        total, chain, _ = walker.depth(self.image, self.fn)
+        self.assertEqual(total, SEQ_PROTOCOL_CHECK_FRAME)
+        self.assertEqual([entry[0] for entry in chain], ["protocolCheck(SeqDraft&)"])
 
 
 # =============================================================================

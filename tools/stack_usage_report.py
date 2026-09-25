@@ -478,14 +478,15 @@ class Image:
     MAX_PAD_BYTES = 3
 
     # Rounds of the anchor fixpoint in `_framing()`. The cap is what
-    # guarantees termination, and that is not belt-and-braces: a round can ADD
-    # anchors as well as drop them, because dropping one lengthens the run
-    # before it and that can make instructions real which were not, and those
-    # name anchors of their own. Measured on the artoo-esp32 image, the
-    # unsized region objdump calls `softUartRxIsr()-0x1028` oscillates between
-    # 88 and 92 anchors and never settles; `_stext` settles at round 5. A body
-    # that has not settled is reported as unvalidated and keeps every edge
-    # objdump gave it, rather than being half-judged.
+    # guarantees termination, and that is not belt-and-braces: a round can DROP
+    # anchors as well as add them, because an added one splits the run it
+    # lands in and that can take instructions out of the real set which named
+    # anchors of their own. Measured on the artoo-esp32 image (#429): of the
+    # bodies framed, 1,469 settle in one round, 3,080 in two and 9 in three;
+    # the unsized region objdump calls `clearRxEdgeLatch()-0x1044` oscillates
+    # between 94 and 97 anchors and never settles. A body that has not settled
+    # is reported as unvalidated and keeps every edge objdump gave it, rather
+    # than being half-judged.
     ANCHOR_ROUNDS = 8
 
     def _is_uncond(self, mnem: str) -> bool:
@@ -545,24 +546,35 @@ class Image:
         phantom `blti` named 0x400e2305 and took a real `call8
         String::indexOf` down with it.
 
-        So the two are solved together, by a fixpoint: frame with every
-        candidate anchor, keep only the anchors named by instructions the
-        framing says are real, and repeat. Where it settles, it settles on the
-        anchors named by correctly framed instructions, which are exactly the
-        ones the hardware guarantees.
+        So the two are solved together, by a fixpoint grown FROM THE ENTRY:
+        frame from the anchors proven so far, collect the anchors named by
+        instructions that framing says are real, and repeat until the set stops
+        changing. The entry is the one boundary known without asking objdump,
+        so every anchor admitted is one a framed instruction names.
+
+        It used to start from the other end, with every candidate anchor, and
+        drop the ones no real instruction named. That keeps a bogus anchor
+        whenever phantoms name each other, and a desynchronised window can do
+        exactly that: framing from the bogus anchor is what makes the phantom
+        naming it "real". `seqStorePrepare` in the artoo-esp32 image held such
+        a set -- a phantom `bany` naming the address one byte past the real
+        resume point, from which the run reaches that `bany` again -- and the
+        bogus anchor it also named, one byte into a real `l32i`, condemned the
+        calls to seqJsonParseVariant, protocolCheck, unlock and stagingFree
+        (src/seq_store.cpp:276-281). SeqDisp walked 3,680 B against its
+        recorded 4,432 B (#429). Grown from the entry, a phantom is admitted
+        only if the framing already reached it from a proven boundary, which
+        the pad skip in `_true_boundaries()` keeps it from doing.
 
         It is NOT monotone, and assuming it was is a mistake this comment used
-        to carry: dropping an anchor lengthens the run before it, which can
-        make instructions real that were not, and those name anchors of their
-        own. One body in the artoo-esp32 image's 7,019 does not settle inside
-        `ANCHOR_ROUNDS` -- the unsized region objdump calls
-        `softUartRxIsr()-0x1028`, which oscillates between 88 and 92 anchors.
-        It returns None here and keeps every edge. (`_stext` is unvalidated
-        too, but for the other reason in `_read_body()`: its entry address
-        carries no instruction line for this to start from. It settles at
-        round 5 when seeded.)
+        to carry: an anchor added splits the run it lands in, which can take
+        instructions out of the real set that named anchors of their own. The
+        round cap is what guarantees termination. A body that has not settled
+        within `ANCHOR_ROUNDS` returns None here and keeps every edge. (`_stext`
+        is unvalidated for the other reason in `_read_body()`: its entry
+        address carries no instruction line for this to start from.)
         """
-        anchors = self._anchors(entry, entry, hi, insns)
+        anchors = {entry}
         for _ in range(self.ANCHOR_ROUNDS):
             real = self._true_boundaries(sorted(anchors), hi, body_bytes, insns)
             if real is None:
