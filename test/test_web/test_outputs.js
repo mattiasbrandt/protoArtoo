@@ -21,7 +21,10 @@
 //     droid refuses a value by the name it saves it under, that name never
 //     reaches a builder (#414, the rule #348 set for refusal tokens) - and the
 //     page's words come from the refusal's keys, never from its sentence, so a
-//     reworded firmware sentence cannot bring the field name back (#425).
+//     reworded firmware sentence cannot bring the field name back (#425). A
+//     refusal is only put on an Output when it names a field this save sent
+//     for that Output: one about a field riding alongside (a Backup restore)
+//     is the droid's own answer and is left as it came.
 // =============================================================================
 
 import { test } from "node:test";
@@ -170,4 +173,29 @@ test("a value the droid refuses is said from the refusal's keys with the Output'
     assert.ok(error.message.includes("20 to 10000"), `what it takes is said from accepts: ${error.message}`);
     return true;
   });
+});
+
+test("a refusal about a field sent alongside the Outputs is left as the droid said it, not pinned on an Output", async () => {
+  const answer = droid();
+  const refusal = {
+    ok: false,
+    error: "speedLimitMax must be 0..600",
+    field: "speedLimitMax",
+    reason: "out-of-range",
+    accepts: "0..600",
+  };
+  const api = shippedApi((path, init) => {
+    if (init?.method === "POST") return { status: 400, body: refusal };
+    if (path === "/api/config") return { status: 200, body: answer.config };
+    return { status: 200, body: { outputs: answer.rows } };
+  });
+  const restoring = outputsModule(() => api);
+  await restoring.load();
+
+  await assert.rejects(
+    restoring.saveAll({ "ledc:0": { throwMs: 500 } }, { alongside: { speedLimitMax: "9999" } }),
+    (error) => {
+      assert.equal(error.message, refusal.error, "the droid's answer, not an Output's setting");
+      return true;
+    });
 });
