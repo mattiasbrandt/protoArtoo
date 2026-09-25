@@ -26,7 +26,6 @@
 #include "../../include/api_seq.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
-#include "../../include/audio_task.h"
 #include "../../include/audio_sound_member.h"
 #include "../../include/reset_reason.h"
 #include "../../include/config.h"
@@ -37,9 +36,8 @@
 #include "../../include/board_outputs.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
-#include "../../include/web_admission.h"
+#include "../../include/status_json.h"
 #include "../../include/web_event_stream.h"
-#include "../../include/web_response_deadline.h"
 #include "../../include/web_request.h"
 #include "../../include/web_server_psychic.h"
 #include "../../include/web_network_bootstrap.h"
@@ -48,8 +46,8 @@
 
 // hosted_link_status.h is only meaningful (and only defined, by
 // web_network_manager_hosted.cpp) on boards with the ESP-Hosted backend; the
-// call site in buildStatusJson() below is guarded by the same capability
-// gate, so a board without it never references the undefined symbol.
+// call site in captureStatusJsonInputs() below is guarded by the same
+// capability gate, so a board without it never references the undefined symbol.
 #if PA_CAP_HOSTED_WIFI
 #include "../../include/hosted_link_status.h"
 #endif
@@ -79,7 +77,8 @@ bool littleFsReady = false;
 // (src/web/web_request_psychic.cpp, against the pure decision core in
 // include/web_admission.h). Its counters -- inflight depth, refusals by class,
 // accept-guard rejections -- are the project-owned globals declared there and
-// in include/web_event_stream.h; this file only reads them for /api/status.
+// in include/web_event_stream.h; formatStatusJson() (src/web/status_json.cpp)
+// reads them for /api/status.
 
 // Profiler-only request lifecycle storage is owned by api_profiler.cpp. The
 // admission middleware reaches it through the opaque api_profiler.h interface,
@@ -95,13 +94,10 @@ static size_t largestFreeBlock8Bit() {
 }
 #endif
 
-// Sized for the longest stamp the version scheme composes:
-// fs-v<release-tag>-<count>-g<sha>[-dirty][+<branch-suffix>], e.g.
-// fs-v1.0.0-alpha.1-837-g401530a+phase-v1.0.0 (43 chars). 128 leaves room for
-// longer branch names on both ends without the copy in loadFsVersion() ever
-// truncating the identity acceptance runs verify.
-static constexpr size_t kVersionStampMax = 128;
-static char s_fsVersion[kVersionStampMax] = "unknown";
+// Sized for the longest stamp the version scheme composes (include/status_json.h),
+// so the copy in loadFsVersion() never truncates the identity acceptance runs
+// verify.
+static char s_fsVersion[STATUS_VERSION_STAMP_MAX] = "unknown";
 bool serverStarted = false;
 bool eventTaskStarted = false;
 static bool otaTaskStarted = false;
@@ -137,32 +133,6 @@ static void logOtaHeapCheckpoint(const char* label) {
                 (unsigned long)largestFreeBlock8Bit());
 }
 
-const char* rcInputModeLabel(RcInputMode mode) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return "standard_pwm";
-        case RC_INPUT_SINGLE_SBUS:
-            return "single_sbus";
-        case RC_INPUT_ELRS:
-            return "elrs";
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return "dual_sbus";
-    }
-}
-
-const char* domeTransportLabel(DomeLinkTransport transport) {
-    switch (transport) {
-        case DOME_LINK_TRANSPORT_UART:
-            return "uart";
-        case DOME_LINK_TRANSPORT_WIFI:
-            return "wifi";
-        case DOME_LINK_TRANSPORT_DISCONNECTED:
-        default:
-            return "disconnected";
-    }
-}
-
 void loadFsVersion() {
     snprintf(s_fsVersion, sizeof(s_fsVersion), "%s", "unknown");
 #ifdef ARDUINO
@@ -192,7 +162,7 @@ void loadFsVersion() {
 
     int n = snprintf(s_fsVersion, sizeof(s_fsVersion), "%s", loadedVersion);
     if (n <= 0 || n >= (int)sizeof(s_fsVersion)) {
-        // Error, not warning: a stamp that outgrows kVersionStampMax means the
+        // Error, not warning: a stamp that outgrows STATUS_VERSION_STAMP_MAX means the
         // version scheme itself changed, and a truncated stamp blinds the
         // flashed-build identity check acceptance runs rely on.
         PA_LOG_ERROR(TAG, "fsVersion truncated to %u chars; version scheme outgrew the buffer",
@@ -201,100 +171,12 @@ void loadFsVersion() {
 #endif
 }
 
-bool appendJsonChunk(char*& pos, size_t& remaining, const char* chunk) {
-    if (remaining == 0) {
-        return false;
-    }
-
-    int n = snprintf(pos, remaining, "%s", chunk);
-    if (n <= 0 || n >= (int)remaining) {
-        return false;
-    }
-
-    pos += n;
-    remaining -= (size_t)n;
-    return true;
-}
-
-bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, const char* state,
-                            const char* detail) {
-    if (remaining == 0) {
-        return false;
-    }
-
-    int n = snprintf(pos, remaining, ",\"%s\":{\"state\":\"%s\",\"detail\":\"%s\"}", key, state,
-                     detail);
-    if (n <= 0 || n >= (int)remaining) {
-        return false;
-    }
-
-    pos += n;
-    remaining -= (size_t)n;
-    return true;
-}
-
 }  // namespace
 
-bool buildStatusJson(char* buffer, size_t bufferSize) {
-    FailsafeDiagnostics diag = {};
-    bool webControlEnabled;
-    bool sbusSignalLost;
-    bool sbus2SignalLost;
-    bool wifiConnected;
-    bool wifiClientConnected;
-    int driveSpeed;
-    int driveSteer;
-    float domeTargetSpeed;
-    int speedLimitMax;
-    SpeedPresetId speedPresetActive;
-    bool stationary;
-    unsigned long uptimeMs;
-    unsigned long heapFree;
-    unsigned long heapMin;
-    uint32_t heapLargestBlock;
-    bool otaActive;
-    uint8_t otaProgressPct;
-    char otaLastError[64];
-    long wifiRssi;
-    bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
-    bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
-    bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
-    bool audioActive;
-    bool audioLinkOk;
-    AudioRxStatus audioRxStatus;
-    bool sleepMode;
-    uint8_t activeMood;
-    uint32_t sleepSinceMs;
-    LitWireReading litWires[BOARD_OUTPUT_LIGHT_CAPABLE_COUNT];
-    size_t litWireCount;
-    RcInputMode rcInputMode;
-    bool singleSbusUseCh2;
-    uint16_t arm1TargetUs;
-    uint16_t arm2TargetUs;
-    uint32_t lastSbus1Ms;
-    uint32_t lastSbus2Ms;
-    uint32_t sbus1LostFrameCount;
-    uint32_t sbus2LostFrameCount;
-    uint32_t queueOverflowCount;
-    uint32_t domeHbRx;
-    uint32_t bodyHbTx;
-    uint32_t domeLastSeenMs;
-    uint32_t domeRxOverflowCount;
-    uint32_t domeRxUnknownCount;
-    DomeLinkTransport domeActiveTransport;
-    DomeUartOwner domeUartOwner;
-    int16_t fbBatteryRaw;
-    int16_t fbBoardTempRaw;
-    int16_t fbSpeedR;
-    int16_t fbSpeedL;
-    int16_t fbCurrentL;
-    int16_t fbCurrentR;
-    bool fbValid;
-
-    if (buffer == nullptr || bufferSize == 0) {
-        return false;
-    }
-
+// The capture half of the status document: everything formatStatusJson()
+// (src/web/status_json.cpp) writes that is not a web admission counter, read
+// once, in the order this builder has always read it.
+static void captureStatusJsonInputs(StatusJsonInputs* in) {
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
     RcInputActiveConfig activeRc = {};
@@ -313,508 +195,115 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // buildWifiJson/buildSerialJson reads elsewhere in the same file/pair).
     DomeStatusSnapshot domeSnap = {};
     captureDomeStatusSnapshot(&domeSnap);
-    domeTargetSpeed = domeSnap.domeTargetSpeed;
-    enableDome = domeSnap.domeEnabled;
+    in->domeTargetSpeed = domeSnap.domeTargetSpeed;
+    in->enableDome = domeSnap.domeEnabled;
 
     taskENTER_CRITICAL(&robotStateMux);
-    copyFailsafeDiagnosticsLocked(&diag);
-    sbusSignalLost = diag.sbusSignalLost;
-    webControlEnabled = robotState.webControlEnabled;
-    sbus2SignalLost = robotState.sbus2SignalLost;
-    driveSpeed = robotState.driveOutputSpeed;
-    driveSteer = robotState.driveOutputSteer;
-    speedLimitMax = cfg.drive.speedLimitMax;
-    speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
-    stationary = robotState.stationary;
+    copyFailsafeDiagnosticsLocked(&in->diag);
+    in->webControlEnabled = robotState.webControlEnabled;
+    in->sbus2SignalLost = robotState.sbus2SignalLost;
+    in->driveSpeed = robotState.driveOutputSpeed;
+    in->driveSteer = robotState.driveOutputSteer;
+    in->speedLimitMax = cfg.drive.speedLimitMax;
+    in->speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
+    in->stationary = robotState.stationary;
     // The width on the pin, which is what the "Target" detail below has always
     // reported; the commanded target of a move in progress is the Parts
     // table's to show (captureServoOutputCommanded(), #362).
-    arm1TargetUs = robotState.servoCommanded[0].nowUs;
-    arm2TargetUs = robotState.servoCommanded[1].nowUs;
-    lastSbus1Ms = robotState.lastSbus1Ms;
-    lastSbus2Ms = robotState.lastSbus2Ms;
-    sbus1LostFrameCount = robotState.sbus1LostFrameCount;
-    sbus2LostFrameCount = robotState.sbus2LostFrameCount;
-    queueOverflowCount = robotState.queueOverflowCount;
-    domeHbRx = robotState.domeHbRx;
-    bodyHbTx = robotState.bodyHbTx;
-    domeLastSeenMs = robotState.domeLastSeenMs;
-    domeRxOverflowCount = robotState.domeRxOverflowCount;
-    domeRxUnknownCount = robotState.domeRxUnknownCount;
-    domeActiveTransport = robotState.domeActiveTransport;
-    domeUartOwner = robotState.domeUartOwner;
-    fbBatteryRaw = robotState.driveFeedbackBatteryRaw;
-    fbBoardTempRaw = robotState.driveFeedbackBoardTempRaw;
-    fbSpeedR = robotState.driveFeedbackSpeedR;
-    fbSpeedL = robotState.driveFeedbackSpeedL;
-    fbCurrentL = robotState.driveFeedbackCurrentL;
-    fbCurrentR = robotState.driveFeedbackCurrentR;
-    fbValid = robotState.driveFeedbackValid;
-    enableArm1 = cfg.system.enable_arm1;
-    enableArm2 = cfg.system.enable_arm2;
-    enableAux1 = cfg.system.enable_aux1;
-    enableAux2 = cfg.system.enable_aux2;
-    enableAux3 = cfg.system.enable_aux3;
-    enableRcCh1 = activeRc.enableRc[0];
-    enableRcCh2 = activeRc.enableRc[1];
-    enableRcCh3 = activeRc.enableRc[2];
-    enableRcCh4 = activeRc.enableRc[3];
-    enableRcCh5 = activeRc.enableRc[4];
-    enableRcCh6 = activeRc.enableRc[5];
-    rcInputMode = static_cast<RcInputMode>(activeRc.mode);
-    singleSbusUseCh2 = activeRc.useCh2;
-    enableS1Hoverboard = cfg.system.enable_drive;
-    enableS2Sound = cfg.system.enable_audio;
-    enableS3DomeCtrl = cfg.system.enable_protor2link;
-    audioActive = robotState.audioActive;
-    audioLinkOk = robotState.audio_module_link_ok;
-    audioRxStatus = robotState.audio_module_rx_status;
-    activeMood = robotState.activeMood;
-    sleepMode = robotState.sleepMode;
-    sleepSinceMs = robotState.sleepSinceMs;
+    in->arm1TargetUs = robotState.servoCommanded[0].nowUs;
+    in->arm2TargetUs = robotState.servoCommanded[1].nowUs;
+    in->lastSbus1Ms = robotState.lastSbus1Ms;
+    in->lastSbus2Ms = robotState.lastSbus2Ms;
+    in->sbus1LostFrameCount = robotState.sbus1LostFrameCount;
+    in->sbus2LostFrameCount = robotState.sbus2LostFrameCount;
+    in->queueOverflowCount = robotState.queueOverflowCount;
+    in->domeHbRx = robotState.domeHbRx;
+    in->bodyHbTx = robotState.bodyHbTx;
+    in->domeLastSeenMs = robotState.domeLastSeenMs;
+    in->domeRxOverflowCount = robotState.domeRxOverflowCount;
+    in->domeRxUnknownCount = robotState.domeRxUnknownCount;
+    in->domeActiveTransport = robotState.domeActiveTransport;
+    in->domeUartOwner = robotState.domeUartOwner;
+    in->fbBatteryRaw = robotState.driveFeedbackBatteryRaw;
+    in->fbBoardTempRaw = robotState.driveFeedbackBoardTempRaw;
+    in->fbSpeedR = robotState.driveFeedbackSpeedR;
+    in->fbSpeedL = robotState.driveFeedbackSpeedL;
+    in->fbCurrentL = robotState.driveFeedbackCurrentL;
+    in->fbCurrentR = robotState.driveFeedbackCurrentR;
+    in->fbValid = robotState.driveFeedbackValid;
+    in->enableArm1 = cfg.system.enable_arm1;
+    in->enableArm2 = cfg.system.enable_arm2;
+    in->enableAux1 = cfg.system.enable_aux1;
+    in->enableAux2 = cfg.system.enable_aux2;
+    in->enableAux3 = cfg.system.enable_aux3;
+    in->enableRcCh1 = activeRc.enableRc[0];
+    in->enableRcCh2 = activeRc.enableRc[1];
+    in->enableRcCh3 = activeRc.enableRc[2];
+    in->enableRcCh4 = activeRc.enableRc[3];
+    in->enableRcCh5 = activeRc.enableRc[4];
+    in->enableRcCh6 = activeRc.enableRc[5];
+    in->rcInputMode = static_cast<RcInputMode>(activeRc.mode);
+    in->singleSbusUseCh2 = activeRc.useCh2;
+    in->enableS1Hoverboard = cfg.system.enable_drive;
+    in->enableS2Sound = cfg.system.enable_audio;
+    in->enableS3DomeCtrl = cfg.system.enable_protor2link;
+    in->audioActive = robotState.audioActive;
+    in->audioLinkOk = robotState.audio_module_link_ok;
+    in->audioRxStatus = robotState.audio_module_rx_status;
+    in->activeMood = robotState.activeMood;
+    in->sleepMode = robotState.sleepMode;
+    in->sleepSinceMs = robotState.sleepSinceMs;
     // The droid's lit wires, read inside the same critical section as
     // everything else here so one frame is one consistent reading (#413).
-    litWireCount = 0;
+    in->litWireCount = 0;
     for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
-        if (!robotState.auxLed[i].lit || litWireCount >= BOARD_OUTPUT_LIGHT_CAPABLE_COUNT) {
+        if (!robotState.auxLed[i].lit || in->litWireCount >= BOARD_OUTPUT_LIGHT_CAPABLE_COUNT) {
             continue;
         }
-        litWires[litWireCount].id = BOARD_OUTPUTS[i].id;
-        litWires[litWireCount].r = robotState.auxLed[i].r;
-        litWires[litWireCount].g = robotState.auxLed[i].g;
-        litWires[litWireCount].b = robotState.auxLed[i].b;
-        litWires[litWireCount].effect = auxLedEffectToString(robotState.auxLed[i].effect);
-        litWires[litWireCount].available = robotState.auxLed[i].available;
-        ++litWireCount;
+        LitWireReading& wire = in->litWires[in->litWireCount];
+        wire.id = BOARD_OUTPUTS[i].id;
+        wire.r = robotState.auxLed[i].r;
+        wire.g = robotState.auxLed[i].g;
+        wire.b = robotState.auxLed[i].b;
+        wire.effect = auxLedEffectToString(robotState.auxLed[i].effect);
+        wire.available = robotState.auxLed[i].available;
+        ++in->litWireCount;
     }
     taskEXIT_CRITICAL(&robotStateMux);
-    uptimeMs = millis();
-    heapFree = ESP.getFreeHeap();
-    heapMin = ESP.getMinFreeHeap();
-    heapLargestBlock = webHeapMaxAlloc();
-    otaActive = s_otaActive;
-    otaProgressPct = s_otaProgressPct;
-    snprintf(otaLastError, sizeof(otaLastError), "%s", s_otaLastError);
+    in->uptimeMs = millis();
+    in->heapFree = ESP.getFreeHeap();
+    in->heapMin = ESP.getMinFreeHeap();
+    in->heapLargestBlock = webHeapMaxAlloc();
+    // Why each of the next three is published is said where it is written
+    // (src/web/status_json.cpp).
+    in->heapLargest8bit = (uint32_t)largestFreeBlock8Bit();
+    in->failedAllocs = failedAllocTrackerCount();
+    in->sseClients = (unsigned)webEventStreamClientCount();
+    in->firmwareVersion = PA_FIRMWARE_VERSION;
+    in->fsVersion = s_fsVersion;
+    in->resetReason = resetReasonName(esp_reset_reason());
+    in->otaActive = s_otaActive;
+    in->otaProgressPct = s_otaProgressPct;
+    snprintf(in->otaLastError, sizeof(in->otaLastError), "%s", s_otaLastError);
     // Query WiFi connectivity status through the seam
     WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
-    wifiConnected = connectivity.wifiConnected;
-    wifiClientConnected = connectivity.wifiClientConnected;
-    wifiRssi = connectivity.wifiRssi;
-
-    // The lit wires, keyed by Output id, in the one shape the aux-LED endpoints
-    // answer with too (include/api_aux_led.h). A droid with no light writes {}.
-    char litWiresJson[LIT_WIRES_JSON_MAX] = {};
-    if (!formatLitWiresJson(litWiresJson, sizeof(litWiresJson), litWires, litWireCount, nullptr)) {
-        return false;
-    }
-
-    // Admission evidence, read from the project-owned counters the serving
-    // backend writes (include/web_admission.h). The JSON field names below are
-    // a comparability contract with the recorded baseline and the load
-    // harness, not a description of which implementation produced them --
-    // which is why they are unchanged by the cutover that removed the other
-    // implementation.
-    const uint32_t acceptRejectHeap = g_webAcceptRejectHeap;
-    const uint32_t acceptRejectRate = g_webAcceptRejectRate;
-    const uint32_t acceptRejectLastMs = g_webAcceptRejectLastMs;
-    const int inflightRequests = g_webInflightRequests;
-    const int inflightRequestsPeak = g_webInflightRequestsPeak;
-    const uint32_t refusedInflightCap = g_webRefusedInflightCap;
-    const uint32_t refusedHeapFloor = g_webRefusedHeapFloor;
-    const uint32_t refusedHeapFloorDiag = g_webRefusedHeapFloorDiag;
-
-    // Build the fixed system-health fields first.
-    int written = snprintf(
-        buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"queueOverflowCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"failedAllocs\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"lights\":%s",
-        diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
-        diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
-        diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
-        (double)domeTargetSpeed, enableDome ? "true" : "false",
-        speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
-        (unsigned long)diag.failsafeTriggerCount, (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs, (unsigned long)diag.failsafeLastTriggerToZeroMs,
-        (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource,
-        // Every non-blocking enqueue that found its queue full, from any task
-        // (logQueueDrop(), src/queue_drop_tracker.cpp). Published beside the
-        // failsafe counters because it is the other half of "was Core 1
-        // degraded across this run" - read here rather than only from a
-        // profiler build, which is the build that measurement forbids.
-        (unsigned long)queueOverflowCount,
-        uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
-        resetReasonName(esp_reset_reason()),
-        heapFree, heapMin, (unsigned long)heapLargestBlock,
-        // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
-        // heapLargestBlock above uses MALLOC_CAP_INTERNAL and can diverge
-        // wildly from what the guards actually see; both are emitted so the
-        // divergence itself is observable.
-        (unsigned long)largestFreeBlock8Bit(),
-        // Failed allocations since boot, from the always-compiled tracker
-        // (include/failed_alloc_tracker.h). ADR 0017's heap rule wants this
-        // flat across a load wave, and wants it on a production image - the
-        // one build /api/profiler, which reports the same counter, is absent
-        // from.
-        (unsigned long)failedAllocTrackerCount(),
-        // Open event streams; the client cap keys on this, so stuck or leaked
-        // entries become visible instead of silently denying new streams.
-        (unsigned)webEventStreamClientCount(), (unsigned long)g_webSseClientsPeak,
-        (unsigned long)acceptRejectHeap, (unsigned long)acceptRejectRate,
-        acceptRejectLastMs == 0 ? -1L
-                                : (long)(uint32_t)((uint32_t)uptimeMs - acceptRejectLastMs),
-        // Cost of the connection guard itself. Kept always-on rather than
-        // measured once: whether the guard is affordable on a stack that
-        // services every connection from one task is a standing property, not
-        // a one-off result.
-        (unsigned long)g_webAcceptGuardLastUs, (unsigned long)g_webAcceptGuardMaxUs,
-        // Depth evidence for the floor. The resting largest-block reading in
-        // this same payload is by definition never the one that caused a
-        // refusal, so a bare refusal count cannot say how far the floor was
-        // crossed -- and crossing depth is what the out-of-scope rule demands
-        // before any floor is argued about.
-        (unsigned long)g_webAcceptRejectLargestBlock,
-        g_webAcceptMinLargestBlockSeen == UINT32_MAX
-            ? -1L
-            : (long)g_webAcceptMinLargestBlockSeen,
-        // Live + peak inflight depth and refusal counts by the same broad
-        // classes the admission layer gates on -- current/peak/refused
-        // evidence needed before any cap, floor, or weight is retuned.
-        inflightRequests, inflightRequestsPeak,
-        (unsigned long)refusedInflightCap, (unsigned long)g_webRefusedSseCap,
-        // Stalled-client evictions. Rare by design, which is exactly why they
-        // are published: a run that never trips the deadline is otherwise
-        // indistinguishable from one where the guard silently stopped working.
-        // The age separates a boot-time blip from an ongoing problem.
-        (unsigned long)g_webSseEvicted,
-        g_webSseEvictLastMs == 0 ? -1L
-                                 : (long)(uint32_t)((uint32_t)uptimeMs - g_webSseEvictLastMs),
-        (unsigned long)refusedHeapFloor, (unsigned long)refusedHeapFloorDiag,
-        (unsigned long)g_webBusyRecoveryPagesServed,
-        otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,
-        wifiConnected ? "true" : "false",
-        wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
-        sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood,
-        litWiresJson);
-
-    // Connection lifetime. httpRequestsServed against httpSocketsAccepted is
-    // the measurement: their ratio is requests per connection, which is what
-    // "does this stack reuse connections" actually means (ADR 0023).
-    // httpSocketsOpenPeak is the other half -- reuse is only affordable if
-    // occupancy stays inside max_open_sockets.
-    //
-    // responseMaxMs is the reading the response-phase deadline is calibrated
-    // against: the longest response phase seen this boot. It is published on
-    // every run rather than measured once, because "does the deadline still
-    // clear the slowest legitimate response" is a standing property of the
-    // system, not a past result (ADR 0024). responseDeadlineAgeMs follows
-    // sseEvictAgeMs: -1 until one has fired.
-    //
-    // sendRetriesMemory is the one to watch: it counts writes that had to wait
-    // because the stack could not allocate a segment, which is the condition
-    // that used to abandon a response mid-body and hand the browser a
-    // well-formed but truncated file (prior async backend failure mode). It is
-    // now retried rather than fatal, so the failure is invisible from the
-    // outside -- this counter is the only place the pressure still shows.
-    if (written > 0 && written < (int)bufferSize - 1) {
-        const uint32_t responseDeadlineLastMs = g_webResponseDeadlineLastMs;
-        const long responseDeadlineAgeMs =
-            g_webResponseDeadlineClosures == 0 ? -1L : (long)(millis() - responseDeadlineLastMs);
-        const int extra =
-            snprintf(buffer + written, bufferSize - (size_t)written,
-                     ",\"httpSocketsAccepted\":%lu,\"httpSocketsOpen\":%d,"
-                     "\"httpSocketsOpenPeak\":%d,\"httpSocketsUntracked\":%lu,"
-                     "\"httpRequestsServed\":%lu,\"responseDeadlineClosures\":%lu,"
-                     "\"responseDeadlineAgeMs\":%ld,\"responseLastMs\":%lu,"
-                     "\"responseMaxMs\":%lu,\"sendRetriesWindow\":%lu,"
-                     "\"sendRetriesMemory\":%lu,\"sendRetryMaxMs\":%lu",
-                     (unsigned long)g_webSocketsAccepted, (int)g_webSocketsOpen,
-                     (int)g_webSocketsOpenPeak, (unsigned long)g_webSocketsUntracked,
-                     (unsigned long)g_webRequestsServed,
-                     (unsigned long)g_webResponseDeadlineClosures, responseDeadlineAgeMs,
-                     (unsigned long)g_webResponseLastMs, (unsigned long)g_webResponseMaxMs,
-                     (unsigned long)g_webSendRetriesWindow,
-                     (unsigned long)g_webSendRetriesMemory,
-                     (unsigned long)g_webSendRetryMaxMs);
-        if (extra > 0) {
-            // Truncation leaves written past the buffer, which the bound check
-            // below reads as a failed build -- the same way the fixed section
-            // above reports its own overflow.
-            written += extra;
-        }
-    }
-
-    // Conditionally append enabled-component keys - disabled components are absent,
-    // not emitted as false placeholders (status/dashboard contract).
-    bool ok = written > 0 && written < (int)bufferSize - 1;
-    if (ok) {
-        char* pos = buffer + written;
-        size_t remaining = bufferSize - (size_t)written;
-        char detail[96];
-
-        if (enableArm1) {
-            snprintf(detail, sizeof(detail), "Target %u us", (unsigned)arm1TargetUs);
-            ok = appendPeripheralStatus(pos, remaining, "arm1", "ready", detail) && ok;
-        }
-        if (enableArm2) {
-            snprintf(detail, sizeof(detail), "Target %u us", (unsigned)arm2TargetUs);
-            ok = appendPeripheralStatus(pos, remaining, "arm2", "ready", detail) && ok;
-        }
-        if (enableAux1) {
-            ok = appendPeripheralStatus(pos, remaining, "aux1", "ready", "Servo channel enabled") &&
-                 ok;
-        }
-        if (enableAux2) {
-            ok = appendPeripheralStatus(pos, remaining, "aux2", "ready", "Servo channel enabled") &&
-                 ok;
-        }
-        if (enableAux3) {
-            ok = appendPeripheralStatus(pos, remaining, "aux3", "ready", "Servo channel enabled") &&
-                 ok;
-        }
-        if (enableDome) {
-            if (domeTargetSpeed > 0.001f || domeTargetSpeed < -0.001f) {
-                snprintf(detail, sizeof(detail), "Target %.0f%%",
-                         (double)(domeTargetSpeed * 100.0f));
-                ok = appendPeripheralStatus(pos, remaining, "domeEsc", "spinning", detail) && ok;
-            } else {
-                ok = appendPeripheralStatus(pos, remaining, "domeEsc", "idle", "Target 0%") && ok;
-            }
-        }
-        if (enableRcCh1 && !(rcInputMode == RC_INPUT_SINGLE_SBUS && singleSbusUseCh2)) {
-            if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-                ok = appendPeripheralStatus(
-                         pos, remaining, "rcCh1", "ready",
-                         "Standard PWM input enabled; routing configurable via /api/config") &&
-                     ok;
-            } else if (lastSbus1Ms == 0) {
-                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
-                                            "Drive SBUS input waiting for first frame") &&
-                     ok;
-            } else if (sbusSignalLost) {
-                snprintf(detail, sizeof(detail),
-                         "Drive SBUS lost, last %lu ms ago, lost frames %lu",
-                         uptimeMs - lastSbus1Ms, (unsigned long)sbus1LostFrameCount);
-                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "signal_lost", detail) && ok;
-            } else {
-                snprintf(detail, sizeof(detail),
-                         "Drive SBUS active, last %lu ms ago, lost frames %lu",
-                         uptimeMs - lastSbus1Ms, (unsigned long)sbus1LostFrameCount);
-                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "active", detail) && ok;
-            }
-        }
-        if (enableRcCh2) {
-            if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-                ok = appendPeripheralStatus(
-                         pos, remaining, "rcCh2", "ready",
-                         "Standard PWM input enabled; routing configurable via /api/config") &&
-                     ok;
-            } else if (rcInputMode == RC_INPUT_SINGLE_SBUS && !singleSbusUseCh2) {
-                ok = appendPeripheralStatus(
-                         pos, remaining, "rcCh2", "standby",
-                         "SBUS2 not selected; using SBUS1 (CH1) in single_sbus mode") &&
-                     ok;
-            } else if (lastSbus2Ms == 0) {
-                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
-                                            "SBUS2 input waiting for first frame") &&
-                     ok;
-            } else if (sbus2SignalLost) {
-                snprintf(detail, sizeof(detail), "SBUS2 lost, last %lu ms ago, lost frames %lu",
-                         uptimeMs - lastSbus2Ms, (unsigned long)sbus2LostFrameCount);
-                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail) && ok;
-            } else {
-                snprintf(detail, sizeof(detail), "SBUS2 active, last %lu ms ago, lost frames %lu",
-                         uptimeMs - lastSbus2Ms, (unsigned long)sbus2LostFrameCount);
-                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail) && ok;
-            }
-        }
-        if (enableRcCh3) {
-            snprintf(detail, sizeof(detail),
-                     "CH3 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh3",
-                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (enableRcCh4) {
-            snprintf(detail, sizeof(detail),
-                     "CH4 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh4",
-                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (enableRcCh5) {
-            snprintf(detail, sizeof(detail),
-                     "CH5 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh5",
-                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (enableRcCh6) {
-            snprintf(detail, sizeof(detail),
-                     "CH6 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh6",
-                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (enableS1Hoverboard) {
-            if (driveSpeed != 0 || driveSteer != 0) {
-                snprintf(detail, sizeof(detail), "Command %d/%d", driveSpeed, driveSteer);
-                ok = appendPeripheralStatus(pos, remaining, "drive", "commanding", detail) &&
-                     ok;
-            } else {
-                ok = appendPeripheralStatus(pos, remaining, "drive", "idle",
-                                            "No drive command requested") &&
-                     ok;
-            }
-        }
-        if (enableS2Sound) {
-            const char* rxStatusText = audioRxStatusToken(audioRxStatus);
-            const char* rxDetail = audioRxStatusDetail(audioRxStatus);
-            // Sound saved on but off this boot has no module behind it: the
-            // block names the picked module and says sound is off rather than
-            // reporting a driver nobody is using as "idle" (#370).
-            const SoundStatusIdentity sound = audioSoundStatusIdentity();
-            const char* state = !sound.on ? "off" : (audioActive ? "playing" : "idle");
-            // Off, the detail is the picked name followed by the shared tail
-            // (AUDIO_SOUND_OFF_STATUS_TAIL), written straight into the body
-            // rather than composed into a buffer on this frame.
-            const char* detailName = !sound.on ? sound.driver : "";
-            const char* detailText =
-                !sound.on ? AUDIO_SOUND_OFF_STATUS_TAIL
-                : audioRxStatus == AUDIO_RX_BLOCKED_BY_DOME_UART
-                    ? rxDetail
-                    : (audioActive ? "Playback active" : "Ready, no active playback");
-            int _n = snprintf(pos, remaining,
-                              ",\"audio\":{\"state\":\"%s\",\"detail\":\"%s%s\",\"driver\":\"%s\",\"output\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
-                              state, detailName, detailText, sound.driver, sound.on ? "on" : "off",
-                              audioLinkOk ? "true" : "false", rxStatusText, rxDetail);
-            if (_n > 0 && _n < (int)remaining) {
-                pos += _n;
-                remaining -= (size_t)_n;
-            } else {
-                ok = false;
-            }
-        }
-        if (enableS3DomeCtrl) {
-            const char* transportLabel = domeTransportLabel(domeActiveTransport);
-            if (domeLastSeenMs == 0) {
-                snprintf(detail, sizeof(detail),
-                         "Heartbeat tx %lu, no protoR2link heartbeat seen yet (transport %s)",
-                         (unsigned long)bodyHbTx, transportLabel);
-                ok = appendPeripheralStatus(pos, remaining, "protoR2link", "not_seen", detail) && ok;
-            } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
-                snprintf(detail, sizeof(detail),
-                         "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
-                         (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
-                         uptimeMs - domeLastSeenMs, transportLabel);
-                ok =
-                    appendPeripheralStatus(pos, remaining, "protoR2link", "connected", detail) && ok;
-            } else {
-                snprintf(detail, sizeof(detail),
-                         "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
-                         (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
-                         uptimeMs - domeLastSeenMs, transportLabel);
-                ok = appendPeripheralStatus(pos, remaining, "protoR2link", "lost", detail) && ok;
-            }
-        }
-
-        // Top-level dome_link block - always present for external tooling,
-        // regardless of whether the protoR2link component is enabled.
-        // three states: connected (hb seen < 5s), lost (was seen, now > 5s), not_seen (never).
-        {
-            const char* dlState;
-            const char* dlTransport = domeTransportLabel(domeActiveTransport);
-            const char* dlUartOwner = "none";
-            int32_t lastRxMs = -1;
-            char dlDetail[96];
-            switch (domeUartOwner) {
-                case DOME_UART_DOME:
-                    dlUartOwner = "dome";
-                    break;
-                case DOME_UART_AUDIO:
-                    dlUartOwner = "audio";
-                    break;
-                case DOME_UART_NONE:
-                default:
-                    break;
-            }
-            if (!enableS3DomeCtrl) {
-                dlState = "disabled";
-                dlTransport = "none";
-            } else if (domeLastSeenMs == 0) {
-                dlState = "not_seen";
-            } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
-                dlState = "connected";
-                lastRxMs = (int32_t)(uptimeMs - domeLastSeenMs);
-            } else {
-                dlState = "lost";
-                lastRxMs = (int32_t)(uptimeMs - domeLastSeenMs);
-            }
-            snprintf(dlDetail, sizeof(dlDetail), "transport=%s, uart_owned=%s", dlTransport,
-                     domeUartOwner == DOME_UART_DOME ? "true" : "false");
-            char dlBuf[384];
-            snprintf(dlBuf, sizeof(dlBuf),
-                     ",\"dome_link\":{\"state\":\"%s\",\"transport\":\"%s\",\"detail\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
-                     ",\"rx_overflow\":%lu,\"rx_unknown\":%lu,\"last_rx_ms\":%ld,\"uart_owner\":\"%s\",\"uart_owned_by_dome\":%s}",
-                     dlState, dlTransport, dlDetail, (unsigned long)bodyHbTx,
-                     (unsigned long)domeHbRx, (unsigned long)domeRxOverflowCount,
-                     (unsigned long)domeRxUnknownCount, (long)lastRxMs, dlUartOwner,
-                     domeUartOwner == DOME_UART_DOME ? "true" : "false");
-            ok = appendJsonChunk(pos, remaining, dlBuf) && ok;
-        }
-
-        // The drive backend's own feedback. The RobotState fields it is read
-        // from are no longer named for one controller, but the published key
-        // still is: "hoverboard" has a consumer (data/drive.js
-        // renderHoverboard) and a documented contract (docs/api.md), so
-        // renaming it is an API change with its own callers to move and not a
-        // field rename (#346, #304).
-        if (fbValid) {
-            char fbBuf[128];
-            snprintf(fbBuf, sizeof(fbBuf),
-                     ",\"hoverboard\":{\"batteryV\":%.2f,\"boardTempC\":%.1f"
-                     ",\"speedR\":%d,\"speedL\":%d"
-                     ",\"currentL\":%.2f,\"currentR\":%.2f}",
-                     (double)(fbBatteryRaw / 100.0f), (double)(fbBoardTempRaw / 10.0f),
-                     (int)fbSpeedR, (int)fbSpeedL, (double)(fbCurrentL / 100.0f),
-                     (double)(fbCurrentR / 100.0f));
-            ok = appendJsonChunk(pos, remaining, fbBuf) && ok;
-        }
-
+    in->wifiConnected = connectivity.wifiConnected;
+    in->wifiClientConnected = connectivity.wifiClientConnected;
+    in->wifiRssi = connectivity.wifiRssi;
+    in->littleFsReady = littleFsReady;
+    in->sound = audioSoundStatusIdentity();
 #if PA_CAP_HOSTED_WIFI
-        // ESP-Hosted C6 link supervisor state (#189). Board Capability
-        // Gate, not runtime config -- absent entirely on boards with no
-        // Hosted backend rather than emitted with placeholder values.
-        {
-            HostedLinkStatusSnapshot hl = hostedLinkQueryStatus();
-            char hlBuf[256];
-            snprintf(hlBuf, sizeof(hlBuf),
-                     ",\"hostedLink\":{\"phase\":\"%s\",\"terminal\":%s,"
-                     "\"transportFailureCount\":%u,\"transportUpEventCount\":%u,"
-                     "\"attemptCount\":%u,\"totalAttemptCount\":%u,\"recoveredCount\":%u,"
-                     "\"lastFailureAtMs\":%lu,\"lastAttemptAtMs\":%lu,\"degradedAtMs\":%lu}",
-                     hostedLinkPhaseName(hl.phase),
-                     hl.phase == HostedLinkPhase::Degraded ? "true" : "false",
-                     hl.transportFailureEventCount, hl.transportUpEventCount, hl.attemptCount,
-                     hl.totalAttemptCount, hl.recoveredCount, (unsigned long)hl.lastFailureAtMs,
-                     (unsigned long)hl.lastAttemptAtMs, (unsigned long)hl.degradedAtMs);
-            ok = appendJsonChunk(pos, remaining, hlBuf) && ok;
-        }
+    in->hostedLink = hostedLinkQueryStatus();
 #endif
+}
 
-        ok = appendJsonChunk(pos, remaining, "}") && ok;
-    }
-
-    if (!ok) {
-        snprintf(buffer, bufferSize, "{\"ok\":false,\"error\":\"status payload overflow\"}");
+bool buildStatusJson(char* buffer, size_t bufferSize) {
+    if (buffer == nullptr || bufferSize == 0) {
         return false;
     }
-    return true;
+    StatusJsonInputs in = {};
+    captureStatusJsonInputs(&in);
+    return formatStatusJson(buffer, bufferSize, in);
 }
 
 bool webLittleFsMounted() {
