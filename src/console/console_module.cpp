@@ -84,10 +84,7 @@
                                  // handleAudioMoodMapGet() applies before rendering the
                                  // four mood-category words (sound.config.mood-category-map)
 #include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
-                               // real executor (registry drift note: the registry's own
-                               // `executor:` field for system.config.mood says configApply,
-                               // which is wrong - see the status comment; not fixed here, that
-                               // edit reaches the fenced data/console_help.txt)
+                               // executor
 #include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0036 Commit Step
                                // beside handleServoPost() (#221 remainder), reused verbatim by
                                // servo.action.open/close/set-position below

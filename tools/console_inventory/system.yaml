@@ -910,10 +910,11 @@ rows:
   - include/api_config_apply.h:68 - configApply Apply Core
   - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
   - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
-  executor_or_core: configApply
+  executor_or_core: applyMood
   missing_metadata:
   - parameter schema (type/values/default not in registry)
-  notes: ''
+  notes: 'The writer is applyMood() (src/tasks/mood.cpp), which persists last_mood itself; the
+    evidence above is the /api/config read path, not the write.'
 - name: system.config.log-level
   type: config
   registry_api_path: /api/config

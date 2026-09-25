@@ -284,6 +284,34 @@ class TestExecutorSymbols(unittest.TestCase):
                         f"Expected no error for executor: none, got: {errors}")
 
 
+class TestNvsKeys(unittest.TestCase):
+    """Test check_nvs_keys() function."""
+
+    def check(self, entry):
+        from tools.check_action_registry_drift import check_nvs_keys
+
+        errors = []
+        check_nvs_keys({'entries': [{'name': 'test.config.foo', **entry}]}, errors)
+        return errors
+
+    def test_key_no_code_uses_fails(self):
+        errors = self.check({'nvs_key': 'cfg_spdMax'})
+        self.assertTrue(any("'cfg_spdMax'" in e and 'no code' in e for e in errors), errors)
+
+    def test_real_key_passes(self):
+        # spd_max is the key src/config_serializer.cpp reads and writes.
+        self.assertEqual(self.check({'nvs_key': 'spd_max'}), [])
+
+    def test_each_of_nvs_keys_is_checked(self):
+        errors = self.check({'nvs_keys': ['snd_moodcat_q', 'snd_moodcat_quiet']})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn('snd_moodcat_quiet', errors[0])
+        self.assertIn('at most 15', errors[0])
+
+    def test_null_key_is_allowed(self):
+        self.assertEqual(self.check({'nvs_key': None}), [])
+
+
 class TestNoneExecutorEvidence(unittest.TestCase):
     """Test check_none_executor_evidence() function."""
 

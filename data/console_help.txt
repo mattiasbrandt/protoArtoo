@@ -137,7 +137,7 @@ system.event.dome-enabled|Dome Enabled|The dome motor came on.|none|
 system.event.boot-complete|Boot Complete|The Body Controller is up. The Boot Complete sound may play.|none|
 system.status.sleep-mode|Sleep Mode|Whether the droid is asleep. It always wakes at boot.|buildStatusJson|
 system.status.mood|Mood|The mood now: Quiet 10, Full-Awake 11, Mid-Awake 13, Awake+ 14.|buildStatusJson|
-system.config.mood|Active Mood|The mood the droid starts in.|configApply|
+system.config.mood|Active Mood|The mood the droid starts in.|applyMood|
 system.config.enable_arm1|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
 system.config.enable_arm2|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|
 system.config.enable_aux1|{output}|Whether a wire is plugged into {output}. Off, nothing on it moves.|configApply|

@@ -268,7 +268,7 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
-  nvs_key: cfg_spdMax
+  nvs_key: spd_max
   executor: configApply
 - name: dome.action.set-speed
   display_name: Dome Speed
@@ -1327,10 +1327,10 @@ entries:
     - 4095
     required: true
   nvs_keys:
-  - snd_moodcat_quiet
-  - snd_moodcat_mid
-  - snd_moodcat_full
-  - snd_moodcat_awakeplus
+  - snd_moodcat_q
+  - snd_moodcat_m
+  - snd_moodcat_f
+  - snd_moodcat_a
   executor: audioMoodMapApply
 - name: sound.action.set-category-range
   display_name: Set Category Range
@@ -1840,7 +1840,7 @@ entries:
     - 0
     - 30
     required: true
-  nvs_key: cfg_sndVol
+  nvs_key: aud_vol
   executor: audioSetVolumeCommitApplied
 - name: sound.config.random-min
   display_name: Random Min Track
@@ -1860,7 +1860,7 @@ entries:
   - name: track
     type: uint16
     required: true
-  nvs_key: cfg_sndRandMin
+  nvs_key: snd_rand_min
   executor: audioTracksApply
 - name: sound.config.random-max
   display_name: Random Max Track
@@ -1880,7 +1880,7 @@ entries:
   - name: track
     type: uint16
     required: true
-  nvs_key: cfg_sndRandMax
+  nvs_key: snd_rand_max
   executor: audioTracksApply
 - name: sound.config.mood-interval-quiet
   display_name: Quiet Mode Interval
@@ -2979,7 +2979,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: last_mood
-  executor: configApply
+  executor: applyMood
 - name: system.config.enable_arm1
   display_name: '{output}'
   description: Whether a wire is plugged into {output}. Off, nothing on it moves.
@@ -3897,7 +3897,7 @@ entries:
   - internal
   safety_critical: false
   requires_web_control: false
-  nvs_key: cfg_rcMode
+  nvs_key: rc_mode
   # configApply(), not rcMapApply(): rcMapApply() owns the RC BINDING table
   # (src/web/api_rc_map_apply.cpp), while this row is the input-mode enum, whose
   # only writer is configApply()'s own "rcInputMode" param
