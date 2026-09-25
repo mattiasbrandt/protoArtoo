@@ -147,6 +147,11 @@ trigger names this case, and this amendment records it rather than absorbing it.
 - **The budget is re-derived from the new cap** with the same method: 160 blocks,
   minus four full sequences as littlefs-python actually stores them, minus the
   free space the fifth save demands. It is measured, not estimated.
+- **Nothing stored is lost when the cap drops.** A filesystem update already
+  erases Learned Sequences (ADR 0006). A firmware-only update does not, so an
+  artoo-esp32 can boot holding more than five. Every stored Learned Sequence still
+  lists, plays and exports, and a new save is refused until the droid is under its
+  cap (operator, 2026-09-25).
 - **Everything else in this ADR stands.** Same surfaces, same choices, same
   behaviour: the Sequences surface on an artoo-esp32 is the same surface, and it
   says five where another board says ten.
