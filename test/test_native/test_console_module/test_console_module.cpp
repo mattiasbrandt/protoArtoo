@@ -2403,6 +2403,8 @@ void test_component_toggle_write_rejects_an_unknown_argument() {
     TEST_ASSERT_FALSE_MESSAGE(snap.system.enable_aux2, "a rejected write must not reach the cache");
 }
 
+// Named by the argument the builder typed, not the POST field it saves under
+// (#425), with the words a boolean takes.
 void test_component_toggle_write_rejects_a_malformed_boolean() {
     runQuery("system.config.enable_aux3 value=maybe");
 
@@ -2410,7 +2412,8 @@ void test_component_toggle_write_rejects_a_malformed_boolean() {
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
-    TEST_ASSERT_EQUAL_STRING("enableAux3", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("true,false,1,0", capturedValue("accepts"));
 }
 
 // =============================================================================
@@ -2492,11 +2495,16 @@ void test_drive_speed_limit_read_and_write() {
     TEST_ASSERT_EQUAL_INT16(300, after.drive.speedLimitMax);
 }
 
+// The refusal names what the builder typed and what it would have taken, read
+// from the Apply Core's refusal data (#425). It used to name the POST field
+// (`speedLimitMax`), which no Console builder ever types.
 void test_drive_speed_limit_rejects_out_of_range() {
     runQuery("drive.config.speed-limit value=9999");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("0..600", capturedValue("accepts"));
 }
 
 // A light's settings are one per Output since #413, so the op names the Output
@@ -4067,11 +4075,14 @@ void test_sound_set_category_range_rejects_a_mismatched_key_pair() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
 }
 
+// Neither bound is out of range; the pair clashes, so it is a conflict named on
+// the argument the core names (ADR 0011 amended 2026-09-25).
 void test_sound_set_category_range_rejects_lo_greater_than_hi() {
     runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=20 hi=10");
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("lo", capturedValue("argument"));
 }
 
 void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
@@ -5134,8 +5145,8 @@ void test_sound_config_category_ranges_write_reaches_the_category_core() {
     TEST_ASSERT_EQUAL_UINT16(60, audioTrackValue("snd_cat_gen_hi"));
 }
 
-// lo>hi is a grouped rule with no single attributable argument, and it lives
-// in the core - this module never re-tests it.
+// lo>hi is a grouped rule, and it lives in the core - this module never
+// re-tests it. The core calls it a conflict (ADR 0011 amended 2026-09-25).
 void test_sound_config_category_ranges_refuses_an_inverted_pair() {
     seedAudioTrack("snd_cat_hap_lo", 10);
     seedAudioTrack("snd_cat_hap_hi", 20);
@@ -5144,7 +5155,7 @@ void test_sound_config_category_ranges_refuses_an_inverted_pair() {
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
-    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT, g_cap.reason);
     TEST_ASSERT_EQUAL_UINT16(10, audioTrackValue("snd_cat_hap_lo"));
     TEST_ASSERT_EQUAL_UINT16(20, audioTrackValue("snd_cat_hap_hi"));
 }

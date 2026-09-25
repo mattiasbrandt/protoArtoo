@@ -73,7 +73,8 @@ EXPECTED_BY_BOARD = {
         # copies, and again at #271 from a walk on the merged tree:
         # 7360 * 1.25 = 9200 -> 9216. Re-derived once more by #354, whose body
         # routines put sequenceStart() on the Console's RC-action-test branch:
-        # 7376 * 1.25 = 9220 -> 9728.
+        # 7376 * 1.25 = 9220 -> 9728. #425's refusal data moved the chain to
+        # 7456, and 7456 * 1.25 = 9320 lands on the same step.
         "console_stack": 9728,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in

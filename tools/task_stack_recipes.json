@@ -324,15 +324,16 @@
             "embeddedCliProcess"
           ],
           "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement.",
-          "chain_bytes": 7376,
-          "product_bytes": 7376,
-          "profiler_bytes": 7376,
+          "chain_bytes": 7456,
+          "product_bytes": 7456,
+          "profiler_bytes": 7456,
           "components": {
-            "onCliCommand": 6976,
+            "onCliCommand": 7056,
             "consoleTask": 320,
             "embeddedCliProcess": 80
           },
-          "rule": "applied"
+          "rule": "applied",
+          "note": "Re-derived 2026-09-25 (#425) from 7376: every Apply Core refusal carries its field, reason and accepts (an 81 B ApplyRefusal), and consoleWriteAudioTracksField's AudioTracksApplyResult holds one. The artoo_esp32 walk gives onCliCommand 7056 against the recorded 6976, its deepest route consoleWriteAudioTracksField (1248 B) -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 9728 (7456 -> 9320 -> 9728)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -344,16 +345,16 @@
             "embeddedCliProcess"
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`.",
-          "chain_bytes": 8384,
-          "product_bytes": 8384,
-          "profiler_bytes": 8384,
+          "chain_bytes": 8464,
+          "product_bytes": 8464,
+          "profiler_bytes": 8464,
           "components": {
-            "onCliCommand": 7920,
+            "onCliCommand": 8000,
             "consoleTask": 368,
             "embeddedCliProcess": 96
           },
           "rule": "applied",
-          "note": "Re-derived 2026-09-18 (#369) from 8320: ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member, and this chain carries a snapshot by value. The coordinator's firebeetle2 walk at ec8557b1 gave 8352 against 8320 at the pre-slice base 367e4abb. onCliCommand's 7888 is that total less the two stitched frames, which hold no snapshot; the profiler image was not walked and is recorded equal to the product image, the same struct being in both. The stack stays 10752 (8352 -> 10440 -> 10752). Re-derived again 2026-09-19 (#412) to 8368: the Console names an Output by the running board's label, and the coordinator's firebeetle2 walk at 2eba8d11 gives onCliCommand 7904 against 7888 at the pre-slice base (the #411 post-merge walk at c753d7b4 passed every chain); the two stitched frames are unchanged. The stack stays 10752 (8368 -> 10460 -> 10752). Re-derived again 2026-09-24 (#418) to 8384: every config write runs through a Write Window, and the firebeetle2 walk of the #418 branch gives onCliCommand 7920 against the recorded 7904, its deepest route now consoleWriteAudioTracksField -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the twelve other tasks walk within their constants and the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 10752 (8384 -> 10480 -> 10752)."
+          "note": "Re-derived 2026-09-18 (#369) from 8320: ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member, and this chain carries a snapshot by value. The coordinator's firebeetle2 walk at ec8557b1 gave 8352 against 8320 at the pre-slice base 367e4abb. onCliCommand's 7888 is that total less the two stitched frames, which hold no snapshot; the profiler image was not walked and is recorded equal to the product image, the same struct being in both. The stack stays 10752 (8352 -> 10440 -> 10752). Re-derived again 2026-09-19 (#412) to 8368: the Console names an Output by the running board's label, and the coordinator's firebeetle2 walk at 2eba8d11 gives onCliCommand 7904 against 7888 at the pre-slice base (the #411 post-merge walk at c753d7b4 passed every chain); the two stitched frames are unchanged. The stack stays 10752 (8368 -> 10460 -> 10752). Re-derived again 2026-09-24 (#418) to 8384: every config write runs through a Write Window, and the firebeetle2 walk of the #418 branch gives onCliCommand 7920 against the recorded 7904, its deepest route now consoleWriteAudioTracksField -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the twelve other tasks walk within their constants and the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 10752 (8384 -> 10480 -> 10752). Re-derived again 2026-09-25 (#425) to 8464: every Apply Core refusal carries its field, reason and accepts (an 81 B ApplyRefusal), and consoleWriteAudioTracksField's AudioTracksApplyResult (1248 B frame) holds one. The firebeetle2 walk of the #425 branch gives onCliCommand 8000 against the recorded 7920 on the same deepest route; the twelve other tasks walk within their constants and the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 10752 (8464 -> 10580 -> 10752)."
         }
       },
       "note": "Re-walked after #226 wave 10 (323c4a20) merged fourteen sound.config rows into src/console/console_module.cpp. That merge put a new deepest branch on this chain: consoleExecuteCommand -> consoleWriteAudioTracksField (1216 B) -> audioTracksCommitApplied (1280 B) -> audioQueueRefreshBindings -> the newlib snprintf/_dtoa_r tail. The chain rose from 7024 to 7360 on ESP32 and from 7136 to 7984 on the ESP32-P4 - different amounts for the same source change, because the Xtensa walk is a lower bound and the new branch is partly invisible on an image that emits a third of its function bodies as data. The ESP32-P4 stack moves to 10240 with it; the ESP32 arm's 9216 still satisfies the rule."

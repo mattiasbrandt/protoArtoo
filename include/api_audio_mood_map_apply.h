@@ -8,8 +8,9 @@
 //   full, awakeplus) through a ConfigParamSource, accepting either the
 //   form-field shape or a "plain" JSON body (matching the legacy handler's
 //   precedence: form fields first, JSON body second, neither -> error), and
-//   validates each against MOOD_CATEGORY_MASK_MAX. Byte-identical error
-//   messages to the legacy handler.
+//   validates each against MOOD_CATEGORY_MASK_MAX. Error messages word for
+//   word the legacy handler's, each with its field, reason and accepts as
+//   data.
 //
 // This core does not touch NVS or the config cache - the existing
 // configUpdateAudioMoodMasks(Preferences&, ...) domain function
@@ -23,11 +24,13 @@
 
 #include <stdint.h>
 
+#include "api_apply_refusal.h"
 #include "api_param_source.h"
 
 struct AudioMoodMapApplyError {
     bool hasError = false;
     char message[128] = {0};
+    ApplyRefusal refusal;  // what `message` says, as data (include/api_apply_refusal.h)
 };
 
 struct AudioMoodMapApplyResult {

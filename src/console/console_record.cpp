@@ -95,8 +95,29 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "read-only";
         case CONSOLE_REASON_PART_NOT_ASSIGNED:
             return "part-not-assigned";
+        case CONSOLE_REASON_CONFLICT:
+            return "conflict";
         default:
             return "unknown";
+    }
+}
+
+ConsoleReason consoleReasonFromApplyRefusal(ApplyRefusalReason reason) {
+    switch (reason) {
+        case ApplyRefusalReason::OutOfRange:
+            return CONSOLE_REASON_OUT_OF_RANGE;
+        case ApplyRefusalReason::MissingArgument:
+            return CONSOLE_REASON_MISSING_ARGUMENT;
+        case ApplyRefusalReason::Conflict:
+            return CONSOLE_REASON_CONFLICT;
+        case ApplyRefusalReason::MalformedArgument:
+            return CONSOLE_REASON_MALFORMED_ARGUMENT;
+        case ApplyRefusalReason::NotInThisBuild:
+            return CONSOLE_REASON_NOT_IN_THIS_BUILD;
+        case ApplyRefusalReason::None:
+        case ApplyRefusalReason::Count:
+        default:
+            return CONSOLE_REASON_NONE;
     }
 }
 

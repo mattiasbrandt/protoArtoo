@@ -9,6 +9,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "api_apply_refusal.h"
 #include "console_module.h"
 
 // Buffer size for a single formatted record line, its CR LF excluded.
@@ -92,6 +93,13 @@ const char* consoleOutcomeString(ConsoleOutcome outcome);
 
 // Get the string representation of a reason
 const char* consoleReasonString(ConsoleReason reason);
+
+// The Console reason for an Apply Core's refusal reason
+// (include/api_apply_refusal.h). The two share one token spelling, so a
+// refusal reads the same on the Console and over HTTP; a native test walks
+// every ApplyRefusalReason and pins it. ApplyRefusalReason::None maps to
+// CONSOLE_REASON_NONE.
+ConsoleReason consoleReasonFromApplyRefusal(ApplyRefusalReason reason);
 
 // Whether a record should carry a reason= field at all.
 //

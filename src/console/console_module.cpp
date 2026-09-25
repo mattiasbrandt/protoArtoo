@@ -1473,9 +1473,12 @@ static ConsoleStatusExecutorFn consoleFindStatusExecutor(const char* operationNa
 // criterion 2 the single-record onRecordResult() sink call has no field
 // for. Reused by schema failures (unknown/missing/out-of-range) and the
 // Marcduino payload's own format check below.
+//
+// `accepts`, when the caller has one, is what the argument would have taken -
+// an Apply Core's refusal carries it (consoleEmitApplyRefusal() below).
 static void consoleEmitArgFailure(uint32_t requestId, const char* operationName,
                                   const char* badKey, ConsoleReason reason,
-                                  const ConsoleRecordSink* sink) {
+                                  const ConsoleRecordSink* sink, const char* accepts = nullptr) {
     if (sink->onRecordBegin) {
         sink->onRecordBegin(requestId, operationName);
     }
@@ -1488,7 +1491,11 @@ static void consoleEmitArgFailure(uint32_t requestId, const char* operationName,
     // accepts=ARM1,ARM2,ARM3,ARM4,ARM5,both rather than leaving the builder to
     // guess what the board prints.
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
-    if (reason == CONSOLE_REASON_OUT_OF_RANGE && badKey != nullptr && entry != nullptr &&
+    if (accepts != nullptr && accepts[0] != '\0') {
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "accepts", accepts);
+        }
+    } else if (reason == CONSOLE_REASON_OUT_OF_RANGE && badKey != nullptr && entry != nullptr &&
         entry->params != nullptr && sink->onRecordField) {
         for (const ConsoleParamDescriptor* p = entry->params; p->name != nullptr; ++p) {
             if (p->board_output && strcmp(p->name, badKey) == 0) {
@@ -1504,6 +1511,18 @@ static void consoleEmitArgFailure(uint32_t requestId, const char* operationName,
     if (sink->onRecordEnd) {
         sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_INVALID, reason);
     }
+}
+
+// An Apply Core refused the write: answer from its refusal data, never from
+// its sentence (ADR 0011 amended 2026-09-25, #425) - the argument the builder
+// typed, the core's reason as its Console token, and `accepts=` when the
+// refusal says what would be taken. `argument` is the caller's: each adapter
+// maps the core's field back to the Console argument that carried it.
+static void consoleEmitApplyRefusal(uint32_t requestId, const char* operationName,
+                                    const char* argument, const ApplyRefusal& refusal,
+                                    const ConsoleRecordSink* sink) {
+    consoleEmitArgFailure(requestId, operationName, argument,
+                          consoleReasonFromApplyRefusal(refusal.reason), sink, refusal.accepts);
 }
 
 // Argument-parse failures (malformed quoting/escaping/UTF-8, or too many
@@ -1841,8 +1860,9 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
     // is shared with this module's other adapter, which may overwrite it as
     // soon as the lock is released, so nothing below reads it.
     ConfigCommitOutcome commit = {};
+    ApplyRefusal refused;
     const ConfigWriteWindowAnswer answer =
-        configWriteWindow(params, &working, &s_consoleConfigApplyResult, src, &commit);
+        configWriteWindow(params, &working, &s_consoleConfigApplyResult, src, &commit, &refused);
     if (answer == ConfigWriteWindowAnswer::Busy) {
         // Another writer is mid-write - report busy rather than
         // proceeding unserialized into the shared config path.
@@ -1854,11 +1874,17 @@ static void consoleWriteScalarConfigField(uint32_t requestId, const char* operat
     }
 
     if (answer == ConfigWriteWindowAnswer::Refused) {
-        // configApply()'s only failure for a single supplied field is that
-        // field's own type/range/enum check - OUT_OF_RANGE matches
-        // consoleValidateArgsAgainstSchema()'s classification for the same
-        // shape of failure on the registry-driven path.
-        consoleEmitArgFailure(requestId, operationName, fieldKey, CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // The refusal names the core's field (the POST field, `speedLimitMax`),
+        // which no Console builder types: they typed `value=` or the field's
+        // own key, and that is the argument named back. A refusal about some
+        // other field - none today, since this write carries exactly one - is
+        // named as the core gave it rather than pinned on an argument that was
+        // not at fault.
+        const char* argument = refused.field;
+        if (strcmp(refused.field, fieldKey) == 0) {
+            argument = consoleArgsFind(parsedArgs, "value") != nullptr ? "value" : fieldKey;
+        }
+        consoleEmitApplyRefusal(requestId, operationName, argument, refused, sink);
         return;
     }
 
@@ -2388,27 +2414,17 @@ static const char* consoleWifiModeToken(WifiMode mode) {
     return (mode == WifiMode::STANDALONE_AP) ? "standalone_ap" : "client";
 }
 
-// wifiApply() reports a field failure as a human sentence, not a field id -
-// that is its contract and POST /api/wifi renders the sentence verbatim, so
-// it is not changed here. Every sentence it can produce opens with the API
-// key it is about (src/web/api_wifi_apply.cpp: the three param helpers'
-// snprintf, the wifiMode parse, and the two mode-vs-SSID rules), so the
-// failing field is recovered by matching that opening word back through the
-// SAME table this adapter used to feed the core. The alternative - deciding
-// which rule fired by re-testing the WiFi rules here - would be a second copy
-// of exactly the logic this ticket routes through the core. Returns the
-// Console key, or NULL for a message that names no field.
-static const char* consoleWifiFailingConsoleKey(const char* message) {
-    if (message == nullptr) return nullptr;
+// The Console key for a field wifiApply() refused, through the SAME table this
+// adapter feeds the core with - the refusal names the core's field (`staSsid`),
+// and the builder typed `sta-ssid`. A field the table does not carry is named
+// as the core gave it.
+static const char* consoleWifiConsoleKeyFor(const char* applyKey) {
     for (size_t i = 0; i < kWifiSettingsFieldCount; ++i) {
-        const char* applyKey = kWifiSettingsFields[i].applyKey;
-        size_t len = strlen(applyKey);
-        if (strncmp(message, applyKey, len) == 0 &&
-            (message[len] == ' ' || message[len] == '\0')) {
+        if (strcmp(kWifiSettingsFields[i].applyKey, applyKey) == 0) {
             return kWifiSettingsFields[i].consoleKey;
         }
     }
-    return nullptr;
+    return applyKey;
 }
 
 // The read side. Field names are POST /api/wifi's own JSON keys verbatim
@@ -2551,17 +2567,12 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
     }
 
     if (!applyResult.ok) {
-        const char* failing = consoleWifiFailingConsoleKey(applyResult.errorMessage);
-        // A field the operator did not type is missing; a field they did type
-        // failed on its value. That split is what makes `mode=client` with no
-        // SSID anywhere read as missing-argument sta-ssid - the grouped rule
-        // this operation exists for - while an over-long or empty SSID they
-        // actually supplied reads as out-of-range on the same field.
-        ConsoleReason reason =
-            (failing != nullptr && consoleArgsFind(parsedArgs, failing) == nullptr)
-                ? CONSOLE_REASON_MISSING_ARGUMENT
-                : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, entry->name, failing, reason, sink);
+        // The core's reason is the answer: it is the core that knows `mode=client`
+        // with no SSID anywhere is a missing sta-ssid, while an over-long or empty
+        // SSID the builder actually supplied is out of range on the same field.
+        consoleEmitApplyRefusal(requestId, entry->name,
+                                consoleWifiConsoleKeyFor(applyResult.refusal.field),
+                                applyResult.refusal, sink);
         return;
     }
 
@@ -2623,10 +2634,10 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // consoleValidateArgsAgainstSchema() checks shape and leaves every bound to
 // the core - the precedent sound.action.set-category-range states for the
 // identical parameters ("the apply core's own validation is the real gate
-// here, not the schema"). A value the core refuses is answered as
-// out-of-range, the same undifferentiated classification every other Apply
-// Core rejection in this module gets, because a grouped rule (lo>hi, an
-// unusable key pair) has no one attributable argument to name.
+// here, not the schema"). A value the core refuses is answered from the
+// core's refusal (consoleEmitApplyRefusal()): the argument it names, which is
+// the core's own parameter name and so this row's argument key, and its
+// reason - a grouped rule such as lo above hi reads as `conflict`.
 //
 // bank/page/clear_binding - REST's optional CHIRP-binding extension to two of
 // these routes - are absent from every one of these schemas, so they are
@@ -2799,7 +2810,7 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     params.ctx = &adapter;
     params.get = consoleAudioTracksParamGet;
 
-    // ~190 B, unlike ConfigApplyResult's ~2.5 KB - small enough to be an
+    // ~270 B, unlike ConfigApplyResult's ~2.5 KB - small enough to be an
     // ordinary local on the Console task's stack, so it needs neither a
     // module static nor the sharing hazard one would bring (pin fact 4).
     AudioTracksApplyResult result;
@@ -2813,15 +2824,10 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
-        // The core reports its refusal as a human sentence, not a field id
-        // (its contract; POST /api/audio/tracks renders it verbatim). For a
-        // row whose key is fixed there is exactly one operator-supplied
-        // field to name, and for the aggregate rows the failure can be
-        // either the key or the value, so `track` is named only when the
-        // operator supplied a key the core accepted.
-        consoleEmitArgFailure(requestId, entry->name,
-                              (fixedKey != nullptr) ? "track" : "key",
-                              CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // The core names the field it refused, and these rows' argument keys
+        // are the core's own parameter names, so the field IS the argument.
+        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
+                                result.error.refusal, sink);
         return;
     }
     if (!commit.ok) {
@@ -2987,11 +2993,11 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
     const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
-        // Any of: an unusable lo_key/hi_key pair, an out-of-range bound, or
-        // lo>hi. One undifferentiated `invalid`, for the reason
-        // consoleExecuteSoundSetCategoryRange() gives for the identical core:
-        // a multi-field range rule has no single attributable argument.
-        consoleEmitArgFailure(requestId, entry->name, "lo_key", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // An unusable key pair, a bound out of range, or a pair that clashes
+        // (lo above hi): the core says which argument and why, in its own
+        // parameter names, which are this row's argument keys.
+        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
+                                result.error.refusal, sink);
         return;
     }
     if (!commit.ok) {
@@ -3052,8 +3058,10 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
         // All four fields are required with range 0-4095 in the registry
         // schema, so the schema check above already refused everything this
         // core can refuse - handled explicitly rather than assumed away, the
-        // same way consoleExecuteSoundSetMoodMap() handles its own.
-        consoleEmitArgFailure(requestId, entry->name, "quiet", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        // same way consoleExecuteSoundSetMoodMap() handles its own, and named
+        // by the core's refusal like every other Apply Core answer here.
+        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
+                                result.error.refusal, sink);
         return;
     }
     // The Write Window POST /api/audio/mood-map calls (include/api_audio.h).

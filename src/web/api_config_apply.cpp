@@ -36,9 +36,48 @@ void appendApplied(ConfigAppliedFields* applied, const char* fmt, ...) {
     applied->count++;
 }
 
-void setError(ConfigApplyResult* result, const char* message) {
+// Every refusal says why and about which field, beside its sentence (#425):
+// the reason is a parameter, so no error write can leave it unset.
+void setError(ConfigApplyResult* result, const char* message, ApplyRefusalReason reason,
+              const char* field, const char* accepts = nullptr) {
     result->error.hasError = true;
     snprintf(result->error.message, sizeof(result->error.message), "%s", message);
+    applyRefusalSet(&result->error.refusal, reason, field, accepts);
+}
+
+// A number outside [lo, hi]: `accepts` is the range, read the way the sentence
+// already writes it.
+void setRangeError(ConfigApplyResult* result, const char* message, const char* field, long lo,
+                   long hi) {
+    result->error.hasError = true;
+    snprintf(result->error.message, sizeof(result->error.message), "%s", message);
+    applyRefusalSetRange(&result->error.refusal, field, lo, hi);
+}
+
+// The words a true/false field takes, as every boolean refusal below states them.
+constexpr const char* kBoolAccepts = "true,false,1,0";
+
+// The first of `names` this request sent, or nullptr. A clash between values
+// is refused naming the field that was sent (#425); when several were, the
+// first in the order this core reads them.
+const char* firstSent(const ConfigParamSource& params, const char* const* names, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (configParamHas(params, names[i])) {
+            return names[i];
+        }
+    }
+    return nullptr;
+}
+
+// The first of `names` this request did NOT send, or nullptr: the partner a
+// sent-together group is missing, which is the field its refusal names.
+const char* firstMissing(const ConfigParamSource& params, const char* const* names, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (!configParamHas(params, names[i])) {
+            return names[i];
+        }
+    }
+    return nullptr;
 }
 
 // The typed edit this request is already making to the Output on `channel`, or
@@ -243,14 +282,17 @@ bool applyDroidBuildHalf(const ConfigParamSource& params, const char* designName
         return true;
     }
     if (!hasDesign || !hasVariant) {
-        setError(result, refusal);
+        setError(result, refusal, ApplyRefusalReason::MissingArgument,
+                 hasDesign ? variantName : designName);
         return false;
     }
     DroidDesignChoice choice = {};
     if (!droidDesignChoiceSet(&choice, configParamGet(params, designName),
                               configParamGet(params, variantName)) ||
         !droidDesignChoiceIsKnown(choice)) {
-        setError(result, refusal);
+        // The catalog answers for the pair, not for either half alone, so the
+        // design names the refusal.
+        setError(result, refusal, ApplyRefusalReason::OutOfRange, designName);
         return false;
     }
     *out = choice;
@@ -303,7 +345,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] speedLimitMax updated to %d", (int)speedLimitMax);
         result->changed = true;
     } else if (configParamHas(params, "speedLimitMax")) {
-        setError(result, "speedLimitMax must be 0..600");
+        setRangeError(result, "speedLimitMax must be 0..600", "speedLimitMax", 0, SPEED_LIMIT_MAX);
         return;
     }
 
@@ -314,7 +356,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] speedPresetSlow updated to %d", (int)speedPresetSlow);
         result->changed = true;
     } else if (configParamHas(params, "speedPresetSlow")) {
-        setError(result, "speedPresetSlow must be 0..600");
+        setRangeError(result, "speedPresetSlow must be 0..600", "speedPresetSlow", 0, SPEED_LIMIT_MAX);
         return;
     }
 
@@ -325,7 +367,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] speedPresetNormal updated to %d", (int)speedPresetNormal);
         result->changed = true;
     } else if (configParamHas(params, "speedPresetNormal")) {
-        setError(result, "speedPresetNormal must be 0..600");
+        setRangeError(result, "speedPresetNormal must be 0..600", "speedPresetNormal", 0,
+                      SPEED_LIMIT_MAX);
         return;
     }
 
@@ -336,14 +379,17 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] speedPresetTurbo updated to %d", (int)speedPresetTurbo);
         result->changed = true;
     } else if (configParamHas(params, "speedPresetTurbo")) {
-        setError(result, "speedPresetTurbo must be 0..600");
+        setRangeError(result, "speedPresetTurbo must be 0..600", "speedPresetTurbo", 0, SPEED_LIMIT_MAX);
         return;
     }
 
     if (speedPresetValuesProvided &&
         !speedPresetValuesAreUnique(working->drive.speedPresetSlow, working->drive.speedPresetNormal,
                                      working->drive.speedPresetTurbo)) {
-        setError(result, "speed presets must be distinct values");
+        static const char* const kPresets[] = {"speedPresetSlow", "speedPresetNormal",
+                                               "speedPresetTurbo"};
+        setError(result, "speed presets must be distinct values", ApplyRefusalReason::Conflict,
+                 firstSent(params, kPresets, sizeof(kPresets) / sizeof(kPresets[0])));
         return;
     }
     if (speedPresetValuesProvided && !speedLimitMaxProvided) {
@@ -367,7 +413,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] webDriveTimeoutMs updated to %u", (unsigned)webDriveTimeoutMs);
         result->changed = true;
     } else if (configParamHas(params, "webDriveTimeoutMs")) {
-        setError(result, "webDriveTimeoutMs must be 100..5000");
+        setRangeError(result, "webDriveTimeoutMs must be 100..5000", "webDriveTimeoutMs", 100, 5000);
         return;
     }
 
@@ -377,7 +423,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] sbusTimeoutMs updated to %u", (unsigned)sbusTimeoutMs);
         result->changed = true;
     } else if (configParamHas(params, "sbusTimeoutMs")) {
-        setError(result, "sbusTimeoutMs must be 50..5000");
+        setRangeError(result, "sbusTimeoutMs must be 50..5000", "sbusTimeoutMs", 50, 5000);
         return;
     }
 
@@ -390,7 +436,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] stationary updated to %s", boolValue ? "true" : "false");
         result->changed = true;
     } else if (configParamHas(params, "stationary")) {
-        setError(result, "stationary must be true/false or 1/0");
+        setError(result, "stationary must be true/false or 1/0", ApplyRefusalReason::OutOfRange,
+                 "stationary", kBoolAccepts);
         return;
     }
     // The stationary release cue stays in the shell (ADR 0012); the shell also
@@ -404,7 +451,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             appendApplied(&result->applied, "[CFG] logLevel updated to %d", (int)lvl);
             result->changed = true;
         } else {
-            setError(result, "logLevel must be 1 (Error), 2 (Warning), 3 (Info), or 4 (Debug)");
+            setRangeError(result, "logLevel must be 1 (Error), 2 (Warning), 3 (Info), or 4 (Debug)",
+                          "logLevel", 1, 4);
             return;
         }
     }
@@ -412,7 +460,9 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     if (configParamHas(params, "rcInputMode")) {
         RcInputMode mode;
         if (!parseRcInputMode(configParamGet(params, "rcInputMode"), &mode)) {
-            setError(result, "rcInputMode must be standard_pwm, single_sbus, dual_sbus, or elrs");
+            setError(result, "rcInputMode must be standard_pwm, single_sbus, dual_sbus, or elrs",
+                     ApplyRefusalReason::OutOfRange, "rcInputMode",
+                     "standard_pwm,single_sbus,dual_sbus,elrs");
             return;
         }
         working->system.rc_input_mode = mode;
@@ -435,7 +485,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         const ComponentPartEntry* member = componentPartById(memberId);
         if (member == nullptr || member->category != COMPONENT_CATEGORY_SOUND ||
             !componentPartIsSelectable(*member)) {
-            setError(result, "soundMember is not a sound module this firmware can drive");
+            setError(result, "soundMember is not a sound module this firmware can drive",
+                     ApplyRefusalReason::OutOfRange, "soundMember");
             return;
         }
         working->system.sound_member = member->value;
@@ -452,7 +503,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         const ComponentPartEntry* member = componentPartById(memberId);
         if (member == nullptr || member->category != COMPONENT_CATEGORY_RADIO_CONTROLLER ||
             !componentPartIsSelectable(*member)) {
-            setError(result, "rcMember is not a radio this firmware lists");
+            setError(result, "rcMember is not a radio this firmware lists",
+                     ApplyRefusalReason::OutOfRange, "rcMember");
             return;
         }
         working->system.rc_member = member->value;
@@ -503,7 +555,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     if (configParamHas(params, "fittedParts")) {
         const char* raw = configParamGet(params, "fittedParts");
         if (droidFittedPartsParse(raw, &result->droidBuild.fitted) != 0) {
-            setError(result, "fittedParts names a Part this build does not model");
+            setError(result, "fittedParts names a Part this build does not model",
+                     ApplyRefusalReason::OutOfRange, "fittedParts");
             return;
         }
         result->droidBuild.fittedChanged = true;
@@ -528,7 +581,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     if (configParamHas(params, "guidedSetupRun")) {
         GuidedSetupRun run = GUIDED_SETUP_NOT_RUN;
         if (!guidedSetupRunFromId(configParamGet(params, "guidedSetupRun"), &run)) {
-            setError(result, "guidedSetupRun must be not-run, skipped or completed");
+            setError(result, "guidedSetupRun must be not-run, skipped or completed",
+                     ApplyRefusalReason::OutOfRange, "guidedSetupRun", "not-run,skipped,completed");
             return;
         }
         result->guidedSetup.run = run;
@@ -551,7 +605,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         if (dropped > 0) {
             setError(result,
                      "guidedSetupVisited must be a comma-separated list of step keys, each at "
-                     "most 12 characters of a-z, 0-9 and _");
+                     "most 12 characters of a-z, 0-9 and _",
+                     ApplyRefusalReason::OutOfRange, "guidedSetupVisited");
             return;
         }
         result->guidedSetup.visited.recorded = true;
@@ -565,7 +620,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     if (configParamHas(params, "guidedSetupSummaryDone")) {
         const char* value = configParamGet(params, "guidedSetupSummaryDone");
         if (strcmp(value, "true") != 0 && strcmp(value, "false") != 0) {
-            setError(result, "guidedSetupSummaryDone must be true or false");
+            setError(result, "guidedSetupSummaryDone must be true or false",
+                     ApplyRefusalReason::OutOfRange, "guidedSetupSummaryDone", "true,false");
             return;
         }
         result->guidedSetup.summaryDone = strcmp(value, "true") == 0;
@@ -580,16 +636,29 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     // told about before it happens.
     if (configParamHas(params, "movePart") || configParamHas(params, "movePartFrom") ||
         configParamHas(params, "movePartTo")) {
+        static const char* const kMoveFields[] = {"movePart", "movePartFrom", "movePartTo"};
         const char* part = configParamGet(params, "movePart");
         ServoOutputPartMove move = {};
-        if (part == nullptr || part[0] == '\0' ||
-            strlen(part) > SERVO_OUTPUT_PART_ID_MAX || !servoOutputPartIdIsValid(part) ||
-            !parsePartMoveEnd(configParamGet(params, "movePartFrom"), &move.fromOutput,
-                              &move.fromDriver, &move.fromChannel) ||
-            !parsePartMoveEnd(configParamGet(params, "movePartTo"), &move.toOutput,
-                              &move.toDriver, &move.toChannel)) {
+        const char* refused = firstMissing(params, kMoveFields,
+                                           sizeof(kMoveFields) / sizeof(kMoveFields[0]));
+        ApplyRefusalReason why = ApplyRefusalReason::MissingArgument;
+        if (refused == nullptr) {
+            why = ApplyRefusalReason::OutOfRange;
+            if (part[0] == '\0' || strlen(part) > SERVO_OUTPUT_PART_ID_MAX ||
+                !servoOutputPartIdIsValid(part)) {
+                refused = "movePart";
+            } else if (!parsePartMoveEnd(configParamGet(params, "movePartFrom"), &move.fromOutput,
+                                         &move.fromDriver, &move.fromChannel)) {
+                refused = "movePartFrom";
+            } else if (!parsePartMoveEnd(configParamGet(params, "movePartTo"), &move.toOutput,
+                                         &move.toDriver, &move.toChannel)) {
+                refused = "movePartTo";
+            }
+        }
+        if (refused != nullptr) {
             setError(result, "movePart, movePartFrom and movePartTo must be sent together: a "
-                             "Part this build models, and each end an Output Address or none");
+                             "Part this build models, and each end an Output Address or none",
+                     why, refused);
             return;
         }
         snprintf(move.part, sizeof(move.part), "%s", part);
@@ -604,7 +673,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->system.single_sbus_use_ch2 = boolValue;
         result->changed = true;
     } else if (configParamHas(params, "sbusRecvCh2")) {
-        setError(result, "sbusRecvCh2 must be true/false or 1/0");
+        setError(result, "sbusRecvCh2 must be true/false or 1/0", ApplyRefusalReason::OutOfRange,
+                 "sbusRecvCh2", kBoolAccepts);
         return;
     }
 
@@ -612,7 +682,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         JsonDocument bodyDoc;
         DeserializationError jsonErr = deserializeJson(bodyDoc, configParamGet(params, "plain"));
         if (jsonErr) {
-            setError(result, "invalid json body");
+            setError(result, "invalid json body", ApplyRefusalReason::MalformedArgument, "plain");
             return;
         }
 
@@ -621,13 +691,14 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             if (rcBody["sbusTimeoutMs"].is<uint32_t>()) {
                 uint32_t parsedSbusTimeout = rcBody["sbusTimeoutMs"].as<uint32_t>();
                 if (parsedSbusTimeout < 50 || parsedSbusTimeout > 5000) {
-                    setError(result, "rc.sbusTimeoutMs must be 50..5000");
+                    setRangeError(result, "rc.sbusTimeoutMs must be 50..5000", "rc.sbusTimeoutMs", 50,
+                                  5000);
                     return;
                 }
                 working->drive.sbusTimeoutMs = parsedSbusTimeout;
                 result->changed = true;
             } else if (!rcBody["sbusTimeoutMs"].isNull()) {
-                setError(result, "rc.sbusTimeoutMs must be integer");
+                setRangeError(result, "rc.sbusTimeoutMs must be integer", "rc.sbusTimeoutMs", 50, 5000);
                 return;
             }
         }
@@ -638,7 +709,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                 working->system.single_sbus_use_ch2 = rcSbus["recvCh2"].as<bool>();
                 result->changed = true;
             } else if (!rcSbus["recvCh2"].isNull()) {
-                setError(result, "rc.sbus.recvCh2 must be boolean");
+                setError(result, "rc.sbus.recvCh2 must be boolean", ApplyRefusalReason::OutOfRange,
+                         "rc.sbus.recvCh2", "true,false");
                 return;
             }
         }
@@ -649,12 +721,14 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                 if (!parseDomeWifiPeerIp(protoR2linkCfg["wifiPeerIp"].as<const char*>(),
                                         working->dome.dome_wifi_peer_ip,
                                         sizeof(working->dome.dome_wifi_peer_ip))) {
-                    setError(result, "protoR2link.wifiPeerIp must be empty or a valid IPv4 address");
+                    setError(result, "protoR2link.wifiPeerIp must be empty or a valid IPv4 address",
+                             ApplyRefusalReason::OutOfRange, "protoR2link.wifiPeerIp");
                     return;
                 }
                 result->changed = true;
             } else if (!protoR2linkCfg["wifiPeerIp"].isNull()) {
-                setError(result, "protoR2link.wifiPeerIp must be a string");
+                setError(result, "protoR2link.wifiPeerIp must be a string",
+                         ApplyRefusalReason::OutOfRange, "protoR2link.wifiPeerIp");
                 return;
             }
         }
@@ -690,7 +764,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         if (!parseBoolValue(configParamGet(params, boolFields[i].param), &boolValue)) {
             char err[160];
             snprintf(err, sizeof(err), "%s must be true/false or 1/0", boolFields[i].param);
-            setError(result, err);
+            setError(result, err, ApplyRefusalReason::OutOfRange, boolFields[i].param, kBoolAccepts);
             return;
         }
         *boolFields[i].field = boolValue;
@@ -704,7 +778,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->dome.dome_neutral_us = domeU16;
         result->changed = true;
     } else if (configParamHas(params, "domeEscNeutralUs")) {
-        setError(result, "domeEscNeutralUs must be 1000..2000");
+        setRangeError(result, "domeEscNeutralUs must be 1000..2000", "domeEscNeutralUs", 1000, 2000);
         return;
     }
 
@@ -712,7 +786,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->dome.dome_min_pulse_us = domeU16;
         result->changed = true;
     } else if (configParamHas(params, "domeEscMinPulseUs")) {
-        setError(result, "domeEscMinPulseUs must be 1000..2000");
+        setRangeError(result, "domeEscMinPulseUs must be 1000..2000", "domeEscMinPulseUs", 1000, 2000);
         return;
     }
 
@@ -720,7 +794,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->dome.dome_max_pulse_us = domeU16;
         result->changed = true;
     } else if (configParamHas(params, "domeEscMaxPulseUs")) {
-        setError(result, "domeEscMaxPulseUs must be 1000..2000");
+        setRangeError(result, "domeEscMaxPulseUs must be 1000..2000", "domeEscMaxPulseUs", 1000, 2000);
         return;
     }
 
@@ -730,9 +804,11 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     // (include/dome_math.h domePulsesInOrder()), so the set is refused whole
     // rather than stored. Only when the request named one, so a POST about
     // something else is never refused over a set it did not touch.
-    if (configParamHas(params, "domeEscNeutralUs") ||
-        configParamHas(params, "domeEscMinPulseUs") ||
-        configParamHas(params, "domeEscMaxPulseUs")) {
+    static const char* const kDomePulses[] = {"domeEscNeutralUs", "domeEscMinPulseUs",
+                                              "domeEscMaxPulseUs"};
+    const char* domePulseSent =
+        firstSent(params, kDomePulses, sizeof(kDomePulses) / sizeof(kDomePulses[0]));
+    if (domePulseSent != nullptr) {
         const DomeConfig& dome = working->dome;
         if (!domePulsesInOrder(dome.dome_min_pulse_us, dome.dome_neutral_us,
                                dome.dome_max_pulse_us)) {
@@ -742,7 +818,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                      "must be min <= neutral <= max",
                      (unsigned)dome.dome_min_pulse_us, (unsigned)dome.dome_neutral_us,
                      (unsigned)dome.dome_max_pulse_us);
-            setError(result, err);
+            setError(result, err, ApplyRefusalReason::Conflict, domePulseSent);
             return;
         }
     }
@@ -752,7 +828,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         working->dome.dome_speed_limit_pct = domePct;
         result->changed = true;
     } else if (configParamHas(params, "domeEscSpeedLimitPct")) {
-        setError(result, "domeEscSpeedLimitPct must be 0..100");
+        setRangeError(result, "domeEscSpeedLimitPct must be 0..100", "domeEscSpeedLimitPct", 0, 100);
         return;
     }
 
@@ -760,7 +836,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         const char* rawPeerIp = configParamGet(params, "protoR2linkWifiPeerIp");
         if (!parseDomeWifiPeerIp(rawPeerIp, working->dome.dome_wifi_peer_ip,
                                  sizeof(working->dome.dome_wifi_peer_ip))) {
-            setError(result, "protoR2linkWifiPeerIp must be empty or a valid IPv4 address");
+            setError(result, "protoR2linkWifiPeerIp must be empty or a valid IPv4 address",
+                     ApplyRefusalReason::OutOfRange, "protoR2linkWifiPeerIp");
             return;
         }
         result->changed = true;
@@ -773,7 +850,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                       domeRndEnableBool ? "true" : "false");
         result->changed = true;
     } else if (configParamHas(params, "domeEscRndEnable")) {
-        setError(result, "domeEscRndEnable must be true/false or 1/0");
+        setError(result, "domeEscRndEnable must be true/false or 1/0", ApplyRefusalReason::OutOfRange,
+                 "domeEscRndEnable", kBoolAccepts);
         return;
     }
 
@@ -783,7 +861,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] domeEscRndSpeedPct updated to %u", (unsigned)domeRndSpeedPct);
         result->changed = true;
     } else if (configParamHas(params, "domeEscRndSpeedPct")) {
-        setError(result, "domeEscRndSpeedPct must be 5..100");
+        setRangeError(result, "domeEscRndSpeedPct must be 5..100", "domeEscRndSpeedPct", 5, 100);
         return;
     }
 
@@ -793,7 +871,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] domeEscRndPauseMin updated to %u", (unsigned)domeRndPauseMin);
         result->changed = true;
     } else if (configParamHas(params, "domeEscRndPauseMin")) {
-        setError(result, "domeEscRndPauseMin must be 1..120");
+        setRangeError(result, "domeEscRndPauseMin must be 1..120", "domeEscRndPauseMin", 1, 120);
         return;
     }
 
@@ -803,7 +881,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] domeEscRndPauseMax updated to %u", (unsigned)domeRndPauseMax);
         result->changed = true;
     } else if (configParamHas(params, "domeEscRndPauseMax")) {
-        setError(result, "domeEscRndPauseMax must be 1..120");
+        setRangeError(result, "domeEscRndPauseMax must be 1..120", "domeEscRndPauseMax", 1, 120);
         return;
     }
 
@@ -813,7 +891,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] domeEscRndMoveMs updated to %u", (unsigned)domeRndMoveMs);
         result->changed = true;
     } else if (configParamHas(params, "domeEscRndMoveMs")) {
-        setError(result, "domeEscRndMoveMs must be 500..10000");
+        setRangeError(result, "domeEscRndMoveMs must be 500..10000", "domeEscRndMoveMs", 500, 10000);
         return;
     }
 
@@ -852,7 +930,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
                              &pulseUs)) {
                 char err[192];
                 snprintf(err, sizeof(err), "%s must be 500..2500", kEndpoints[e].param);
-                setError(result, err);
+                setRangeError(result, err, kEndpoints[e].param, kServoPulseMinUs, kServoPulseMaxUs);
                 return;
             }
             edit.*(kEndpoints[e].member) = pulseUs;
@@ -872,7 +950,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             if (!isValidServoCompType((uint8_t)parsed)) {
                 char err[180];
                 snprintf(err, sizeof(err), "%s must be none/mg996r/mg90s/rgb", set.typeParam);
-                setError(result, err);
+                setError(result, err, ApplyRefusalReason::OutOfRange, set.typeParam,
+                         "none,mg996r,mg90s,rgb");
                 return;
             }
 
@@ -906,13 +985,15 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             char err[192];
             snprintf(err, sizeof(err), "%s must be %u..%u", output.ledCountField,
                      (unsigned)SERVO_LIGHT_LEDS_MIN, (unsigned)SERVO_LIGHT_LEDS_MAX);
-            setError(result, err);
+            setRangeError(result, err, output.ledCountField, SERVO_LIGHT_LEDS_MIN,
+                          SERVO_LIGHT_LEDS_MAX);
             return;
         }
 
         ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
         if (edit == nullptr) {
-            setError(result, "too many Output settings in one request");
+            setError(result, "too many Output settings in one request",
+                     ApplyRefusalReason::OutOfRange, output.ledCountField);
             return;
         }
         edit->led_count = ledCount;
@@ -940,7 +1021,9 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             // The buffers are sized from the longest stored id, so this is a
             // build whose table outgrew CONFIG_MOTION_FIELD_NAME_MAX: refuse,
             // rather than read a truncated name as some other field.
-            setError(result, "an Output's Motion Profile field name does not fit");
+            // No field to name: the name is exactly what did not fit.
+            setError(result, "an Output's Motion Profile field name does not fit",
+                     ApplyRefusalReason::OutOfRange, nullptr);
             return;
         }
         const bool hasThrow = configParamHas(params, throwField);
@@ -957,7 +1040,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             char err[192];
             snprintf(err, sizeof(err), "%s must be %u..%u ms", throwField,
                      (unsigned)SERVO_THROW_MS_MIN, (unsigned)SERVO_THROW_MS_MAX);
-            setError(result, err);
+            setRangeError(result, err, throwField, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX);
             return;
         }
         uint16_t accelMs = 0;
@@ -966,14 +1049,14 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
             char err[192];
             snprintf(err, sizeof(err), "%s must be %u..%u ms", accelField,
                      (unsigned)SERVO_ACCEL_MS_MIN, (unsigned)SERVO_ACCEL_MS_MAX);
-            setError(result, err);
+            setRangeError(result, err, accelField, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX);
             return;
         }
         ServoEasing easing = SERVO_EASE_NONE;
         if (hasEase && !servoParseEasing(configParamGet(params, easeField), &easing)) {
             char err[192];
             snprintf(err, sizeof(err), "%s must be none, soft or overshoot", easeField);
-            setError(result, err);
+            setError(result, err, ApplyRefusalReason::OutOfRange, easeField, "none,soft,overshoot");
             return;
         }
         // Limp is what a row nobody configured does; a value that is not one of
@@ -983,13 +1066,16 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         if (hasBoot && !servoParseBootBehaviour(configParamGet(params, bootField), &boot)) {
             char err[192];
             snprintf(err, sizeof(err), "%s must be limp, home-hold or home-release", bootField);
-            setError(result, err);
+            setError(result, err, ApplyRefusalReason::OutOfRange, bootField,
+                     "limp,home-hold,home-release");
             return;
         }
 
         ServoOutputEdit* edit = typedEditFor(&result->servoOutputs, output.channel);
         if (edit == nullptr) {
-            setError(result, "too many Output settings in one request");
+            setError(result, "too many Output settings in one request",
+                     ApplyRefusalReason::OutOfRange,
+                     hasThrow ? throwField : hasAccel ? accelField : hasEase ? easeField : bootField);
             return;
         }
         if (hasThrow) {
@@ -1037,14 +1123,28 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         ServoOutputEdit capture = {};
         ServoOutputEnd end = SERVO_END_CENTRE;
         uint16_t capturedUs = 0;
+        static const char* const kCaptureFields[] = {"captureOutput", "captureEnd", "captureUs"};
+        static const char* const kCaptureRefusal =
+            "captureOutput, captureEnd and captureUs must be sent together: an Output "
+            "Address, one of open/centre/close, and a width 500..2500";
         const char* address = configParamGet(params, "captureOutput");
-        if (address == nullptr ||
-            !servoOutputParseAddress(address, &capture.driver, &capture.channel) ||
-            !servoParseOutputEnd(configParamGet(params, "captureEnd"), &end) ||
-            !paramUint16(params, "captureUs", kServoPulseMinUs, kServoPulseMaxUs, &capturedUs)) {
-            setError(result,
-                     "captureOutput, captureEnd and captureUs must be sent together: an Output "
-                     "Address, one of open/centre/close, and a width 500..2500");
+        const char* missing = firstMissing(params, kCaptureFields,
+                                           sizeof(kCaptureFields) / sizeof(kCaptureFields[0]));
+        if (missing != nullptr) {
+            setError(result, kCaptureRefusal, ApplyRefusalReason::MissingArgument, missing);
+            return;
+        }
+        if (!servoOutputParseAddress(address, &capture.driver, &capture.channel)) {
+            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, "captureOutput");
+            return;
+        }
+        if (!servoParseOutputEnd(configParamGet(params, "captureEnd"), &end)) {
+            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, "captureEnd",
+                     "open,centre,close");
+            return;
+        }
+        if (!paramUint16(params, "captureUs", kServoPulseMinUs, kServoPulseMaxUs, &capturedUs)) {
+            setRangeError(result, kCaptureRefusal, "captureUs", kServoPulseMinUs, kServoPulseMaxUs);
             return;
         }
         capture.kind = SERVO_EDIT_CAPTURE;
@@ -1079,7 +1179,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         const char* address = configParamGet(params, "reverseOutput");
         if (address == nullptr ||
             !servoOutputParseAddress(address, &reverse.driver, &reverse.channel)) {
-            setError(result, "reverseOutput must be an Output Address");
+            setError(result, "reverseOutput must be an Output Address", ApplyRefusalReason::OutOfRange,
+                     "reverseOutput");
             return;
         }
         reverse.kind = SERVO_EDIT_REVERSE;
@@ -1089,7 +1190,8 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     }
 
     if (!result->changed) {
-        setError(result, "no supported config fields supplied");
+        setError(result, "no supported config fields supplied", ApplyRefusalReason::MissingArgument,
+                 nullptr);
         return;
     }
 

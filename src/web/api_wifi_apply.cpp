@@ -17,9 +17,19 @@
 
 namespace {
 
-void setError(WifiApplyResult* result, const char* message) {
+// The sentence, and what it says as data (#425): the reason is a parameter,
+// so no error write can leave it unset.
+void setError(WifiApplyResult* result, const char* message, ApplyRefusalReason reason,
+              const char* field, const char* accepts = nullptr) {
     result->ok = false;
     snprintf(result->errorMessage, sizeof(result->errorMessage), "%s", message);
+    applyRefusalSet(&result->refusal, reason, field, accepts);
+}
+
+// A value too long for its field: the sentence the three param helpers below
+// write, and the field it is about.
+void setLengthError(WifiApplyResult* result, const char* message, const char* field) {
+    setError(result, message, ApplyRefusalReason::OutOfRange, field);
 }
 
 bool wifiModeFromString(const char* raw, WifiMode* out) {
@@ -100,7 +110,7 @@ void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyRe
                         configParamHas(params, "staPassword") || configParamHas(params, "apSsid") ||
                         configParamHas(params, "apPassword");
     if (!anySupplied) {
-        setError(result, "no wifi fields supplied");
+        setError(result, "no wifi fields supplied", ApplyRefusalReason::MissingArgument, nullptr);
         return;
     }
 
@@ -109,7 +119,8 @@ void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyRe
     if (configParamHas(params, "wifiMode")) {
         WifiMode mode;
         if (!wifiModeFromString(configParamGet(params, "wifiMode"), &mode)) {
-            setError(result, "wifiMode must be client or standalone_ap");
+            setError(result, "wifiMode must be client or standalone_ap",
+                     ApplyRefusalReason::OutOfRange, "wifiMode", "client,standalone_ap");
             return;
         }
         working->mode = mode;
@@ -117,31 +128,40 @@ void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyRe
 
     if (!paramSsid(params, "staSsid", working->sta_ssid, sizeof(working->sta_ssid), err,
                    sizeof(err))) {
-        setError(result, err);
+        setLengthError(result, err, "staSsid");
         return;
     }
     if (!paramPasswordMaxLen(params, "staPassword", working->sta_password,
                               sizeof(working->sta_password), err, sizeof(err))) {
-        setError(result, err);
+        setLengthError(result, err, "staPassword");
         return;
     }
     if (!paramSsid(params, "apSsid", working->ap_ssid, sizeof(working->ap_ssid), err,
                    sizeof(err))) {
-        setError(result, err);
+        setLengthError(result, err, "apSsid");
         return;
     }
     if (!paramApPassword(params, "apPassword", working->ap_password, sizeof(working->ap_password),
                          err, sizeof(err))) {
-        setError(result, err);
+        setLengthError(result, err, "apPassword");
         return;
     }
 
+    // A mode with no usable SSID. An SSID this request did not send is missing;
+    // one it sent empty was the wrong value. That split is what reads
+    // `mode=client` with no SSID anywhere as the grouped rule it is.
     if (working->mode == WifiMode::CLIENT && working->sta_ssid[0] == '\0') {
-        setError(result, "staSsid is required for WiFi Client Mode");
+        setError(result, "staSsid is required for WiFi Client Mode",
+                 configParamHas(params, "staSsid") ? ApplyRefusalReason::OutOfRange
+                                                   : ApplyRefusalReason::MissingArgument,
+                 "staSsid");
         return;
     }
     if (working->mode == WifiMode::STANDALONE_AP && working->ap_ssid[0] == '\0') {
-        setError(result, "apSsid is required for Standalone AP Mode");
+        setError(result, "apSsid is required for Standalone AP Mode",
+                 configParamHas(params, "apSsid") ? ApplyRefusalReason::OutOfRange
+                                                  : ApplyRefusalReason::MissingArgument,
+                 "apSsid");
         return;
     }
 
