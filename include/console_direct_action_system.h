@@ -386,10 +386,10 @@ static void consoleExecuteDirectProfilerTraceStop(uint32_t requestId, const char
 // system.action.reboot: no arguments, matching POST /api/reboot
 // (handleRebootPost, src/web/api_system.cpp) - a status broadcast, then the
 // complete record group, THEN the deferred restart flag, in that order:
-// requestSystemRestart() (include/web_server.h) only arms loop()'s restart
-// (src/main.cpp) after delayMs, so emitting the record after arming it
-// would risk it racing the restart for nothing, where emitting it first
-// costs nothing and is provably ordered before the reboot lands (ticket
+// requestSystemRestart() (include/web_server.h) only arms SafetyMonitor's
+// restart (src/tasks/safety.cpp) after delayMs, so emitting the record after
+// arming it would risk it racing the restart for nothing, where emitting it
+// first costs nothing and is provably ordered before the reboot lands (ticket
 // acceptance criterion 3). ADR 0032 ("requestSystemRestart() keeps its
 // operator-initiated callers only") is satisfied by construction: a Console
 // reboot is operator-initiated, and this adds no new caller of it anywhere

@@ -53,9 +53,6 @@ QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue = nullptr;
 QueueHandle_t audioCmdQueue = nullptr;
 QueueHandle_t domeTxQueue = nullptr;
-static volatile bool restartRequested = false;
-static volatile uint32_t restartAtMs = 0;
-static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
 // Who owns the serial wire, and how far the owner has drained the ring
 // (ADR 0039). Both live under logMux with the ring itself, which is what makes
@@ -391,13 +388,6 @@ void loadConfigToState() {
     robotState.stationary = snap.system.stationary;
 }
 
-void requestSystemRestart(uint32_t delayMs) {
-    taskENTER_CRITICAL(&restartMux);
-    restartRequested = true;
-    restartAtMs = millis() + delayMs;
-    taskEXIT_CRITICAL(&restartMux);
-}
-
 void setup() {
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
     // BEFORE begin(), deliberately: HWCDC::begin() only creates its receive
@@ -731,32 +721,23 @@ void setup() {
     // host had not yet picked up (ADR 0038's Consequences named these two
     // sites; src/tasks/console_task.cpp:#265 reported them as out of scope
     // then, and this ticket owns src/main.cpp).
+
+    // The Arduino loopTask has run setup() and has nothing left to do: loop()
+    // only ever polled for a requested restart, which SafetyMonitor now does
+    // (src/tasks/safety.cpp). Deleting it gives its ARDUINO_LOOP_STACK_SIZE
+    // stack (platformio.ini) back to the heap (#428).
+    //
+    // No esp_task_wdt_delete() first, deliberately: this task is not on the
+    // task watchdog. Both installed arduino-esp32 cores (3.3.7, 3.3.11) start
+    // it with loopTaskWDTEnabled = false and subscribe it only through
+    // enableLoopWDT(), which nothing here calls, and neither sdkconfig sets
+    // CONFIG_ARDUINO_LOOP_WDT. A task deleted while subscribed would trip the
+    // watchdog; one never subscribed cannot.
+    vTaskDelete(nullptr);
 }
 
+// Never runs. setup() ends by deleting the task that calls both (the Arduino
+// loopTask), so its stack goes back to the heap; the Arduino core still calls
+// loop() by name, so it has to exist.
 void loop() {
-    bool shouldRestart = false;
-
-    taskENTER_CRITICAL(&restartMux);
-    if (restartRequested && (int32_t)(millis() - restartAtMs) >= 0) {
-        shouldRestart = true;
-    }
-    taskEXIT_CRITICAL(&restartMux);
-
-    if (shouldRestart) {
-        PA_LOG_INFO("main", "restarting controller");
-        // No Serial.flush() here either, for the reason setup()'s tail gives:
-        // the Arduino loop task does not own this wire. The line above is in
-        // the ring, the Console task drains it within its 10 ms poll, and the
-        // delay(100) below is well past the ~4 ms a line of this length takes
-        // at 115200 8N1 - so the restart notice still reaches the operator,
-        // and on the CDC it now reaches them at all (flush() there discarded
-        // the ring rather than draining it).
-        // Deinit TWDT before restart  --  prevents esp_restart() from being
-        // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
-        esp_task_wdt_deinit();
-        delay(100);
-        ESP.restart();
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(100));
 }
