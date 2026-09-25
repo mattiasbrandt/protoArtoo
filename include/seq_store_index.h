@@ -16,10 +16,17 @@
 
 #include "sequence_engine.h"  // SeqToggleGroup
 
-// Capacity cap: 10 Learned Sequences total. Issue #2 grill decision 5 set 16;
-// the operator lowered it to 10 on 2026-09-13 (#382) so the saved sequences
-// and the web UI stop competing for the same filesystem blocks.
-static const uint8_t SEQ_STORE_MAX = 10;
+// Index CAPACITY: how many Learned Sequences the droid can hold in memory, list
+// and play. Ten on every board. It is deliberately not the number that refuses
+// a save -- that is the board's CAP, SEQ_STORE_CAP in seq_store_util.h, which
+// is five on the artoo-esp32 (ADR 0065, amended 2026-09-25). The two are kept
+// apart because a firmware-only update can leave an artoo-esp32 holding more
+// than its cap, and every one it holds must still load at boot, list and play;
+// only a new save is refused. Collapsing them back into one constant would
+// drop the sixth-and-later sequences out of the boot scan on such a droid.
+// History: issue #2 grill decision 5 set 16; the operator lowered it to 10 on
+// 2026-09-13 (#382).
+static const uint8_t SEQ_INDEX_CAPACITY = 10;
 
 struct SeqIndexEntry {
     char           name[24];      // "DM:MYSEQ"

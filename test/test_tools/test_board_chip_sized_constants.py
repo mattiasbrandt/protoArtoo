@@ -52,6 +52,14 @@ EXPECTED_BY_BOARD = {
     # Pre-#256 values, unchanged. Every one was sized against this board's heap,
     # and every one must stay exactly where it is.
     "PA_BOARD_ARTOO_ESP32": {
+        # The one entry here that is NOT a pre-#256 value: the operator set the
+        # artoo-esp32's Learned Sequence cap to five on 2026-09-25 (ADR 0065
+        # amendment, #426), so the filesystem image and the saved sequences fit
+        # one 160-block partition. The first refused count is what the real
+        # seqStoreCapacityCheck() answers when compiled for this board.
+        "seq_store_cap": 5,
+        "seq_first_refused_count": 5,
+        "seq_index_capacity": 10,
         "seq_file_max_bytes": 12 * 1024,
         "seq_fs_free_floor": 24 * 1024,
         "evid_cmd_len": 48,
@@ -80,6 +88,11 @@ EXPECTED_BY_BOARD = {
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
     "PA_BOARD_FIREBEETLE2": {
+        # Ten, unchanged (ADR 0065 amendment): this board's filesystem is
+        # 9.88 MB and the web image never competes with the sequences.
+        "seq_store_cap": 10,
+        "seq_first_refused_count": 10,
+        "seq_index_capacity": 10,
         "seq_file_max_bytes": 24 * 1024,
         "seq_fs_free_floor": 48 * 1024,
         "evid_cmd_len": 64,
@@ -192,6 +205,17 @@ class BoardChipSizedConstants(unittest.TestCase):
                 '#include "config.h"',
                 "#include <cstdio>",
                 "int main() {",
+                # The real refusal, not the constant: the first index count at
+                # which seqStoreCapacityCheck() refuses a new name, with room
+                # to spare on every other axis.
+                "    unsigned firstRefused = 0;",
+                "    while (firstRefused <= SEQ_INDEX_CAPACITY &&",
+                "           seqStoreCapacityCheck(true, (uint8_t)firstRefused,",
+                "                                 100, 1u << 20).ok) {",
+                "        ++firstRefused;",
+                "    }",
+                '    std::printf("%u %u %u ", (unsigned)SEQ_STORE_CAP,',
+                "        firstRefused, (unsigned)SEQ_INDEX_CAPACITY);",
                 '    std::printf("%zu %zu %d %d %d %zu %zu %zu %zu %zu %zu %zu '
                 '%u %u %u %u\\n",',
                 "        (size_t)SEQ_FILE_MAX_BYTES, (size_t)SEQ_FS_FREE_FLOOR,",
@@ -221,10 +245,16 @@ class BoardChipSizedConstants(unittest.TestCase):
                 shutil.copyfile(INCLUDE_DIR / name, staged / name)
             source_path = Path(tmp) / "chip_sized_constants_probe.cpp"
             source_path.write_text(self._probe_source(board_macro), encoding="utf-8")
+            # The store's capacity decision is compiled in for real, once per
+            # board, so the refusal is the production function's answer.
+            store_util = Path(tmp) / "seq_store_util.cpp"
+            shutil.copyfile(REPO_ROOT / "src" / "seq_store_util.cpp", store_util)
             output_path = Path(tmp) / "chip_sized_constants_probe"
             compile_result = subprocess.run(
                 [self.compiler, "-std=c++17", "-I", str(staged),
-                 str(source_path), "-o", str(output_path)],
+                 f"-DPA_BOARD={board_macro}", "-DPA_LOG_LEVEL=2",
+                 "-DPA_HEAP_PROFILE=0",
+                 str(source_path), str(store_util), "-o", str(output_path)],
                 capture_output=True, text=True, check=False,
             )
             self.assertEqual(compile_result.returncode, 0, compile_result.stderr)
@@ -234,8 +264,12 @@ class BoardChipSizedConstants(unittest.TestCase):
             )
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
         fields = [int(v) for v in run_result.stdout.split()]
-        self.assertEqual(len(fields), 16, run_result.stdout)
+        self.assertEqual(len(fields), 19, run_result.stdout)
+        store, fields = fields[:3], fields[3:]
         values = {
+            "seq_store_cap": store[0],
+            "seq_first_refused_count": store[1],
+            "seq_index_capacity": store[2],
             "seq_file_max_bytes": fields[0],
             "seq_fs_free_floor": fields[1],
             "evid_cmd_len": fields[2],
@@ -438,7 +472,7 @@ class BoardChipSizedConstants(unittest.TestCase):
         self.assertNotEqual(artoo, firebeetle)
         # console_stack is deliberately absent: see
         # test_console_stack_is_derived_per_chip_even_where_they_coincide.
-        for key in ("seq_file_max_bytes", "seq_fs_free_floor",
+        for key in ("seq_store_cap", "seq_file_max_bytes", "seq_fs_free_floor",
                     "evid_cmd_len", "evid_tx_cap", "evid_cleanup_cap",
                     "evid_record_bytes", "log_ring_max_lines",
                     "web_events_stack"):
@@ -490,6 +524,8 @@ class BoardChipSizedConstants(unittest.TestCase):
         for header, needle in (
             ("seq_store_util.h",
              "the Learned Sequence per-file cap has no value for this chip target"),
+            ("seq_store_util.h",
+             "the Learned Sequence store cap has no value for this board"),
             ("sequence_run_evidence.h",
              "sequence run-evidence ring dimensions have no value for this chip target"),
             ("log_buffer.h",

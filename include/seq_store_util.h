@@ -13,7 +13,7 @@
 
 #include "config.h"            // PA_CHIP_TARGET_* (chip-target selection)
 #include "protocol_check.h"    // ProtocolCheckResult, PC_MAX_STEPS, PC_CMD_MAX
-#include "seq_store_index.h"   // SEQ_STORE_MAX
+#include "seq_store_index.h"   // SEQ_INDEX_CAPACITY
 
 // Capacity guards (issue #2 grill decision 5), sized per chip target.
 //
@@ -65,12 +65,48 @@
   #error "the Learned Sequence per-file cap has no value for this chip target"
 #endif
 
+// STORE CAP: how many Learned Sequences this board lets a builder save. It is a
+// Board Variant fact, the first thing a builder can do that depends on which
+// board they bought (ADR 0065, amended 2026-09-25), so it is selected on
+// PA_BOARD rather than on the chip target. The droid reports it in GET
+// /api/identity (learned_sequence_cap) and the Sequences page reads it from
+// there, so no page carries a copy of its own.
+//
+//   artoo-esp32: 5. Its 160-block filesystem partition holds both the web image
+//   and the saved sequences, and tools/build_budgets.json derives the image's
+//   budget from this number: four full-size sequences, plus the free space the
+//   fifth save demands (SEQ_FS_FREE_FLOOR + the file). Changing it means
+//   redoing that arithmetic.
+//
+//   firebeetle2: 10. Its partition is 9.88 MB; the web image never competes.
+//
+// A save is refused only when it is NEW and the store already holds at least
+// the cap. `>=` rather than `==` is load-bearing: a firmware-only update can
+// boot an artoo-esp32 holding more than five (the index capacity above the cap
+// is what keeps them), and such a droid must refuse new saves until the
+// builder has deleted down below the cap, while overwriting one it already
+// holds still saves.
+#if PA_BOARD == PA_BOARD_ARTOO_ESP32
+  #define PA_SEQ_STORE_CAP 5
+#elif PA_BOARD == PA_BOARD_FIREBEETLE2
+  #define PA_SEQ_STORE_CAP 10
+#else
+  #error "the Learned Sequence store cap has no value for this board"
+#endif
+
+static const uint8_t SEQ_STORE_CAP = PA_SEQ_STORE_CAP;
+static_assert(PA_SEQ_STORE_CAP <= SEQ_INDEX_CAPACITY,
+              "a board's Learned Sequence cap cannot exceed what the index holds:"
+              " a save the cap accepts would then be dropped by seqStoreIndexAdd");
+
 // Stringified from the same macro as the constant so the operator-visible size
 // in the rejection message cannot drift from the size actually enforced.
 #define PA_SEQ_STR_INNER(x) #x
 #define PA_SEQ_STR(x) PA_SEQ_STR_INNER(x)
 #define SEQ_FILE_TOO_LARGE_MESSAGE \
     "file too large (" PA_SEQ_STR(PA_SEQ_FILE_MAX_KB) " KB max)"
+#define SEQ_STORE_FULL_MESSAGE \
+    "store full (" PA_SEQ_STR(PA_SEQ_STORE_CAP) " sequences max)"
 
 static const size_t SEQ_FILE_MAX_BYTES = PA_SEQ_FILE_MAX_KB * 1024;  // per-file cap
 static const size_t SEQ_FS_FREE_FLOOR  = 2 * SEQ_FILE_MAX_BYTES;  // LittleFS free-space floor

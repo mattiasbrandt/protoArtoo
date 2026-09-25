@@ -57,11 +57,11 @@ static void test_add_updates_in_place() {
 
 static void test_full_table_rejects_new_accepts_update() {
     char name[24];
-    for (uint8_t i = 0; i < SEQ_STORE_MAX; ++i) {
+    for (uint8_t i = 0; i < SEQ_INDEX_CAPACITY; ++i) {
         snprintf(name, sizeof(name), "DM:S%u", (unsigned)i);
         TEST_ASSERT_TRUE(seqStoreIndexAdd(mk(name, TOGGLE_NONE)));
     }
-    TEST_ASSERT_EQUAL_UINT8(SEQ_STORE_MAX, seqStoreIndexCount());
+    TEST_ASSERT_EQUAL_UINT8(SEQ_INDEX_CAPACITY, seqStoreIndexCount());
     // New name when full -> rejected.
     TEST_ASSERT_FALSE(seqStoreIndexAdd(mk("DM:OVERFLOW", TOGGLE_NONE)));
     // Existing name when full -> still updates.

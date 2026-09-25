@@ -11,7 +11,7 @@
 
 #include <string.h>
 
-static SeqIndexEntry s_entries[SEQ_STORE_MAX];
+static SeqIndexEntry s_entries[SEQ_INDEX_CAPACITY];
 static uint8_t       s_count = 0;
 
 void seqStoreIndexClear() {
@@ -33,7 +33,7 @@ bool seqStoreIndexAdd(const SeqIndexEntry& e) {
         s_entries[slot] = e;  // update in place
         return true;
     }
-    if (s_count >= SEQ_STORE_MAX) return false;
+    if (s_count >= SEQ_INDEX_CAPACITY) return false;
     s_entries[s_count++] = e;
     return true;
 }
