@@ -100,10 +100,22 @@ static void onRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutcome
 // Static Configuration and State
 // =============================================================================
 
-// Static buffer for embedded-cli instance (no dynamic allocation per criterion)
-// Per embedded_cli.h:202, embeddedCliRequiredSize() computes the required size.
-// This buffer must be large enough for the config (verified at init time).
-static CLI_UINT embeddedCliBuffer[512];  // CLI_UINT is size-aligned per embedded_cli.h
+// The embedded-cli configuration this Console runs: embeddedCliDefaultConfig()'s
+// own sizes, stated here so the static buffer below is sized from them at
+// compile time by the library's own formula (EMBEDDED_CLI_REQUIRED_SIZE,
+// lib/embedded-cli/VENDORED.md Patch 9) rather than guessed and checked at run
+// time, where a buffer too small deletes this task - the Survival Path (#428).
+// Other code leans on the 64 B command buffer (include/console_serial_output.h,
+// include/console_line_overflow.h).
+static constexpr uint16_t kCliRxBufferSize = 64;
+static constexpr uint16_t kCliCmdBufferSize = 64;
+static constexpr uint16_t kCliHistoryBufferSize = 128;
+static constexpr uint16_t kCliMaxBindingCount = 8;
+
+// Static buffer for embedded-cli instance (no dynamic allocation per criterion).
+// CLI_UINT is size-aligned per embedded_cli.h.
+static CLI_UINT embeddedCliBuffer[BYTES_TO_CLI_UINTS(EMBEDDED_CLI_REQUIRED_SIZE(
+    kCliRxBufferSize, kCliCmdBufferSize, kCliHistoryBufferSize, kCliMaxBindingCount))];
 static EmbeddedCliConfig* embeddedCliConfig = nullptr;
 static EmbeddedCli* embeddedCli = nullptr;
 
@@ -385,11 +397,14 @@ void consoleTask(void* pvParameters) {
 
     // Initialize embedded-cli with static buffer configuration (no dynamic allocation)
     // Per embedded_cli.h documentation, derive config from embeddedCliDefaultConfig()
-    // and check the required size against our static buffer
+    // and set the four sizes the static buffer was sized for.
     embeddedCliConfig = embeddedCliDefaultConfig();
     embeddedCliConfig->cliBuffer = embeddedCliBuffer;
     embeddedCliConfig->cliBufferSize = sizeof(embeddedCliBuffer);
-    // Use default rxBufferSize, cmdBufferSize, historyBufferSize
+    embeddedCliConfig->rxBufferSize = kCliRxBufferSize;
+    embeddedCliConfig->cmdBufferSize = kCliCmdBufferSize;
+    embeddedCliConfig->historyBufferSize = kCliHistoryBufferSize;
+    embeddedCliConfig->maxBindingCount = kCliMaxBindingCount;
 
     // Disable live autocompletion (enableAutoComplete). Live autocompletion
     // emits cursor save/restore escape sequences on every keystroke to show
@@ -406,7 +421,8 @@ void consoleTask(void* pvParameters) {
     // include/console_completion.h and lib/embedded-cli/VENDORED.md Patch 5).
     embeddedCliConfig->enableAutoComplete = false;
 
-    // Verify buffer is large enough for the configuration
+    // The buffer is sized for exactly this configuration at compile time, so
+    // this cannot fail unless the four assignments above stop matching it.
     uint16_t requiredSize = embeddedCliRequiredSize(embeddedCliConfig);
     if (requiredSize > sizeof(embeddedCliBuffer)) {
         PA_LOG_ERROR(TAG, "embedded-cli buffer too small: need %u bytes, have %zu",
@@ -658,8 +674,8 @@ void consoleTask(void* pvParameters) {
         // Process any available serial data.
         //
         // One byte in, one drain out. embeddedCliReceiveChar() pushes into a
-        // fixed rx FIFO (rxBufferSize, 64 B at embeddedCliDefaultConfig()'s
-        // defaults) and embeddedCliProcess() is what empties it, so feeding a
+        // fixed rx FIFO (rxBufferSize, kCliRxBufferSize = 64 B above) and
+        // embeddedCliProcess() is what empties it, so feeding a
         // whole Serial.available() batch first would overrun the FIFO for any
         // burst larger than 64 bytes - a pasted command, or a fast typist's
         // key-repeat - and the library would then discard the partial line.
