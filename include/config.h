@@ -819,8 +819,13 @@ constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
 // exactly on the 7168 this arm already held above the old rule (the pre-#256
 // literal), so the arm moves from "above rule" to the rule itself; the stack
 // does not change.
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5616;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5616 -> 7020 -> 7168
+// Re-derived 2026-09-25 (#428): 5616 -> 4944. The RC dispatch reads the config
+// fields it uses by name instead of three 916 B ConfigSnapshot copies
+// (loadTier2TriggerBindings, the PWM signal check, the RC watchdog), so the walk
+// fell by 672 B. Operator decision 2026-09-25: the stack follows the rule down,
+// full margin kept, and the 512 B goes back to the heap.
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 4944;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 6656;  // rule: 4944 -> 6180 -> 6656
 // Re-derived 2026-09-11 (#342): 3200 -> 3216. One Xtensa frame step on
 // setArmPosition(), spent on the ADR 0041 drive-command clamp -- the door that
 // stops servo.action.set-position driving a fitted part past what its component
@@ -894,8 +899,18 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5632;  // rule: 4432 -> 554
 // holder check's log line -> the snprintf/_dtoa_r tail; onCliCommand walks
 // 7056 against the recorded 6976, and the two stitched frames are unchanged.
 // The rule still lands on 9728, so the allocation does not move.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 7456;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 9728;  // rule: 7456 -> 9320 -> 9728
+// Re-derived 2026-09-25 (#428): 7456 -> 8688. The walk now follows every
+// executor table consoleExecuteCommand() calls through - the six direct-action
+// tables and the audio-config and scalar-config tables, besides
+// g_statusExecutors - where it used to stop at the call. onCliCommand walks
+// 8288, its deepest route consoleExecuteSoundVolumeConfig ->
+// audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist -> the holder
+// check's log line -> the snprintf/_dtoa_r tail; the two stitched frames are
+// unchanged. Operator decision 2026-09-25: raise to the rule, full margin, since
+// #428 freed 26.8 KB of static RAM and this is the task that saves config to
+// flash.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8688;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // rule: 8688 -> 10860 -> 11264
 constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #256. Floor
 // holds by 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is

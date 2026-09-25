@@ -68,7 +68,7 @@ struct TaskStackArm {
 // test/test_tools/test_task_stack_recipes.py asserts the two agree.
 static const TaskStackArm kArms[] = {
     {"DriveTask", 4080U, 5632U, RULE_ABOVE},
-    {"RCInputTask", 5616U, 7168U, RULE_APPLIED},
+    {"RCInputTask", 4944U, 6656U, RULE_APPLIED},
     {"ServoTask", 3216U, 4096U, RULE_APPLIED},
     {"DomeTask", 2992U, 3072U, RULE_DECLINED},
     {"AudioTask", 5280U, 6144U, RULE_DECLINED},
@@ -76,7 +76,7 @@ static const TaskStackArm kArms[] = {
     {"DomeLinkTask", 5872U, 6144U, RULE_DECLINED},
     {"SafetyMonitor", 3088U, 4096U, RULE_APPLIED},
     {"SeqDisp", 4432U, 5632U, RULE_APPLIED},
-    {"Console", 7456U, 9728U, RULE_APPLIED},
+    {"Console", 8688U, 11264U, RULE_APPLIED},
     {"WebEvents", 5904U, 6144U, RULE_DECLINED},
     {"ArduinoOTA", 3696U, 4096U, RULE_DECLINED},
 };

@@ -68,10 +68,11 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 5616,
-          "product_bytes": 5616,
-          "profiler_bytes": 5616,
-          "rule": "applied"
+          "chain_bytes": 4944,
+          "product_bytes": 4944,
+          "profiler_bytes": 4944,
+          "rule": "applied",
+          "note": "Re-derived 2026-09-25 (#428) from 5616: the RC dispatch reads the config fields it uses by name instead of three 916 B ConfigSnapshot copies (loadTier2TriggerBindings, the PWM signal check, the RC watchdog). The artoo_esp32 walk gives 4944. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: the stack follows the rule down, 7168 -> 6656 (4944 -> 6180 -> 6656)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -327,19 +328,51 @@
             {
               "caller": "consoleExecuteCommand",
               "table": "g_statusExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_systemDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_driveDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_soundDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_auxRcDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_servoDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_domeDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_audioConfigExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_scalarConfigExecutors"
             }
           ],
-          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
-          "chain_bytes": 7456,
-          "product_bytes": 7456,
-          "profiler_bytes": 7456,
+          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). A direct action, an audio config write and a scalar config write are reached the same way, through a pointer found in one of the six g_*DirectActionExecutors tables, g_audioConfigExecutors or g_scalarConfigExecutors, so those rows are stitched too (#428). Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
+          "chain_bytes": 8688,
+          "product_bytes": 8688,
+          "profiler_bytes": 8688,
           "components": {
-            "onCliCommand": 7056,
+            "onCliCommand": 8288,
             "consoleTask": 320,
             "embeddedCliProcess": 80
           },
           "rule": "applied",
-          "note": "Re-derived 2026-09-25 (#425) from 7376: every Apply Core refusal carries its field, reason and accepts (an 81 B ApplyRefusal), and consoleWriteAudioTracksField's AudioTracksApplyResult holds one. The artoo_esp32 walk gives onCliCommand 7056 against the recorded 6976, its deepest route consoleWriteAudioTracksField (1248 B) -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 9728 (7456 -> 9320 -> 9728)."
+          "note": "Re-derived 2026-09-25 (#425) from 7376: every Apply Core refusal carries its field, reason and accepts (an 81 B ApplyRefusal), and consoleWriteAudioTracksField's AudioTracksApplyResult holds one. The artoo_esp32 walk gives onCliCommand 7056 against the recorded 6976, its deepest route consoleWriteAudioTracksField (1248 B) -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 9728 (7456 -> 9320 -> 9728). Re-derived again 2026-09-25 (#428) to 8688: the walk now follows the six direct-action tables and the audio-config and scalar-config tables consoleExecuteCommand() calls through, besides g_statusExecutors. onCliCommand walks 8288, its deepest route consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist -> configSaveGuidedSetup -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: the stack is raised to the rule, 9728 -> 11264 (8688 -> 10860 -> 11264)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -354,6 +387,38 @@
             {
               "caller": "consoleExecuteCommand",
               "table": "g_statusExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_systemDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_driveDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_soundDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_auxRcDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_servoDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_domeDirectActionExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_audioConfigExecutors"
+            },
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_scalarConfigExecutors"
             }
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status or api op through a pointer read from g_statusExecutors.",
