@@ -182,7 +182,6 @@
   //   fromConfig       the board declares it: it has a stored id, a label and
   //                    a wired tick (the name dates from when its settings
   //                    were read from GET /api/config)
-  //   fromTable        GET /api/servo/outputs has a row for it - every Output
   //   switchable       it has a wired tick, so a page may offer one
   //   wired            the one wired rule (header)
   //   canLight         a Light Type may go on this wire at all
@@ -206,7 +205,6 @@
       label: printed,
       name: printed || table.address,
       fromConfig: table.id !== "",
-      fromTable: true,
       wired: table.switchable ? wiredTick : true,
       canLight: lightCapable,
       type,
