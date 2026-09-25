@@ -9,8 +9,8 @@ both cheap:
    what counts as a restart on each image, what a wrong `--image` does, and
    which report keys each image may emit.
 2. **Drift guards** that read the firmware sources the schemas were derived
-   from (`src/web/web_server.cpp`, `include/reset_reason.h`, `include/config.h`,
-   `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
+   from (`src/web/web_server.cpp` and `src/web/status_json.cpp`,
+   `include/reset_reason.h`, `include/config.h`, `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
    or a board capability stops gating what the schemas assume it gates, this
    suite goes red instead of the harness silently reading a field that is no
    longer there.
@@ -32,6 +32,12 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 import soak  # noqa: E402
 
 WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
+# buildStatusJson() is split the ADR 0036 way since #428: web_server.cpp
+# captures the state and src/web/status_json.cpp writes the document. The
+# payload drift guards read the two as the one builder they are; the event
+# stream guards still read web_server.cpp, where eventStreamTask() lives.
+STATUS_JSON_CPP = (REPO_ROOT / "src" / "web" / "status_json.cpp").read_text()
+STATUS_BUILDER_CPP = WEB_SERVER_CPP + STATUS_JSON_CPP
 # #225: resetReasonName() moved from src/reset_reason.cpp into
 # include/reset_reason.h (header-only, so the Console's system.status.health
 # query can call it from a native-compiled translation unit too).
@@ -102,27 +108,27 @@ class ShippingFieldNamesMatchTheFirmware(unittest.TestCase):
         for field in (SHIPPING.heap_field, SHIPPING.sse_clients_field,
                       SHIPPING.restart_field, "resetReason"):
             with self.subTest(field=field):
-                self.assertIn(f'\\"{field}\\":', WEB_SERVER_CPP,
+                self.assertIn(f'\\"{field}\\":', STATUS_BUILDER_CPP,
                               f"{field!r} is no longer emitted by buildStatusJson()")
 
     def test_reset_reason_is_emitted_as_a_string(self):
         # The harness treats it as resetReasonName()'s string. An int round
         # trip would re-create the guessed-ESP_RST_* defect this ticket
         # already recorded once.
-        self.assertIn('\\"resetReason\\":\\"%s\\"', WEB_SERVER_CPP)
-        self.assertIn("resetReasonName(esp_reset_reason())", WEB_SERVER_CPP)
+        self.assertIn('\\"resetReason\\":\\"%s\\"', STATUS_BUILDER_CPP)
+        self.assertIn("resetReasonName(esp_reset_reason())", STATUS_BUILDER_CPP)
 
     def test_ladder_fields_are_emitted_inside_the_hostedlink_object(self):
-        self.assertIn(f'\\"{SHIPPING.ladder_container}\\":{{', WEB_SERVER_CPP)
+        self.assertIn(f'\\"{SHIPPING.ladder_container}\\":{{', STATUS_BUILDER_CPP)
         for name in SHIPPING.ladder_fields.values():
             with self.subTest(field=name):
-                self.assertIn(f'\\"{name}\\":', WEB_SERVER_CPP)
+                self.assertIn(f'\\"{name}\\":', STATUS_BUILDER_CPP)
 
     def test_the_shipping_payload_still_publishes_no_bootcount(self):
         # The whole shipping restart model rests on this: no bootCount means
         # uptimeMs regression is the only reboot evidence available. If one
         # ever appears, the schema should read it rather than keep inferring.
-        self.assertNotIn("bootCount", WEB_SERVER_CPP)
+        self.assertNotIn("bootCount", STATUS_BUILDER_CPP)
         self.assertFalse(SHIPPING.publishes_boot_count)
 
     def test_no_c6_reset_route_exists_in_the_shipping_sources(self):
@@ -461,10 +467,10 @@ class ArtooIsTheSharedStatusBuilderMinusOneCapability(unittest.TestCase):
     suite is where that surfaces."""
 
     def test_the_hostedlink_object_is_emitted_only_under_the_capability_guard(self):
-        guarded = re.findall(r"#if PA_CAP_HOSTED_WIFI\n(.*?)\n#endif", WEB_SERVER_CPP,
+        guarded = re.findall(r"#if PA_CAP_HOSTED_WIFI\n(.*?)\n#endif", STATUS_BUILDER_CPP,
                              re.DOTALL)
         emit = f'\\"{soak.HOSTED_LINK_CONTAINER}\\":'
-        total = WEB_SERVER_CPP.count(emit)
+        total = STATUS_BUILDER_CPP.count(emit)
         inside = sum(block.count(emit) for block in guarded)
         self.assertGreater(total, 0, "buildStatusJson() no longer emits hostedLink at all")
         self.assertEqual(
@@ -507,7 +513,7 @@ class ArtooIsTheSharedStatusBuilderMinusOneCapability(unittest.TestCase):
         for field in (ARTOO.heap_field, ARTOO.sse_clients_field, ARTOO.restart_field,
                       "resetReason", "wifiConnected"):
             with self.subTest(field=field):
-                self.assertIn(f'\\"{field}\\":', WEB_SERVER_CPP,
+                self.assertIn(f'\\"{field}\\":', STATUS_BUILDER_CPP,
                               f"{field!r} is no longer emitted by buildStatusJson()")
 
 
@@ -954,15 +960,15 @@ class AdmissionCountersMatchTheFirmware(unittest.TestCase):
                           schema.accept_min_largest_block_field,
                           schema.heap_free_field, schema.heap_min_field):
                 with self.subTest(image=schema.name, field=field):
-                    self.assertIn(f'\\"{field}\\":', WEB_SERVER_CPP,
+                    self.assertIn(f'\\"{field}\\":', STATUS_BUILDER_CPP,
                                   f"{field!r} is no longer emitted by buildStatusJson()")
 
     def test_the_never_sampled_sentinel_is_the_one_the_firmware_publishes(self):
         # g_webAcceptMinLargestBlockSeen starts at UINT32_MAX and is published
         # as -1 until the guard has sampled once. Reading that as a byte count
         # would report the deepest possible breach on an idle controller.
-        self.assertIn("g_webAcceptMinLargestBlockSeen == UINT32_MAX", WEB_SERVER_CPP)
-        self.assertIn("? -1L", WEB_SERVER_CPP)
+        self.assertIn("g_webAcceptMinLargestBlockSeen == UINT32_MAX", STATUS_BUILDER_CPP)
+        self.assertIn("? -1L", STATUS_BUILDER_CPP)
         self.assertEqual(soak.ACCEPT_MIN_LARGEST_BLOCK_NEVER_SAMPLED, -1)
 
     def test_a_never_sampled_reading_is_none_and_never_zero(self):
