@@ -167,10 +167,25 @@ constexpr uint8_t SERVO_OUTPUT_PART_SLOTS = 4;
 
 // ADR 0052 sizes the model at thirteen-to-twenty-three Outputs once an expander
 // is fitted. Twenty-four rows covers that with one spare.
+//
+// Except on artoo-esp32 while LEDC is its only Output driver: LEDC addresses
+// five Outputs there (servoOutputChannelIsValid() below, include/ledc_pwm.h),
+// so it holds five rows, and every static byte on that board is a heap byte.
+// It goes back to twenty-four when an expander driver lands (operator
+// decision 2026-09-25, #428).
+//
+// `#if defined`: PA_CHIP_TARGET_* are presence macros from config.h (included
+// through board_outputs.h above), not 0/1 gates.
+#if defined(PA_CHIP_TARGET_ESP32)
+constexpr uint8_t SERVO_OUTPUT_ROW_MAX = 5;
+#else
 constexpr uint8_t SERVO_OUTPUT_ROW_MAX = 24;
+#endif
 
 // The five LEDC outputs this controller drives today.
 constexpr uint8_t SERVO_OUTPUT_ROW_DEFAULT_COUNT = 5;
+static_assert(SERVO_OUTPUT_ROW_DEFAULT_COUNT <= SERVO_OUTPUT_ROW_MAX,
+              "the table must hold the Outputs this controller ships with");
 
 // -----------------------------------------------------------------------------
 // The row

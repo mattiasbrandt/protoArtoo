@@ -167,7 +167,7 @@ boards against the #233 baseline.
 
 ## Patches Applied
 
-The vendored source includes eight required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
+The vendored source includes nine required patches. Each is mechanical, documented, and offered upstream as a PR candidate.
 
 ### Patch 1: Safe Enter - No Auto-completion on Enter
 
@@ -677,6 +677,56 @@ and an overflowing render reports 0 without moving the line editor.
 whole redraw reaching `Serial` in one write, and a keystroke arriving mid-
 emission landing outside the line rather than inside it.
 
+### Patch 9: Compile-Time Required Size
+
+**Problem**: `embeddedCliRequiredSize()` is the only way to learn how large a
+caller's `cliBuffer` must be, and it is a run-time function: it reads
+`sizeof(EmbeddedCliImpl)`, and that struct was private to `embedded_cli.c`. A
+caller that wants a static buffer therefore had to guess a size and check it at
+init. `src/tasks/console_task.cpp` guessed 2,048 B for a configuration that
+needs 524 B on xtensa, because a guess that is too small fails at run time,
+and there a failed size check deletes the Console task - the Survival Path, the
+one operator surface that answers when HTTP admission refuses everything. On
+artoo-esp32, where every static byte is a heap byte, the spare 1,524 B were the
+price of not being able to compute the answer (#428).
+
+**Solution**: `EMBEDDED_CLI_REQUIRED_SIZE(rx, cmd, history, maxBindings)` - the
+same formula as a constant expression, in `embedded_cli.h`, so a static buffer
+is declared exactly as large as the library needs:
+
+```c
+static CLI_UINT buf[BYTES_TO_CLI_UINTS(EMBEDDED_CLI_REQUIRED_SIZE(64, 64, 128, 8))];
+```
+
+To make that possible, `struct EmbeddedCliImpl` and the two structs it embeds
+(`FifoBuf`, `CliHistory`) moved from `embedded_cli.c` into the header,
+unchanged, and the internal binding count became
+`EMBEDDED_CLI_INTERNAL_BINDING_COUNT` (0, per Patch 4). `embeddedCliRequiredSize()`
+is now defined as the macro, so the run-time and compile-time answers cannot
+drift apart.
+
+**File**: `include/embedded_cli.h`, `src/embedded_cli.c`
+**Lines**:
+- `include/embedded_cli.h`: the three moved struct definitions and their
+  typedefs, `EMBEDDED_CLI_INTERNAL_BINDING_COUNT`, `EMBEDDED_CLI_REQUIRED_SIZE()`,
+  between `struct EmbeddedCliConfig` and `embeddedCliDefaultConfig()`.
+- `src/embedded_cli.c`: the moved definitions removed (`AutocompletedCommand`
+  stays, it is not part of the buffer layout); `cliInternalBindingCount` reads
+  the macro; `embeddedCliRequiredSize()`'s body is the macro.
+
+**RAM ownership**: none added. Code size is unchanged: the formula is the same
+arithmetic the function already did.
+
+**Upstream candidacy**: Yes. Any caller with a static buffer - the case the
+library's own `cliBuffer` option exists for - has the same guess-and-check
+problem, and the change only moves definitions and names a formula.
+
+**Test**: the formula is the one the native CLI suites
+(`test/test_native/test_cli_*`) already exercise through
+`embeddedCliRequiredSize()` and `embeddedCliNew()`; the compile-time caller is
+`src/tasks/console_task.cpp`, which states the four sizes it configures and
+sizes `embeddedCliBuffer` from them.
+
 ## Integration Notes
 
 ### Static Buffer Allocation
@@ -690,14 +740,18 @@ completion is Patch 5's catalog completion callback, not bindings (see
 illustrated was written for and which the project deliberately does not pay:
 
 ```c
-#define CLI_BUFFER_SIZE embeddedCliRequiredSize(&config)
-
-static CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(CLI_BUFFER_SIZE)];
+// Patch 9: the library's own formula, as a constant expression
+static CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(
+    EMBEDDED_CLI_REQUIRED_SIZE(RX_SIZE, CMD_SIZE, HISTORY_SIZE, MAX_BINDINGS))];
 
 config.cliBuffer = cliBuffer;  // No malloc needed
+config.cliBufferSize = sizeof(cliBuffer);
+config.rxBufferSize = RX_SIZE;  // and the other three: the sizes the buffer was built for
 ```
 
-Verify `BYTES_TO_CLI_UINTS` is defined and that the static allocation compiles.
+The configuration the caller hands `embeddedCliNew()` must be the one the
+buffer was sized for; `src/tasks/console_task.cpp` states the four sizes once
+and uses them for both.
 
 ### Dispatcher
 

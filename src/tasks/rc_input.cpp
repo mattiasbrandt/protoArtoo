@@ -21,8 +21,11 @@
 // =============================================================================
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
+
+#include <new>
 
 #include "../../include/commanded_modes.h"
 #include "../../include/config.h"
@@ -36,6 +39,7 @@
 #include "../../include/queue_drop_tracker.h"
 #include "../../include/rc_channel_mapper.h"
 #include "../../include/rc_dispatcher_helpers.h"
+#include "../../include/rc_input.h"
 #include "../../include/rc_input_processor.h"
 #include "../../include/rc_input_step.h"
 #include "../../include/rc_mapping_cache.h"
@@ -53,13 +57,50 @@ static const char* TAG = "RCInputTask";
 // channel are derived from the chip's RMT geometry, not fixed at 3 -- see
 // include/sbus_rmt_budget.h (#255).
 // UART1 is now exclusively owned by DriveTask; UART2 by DomeLinkTask.
-static SbusDecoder sbus_drive;
-static SbusDecoder sbus_dome;
+//
+// Allocated by rcInputAllocateDecoders() from setup(), only for the boot RC
+// mode that reads them, and null otherwise: 1,664 B each on artoo-esp32, where
+// every static byte is a heap byte, and most droids run one receiver or none
+// (#428).
+static SbusDecoder* s_sbusDrive = nullptr;
+static SbusDecoder* s_sbusDome = nullptr;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
                                       PIN_RC_CH4, PIN_RC_CH5, PIN_RC_CH6};
 
 static RcInputProcessor s_rcProcessor = {};
 static RcInputStepState s_rcStepState = {};
+
+// The RC processor's dispatch scratch (#428): what one dispatch hands
+// rcInputProcessorTick() and what it gets back. Both dispatch paths below run
+// only on RCInputTask, one after the other and never nested, so one input and
+// one output serve them all; the processor config is built straight into the
+// input. Static rather than stack, to keep ~1.5 KB off a Core 1 real-time
+// task's stack, and never heap: Core 1 allocates nothing after setup().
+static RcProcessorInput s_dispatchInput = {};
+static RcProcessorOutput s_dispatchOutput = {};
+
+// One decoder, for as long as the controller runs - the lifetime the static it
+// replaces had. Internal 8-bit RAM, never PSRAM: RMT's receive-done callback
+// runs in an ISR and writes this object's symbol buffers, and on the ESP32-P4
+// malloc can hand out PSRAM (CONFIG_SPIRAM_USE_MALLOC).
+static SbusDecoder* allocateSbusDecoder(const char* receiver) {
+    void* storage = heap_caps_malloc(sizeof(SbusDecoder), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (storage == nullptr) {
+        PA_LOG_ERROR(TAG, "no memory for the %s SBUS decoder (%u B)", receiver,
+                     (unsigned)sizeof(SbusDecoder));
+        return nullptr;
+    }
+    return new (storage) SbusDecoder();
+}
+
+void rcInputAllocateDecoders(const RcInputStartupPlan& plan) {
+    if (plan.driveSbusEnabled && s_sbusDrive == nullptr) {
+        s_sbusDrive = allocateSbusDecoder("drive");
+    }
+    if (plan.domeSbusEnabled && s_sbusDome == nullptr) {
+        s_sbusDome = allocateSbusDecoder("dome");
+    }
+}
 
 static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6]) {
     bool anyValid = false;
@@ -144,11 +185,9 @@ static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) 
         return;
     }
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
     static_assert(RC_TRIGGER_MAX >= RC_TRIGGER_SLOT_COUNT,
                   "trigger buffer must hold every config slot");
-    *count = rcTriggerSlotsCopy(cfg.system, bindings, RC_TRIGGER_MAX);
+    *count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_MAX);
 }
 
 static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcessorConfig* out) {
@@ -156,37 +195,15 @@ static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcesso
     out->mapping = rcGetMappingConfig(active);
     loadTier2TriggerBindings(out->triggers, &out->triggerCount);
 
-    static ConfigSnapshot snap = {};
-    configCacheRead(&snap);
-    out->categories.gen_lo   = snap.audio.snd_cat_gen_lo;
-    out->categories.gen_hi   = snap.audio.snd_cat_gen_hi;
-    out->categories.chat_lo  = snap.audio.snd_cat_chat_lo;
-    out->categories.chat_hi  = snap.audio.snd_cat_chat_hi;
-    out->categories.hap_lo   = snap.audio.snd_cat_hap_lo;
-    out->categories.hap_hi   = snap.audio.snd_cat_hap_hi;
-    out->categories.proc_lo  = snap.audio.snd_cat_proc_lo;
-    out->categories.proc_hi  = snap.audio.snd_cat_proc_hi;
-    out->categories.sad_lo   = snap.audio.snd_cat_sad_lo;
-    out->categories.sad_hi   = snap.audio.snd_cat_sad_hi;
-    out->categories.sent_lo  = snap.audio.snd_cat_sent_lo;
-    out->categories.sent_hi  = snap.audio.snd_cat_sent_hi;
-    out->categories.hum_lo   = snap.audio.snd_cat_hum_lo;
-    out->categories.hum_hi   = snap.audio.snd_cat_hum_hi;
-    out->categories.scrm_lo  = snap.audio.snd_cat_scrm_lo;
-    out->categories.scrm_hi  = snap.audio.snd_cat_scrm_hi;
-    out->categories.ooh_lo   = snap.audio.snd_cat_ooh_lo;
-    out->categories.ooh_hi   = snap.audio.snd_cat_ooh_hi;
-    out->categories.alrm_lo  = snap.audio.snd_cat_alrm_lo;
-    out->categories.alrm_hi  = snap.audio.snd_cat_alrm_hi;
-    out->categories.snarky_lo = snap.audio.snd_cat_snarky_lo;
-    out->categories.snarky_hi = snap.audio.snd_cat_snarky_hi;
-    out->categories.whis_lo  = snap.audio.snd_cat_whis_lo;
-    out->categories.whis_hi  = snap.audio.snd_cat_whis_hi;
+    // By field, not a whole ConfigSnapshot: the ranges and the preset are all
+    // a dispatch reads of it (#428).
+    SpeedPresetId speedPresetActive = SpeedPresetId::Normal;
+    configCacheReadRcActionContext(&out->categories, &speedPresetActive);
 
     taskENTER_CRITICAL(&robotStateMux);
     out->estopActive        = robotState.estop;
     out->currentSleepMode   = robotState.sleepMode;
-    out->currentSpeedPreset = normalizeSpeedPresetId((uint8_t)snap.drive.speedPresetActive);
+    out->currentSpeedPreset = normalizeSpeedPresetId((uint8_t)speedPresetActive);
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -240,36 +257,12 @@ static RcDispatchOutcome processTriggerAction(RobotActionId target, const char* 
     ap.pressed = pressed;
     ap.randomSeed = (uint32_t)esp_random();
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    ap.categories.gen_lo = cfg.audio.snd_cat_gen_lo;
-    ap.categories.gen_hi = cfg.audio.snd_cat_gen_hi;
-    ap.categories.chat_lo = cfg.audio.snd_cat_chat_lo;
-    ap.categories.chat_hi = cfg.audio.snd_cat_chat_hi;
-    ap.categories.hap_lo = cfg.audio.snd_cat_hap_lo;
-    ap.categories.hap_hi = cfg.audio.snd_cat_hap_hi;
-    ap.categories.proc_lo = cfg.audio.snd_cat_proc_lo;
-    ap.categories.proc_hi = cfg.audio.snd_cat_proc_hi;
-    ap.categories.sad_lo = cfg.audio.snd_cat_sad_lo;
-    ap.categories.sad_hi = cfg.audio.snd_cat_sad_hi;
-    ap.categories.sent_lo = cfg.audio.snd_cat_sent_lo;
-    ap.categories.sent_hi = cfg.audio.snd_cat_sent_hi;
-    ap.categories.hum_lo = cfg.audio.snd_cat_hum_lo;
-    ap.categories.hum_hi = cfg.audio.snd_cat_hum_hi;
-    ap.categories.scrm_lo = cfg.audio.snd_cat_scrm_lo;
-    ap.categories.scrm_hi = cfg.audio.snd_cat_scrm_hi;
-    ap.categories.ooh_lo = cfg.audio.snd_cat_ooh_lo;
-    ap.categories.ooh_hi = cfg.audio.snd_cat_ooh_hi;
-    ap.categories.alrm_lo = cfg.audio.snd_cat_alrm_lo;
-    ap.categories.alrm_hi = cfg.audio.snd_cat_alrm_hi;
-    ap.categories.snarky_lo = cfg.audio.snd_cat_snarky_lo;
-    ap.categories.snarky_hi = cfg.audio.snd_cat_snarky_hi;
-    ap.categories.whis_lo = cfg.audio.snd_cat_whis_lo;
-    ap.categories.whis_hi = cfg.audio.snd_cat_whis_hi;
+    SpeedPresetId speedPresetActive = SpeedPresetId::Normal;
+    configCacheReadRcActionContext(&ap.categories, &speedPresetActive);
     taskENTER_CRITICAL(&robotStateMux);
     ap.estopActive = robotState.estop;
     ap.currentSleepMode = robotState.sleepMode;
-    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
+    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)speedPresetActive);
     taskEXIT_CRITICAL(&robotStateMux);
 
     RcActionResult res = rcDispatchAction(ap);
@@ -338,10 +331,9 @@ static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {
 
     // PWM failsafe: check if we have recent valid PWM input before processing drive commands
     bool pwmSignalLost = false;
-    ConfigSnapshot cfgSnap = {};
-    configCacheRead(&cfgSnap);
+    const uint32_t signalTimeoutMs = configCacheSbusTimeoutMs();
     taskENTER_CRITICAL(&robotStateMux);
-    pwmSignalLost = pwmSignalLostCheck(robotState.lastPwmMs, pwmCheckMs, cfgSnap.drive.sbusTimeoutMs);
+    pwmSignalLost = pwmSignalLostCheck(robotState.lastPwmMs, pwmCheckMs, signalTimeoutMs);
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (pwmSignalLost) {
@@ -356,22 +348,18 @@ static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {
     snap.mode  = RC_INPUT_STANDARD_PWM;
     for (int i = 0; i < 6; ++i) snap.channels[i] = (int16_t)pulses[i];
 
-    static RcProcessorConfig cfg_proc = {};
-    buildRcProcessorConfig(active, &cfg_proc);
-    cfg_proc.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
+    RcProcessorInput& input = s_dispatchInput;
+    buildRcProcessorConfig(active, &input.config);
+    input.config.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
     // PWM mode has no Tier 2 SBUS triggers  --  clear count so processor skips the loop
-    cfg_proc.triggerCount = 0;
-
-    static RcProcessorInput input = {};
+    input.config.triggerCount = 0;
     input.channels     = snap;
-    input.config       = cfg_proc;
     input.nowMs        = millis();
     input.randomSeed   = (uint32_t)esp_random();
     input.sourceFilter = RC_BINDING_PWM;
 
-    static RcProcessorOutput output = {};
-    rcInputProcessorTick(&s_rcProcessor, input, &output);
-    dispatchProcessorOutput(output, cfg_proc.mapping, cfg_proc.triggers);
+    rcInputProcessorTick(&s_rcProcessor, input, &s_dispatchOutput);
+    dispatchProcessorOutput(s_dispatchOutput, input.config.mapping, input.config.triggers);
 }
 
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
@@ -384,20 +372,16 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     snap.channels[16] = data.ch17 ? 1811 : 172;
     snap.channels[17] = data.ch18 ? 1811 : 172;
 
-    static RcProcessorConfig cfg = {};
-    buildRcProcessorConfig(active, &cfg);
-    cfg.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
-
-    static RcProcessorInput input = {};
+    RcProcessorInput& input = s_dispatchInput;
+    buildRcProcessorConfig(active, &input.config);
+    input.config.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
     input.channels     = snap;
-    input.config       = cfg;
     input.nowMs        = millis();
     input.randomSeed   = (uint32_t)esp_random();
     input.sourceFilter = source;
 
-    static RcProcessorOutput output = {};
-    rcInputProcessorTick(&s_rcProcessor, input, &output);
-    dispatchProcessorOutput(output, cfg.mapping, cfg.triggers);
+    rcInputProcessorTick(&s_rcProcessor, input, &s_dispatchOutput);
+    dispatchProcessorOutput(s_dispatchOutput, input.config.mapping, input.config.triggers);
 }
 
 
@@ -426,11 +410,14 @@ void rcInputTask(void* pvParameters) {
     const bool useCh2 = active.useCh2;
     const RcInputStartupPlan startupPlan = rcInputStepStartupPlan(active);
 
+    // A decoder setup() could not allocate stays off exactly as one whose RMT
+    // channel would not start: its receiver is logged as disabled, and the
+    // drive stays locked by the boot SBUS watchdog trigger (src/main.cpp).
     bool driveSbusEnabled = false;
-    if (startupPlan.driveSbusEnabled) {
+    if (startupPlan.driveSbusEnabled && s_sbusDrive != nullptr) {
         bool useDriveSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
         int sbusRxPin = useDriveSbus2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
-        if (!sbus_drive.begin(sbusRxPin)) {
+        if (!s_sbusDrive->begin(sbusRxPin)) {
             PA_LOG_ERROR(TAG, "RMT init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
                          sbusRxPin);
         } else {
@@ -439,8 +426,8 @@ void rcInputTask(void* pvParameters) {
     }
 
     bool domeSbusEnabled = false;
-    if (startupPlan.domeSbusEnabled) {
-        if (!sbus_dome.begin(PIN_SBUS2_RX)) {
+    if (startupPlan.domeSbusEnabled && s_sbusDome != nullptr) {
+        if (!s_sbusDome->begin(PIN_SBUS2_RX)) {
             PA_LOG_ERROR(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
         } else {
             domeSbusEnabled = true;
@@ -495,8 +482,8 @@ void rcInputTask(void* pvParameters) {
         }
 
         // --- Drive receiver (SBUS #1, or SBUS2 GPIO when single_sbus+useCh2) ---
-        if (driveSbusEnabled && sbus_drive.read()) {
-            SbusData data = sbus_drive.data();
+        if (driveSbusEnabled && s_sbusDrive->read()) {
+            SbusData data = s_sbusDrive->data();
 
             // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
             // Treat as SBUS2  --  store to sbus2 state and dispatch dome/aux bindings only.
@@ -617,9 +604,7 @@ void rcInputTask(void* pvParameters) {
         uint32_t nowMs = millis();
         uint32_t timeoutMs = 0;
         if (driveWatchdogEnabled || domeSbusEnabled) {
-            ConfigSnapshot watchdogCfg = {};
-            configCacheRead(&watchdogCfg);
-            timeoutMs = watchdogCfg.drive.sbusTimeoutMs;
+            timeoutMs = configCacheSbusTimeoutMs();
         }
 
         uint32_t lastSbus1 = 0;
@@ -657,7 +642,7 @@ void rcInputTask(void* pvParameters) {
                     bool rcDebug = robotState.rcDebugMode;
                     taskEXIT_CRITICAL(&robotStateMux);
                     if (rcDebug) {
-                        SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
+                        SbusDecoderDebugStats driveStats = s_sbusDrive->debugStats();
                         PA_LOG_DEBUG(
                             TAG,
                             "drive watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
@@ -692,8 +677,8 @@ void rcInputTask(void* pvParameters) {
         }
 
         // --- Dome-spin receiver (SBUS #2) ---
-        if (domeSbusEnabled && sbus_dome.read()) {
-            SbusData data = sbus_dome.data();
+        if (domeSbusEnabled && s_sbusDome->read()) {
+            SbusData data = s_sbusDome->data();
 
             taskENTER_CRITICAL(&robotStateMux);
             bool wasSbus2HwFailsafe = robotState.sbus2HwFailsafe;
@@ -761,7 +746,7 @@ void rcInputTask(void* pvParameters) {
                     bool rcDebug = robotState.rcDebugMode;
                     taskEXIT_CRITICAL(&robotStateMux);
                     if (rcDebug) {
-                        SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                        SbusDecoderDebugStats domeStats = s_sbusDome->debugStats();
                         PA_LOG_DEBUG(
                             TAG,
                             "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
@@ -821,9 +806,10 @@ void rcInputTask(void* pvParameters) {
                 if (waitingDome)
                     PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");
                 if (rcDebug) {
-                    SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
-                    SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                    // Each receiver's stats only while it is waiting: waiting
+                    // implies it started, so its decoder exists.
                     if (waitingDrive) {
+                        SbusDecoderDebugStats driveStats = s_sbusDrive->debugStats();
                         PA_LOG_DEBUG(TAG,
                                      "SBUS1 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
                                      "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
@@ -844,6 +830,7 @@ void rcInputTask(void* pvParameters) {
                                      (unsigned long)driveStats.maxSymbolCount);
                     }
                     if (waitingDome) {
+                        SbusDecoderDebugStats domeStats = s_sbusDome->debugStats();
                         PA_LOG_DEBUG(TAG,
                                      "SBUS2 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
                                      "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "

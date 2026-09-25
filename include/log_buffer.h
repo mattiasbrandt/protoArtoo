@@ -26,9 +26,10 @@
 // PA_LOG_SERIAL_LINE_MAX (256, logging.h), so a retained line is clipped at
 // half of what was printed -- but the rationale above is "covers all normal log
 // lines", not a heap argument, so widening it is not the inherited-scarcity fix
-// this file makes. It would also widen the SSE batch statics that are sized off
-// it (s_sseLogLines / s_sseLogBatch, web_server.cpp), spending permanent DRAM on
-// a dimension that is not what limits retained history.
+// this file makes. It would also widen what the SSE log batch is sized off it
+// (s_sseLogLines and kSseLogBatchBytes, web_server.cpp - the batch must fit the
+// WebEvents event body whole), spending permanent DRAM on a dimension that is
+// not what limits retained history.
 static constexpr size_t LOG_LINE_MAX = 128;
 
 // Ring depth follows the operator's saved log level. The ring is sized ONCE at

@@ -21,6 +21,8 @@
 #include "servo_motion_ramp.h"  // ServoMotionProfile - what a move is planned from
 #include "wifi_boot_decision.h"  // For WifiBootPosture (#189)
 
+struct RcAudioCategorySnapshot;  // include/rc_action_dispatcher.h
+
 // =============================================================================
 // Cache read-write (live runtime state)
 // =============================================================================
@@ -38,9 +40,24 @@ bool configCacheDomeEnabled();
 bool configCacheServoAnyEnabled();
 // Whether the Output at `boardOutputIndex` in include/board_outputs.h's
 // BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
-// without copying a 944 B snapshot onto the caller's frame to ask one bit.
+// without copying a 916 B snapshot onto the caller's frame to ask one bit.
 bool configCacheOutputIsWired(size_t boardOutputIndex);
 void configCacheReadWifi(WifiConfig* out);
+
+// The narrow reads an RC dispatch makes on Core 1 (src/tasks/rc_input.cpp),
+// each by field so a dispatch copies what it uses rather than a 916 B
+// ConfigSnapshot onto the real-time task's stack or into a static (#428).
+//
+// configCacheReadRcActionContext: the twelve sound-category ranges an RC
+// action picks a random track from, and the active speed preset, in one
+// configCacheMux section. Either pointer may be null.
+void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
+                                    SpeedPresetId* speedPresetActive);
+// configCacheReadRcTriggerSlots: rcTriggerSlotsCopy() on the live config.
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
+// configCacheSbusTimeoutMs: drive.sbusTimeoutMs, the RC signal watchdog's
+// timeout.
+uint32_t configCacheSbusTimeoutMs();
 
 // The addressed Servo Output rows (ADR 0041). They sit outside ConfigSnapshot,
 // on their own NVS keys -- see include/config_serializer.h for why the table is
@@ -215,7 +232,7 @@ void configCacheReplace(const ConfigSnapshot& snap);
 //
 // The RC speed preset's write, and safe where that runs: RCInputTask, Core 1
 // (src/rc_dispatcher_helpers.cpp). It used to be a whole-snapshot read, two
-// field edits and configCacheApply() across two critical sections - 944 B of
+// field edits and configCacheApply() across two critical sections - 916 B of
 // snapshot on the real-time task's stack, and a write that replaced every
 // other field with what it had read, so a config POST landing between the two
 // sections lost its fields (#417). No mutex is taken, ever: a blocking take on
@@ -237,8 +254,8 @@ void configCacheSetSpeedLimit(int16_t speedLimitMax, SpeedPresetId preset);
 // commandedSetStationary() (src/commanded_modes.cpp) keeps this in step with
 // RobotState.stationary so the next config save persists the commanded mode
 // instead of reverting it from a stale cache. It used to do that with a
-// whole-snapshot round trip - read all 944 B of ConfigSnapshot out, set one
-// bool, write all 944 B back through configCacheApply() - on the SBUS path
+// whole-snapshot round trip - read all 916 B of ConfigSnapshot out, set one
+// bool, write all 916 B back through configCacheApply() - on the SBUS path
 // (Core 1, once per frame while driving, src/tasks/rc_input.cpp), on the httpd
 // task and on the Console alike. That also marked RobotState.rcConfigDirty on
 // every toggle, making RcInputTask rebuild its cached mapping config for a

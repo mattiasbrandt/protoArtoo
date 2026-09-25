@@ -622,7 +622,7 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // cycles the walk cuts sit in the ESP-IDF heap and log tail underneath it -- a
 // cut edge makes the reported total a LOWER bound, so it cannot be where the
 // number came from. Three nested frames on the config-write path each carried a
-// ConfigSnapshot (944 B) by value --
+// ConfigSnapshot (944 B then, 916 B today) by value --
 // consoleWriteScalarConfigField's `working` plus the ConfigCommitOutcome it got
 // back (944 + 948 in one frame), and commandedSetStationary's `cfg` -- on top of
 // consoleExecuteCommand's own 1888 B and the ~2.3 KB newlib tail that every

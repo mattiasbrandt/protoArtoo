@@ -119,7 +119,8 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 // elsewhere stayed invisible to both the endpoint and the guard until #271:
 // WebEvents and ArduinoOTA (web_server.cpp) and HostedRecovery
 // (web_network_manager_hosted.cpp, ESP32-P4 only -- it reports not-found on
-// artoo-esp32, like any task this image does not run).
+// artoo-esp32, like any task this image does not run). loopTask ends when
+// setup() returns (#428), so a running controller reports it not-found too.
 //
 // That is worse than an obviously absent endpoint, because the response looks
 // complete -- a task that is never listed reads the same as a task that is

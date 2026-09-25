@@ -8,19 +8,26 @@
 //   - Log failsafe trigger count increases
 //   - Verify dome connection state transitions (connected <-> lost)
 //   - Warn if free heap drops below 20 KB and monitor heap fragmentation
+//   - Carry out an operator-requested restart (requestSystemRestart())
 //
 // SAFETY: This task does NOT directly control motors or actuators.
-//         It is an observer only. All motor control is in DriveTask.
+//         It is an observer only. All motor control is in DriveTask. The one
+//         thing it does is the restart an operator asked for, which it owns
+//         because the Arduino loopTask, which used to, exits after setup().
 // =============================================================================
 
 #include <Arduino.h>
+#include <esp_err.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 
 #include "api_profiler.h"
 #include "failed_alloc_tracker.h"
 #include "heap_health.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "safety.h"
+#include "web_server.h"  // requestSystemRestart()
 
 static const char* TAG = "SafetyMonitor";
 
@@ -34,6 +41,60 @@ static uint8_t fragmentedSampleCount = 0;
 
 constexpr size_t HEAP_FRAGMENT_LARGEST_BLOCK_WARN_BYTES = 10240;
 constexpr uint8_t HEAP_FRAGMENT_WARN_SAMPLE_COUNT = 30;  // 3 s at 10 Hz
+
+// An operator-requested restart: armed by requestSystemRestart(), carried out
+// by restartIfRequested() on this task's 10 Hz tick once the delay has run.
+// Nothing else arms it - a network fault never restarts the controller
+// (ADR 0032). It lived on the Arduino loopTask's loop() until #428 let that
+// task exit after setup() to give its stack back to the heap; this task was
+// already polling at the same 100 ms.
+static volatile bool restartRequested = false;
+static volatile uint32_t restartAtMs = 0;
+static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
+
+void requestSystemRestart(uint32_t delayMs) {
+    taskENTER_CRITICAL(&restartMux);
+    restartRequested = true;
+    restartAtMs = millis() + delayMs;
+    taskEXIT_CRITICAL(&restartMux);
+}
+
+static void restartIfRequested() {
+    bool shouldRestart = false;
+
+    taskENTER_CRITICAL(&restartMux);
+    if (restartRequested && (int32_t)(millis() - restartAtMs) >= 0) {
+        shouldRestart = true;
+    }
+    taskEXIT_CRITICAL(&restartMux);
+
+    if (!shouldRestart) {
+        return;
+    }
+
+    PA_LOG_INFO(TAG, "restarting controller");
+    // No Serial.flush() here: this task does not own the wire (ADR 0039). The
+    // line above is in the ring, the Console task drains it within its 10 ms
+    // poll, and the delay(100) below is well past the ~4 ms a line of this
+    // length takes at 115200 8N1 - so the restart notice still reaches the
+    // operator, and on the CDC it reaches them at all (flush() there discarded
+    // the ring rather than draining it).
+    //
+    // Deinit TWDT before restart  --  prevents esp_restart() from being
+    // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
+    // ESP-IDF refuses the deinit while any task is still subscribed
+    // (task_wdt.c: "Tasks/users still subscribed"), and DriveTask, ServoTask
+    // and SeqDisp always are, so the watchdog stays on; they go on feeding it
+    // through the delay below, and esp_restart() resets with ESP_RST_SW
+    // either way. The refusal is logged rather than dropped.
+    const esp_err_t twdtDeinit = esp_task_wdt_deinit();
+    if (twdtDeinit != ESP_OK) {
+        PA_LOG_WARN(TAG, "task watchdog still running at restart: %s",
+                    esp_err_to_name(twdtDeinit));
+    }
+    delay(100);
+    ESP.restart();
+}
 
 // -----------------------------------------------------------------------------
 // safetyMonitorTask()
@@ -158,6 +219,8 @@ void safetyMonitorTask(void* pvParameters) {
         }
 
         profilerPeriodicCollect();
+
+        restartIfRequested();
 
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz
     }

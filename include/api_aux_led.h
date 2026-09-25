@@ -47,13 +47,14 @@ bool formatLitWiresJson(char* buf, size_t bufSize, const LitWireReading* wires, 
 // status frame is built on the WebEvents task's stack and the aux-LED reply on
 // a web handler's, so a loose bound here is stack nobody gets back.
 //
-// One entry is {"<id>":{"r":255,"g":255,"b":255,"effect":"pulse","available":false},
-//   = 3 + id + 8 + 8 + 8 + 17 + 17 + 2 punctuation and separator
+// One entry is ,"<id>":{"r":255,"g":255,"b":255,"effect":"pulse","available":false}
+//   = 1 separator + (3 + id) + 9 + 8 + 8 + 17 + 17 + 1 closing brace
 // with the widest value in every field: three-digit channels, the longest
-// effect word ("pulse", 5) and the longer boolean ("false", 5). Only an Output
-// a light may go on can appear, so the count is bounded by those and not by
-// the whole table. Plus the two braces and the terminator.
-constexpr size_t LIT_WIRE_JSON_ENTRY_MAX = 63 + BOARD_OUTPUT_ID_MAX_LEN;
+// effect word ("pulse", 5) and the longer boolean ("false", 5). The first entry
+// has no separator, so this is one byte over for it. Only an Output a light may
+// go on can appear, so the count is bounded by those and not by the whole
+// table. Plus the two braces and the terminator.
+constexpr size_t LIT_WIRE_JSON_ENTRY_MAX = 64 + BOARD_OUTPUT_ID_MAX_LEN;
 constexpr size_t LIT_WIRES_JSON_MAX =
     BOARD_OUTPUT_LIGHT_CAPABLE_COUNT * LIT_WIRE_JSON_ENTRY_MAX + 3;
 

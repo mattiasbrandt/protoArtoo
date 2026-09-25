@@ -83,144 +83,7 @@
 */
 #define CURSOR_DIRECTION_BACKWARD false
 
-typedef struct EmbeddedCliImpl EmbeddedCliImpl;
 typedef struct AutocompletedCommand AutocompletedCommand;
-typedef struct FifoBuf FifoBuf;
-typedef struct CliHistory CliHistory;
-
-struct FifoBuf {
-    char *buf;
-    /**
-     * Position of first element in buffer. From this position elements are taken
-     */
-    uint16_t front;
-    /**
-     * Position after last element. At this position new elements are inserted
-     */
-    uint16_t back;
-    /**
-     * Size of buffer
-     */
-    uint16_t size;
-};
-
-struct CliHistory {
-    /**
-     * Items in buffer are separated by null-chars
-     */
-    char *buf;
-
-    /**
-     * Total size of buffer
-     */
-    uint16_t bufferSize;
-
-    /**
-     * Index of currently selected element. This allows to navigate history
-     * After command is sent, current element is reset to 0 (no element)
-     */
-    uint16_t current;
-
-    /**
-     * Number of items in buffer
-     * Items are counted from top to bottom (and are 1 based).
-     * So the most recent item is 1 and the oldest is itemCount.
-     */
-    uint16_t itemsCount;
-};
-
-struct EmbeddedCliImpl {
-    /**
-     * Invitation string. Is printed at the beginning of each line with user
-     * input
-     */
-    const char *invitation;
-
-    CliHistory history;
-
-    /**
-     * Buffer for storing received chars.
-     * Chars are stored in FIFO mode.
-     */
-    FifoBuf rxBuffer;
-
-    /**
-     * Buffer for current command
-     */
-    char *cmdBuffer;
-
-    /**
-     * Size of current command
-     */
-    uint16_t cmdSize;
-
-    /**
-     * Total size of command buffer
-     */
-    uint16_t cmdMaxSize;
-
-    CliCommandBinding *bindings;
-
-    /**
-     * Flags for each binding. Sizes are the same as for bindings array
-     */
-    uint8_t *bindingsFlags;
-
-    uint16_t bindingsCount;
-
-    uint16_t maxBindingsCount;
-
-    /**
-     * Total length of input line. This doesn't include invitation but
-     * includes current command and its live autocompletion
-     */
-    uint16_t inputLineLength;
-
-    /**
-     * Stores last character that was processed.
-     */
-    char lastChar;
-
-    /**
-     * Flags are defined as CLI_FLAG_*
-     */
-    uint8_t flags;
-
-    /**
-     * Cursor position for current command from right to left
-     * 0 = end of command
-     */
-    uint16_t cursorPos;
-
-    /**
-     * [PATCH: Single-write redraw] Capture target for embeddedCliPrintToBuffer.
-     * While non-NULL, every character this library would hand to
-     * cli->writeChar is appended here instead (writeCharOut below), so a
-     * caller can render a whole redraw and hand it to its transport in ONE
-     * write. NULL - the state outside that one call - restores the upstream
-     * behavior exactly: straight through to cli->writeChar, character by
-     * character.
-     */
-    char *outBuffer;
-
-    /**
-     * Capacity of outBuffer. Meaningful only while outBuffer is non-NULL.
-     */
-    size_t outCapacity;
-
-    /**
-     * Bytes appended to outBuffer so far.
-     */
-    size_t outLength;
-
-    /**
-     * Set when a character did not fit outBuffer. The partial content is then
-     * never handed back: a half-rendered redraw on the wire is worse than no
-     * redraw at all, so embeddedCliPrintToBuffer reports the whole render as
-     * not fitting and the caller falls back to whatever it can send whole.
-     */
-    bool outOverflow;
-};
 
 struct AutocompletedCommand {
     /**
@@ -259,7 +122,10 @@ static EmbeddedCliConfig defaultConfig;
  * - help
  */
 // [PATCH: Project-help ownership] Disable internal help binding so the project's help owns the name.
-static const uint16_t cliInternalBindingCount = 0;  // Was: 1 (internal help binding)
+// [PATCH: Compile-time required size] The count itself is
+// EMBEDDED_CLI_INTERNAL_BINDING_COUNT in embedded_cli.h, which
+// EMBEDDED_CLI_REQUIRED_SIZE() needs at compile time.
+static const uint16_t cliInternalBindingCount = EMBEDDED_CLI_INTERNAL_BINDING_COUNT;
 
 static const char *lineBreak = "\r\n";
 
@@ -525,15 +391,11 @@ EmbeddedCliConfig *embeddedCliDefaultConfig(void) {
 }
 
 uint16_t embeddedCliRequiredSize(EmbeddedCliConfig *config) {
-    uint16_t bindingCount = (uint16_t) (config->maxBindingCount + cliInternalBindingCount);
-    return (uint16_t) (CLI_UINT_SIZE * (
-            BYTES_TO_CLI_UINTS(sizeof(EmbeddedCli)) +
-            BYTES_TO_CLI_UINTS(sizeof(EmbeddedCliImpl)) +
-            BYTES_TO_CLI_UINTS(config->rxBufferSize * sizeof(char)) +
-            BYTES_TO_CLI_UINTS(config->cmdBufferSize * sizeof(char)) +
-            BYTES_TO_CLI_UINTS(config->historyBufferSize * sizeof(char)) +
-            BYTES_TO_CLI_UINTS(bindingCount * sizeof(CliCommandBinding)) +
-            BYTES_TO_CLI_UINTS(bindingCount * sizeof(uint8_t))));
+    // [PATCH: Compile-time required size] One formula for both: this and a
+    // caller sizing its buffer at compile time can never disagree.
+    return (uint16_t) EMBEDDED_CLI_REQUIRED_SIZE(config->rxBufferSize, config->cmdBufferSize,
+                                                 config->historyBufferSize,
+                                                 config->maxBindingCount);
 }
 
 EmbeddedCli *embeddedCliNew(EmbeddedCliConfig *config) {

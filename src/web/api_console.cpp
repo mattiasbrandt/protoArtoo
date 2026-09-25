@@ -42,95 +42,11 @@
 #include "../../include/console_args.h"  // consoleSplitCommandLine() - the `operations` routing
                                           // check below (#221)
 #include "../../include/web_json_slice_writer.h"
+#include "../../include/web_request_scratch.h"
 #include "../../include/web_server.h"   // getLogBufferCount() - #239's system.status.logs
                                          // peek, below
 #include "../../include/log_buffer.h"   // LOG_LINE_MAX - the per-item arena reserve #239 needs
                                          // (pure header, no Arduino/FreeRTOS dependency)
-
-// Maximum number of records + value storage for a single BOUNDED response.
-// `operations` never uses this path (see fillOperationsResponse below) -
-// this cap sizes the small, fixed responses every other command produces.
-#define CONSOLE_RESPONSE_RECORDS_MAX 32
-#define CONSOLE_RECORD_VALUE_ARENA 2048
-
-// Worst-case bytes one item's value can consume in the arena. The longest
-// item value any query emits today is a log line (system.status.logs, #239),
-// up to LOG_LINE_MAX-1 bytes. Reserving this much before accepting an item
-// guarantees arenaStoreString() never has to silently truncate a value on
-// this path - an item this file refuses is visible on the wire
-// (webSink.itemsTruncated -> "truncated":true); one arenaStoreString() quietly
-// shortened would not be. Revisit if a future item-emitting query's values
-// can be longer than a log line.
-#define CONSOLE_ITEM_VALUE_RESERVE_BYTES LOG_LINE_MAX
-
-struct ConsoleRecord {
-    const char* type;
-    uint32_t requestId;
-    const char* status;
-    const char* outcome;
-    const char* reason;
-    const char* operation;
-    const char* name;
-    const char* value;
-};
-
-// Arena holds copied values; all record pointers reference this storage
-struct ConsoleWebSink {
-    ConsoleRecord records[CONSOLE_RESPONSE_RECORDS_MAX];
-    size_t recordCount;
-    char valueArena[CONSOLE_RECORD_VALUE_ARENA];
-    size_t arenaUsed;
-    // Set the moment a sink callback cannot record a record because the
-    // array is full - including the `end`/`result` record that would have
-    // closed the group. handleConsolePost() checks this before building any
-    // response, so a command that outgrows this path answers with an
-    // explicit failure instead of a JSON body that looks complete but is
-    // missing its close (#240). system.status.logs (#239) never reaches this:
-    // its item count is bounded up front by itemsToSkip below, precisely so
-    // it degrades via itemsTruncated instead.
-    bool overflowed;
-    // #239: system.status.logs-style graceful item truncation.
-    // itemsToSkip is set once, before consoleExecuteCommand() runs
-    // (handleConsolePost()'s system.status.logs branch), to the number of
-    // OLDEST items to discard so the KEPT items are the newest ones - a
-    // discarded item never touches records[]/valueArena, so skipping costs
-    // nothing, unlike storing-then-evicting an already-kept item would.
-    // itemsTruncated is set the moment any item is skipped this way, or an
-    // item is refused for arena headroom (webOnRecordItem_impl) - reported to
-    // the client on the JSON response envelope ("truncated":true), never as
-    // a new Console Record field; the wire protocol itself is unchanged.
-    size_t itemsToSkip;
-    bool itemsTruncated;
-};
-
-// #266: this struct alone was ~3.1 KB on the real 32-bit target, and living
-// on handleConsolePost()'s stack (alongside two 256-byte command buffers) was
-// enough by itself to overflow the httpd task's 8 KB stack on the very first
-// POST, for every command including the smallest possible one - measured via
-// `-fstack-usage` (handleConsolePost()'s frame: 3776 B before, 240 B after
-// moving it and the buffers to static storage; see handleConsolePost()'s own
-// comment). Guards against this struct growing back into stack-sized
-// territory unnoticed: a future field addition that trips this budget must
-// re-measure the static chain (this struct is now `static`, so it costs .bss
-// - RAM budget in tools/build_budgets.json - not stack, but a large
-// ADDITIONAL request-scoped struct like this one, declared as a stack local
-// elsewhere in this file or a new adapter, would reopen exactly this defect)
-// rather than silently raising the number here.
-//
-// PA_NATIVE_TEST_STUBS-gated out: the native test build compiles this same
-// struct for the HOST'S pointer width, not the target's. ConsoleRecord holds
-// seven `const char*` fields, so a 64-bit host makes this struct ~1 KB larger
-// than the real ESP32/ESP32-P4 build (measured: 4136 B host vs 3092 B
-// target) for a reason with zero bearing on either chip's actual stack
-// (native tests never run on an httpd task) - asserting the target's number
-// against a host-compiled size would either false-fail on every native build
-// or have to be loosened past the point of guarding anything.
-#if !defined(PA_NATIVE_TEST_STUBS)
-static_assert(sizeof(ConsoleWebSink) <= 3200,
-              "ConsoleWebSink grew past its #266 stack-safety budget - "
-              "re-measure handleConsolePost()'s -fstack-usage frame before "
-              "raising this number");
-#endif
 
 static ConsoleWebSink* g_currentWebSink = nullptr;
 
@@ -335,8 +251,10 @@ static void opsOnRecordEnd(uint32_t requestId, ConsoleStatus status, ConsoleOutc
 // see the same command line and request id): sendChunked()'s contract calls
 // the filler repeatedly with different byte offsets into the same logical
 // body, so a value that changed between calls would make different replays
-// disagree about what that body is.
-static char g_operationsCommand[256];
+// disagree about what that body is. The line itself is the request's
+// ConsoleWebScratch::operationsCommand, in the web request scratch; this
+// points at it only while handleConsolePost() streams.
+static const char* g_operationsCommand = nullptr;
 static uint32_t g_operationsRequestId;
 
 static size_t fillOperationsResponse(uint8_t* output, size_t capacity, size_t offset) {
@@ -370,26 +288,28 @@ static size_t fillOperationsResponse(uint8_t* output, size_t capacity, size_t of
 }
 
 void handleConsolePost(WebRequest& req) {
-    // Static, not stack (#266): ConsoleWebSink alone is ~3.1 KB (records[32] +
-    // the 2 KB value arena) and this function's other locals brought the
-    // frame to 3776 B (measured via `-fstack-usage`) - on an 8 KB httpd task
-    // stack that is also carrying the PsychicHttp/esp_http_server/lwIP
-    // dispatch chain beneath every route AND consoleExecuteCommand()'s own
-    // fixed ~1.9 KB frame (paid on every call regardless of which operation
-    // runs - console_module.cpp's lineBuf[256] plus its dispatch switch),
-    // that was enough on its own to overflow the task stack on the very
-    // first POST, for every command including the smallest possible one
-    // (#266's measurement). Same fix, same reasoning as api_status.cpp's
-    // `body[3072]` comment on handleStatusGet(): one "httpd" task processes
-    // one request at a time (PsychicHttp's default synchronous dispatch, the
-    // same assumption g_currentWebSink/g_operationsCommand below already
-    // make), so a static buffer here is race-free and costs .bss instead of
-    // stack. Explicitly reset every field below rather than relying on
-    // static zero-init, which only runs once at boot, not per request.
-    static char command[256];
-    memset(command, 0, sizeof(command));
-    static ConsoleWebSink webSink;
-    memset(&webSink, 0, sizeof(webSink));
+    // Not stack (#266): ConsoleWebSink alone is ~3.1 KB (records[32] + the
+    // 2 KB value arena) and this function's other locals brought the frame to
+    // 3776 B (measured via `-fstack-usage`) - on an 8 KB httpd task stack that
+    // is also carrying the PsychicHttp/esp_http_server/lwIP dispatch chain
+    // beneath every route AND consoleExecuteCommand()'s own fixed ~1.9 KB
+    // frame (paid on every call regardless of which operation runs -
+    // console_module.cpp's lineBuf[256] plus its dispatch switch), that was
+    // enough on its own to overflow the task stack on the very first POST,
+    // for every command including the smallest possible one (#266's
+    // measurement). Not statics of their own either (#428): every buffer this
+    // request holds is one ConsoleWebScratch in the web request scratch
+    // (include/web_request_scratch.h), which one "httpd" task claims for one
+    // request at a time - the same assumption g_currentWebSink and
+    // g_operationsCommand make - and zeroes on every claim.
+    WebRequestScratch<ConsoleWebScratch> scratch;
+    if (!scratch) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"request scratch unavailable\"}");
+        return;
+    }
+    auto& command = scratch->command;
+    ConsoleWebSink& webSink = scratch->webSink;
 
     // Check for truncation in form parameter (D13: detect oversized command)
     const char* paramValue = req.paramRef("command");
@@ -450,19 +370,23 @@ void handleConsolePost(WebRequest& req) {
             // so this file and the module can never disagree about which
             // command names it, including when whitespace between the name
             // and "type=" is more than one space.
-            // Static for the same reason as `command`/`webSink` above (#266):
-            // one httpd-task request in flight at a time, so no reset is
-            // needed beyond the snprintf() below, which always fully
-            // (re)terminates it before use.
-            static char routeScratch[sizeof(command)];
+            // In the scratch with `command`/`webSink` above; the snprintf()
+            // below always fully (re)terminates it before use.
+            auto& routeScratch = scratch->routeScratch;
             snprintf(routeScratch, sizeof(routeScratch), "%s", command);
             char* routeName = nullptr;
             char* routeArgsUnused = nullptr;
             consoleSplitCommandLine(routeScratch, &routeName, &routeArgsUnused);
             if (routeName != nullptr && strcmp(routeName, "operations") == 0) {
                 g_operationsRequestId = consoleGetNextRequestId();
-                snprintf(g_operationsCommand, sizeof(g_operationsCommand), "%s", command);
-                if (!req.sendChunked("application/json", fillOperationsResponse)) {
+                snprintf(scratch->operationsCommand, sizeof(scratch->operationsCommand), "%s",
+                         command);
+                // sendChunked() calls the filler to the last chunk before it
+                // returns, so the scratch outlives every read of this pointer.
+                g_operationsCommand = scratch->operationsCommand;
+                const bool sent = req.sendChunked("application/json", fillOperationsResponse);
+                g_operationsCommand = nullptr;
+                if (!sent) {
                     req.send(500, "application/json",
                              "{\"ok\":false,\"error\":\"response alloc failed\"}");
                 }
@@ -548,8 +472,7 @@ void handleConsolePost(WebRequest& req) {
         return;
     }
 
-    static char responseBody[4096];
-    memset(responseBody, 0, sizeof(responseBody));
+    auto& responseBody = scratch->responseBody;
 
     JsonDocument responseDoc;
     JsonArray recordsArray = responseDoc["records"].to<JsonArray>();

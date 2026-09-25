@@ -8,6 +8,7 @@
 #pragma once
 
 #include "rc_dispatcher_helpers.h"  // RcDispatchOutcome, CommandSource (fwd-declared)
+#include "rc_input_step.h"          // RcInputStartupPlan
 #include "rc_mapping.h"
 
 // -----------------------------------------------------------------------------
@@ -17,6 +18,17 @@
 // Implements Layers 1 (hardware failsafe) and 2 (software watchdog) failsafe.
 // -----------------------------------------------------------------------------
 void rcInputTask(void* pvParameters);
+
+// -----------------------------------------------------------------------------
+// rcInputAllocateDecoders()
+// Allocates the SBUS decoders the boot RC plan reads, once, from setup(), and
+// only those (#428): dual_sbus two, single_sbus one, standard_pwm none, and a
+// droid with no RC input creates no task at all. Call before creating
+// rcInputTask(), which starts what this allocated and allocates nothing - Core
+// 1 stays heap-free after setup(). A decoder that cannot be allocated is
+// logged and its receiver stays off, as one whose RMT channel will not start.
+// -----------------------------------------------------------------------------
+void rcInputAllocateDecoders(const RcInputStartupPlan& plan);
 
 // Test-dispatch helper used by the REST /api/actions/test route and the
 // Controller Console's non-motion action executor (#220, ADR 0036) - the

@@ -17,11 +17,14 @@
 // a restore posts back. The body is read once, at the top, and every check
 // reads its field by form name whichever door it came in by.
 //
-// ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) -
-// too large to return by value on an 8 KB web server task stack (see
+// ConfigApplyResult is 2,060 B on artoo-esp32 (the applied-fields log record
+// dominates, and that chip keeps fewer lines and rows) and larger where it
+// keeps 32 lines and 24 rows - too large to return by value on an 8 KB web
+// server task stack (see
 // api_seq.cpp's SeqRunEvidence for the same constraint). It is an
-// out-parameter; callers keep their instance `static`, matching that
-// precedent, rather than a stack local.
+// out-parameter, never a stack local: POST /api/config keeps its instance in
+// the web request scratch (include/web_request_scratch.h) and the Console
+// module a static of its own.
 //
 // ConfigApplyActions intentionally has no playDriveOnCue: ADR 0012 moves
 // that rule to commandedSetStationary() (state-derived), once the later
@@ -38,6 +41,7 @@
 
 #include "api_apply_refusal.h"
 #include "api_param_source.h"
+#include "config.h"  // PA_CHIP_TARGET_ESP32 - a presence macro, so it must be in scope
 #include "config_cache.h"
 #include "droid_build.h"
 #include "guided_setup.h"
@@ -65,7 +69,15 @@ struct ConfigApplyActions {
 // lines past the bound are counted in `dropped` instead, and the shell says how
 // many it could not show rather than letting the log look complete.
 struct ConfigAppliedFields {
+    // Sixteen on artoo-esp32, where BSS is the heap, so a restore there counts
+    // more of its lines as `dropped` while its fields still apply in full.
+    // Back to 32 when that board has the static RAM to spare again (operator
+    // decision 2026-09-25, #428).
+#if defined(PA_CHIP_TARGET_ESP32)
+    static constexpr size_t kMaxLines = 16;
+#else
     static constexpr size_t kMaxLines = 32;
+#endif
     static constexpr size_t kLineWidth = 80;
     char lines[kMaxLines][kLineWidth];
     size_t count = 0;

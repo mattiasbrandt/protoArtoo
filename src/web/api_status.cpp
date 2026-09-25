@@ -10,12 +10,14 @@
 
 #include "api_status.h"
 
+#include "api_json_response.h"  // webSendJsonError
 #include "board_outputs.h"  // boardComponentLabel, runningBoardName
 #include "config.h"
 #include "dome_task.h"
 #include "log_buffer.h"
 #include "logging.h"
 #include "web_request.h"
+#include "web_request_scratch.h"
 #include "web_server.h"
 
 // The gather step for each of these three lives in captureWifiStatusSnapshot/
@@ -68,13 +70,18 @@ void handleWifiGet(WebRequest& req) {
 }
 
 void handleStatusGet(WebRequest& req) {
-    // Static, not stack: 3 KB on an 8 KB server task left too little headroom
-    // for the snprintf float-formatting frames plus nested interrupt frames
-    // under network load (stack-watchpoint panic proven by coredump). Both
-    // backends dispatch handlers from a single task, so one shared buffer is
-    // race-free -- same pattern as api_logs.cpp.
-    static char body[3072];
-    if (!buildStatusJson(body, sizeof(body))) {
+    // In the web request scratch, not on the stack: 3 KB on an 8 KB server
+    // task left too little headroom for the snprintf float-formatting frames
+    // plus nested interrupt frames under network load (stack-watchpoint panic
+    // proven by coredump). Not a static of its own either: the scratch is the
+    // one store every handler's request-scoped buffer shares (#428).
+    WebRequestScratch<WebScratchText<STATUS_JSON_BUFFER_BYTES>> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    char* body = scratch->text;
+    if (!buildStatusJson(body, sizeof(scratch->text))) {
         PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
     }
     req.send(200, "application/json", body);

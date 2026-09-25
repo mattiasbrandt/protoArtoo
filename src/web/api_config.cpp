@@ -35,6 +35,7 @@
 #include "board_outputs.h"  // BOARD_OUTPUTS, boardComponentLabel() - one label source
 #include "board_output_enabled.h"  // BOARD_OUTPUTS indices, which configCacheOutputIsWired() takes
 #include "web_param_source.h"
+#include "web_request_scratch.h"
 #include "drive_speed_preset.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
@@ -1022,15 +1023,20 @@ void handleRcMapGet(WebRequest& req) {
         return;
     }
 
-    // Bounded like the config snapshot above, and for the same reasons. The
-    // map holds at most kRcMapMaxEntries entries of source/channel/action plus
-    // an optional Marcduino payload; 2 KB clears a full map with headroom.
-    static char body[2048];
-    if (measureJson(doc) >= sizeof(body)) {
+    // Bounded like the config snapshot above, and for the same reasons, at
+    // RC_MAP_JSON_BODY_BYTES (include/web_request_scratch.h).
+    WebRequestScratch<WebScratchText<RC_MAP_JSON_BODY_BYTES>> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    char* body = scratch->text;
+    const size_t bodySize = sizeof(scratch->text);
+    if (measureJson(doc) >= bodySize) {
         webSendJsonError(req, 500, "rc map response overflow");
         return;
     }
-    serializeJson(doc, body, sizeof(body));
+    serializeJson(doc, body, bodySize);
     req.send(200, "application/json", body);
 }
 
@@ -1040,9 +1046,14 @@ void handleRcMapPost(WebRequest& req) {
 
     ConfigSnapshot working;
 
-    // RcMapApplyResult is small (~150 bytes); static kept for consistency
-    // with the ADR 0011 apply-core out-parameter convention.
-    static RcMapApplyResult result;
+    // RcMapApplyResult is small (163 B on artoo-esp32); it shares the web
+    // request scratch rather than holding a static of its own (#428).
+    WebRequestScratch<RcMapApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    RcMapApplyResult& result = *scratch;
 
     // Answers are rendered after the Write Window returns: nothing below
     // touches config state.
@@ -1088,12 +1099,17 @@ void handleConfigPost(WebRequest& req) {
 
     ConfigSnapshot working;
 
-    // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
-    // record) - static avoids a large stack frame on the server task,
-    // matching api_seq.cpp's SeqRunEvidence precedent. Only this task calls
-    // this handler, so the instance needs no protection of its own; the Write
-    // Window's lock is about the shared config cache and NVS, not this buffer.
-    static ConfigApplyResult result;
+    // ConfigApplyResult is 2,060 B on artoo-esp32 (dominated by the
+    // applied-fields log record) - too large for the server task's stack, so
+    // it lives in the web request scratch (include/web_request_scratch.h), as
+    // api_seq.cpp's SeqRunEvidence does. The Write Window's lock is about the
+    // shared config cache and NVS, not this buffer.
+    WebRequestScratch<ConfigApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    ConfigApplyResult& result = *scratch;
 
     // configWriteWindow() leaves the post-commit snapshot in `working`.
     ConfigCommitOutcome commit = {};
@@ -1295,9 +1311,14 @@ void handleWifiPost(WebRequest& req) {
 
     WifiConfig working = {};
 
-    // WifiApplyResult is small; static kept for consistency with the
-    // ADR 0011 apply-core out-parameter convention.
-    static WifiApplyResult result;
+    // WifiApplyResult is small (274 B on artoo-esp32); it shares the web
+    // request scratch rather than holding a static of its own (#428).
+    WebRequestScratch<WifiApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    WifiApplyResult& result = *scratch;
 
     // The Write Window shared with the Console's WiFi write (api_wifi_apply.h).
     WifiCommitOutcome commit = {};

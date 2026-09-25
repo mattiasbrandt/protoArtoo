@@ -66,6 +66,7 @@
 #include "robot_state.h"
 #include "web_json_slice_writer.h"
 #include "web_param_source.h"
+#include "web_request_scratch.h"
 #include "web_server.h"
 
 static const char* TAG = "WebServer";
@@ -515,7 +516,13 @@ AudioMoodMapCommitOutcome audioMoodMapCommitApplied(const AudioMoodMapApplyResul
 void handleAudioMoodMapPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
-    static AudioMoodMapApplyResult result;
+    // In the web request scratch rather than a static of its own (#428).
+    WebRequestScratch<AudioMoodMapApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    AudioMoodMapApplyResult& result = *scratch;
     audioMoodMapApply(params, &result);
     if (result.error.hasError) {
         // This core has no not-found case: an unknown field is a bad request.
@@ -656,7 +663,13 @@ AudioTracksCommitOutcome audioTracksCommitApplied(ConfigSnapshot* snap,
 void handleAudioTracksPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
-    static AudioTracksApplyResult result;
+    // In the web request scratch rather than a static of its own (#428).
+    WebRequestScratch<AudioTracksApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    AudioTracksApplyResult& result = *scratch;
     ConfigSnapshot snap;
     AudioTracksCommitOutcome commit;
     if (!audioTracksWriteWindow(params, audioCatalogSupported(), &snap, &result, &commit)) {
@@ -770,7 +783,13 @@ AudioCategoryRangeCommitOutcome audioCategoryRangeCommitApplied(
 void handleAudioCategoryRangePost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
-    static AudioCategoryRangeApplyResult result;
+    // In the web request scratch rather than a static of its own (#428).
+    WebRequestScratch<AudioCategoryRangeApplyResult> scratch;
+    if (!scratch) {
+        webSendJsonError(req, 500, "request scratch unavailable");
+        return;
+    }
+    AudioCategoryRangeApplyResult& result = *scratch;
     ConfigSnapshot snap;
     AudioCategoryRangeCommitOutcome commit;
     if (!audioCategoryRangeWriteWindow(params, audioCatalogSupported(), &snap, &result, &commit)) {

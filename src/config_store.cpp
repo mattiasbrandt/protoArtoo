@@ -17,6 +17,7 @@
 #include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
+#include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
 #include "rc_mapping.h"
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
@@ -735,6 +736,59 @@ bool configCacheOutputIsWired(size_t boardOutputIndex) {
     wired = boardOutputIsWired(configCache.system, boardOutputIndex);
     taskEXIT_CRITICAL(&configCacheMux);
     return wired;
+}
+
+void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
+                                    SpeedPresetId* speedPresetActive) {
+    taskENTER_CRITICAL(&configCacheMux);
+    if (categories != nullptr) {
+        const AudioConfig& audio = configCache.audio;
+        categories->gen_lo = audio.snd_cat_gen_lo;
+        categories->gen_hi = audio.snd_cat_gen_hi;
+        categories->chat_lo = audio.snd_cat_chat_lo;
+        categories->chat_hi = audio.snd_cat_chat_hi;
+        categories->hap_lo = audio.snd_cat_hap_lo;
+        categories->hap_hi = audio.snd_cat_hap_hi;
+        categories->proc_lo = audio.snd_cat_proc_lo;
+        categories->proc_hi = audio.snd_cat_proc_hi;
+        categories->sad_lo = audio.snd_cat_sad_lo;
+        categories->sad_hi = audio.snd_cat_sad_hi;
+        categories->sent_lo = audio.snd_cat_sent_lo;
+        categories->sent_hi = audio.snd_cat_sent_hi;
+        categories->hum_lo = audio.snd_cat_hum_lo;
+        categories->hum_hi = audio.snd_cat_hum_hi;
+        categories->scrm_lo = audio.snd_cat_scrm_lo;
+        categories->scrm_hi = audio.snd_cat_scrm_hi;
+        categories->ooh_lo = audio.snd_cat_ooh_lo;
+        categories->ooh_hi = audio.snd_cat_ooh_hi;
+        categories->alrm_lo = audio.snd_cat_alrm_lo;
+        categories->alrm_hi = audio.snd_cat_alrm_hi;
+        categories->snarky_lo = audio.snd_cat_snarky_lo;
+        categories->snarky_hi = audio.snd_cat_snarky_hi;
+        categories->whis_lo = audio.snd_cat_whis_lo;
+        categories->whis_hi = audio.snd_cat_whis_hi;
+    }
+    if (speedPresetActive != nullptr) {
+        *speedPresetActive = configCache.drive.speedPresetActive;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap) {
+    if (out == nullptr) {
+        return 0;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    const size_t count = rcTriggerSlotsCopy(configCache.system, out, cap);
+    taskEXIT_CRITICAL(&configCacheMux);
+    return count;
+}
+
+uint32_t configCacheSbusTimeoutMs() {
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint32_t timeoutMs = configCache.drive.sbusTimeoutMs;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return timeoutMs;
 }
 
 bool configCacheServoAnyEnabled() {
