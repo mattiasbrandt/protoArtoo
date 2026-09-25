@@ -1,4 +1,4 @@
-"""Code the Xtensa listing prints as data (#430).
+"""Code the Xtensa listing prints as data, and calls through the log hook (#430).
 
 The artoo-esp32 image keeps only part of its `.xt.prop` property table, and
 objdump decodes an address in a gap between records by the next record's
@@ -11,6 +11,11 @@ real call.
 
 The fakes below answer objdump for two listings of one image: the product one,
 and the one of the copy objcopy writes, told apart by the copy's path.
+
+src/main.cpp sets ESP-IDF's log print hook with esp_log_set_vprintf(), and
+esp_log_va() and esp_log() call through the pointer it stores.
+`Image.stitch_pointer_calls()` finds those callers in the listing - a load of
+the pointer plus an indirect call - rather than taking them from a list.
 """
 
 import sys
@@ -179,6 +184,40 @@ class ABodyPrintedAsDataIsReadFromTheStrippedCopy(unittest.TestCase):
         self.assertEqual(adopted, ["hiddenBody"])
         with self.assertRaises(sur.Fatal):
             self.image.adopt_archive_bodies(["deepCallee"], Archives())
+
+
+class TheLogHookIsWalkedFromEveryCallThroughItsPointer(unittest.TestCase):
+    def setUp(self):
+        self.image = image()
+
+    def test_the_callers_are_found_not_listed(self):
+        callers = self.image.stitch_pointer_calls("esp_log_vprint_func",
+                                                  ["paLogIdfVprintf"])
+        # The setter loads the pointer too, but makes no call through it.
+        self.assertEqual([fn.name for fn in callers], ["esp_log_va"])
+        walker = sur.Walker([self.image], sur.DEFAULT_PRUNE)
+        total, chain, _ = walker.depth(self.image, self.image.funcs[LOG_VA])
+        self.assertEqual(total, HOOK_FRAME)
+        self.assertEqual(chain[0][3], "stitched via esp_log_vprint_func")
+
+    def test_an_absent_pointer_or_callee_is_reported(self):
+        with self.assertRaises(KeyError):
+            self.image.stitch_pointer_calls("renamed_func", ["paLogIdfVprintf"])
+        with self.assertRaises(KeyError):
+            self.image.stitch_pointer_calls("esp_log_vprint_func", ["renamedHook"])
+
+    def test_a_pointer_nothing_calls_through_is_refused(self):
+        self.image.funcs[LOG_VA].indirect = []
+        with self.assertRaises(sur.Fatal):
+            self.image.stitch_pointer_calls("esp_log_vprint_func", ["paLogIdfVprintf"])
+
+    def test_riscv_names_the_pointer_after_a_hash(self):
+        fn = sur.Function(LOG_VA, "esp_log_va")
+        riscv = image("riscv")
+        riscv._riscv_flow(fn, LOG_VA, "lw",
+                          f"a5,-1780(gp) # {POINTER:08x} <esp_log_vprint_func>",
+                          None, {})
+        self.assertEqual(fn.refs, {POINTER})
 
 
 if __name__ == "__main__":

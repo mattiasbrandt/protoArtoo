@@ -134,6 +134,10 @@ WHAT IT CANNOT SEE, AND SAYS SO
   dispatch table named with ``--stitch-table CALLER=TABLE``: every function the
   table holds in the image is walked as a callee of CALLER
   (``Image.stitch_table()``). The ``callx``/``jalr`` itself is still listed.
+  So is a call through a function pointer the program sets at run time and
+  a library calls through from several places, named with ``--stitch-pointer
+  POINTER=CALLEE`` (``Image.stitch_pointer_calls()``): ESP-IDF's log print
+  hook is the one this project installs.
 - Code in a region carrying no function symbol at all. It is attributed to
   nothing rather than to whichever symbol precedes it, so a chain through one
   stops there: a lower bound rather than an invented path.
@@ -224,6 +228,9 @@ TARGET_RE = re.compile(r"([0-9a-f]+)\s+<([^>]+)>")
 # `l32r a8, 400074 <lit> (40114c <hook>)` -- objdump resolves the literal pool
 # word itself, which is what an Xtensa long call actually jumps to.
 L32R_VALUE_RE = re.compile(r"\(([0-9a-f]+)\s+<[^>]+>\)\s*$")
+# `lw a5,-1780(gp) # 4ff13d0c <esp_log_vprint_func>` -- RISC-V objdump resolves
+# a gp- or pc-relative operand to the address it names, after a `#`.
+RISCV_REF_RE = re.compile(r"#\s*([0-9a-f]+)\s+<[^>]+>\s*$")
 # An operand can be decimal or hex depending on magnitude: `entry a1, 32` and
 # `entry a1, 0x220` are both emitted.
 IMM_RE = r"(-?(?:0x[0-9a-f]+|\d+))"
@@ -280,7 +287,7 @@ def split_insn(line: str):
 
 class Function:
     __slots__ = ("addr", "name", "frame", "frame_kind", "calls", "indirect", "src",
-                 "decoded")
+                 "decoded", "refs")
 
     def __init__(self, addr: int, name: str):
         self.addr = addr
@@ -292,6 +299,10 @@ class Function:
         self.calls: list[tuple[int, str, str | None]] = []  # (target addr, insn, srcline)
         self.indirect: list[tuple[int, str, str | None]] = []  # (pc, insn text, srcline)
         self.src: str | None = None
+        # Addresses this body's instructions load or name: an Xtensa `l32r`
+        # literal's value, a RISC-V operand objdump resolves after `#`. What
+        # `Image.stitch_pointer_calls()` finds a pointer's callers by.
+        self.refs: set[int] = set()
 
 
 class Image:
@@ -524,6 +535,48 @@ class Image:
             for target in targets:
                 fn.calls.append((target.addr, "stitched call", None))
         return targets
+
+    def stitch_pointer_calls(self, pointer: str, callees: list[str]) -> list[Function]:
+        """Add a call edge to `callees` from every function that calls through `pointer`.
+
+        For a function pointer the program sets at run time and a library calls
+        through from more than one place: ESP-IDF's log print hook,
+        `esp_log_vprint_func`, which `esp_log_set_vprintf()` sets and
+        `esp_log_va()` and `esp_log()` both call (components/log/src/log.c,
+        esp_private/log_print.h). The callers are not named by the recipe but
+        found in the listing - every function that loads or names the
+        pointer's address AND makes an indirect call - so a library update that
+        adds a caller is walked without editing the recipe. Setting the
+        pointer is not a call, and `esp_log_set_vprintf()`, which only stores
+        it, makes none. Over-approximates a function that loads the pointer and
+        makes some other indirect call too, which is the safe direction for a
+        floor. The edge is marked `stitched via <pointer>`.
+
+        Returns the callers. Raises KeyError naming an absent pointer or
+        callee, Fatal when the pointer's name is ambiguous or nothing in the
+        image calls through it - the recipe no longer describes the image.
+        """
+        found = self._data_objects().get(pointer)
+        if not found:
+            raise KeyError(pointer)
+        if len(found) != 1:
+            raise Fatal(f"{len(found)} data objects are named {pointer} in {self.elf}; "
+                        "a stitched pointer must name one")
+        addr = found[0][0]
+        targets: list[Function] = []
+        for name in callees:
+            hit = self.by_name(name)
+            if not hit:
+                raise KeyError(name)
+            targets.extend(hit)
+        callers = [fn for fn in self.funcs.values() if addr in fn.refs and fn.indirect]
+        if not callers:
+            raise Fatal(f"nothing in {self.elf} calls through {pointer}; "
+                        "the stitch no longer describes this image")
+        for fn in callers:
+            for target in targets:
+                fn.calls.append((target.addr, f"stitched via {pointer}", None))
+        return sorted(callers, key=lambda f: f.addr)
 
     def adopt_archive_bodies(self, names: list[str], archives: "ArchiveBodies",
                              pointer_tables: dict[str, str] | None = None) -> list[str]:
@@ -1237,6 +1290,8 @@ class Image:
         if mnem == "l32r":
             m = re.match(r"^(a\d+),", ops)
             val = L32R_VALUE_RE.search(ops)
+            if val:
+                fn.refs.add(int(val.group(1), 16))
             if m and val:
                 # objdump dereferences the literal pool itself and prints the
                 # word in parentheses. When it cannot (about 1.5% of l32r sites,
@@ -1272,6 +1327,9 @@ class Image:
                 fn.indirect.append((pc, f"{mnem} {ops}", srcline))
 
     def _riscv_flow(self, fn, pc, mnem, ops, srcline, pending_auipc) -> None:
+        ref = RISCV_REF_RE.search(ops)
+        if ref:
+            fn.refs.add(int(ref.group(1), 16))
         if mnem == "auipc":
             m = re.match(r"^(\w+),\s*0x([0-9a-f]+)", ops)
             if m:
@@ -1649,6 +1707,12 @@ def main(argv=None) -> int:
                     help="follow a call through a pointer set at run time: CALLEE "
                          "becomes a callee of CALLER (repeatable; the 'calls' of a "
                          "task_stack_recipes.json arm)")
+    ap.add_argument("--stitch-pointer", action="append", default=[],
+                    metavar="POINTER=CALLEE",
+                    help="follow every call through a function pointer set at run "
+                         "time: CALLEE becomes a callee of each function that loads "
+                         "POINTER and calls indirectly (repeatable; the 'pointer_calls' "
+                         "of task_stack_recipes.json)")
     ap.add_argument("--archive-body", action="append", default=[], metavar="FUNCTION",
                     help="walk an undecoded body from its archive member (repeatable; "
                          "the 'archive_bodies' of a task_stack_recipes.json arm)")
@@ -1693,6 +1757,16 @@ def main(argv=None) -> int:
         img.adopt_archive_bodies(args.archive_body,
                                  ArchiveBodies(objdump, resolve_archive_dir(args.env)),
                                  pointers)
+    pointer_callers = []
+    for spec in args.stitch_pointer:
+        pointer, sep, callee = spec.partition("=")
+        if not sep or not pointer or not callee:
+            raise Fatal(f"--stitch-pointer wants POINTER=CALLEE, got {spec!r}")
+        try:
+            callers = img.stitch_pointer_calls(pointer, [callee])
+        except KeyError as exc:
+            raise Fatal(f"--stitch-pointer {spec}: {exc.args[0]} is not in the image") from exc
+        pointer_callers.append((pointer, callee, [fn.name for fn in callers]))
 
     ver = subprocess.run([str(objdump), "--version"], capture_output=True, text=True,
                          check=True).stdout.splitlines()[0]
@@ -1707,6 +1781,9 @@ def main(argv=None) -> int:
     print(f"  .su      {len(su)} records under {build_dir.relative_to(ROOT)}")
     for caller, table, count in stitched:
         print(f"  stitched {caller} -> every row of {table} ({count} functions)")
+    for pointer, callee, callers in pointer_callers:
+        print(f"  stitched every call through {pointer} -> {callee}"
+              f" (from {', '.join(callers)})")
     print("=" * 78)
 
     status = 0

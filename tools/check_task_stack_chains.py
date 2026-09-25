@@ -36,6 +36,21 @@ in:
 Like `tables`, all three are facts about the image rather than one task, so
 each is applied once, to the whole graph, before the first walk.
 
+One stitch belongs to no task at all, and lives at the top of the recipe file
+instead of in an arm: `pointer_calls`, a function pointer the program sets at
+run time that a library calls through from several places - ESP-IDF's log
+print hook, which src/main.cpp sets to paLogIdfVprintf. Every function the
+listing shows loading the pointer and calling indirectly gets an edge to the
+named callee (`Image.stitch_pointer_calls()`, #430), so every task that can
+reach an ESP-IDF log call walks the hook, on each chip the entry names. It is
+applied after every arm's stitches and archive bodies, which rewrite a body's
+calls, and before the first walk.
+
+The recipe file does not carry the log-hook entry yet. Stitched, it moves
+eleven of twelve artoo-esp32 chains past their recorded constants, and the
+stack raises that would follow cost more heap than #430 may spend without an
+operator decision; the measured entry and figures are on #430.
+
 The chain is
 
     chain = max over roots of (that root's total worst-case chain,
@@ -75,7 +90,8 @@ no longer describes the image and a silent pass would be the drift this exists
 to catch:
 
 - a root, stitched-frame, stitched-table or table-caller symbol is absent
-  (renamed, or inlined away);
+  (renamed, or inlined away), or a stitched pointer is absent or nothing in
+  the image calls through it any more;
 - a covered root's body is emitted as data in the very image the recipe names,
   so the walk that produced the recorded figure cannot be reproduced.
 
@@ -324,6 +340,35 @@ def undecoded_share(img: sur.Image) -> tuple[int, int, int]:
     return undec, len(img.recovered_bodies), len(img.funcs)
 
 
+def stitch_pointer_calls(img: sur.Image, recipes: dict, chip: str
+                         ) -> tuple[list[tuple[str, str, list[str]]], list[str]]:
+    """Apply the recipe file's image-wide `pointer_calls` for this chip.
+
+    Returns ([(pointer, callee, caller names)], [failure reasons]). A pointer or
+    callee that is absent, or a pointer nothing calls through, is a failure: the
+    recipe no longer describes the image, and walking on without the edge would
+    pass every chain the hook deepens.
+    """
+    applied: list[tuple[str, str, list[str]]] = []
+    failures: list[str] = []
+    for entry in recipes.get("pointer_calls", []):
+        if chip not in entry["chips"]:
+            continue
+        for callee in entry["callees"]:
+            try:
+                callers = img.stitch_pointer_calls(entry["pointer"], [callee])
+            except KeyError as exc:
+                failures.append(
+                    f"pointer_calls {entry['pointer']} -> {callee}: {exc.args[0]} is "
+                    "absent from the image -- re-record the stitch")
+                continue
+            except sur.Fatal as exc:
+                failures.append(f"pointer_calls {entry['pointer']} -> {callee}: {exc}")
+                continue
+            applied.append((entry["pointer"], callee, [fn.name for fn in callers]))
+    return applied, failures
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -376,6 +421,8 @@ def main(argv=None) -> int:
             adopted.extend(image.adopt_archive_bodies(
                 arm["archive_bodies"], arm.get("pointer_tables", {})))
 
+    pointer_calls, pointer_failures = stitch_pointer_calls(image.img, recipes, chip)
+
     undec, recovered, total_funcs = undecoded_share(image.img)
     print(f"check_task_stack_chains  env={args.env}  chip={chip}  arch={image.arch}")
     print(f"  image  {image.elf.relative_to(ROOT)}")
@@ -392,13 +439,16 @@ def main(argv=None) -> int:
         print(f"  stitched {caller} -> every row of {table} ({count} functions)")
     for caller, callee in sorted(called):
         print(f"  stitched {caller} -> {callee} (called through a run-time pointer)")
+    for pointer, callee, callers in pointer_calls:
+        print(f"  stitched every call through {pointer} -> {callee}"
+              f" (from {', '.join(callers)})")
     if adopted:
         print(f"  walked from their archive members: {len(adopted)} undecoded bodies"
               f" ({', '.join(sorted(set(adopted))[:6])}{', ...' if len(set(adopted)) > 6 else ''})")
     print()
 
     rows: list[tuple[str, str, str]] = []
-    failures: list[str] = []
+    failures: list[str] = list(pointer_failures)
     notes: list[str] = []
     covered = 0
 
