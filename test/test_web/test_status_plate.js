@@ -36,6 +36,7 @@ const part3Src = bootstrapFile.substring(part3Marker);
 const shellSrc = readData("shell.js");
 const statusStreamSrc = readData("status_stream.js");
 const liveReadingSrc = readData("live_reading.js");
+const healthSignalsSrc = readData("health_signals.js");
 
 const IDENTITY = {
   droidName: "artoo",
@@ -58,8 +59,8 @@ const HEALTHY = Object.freeze({
   speedPreset: "normal",
   drive: { state: "idle", detail: "No drive command requested" },
   rcCh1: { state: "active", detail: "Drive SBUS active" },
-  dome_link: { state: "connected", uart_owner: "dome" },
-  audio: { state: "idle", link_ok: true, rx_status: "available" },
+  dome_link: { state: "connected", transport: "uart", uart_owner: "dome" },
+  audio: { state: "idle", driver: "CHIRP Audio Trigger", link_ok: true, rx_status: "available" },
   // Telemetry the plate must refuse.
   uptimeMs: 27790,
   heapFree: 173152,
@@ -232,7 +233,12 @@ const boot = async ({ status = null, stream = true } = {}) => {
   if (stream) context.EventSource = FakeEventSource;
   context.globalThis = context;
 
-  const REAL_SCRIPTS = { "/shell.js": shellSrc, "/status_stream.js": statusStreamSrc, "/live_reading.js": liveReadingSrc };
+  const REAL_SCRIPTS = {
+    "/shell.js": shellSrc,
+    "/status_stream.js": statusStreamSrc,
+    "/live_reading.js": liveReadingSrc,
+    "/health_signals.js": healthSignalsSrc,
+  };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
     const src = node.src;
@@ -354,34 +360,28 @@ test("RC LINK reads the hardware failsafe bit as well as the frames", async () =
   assert.equal(env.chipValue("rclink"), "UNMEASURED");
 });
 
-test("DOME LINK and SOUND LINK both read who owns the shared bus", async () => {
+test("a protoR2link lost while sound holds the line reads lost, in red", async () => {
+  // protoR2link hands the shared serial line to sound only while it runs on
+  // WiFi fallback, so a "lost" with sound holding the line is a real WiFi
+  // loss. The chip used to look at the line owner first and show a grey
+  // "held by sound" over it, hiding the loss (#422).
   const env = await boot({ status: { ...HEALTHY } });
-  assert.equal(env.chipValue("domelink"), "OK");
-  assert.equal(env.chipValue("soundlink"), "OK");
-
-  // The dome and the sound module share UART2. While sound holds it the dome
-  // heartbeat cannot arrive and the firmware reports a plain "lost" -- so a
-  // chip reading only the state says the link died when nobody could ask.
-  env.pushStatus({ dome_link: { state: "lost", uart_owner: "audio" } });
-  await sleep(5);
-  assert.equal(env.chipValue("domelink"), "HELD BY SOUND");
-  assert.equal(env.chipClass("domelink"), "status-chip", "a busy bus is not a stopped link");
-
-  env.pushStatus({ dome_link: { state: "lost", uart_owner: "dome" } });
+  env.pushStatus({ dome_link: { state: "lost", transport: "wifi", uart_owner: "audio", uart_owned_by_dome: false } });
   await sleep(5);
   assert.equal(env.chipValue("domelink"), "LOST");
   assert.match(env.chipClass("domelink"), /status-chip-stopped/);
+});
 
-  // The same shape from the other end: link_ok false means either no answer or
-  // a bus the dome is holding, and only rx_status tells them apart.
+test("sound held by protoR2link is not a module that failed to answer", async () => {
+  // Both report link_ok false; only the droid's rx_status tells them apart,
+  // and the model reads it for every page (data/health_signals.js).
+  const env = await boot({ status: { ...HEALTHY } });
   env.pushStatus({ audio: { link_ok: false, rx_status: "blocked_by_dome_uart" } });
   await sleep(5);
-  assert.equal(env.chipValue("soundlink"), "HELD BY DOME");
-  assert.equal(env.chipClass("soundlink"), "status-chip");
+  assert.equal(env.chipClass("soundlink"), "status-chip", "held is grey, never red");
 
   env.pushStatus({ audio: { link_ok: false, rx_status: "no_response" } });
   await sleep(5);
-  assert.equal(env.chipValue("soundlink"), "NO ANSWER");
   assert.match(env.chipClass("soundlink"), /status-chip-stopped/);
 });
 

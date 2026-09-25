@@ -151,7 +151,7 @@ void test_capabilities_zero_driver() {
 
 void test_missing_track_field() {
     char buf[256];
-    formatAudioStatusJson(buf, sizeof(buf), "MP3Trigger", true, 0x0D, true, true, 0x00, 0xFF,
+    formatAudioStatusJson(buf, sizeof(buf), "MP3 Trigger", true, 0x0D, true, true, 0x00, 0xFF,
                           10, 99, 99, "available", "Sound module RX is available");
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"missing_track\":99"));
 }

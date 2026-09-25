@@ -13,7 +13,10 @@
 // - Staleness is not a health state. A stale row keeps the state the
 //   controller last reported; the Status Plate carries the one freshness
 //   statement for the whole surface (CONTEXT.md "Health Signal", _Avoid_)
-// - Exposes concise operator summary plus richer backend tooltip detail
+// - A signal is a state and one word. It carries no key=value detail: a raw
+//   field name is not something a builder reads (#298, #422)
+// - protoR2link and the sound link are answered from one word table, which
+//   every page that shows either link reads (readProtoR2link, readSoundLink)
 // =============================================================================
 (() => {
   const INDICATOR_STATE_LABELS = Object.freeze({
@@ -33,37 +36,15 @@
   ]);
 
   const hasOwnKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-  const boolText = (value, unknown) => (value === true ? "true" : value === false ? "false" : unknown);
-  const healthSignal = (state, reason = "", detail = reason) => ({ state, reason, detail });
+  const healthSignal = (state, reason = "") => ({ state, reason });
 
-  const evaluateSbus = (payload, unknown) => {
+  const evaluateSbus = (payload) => {
+    // No rcCh1-rcCh6 key at all: the RC receiver is switched off.
     const anyRcEnabled = RC_CHANNEL_KEYS.some((key) => hasOwnKey(payload, key));
-    if (!anyRcEnabled) {
-      return healthSignal(
-        "off",
-        "No RC input",
-        "No rcCh1-rcCh6 keys in payload; RC receiver likely disabled"
-      );
-    }
-    if (payload.sbusHwFailsafe === true) {
-      return healthSignal(
-        "fail",
-        "HW failsafe",
-        `sbusHwFailsafe=true, sbusSignalLost=${boolText(payload.sbusSignalLost, unknown)}`
-      );
-    }
-    if (payload.sbusSignalLost === true) {
-      return healthSignal(
-        "fail",
-        "Signal lost",
-        `sbusSignalLost=true, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe, unknown)}`
-      );
-    }
-    return healthSignal(
-      "ok",
-      "Frames ok",
-      `sbusSignalLost=${boolText(payload.sbusSignalLost, unknown)}, sbusHwFailsafe=${boolText(payload.sbusHwFailsafe, unknown)}`
-    );
+    if (!anyRcEnabled) return healthSignal("off", "No RC input");
+    if (payload.sbusHwFailsafe === true) return healthSignal("fail", "HW failsafe");
+    if (payload.sbusSignalLost === true) return healthSignal("fail", "Signal lost");
+    return healthSignal("ok", "Frames ok");
   };
 
   // An AP-only droid is a normal droid, so "not joined" is not "degraded" -
@@ -75,24 +56,19 @@
   const evaluateWifi = (payload, unknown) => {
     const reported = hasOwnKey(payload, "wifiConnected") || hasOwnKey(payload, "wifiClientConnected");
     const connected = payload.wifiConnected === true || payload.wifiClientConnected === true;
-    const wifiRssi = Number(payload.wifiRssi);
-    const rssiText = Number.isFinite(wifiRssi) ? `${wifiRssi} dBm` : unknown;
-    const detail = `wifiConnected=${boolText(payload.wifiConnected, unknown)}, wifiClientConnected=${boolText(payload.wifiClientConnected, unknown)}, wifiRssi=${rssiText}`;
-    if (connected) return healthSignal("ok", "Connected", detail);
-    if (reported) return healthSignal("off", "Not joined", detail);
-    return healthSignal("off", unknown, detail);
+    if (connected) return healthSignal("ok", "Connected");
+    if (reported) return healthSignal("off", "Not joined");
+    return healthSignal("off", unknown);
   };
 
   // A payload that never carried littleFsReady has not told us the mount
   // failed; it has told us nothing. Red is "stopped or refused", and claiming
   // it for a key we were never sent is the same defect as claiming amber.
   const evaluateFilesystem = (payload, unknown) => {
-    if (!hasOwnKey(payload, "littleFsReady")) {
-      return healthSignal("off", unknown, "littleFsReady absent from payload");
-    }
+    if (!hasOwnKey(payload, "littleFsReady")) return healthSignal("off", unknown);
     return payload.littleFsReady === true
-      ? healthSignal("ok", "Mounted", "littleFsReady=true")
-      : healthSignal("fail", "Not ready", `littleFsReady=${boolText(payload.littleFsReady, unknown)}`);
+      ? healthSignal("ok", "Mounted")
+      : healthSignal("fail", "Not ready");
   };
 
   const evaluateHeap = (payload, unknown) => {
@@ -108,170 +84,151 @@
     if (Number.isFinite(largest) && largest >= 0) {
       const warnAt = t.largestWarn ?? 16000;
       const failAt = t.largestCritical ?? 12000;
-      const free = Number.isFinite(heapBytes) ? `, heapFree=${heapBytes} B` : "";
-      const detail = `heapLargest8bit=${largest} B (warn <=${warnAt} B, fail <=${failAt} B${free})`;
-      if (largest > warnAt) return healthSignal("ok", "Normal", detail);
-      if (largest > failAt) return healthSignal("warn", "Low", detail);
-      return healthSignal("fail", "Critical", detail);
+      if (largest > warnAt) return healthSignal("ok", "Normal");
+      if (largest > failAt) return healthSignal("warn", "Low");
+      return healthSignal("fail", "Critical");
     }
 
     // Older firmware without heapLargest8bit: fall back to total free heap.
     // Neither number present is a reading we do not have, not a low one.
-    if (!Number.isFinite(heapBytes) || heapBytes < 0) {
-      return healthSignal(
-        "off",
-        unknown,
-        `heapFree=${String(payload.heapFree ?? unknown)} (expected non-negative bytes)`
-      );
-    }
+    if (!Number.isFinite(heapBytes) || heapBytes < 0) return healthSignal("off", unknown);
 
     const warnAt = t.freeWarn ?? 65000;
     const failAt = t.freeCritical ?? 40000;
-    const detail = `heapFree=${heapBytes} B (warn <=${warnAt} B, fail <=${failAt} B)`;
-    if (heapBytes > warnAt) return healthSignal("ok", "Normal", detail);
-    if (heapBytes > failAt) return healthSignal("warn", "Low", detail);
-    return healthSignal("fail", "Critical", detail);
+    if (heapBytes > warnAt) return healthSignal("ok", "Normal");
+    if (heapBytes > failAt) return healthSignal("warn", "Low");
+    return healthSignal("fail", "Critical");
+  };
+
+  // ---------------------------------------------------------------------------
+  // protoR2link and the sound link: one word table for both
+  //
+  // The two share one serial line. protoR2link hands it to sound only while it
+  // runs on WiFi fallback and takes it back at will (src/tasks/dome_link.cpp,
+  // releaseUartToAudioRx and domeUartAcquire), so sound can be held by
+  // protoR2link and protoR2link is never held by sound: a protoR2link "lost"
+  // is always a real loss. The droid already says which state each link is in
+  // - dome_link.state, and the sound block's rx_status - and this is the one
+  // place a page turns that into a word and a light. No page reads the line
+  // owner or combines it with a state to reach a verdict of its own (#422,
+  // CONTEXT.md "Health Signal").
+  //
+  // Each answer is { state, word, short }: `state` is the light (ok green,
+  // fail red, off grey - neither table has an amber row), `word` is what a
+  // page prints, and `short` is the Status Plate's form of it, set there in
+  // capitals. `short` is the word itself wherever the table gives no short
+  // form.
+  //
+  // `words` carries the Live Reading's two words (window.PALiveReading):
+  // `unknown` for a link the frames never carry, and `findingOut` for a
+  // status of null, before the droid has sent a good frame.
+  // ---------------------------------------------------------------------------
+  const linkAnswer = (state, word, short = word) => ({ state, word, short });
+
+  // While linked, the transport IS the value: the glossary's operator labels,
+  // and the chip's short form of each (CONTEXT.md "protoR2link Transport
+  // Visibility").
+  const PROTO_R2LINK_TRANSPORT_WORDS = Object.freeze({
+    uart: linkAnswer("ok", "UART (slip ring)", "UART"),
+    wifi: linkAnswer("ok", "WiFi (fallback)", "WIFI"),
+  });
+
+  const PROTO_R2LINK_WORDS = Object.freeze({
+    disabled: linkAnswer("off", "Off"),
+    // Enabled and never answered: a droid with no dome board fitted reads
+    // exactly this, so it is not reporting rather than degraded.
+    not_seen: linkAnswer("off", "Not seen"),
+    // Heard, then stopped.
+    lost: linkAnswer("fail", "Lost"),
+  });
+
+  const SOUND_LINK_WORDS = Object.freeze({
+    off: linkAnswer("off", "Off"),
+    // protoR2link holds the shared line, so nobody can ask the module. Not
+    // reporting, and never the module's fault.
+    held: linkAnswer("off", "Held by protoR2link"),
+    noAnswer: linkAnswer("fail", "No answer"),
+  });
+
+  const requireLinkWords = (words, status) => {
+    const { unknown, findingOut } = words || {};
+    if (typeof unknown !== "string" || unknown === "") {
+      throw new TypeError("a link reading needs the Live Reading's word for an unknown field");
+    }
+    if (status === null && (typeof findingOut !== "string" || findingOut === "")) {
+      throw new TypeError("a link reading of no frame needs the Live Reading's Finding out word");
+    }
+    return { unknown, findingOut };
+  };
+
+  const isObject = (value) => value !== null && typeof value === "object";
+
+  // protoR2link, read from the status frame's dome_link block. The firmware
+  // emits that block on every frame (src/web/web_server.cpp), so a frame
+  // without it is one that never carries it.
+  const readProtoR2link = (status, words) => {
+    const { unknown, findingOut } = requireLinkWords(words, status);
+    if (status === null) return linkAnswer("off", findingOut);
+    const link = isObject(status) ? status.dome_link : undefined;
+    if (!isObject(link)) return linkAnswer("off", unknown);
+    if (link.state === "connected") {
+      return PROTO_R2LINK_TRANSPORT_WORDS[link.transport] || linkAnswer("ok", unknown);
+    }
+    return PROTO_R2LINK_WORDS[link.state] || linkAnswer("off", unknown);
+  };
+
+  // The sound link, read from a sound block: the status frame's `audio`, or
+  // the same fields as GET /api/audio answers them (the Sound page reads
+  // both). The frame has no `audio` key when the sound component is switched
+  // off in config, so an absent block is Off rather than Unknown.
+  const readSoundBlock = (audio, { unknown }) => {
+    if (audio === undefined) return SOUND_LINK_WORDS.off;
+    if (!isObject(audio)) return linkAnswer("off", unknown);
+    // Saved on but off this boot: no module is behind it (#370).
+    if (audio.output === "off") return SOUND_LINK_WORDS.off;
+    // Ahead of link_ok on purpose: a held line also reports link_ok false,
+    // and only rx_status tells it from a module that did not answer.
+    if (audio.rx_status === "blocked_by_dome_uart") return SOUND_LINK_WORDS.held;
+    if (audio.link_ok === true) {
+      // The fitted module's registry display name, as its driver reports it.
+      const name = typeof audio.driver === "string" && audio.driver !== "" ? audio.driver : unknown;
+      return linkAnswer("ok", name);
+    }
+    if (audio.link_ok === false) return SOUND_LINK_WORDS.noAnswer;
+    return linkAnswer("off", unknown);
+  };
+
+  const readSoundLink = (status, words) => {
+    const checked = requireLinkWords(words, status);
+    if (status === null) return linkAnswer("off", checked.findingOut);
+    return readSoundBlock(isObject(status) ? status.audio : undefined, checked);
   };
 
   const evaluateDomeLink = (payload, unknown) => {
-    if (!payload.dome_link || typeof payload.dome_link !== "object") {
-      return healthSignal("off", "Disabled", "dome_link block absent from payload");
-    }
-
-    const linkState = payload.dome_link.state;
-    const linkDetail = typeof payload.dome_link.detail === "string" && payload.dome_link.detail.length > 0
-      ? payload.dome_link.detail
-      : "n/a";
-
-    if (linkState === "disabled") {
-      return healthSignal(
-        "off",
-        "Disabled",
-        "state=disabled (protoR2link disabled in config)"
-      );
-    }
-    if (linkState === "connected") {
-      const transport = payload.dome_link.transport;
-      const transportLabel = transport === "uart" ? " - UART (slip ring)"
-        : transport === "wifi" ? " - WiFi (fallback)"
-        : "";
-      const ownerDetail = payload.dome_link.uart_owned_by_dome === true
-        ? ", UART2 owned by protoR2link"
-        : "";
-      return healthSignal(
-        "ok",
-        `Connected${transportLabel}`,
-        `state=connected, detail=${linkDetail}${ownerDetail}`
-      );
-    }
-    if (linkState === "lost") {
-      return healthSignal("fail", "Heartbeat lost", `state=lost, detail=${linkDetail}`);
-    }
-    // Never seen: the link is enabled and the dome has never answered, which
-    // is not reporting rather than degraded - a droid with no dome board
-    // fitted reads exactly this, and it is not worth getting up for. "lost"
-    // above stays a hard fault: that one WAS heard and then stopped.
-    if (linkState === "not_seen") {
-      return healthSignal("off", "Not seen", `state=not_seen, detail=${linkDetail}`);
-    }
-    if (typeof linkState === "string" && linkState.length > 0) {
-      return healthSignal(
-        "off",
-        `${unknown} (${linkState})`,
-        `state=${linkState}, detail=${linkDetail}`
-      );
-    }
-    return healthSignal("off", unknown, `state=${unknown}, detail=${linkDetail}`);
+    const { state, word } = readProtoR2link(payload, { unknown });
+    return healthSignal(state, word);
   };
 
   const evaluateSound = (payload, unknown) => {
-    if (!hasOwnKey(payload, "audio")) {
-      return healthSignal("off", "Disabled", "audio block absent from payload");
-    }
-    if (!payload.audio || typeof payload.audio !== "object") {
-      return healthSignal(
-        "off",
-        "Invalid payload",
-        `audio type=${typeof payload.audio} (expected object)`
-      );
-    }
-
-    const soundState = payload.audio.state;
-    const soundDetail = typeof payload.audio.detail === "string" && payload.audio.detail.length > 0
-      ? payload.audio.detail
-      : "n/a";
-    const soundRxStatus = payload.audio.rx_status;
-    const soundRxDetail = typeof payload.audio.rx_detail === "string" && payload.audio.rx_detail.length > 0
-      ? payload.audio.rx_detail
-      : soundDetail;
-
-    // DomeLink owns the UART, so the module cannot be asked. That is the
-    // definition of not reporting; it is still not a module failure, which is
-    // why this branch sits above the link_ok=false hard fault below.
-    if (soundRxStatus === "blocked_by_dome_uart") {
-      return healthSignal("off", "Status unavailable", soundRxDetail);
-    }
-
-    if (payload.audio.link_ok === false) {
-      return healthSignal(
-        "fail",
-        "No module response",
-        `link_ok=false, state=${soundState}, rx_status=${soundRxStatus ?? unknown}`
-      );
-    }
-
-    if (soundState === "playing") {
-      return healthSignal("ok", "Playing", `state=playing, detail=${soundDetail}`);
-    }
-    if (soundState === "idle") {
-      return healthSignal("ok", "Idle", `state=idle, detail=${soundDetail}`);
-    }
-    if (typeof soundState === "string" && soundState.length > 0) {
-      return healthSignal(
-        "off",
-        `${unknown} (${soundState})`,
-        `state=${soundState}, detail=${soundDetail}`
-      );
-    }
-    return healthSignal("off", unknown, `state=${unknown}, detail=${soundDetail}`);
+    const { state, word } = readSoundLink(payload, { unknown });
+    return healthSignal(state, word);
   };
 
   const evaluateDomeEsc = (payload, unknown) => {
-    if (payload.domeEnabled !== true) {
-      return healthSignal(
-        "off",
-        "Disabled",
-        `domeEnabled=${boolText(payload.domeEnabled, unknown)}`
-      );
-    }
+    if (payload.domeEnabled !== true) return healthSignal("off", "Disabled");
 
     const domeData = payload.domeEsc && typeof payload.domeEsc === "object" ? payload.domeEsc : null;
     const domeState = domeData ? domeData.state : null;
-    const domeDetail = domeData && typeof domeData.detail === "string" && domeData.detail.length > 0
-      ? domeData.detail
-      : "n/a";
 
-    if (domeState === "spinning") {
-      return healthSignal("ok", "Spinning", `domeEnabled=true, state=spinning, detail=${domeDetail}`);
-    }
-    if (domeState === "idle") {
-      return healthSignal("ok", "Idle", `domeEnabled=true, state=idle, detail=${domeDetail}`);
-    }
+    if (domeState === "spinning") return healthSignal("ok", "Spinning");
+    if (domeState === "idle") return healthSignal("ok", "Idle");
     // A state we have no branch for is one we do not understand, which is not
-    // reporting rather than degraded. The state string stays in the detail so
-    // the tooltip still says what arrived.
+    // reporting rather than degraded. The state string stays in the word so
+    // the row still says what arrived.
     if (typeof domeState === "string" && domeState.length > 0) {
-      return healthSignal(
-        "off",
-        `${unknown} (${domeState})`,
-        `domeEnabled=true, state=${domeState}, detail=${domeDetail}`
-      );
+      return healthSignal("off", `${unknown} (${domeState})`);
     }
-    return healthSignal(
-      "off",
-      unknown,
-      `domeEnabled=true, state=${unknown}`
-    );
+    return healthSignal("off", unknown);
   };
 
   const HEALTH_EVALUATORS = Object.freeze({
@@ -297,12 +254,11 @@
       const signal = evaluate(safePayload, unknown);
       const resolved = signal && typeof signal === "object"
         ? signal
-        : healthSignal("off", "Invalid state", "Health evaluator returned invalid shape");
+        : healthSignal("off", "Invalid state");
       return {
         id,
         state: resolved.state,
         reason: resolved.reason || "",
-        detail: resolved.detail || "",
       };
     });
   };
@@ -310,6 +266,8 @@
   const api = Object.freeze({
     INDICATOR_STATE_LABELS,
     deriveHealthSignals,
+    readProtoR2link,
+    readSoundLink,
   });
 
   if (typeof window !== "undefined") {

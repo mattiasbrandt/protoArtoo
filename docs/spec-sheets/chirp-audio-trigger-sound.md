@@ -967,8 +967,8 @@ therefore arbitrates rather than assuming:
   **cached** state untouched rather than a false "no response".
 - `refreshCatalog()` refuses outright when the dome owns the bus.
 - `classifyRxStatus()` distinguishes `AUDIO_RX_BLOCKED_BY_DOME_UART` from
-  `AUDIO_RX_NO_RESPONSE`, and the Sound page prints *"Status unavailable:
-  protoR2link is using UART"* rather than an error.
+  `AUDIO_RX_NO_RESPONSE`, and every page shows the sound link as *"Held by
+  protoR2link"*, in grey, rather than an error (#422).
 
 **Sound always plays; only the answers can be unavailable.** That asymmetry is
 the design, and it is correct. CHANGELOG records both halves being fixed on real

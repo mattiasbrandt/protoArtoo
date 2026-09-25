@@ -816,7 +816,7 @@ actually answer."* For this word:
 - Note text: *"Status is cached from boot. Use Poll to refresh -- only poll when
   not playing."*
 - CHIRP catalog card: hidden, with *"Catalog unavailable for this backend."*
-- When `driver === "MP3Trigger"`: wiring note (3.3 V jumper, `MP3TRIGR.INI`
+- When `driver === "MP3 Trigger"`: wiring note (3.3 V jumper, `MP3TRIGR.INI`
   `#BAUD 9600`), missing-clip banner from `missing_track`, category-range
   warning for 254/255
 

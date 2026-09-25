@@ -66,10 +66,8 @@ class AudioDriverChirp : public AudioDriver {
     // names CHIRP Droid Control, a different product by the same author
     // (CONTEXT.md Flagged Ambiguities, 2026-09-08: always qualify in operator
     // copy). Read from this product's Component Registry row rather than
-    // restated here, exactly as capabilities() is. The other two sound drivers
-    // keep their own short literals: "MP3Trigger" is matched by the Sound page
-    // to decide which module-specific rows exist at all, so its spelling is
-    // load-bearing in a way this one is not.
+    // restated here, exactly as capabilities() is - as the other two sound
+    // drivers do (#422).
     const char* driverName() const override {
         return componentPartDisplayName("chirp");
     }

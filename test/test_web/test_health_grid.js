@@ -45,7 +45,7 @@ const HEALTHY_FRAME = Object.freeze({
   littleFsReady: true,
   heapLargest8bit: 90000,
   dome_link: { state: "connected", transport: "uart" },
-  audio: { state: "idle" },
+  audio: { state: "idle", driver: "CHIRP Audio Trigger", output: "on", link_ok: true, rx_status: "available" },
   domeEnabled: true,
   domeEsc: { state: "idle" },
   estop: false,

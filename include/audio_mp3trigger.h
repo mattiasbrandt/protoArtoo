@@ -76,8 +76,11 @@ class AudioDriverMp3Trigger : public AudioDriver {
     // nativeVol = (30 - vol) * MP3TRIGGER_VOL_AUDIBLE / 30.
     void setVolume(uint8_t vol) override;
 
+    // The operator-visible name, read from this product's Component Registry
+    // row. It was the bare "MP3Trigger", which put a spelling no builder uses
+    // on every surface that names the fitted module (#422).
     const char* driverName() const override {
-        return "MP3Trigger";
+        return componentPartDisplayName("mp3_trigger");
     }
 
     // Capabilities bitmask: status query, track count, current track (cached).

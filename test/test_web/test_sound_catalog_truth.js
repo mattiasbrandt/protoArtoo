@@ -23,6 +23,11 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { createRequire } from "node:module";
+
+// The sound link's word and light come from the health-signal model, which
+// every page loads ahead of the shell (data/health_signals.js).
+const PAHealthSignals = createRequire(import.meta.url)("../../data/health_signals.js");
 
 // The CHIRP row's capability word (include/component_registry.inc part id 20).
 const CAPS_CHIRP = 0x3f;
@@ -61,6 +66,7 @@ const catalogBody = (overrides = {}) => ({
 const mount = ({ catalog = catalogBody(), tracks = {}, refreshReply = { ok: true, request: 1 } } = {}) => {
   const state = { catalog, created: [], fired: new Set() };
   const env = loadPageModule("sound.js", {
+    overrides: { PAHealthSignals },
     respond: (path) => {
       // The page reads sound's enabled state off /api/status, and every control
       // on the page is disabled when it is missing.

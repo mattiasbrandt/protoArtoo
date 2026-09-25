@@ -21,6 +21,8 @@
 #include <stdio.h>
 #include <unity.h>
 
+#include "component_registry.h"
+
 // Replicate constants locally — keeps tests self-contained and avoids pulling
 // in Arduino headers through audio_mp3trigger.h.
 static constexpr uint8_t MP3TRIGGER_STOP_TRACK   = 254;
@@ -167,13 +169,14 @@ void test_capabilities_not_safe_during_play() {
 }
 
 // -----------------------------------------------------------------------------
-// Test 9: driverName() returns "MP3Trigger"
+// Test 9: the name driverName() returns is the registry row's display name
 // -----------------------------------------------------------------------------
-void test_driver_name_is_MP3Trigger() {
-    // Mirror the literal from AudioDriverMp3Trigger::driverName()
-    const char* name = "MP3Trigger";
-    TEST_ASSERT_EQUAL_STRING("MP3Trigger", name);
-    TEST_ASSERT_EQUAL_INT(10, (int)(sizeof("MP3Trigger") - 1));
+// AudioDriverMp3Trigger::driverName() returns componentPartDisplayName(
+// "mp3_trigger"). The bound driver's own answer is pinned in
+// test_audio_sound_member; this pins the row it reads, so the operator never
+// sees the bare "MP3Trigger" the driver once returned (#422).
+void test_driver_name_is_the_registry_display_name() {
+    TEST_ASSERT_EQUAL_STRING("MP3 Trigger", componentPartDisplayName("mp3_trigger"));
 }
 
 // -----------------------------------------------------------------------------
@@ -255,7 +258,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_capabilities_not_safe_during_play);
 
     // Driver name (spec test 9)
-    RUN_TEST(test_driver_name_is_MP3Trigger);
+    RUN_TEST(test_driver_name_is_the_registry_display_name);
 
     // S1 response parsing
     RUN_TEST(test_s1_response_parse_strips_equals_prefix);

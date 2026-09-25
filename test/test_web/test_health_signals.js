@@ -47,7 +47,7 @@ const HEALTHY_PAYLOAD = Object.freeze({
   heapLargest8bit: 90000,
   heapFree: 150000,
   dome_link: { state: "connected", transport: "uart" },
-  audio: { state: "idle" },
+  audio: { state: "idle", driver: "CHIRP Audio Trigger", output: "on", link_ok: true, rx_status: "available" },
   domeEnabled: true,
   domeEsc: { state: "idle" },
 });
@@ -82,7 +82,6 @@ test("WiFi reads OK when the radio is serving and never amber when it is not", (
   const serving = toSignalMap({ wifiConnected: true, wifiRssi: -47 });
   assert.equal(serving["h-wifi"].state, "ok");
   assert.equal(serving["h-wifi"].reason, "Connected");
-  assert.match(serving["h-wifi"].detail, /wifiRssi=-47 dBm/);
 
   // deriveWiFiConnectivityFields (src/web/api_status_serializers.cpp) reports
   // wifiClientConnected when a station has associated with this droid's AP.
@@ -143,113 +142,66 @@ test("memory keeps amber for a reported low number and reads OFF for no number",
 });
 
 // -----------------------------------------------------------------------------
-// protoR2link
+// protoR2link and the sound link: one word table (#422)
+//
+// Every page that shows either link reads these two answers, so the table is
+// the contract: the droid's state goes in, one word and one light come out.
 // -----------------------------------------------------------------------------
 
-test("protoR2link reads OFF when disabled and keeps FAIL for a heartbeat it lost", () => {
-  const disabled = toSignalMap({ dome_link: { state: "disabled" } });
-  assert.equal(disabled["h-dome-link"].state, "off");
-  assert.equal(disabled["h-dome-link"].reason, "Disabled");
-  assert.match(disabled["h-dome-link"].detail, /state=disabled/);
+const FINDING_OUT = (() => {
+  const context = { window: {}, console };
+  vm.runInNewContext(readFileSync(path.join(__dirname, "../../data/live_reading.js"), "utf8"), context);
+  return context.window.PALiveReading.FINDING_OUT;
+})();
+const WORDS = { unknown: UNKNOWN, findingOut: FINDING_OUT };
+const { readProtoR2link, readSoundLink } = require("../../data/health_signals.js");
 
-  // "lost" is a heartbeat that WAS heard and then stopped - a real regression
-  // from a known-good state, and the one dome-link branch that stays red.
-  const lost = toSignalMap({ dome_link: { state: "lost", detail: "no heartbeat 12s" } });
-  assert.equal(lost["h-dome-link"].state, "fail");
-  assert.equal(lost["h-dome-link"].reason, "Heartbeat lost");
-});
-
-test("protoR2link connected includes transport label in reason", () => {
-  const uart = toSignalMap({
-    dome_link: { state: "connected", transport: "uart", uart_owned_by_dome: true },
+test("protoR2link: each state the droid reports has one word and one light", () => {
+  const rows = [
+    [{ dome_link: { state: "connected", transport: "uart" } }, "ok", "UART (slip ring)", "UART"],
+    [{ dome_link: { state: "connected", transport: "wifi" } }, "ok", "WiFi (fallback)", "WIFI"],
+    [{ dome_link: { state: "disabled" } }, "off", "Off", "Off"],
+    [{ dome_link: { state: "not_seen" } }, "off", "Not seen", "Not seen"],
+    [{ dome_link: { state: "lost" } }, "fail", "Lost", "Lost"],
+    [null, "off", FINDING_OUT, FINDING_OUT],
+    [{}, "off", UNKNOWN, UNKNOWN],
+  ];
+  rows.forEach(([status, state, word, short]) => {
+    assert.deepEqual(readProtoR2link(status, WORDS), { state, word, short }, JSON.stringify(status));
   });
-  assert.equal(uart["h-dome-link"].state, "ok");
-  assert.equal(uart["h-dome-link"].reason, "Connected - UART (slip ring)");
-  assert.match(uart["h-dome-link"].detail, /UART2 owned by protoR2link/);
-
-  const wifi = toSignalMap({ dome_link: { state: "connected", transport: "wifi" } });
-  assert.equal(wifi["h-dome-link"].state, "ok");
-  assert.equal(wifi["h-dome-link"].reason, "Connected - WiFi (fallback)");
-
-  const noTransport = toSignalMap({ dome_link: { state: "connected" } });
-  assert.equal(noTransport["h-dome-link"].state, "ok");
-  assert.equal(noTransport["h-dome-link"].reason, "Connected");
+  // The Dashboard's Health row is the same answer.
+  assert.equal(toSignalMap({ dome_link: { state: "lost" } })["h-dome-link"].state, "fail");
 });
 
-test("protoR2link never seen, unrecognised or silent all read OFF", () => {
-  // Never seen: enabled, and the dome has never answered. A droid with no dome
-  // board fitted reads exactly this, and it is not worth getting up for.
-  const neverSeen = toSignalMap({ dome_link: { state: "not_seen", detail: "no heartbeat yet" } });
-  assert.equal(neverSeen["h-dome-link"].state, "off");
-  assert.equal(neverSeen["h-dome-link"].reason, "Not seen");
-
-  const unknown = toSignalMap({ dome_link: { state: "handshaking" } });
-  assert.equal(unknown["h-dome-link"].state, "off");
-  assert.equal(unknown["h-dome-link"].reason, `${UNKNOWN} (handshaking)`);
-  assert.match(unknown["h-dome-link"].detail, /state=handshaking/);
-
-  const noState = toSignalMap({ dome_link: { detail: "n/a" } });
-  assert.equal(noState["h-dome-link"].state, "off");
-  assert.equal(noState["h-dome-link"].reason, UNKNOWN);
-});
-
-// -----------------------------------------------------------------------------
-// Sound
-// -----------------------------------------------------------------------------
-
-test("sound reads OK while playing or idle and OFF when the block is absent", () => {
-  const playing = toSignalMap({ audio: { state: "playing", detail: "track 3" } });
-  assert.equal(playing["h-sound"].state, "ok");
-  assert.equal(playing["h-sound"].reason, "Playing");
-
-  const idle = toSignalMap({ audio: { state: "idle" } });
-  assert.equal(idle["h-sound"].state, "ok");
-  assert.equal(idle["h-sound"].reason, "Idle");
-
-  const absent = toSignalMap({});
-  assert.equal(absent["h-sound"].state, "off");
-  assert.equal(absent["h-sound"].reason, "Disabled");
-});
-
-test("sound no response remains a failure", () => {
-  const signals = toSignalMap({
-    audio: {
-      state: "idle",
-      link_ok: false,
-      rx_status: "no_response",
-    },
+test("the sound link: each state the droid reports has one word and one light", () => {
+  const rows = [
+    [{ audio: { driver: "MP3 Trigger", output: "on", link_ok: true, rx_status: "available" } }, "ok", "MP3 Trigger"],
+    [{}, "off", "Off"],
+    [{ audio: { driver: "DY-SV5W", output: "off", link_ok: false } }, "off", "Off"],
+    [{ audio: { driver: "DY-SV5W", output: "on", link_ok: false, rx_status: "no_response" } }, "fail", "No answer"],
+    [{ audio: { output: "on", link_ok: false, rx_status: "blocked_by_dome_uart" } }, "off", "Held by protoR2link"],
+    [null, "off", FINDING_OUT],
+    [{ audio: { state: "idle" } }, "off", UNKNOWN],
+  ];
+  rows.forEach(([status, state, word]) => {
+    assert.deepEqual(readSoundLink(status, WORDS), { state, word, short: word }, JSON.stringify(status));
   });
-
-  assert.equal(signals["h-sound"].state, "fail");
-  assert.equal(signals["h-sound"].reason, "No module response");
+  assert.equal(toSignalMap({ audio: { link_ok: false, rx_status: "no_response" } })["h-sound"].state, "fail");
 });
 
-test("a sound status that cannot be asked for reads OFF, and is still not a failure", () => {
-  // DomeLink owns UART2, so the module is not being asked. That is not
-  // reporting - and it must stay distinct from the no-response fault above.
-  const blocked = toSignalMap({
-    audio: {
-      state: "idle",
-      link_ok: false,
-      rx_status: "blocked_by_dome_uart",
-      rx_detail: "Status unavailable: DomeLink is using UART",
-    },
+test("who holds the shared line never changes a link's answer; the droid's state does", () => {
+  // protoR2link is never held by sound: a lost with sound holding the line is
+  // a real WiFi loss and reads the same red as any other lost.
+  ["dome", "audio", "none"].forEach((owner) => {
+    const lost = { dome_link: { state: "lost", uart_owner: owner, uart_owned_by_dome: owner === "dome" } };
+    assert.equal(readProtoR2link(lost, WORDS).state, "fail", `uart_owner=${owner}`);
+    assert.equal(toSignalMap(lost)["h-dome-link"].state, "fail", `uart_owner=${owner}`);
   });
-  assert.equal(blocked["h-sound"].state, "off");
-  assert.equal(blocked["h-sound"].reason, "Status unavailable");
-  assert.equal(blocked["h-sound"].detail, "Status unavailable: DomeLink is using UART");
+});
 
-  const unknown = toSignalMap({ audio: { state: "booting" } });
-  assert.equal(unknown["h-sound"].state, "off");
-  assert.equal(unknown["h-sound"].reason, `${UNKNOWN} (booting)`);
-
-  const noState = toSignalMap({ audio: { detail: "n/a" } });
-  assert.equal(noState["h-sound"].state, "off");
-  assert.equal(noState["h-sound"].reason, UNKNOWN);
-
-  const malformed = toSignalMap({ audio: "idle" });
-  assert.equal(malformed["h-sound"].state, "off");
-  assert.equal(malformed["h-sound"].reason, "Invalid payload");
+test("a link reading refuses to guess the Live Reading's words", () => {
+  assert.throws(() => readProtoR2link({}, {}), TypeError);
+  assert.throws(() => readSoundLink(null, { unknown: UNKNOWN }), TypeError);
 });
 
 // -----------------------------------------------------------------------------
@@ -270,19 +222,16 @@ test("dome esc reports OK for idle and spinning states", () => {
   const idle = toSignalMap({ domeEnabled: true, domeEsc: { state: "idle" } });
   assert.equal(idle["h-dome-esc"].state, "ok");
   assert.equal(idle["h-dome-esc"].reason, "Idle");
-  assert.match(idle["h-dome-esc"].detail, /domeEnabled=true, state=idle/);
 
   const spinning = toSignalMap({ domeEnabled: true, domeEsc: { state: "spinning" } });
   assert.equal(spinning["h-dome-esc"].state, "ok");
   assert.equal(spinning["h-dome-esc"].reason, "Spinning");
-  assert.match(spinning["h-dome-esc"].detail, /domeEnabled=true, state=spinning/);
 });
 
-test("dome esc reads OFF for a state it does not recognise, keeping the state in the detail", () => {
+test("dome esc reads OFF for a state it does not recognise, keeping the state in the word", () => {
   const unknown = toSignalMap({ domeEnabled: true, domeEsc: { state: "paused" } });
   assert.equal(unknown["h-dome-esc"].state, "off");
   assert.equal(unknown["h-dome-esc"].reason, `${UNKNOWN} (paused)`);
-  assert.match(unknown["h-dome-esc"].detail, /state=paused/);
 
   const missingState = toSignalMap({ domeEnabled: true });
   assert.equal(missingState["h-dome-esc"].state, "off");
@@ -308,9 +257,8 @@ test("with the stream down a row keeps the state the controller last reported", 
 
 test("no row says anything about staleness", () => {
   const streamDown = deriveHealthSignals(HEALTHY_PAYLOAD, { stale: true });
-  streamDown.forEach(({ id, reason, detail }) => {
-    assert.doesNotMatch(reason, /stale/i, `${id} reason must not mention staleness`);
-    assert.doesNotMatch(detail, /stale|interrupted|last known/i, `${id} detail must not mention staleness`);
+  streamDown.forEach(({ id, reason }) => {
+    assert.doesNotMatch(reason, /stale|interrupted|last known/i, `${id} must not mention staleness`);
   });
 });
 

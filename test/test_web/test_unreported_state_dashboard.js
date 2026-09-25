@@ -106,7 +106,10 @@ test("a WiFi signal nothing measured is not printed as a very strong one", async
 // A Dashboard fed whole frames through the stream and the Live Reading, so a
 // frame can leave a field out.
 const mountDashboard = () => {
-  const env = loadPageModule("app.js", { respond: () => ({ data: {} }) });
+  const env = loadPageModule("app.js", {
+    respond: () => ({ data: {} }),
+    overrides: { PAHealthSignals: MODELS.PAHealthSignals },
+  });
   return { env, send: (changes) => env.pushStatus(statusFrame(changes)), unknown: env.window.PALiveReading.UNKNOWN };
 };
 
@@ -147,10 +150,55 @@ test("the component card names Outputs as the firmware reported them, and no oth
     { rows },
   );
   await env.window.PALiveReading.read();
-  await env.runSection("app-log-level");
+  await env.runSection("app-output-names");
   await env.settle();
 
   const card = env.element("component-status-grid").innerHTML;
   assert.match(card, /GPIO 49/, "the Output is named as its board prints it");
   assert.doesNotMatch(card, /AUX|aux1/i, "and nothing the firmware did not report is listed");
+});
+
+// The log level and the Droid Build are the config's answer, and the Outputs'
+// names are the servo table's. They were one read, so a table read that failed
+// blanked the log level too (#423).
+test("the log level still renders when the Outputs read fails", async () => {
+  let env = null;
+  env = loadPageModule("app.js", {
+    respond: (path) => {
+      if (path === "/api/servo/outputs") throw new Error("no response from controller");
+      if (path === "/api/config") return { data: CONFIG };
+      return { data: {} };
+    },
+    overrides: {
+      PAHealthSignals: MODELS.PAHealthSignals,
+      DroidParts: MODELS.DroidParts,
+      DroidBuild: MODELS.DroidBuild,
+      PAOutputs: outputsModule(() => env.window.PAApi),
+      PAUi: { setupActionHtml: (action) => `${action} in <a href="/setup.html">Setup</a>` },
+    },
+  });
+  await env.runSection("app-log-level");
+  await env.settle();
+  assert.equal(env.element("log-level-pill").textContent, "Info");
+  await assert.rejects(env.runSection("app-output-names"), "the table read's own failure still reaches the bootstrap");
+});
+
+// The Components card's protoR2link and Audio rows say what the model says,
+// and never read who holds the shared line (#422).
+test("the component card names both links in the model's words", async () => {
+  const frame = {
+    dome_link: { state: "lost", transport: "wifi", uart_owner: "audio", uart_owned_by_dome: false },
+    protoR2link: { state: "lost", detail: "Heartbeat rx 3 / tx 9, last 9000 ms ago (transport wifi)" },
+    audio: { state: "idle", driver: "CHIRP Audio Trigger", output: "on", link_ok: false, rx_status: "blocked_by_dome_uart" },
+  };
+  const env = dashboard(frame);
+  await env.window.PALiveReading.read();
+  await env.settle();
+
+  const words = { unknown: env.window.PALiveReading.UNKNOWN };
+  const card = env.element("component-status-grid").innerHTML;
+  const model = MODELS.PAHealthSignals;
+  const payload = { ...HEALTHY, ...frame };
+  assert.match(card, new RegExp(`<dd id="state-protoR2link">${model.readProtoR2link(payload, words).word}</dd>`));
+  assert.match(card, new RegExp(`<dd id="state-audio">${model.readSoundLink(payload, words).word}</dd>`));
 });

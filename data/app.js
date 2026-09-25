@@ -186,7 +186,7 @@
   };
 
 
-  const setIndicator = (id, state, reason = "", detail = "") => {
+  const setIndicator = (id, state, reason = "") => {
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
@@ -196,27 +196,23 @@
       // already says ok / degraded / faulted / not reporting, and "OK: Frames
       // ok" says one of those twice. The state label is the fallback for an
       // evaluator that returned no reason, so a signal is never wordless.
+      // No hover title: the raw key=value detail that used to sit there named
+      // firmware fields, not anything a builder reads (#298, #422).
       const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
       textEl.textContent = reason || label;
-
-      if (detail) {
-        textEl.title = detail;
-      } else {
-        textEl.removeAttribute("title");
-      }
     }
   };
 
   const renderHealth = (payload) => {
     if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
       Object.keys(INDICATOR_TEXT).forEach((id) => {
-        setIndicator(id, "off", "Health model missing", "health_signals.js failed to load");
+        setIndicator(id, "off", "Health model missing");
       });
       return;
     }
 
     const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { unknown: window.PALiveReading.UNKNOWN });
-    signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
+    signals.forEach(({ id, state, reason }) => setIndicator(id, state, reason));
     renderHealthSummary(signals);
   };
 
@@ -248,6 +244,30 @@
     if (lastStatus) renderComponentStatus(lastStatus);
   };
 
+  // What one row of the Components card says. protoR2link and the sound link
+  // are the health-signal model's word, the same one the Health card, the
+  // Status Plate, Maintenance and Sound show (data/health_signals.js, #422),
+  // and carry no line of their own beneath it: the firmware's detail there
+  // restated the state in other words. Every other row is the firmware's
+  // state and detail.
+  const LINK_COMPONENT_READERS = {
+    protoR2link: (payload) => HEALTH_SIGNAL_MODEL.readProtoR2link(payload, { unknown: window.PALiveReading.UNKNOWN }),
+    audio: (payload) => HEALTH_SIGNAL_MODEL.readSoundLink(payload, { unknown: window.PALiveReading.UNKNOWN }),
+  };
+
+  const componentReading = (key, payload) => {
+    const readLink = LINK_COMPONENT_READERS[key];
+    if (readLink && HEALTH_SIGNAL_MODEL) return { state: readLink(payload).word, detail: "" };
+    const entry = payload[key];
+    let state = entry ? "enabled" : "disabled";
+    let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
+    if (entry && typeof entry === "object") {
+      state = entry.state || "enabled";
+      detail = entry.detail || COMPONENT_ENABLED_TEXT;
+    }
+    return { state: String(state).replace(/_/g, " "), detail };
+  };
+
   const renderComponentStatus = (payload) => {
     if (!componentStatusCard || !componentStatusGrid) return;
 
@@ -264,67 +284,33 @@
       componentSummary.textContent = `${active.length} reported`;
     }
 
-    // Build signature: component IDs + flags that affect transport lines
-    const transportFlags = [
-      payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
-      payload.audio?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
-    ].filter(Boolean).join(",");
-    const signature = active.map(([key, label]) => `${key}:${label}`).join(",") + "|" + transportFlags;
+    const signature = active.map(([key, label]) => `${key}:${label}`).join(",");
 
-    // Rebuild only if component IDs or transport flags changed
+    // Rebuild only if the component set changed
     if (signature !== renderedComponentIds) {
       renderedComponentIds = signature;
       const items = active.map(([key, label]) => {
-        const entry = payload[key];
-        let state = entry ? "enabled" : "disabled";
-        let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
-        if (entry && typeof entry === "object") {
-          state = entry.state || "enabled";
-          detail = entry.detail || COMPONENT_ENABLED_TEXT;
-        }
-        const stateText = String(state).replace(/_/g, " ");
-        const safeState = window.PAUtils.escapeHtml(stateText);
-        const safeDetail = window.PAUtils.escapeHtml(detail);
-        let transportLine = "";
-        if (key === "protoR2link" && payload.dome_link?.state === "connected") {
-          if (payload.dome_link?.uart_owned_by_dome === true) {
-            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("Holds the serial port the sound module shares.")}</div>`;
-          }
-        }
-        if (key === "audio" && entry?.rx_status === "blocked_by_dome_uart") {
-          // Name the module that is actually fitted. This line said "CHIRP"
-          // unconditionally, which was wrong on a DY-SV5W or MP3 Trigger droid
-          // even before the sound module became a runtime choice.
-          const moduleName = entry?.driver || "Sound module";
-          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml(moduleName + " cannot answer: the dome link holds its port.")}</div>`;
-        }
+        const { state, detail } = componentReading(key, payload);
         return `
         <div class="status-item" id="comp-${key}">
           <dt>${label}</dt>
-          <dd id="state-${key}">${safeState}</dd>
-          <div class="desc mt-6" id="detail-${key}">${safeDetail}</div>${transportLine}
+          <dd id="state-${key}">${window.PAUtils.escapeHtml(state)}</dd>${detail
+            ? `
+          <div class="desc mt-6" id="detail-${key}">${window.PAUtils.escapeHtml(detail)}</div>`
+            : ""}
         </div>`;
       }).join("");
       componentStatusGrid.innerHTML = `<dl class="status-grid">${items}</dl>`;
     } else {
       // Patch only the text content when component set hasn't changed
       active.forEach(([key]) => {
-        const entry = payload[key];
-        let state = entry ? "enabled" : "disabled";
-        let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
-        if (entry && typeof entry === "object") {
-          state = entry.state || "enabled";
-          detail = entry.detail || COMPONENT_ENABLED_TEXT;
-        }
-        const stateText = String(state).replace(/_/g, " ");
-        const safeState = window.PAUtils.escapeHtml(stateText);
-        const safeDetail = window.PAUtils.escapeHtml(detail);
+        const { state, detail } = componentReading(key, payload);
 
         const stateEl = document.getElementById(`state-${key}`);
-        if (stateEl) stateEl.textContent = safeState;
+        if (stateEl) stateEl.textContent = state;
 
         const detailEl = document.getElementById(`detail-${key}`);
-        if (detailEl) detailEl.textContent = safeDetail;
+        if (detailEl) detailEl.textContent = detail;
       });
     }
   };
@@ -918,23 +904,30 @@
   const loadLogLevel = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
     const api = handle ?? window.PAApi;
-    // The config alone, read through data/outputs.js so the Outputs' names
-    // come with it (PAApi reads no-store by default).
-    const { config, outputs } = await window.PAOutputs.load({ handle: api, rows: false });
+    // The config alone (PAApi reads no-store by default). The Outputs' names
+    // are not on it - an Output is its row in the servo table (ADR 0068) - so
+    // they are a section of their own below, and a failed table read cannot
+    // take the log level or the Droid Build down with it (#423).
+    const answer = await api.get("/api/config");
+    const config = answer?.data && typeof answer.data === "object" ? answer.data : {};
     // The identity plate's Droid Build row rides this payload rather than
     // fetching one of its own: droid_build.js's adopt() takes a config the page
     // already holds, and the controller sheds connections under load, so a
     // second GET of the same document would cost a client slot to learn what
     // this one already said.
     renderDroidBuild(window.DroidBuild?.adopt(config) || null);
-    // The Outputs' names ride the same payload, for the same reason.
-    adoptOutputLabels(outputs);
     const level = Number(config?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
     }
     currentLogLevel = level;
     renderLogLevelPill(level);
+  };
+
+  // The Outputs' names for the Components card: the servo table alone, read
+  // through data/outputs.js (#415).
+  const loadOutputNames = async ({ handle = null } = {}) => {
+    adoptOutputLabels(await window.PAOutputs.refresh({ handle: handle ?? window.PAApi }));
   };
 
   const cycleLogLevel = async () => {
@@ -1476,6 +1469,7 @@
   const SECTIONS = [
     ["app-recent-logs", loadRecentLogs, "recent logs"],
     ["app-log-level", loadLogLevel, "log level setting"],
+    ["app-output-names", loadOutputNames, "Output names"],
     ["app-console-catalog", loadConsoleCatalog, "console commands"],
   ];
 
@@ -1483,6 +1477,7 @@
     if (!window.PABootstrap) {
       loadRecentLogs().catch(() => {});
       loadLogLevel().catch(() => {});
+      loadOutputNames().catch(() => {});
       loadConsoleCatalog().catch(() => {});
       return;
     }

@@ -47,7 +47,7 @@ void test_each_selectable_member_binds_to_its_own_driver() {
 
     audioBindSoundMember(memberValue("mp3_trigger"));
     TEST_ASSERT_EQUAL_STRING("mp3_trigger", audioActiveSoundMember().part->id);
-    TEST_ASSERT_EQUAL_STRING("MP3Trigger", audioActiveSoundMember().driver->driverName());
+    TEST_ASSERT_EQUAL_STRING("MP3 Trigger", audioActiveSoundMember().driver->driverName());
     TEST_ASSERT_EQUAL_UINT8(13, audioActiveSoundMember().driver->capabilities());
 
     audioBindSoundMember(memberValue("chirp"));
@@ -79,6 +79,22 @@ void test_every_selectable_sound_row_binds_to_the_driver_that_row_describes() {
     TEST_ASSERT_EQUAL_UINT8(componentCategorySelectableCount(COMPONENT_CATEGORY_SOUND), selectable);
 }
 
+// Every page that names the fitted module prints what its driver reports, so
+// each selectable Sound row's driver reports that row's own display name. The
+// MP3 Trigger's once said the bare "MP3Trigger" (#422). Walks the registry, so a
+// fourth module's driver is held to its row the day the row lands.
+void test_every_selectable_sound_driver_reports_its_rows_display_name() {
+    for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+        const ComponentPartEntry& part = COMPONENT_PARTS[i];
+        if (part.category != COMPONENT_CATEGORY_SOUND || !componentPartIsSelectable(part)) {
+            continue;
+        }
+        audioBindSoundMember(part.value);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(part.name, audioActiveSoundMember().driver->driverName(),
+                                         part.id);
+    }
+}
+
 // A stored value this image cannot drive degrades to the build default, not to
 // silence and not to a null driver: 0 is what a controller that has never been
 // told stores, dfplayer_mini is a roadmap row with no driver, hoverboard is a
@@ -100,6 +116,7 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_each_selectable_member_binds_to_its_own_driver);
     RUN_TEST(test_every_selectable_sound_row_binds_to_the_driver_that_row_describes);
+    RUN_TEST(test_every_selectable_sound_driver_reports_its_rows_display_name);
     RUN_TEST(test_an_unusable_stored_value_falls_back_to_the_build_default);
     return UNITY_END();
 }
