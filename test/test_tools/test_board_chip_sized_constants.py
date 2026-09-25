@@ -69,10 +69,12 @@ EXPECTED_BY_BOARD = {
         "log_line_max": 128,
         "log_ladder": (16, 20, 24, 48),
         "log_ring_max_lines": 48,
-        # Pre-#256 literals, unchanged. WebEvents is 6144 here even though the
-        # #248 rule on its 5904 B chain would raise it -- the tight-heap decline
-        # recorded beside the constant in include/config.h.
-        "rc_input_stack": 7168,
+        # Pre-#256 literals, unchanged but for RCInputTask. WebEvents is 6144
+        # here even though the #248 rule on its 5904 B chain would raise it --
+        # the tight-heap decline recorded beside the constant in
+        # include/config.h. RCInputTask followed the rule down at #428 on its
+        # shorter chain, 4944 -> 6656.
+        "rc_input_stack": 6656,
         "audio_stack": 6144,
         "web_events_stack": 6144,
         # Raised from 5120 by #226 - the only stack here whose under-size was a
@@ -82,8 +84,10 @@ EXPECTED_BY_BOARD = {
         # 7360 * 1.25 = 9200 -> 9216. Re-derived once more by #354, whose body
         # routines put sequenceStart() on the Console's RC-action-test branch:
         # 7376 * 1.25 = 9220 -> 9728. #425's refusal data moved the chain to
-        # 7456, and 7456 * 1.25 = 9320 lands on the same step.
-        "console_stack": 9728,
+        # 7456, and 7456 * 1.25 = 9320 lands on the same step. #428's walk
+        # follows every executor table the Console dispatches through:
+        # 8688 * 1.25 = 10860 -> 11264.
+        "console_stack": 11264,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in
     # include/seq_store_util.h and include/sequence_run_evidence.h.
@@ -107,10 +111,12 @@ EXPECTED_BY_BOARD = {
         # Re-derived 2026-09-13 (#256 reopen) by the #248 rule from the
         # firebeetle2 product walk. RCInput 6544 -> 8192; Audio 5040 -> 6656;
         # WebEvents 5776 -> 7680 (stack unchanged); Console 8320 -> 10752.
+        # #428: the Console walk follows every executor table it dispatches
+        # through, 8464 -> 9696, and the rule raises it 10752 -> 12288.
         "rc_input_stack": 8192,
         "audio_stack": 6656,
         "web_events_stack": 7680,
-        "console_stack": 10752,
+        "console_stack": 12288,
     },
 }
 
