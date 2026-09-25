@@ -46,14 +46,10 @@
     isLightRow,
   } = P;
 
-  // The Output a Part is on, among the rows this page last painted.
-  const outputOf = (partId) => OUTPUTS.forPart(partId, outputs);
-
-  // The bench feed (#318). One read of the outputs answer a second repaints the
-  // table and the picture - any Part another client or the Console moved, and
-  // what every part was last told - and only while Parts is on screen: the
-  // shell stops it when the operator leaves (#360).
-  const POLL_MS = 1000;
+  // The Output a Part is on, as the droid last answered.
+  const outputOf = (partId) => OUTPUTS.forPart(partId);
+  // Whether the droid has answered with its Outputs yet.
+  const answered = () => OUTPUTS.known().table;
 
   const groupHeading = (group) => {
     const [one, many] = group.unit || ["part", "parts"];
@@ -89,7 +85,7 @@
       `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
       `<span class="parts-gang"></span></th>` +
       `<td><select class="parts-output" aria-label="${esc(`Output that drives ${part.name}`)}" disabled>` +
-      `<option value="${NO_OUTPUT}">Finding out...</option></select></td></tr>`
+      `<option value="${NO_OUTPUT}">${esc(OUTPUTS.live(null).word)}</option></select></td></tr>`
     );
   };
 
@@ -117,7 +113,6 @@
   // ---------------------------------------------------------------------------
   // Repainted in place
   // ---------------------------------------------------------------------------
-  let outputs = null; // null until the droid has answered
   // The Live Reading's three-valued estop (data/live_reading.js): "latched",
   // "clear", or "finding-out" until the droid has said and whenever contact
   // with it is lost.
@@ -139,7 +134,7 @@
   // until they let go.
   const held = (id, select) => id === mover.pending() || document.activeElement === select;
 
-  const paintRow = (id, row, addresses) => {
+  const paintRow = (id, row, outputs, addresses) => {
     const output = outputOf(id);
     row.node.classList.toggle("is-wired", output !== null);
     const gang = output ? output.parts.filter((other) => other !== id) : [];
@@ -163,9 +158,10 @@
   };
 
   const paint = () => {
-    if (outputs === null) return;
+    if (!answered()) return;
+    const outputs = OUTPUTS.list();
     const addresses = outputs.map((output) => output.address).join(",");
-    rows.forEach((row, id) => paintRow(id, row, addresses));
+    rows.forEach((row, id) => paintRow(id, row, outputs, addresses));
 
     const wired = catalog.parts.filter((part) => outputOf(part.id) !== null).length;
     const idle = outputs.filter((output) => output.parts.length === 0).length;
@@ -183,11 +179,10 @@
     paintBody();
   };
 
-  // The servo table alone: this page shows nothing the config answers.
+  // The servo table alone: this page shows nothing the config answers. The
+  // read publishes, and the page paints from that (below), once.
   const loadOutputs = async ({ handle = null } = {}) => {
     await OUTPUTS.refresh({ handle });
-    outputs = OUTPUTS.list().filter((output) => output.fromTable);
-    paint();
   };
 
   const refresh = () =>
@@ -207,8 +202,8 @@
   tableRegion.addEventListener("change", (event) => {
     const select = event.target;
     const id = select?.closest?.("[data-part]")?.dataset.part;
-    if (!id || outputs === null) return;
-    mover.request(P.moveFor(outputs, id, select.value), select);
+    if (!id || !answered()) return;
+    mover.request(P.moveFor(OUTPUTS.list(), id, select.value), select);
   });
 
   // A control that was held catches up with whatever arrived while it was.
@@ -297,13 +292,18 @@
   // reversed Endpoint Pair reads the same way round with no invert flag
   // anywhere (ADR 0041), and an Output nobody has measured has no travel for a
   // fraction to be of, which is its own mark rather than a made-up number.
+  //
+  // Whether there is a position at all, and the word when there is not, are
+  // data/outputs.js's answer, so a limp Part says why in the words Servos
+  // uses for the same Output.
   const markFor = (partId) => {
     const part = partById.get(partId);
-    const output = outputs === null ? null : outputOf(partId);
-    if (outputs === null) return { mark: view.MARKS.UNKNOWN, said: "finding out" };
+    if (!answered()) return { mark: view.MARKS.UNKNOWN, said: OUTPUTS.live(null).word };
+    const output = outputOf(partId);
     if (!output) return { mark: view.MARKS.UNASSIGNED };
-    if (!output.reported) return { mark: view.MARKS.UNKNOWN, said: window.PALiveReading.UNKNOWN };
-    if (output.commandedUs === null) return { mark: view.MARKS.LIMP };
+    const live = OUTPUTS.live(output);
+    if (live.state === "unknown") return { mark: view.MARKS.UNKNOWN, said: live.word };
+    if (live.state === "limp") return { mark: view.MARKS.LIMP, said: live.word };
     // A light has no travel, so it gets no position and no Open: the treatment
     // removes what its Kind cannot promise (data/droid_part_kind.js).
     if (kinds?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${output.name}` };
@@ -321,7 +321,7 @@
     const marker = drawing.markerOf(markerId);
     if (marker.panTilt) return {};
     const own = marker.parts.filter((id) => !kinds?.isLight(partById.get(id)));
-    const wired = own.concat(marker.parts).find((id) => outputs !== null && outputOf(id) !== null);
+    const wired = own.concat(marker.parts).find((id) => answered() && outputOf(id) !== null);
     if (wired) return markFor(wired);
     if (marker.target) {
       return domeTold.has(marker.target)
@@ -384,7 +384,7 @@
   // expander's unnamed row cannot be reached from here at all - the same bound
   // the calibration dial keeps.
   const servoOutputFor = (partId) => {
-    const output = outputs === null ? null : outputOf(partId);
+    const output = answered() ? outputOf(partId) : null;
     if (!output || !hasServoWord(output) || isLightRow(output) || !output.calibrated) return null;
     return output;
   };
@@ -399,10 +399,10 @@
     const onDroid = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) !== -1);
     const isFitted = unfitted.length < parts.length;
     const own = parts.filter((id) => !kinds?.isLight(partById.get(id)));
-    const wiredPart = own.concat(parts).find((id) => outputs !== null && outputOf(id) !== null) || null;
+    const wiredPart = own.concat(parts).find((id) => answered() && outputOf(id) !== null) || null;
     const output = wiredPart === null ? null : outputOf(wiredPart);
     const servoOutput = wiredPart === null ? null : servoOutputFor(wiredPart);
-    const unwired = parts.filter((id) => outputs !== null && outputOf(id) === null);
+    const unwired = parts.filter((id) => answered() && outputOf(id) === null);
     // A Part off the droid with an Output still mapped: the two facts disagree,
     // and neither is wrong, so the panel says both and changes neither.
     const offButMapped = fitted !== null && !isFitted && output !== null;
@@ -413,12 +413,14 @@
     let servo;
     if (output) servo = `On a servo (${output.name})`;
     else if (marker.target) servo = "On a servo (dome-link)";
-    else if (outputs === null) servo = "Finding out";
+    else if (!answered()) servo = OUTPUTS.live(null).word;
     else servo = "No output mapped";
 
     const facts = [{ term: "Servo", value: servo }];
     if (cls !== null) {
-      facts.push({ term: "State", value: cls === "unknown" ? mark.said || "Finding out" : view.LEGEND_TEXT[cls] });
+      // The mark's own words where it has them - a limp Part says why, and a
+      // Part with no reading says which kind - and the legend's word otherwise.
+      facts.push({ term: "State", value: cls === mark.mark && mark.said ? mark.said : view.LEGEND_TEXT[cls] });
     }
     if (fitted !== null) facts.push({ term: "Fitted", value: isFitted ? "Yes" : "No" });
 
@@ -445,8 +447,8 @@
       why = `Not on your droid, but still mapped to ${output.name}. Add it back, or change its output.`;
     } else if (!isFitted) {
       why = "Not on your droid. Add it to your build first.";
-    } else if (outputs === null && !marker.target) {
-      why = "Finding out what drives it.";
+    } else if (!answered() && !marker.target) {
+      why = `${OUTPUTS.live(null).word} what drives it.`;
     } else if (estop === "finding-out") {
       why = "Finding out if the droid is stopped. Open it waits for the answer.";
     } else if (estop === "latched") {
@@ -581,7 +583,7 @@
         }
         const mapped = [];
         leaving.forEach((id) => {
-          const output = outputs === null ? null : outputOf(id);
+          const output = answered() ? outputOf(id) : null;
           if (output && mapped.indexOf(output.name) === -1) mapped.push(output.name);
         });
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
@@ -708,7 +710,13 @@
 
   // ---------------------------------------------------------------------------
   // Loading
+  //
+  // Every read of the Outputs - this page's, the follow's, a save made on
+  // another surface - publishes once, and this is the one place the page
+  // paints from it.
   // ---------------------------------------------------------------------------
+  OUTPUTS.onChange(() => paint());
+
   if (window.PABootstrap) {
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "parts list",
@@ -721,9 +729,9 @@
     loadOutputs().catch((error) => console.warn("[parts] outputs unavailable:", error));
   }
 
-  // Owned by this surface, so the shell stops it when the operator leaves
-  // Parts and starts it on the way back (#360). A failed read is
-  // PASurface.poll()'s to report: catching it here handed the registry a
-  // fulfilled promise and marked Parts current on a read that never landed.
-  window.PASurface?.poll(() => loadOutputs(), { cadenceMs: POLL_MS, refreshOnReturn: true }).start();
+  // The bench feed (#318): data/outputs.js's follow of the table repaints the
+  // table and the picture - any Part another client or the Console moved, and
+  // what every part was last told. It is this surface's, so the shell stops it
+  // when the operator leaves Parts and starts it on the way back (#360).
+  OUTPUTS.follow().start();
 })();

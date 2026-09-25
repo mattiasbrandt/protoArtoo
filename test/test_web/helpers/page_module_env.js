@@ -103,7 +103,14 @@ class ApiError extends Error {
 // call with (wrapped as { data } unless it already looks like a response), or
 // throw to fail it. Every call is appended to `requests` first, so a rejected
 // call is still visible to the test.
-export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, overrides = {} } = {}) => {
+//
+// chain names shipped data/ files the surface's document loads between the Live
+// Reading and the surface itself (its data-scripts), run in this same context
+// as a browser runs them. A module the page shares a window with - data/outputs.js
+// reads the surface registry and the Live Reading from it - is chained rather
+// than handed in as an override built in a context of its own, where neither
+// exists.
+export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, overrides = {}, chain = [] } = {}) => {
   const source = readFileSync(join(dataDir, file), "utf-8");
   const requests = [];
   const fetches = [];
@@ -284,6 +291,9 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
   vm.runInNewContext(liveReadingSrc, context, { filename: "live_reading.js" });
   context.PALiveReading = windowMock.PALiveReading;
   windowMock.PALiveReading.start();
+  chain.forEach((name) => {
+    vm.runInNewContext(readFileSync(join(dataDir, name), "utf-8"), context, { filename: name });
+  });
   // Then load the page module itself
   vm.runInNewContext(source, context, { filename: file });
 

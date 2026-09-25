@@ -14,7 +14,6 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { loadPageModule, partsGlobals } from "./helpers/page_module_env.js";
-import { outputsModule } from "./helpers/fake_droid.js";
 
 // Test payloads for each module
 const CONFIG_PAYLOAD = {
@@ -91,7 +90,8 @@ test("servo-outputs loader issues its request through the handle, not PAApi", as
   let env = null;
   env = loadPageModule("servo.js", {
     respond: () => ({ data: OUTPUTS_PAYLOAD }),
-    overrides: { ...partsGlobals(), PAOutputs: outputsModule(() => env.window.PAApi) },
+    overrides: partsGlobals(),
+    chain: ["outputs.js"],
   });
   const { calls, handle } = makeRecordingHandle(OUTPUTS_PAYLOAD);
 

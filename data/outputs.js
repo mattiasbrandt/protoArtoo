@@ -36,6 +36,18 @@
 // boot behaviour - rides the same row, and the ease and boot words live here
 // beside the other two vocabularies.
 //
+// WHAT AN OUTPUT IS DOING is answered here and nowhere else (#421): one state
+// and one word per Output, from one table, and Servos, Parts and Output
+// Settings all show that answer. It is the one reader of a row's live fields,
+// for the reason the research gives its CHPOS reader: a gauge and a dial
+// disagreeing about the same servo would be the worst possible outcome. A page
+// may still draw a heard position its own way - microseconds on Servos, Open
+// or Closed on Parts' picture - but whether there is one, and the word when
+// there is not, are this module's.
+//
+// It also runs the once-a-second follow of the table, as a handle the surface
+// that wants it starts, so the surface still owns its poll (#360).
+//
 // DATA ONLY. Nothing here touches the page: the plates are drawn by
 // data/output_settings.js from what this module holds.
 // =============================================================================
@@ -75,6 +87,22 @@
 
   const text = (value) => (typeof value === "string" ? value : "");
 
+  // Why an Output has no pulse, in the builder's words. The two firmware bounds
+  // on a calibration dial's hold each get their own sentence (#364), and a
+  // reason this page does not know reads as the plain one.
+  const LIMP_WORDS = Object.freeze({
+    "off": "Limp - no pulse",
+    "pulses-off": "Limp - pulses off",
+    "expiry": "Went limp - the dial stopped asking",
+    "ceiling": "Went limp - ten minutes is the most a dial holds",
+    "estop": "Limp - the estop let go",
+    "sleep": "Limp - sleep mode let go",
+  });
+
+  // The follow: one read of the table a second, while the surface that
+  // started it is on screen (#318, #360).
+  const FOLLOW_MS = 1000;
+
   // ---------------------------------------------------------------------------
   // The two reads, as the droid last answered them
   // ---------------------------------------------------------------------------
@@ -87,6 +115,11 @@
   // from this is one waiting for a restart.
   const started = new Map();
   const listeners = new Set();
+  // Each Output's live fields, as its row reported them: whether the row
+  // carries a position at all, and why there is no pulse. Kept off the Output
+  // itself, so no page can read them and work out a state of its own; live()
+  // is the only reader.
+  const heard = new WeakMap();
 
   const number = (value) => (typeof value === "number" ? value : null);
 
@@ -137,7 +170,7 @@
     limp: typeof row.limp === "string" ? row.limp : "off",
   });
 
-  // One Output, from its row.
+  // One Output, from its row. Its live fields are not on it: see live().
   //
   //   address          its Output Address: what a command and a save name
   //   id               the stored config id, where the board has one; "" for
@@ -166,7 +199,7 @@
   //   started          what it was first reported with (above), or null
   //   parts ...        the rest of its row, read by readRow()
   const outputOf = (row) => {
-    const { printed, wiredTick, lightCapable, ...table } = row;
+    const { printed, wiredTick, lightCapable, reported, limp, ...table } = row;
     const type = table.component || (lightCapable ? NO_SERVO.id : SERVO_MODELS[0].id);
     const output = {
       ...table,
@@ -193,7 +226,9 @@
     }
     output.started = started.get(output.address) || null;
     output.parts = Object.freeze(output.parts.slice());
-    return Object.freeze(output);
+    Object.freeze(output);
+    heard.set(output, { reported, limp });
+    return output;
   };
 
   // The Outputs, in the firmware's order (include/board_outputs.h BOARD_OUTPUTS
@@ -445,6 +480,51 @@
   const known = () => ({ config: config !== null, table: rows !== null });
 
   /**
+   * What an Output is doing, and the one word a page shows for it. The two
+   * words for no reading at all are the Live Reading's (data/live_reading.js),
+   * so a Part and a status field say the same thing when nothing is heard.
+   *
+   *   finding-out  the table has not answered yet: `output` is null
+   *   unknown      the row carries no position: a firmware older than the
+   *                Output table, which is not the same as no pulse
+   *   pulsing      there is a pulse on it; `word` is null, and the page draws
+   *                the position its own way
+   *   limp         no pulse, and `word` says why
+   *
+   * @param {object|null} output - one this module handed out, or null before
+   *   the table has answered
+   * @returns {{state: string, word: string|null}}
+   */
+  const live = (output) => {
+    const words = window.PALiveReading;
+    if (output === null || output === undefined) {
+      return Object.freeze({ state: "finding-out", word: words.FINDING_OUT });
+    }
+    const facts = heard.get(output);
+    // A copy, or an Output from another read, has no answer here, and
+    // guessing one is how two pages come to disagree.
+    if (!facts) throw new Error(`${output.address} is not an Output this module handed out`);
+    if (!facts.reported) return Object.freeze({ state: "unknown", word: words.UNKNOWN });
+    if (output.commandedUs !== null) return Object.freeze({ state: "pulsing", word: null });
+    return Object.freeze({ state: "limp", word: LIMP_WORDS[facts.limp] || LIMP_WORDS.off });
+  };
+
+  /**
+   * Follow the table: one read a second, while the surface that asked is on
+   * screen. The handle is that surface's (#360): the shell stops it when the
+   * operator leaves and starts it again on the way back, and a read that fails
+   * is the surface poll's to report, never caught here. Every read publishes,
+   * so a page paints from onChange() and nothing else.
+   *
+   * @returns {{start: function, stop: function}}
+   */
+  const follow = () => {
+    const surface = window.PASurface;
+    if (!surface) throw new Error("the surface registry (/page_bootstrap.js) is not loaded");
+    return surface.poll(() => refresh(), { cadenceMs: FOLLOW_MS, refreshOnReturn: true });
+  };
+
+  /**
    * Be told whenever what this module holds changes: a read, a save, or a
    * save's answer. The listener is handed the Outputs.
    *
@@ -465,6 +545,8 @@
     servoModel,
     load,
     refresh,
+    follow,
+    live,
     list: () => outputs,
     at,
     forPart,
