@@ -17,13 +17,24 @@ WHAT A RECIPE IS
 ----------------
 `tools/task_stack_recipes.json` records, per task and per chip arm: the
 PlatformIO environment the figure was measured on, the root symbols walked, and
-the two ways an indirect call the walker cannot follow is stitched back in:
+the ways an indirect call, or a body, the walker cannot follow is stitched back
+in:
 
 - `frames`: own frames ABOVE the root, added by hand, where the call through a
   pointer is what reaches the root (the Console's `cli->onCommand`);
 - `tables`: a dispatch table BELOW the root. Every function the table holds
   becomes a callee of the function that calls through it, so the walk takes
-  the deepest row itself (`stack_usage_report.Image.stitch_table()`).
+  the deepest row itself (`stack_usage_report.Image.stitch_table()`);
+- `calls`: named callees of a caller that calls them through a pointer set at
+  run time, so no table in the image holds them - a registered shutdown
+  handler under esp_restart() (`Image.stitch_calls()`, #428);
+- `archive_bodies`: functions whose body the image emits as data, walked from
+  the archive member they were linked from instead - the frame from `entry`,
+  callees from its relocations, with `pointer_tables` naming the table a
+  run-time pointer is set to (`Image.adopt_archive_bodies()`, #428).
+
+Like `tables`, all three are facts about the image rather than one task, so
+each is applied once, to the whole graph, before the first walk.
 
 The chain is
 
@@ -225,6 +236,8 @@ class ImageChains:
             images.append(sur.Image("rom", rom_elf, objdump, arch))
         self.img = images[0]
         self.walker = sur.Walker(images, sur.DEFAULT_PRUNE)
+        self._objdump = objdump
+        self._archives: sur.ArchiveBodies | None = None
         # The bodies whose extent the symbol table does not give, so the walker
         # still reads them "until the next symbol". Those are the only bodies
         # that can still absorb a literal pool, so a chain running through one
@@ -235,6 +248,13 @@ class ImageChains:
             for addr in self.img.unsized
             if addr in self.img.funcs
         }
+
+    def adopt_archive_bodies(self, names: list[str], pointers: dict[str, str]) -> list[str]:
+        """Walk undecoded bodies from their archive members; the names adopted."""
+        if self._archives is None:
+            self._archives = sur.ArchiveBodies(self._objdump,
+                                               sur.resolve_archive_dir(self.env))
+        return self.img.adopt_archive_bodies(names, self._archives, pointers)
 
     def stitch_table(self, caller: str, table: str) -> int:
         """Stitch one dispatch table into the call graph; the row count.
@@ -325,6 +345,8 @@ def main(argv=None) -> int:
     # once, and all of them before the first walk (see ImageChains.stitch_table).
     stitched: dict[tuple[str, str], int] = {}
     stitch_missing: dict[tuple[str, str], str] = {}
+    called: set[tuple[str, str]] = set()
+    adopted: list[str] = []
     for task in recipes["tasks"]:
         arm = task["chips"].get(chip)
         if arm is None or arm["env"] != args.env:
@@ -337,6 +359,19 @@ def main(argv=None) -> int:
                 stitched[key] = image.stitch_table(*key)
             except KeyError as exc:
                 stitch_missing[key] = str(exc.args[0])
+        for call in arm.get("calls", []):
+            for callee in call["callees"]:
+                key = (call["caller"], callee)
+                if key in called or key in stitch_missing:
+                    continue
+                try:
+                    image.img.stitch_calls(call["caller"], [callee])
+                    called.add(key)
+                except KeyError as exc:
+                    stitch_missing[key] = str(exc.args[0])
+        if arm.get("archive_bodies"):
+            adopted.extend(image.adopt_archive_bodies(
+                arm["archive_bodies"], arm.get("pointer_tables", {})))
 
     undec, total_funcs = undecoded_share(image.img)
     print(f"check_task_stack_chains  env={args.env}  chip={chip}  arch={image.arch}")
@@ -348,6 +383,11 @@ def main(argv=None) -> int:
     )
     for (caller, table), count in sorted(stitched.items()):
         print(f"  stitched {caller} -> every row of {table} ({count} functions)")
+    for caller, callee in sorted(called):
+        print(f"  stitched {caller} -> {callee} (called through a run-time pointer)")
+    if adopted:
+        print(f"  walked from their archive members: {len(adopted)} undecoded bodies"
+              f" ({', '.join(sorted(set(adopted))[:6])}{', ...' if len(set(adopted)) > 6 else ''})")
     print()
 
     rows: list[tuple[str, str, str]] = []
@@ -389,6 +429,12 @@ def main(argv=None) -> int:
             stitch_missing[(s["caller"], s["table"])]
             for s in arm.get("tables", [])
             if (s["caller"], s["table"]) in stitch_missing
+        )
+        missing.extend(
+            stitch_missing[(c["caller"], callee)]
+            for c in arm.get("calls", [])
+            for callee in c["callees"]
+            if (c["caller"], callee) in stitch_missing
         )
         try:
             for root in arm["roots"]:
