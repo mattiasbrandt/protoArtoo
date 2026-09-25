@@ -381,7 +381,9 @@ void loadConfigToState() {
 
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
     // All validation and clamping is now performed within configLoad()
-    configCacheApply(snap);
+    // Replace, not Apply: nothing on Core 1 has written the RC live fields yet,
+    // so the loaded values are the ones to take (include/config_cache.h).
+    configCacheReplace(snap);
 
     robotState.activeMood = lastMood;
 

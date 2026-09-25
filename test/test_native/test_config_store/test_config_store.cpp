@@ -369,7 +369,7 @@ void test_a_failed_row_write_stops_the_save_before_the_fixed_field_sets() {
 
     ConfigSnapshot snap = {};
     configSnapshotDefaults(&snap);
-    configCacheApply(snap);
+    configCacheReplace(snap);
     ConfigSaveExtras extras;
     extras.droidBuild = true;
     extras.guidedSetup = true;
@@ -433,7 +433,7 @@ void bootFrom(Preferences& prefs, ConfigSnapshot* snap) {
     configLoadServoOutputs(prefs, &report);
     prefs.end();
     boardOutputTickAdoptedLight(report, &snap->system);
-    configCacheApply(*snap);
+    configCacheReplace(*snap);
 }
 
 // The Output `main`'s aux_led_pin slot named: the Nth light-capable one.
@@ -976,7 +976,7 @@ void test_configCacheRead_captures_all_categories() {
     seeded.system.rc_free3.source    = RC_BINDING_SBUS2;
     seeded.system.rc_free3.channel   = 7;
 
-    configCacheApply(seeded);
+    configCacheReplace(seeded);
 
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
@@ -1076,7 +1076,7 @@ void test_active_rc_config_survives_saved_toggle_and_mode_changes() {
     saved.system.enable_arm1 = false;
     saved.system.enable_arm2 = true;
     saved.system.enable_audio = false;
-    configCacheApply(saved);
+    configCacheReplace(saved);
 
     RcInputActiveConfig active = {};
     configCacheReadActiveRcInput(&active);
@@ -1113,7 +1113,7 @@ void test_active_component_toggles_survive_a_later_saved_write() {
     saved.system.enable_arm2 = true;
     saved.system.enable_audio = false;
     saved.system.enable_protor2link = true;
-    configCacheApply(saved);
+    configCacheReplace(saved);
 
     // Active still reflects what actually booted...
     TEST_ASSERT_TRUE(configCacheReadActiveComponentToggle(0));   // enable_arm1
@@ -1145,7 +1145,7 @@ void test_configCacheRead_save_round_trip() {
     seeded.system.rc_input_mode     = RC_INPUT_SINGLE_SBUS;
     seeded.system.rc_sbus_arm1 =
         makeRcBindingConfig(RC_BINDING_SBUS1, 4, 172, 992, 1811, 10, false);
-    configCacheApply(seeded);
+    configCacheReplace(seeded);
 
     ConfigSnapshot snap1 = {};
     configCacheRead(&snap1);
@@ -1174,8 +1174,9 @@ void test_configCacheRead_save_round_trip() {
     TEST_ASSERT_EQUAL_UINT16(10, snap2.system.rc_sbus_arm1.deadband);
 }
 
-// Test: configCacheApply applies all categories of fields from snapshot
-void test_configCacheApply_applies_all_categories() {
+// Test: configCacheReplace applies all categories of fields from snapshot,
+// the RC live fields included (configCacheApply() keeps those, #420)
+void test_configCacheReplace_applies_all_categories() {
     // Create a snapshot with distinct non-default values for every category
     ConfigSnapshot snap = {};
 
@@ -1240,7 +1241,7 @@ void test_configCacheApply_applies_all_categories() {
     // Pre-set a non-cfg sentinel to verify apply does not touch it
     robotState.driveOutputSpeed = 999;
 
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     ConfigSnapshot applied = {};
     configCacheRead(&applied);
@@ -1276,8 +1277,8 @@ void test_configCacheApply_applies_all_categories() {
     TEST_ASSERT_EQUAL_INT(999, robotState.driveOutputSpeed);
 }
 
-// Test: configCacheApply does not touch runtime fields
-void test_configCacheApply_does_not_touch_runtime_fields() {
+// Test: configCacheReplace does not touch runtime fields
+void test_configCacheReplace_does_not_touch_runtime_fields() {
     // Set a non-cfg runtime field to a known value
     robotState.driveOutputSpeed = 123;  // This is a non-cfg field
     robotState.driveOutputSteer = 456;  // Another non-cfg field
@@ -1286,7 +1287,7 @@ void test_configCacheApply_does_not_touch_runtime_fields() {
     ConfigSnapshot snap = {};
     snap.system.stationary = true;
 
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     ConfigSnapshot applied = {};
     configCacheRead(&applied);
@@ -1315,7 +1316,7 @@ void test_configCacheSetStationary_writes_only_that_field() {
     seeded.system.logLevel = 2;
     seeded.system.stationary = false;
     seeded.system.enable_arm1 = true;
-    configCacheApply(seeded);
+    configCacheReplace(seeded);
 
     configCacheSetStationary(true);
 
@@ -1332,9 +1333,9 @@ void test_configCacheSetStationary_writes_only_that_field() {
 void test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty() {
     ConfigSnapshot seeded = {};
     configSnapshotDefaults(&seeded);
-    configCacheApply(seeded);
+    configCacheReplace(seeded);
 
-    // configCacheApply() above legitimately raised the flag; RcInputTask
+    // configCacheReplace() above legitimately raised the flag; RcInputTask
     // clears it after a rebuild, and this is that cleared state.
     robotState.rcConfigDirty = false;
 
@@ -1361,7 +1362,7 @@ void test_configCacheSelectSpeedPreset_writes_only_the_speed_pair() {
     seeded.drive.speedPresetActive = SpeedPresetId::Normal;
     seeded.drive.speedLimitMax = 300;
     seeded.audio.audioVolume = 17;
-    configCacheApply(seeded);
+    configCacheReplace(seeded);
     robotState.rcConfigDirty = false;
 
     TEST_ASSERT_EQUAL_INT(150, configCacheSelectSpeedPreset(SpeedPresetId::Slow));
@@ -1454,11 +1455,11 @@ void test_config_domain_round_trip_matrix() {
     seed_domain_round_trip_baseline(prefs);
     ConfigSnapshot loaded = {};
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configCacheApply(loaded);
+    configCacheReplace(loaded);
     ConfigSnapshot fromState = {};
     configCacheRead(&fromState);
     fromState.drive.speedLimitMax = 580;
-    configCacheApply(fromState);
+    configCacheReplace(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveDrive(prefs, fromState.drive));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
@@ -1468,10 +1469,10 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configCacheApply(loaded);
+    configCacheReplace(loaded);
     configCacheRead(&fromState);
     fromState.audio.audioVolume = 24;
-    configCacheApply(fromState);
+    configCacheReplace(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveAudio(prefs, fromState.audio));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
@@ -1481,10 +1482,10 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configCacheApply(loaded);
+    configCacheReplace(loaded);
     configCacheRead(&fromState);
     fromState.dome.dome_speed_limit_pct = 62;
-    configCacheApply(fromState);
+    configCacheReplace(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveDome(prefs, fromState.dome));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
@@ -1494,10 +1495,10 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configCacheApply(loaded);
+    configCacheReplace(loaded);
     configCacheRead(&fromState);
     fromState.system.enable_audio = false;
-    configCacheApply(fromState);
+    configCacheReplace(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveSystem(prefs, fromState.system));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
@@ -1549,7 +1550,7 @@ void test_configUpdateAudioMoodMasks_round_trips_through_audio_store() {
 
     ConfigSnapshot snap = {};
     TEST_ASSERT_TRUE(configLoad(prefs, &snap));
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     TEST_ASSERT_TRUE(configUpdateAudioMoodMasks(prefs, 0x0001, 0x0002, 0x0004, 0x0008));
 
@@ -1723,7 +1724,7 @@ void test_an_addressed_edit_is_the_only_way_an_endpoint_changes() {
 
     ConfigSnapshot snap = {};
     configSnapshotDefaults(&snap);
-    configCacheApply(snap);
+    configCacheReplace(snap);
 
     uint16_t openUs = 0;
     uint16_t closeUs = 0;
@@ -1947,8 +1948,8 @@ int main() {
     RUN_TEST(test_active_rc_config_survives_saved_toggle_and_mode_changes);
     RUN_TEST(test_active_component_toggles_survive_a_later_saved_write);
     RUN_TEST(test_configCacheRead_save_round_trip);
-    RUN_TEST(test_configCacheApply_applies_all_categories);
-    RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);
+    RUN_TEST(test_configCacheReplace_applies_all_categories);
+    RUN_TEST(test_configCacheReplace_does_not_touch_runtime_fields);
     RUN_TEST(test_configCacheSetStationary_writes_only_that_field);
     RUN_TEST(test_configCacheSetStationary_does_not_mark_the_rc_mapping_dirty);
     RUN_TEST(test_configCacheSelectSpeedPreset_writes_only_the_speed_pair);

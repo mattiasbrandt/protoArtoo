@@ -65,7 +65,7 @@ void applyIdentity(const char* name, bool mdnsUseName) {
     snap.system.mdns_use_name = mdnsUseName;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 }
 

@@ -12,7 +12,7 @@
 //
 //     {
 //         const ConfigWriteWindowForTest seed;
-//         configCacheApply(snap);
+//         configCacheReplace(snap);
 //     }
 //
 // It is the config write lock itself, so it takes the lock like a real window

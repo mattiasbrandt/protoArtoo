@@ -865,10 +865,12 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         PA_LOG_INFO(TAG, "[CFG] and %u more field(s) updated", (unsigned)result.applied.dropped);
     }
 
-    // Not configCacheApply(): the speed group and stationary are also written
-    // at runtime by RC input on Core 1, which cannot take the config write lock
-    // this commit holds, so `working` may carry a value from before one landed.
-    // Whichever of them the request did not state keeps its live value (#417).
+    // Not configCacheApply(), which keeps both: this request can state the
+    // speed group and stationary, and a stated one must land. They are also
+    // written at runtime by RC input on Core 1, which cannot take the config
+    // write lock this commit holds, so `working` may carry a value from before
+    // one landed. Whichever of them the request did not state keeps its live
+    // value (#417).
     configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
 
     // An Output's settings arrive as rows (ADR 0068) and as the capture and

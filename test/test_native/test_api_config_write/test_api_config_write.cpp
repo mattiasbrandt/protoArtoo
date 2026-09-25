@@ -45,7 +45,7 @@ ConfigSnapshot readSnapshot() {
 void setUp() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 100;
-    configCacheApply(snap);
+    configCacheReplace(snap);
     configCacheSetActiveWifi(snap.wifi);
     configCacheSetActiveWifiRecovery(false);
     g_test_status_broadcast_count = 0;
@@ -168,7 +168,7 @@ void test_config_post_accepts_a_raw_json_body_under_the_plain_name() {
 // The Commit Step hands its post-commit snapshot back through `working`
 // instead of returning one (ADR 0011's 2026-09-04 amendment), so what the
 // caller renders has to be the state the config cache actually ended up in.
-// Drop configCacheApply(*working) from configCommitApplied() and this goes
+// Drop configCacheApplyKeepingLive(*working, ...) from configCommitApplied() and this goes
 // red: `working` still carries the caller's intent while the cache never
 // moved.
 void test_config_commit_leaves_working_agreeing_with_the_config_cache() {
@@ -367,7 +367,7 @@ Configuration readConfiguration() {
 void applyConfiguration(const Configuration& config) {
     loadServoOutputTable(config.rows);
     const ConfigWriteWindowForTest window;
-    configCacheApply(config.snap);
+    configCacheReplace(config.snap);
     configCacheApplyDroidBuild(config.build);
     configCacheApplyGuidedSetup(config.guided);
 }

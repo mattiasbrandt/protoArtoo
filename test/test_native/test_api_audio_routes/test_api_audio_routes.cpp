@@ -100,7 +100,7 @@ void setUp() {
     audioCatalogGateResetForTest();
     robotState = RobotState{};
     ConfigSnapshot snap = {};
-    configCacheApply(snap);
+    configCacheReplace(snap);
     // Audio output on for this boot, so the routes below reach their queue
     // stubs; the sound-off test switches it off itself (#370).
     configCacheSetActiveAudioEnabled(true);
@@ -320,7 +320,7 @@ void test_tracks_get_serializes_every_field_from_the_config_snapshot() {
     snap.audio.snd_int_awake = 45;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     callGet(handleAudioTracksGet, nullptr, 0);
@@ -463,7 +463,7 @@ void test_mood_map_get_returns_the_configured_masks() {
     snap.audio.snd_moodcat_awakeplus = 8;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 
     callGet(handleAudioMoodMapGet, nullptr, 0);

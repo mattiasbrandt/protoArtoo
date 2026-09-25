@@ -78,7 +78,7 @@ void setDriveConfig(int16_t speedLimitMax) {
     snap.drive.speedLimitMax = speedLimitMax;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 }
 
@@ -88,7 +88,7 @@ void setDomeEnabled(bool enabled) {
     snap.system.enable_dome_esc = enabled;
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 }
 
@@ -109,7 +109,7 @@ void setDomeWifiPeer(const char* ip) {
     snap.dome.dome_wifi_peer_ip[sizeof(snap.dome.dome_wifi_peer_ip) - 1] = '\0';
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApply(snap);
+        configCacheReplace(snap);
     }
 }
 
