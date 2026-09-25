@@ -376,20 +376,8 @@ class Image:
         return sizes
 
     # -- dispatch tables ----------------------------------------------------
-    def table_entries(self, table: str) -> list[int]:
-        """Function entries held by one data object in the image, in order.
-
-        A dispatch table is an array of rows in read-only data, and a row's
-        function pointer is a word equal to some function's entry address. So
-        the object's bytes are read out of the image and every aligned
-        little-endian word that is a function entry is taken; the other words
-        (a row's name pointer, padding) name no entry and fall away. Reading the
-        table rather than listing its rows in a recipe is what keeps a new row
-        from being missed.
-
-        Raises KeyError when the object is absent, Fatal when its name is
-        ambiguous or its bytes cannot be read.
-        """
+    def _data_objects(self) -> dict[str, list[tuple[int, int]]]:
+        """Data objects in the image by name: [(address, size)], read once."""
         if self._objects is None:
             self._objects = {}
             for line in self._run([str(self._objdump), "-t", "-C", str(self.elf)]):
@@ -405,7 +393,23 @@ class Image:
                 except (ValueError, IndexError):
                     continue
                 self._objects.setdefault(size_name[1].strip(), []).append((addr, size))
-        found = self._objects.get(table)
+        return self._objects
+
+    def table_entries(self, table: str) -> list[int]:
+        """Function entries held by one data object in the image, in order.
+
+        A dispatch table is an array of rows in read-only data, and a row's
+        function pointer is a word equal to some function's entry address. So
+        the object's bytes are read out of the image and every aligned
+        little-endian word that is a function entry is taken; the other words
+        (a row's name pointer, padding) name no entry and fall away. Reading the
+        table rather than listing its rows in a recipe is what keeps a new row
+        from being missed.
+
+        Raises KeyError when the object is absent, Fatal when its name is
+        ambiguous or its bytes cannot be read.
+        """
+        found = self._data_objects().get(table)
         if not found:
             raise KeyError(table)
         if len(found) != 1:
@@ -461,6 +465,99 @@ class Image:
             for target in targets:
                 fn.calls.append((target, f"stitched via {table}", None))
         return [self.funcs[target] for target in targets]
+
+    def stitch_calls(self, caller: str, callees: list[str]) -> list[Function]:
+        """Add a call edge from `caller` to each function named in `callees`.
+
+        For a call through a pointer that is set at run time, so that neither
+        the listing nor any table in the image says where it goes: a handler
+        registered with esp_register_shutdown_handler() and called by
+        esp_restart(), or the print hook installed with esp_log_set_vprintf()
+        and called by esp_log_writev(). The recipe names the targets, with the
+        registration that justifies each. The edge is marked `stitched call`.
+        Raises KeyError naming the first absent symbol.
+        """
+        callers = self.by_name(caller)
+        if not callers:
+            raise KeyError(caller)
+        targets: list[Function] = []
+        for name in callees:
+            found = self.by_name(name)
+            if not found:
+                raise KeyError(name)
+            targets.extend(found)
+        for fn in callers:
+            for target in targets:
+                fn.calls.append((target.addr, "stitched call", None))
+        return targets
+
+    def adopt_archive_bodies(self, names: list[str], archives: "ArchiveBodies",
+                             pointer_tables: dict[str, str] | None = None) -> list[str]:
+        """Walk undecodable bodies from the archive members they were linked from.
+
+        objdump emits some Xtensa bodies in the linked image as data (see the
+        module docstring), so their frame reads 0 and their calls are invisible:
+        a closed library's function is the usual case. The archive member the
+        linker took it from still carries what the image lost - the `entry a1, N`
+        that is its frame, and relocations naming everything its literal pool
+        loads. For each named function, and every undecoded function reached
+        from it that way, this takes the frame from the member and makes every
+        function the member's relocations name a callee.
+
+        A relocation naming a data object stands for a call through a table of
+        pointers: every function entry that object holds in the image becomes a
+        callee. `pointer_tables` maps a pointer the program sets at run time
+        (so the image holds no address in it) to the table it is set to point
+        at. Both over-approximate - every row, whether or not that path calls
+        it - which is the safe direction for a floor.
+
+        Returns the names adopted. Raises Fatal when a named function is absent,
+        decodes normally, or has no archive body.
+        """
+        pointer_tables = pointer_tables or {}
+        adopted: list[str] = []
+        queue: list[Function] = []
+        for name in names:
+            found = self.by_name(name)
+            if not found:
+                raise Fatal(f"archive body {name}: not in the image")
+            for fn in found:
+                if fn.frame_kind == "archive":
+                    continue  # already adopted, through another recipe arm
+                if fn.frame_kind != "undecoded":
+                    raise Fatal(f"archive body {name}: the image decodes it ({fn.frame_kind}); "
+                                "walk the image instead")
+                if archives.body(fn.name) is None:
+                    raise Fatal(f"archive body {name}: no archive member defines it")
+                queue.append(fn)
+        seen: set[int] = set()
+        while queue:
+            fn = queue.pop()
+            if fn.addr in seen:
+                continue
+            seen.add(fn.addr)
+            body = archives.body(fn.name)
+            if body is None:
+                continue
+            frame, refs = body
+            fn.frame = frame
+            fn.frame_kind = "archive"
+            fn.calls = []
+            for ref in sorted(refs):
+                targets = self.by_name(ref)
+                if not targets:
+                    table = pointer_tables.get(ref, ref)
+                    if table in self._data_objects():
+                        try:
+                            targets = [self.funcs[a] for a in self.table_entries(table)]
+                        except Fatal:
+                            targets = []
+                for target in targets:
+                    fn.calls.append((target.addr, "archive reloc", None))
+                    if target.frame_kind == "undecoded" and target.addr not in seen:
+                        queue.append(target)
+            adopted.append(fn.name)
+        return adopted
 
     def _disassemble(self, objdump: Path) -> None:
         """Read the listing into one Function per symbol, body by body.
@@ -1126,6 +1223,113 @@ class Image:
         return [f for f in self.funcs.values() if f.name.split("(")[0] == base]
 
 
+class ArchiveBodies:
+    """Frames and callees of functions as the static archives record them.
+
+    Xtensa only: it reads `entry a1, N` as the frame. Used by
+    Image.adopt_archive_bodies() for bodies the linked image does not decode.
+    For each function it answers (frame bytes, names its section's relocations
+    reference) - R_XTENSA_32 in the literal pool and R_XTENSA_SLOT0_OP on a
+    direct call, section symbols excluded. An archive is read the first time a
+    function it defines is asked for.
+    """
+
+    def __init__(self, objdump: Path, libdir: Path):
+        self.objdump = objdump
+        self.nm = objdump.with_name(objdump.name.replace("objdump", "nm"))
+        self.libdir = libdir
+        self._defined_in: dict[str, Path] | None = None
+        self._bodies: dict[str, tuple[int, set[str]]] = {}
+        self._read: set[Path] = set()
+
+    def _run(self, argv: list[str]):
+        out = subprocess.run(argv, capture_output=True, text=True, errors="replace")
+        if out.returncode != 0:
+            raise Fatal(f"{argv[0]} exited {out.returncode}: {out.stderr.strip()[:400]}")
+        return out.stdout.splitlines()
+
+    def _index(self) -> dict[str, Path]:
+        if self._defined_in is None:
+            self._defined_in = {}
+            archives = sorted(self.libdir.glob("*.a"))
+            if not archives:
+                raise Fatal(f"no archives under {self.libdir}")
+            for line in self._run([str(self.nm), "-A", "--defined-only", *map(str, archives)]):
+                # /path/libx.a:member.o:00000000 T symbol
+                parts = line.rsplit(" ", 2)
+                if len(parts) != 3 or parts[1] not in ("T", "t"):
+                    continue
+                self._defined_in.setdefault(parts[2], Path(parts[0].split(":", 1)[0]))
+        return self._defined_in
+
+    def _read_archive(self, archive: Path) -> None:
+        self._read.add(archive)
+        member = None
+        owners: dict[tuple[str, str], list[str]] = {}
+        for line in self._run([str(self.objdump), "-t", str(archive)]):
+            m = re.match(r"^(\S+):\s+file format", line)
+            if m:
+                member = m.group(1)
+                continue
+            m = re.match(r"^[0-9a-f]+ (.{7}) (\S+)\s+[0-9a-f]+ (\S+)$", line)
+            if m and "F" in m.group(1) and member:
+                owners.setdefault((member, m.group(2)), []).append(m.group(3))
+        frames: dict[str, int] = {}
+        cur = None
+        for line in self._run([str(self.objdump), "-d", str(archive)]):
+            m = re.match(r"^[0-9a-f]+ <([^>+]+)>:$", line)
+            if m:
+                cur = m.group(1)
+                continue
+            m = re.search(r"\sentry\s+a1,\s*(\d+)", line)
+            if m and cur is not None:
+                frames.setdefault(cur, int(m.group(1)))
+                cur = None
+        refs: dict[str, set[str]] = {}
+        member = section = None
+        for line in self._run([str(self.objdump), "-r", str(archive)]):
+            m = re.match(r"^(\S+):\s+file format", line)
+            if m:
+                member = m.group(1)
+                continue
+            m = re.match(r"^RELOCATION RECORDS FOR \[([^\]]+)\]:", line)
+            if m:
+                section = m.group(1)
+                continue
+            m = re.match(r"^[0-9a-f]+ (?:R_XTENSA_32|R_XTENSA_SLOT0_OP)\s+(\S+)", line)
+            if not m or member is None or section is None:
+                continue
+            target = re.sub(r"\+0x[0-9a-f]+$", "", m.group(1))
+            if target.startswith("."):
+                continue
+            for fn in owners.get((member, section), []):
+                refs.setdefault(fn, set()).add(target)
+        for fn, frame in frames.items():
+            self._bodies.setdefault(fn, (frame, refs.get(fn, set())))
+
+    def body(self, name: str) -> tuple[int, set[str]] | None:
+        """(frame, referenced names) for `name`, or None when no archive has it."""
+        archive = self._index().get(name)
+        if archive is None:
+            return None
+        if archive not in self._read:
+            self._read_archive(archive)
+        return self._bodies.get(name)
+
+
+def resolve_archive_dir(env: str) -> Path:
+    """The framework archives the env's image is linked from."""
+    budgets = json.loads(BUDGETS.read_text())
+    platform, rec = "esp32", budgets["platforms"]["esp32"]
+    for name, r in budgets["platforms"].items():
+        if env in r.get("envs", []):
+            platform, rec = name, r
+            break
+    core_dir = Path(os.path.expanduser(rec.get("core_dir", "~/.platformio")))
+    libs = rec.get("libs_dir", platform)
+    return core_dir / "packages" / "framework-arduinoespressif32-libs" / libs / "lib"
+
+
 # =============================================================================
 # Depth walk
 # =============================================================================
@@ -1327,6 +1531,17 @@ def main(argv=None) -> int:
                     help="follow an indirect call through a dispatch table: every "
                          "function TABLE holds becomes a callee of CALLER "
                          "(repeatable; the 'tables' of a task_stack_recipes.json arm)")
+    ap.add_argument("--stitch-call", action="append", default=[],
+                    metavar="CALLER=CALLEE",
+                    help="follow a call through a pointer set at run time: CALLEE "
+                         "becomes a callee of CALLER (repeatable; the 'calls' of a "
+                         "task_stack_recipes.json arm)")
+    ap.add_argument("--archive-body", action="append", default=[], metavar="FUNCTION",
+                    help="walk an undecoded body from its archive member (repeatable; "
+                         "the 'archive_bodies' of a task_stack_recipes.json arm)")
+    ap.add_argument("--pointer-table", action="append", default=[],
+                    metavar="POINTER=TABLE",
+                    help="a pointer set at run time to TABLE, for --archive-body")
     args = ap.parse_args(argv)
     prune = () if args.no_prune else DEFAULT_PRUNE
 
@@ -1347,6 +1562,24 @@ def main(argv=None) -> int:
             stitched.append((caller, table, len(img.stitch_table(caller, table))))
         except KeyError as exc:
             raise Fatal(f"--stitch-table {spec}: {exc.args[0]} is not in the image") from exc
+    for spec in args.stitch_call:
+        caller, sep, callee = spec.partition("=")
+        if not sep or not caller or not callee:
+            raise Fatal(f"--stitch-call wants CALLER=CALLEE, got {spec!r}")
+        try:
+            img.stitch_calls(caller, [callee])
+        except KeyError as exc:
+            raise Fatal(f"--stitch-call {spec}: {exc.args[0]} is not in the image") from exc
+    if args.archive_body:
+        pointers = {}
+        for spec in args.pointer_table:
+            ptr, sep, table = spec.partition("=")
+            if not sep or not ptr or not table:
+                raise Fatal(f"--pointer-table wants POINTER=TABLE, got {spec!r}")
+            pointers[ptr] = table
+        img.adopt_archive_bodies(args.archive_body,
+                                 ArchiveBodies(objdump, resolve_archive_dir(args.env)),
+                                 pointers)
 
     ver = subprocess.run([str(objdump), "--version"], capture_output=True, text=True,
                          check=True).stdout.splitlines()[0]

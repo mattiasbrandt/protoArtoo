@@ -261,7 +261,23 @@
           "product_bytes": 2944,
           "profiler_bytes": 3088,
           "deeper_image": "artoo_esp32_profiler - 3088 B against the product image's 2944 B. This is the one arm in the table where the floor did NOT already hold: the constant was 3072, which the profiler image exceeds by 16 B. Raised by the rule at #271.",
-          "rule": "applied"
+          "rule": "applied",
+          "calls": [
+            {
+              "caller": "esp_restart",
+              "callees": [
+                "esp_sync_timekeeping_timers",
+                "esp_wifi_stop"
+              ]
+            }
+          ],
+          "archive_bodies": [
+            "esp_wifi_stop"
+          ],
+          "pointer_tables": {
+            "g_osi_funcs_p": "g_wifi_osi_funcs"
+          },
+          "stitch_reason": "Since #428 this task carries out an operator-requested restart, and esp_restart() runs every handler registered with esp_register_shutdown_handler() on the calling task, through a pointer array filled at run time. This image registers two: esp_sync_timekeeping_timers (esp_timer's system_time.c, because both CONFIG_ESP_TIME_FUNCS_USE_ESP_TIMER and _RTC_TIMER are set) and esp_wifi_stop (esp_wifi's wifi_default.c:273). libbt's handler is not linked (CONFIG_BT_ENABLED=n) and the Arduino core's usb_persist_shutdown_handler is registered only by usb_persist_restart(), which nothing calls. esp_wifi_stop is libnet80211.a's (ieee80211_api.o) and objdump emits its body in this image as data, so it and every closed body it reaches are walked from their archive members; the closed code calls the OS adapter through g_osi_funcs_p, which esp_wifi_init() points at g_wifi_osi_funcs at run time. Measured 2026-09-25: esp_wifi_stop 2016 B, esp_sync_timekeeping_timers 1680 B, the restart branch 368 + 32 (EspClass::restart) + 32 (esp_restart) + 2016 = 2448 B, under the 2880 B failedAllocTrackerInit() branch. Not followed, as in every other chain here: the IDF log print hook (paLogIdfVprintf, installed with esp_log_set_vprintf()), which esp_wifi_stop's error paths reach through wifi_log -> esp_log_writev; with it the restart branch is 3616 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -273,7 +289,17 @@
           "product_bytes": 3888,
           "profiler_bytes": 4064,
           "deeper_image": "firebeetle2_profiler - 4064 B against the product image's 3888 B. Same substitution as #271: the profiler image (PA_LOG_LEVEL=4) is the deeper walk, and the constant is compiled into both.",
-          "rule": "applied"
+          "rule": "applied",
+          "calls": [
+            {
+              "caller": "esp_restart",
+              "callees": [
+                "esp_sync_timekeeping_timers",
+                "esp_wifi_stop"
+              ]
+            }
+          ],
+          "stitch_reason": "As on artoo-esp32, esp_restart() runs every registered shutdown handler on this task since #428. This image registers esp_sync_timekeeping_timers (esp_timer_impl_init_system_time) and esp_wifi_stop (set_default_wifi_handlers, ESP-Hosted's esp_wifi_with_remote.c, which decodes in full). The firebeetle2 walk at f912e336 gives esp_restart 800 B (timekeeping 784, esp_wifi_stop 528), under the 3888 B product walk; the IDF log print hook is not reached on this path."
         }
       }
     },

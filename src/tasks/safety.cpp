@@ -17,9 +17,7 @@
 // =============================================================================
 
 #include <Arduino.h>
-#include <esp_err.h>
 #include <esp_heap_caps.h>
-#include <esp_task_wdt.h>
 
 #include "api_profiler.h"
 #include "failed_alloc_tracker.h"
@@ -80,18 +78,22 @@ static void restartIfRequested() {
     // operator, and on the CDC it reaches them at all (flush() there discarded
     // the ring rather than draining it).
     //
-    // Deinit TWDT before restart  --  prevents esp_restart() from being
-    // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
-    // ESP-IDF refuses the deinit while any task is still subscribed
-    // (task_wdt.c: "Tasks/users still subscribed"), and DriveTask, ServoTask
-    // and SeqDisp always are, so the watchdog stays on; they go on feeding it
-    // through the delay below, and esp_restart() resets with ESP_RST_SW
-    // either way. The refusal is logged rather than dropped.
-    const esp_err_t twdtDeinit = esp_task_wdt_deinit();
-    if (twdtDeinit != ESP_OK) {
-        PA_LOG_WARN(TAG, "task watchdog still running at restart: %s",
-                    esp_err_to_name(twdtDeinit));
-    }
+    // The task watchdog stays armed through the restart, on purpose (#428).
+    // DriveTask, ServoTask and SeqDisp are always subscribed and keep feeding it
+    // through the delay below, far inside WATCHDOG_TIMEOUT_S (3 s), so an
+    // ordinary restart resets as ESP_RST_SW. If the restart instead hangs in a
+    // way that starves them - a shutdown handler spinning with interrupts off or
+    // above their priority - they stop feeding, the watchdog resets the
+    // controller as ESP_RST_TASK_WDT, and bootWatchdogResetDecision() latches
+    // estop on the next boot: the fail-safe answer. A handler that only blocks
+    // leaves them feeding, so the controller keeps running unrestarted, as it
+    // would with no watchdog at all.
+    //
+    // It used to call esp_task_wdt_deinit() here to keep the restart from
+    // reading as a watchdog reset. That could never succeed - ESP-IDF refuses
+    // while any task is subscribed (task_wdt.c, "Tasks/users still
+    // subscribed") - and had it succeeded, a hung restart would have hung for
+    // good instead of being reset.
     delay(100);
     ESP.restart();
 }

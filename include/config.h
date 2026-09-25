@@ -745,6 +745,11 @@ constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 4464;
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 5632;  // rule: 4464 -> 5580 -> 5632
 constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 7296;
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 9216;  // rule: 7296 -> 9120 -> 9216
+// Walked again 2026-09-25 (#428) with the requested restart's shutdown handlers
+// stitched under esp_restart() (tools/task_stack_recipes.json): the restart
+// branch is 800 B - esp_sync_timekeeping_timers 784, ESP-Hosted's esp_wifi_stop
+// 528 - under the 3888 B the product image already walks, with or without the
+// IDF log print hook. The figure does not move.
 constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 4064;
 constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 4064 -> 5080 -> 5120
 // Re-derived 2026-09-17 (#365): 4576 -> 4656. sequenceDispatcherTask()'s OWN
@@ -871,6 +876,15 @@ constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 5872;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #250. Floor
 // holds by 272 B.
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
+// Walked again 2026-09-25 (#428): since #428 this task runs esp_restart(), and
+// with it every registered shutdown handler. The recipe stitches the two this
+// image registers and walks the closed esp_wifi_stop from its archive members:
+// the restart branch is 368 + 32 + 32 + 2016 = 2448 B, under the 2880 B the
+// product image already walks, so the figure does not move. Not followed, as
+// in every other chain in this file: the IDF log print hook (paLogIdfVprintf),
+// which esp_wifi_stop's error paths reach; with it the branch is 3616 B, and
+// the rule, 3616 -> 4520 -> 4608, would not fit this 4096 B stack. Reported on
+// #428 for an allocation decision; the stack is not changed here.
 constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3088;
 // rule: 3088 -> 3860 -> 4096. Raised from 3072 by #271, and this is the one arm
 // in the block where the floor did NOT already hold: the artoo profiler image
