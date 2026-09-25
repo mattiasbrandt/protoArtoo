@@ -1524,7 +1524,10 @@ class Walker:
     def __init__(self, images: list[Image], prune: tuple[str, ...] = ()):
         self.images = images
         self.prune = set(prune)
-        self._memo: dict[int, tuple[int, list]] = {}
+        # (entry, stack members in its cycle) -> result; see depth().
+        self._memo: dict[tuple[int, frozenset[int]], tuple[int, list, bool]] = {}
+        self._components: dict[int, frozenset[int]] | None = None
+        self._states: dict[frozenset[int], int] = {}
         self.cut_cycles: list[str] = []
         self.pruned: set[str] = set()
         self.unresolved: list[tuple[str, int]] = []  # (function name, target addr)
@@ -1554,28 +1557,139 @@ class Walker:
                 return img, img.funcs[addr]
         return None
 
-    def depth(self, img: Image, fn: Function, stack: tuple[int, ...] = ()):
+    # Distinct (function, cycle context) states one strongly connected
+    # component may take before the walk refuses to go on. See depth(): the
+    # count is exponential in the size of a component only in the worst case,
+    # and a call graph is nowhere near it -- measured at #430 with the IDF log
+    # hook stitched, the largest artoo-esp32 component (49 functions) takes
+    # 14,921 states and the largest firebeetle2 one (44) 20,725, and each walk
+    # finishes in under a second. The cap is what makes the walk bounded in time
+    # whatever a future stitch does to the graph, and reaching it is a Fatal
+    # rather than a quietly shallower answer.
+    MAX_COMPONENT_STATES = 1_000_000
+
+    def _component(self, addr: int) -> frozenset[int]:
+        """The strongly connected component of the call graph holding addr.
+
+        Computed once, over every function in every image, on the first walk:
+        like the memo, it assumes every stitch is in place before the first
+        depth() call, which is the order every caller here keeps. Iterative
+        Tarjan, because the graph is deeper than Python's recursion limit
+        allows a recursive one to be.
+        """
+        if self._components is None:
+            nodes = {}
+            for img in self.images:
+                for a, fn in img.funcs.items():
+                    nodes.setdefault(a, fn)
+
+            def successors(a: int) -> list[int]:
+                out = []
+                for target, _insn, _src in nodes[a].calls:
+                    found = self.lookup(target)
+                    if found is None or self.is_pruned(found[1]):
+                        continue
+                    out.append(found[1].addr)
+                return out
+
+            index: dict[int, int] = {}
+            low: dict[int, int] = {}
+            on_stack: set[int] = set()
+            stack: list[int] = []
+            components: dict[int, frozenset[int]] = {}
+            counter = 0
+            for start in nodes:
+                if start in index:
+                    continue
+                index[start] = low[start] = counter
+                counter += 1
+                stack.append(start)
+                on_stack.add(start)
+                work = [(start, iter(successors(start)))]
+                while work:
+                    v, it = work[-1]
+                    for w in it:
+                        if w not in index:
+                            index[w] = low[w] = counter
+                            counter += 1
+                            stack.append(w)
+                            on_stack.add(w)
+                            work.append((w, iter(successors(w))))
+                            break
+                        if w in on_stack:
+                            low[v] = min(low[v], index[w])
+                    else:
+                        work.pop()
+                        if work:
+                            parent = work[-1][0]
+                            low[parent] = min(low[parent], low[v])
+                        if low[v] == index[v]:
+                            members = []
+                            while True:
+                                w = stack.pop()
+                                on_stack.discard(w)
+                                members.append(w)
+                                if w == v:
+                                    break
+                            comp = frozenset(members)
+                            for w in members:
+                                components[w] = comp
+            self._components = components
+        return self._components.get(addr, frozenset((addr,)))
+
+    def depth(self, img: Image, fn: Function, stack=()):
         """(bytes, chain, cut_below) for the deepest path from fn.
 
-        ``cut_below`` says whether this result was shortened by a recursion cut
-        anywhere beneath it. Only results with no cut below them are memoised.
+        A call to a function already on the call stack is a real call, so its
+        frame is counted, but the walk does not go round the cycle again: the
+        edge is cut and reported, and ``cut_below`` says whether this result was
+        shortened by such a cut anywhere beneath it. `stack` is the functions
+        above this one on the path being walked.
 
-        That distinction is the whole point of the third element. A cut result
-        is valid ONLY for the call stack that produced it -- the same function
-        reached from somewhere else may complete the cycle differently, or not
-        enter it at all. Caching one and reusing it elsewhere made the report
-        depend on the order roots were passed on the command line: on the
-        firebeetle2 image `--root domeTask` alone gave 3008 bytes but 3296 when
-        safetyMonitorTask was walked first, and safetyMonitorTask gave 2768
-        alone against 2480 after domeTask. Both #245's table and #248's issue
-        body were measured with that bug present.
+        WHAT A RESULT DEPENDS ON
+        ------------------------
+        Not the whole stack: only the part of it inside fn's own strongly
+        connected component. A function on the stack that fn can reach again
+        is, by definition, in fn's component - everything above it that is
+        not is unreachable from here, and cannot be what a cut cuts. So a
+        result is memoised under (fn, the stack's members in fn's component),
+        and is correct wherever that key recurs. Outside any cycle the key is
+        (fn, nothing), which is the plain memo this walk always had.
+
+        That fixes two faults this method has had, without trading one for
+        the other:
+
+        - A cut result used to be memoised by fn alone and reused under a
+          different stack, which made the report depend on the order roots
+          were passed: on the firebeetle2 image `--root domeTask` alone gave
+          3008 bytes but 3296 when safetyMonitorTask was walked first (#245,
+          #248 were measured with that bug). The key now carries the stack
+          the cut depended on, so the order cannot matter.
+        - The fix for that stopped memoising cut results at all, and every
+          ancestor of a cycle then re-walked its whole subtree once per path
+          reaching it: exponential. With the IDF log hook stitched, the
+          firebeetle2 walk did not finish in 20 minutes (#430).
+
+        The number of keys in one component is bounded by
+        MAX_COMPONENT_STATES; reaching it raises Fatal.
         """
-        if fn.addr in stack:
+        comp = self._component(fn.addr)
+        local = frozenset(a for a in stack if a in comp)
+        if fn.addr in local:
             self.cut_cycles.append(fn.name)
             return 0, [("<recursion cut>", 0, None)], True
-        if fn.addr in self._memo:
-            sub, chain = self._memo[fn.addr]
-            return sub, chain, False
+        key = (fn.addr, local)
+        if key in self._memo:
+            return self._memo[key]
+        if len(comp) > 1:
+            states = self._states.get(comp, 0) + 1
+            if states > self.MAX_COMPONENT_STATES:
+                raise Fatal(
+                    f"the {len(comp)}-function cycle through {fn.name} took more than "
+                    f"{self.MAX_COMPONENT_STATES} walk states; a stitch has made the "
+                    "call graph too cyclic to walk exactly")
+            self._states[comp] = states
+        below = local | {fn.addr}
         best_sub, best_chain, best_edge = 0, [], None
         cut_below = False
         for target, insn, srcline in fn.calls:
@@ -1586,7 +1700,7 @@ class Walker:
             timg, tfn = found
             if self.is_pruned(tfn):
                 continue
-            sub, chain, sub_cut = self.depth(timg, tfn, stack + (fn.addr,))
+            sub, chain, sub_cut = self.depth(timg, tfn, below if tfn.addr in comp else ())
             # Any cut anywhere among the branches can have suppressed the one
             # that would have won, so the maximum itself is suspect, not just
             # the branch that was cut.
@@ -1595,13 +1709,13 @@ class Walker:
             if total > best_sub:
                 best_sub, best_chain, best_edge = total, chain, (tfn, insn, srcline)
         if best_edge is None:
-            result = (0, [])
+            result = (0, [], cut_below)
         else:
             tfn, insn, srcline = best_edge
-            result = (best_sub, [(tfn.name, tfn.frame, srcline, insn)] + best_chain)
-        if not cut_below:
-            self._memo[fn.addr] = result
-        return result[0], result[1], cut_below
+            result = (best_sub, [(tfn.name, tfn.frame, srcline, insn)] + best_chain,
+                      cut_below)
+        self._memo[key] = result
+        return result
 
     def callsite_table(self, img: Image, fn: Function) -> list[tuple]:
         rows = []
