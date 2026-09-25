@@ -53,10 +53,10 @@ caller always passes - each with its reason and the sites that prove it
 before the first walk. An entry whose edge is no longer in the image fails the
 row, like an absent root, so a stale entry cannot hide anything.
 
-The log-hook entry is on for artoo-esp32 only. That image links newlib nano
-printf, which is what makes every chain fit its stack with the hook walked; on
-the ESP32-P4 the hook-on walk needs raises that are an operator decision, and
-the entry's own reason carries the figure (#430).
+The log-hook entry is on for both chips (#430). The artoo-esp32 image links
+newlib nano printf, which is what makes every chain there fit its stack with
+the hook walked; the ESP32-P4 keeps full newlib and its stacks were raised by
+the allocation rule to cover it.
 
 The chain is
 
