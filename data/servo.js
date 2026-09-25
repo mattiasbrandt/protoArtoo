@@ -66,10 +66,6 @@
     isLightRow,
   } = P;
 
-  // The bench feed (#318): one read of the outputs answer a second while
-  // Servos is on screen, stopped by the shell when the operator leaves (#360).
-  const POLL_MS = 1000;
-
   // #293's honesty tiers, as the counts the Outputs section is headed with
   // (#318). A tier is a count, never a place a row moves to: the rows stay in
   // the order the wires plug in.
@@ -82,7 +78,7 @@
   // not the same as an Output with no pulse, so it is never counted as off.
   const tierOf = (output) => {
     if (output.parts.length === 0) return "no-part";
-    return output.reported && output.commandedUs === null ? "switched-off" : "driving";
+    return OUTPUTS.live(output).state === "limp" ? "switched-off" : "driving";
   };
 
   const tiersNode = document.getElementById("outputs-tiers");
@@ -103,11 +99,15 @@
   const esc = (value) => window.PAUtils.escapeHtml(String(value));
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
-  // The Outputs this page draws a row for: the ones the servo table lists, in
-  // the order data/outputs.js gives them, each carrying whether it is wired
-  // and what it carries.
-  let outputs = null; // null until the droid has answered
-  const tableOutputs = () => OUTPUTS.list().filter((output) => output.fromTable);
+  // Until the table answers, the section and the part picker say so in the
+  // one word for it (data/outputs.js live()); the page's markup carries none.
+  if (tiersNode) tiersNode.textContent = OUTPUTS.live(null).word;
+  findPick.innerHTML = `<option value="">${esc(OUTPUTS.live(null).word)}</option>`;
+
+  // The Outputs this page draws a row for are data/outputs.js's list, in the
+  // order it gives them, each carrying whether it is wired and what it
+  // carries; this page keeps no copy of its own.
+  const answered = () => OUTPUTS.known().table;
   let run = null; // the Find by Moving run in progress, at most one (below)
   let dial = null; // the Output being calibrated, at most one (below)
   // Whether anything may be asked to move: the Live Reading's answer
@@ -196,7 +196,7 @@
 
   // The only rebuild, and only when the set of Outputs itself changes - which a
   // controller does across a reboot, not while this page is reading it (#318).
-  const buildOutputs = (addresses) => {
+  const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
       `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
       `<th scope="col">Commanded position</th><th scope="col">Drive it</th><th scope="col">Output Release</th>` +
@@ -266,25 +266,16 @@
     return "";
   };
 
-  // Why an Output has no pulse, said the way a builder needs it. The two
-  // firmware bounds each get their own sentence.
-  const LIMP_SAID = {
-    "off": "Limp - no pulse",
-    "pulses-off": "Limp - pulses off",
-    "expiry": "Went limp - the dial stopped asking",
-    "ceiling": "Went limp - ten minutes is the most a dial holds",
-    "estop": "Limp - the estop let go",
-    "sleep": "Limp - sleep mode let go",
-  };
-
   // Only style, textContent and classList, on nodes that already exist: a
   // repaint never rebuilds a row, so the control under the builder's pointer
-  // stays where it is (hw-table.js:171-174).
+  // stays where it is (hw-table.js:171-174). What the Output is doing, and
+  // the word for it when there is no position to draw, are data/outputs.js's.
   const paintOutputRow = (output) => {
     const row = outputRows.get(output.address);
     if (!row) return;
     const light = isLightRow(output);
-    const pulsing = output.commandedUs !== null;
+    const live = OUTPUTS.live(output);
+    const pulsing = live.state === "pulsing";
     row.node.classList.toggle("is-wired", output.parts.length > 0);
     row.node.classList.toggle("partkind-light", light);
     row.bar.classList.toggle("is-off", !pulsing);
@@ -307,11 +298,11 @@
     row.off.hidden = !driveable;
     paintMotion(row, output, driveable);
     row.node.classList.toggle("is-held", output.held);
-    // The droid does not send this Output's pulse at all: the Live Reading's
-    // word for a field that never arrives, not the one for one still coming.
-    if (!output.reported) {
-      row.us.textContent = window.PALiveReading.UNKNOWN;
-      row.release.textContent = window.PALiveReading.UNKNOWN;
+    // The droid does not send this Output's pulse at all: the word for a field
+    // that never arrives, not the one for one still coming.
+    if (live.state === "unknown") {
+      row.us.textContent = live.word;
+      row.release.textContent = live.word;
       return;
     }
     // An Output with no pulse says so: a blank cell cannot be told from a table
@@ -325,7 +316,7 @@
     else if (pulsing) row.release.textContent = "Holds where it stops";
     // An Output that has gone limp says WHICH of the ways it can happen this
     // was (#364): a bound the dial ran into is not the estop letting go.
-    else row.release.textContent = LIMP_SAID[output.limp] || LIMP_SAID.off;
+    else row.release.textContent = live.word;
   };
 
   // ---------------------------------------------------------------------------
@@ -371,7 +362,7 @@
   // settings (data/outputs.js). The droid refuses a number outside what the
   // row takes and says which; the row then repaints to what it holds.
   const saveMotion = async (address, patch) => {
-    const output = outputs?.find((each) => each.address === address);
+    const output = OUTPUTS.at(address);
     const power = "boot" in patch;
     if (!output || !(power ? bootOpen(output) : motionOpen(output))) return;
     try {
@@ -381,13 +372,13 @@
       // data/outputs.js has already put a refusal in the page's words.
       showFeedback(`Not saved: ${window.PAApi.messageFor(error)}.`, "error");
       const row = outputRows.get(address);
-      const now = outputs?.find((each) => each.address === address);
+      const now = OUTPUTS.at(address);
       if (row && now) paintMotion(row, now, isDriveable(now));
     }
   };
 
-  const paintOutputs = (addresses) => {
-    if (outputAddresses !== addresses) buildOutputs(addresses);
+  const paintOutputs = (outputs, addresses) => {
+    if (outputAddresses !== addresses) buildOutputs(outputs, addresses);
     outputs.forEach(paintOutputRow);
     const counts = new Map(TIERS.map((tier) => [tier.id, 0]));
     outputs.forEach((output) => counts.set(tierOf(output), counts.get(tierOf(output)) + 1));
@@ -408,7 +399,7 @@
   // the builder's pointer.
   let findSet = null;
   const paintFindPick = () => {
-    const unwired = catalog.parts.filter((part) => OUTPUTS.forPart(part.id, outputs) === null);
+    const unwired = catalog.parts.filter((part) => OUTPUTS.forPart(part.id) === null);
     const key = unwired.map((part) => part.id).join(",");
     if (key !== findSet && document.activeElement !== findPick) {
       const keep = findPick.value;
@@ -434,22 +425,22 @@
   // Repainted in place
   // ---------------------------------------------------------------------------
   const paint = () => {
-    if (outputs === null) return;
+    if (!answered()) return;
+    const outputs = OUTPUTS.list();
     const addresses = outputs.map((output) => output.address).join(",");
-    paintOutputs(addresses);
+    paintOutputs(outputs, addresses);
     paintFindPick();
     // The droid has answered again, which is the only thing a run steps on.
     stepRun();
     paintDial();
   };
 
-  // The bench feed reads the servo table alone; the section run on mount reads
-  // the config with it, once, for what each Output carries.
+  // A read after an act reads the servo table alone; the section run on mount
+  // reads the config with it, once, for what each Output carries. Either
+  // publishes, and the page paints from that, once (below).
   const loadOutputs = async ({ handle = null, withConfig = false } = {}) => {
     if (withConfig) await OUTPUTS.load({ handle });
     else await OUTPUTS.refresh({ handle });
-    outputs = tableOutputs();
-    paint();
   };
 
   // One read the dial and a capture both wait on, so what the panel shows after
@@ -488,18 +479,18 @@
     if (!select?.classList?.contains("outputs-add")) return;
     const address = select.closest?.("[data-output]")?.dataset.output;
     const id = select.value;
-    if (!address || !id || outputs === null) return;
+    if (!address || !id || !answered()) return;
     // A pick is a request, not a state this control keeps: it goes back to its
     // prompt, and the row's Drives cell says what the droid answered.
     select.value = "";
-    mover.request(P.moveFor(outputs, id, address), select);
+    mover.request(P.moveFor(OUTPUTS.list(), id, address), select);
   });
 
   // ---------------------------------------------------------------------------
   // Driving an Output from its row
   // ---------------------------------------------------------------------------
   const drive = async (address, action) => {
-    const output = outputs?.find((each) => each.address === address);
+    const output = OUTPUTS.at(address);
     const row = outputRows.get(address);
     if (!output || !row) return;
     const label = output.name;
@@ -561,24 +552,27 @@
   // Output with none cannot twitch, and the firmware would refuse it), and a
   // name the servo route takes as its arm.
   const spareOutputs = () =>
-    outputs.filter((output) => output.parts.length === 0 && output.commandedUs !== null && hasServoWord(output));
+    OUTPUTS.list().filter(
+      (output) => output.parts.length === 0 && OUTPUTS.live(output).state === "pulsing" && hasServoWord(output)
+    );
 
   const endRun = (text, level) => {
     if (run === null) return;
     run = null;
     runPanel.remove();
-    if (outputs !== null) paintFindPick();
+    if (answered()) paintFindPick();
     if (text) showFeedback(text, level);
   };
 
   // The nudged Output's last commanded mark is not current any more: the
   // estop ended the nudge somewhere the run never read. Held back, not
-  // guessed at, until the next answer repaints the row.
+  // guessed at, until the next answer repaints the row - which is the table
+  // not having answered yet, and says so in its word.
   const markNotCurrent = (address) => {
     const row = outputRows.get(address);
     if (!row) return;
     row.bar.classList.add("is-stale");
-    row.us.textContent = "Stopped — finding out where it is";
+    row.us.textContent = OUTPUTS.live(null).word;
   };
 
   // Ask the droid to nudge the next spare Output, or end the run when there
@@ -598,7 +592,7 @@
       return;
     }
     const address = current.candidates[current.at];
-    const output = outputs.find((each) => each.address === address);
+    const output = OUTPUTS.at(address);
     if (!output || output.nudgesDone === null) {
       // The droid's answer changed shape under the run: a reboot, or a
       // different firmware. Nothing is asked of an Output the page cannot
@@ -627,12 +621,12 @@
   const stepRun = () => {
     if (run === null || run.sending || run.address === null) return;
     const label = partLabel(run.partId);
-    const wiredTo = OUTPUTS.forPart(run.partId, outputs);
+    const wiredTo = OUTPUTS.forPart(run.partId);
     if (wiredTo) {
       endRun(`${label} is on ${wiredTo.name} now, so the run stopped.`);
       return;
     }
-    const output = outputs.find((each) => each.address === run.address);
+    const output = OUTPUTS.at(run.address);
     if (!output || output.nudgesDone === null) {
       endRun(`${run.address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
       return;
@@ -642,7 +636,7 @@
     // pin (#364). A limp Output cannot twitch, so the run ENDS here rather than
     // stepping on: ending a nudge bumps nudgesDone, and without this the count
     // going up would read as "that one finished, try the next".
-    if (output.commandedUs === null) {
+    if (OUTPUTS.live(output).state === "limp") {
       endRun(`${output.name} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
       return;
     }
@@ -651,7 +645,7 @@
   };
 
   const startRun = (partId) => {
-    if (outputs === null || !partId) return;
+    if (!answered() || !partId) return;
     if (run !== null) {
       showFeedback(`One run at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
       return;
@@ -669,7 +663,9 @@
       // A spare Output powers up limp unless its row says otherwise (ADR 0052),
       // so "no spare Output" and "no spare Output with a pulse" need different
       // words: only the second is fixed by driving one.
-      const limpSpare = outputs.some((output) => output.parts.length === 0 && output.commandedUs === null && hasServoWord(output));
+      const limpSpare = OUTPUTS.list().some(
+        (output) => output.parts.length === 0 && OUTPUTS.live(output).state === "limp" && hasServoWord(output)
+      );
       showFeedback(
         limpSpare
           ? "Nothing to nudge. The spare outputs are limp, so none can twitch. Drive one first."
@@ -698,7 +694,7 @@
     if (run === null) return;
     const { partId, address } = run;
     endRun();
-    mover.request(P.moveFor(outputs, partId, address), findPick);
+    mover.request(P.moveFor(OUTPUTS.list(), partId, address), findPick);
   };
 
   const stopRun = () => {
@@ -828,8 +824,7 @@
   const dialSweep = dialPanel.querySelector(".cal-sweep");
   const dialResume = dialPanel.querySelector(".cal-resume");
 
-  const dialOutput = () =>
-    (dial === null || outputs === null ? null : outputs.find((each) => each.address === dial.address) || null);
+  const dialOutput = () => (dial === null ? null : OUTPUTS.at(dial.address));
 
   const setNote = (text, level) => {
     dialNote.textContent = text;
@@ -941,8 +936,7 @@
   };
 
   const openDial = (address) => {
-    if (outputs === null) return;
-    const output = outputs.find((each) => each.address === address);
+    const output = OUTPUTS.at(address);
     if (!output) return;
     if (run !== null) {
       showFeedback(`One at a time: ${partLabel(run.partId)} is being found. Stop that run first.`, "warning");
@@ -955,7 +949,7 @@
       // Start from where the droid says the Output is standing, so the first
       // hold does not move the part at all. An Output with no pulse has no
       // position to start from, so the middle of its band is the honest guess.
-      us: output.commandedUs === null ? Math.round((band.lo + band.hi) / 2) : output.commandedUs,
+      us: OUTPUTS.live(output).state === "pulsing" ? output.commandedUs : Math.round((band.lo + band.hi) / 2),
       safe: false,
       ends: false,
       sweeping: false,
@@ -1079,11 +1073,12 @@
 
     // The Output has gone limp under the dial: one of the firmware's two
     // bounds, or the estop. The panel says which, and one press takes it back.
-    const limp = output.commandedUs === null;
+    const live = OUTPUTS.live(output);
+    const limp = live.state === "limp";
     if (limp) dial.holding = false;
     dialResume.hidden = !limp;
     if (limp && !dial.sweeping) {
-      setNote(`${LIMP_SAID[output.limp] || LIMP_SAID.off}. Press take it again to hold it once more.`, "warning");
+      setNote(`${live.word}. Press take it again to hold it once more.`, "warning");
     }
   };
 
@@ -1180,7 +1175,8 @@
   // centre to go back to, and the controller skips it for the same reason.
   // ---------------------------------------------------------------------------
   const centreAll = async () => {
-    if (outputs === null) return;
+    if (!answered()) return;
+    const outputs = OUTPUTS.list();
     const lights = outputs.filter(isLightRow).length;
     const going = outputs.length - lights;
     try {
@@ -1210,8 +1206,7 @@
   // which of the two happened, because the builder has just caused both.
   // ---------------------------------------------------------------------------
   const pulsesOff = async (address) => {
-    if (outputs === null) return;
-    const output = outputs.find((each) => each.address === address);
+    const output = OUTPUTS.at(address);
     if (!output) return;
     const label = output.name;
     const findingPart = run !== null && run.address === address ? run.partId : null;
@@ -1247,12 +1242,12 @@
     // itself: a refused control asks the droid for nothing.
     if (!address || button.disabled) return;
     if (button.dataset.ease) {
-      const output = outputs?.find((each) => each.address === address);
+      const output = OUTPUTS.at(address);
       if (output && button.dataset.ease !== output.ease) started(saveMotion(address, { ease: button.dataset.ease }));
       return;
     }
     if (button.dataset.boot) {
-      const output = outputs?.find((each) => each.address === address);
+      const output = OUTPUTS.at(address);
       if (output && button.dataset.boot !== output.boot) started(saveMotion(address, { boot: button.dataset.boot }));
       return;
     }
@@ -1296,8 +1291,8 @@
     // And it ends a back-to-centre sweep wherever it had got to (#365): no
     // row's commanded mark is current any longer, so each is held back rather
     // than guessed at until the droid answers again.
-    if (latched && outputs !== null) {
-      outputs.forEach((output) => markNotCurrent(output.address));
+    if (latched && answered()) {
+      OUTPUTS.list().forEach((output) => markNotCurrent(output.address));
       window.PAUtils.showFeedback(
         centreSaid,
         "The estop let go of every output. Nothing is being driven, so nothing is going back to centre.",
@@ -1318,11 +1313,10 @@
     feedback: document.getElementById("servo-types-feedback"),
     describe: (output) => listParts(output.parts),
   });
-  OUTPUTS.onChange(() => {
-    if (outputs === null) return;
-    outputs = tableOutputs();
-    outputs.forEach(paintOutputRow);
-  });
+  // Every read of the Outputs - the follow's, an act's, a save's answer -
+  // publishes once, and this is the one place the page paints from it, so a
+  // read paints each row once (#421).
+  OUTPUTS.onChange(() => paint());
 
   // ---------------------------------------------------------------------------
   // Loading
@@ -1348,10 +1342,8 @@
     loadOutputs({ withConfig: true }).catch((error) => console.warn("[servo] outputs unavailable:", error));
   }
 
-  // Owned by this surface, so the shell stops it when the operator leaves
-  // Servos and starts it on the way back (#360). A failed read is
-  // PASurface.poll()'s to report: catching it here would hand the registry a
-  // fulfilled promise and mark the surface current on a read that never landed
-  // (#360).
-  window.PASurface?.poll(() => loadOutputs(), { cadenceMs: POLL_MS, refreshOnReturn: true }).start();
+  // The bench feed (#318): data/outputs.js's follow of the table. It is this
+  // surface's, so the shell stops it when the operator leaves Servos and
+  // starts it on the way back (#360).
+  OUTPUTS.follow().start();
 })();

@@ -15,7 +15,7 @@
 import test from "node:test";
 import assert from "node:assert";
 
-import { bootParts, withParts, output, sleep } from "./helpers/parts_surface.js";
+import { bootParts, bootServos, withParts, output, sleep } from "./helpers/parts_surface.js";
 
 const marker = (env, id) =>
   env.document.querySelectorAll("[data-marker]").find((node) => node.dataset.marker === id);
@@ -75,6 +75,24 @@ test("a dome piece nobody has told draws no position, and one told draws what it
   await sleep(20);
   assert.equal(domePosts(env).length, 1);
   assert.ok(pie().classList.contains("is-open"), "told to open, it draws Open");
+});
+
+// One Output, one answer (#421): a gauge and a dial disagreeing about the same
+// servo is the worst outcome a two-surface mapping can have. Until #421 Parts
+// showed a limp Output as a bare Limp while Servos named why, from its own
+// table.
+test("a limp Part says why in the same words Servos uses for its Output", async () => {
+  const limp = () => measuredArm1().map((row) =>
+    (row.address === "ledc:0" ? { ...row, commandedUs: null, targetUs: null, limp: "expiry" } : row));
+  const servos = await bootServos({ outputs: limp() });
+  const said = servos.text("ledc:0", "outputs-release");
+  assert.ok(said.length > 0, "Servos says why the Output is limp");
+
+  const env = await bootParts({ outputs: limp() });
+  pick(env, "doorFL");
+  assert.ok(marker(env, "doorFL").classList.contains("is-limp"), "the picture draws it limp");
+  assert.ok(facts(env).some((text) => text.includes(said)),
+    `the panel says what Servos says ("${said}"): ${facts(env).join(" | ")}`);
 });
 
 test("a click only selects: the panel fills and the droid is asked for nothing", async () => {

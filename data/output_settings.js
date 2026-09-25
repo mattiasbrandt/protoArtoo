@@ -208,9 +208,10 @@
 
   const render = (view) => {
     // A plate saves what the Output's row says, so it waits for the rows: until
-    // they have answered there is no Output to draw.
+    // they have answered there is no Output to draw, and the line says so in
+    // the one word every surface uses for it (data/outputs.js live()).
     if (!OUTPUTS.known().table) {
-      view.body.replaceChildren(element("p", "hint", "Reading the outputs from the droid…"));
+      view.body.replaceChildren(element("p", "hint", OUTPUTS.live(null).word));
       return;
     }
     const outputs = OUTPUTS.list();

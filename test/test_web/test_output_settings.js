@@ -87,7 +87,7 @@ const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
   };
   const context = { window, document, console, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout, URLSearchParams };
   context.globalThis = context;
-  for (const file of ["apply_timing.js", "outputs.js", "output_settings.js"]) {
+  for (const file of ["live_reading.js", "apply_timing.js", "outputs.js", "output_settings.js"]) {
     vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
   }
   window.PAOutputSettings.mount("wired", {
