@@ -47,7 +47,7 @@ void test_each_selectable_member_binds_to_its_own_driver() {
 
     audioBindSoundMember(memberValue("mp3_trigger"));
     TEST_ASSERT_EQUAL_STRING("mp3_trigger", audioActiveSoundMember().part->id);
-    TEST_ASSERT_EQUAL_STRING("MP3Trigger", audioActiveSoundMember().driver->driverName());
+    TEST_ASSERT_EQUAL_STRING("MP3 Trigger", audioActiveSoundMember().driver->driverName());
     TEST_ASSERT_EQUAL_UINT8(13, audioActiveSoundMember().driver->capabilities());
 
     audioBindSoundMember(memberValue("chirp"));

@@ -42,8 +42,10 @@ class AudioDriverDySv5w : public AudioDriver {
     void playTrack(uint16_t track) override;
     void stop() override;
     void setVolume(uint8_t vol) override;
+    // The operator-visible name, read from this product's Component Registry
+    // row so every surface shows the name the registry declares (#422).
     const char* driverName() const override {
-        return "DY-SV5W";
+        return componentPartDisplayName("dy_sv5w");
     }
 
     // DY-SV5W: supports query, device type, track count, current track; not safe

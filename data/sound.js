@@ -153,7 +153,9 @@
   const mp3WireNote = document.getElementById("mp3-wire-note");
   const mp3MissingTrack = document.getElementById("mp3-missing-track");
   const mp3RangeWarning = document.getElementById("mp3-range-warning");
-  const MP3_DRIVER_NAME = "MP3Trigger";
+  // The MP3 Trigger's Component Registry display name, which is what its
+  // driver reports as `driver` (include/audio_mp3trigger.h).
+  const MP3_DRIVER_NAME = "MP3 Trigger";
   const MP3_WIRE_NOTE =
     "Power this board from the 3.3 V jumper: 5 V can kill the Body Controller's receive pin. It answers only with MP3TRIGR.INI on the card, holding #BAUD 9600.";
   const MP3_RANGE_WARNING =
