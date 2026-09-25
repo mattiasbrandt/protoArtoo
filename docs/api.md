@@ -115,12 +115,21 @@ served normally; only requests that had no answer either way reach this reply.
 ### GET /api/identity
 
 Returns the droid's cosmetic name, mDNS hostname preference, canonical Board
-Variant id, the complete compile-time Feature Availability manifest, and the
-Board Lanes this image routes each signal over.
+Variant id, how many Learned Sequences it lets a builder save, the complete
+compile-time Feature Availability manifest, and the Board Lanes this image
+routes each signal over.
 
 - Success: `200` JSON with:
   - `droidName` and `mdnsUseName`
   - `board`: `artoo_esp32` or `firebeetle2`
+  - `learned_sequence_cap`: how many Learned Sequences this droid lets a
+    builder save - `5` on `artoo_esp32`, `10` on `firebeetle2` (ADR 0065,
+    amended 2026-09-25). It is a board fact the droid reports so no page keeps
+    a copy of it: the Sequences page reads it here, from the payload the shell
+    already fetches once per page. It is the number that refuses a new save
+    (`POST /api/seq`), not a bound on what `GET /api/seq/list` returns: a droid
+    a firmware-only update left holding more than its cap lists and plays every
+    one it holds
   - `board_capabilities`: an object containing every `PA_CAP_*` declaration
     from `include/board_capabilities.inc`, with boolean values
   - `board_lanes`: an object containing every Board Lane from
@@ -145,7 +154,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity
@@ -156,7 +165,8 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
   - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
   - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
 - Success: `200` JSON with the updated identity and the same `board`,
-  `board_capabilities`, `board_lanes`, and `build_flags` fields as GET
+  `learned_sequence_cap`, `board_capabilities`, `board_lanes`, and
+  `build_flags` fields as GET
 - Errors:
   - `400` `{"ok":false,"error":"droidName is required"}`
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
@@ -174,7 +184,7 @@ curl -s -X POST http://artoo.local/api/identity \
 #### Example response
 
 ```json
-{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### GET /api/identity/components
@@ -1251,7 +1261,9 @@ Learned Sequences are named command sequences stored in the controller's persist
 
 ### GET /api/seq/list
 
-Returns an index of all Learned Sequences stored in the controller.
+Returns an index of all Learned Sequences stored in the controller - every one
+it holds, up to ten on any board, which can be more than the board's save cap
+(`learned_sequence_cap` in `GET /api/identity`) after a firmware-only update.
 
 - Success: `200` JSON array of sequence metadata objects
   - `name`: sequence identifier (e.g., `"DM:ROCKMARCH"`)
@@ -1445,6 +1457,11 @@ Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check vali
 - Success: `200` `{"ok":true}`
 - Errors:
   - `400` `{"ok":false,"error":"...","field":"<field>"}` (Protocol Check failure, see field)
+  - `400` `{"ok":false,"field":"name","error":"store full (5 sequences max)"}`
+    when the name is new and the droid already holds at least its
+    `learned_sequence_cap` (`GET /api/identity`; the number in the message is
+    that cap, 10 on `firebeetle2`). Overwriting a name it already holds is not
+    refused, even on a droid over its cap
   - `500` `{"ok":false,"error":"sequence save failed"}`
 
 #### Example request
