@@ -1,6 +1,6 @@
 # The Configuration is written in the shape it is read
 
-Status: accepted (2026-09-25, issue #423). Settled by grilling the operator
+Status: accepted (2026-09-25, issue #423; amended 2026-09-26, issue #431, see below). Settled by grilling the operator
 after the architecture review of the operator-experience epic's hot spots.
 
 ## Context
@@ -92,3 +92,78 @@ back what the backup holds.**
 - The capture, reverse and move-a-Part acts stay acts.
 - ADR 0011's rejected "pre-copied params struct" is not reopened: nothing here
   copies values past the Param Source.
+
+## Amended 2026-09-26: each Setting is declared once, and its words live in the browser
+
+Settled by grilling the operator after the architecture review of 2026-09-26
+(issue #431).
+
+### Context
+
+This ADR made GET and POST one contract, but left each **Setting** (`CONTEXT.md`)
+written out by hand at every door. Measured on `epic/operator-experience` @
+`6ee43d45`:
+
+- One scalar, the dome's idle-turn move time, sits at 7 sites in 5 files: the
+  struct, the default, the NVS read and write (its key typed twice), the GET
+  writer, the GET-path table and the POST check, whose range is typed twice.
+- A second range table, `configValidate`, disagreed with the POST check on four
+  Settings (log level 1..3 against 1..4, the move time 100..10000 against
+  500..10000, and two more). Outside tests, only the mood-mask write called it.
+- The round-trip test this ADR asked for lists its Settings by hand, so a
+  Setting left out of both GET and the test goes unnoticed.
+- One Output row field, the LED count (#413), touched about 14 sites, and the row
+  names its fields in two vocabularies (`leds` and `ledCount`).
+- #425 put field, reason and accepts on every refusal, but only the Outputs module
+  in the browser read them. Every other page showed the firmware's sentence with
+  the wire name in it, which ADR 0059 forbids, and a test pinned that as correct.
+- Log level took words on the Console and only numbers over HTTP. The RC mode
+  words were mapped by hand in six places.
+
+### Decision
+
+- **Each Setting is declared once in the firmware:** its form name, its GET path,
+  its parse and check (a range or a word list, answering field, reason and
+  accepts), its NVS key and its default. GET, POST, the NVS save and load, and
+  the Console's single-field ops loop over the declarations. **An Output row
+  declares its Settings the same way**, and the row door reads and writes by it.
+  NVS key strings do not change. Rules that span Settings stay hand-written
+  beside the loop.
+- **A Setting that takes words takes the same words at every door;** the
+  declaration decides. GET keeps its shape, so the round trip holds.
+- **The builder's words for every Setting, and its unit, live in one browser
+  table.** Every refusal is worded from field, reason and accepts, never from the
+  sentence. **A check fails when a declared Setting has no words.**
+- **The browser keeps no copy of a firmware range.** The worded refusal on save
+  replaces the page-side checks.
+- `docs/action-registry.yaml` loses `nvs_key:`, and its check with it; the
+  declaration is the one home.
+
+### Considered and rejected
+
+- **The words in the firmware declaration.** One home for names and words, but
+  every copy review would need a build, and the words would cost flash on a board
+  that is short of it.
+- **A fallback sentence and no check.** ADR 0059's own evidence is a required
+  field populated 194 of 194 times by convention and failing anyway.
+- **As-you-type checks fed from GET.** The reference checks a pulse width at
+  every keystroke, and that is a better moment. It would put every Setting's
+  accepts on `/api/config`, which is tight on the artoo-esp32, and it is one more
+  reader of the range. The builder learns on save, in words.
+- **Keeping the page-side range copies.** They are how `configValidate` came to
+  disagree.
+- **Keeping `nvs_key:`, checked.** The defect pass of 2026-09-26 added exactly
+  that check (`check_nvs_keys`, after 9 of the keys were found wrong). It keeps a
+  third home true instead of removing it, and no code reads the registry's key;
+  the check goes with the field.
+- **Droid Settings only, rows later.** It would leave the row's 14 sites and a
+  second list for the drift check.
+
+### Consequences
+
+- `configValidate` and the `ConfigKey` enum go.
+- The round-trip test and a save-and-load test are generated from the
+  declarations.
+- `outputs.js`'s own words for row fields become entries in the one table.
+- This does not reopen the rejected "firmware name table served to the browser":
+  nothing is served, and the browser holds only words.
