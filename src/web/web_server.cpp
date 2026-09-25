@@ -318,15 +318,20 @@ bool webServerHasSSEClients() {
     return webEventStreamClientCount() > 0;
 }
 
-// Shared SSE JSON buffers - file-scope so every producer in this file uses the
-// same allocation rather than each having their own.
-// Combined saving vs previous approach (two sets of statics): 3 KB BSS.
-// Status JSON can exceed 1 KB when many components are enabled; keep headroom.
-static char s_sseStatusBody[3072];
-// RC diagnostics JSON reaches ~2570 bytes in dual_sbus mode (2 sources + 7 analog
-// channels + digital section + mapping profile + raw channel arrays).
-// Keep a 3072-byte margin to avoid truncating SSE rc events.
-static char s_sseRcBody[3072];
+// A log event's batch: up to eight lines, each with its separator.
+static constexpr size_t kSseLogBatchBytes = 8 * (LOG_LINE_MAX + 8) + 1;
+
+// The WebEvents task's one event body (#428). The status, rc and log events
+// are built into it one after another, all on this task, and
+// webEventStreamBroadcast() has put each on the wire before it returns
+// (src/web/web_request_psychic.cpp), so it never holds two at once. Sized by
+// the largest of the three, the status document (STATUS_JSON_BUFFER_BYTES,
+// include/status_json.h). The rc event needs at most 2,518 B (#381) and is
+// still measured against this buffer before it is written; a log batch always
+// fits whole.
+static char s_sseBody[STATUS_JSON_BUFFER_BYTES];
+static_assert(kSseLogBatchBytes <= sizeof(s_sseBody),
+              "a whole log batch must fit the WebEvents event body");
 static JsonDocument s_sseRcDoc;
 static bool s_rcSseBuildWarned = false;
 static bool s_rcSseSizeWarned = false;
@@ -335,7 +340,6 @@ static portMUX_TYPE s_broadcastMux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_broadcastRequested = false;
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
-static char s_sseLogBatch[8 * (LOG_LINE_MAX + 8) + 1];
 static int s_logSendTick = 0;
 
 void requestStatusBroadcastNow() {
@@ -387,7 +391,7 @@ void eventStreamTask(void*) {
             taskEXIT_CRITICAL(&s_broadcastMux);
 
             if (broadcastRequested) {
-                if (!buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody))) {
+                if (!buildStatusJson(s_sseBody, sizeof(s_sseBody))) {
                     if (!s_statusSseOverflowWarned) {
                         PA_LOG_WARN("WebEvents",
                                     "status SSE payload overflowed; sending fallback payload");
@@ -396,7 +400,7 @@ void eventStreamTask(void*) {
                 } else {
                     s_statusSseOverflowWarned = false;
                 }
-                webEventStreamBroadcast("status", s_sseStatusBody, nowMs);
+                webEventStreamBroadcast("status", s_sseBody, nowMs);
             }
 
             RcDiagnosticsSnapshot rcSnap;
@@ -410,17 +414,17 @@ void eventStreamTask(void*) {
             } else {
                 s_rcSseBuildWarned = false;
                 size_t rcBytes = measureJson(s_sseRcDoc);
-                if (rcBytes >= sizeof(s_sseRcBody)) {
+                if (rcBytes >= sizeof(s_sseBody)) {
                     if (!s_rcSseSizeWarned) {
                         PA_LOG_WARN("WebEvents",
                                     "rc SSE payload too large (%u bytes >= %u); event dropped",
-                                    (unsigned)rcBytes, (unsigned)sizeof(s_sseRcBody));
+                                    (unsigned)rcBytes, (unsigned)sizeof(s_sseBody));
                         s_rcSseSizeWarned = true;
                     }
                 } else {
                     s_rcSseSizeWarned = false;
-                    serializeJson(s_sseRcDoc, s_sseRcBody, sizeof(s_sseRcBody));
-                    webEventStreamBroadcast("rc", s_sseRcBody, nowMs);
+                    serializeJson(s_sseRcDoc, s_sseBody, sizeof(s_sseBody));
+                    webEventStreamBroadcast("rc", s_sseBody, nowMs);
                 }
             }
             if (!hwmUnderLoadLogged) {
@@ -435,18 +439,18 @@ void eventStreamTask(void*) {
                 s_lastLogSent = copyNewLogLinesSince(s_lastLogSent, s_sseLogLines, 8, &linesCopied);
                 if (linesCopied > 0) {
                     size_t pos = 0;
-                    for (size_t i = 0; i < linesCopied && pos < sizeof(s_sseLogBatch) - 1; ++i) {
+                    for (size_t i = 0; i < linesCopied && pos < kSseLogBatchBytes - 1; ++i) {
                         if (i > 0) {
-                            s_sseLogBatch[pos++] = '\x01';
+                            s_sseBody[pos++] = '\x01';
                         }
                         size_t lineLen = strnlen(s_sseLogLines[i], LOG_LINE_MAX);
-                        size_t room = sizeof(s_sseLogBatch) - 1 - pos;
+                        size_t room = kSseLogBatchBytes - 1 - pos;
                         size_t copy = lineLen < room ? lineLen : room;
-                        memcpy(s_sseLogBatch + pos, s_sseLogLines[i], copy);
+                        memcpy(s_sseBody + pos, s_sseLogLines[i], copy);
                         pos += copy;
                     }
-                    s_sseLogBatch[pos] = '\0';
-                    webEventStreamBroadcast("log", s_sseLogBatch, nowMs);
+                    s_sseBody[pos] = '\0';
+                    webEventStreamBroadcast("log", s_sseBody, nowMs);
                 }
             }
         }
