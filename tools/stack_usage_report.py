@@ -818,6 +818,9 @@ class Image:
         # keeps a mid-function `addi sp,sp,-N` (an alloca, or the epilogue's
         # restore) out of the frame figure.
         prologue_left = 24
+        # RISC-V: registers the prologue has loaded with a known constant, so a
+        # register-sized `add sp,sp,rX` can still be read as a fixed frame.
+        prologue_consts: dict[str, int] = {}
 
         for pc in order:
             nbytes, mnem, ops = insns[pc]
@@ -861,7 +864,7 @@ class Image:
                     prologue_left = 0
                 else:
                     prologue_left -= 1
-                    self._maybe_frame(fn, mnem, ops)
+                    self._maybe_frame(fn, mnem, ops, prologue_consts)
             if self.arch == "xtensa":
                 self._invalidate(XTENSA_NON_WRITING, r"a\d+", mnem, ops, pending_lit)
                 self._xtensa_flow(fn, pc, mnem, ops, srclines[pc], pending_lit)
@@ -929,7 +932,8 @@ class Image:
         return False
 
 
-    def _maybe_frame(self, fn: Function, mnem: str, ops: str) -> None:
+    def _maybe_frame(self, fn: Function, mnem: str, ops: str,
+                     consts: dict[str, int] | None = None) -> None:
         """Accumulate the prologue's stack-pointer adjustments into fn.frame.
 
         A frame is NOT always one instruction. GCC splits an allocation that
@@ -970,7 +974,7 @@ class Image:
                 fn.frame_kind = "dynamic"
             return
         # RISC-V: `addi sp,sp,-N`; objdump prints the compressed c.addi16sp the
-        # same way. A register-sized adjustment is a variable-length frame.
+        # same way.
         m = re.match(r"^sp,\s*sp,\s*" + IMM_RE + r"$", ops)
         if mnem in ("addi", "c.addi16sp", "c.addi4spn") and m:
             delta = parse_imm(m.group(1))
@@ -978,8 +982,45 @@ class Image:
                 fn.frame += -delta
                 fn.frame_kind = "fixed"
             return
-        if mnem in ("add", "sub") and ops.startswith("sp,sp,"):
-            fn.frame_kind = "dynamic"
+        # A frame past `addi`'s reach can also arrive through a register the
+        # prologue loads with a constant first:
+        #
+        #   consoleExecuteDomeApiGetSequenceLastRun:
+        #       addi sp,sp,-144   ...   lui t0,0xffffe   ...   add sp,sp,t0
+        #
+        # is a fixed 144 + 8192 B frame, not a variable one. Reading it as
+        # "dynamic" counted 144 B and hid the 8 KB that overflowed the ESP32-P4
+        # Console (#427, #429). So constants loaded by `lui`/`li`/`addi` are
+        # tracked, and only an adjustment by a register holding something else
+        # is a variable-length frame.
+        if consts is None:
+            consts = {}
+        m = re.match(r"^sp,\s*sp,\s*(\w+)$", ops)
+        if mnem in ("add", "c.add", "sub") and m:
+            value = consts.get(m.group(1))
+            if value is None:
+                fn.frame_kind = "dynamic"
+                return
+            delta = value if mnem != "sub" else -value
+            if delta < 0:
+                fn.frame += -delta
+                fn.frame_kind = "fixed"
+            return
+        m = re.match(r"^(\w+),\s*(?:(\w+),\s*)?" + IMM_RE + r"$", ops)
+        if m and mnem in ("lui", "c.lui") and m.group(2) is None:
+            value = (parse_imm(m.group(3)) & 0xFFFFF) << 12
+            consts[m.group(1)] = value - (1 << 32) if value & 0x80000000 else value
+            return
+        if m and mnem in ("li", "c.li") and m.group(2) is None:
+            consts[m.group(1)] = parse_imm(m.group(3))
+            return
+        if m and mnem in ("addi", "c.addi") and m.group(2) in consts:
+            consts[m.group(1)] = consts[m.group(2)] + parse_imm(m.group(3))
+            return
+        # Anything else writing a tracked register makes it unknown again.
+        dest = re.match(r"^(\w+)\s*(,|$)", ops)
+        if dest and not RISCV_NON_WRITING.match(mnem):
+            consts.pop(dest.group(1), None)
 
     # -- control flow -------------------------------------------------------
     def _xtensa_flow(self, fn, pc, mnem, ops, srcline, pending_lit) -> None:

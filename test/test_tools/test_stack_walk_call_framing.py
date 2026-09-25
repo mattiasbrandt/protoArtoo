@@ -705,5 +705,64 @@ class RiscvArmIsUntouched(unittest.TestCase):
         self.assertEqual([entry[0] for entry in chain], ["rvRealCallee"])
 
 
+
+# A frame too large for `addi` can arrive through a register the prologue
+# loads with a constant. The ESP32-P4 Console op that answers the last-run query
+# (#427) is exactly this, bytes as linked:
+#
+#     addi sp,sp,-144   lui t0,0xffffe   ...   add sp,sp,t0
+#
+# a fixed 8,336 B frame. Read as "dynamic", it counted 144 B, and even with the
+# op table stitched (#429) the walk could not see the 8 KB that overflowed.
+
+RV_BIG = 0x40021900
+RV_BIG_SIZE = 0x14
+
+RV_BIG_SYMBOLS = [
+    "SYMBOL TABLE:",
+    f"{RV_BIG:08x} l     F .text\t{RV_BIG_SIZE:08x} lastRunOp(unsigned long)",
+]
+
+RV_BIG_LISTING = [
+    "Disassembly of section .text:",
+    "",
+    f"{RV_BIG:08x} <lastRunOp(unsigned long)>:",
+    "/repo/src/console/console_module.cpp:900",
+    f"{RV_BIG + 0x00:08x}:\t7175          \taddi\tsp,sp,-144",
+    f"{RV_BIG + 0x02:08x}:\t72f9          \tlui\tt0,0xffffe",
+    f"{RV_BIG + 0x04:08x}:\t6789          \tlui\ta5,0x2",
+    f"{RV_BIG + 0x06:08x}:\tc706          \tsw\tra,140(sp)",
+    f"{RV_BIG + 0x08:08x}:\t06c78713      \taddi\ta4,a5,108",
+    f"{RV_BIG + 0x0c:08x}:\t9116          \tadd\tsp,sp,t0",
+    f"{RV_BIG + 0x0e:08x}:\t970a          \tadd\ta4,a4,sp",
+    f"{RV_BIG + 0x10:08x}:\t842a          \tmv\ts0,a0",
+    f"{RV_BIG + 0x12:08x}:\t8082          \tret",
+]
+
+
+class RiscvConstantFrameImage(sur.Image):
+    LISTING = RV_BIG_LISTING
+
+    def _run(self, argv):
+        return iter(RV_BIG_SYMBOLS if "-t" in argv else self.LISTING)
+
+
+class ARegisterSizedFrameOfAKnownConstantIsFixed(unittest.TestCase):
+    def _frame(self, cls):
+        fn = cls("fake", Path("fake.elf"), Path("objdump"), "riscv").funcs[RV_BIG]
+        return fn.frame, fn.frame_kind
+
+    def test_the_lui_loaded_adjustment_is_counted(self):
+        self.assertEqual(self._frame(RiscvConstantFrameImage), (144 + 8192, "fixed"))
+
+    def test_a_register_the_prologue_overwrote_is_still_variable(self):
+        class Overwritten(RiscvConstantFrameImage):
+            # `add t0,t0,a0` before the adjustment: t0 no longer holds the
+            # constant, so the frame is variable and only the addi is counted.
+            LISTING = [line.replace("\tlui\ta5,0x2", "\tadd\tt0,t0,a0")
+                       for line in RV_BIG_LISTING]
+        self.assertEqual(self._frame(Overwritten), (144, "dynamic"))
+
+
 if __name__ == "__main__":
     unittest.main()
