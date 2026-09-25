@@ -113,7 +113,8 @@ def build_environment(env_name, budgets):
 def filesystem_image_bytes(env_name, budgets):
     """Image the filesystem and return the bytes it actually allocates, or None.
 
-    mklittlefs writes an image the full size of the partition, so littlefs.bin's
+    The builder (littlefs-python, in the platform's build_fs_image) writes an
+    image the full size of the partition, so littlefs.bin's
     own file size is the partition size and says nothing whatever about usage --
     quoting it as the measurement is the trap this function exists to close. A
     block that has never been written is left erased, all 0xFF, so what the

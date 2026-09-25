@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-walk every task's Measured Chain recipe and fail when one exceeds its constant.
+"""Re-walk every task's Measured Chain recipe and fail when one outgrows its chip's rule.
 
 WHY THIS EXISTS
 ---------------
@@ -17,10 +17,18 @@ WHAT A RECIPE IS
 ----------------
 `tools/task_stack_recipes.json` records, per task and per chip arm: the
 PlatformIO environment the figure was measured on, the root symbols walked, and
-any own-frames stitched in by hand because the walker cannot follow the
-indirect call that reaches them. The chain is
+the two ways an indirect call the walker cannot follow is stitched back in:
 
-    chain = max over roots of (that root's total worst-case chain)
+- `frames`: own frames ABOVE the root, added by hand, where the call through a
+  pointer is what reaches the root (the Console's `cli->onCommand`);
+- `tables`: a dispatch table BELOW the root. Every function the table holds
+  becomes a callee of the function that calls through it, so the walk takes
+  the deepest row itself (`stack_usage_report.Image.stitch_table()`).
+
+The chain is
+
+    chain = max over roots of (that root's total worst-case chain,
+                               walked with every stitched table's rows)
           + sum over stitched frames of (that symbol's own frame)
 
 which is exactly what the two `tools/stack_usage_report.py` invocations in
@@ -28,11 +36,21 @@ which is exactly what the two `tools/stack_usage_report.py` invocations in
 
 WHAT IT CHECKS, AND WHAT IT DELIBERATELY DOES NOT
 -------------------------------------------------
-Covered arms are the ones whose recorded environment matches `--env`. For each,
-the freshly walked chain must be <= the `include/config.h` constant for that
-chip. Arms recorded against a different environment (the ESP32-P4 product
-image, or a profiler image substituted because the product image's body is
-emitted as data) are listed as not covered and are not guessed at.
+Covered arms are the ones whose recorded environment matches `--env`. Arms
+recorded against a different environment (the other chip's product image, or a
+profiler image substituted because the product image's body is emitted as data)
+are listed as not covered and are not guessed at. A covered arm is judged per
+chip (ADR 0040, amendment of 2026-09-25, #429) - see `judge_arm()`:
+
+- artoo-esp32 is byte-exact: the freshly walked chain must be <= the
+  `*_MEASURED_CHAIN_BYTES` constant. It is the scarce chip, and every byte of
+  growth should stop a slice.
+- ESP32-P4 is judged by allocation: an arm fails only when ADR 0040's rule
+  applied to the walk, ceil512(ceil(chain x 1.25)), exceeds its
+  `*_STACK_BYTES`. A walk that has merely moved from its recorded figure is a
+  note, and the figure is re-derived when the task is next touched. The P4 is
+  walked by a coordinator's post-merge run rather than by the slice that moves
+  it, so failing on drift there failed whichever slice came next.
 
 The Xtensa walk is a floor, not a bound: objdump emits a large share of that
 image's function bodies as data, so a chain crossing one is truncated. This
@@ -43,12 +61,13 @@ Two conditions fail beyond an exceedance, because both mean the recorded recipe
 no longer describes the image and a silent pass would be the drift this exists
 to catch:
 
-- a root or stitched-frame symbol is absent (renamed, or inlined away);
+- a root, stitched-frame, stitched-table or table-caller symbol is absent
+  (renamed, or inlined away);
 - a covered root's body is emitted as data in the very image the recipe names,
   so the walk that produced the recorded figure cannot be reproduced.
 
-Exit codes: 0 = every covered chain is within its constant; 1 = an input was
-missing or unreadable; 2 = at least one covered recipe failed.
+Exit codes: 0 = every covered chain passes its chip's judgement; 1 = an input
+was missing or unreadable; 2 = at least one covered recipe failed.
 """
 
 from __future__ import annotations
@@ -58,6 +77,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # Sibling module in tools/, which is on sys.path for both entry points: this
 # script run directly, and the tooling tests that import it.
@@ -89,6 +109,63 @@ CONSTEXPR_RE = re.compile(
 
 class Fatal(Exception):
     """An input this check cannot be produced without."""
+
+
+# How a re-walked chain is judged, per chip (ADR 0040's 2026-09-25 amendment).
+# A chip in neither set is refused rather than defaulted: which way a new chip
+# is judged is a decision, and the looser default would be the silent one.
+BYTE_EXACT_CHIPS = frozenset({"esp32"})
+ALLOCATION_RULE_CHIPS = frozenset({"esp32p4"})
+
+
+def rule_stack(chain: int) -> int:
+    """ADR 0040's sizing rule: ceil512(ceil(chain x 1.25)), in integers."""
+    need = (chain * 5 + 3) // 4
+    return ((need + 511) // 512) * 512
+
+
+class Verdict(NamedTuple):
+    failure: str | None  # why this arm fails the check; None when it passes
+    detail: str          # the row's status column
+    note: str | None     # printed under the table; never fails the check
+
+
+def judge_arm(chip: str, walked: int, chain_name: str, chain: int,
+              stack_name: str, stack: int) -> Verdict:
+    """Judge one re-walked arm against its recorded chain and its stack."""
+    if chip in BYTE_EXACT_CHIPS:
+        if walked > chain:
+            return Verdict(
+                f"chain {walked} B exceeds {chain_name} = {chain} B by "
+                f"{walked - chain} B -- re-measure and re-derive the stack on "
+                "both chips, with the reason",
+                f"OVER {chain_name}={chain}", None)
+        return Verdict(
+            None, f"within {chain_name}={chain} (headroom {chain - walked} B)", None)
+    if chip in ALLOCATION_RULE_CHIPS:
+        need = rule_stack(walked)
+        drift = None
+        if walked != chain:
+            drift = (
+                f"walked {walked} B against the recorded {chain_name} = {chain} B"
+                f" ({walked - chain:+d} B); {stack_name} still covers it by the"
+                " rule - re-derive the figure when this task is next touched"
+            )
+        if need > stack:
+            return Verdict(
+                f"the rule on the walked chain, {walked} -> {need} B, exceeds "
+                f"{stack_name} = {stack} B by {need - stack} B -- re-derive the "
+                "chain and raise the stack by the rule, with the reason",
+                f"OVER {stack_name}={stack} (rule {walked} -> {need})", None)
+        return Verdict(
+            None,
+            f"within {stack_name}={stack} (rule {walked} -> {need};"
+            f" recorded {chain_name}={chain})",
+            drift)
+    raise Fatal(
+        f"no judgement recorded for chip '{chip}': ADR 0040 decides per chip "
+        "whether a chain is byte-exact or judged by its allocation"
+    )
 
 
 def parse_chip_constants() -> dict[str, dict[str, int]]:
@@ -158,6 +235,14 @@ class ImageChains:
             for addr in self.img.unsized
             if addr in self.img.funcs
         }
+
+    def stitch_table(self, caller: str, table: str) -> int:
+        """Stitch one dispatch table into the call graph; the row count.
+
+        Applied before any chain is walked: the walker memoises a function's
+        depth, and a depth taken before the edges existed would be reused after.
+        """
+        return len(self.img.stitch_table(caller, table))
 
     def chain_total(self, name: str) -> tuple[int, list[str]]:
         """(worst-case chain from this root, notes). Raises when absent.
@@ -235,6 +320,24 @@ def main(argv=None) -> int:
     if chip not in constants:
         raise Fatal(f"no config.h arm for platform '{chip}'")
 
+    # A stitched table is a fact about the image, not about one task - the
+    # call it stands for is made whichever task reaches it - so each is applied
+    # once, and all of them before the first walk (see ImageChains.stitch_table).
+    stitched: dict[tuple[str, str], int] = {}
+    stitch_missing: dict[tuple[str, str], str] = {}
+    for task in recipes["tasks"]:
+        arm = task["chips"].get(chip)
+        if arm is None or arm["env"] != args.env:
+            continue
+        for stitch in arm.get("tables", []):
+            key = (stitch["caller"], stitch["table"])
+            if key in stitched or key in stitch_missing:
+                continue
+            try:
+                stitched[key] = image.stitch_table(*key)
+            except KeyError as exc:
+                stitch_missing[key] = str(exc.args[0])
+
     undec, total_funcs = undecoded_share(image.img)
     print(f"check_task_stack_chains  env={args.env}  chip={chip}  arch={image.arch}")
     print(f"  image  {image.elf.relative_to(ROOT)}")
@@ -243,6 +346,8 @@ def main(argv=None) -> int:
         f"  function bodies objdump emitted as data: {undec} of {total_funcs}"
         f" -- every chain below is a LOWER bound"
     )
+    for (caller, table), count in sorted(stitched.items()):
+        print(f"  stitched {caller} -> every row of {table} ({count} functions)")
     print()
 
     rows: list[tuple[str, str, str]] = []
@@ -262,18 +367,29 @@ def main(argv=None) -> int:
             )
             continue
         constant_name = task["chain_constant"]
-        constant = constants[chip].get(constant_name)
-        if constant is None:
-            failures.append(
-                f"{name}: {constant_name} is not declared in config.h's {chip} arm"
+        stack_name = task["stack_constant"]
+        undeclared = [
+            n for n in (constant_name, stack_name) if n not in constants[chip]
+        ]
+        if undeclared:
+            failures.extend(
+                f"{name}: {n} is not declared in config.h's {chip} arm"
+                for n in undeclared
             )
-            rows.append((name, "?", f"{constant_name} missing from config.h"))
+            rows.append((name, "?", f"{', '.join(undeclared)} missing from config.h"))
             continue
+        constant = constants[chip][constant_name]
+        stack = constants[chip][stack_name]
 
         walked = 0
         row_notes: list[str] = []
         missing: list[str] = []
         blind = False
+        missing.extend(
+            stitch_missing[(s["caller"], s["table"])]
+            for s in arm.get("tables", [])
+            if (s["caller"], s["table"]) in stitch_missing
+        )
         try:
             for root in arm["roots"]:
                 sub, sub_notes = image.chain_total(root)
@@ -306,18 +422,12 @@ def main(argv=None) -> int:
             continue
 
         covered += 1
-        if walked > constant:
-            failures.append(
-                f"{name}: chain {walked} B exceeds {constant_name} = {constant} B"
-                f" by {walked - constant} B -- re-measure and re-derive the stack"
-                " on both chips, with the reason"
-            )
-            rows.append((name, str(walked), f"OVER {constant_name}={constant}"))
-        else:
-            rows.append(
-                (name, str(walked), f"within {constant_name}={constant}"
-                 f" (headroom {constant - walked} B)")
-            )
+        verdict = judge_arm(chip, walked, constant_name, constant, stack_name, stack)
+        if verdict.failure is not None:
+            failures.append(f"{name}: {verdict.failure}")
+        if verdict.note is not None:
+            notes.append(f"{name}: {verdict.note}")
+        rows.append((name, str(walked), verdict.detail))
 
     width = max(len(r[0]) for r in rows) if rows else 4
     for task_name, walked, detail in rows:
@@ -335,7 +445,10 @@ def main(argv=None) -> int:
         for failure in failures:
             print(f"FAIL {failure}")
         return 2
-    print("every re-walked chain is within its recorded constant")
+    if chip in ALLOCATION_RULE_CHIPS:
+        print("every re-walked chain fits its stack by the rule")
+    else:
+        print("every re-walked chain is within its recorded constant")
     return 0
 
 

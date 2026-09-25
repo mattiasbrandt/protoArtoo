@@ -6,9 +6,9 @@
     "notes": [
       "Thirteen tasks: the ten created in src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp) and HostedRecovery (src/web/web_network_manager_hosted.cpp). HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, so artoo-esp32 has twelve and the ESP32-P4 thirteen. ADR 0040 and #271 both say 'twelve' and then list thirteen; the list is right and the count is not.",
       "loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini and is deliberately outside this table.",
-      "chain = max over 'roots' of that root's total worst-case chain, plus the sum of the own frames named in 'frames'. A frame is stitched by hand only where the walker cannot follow the call that reaches it (an indirect call through a function pointer); 'stitch_reason' says which call and why.",
+      "chain = max over 'roots' of that root's total worst-case chain, plus the sum of the own frames named in 'frames'. A frame is stitched by hand only where the walker cannot follow the call that reaches it (an indirect call through a function pointer); 'stitch_reason' says which call and why. An indirect call BELOW a root, through a pointer read from a dispatch table, is stitched by 'tables': every function the named table holds in the image becomes a callee of 'caller', so the walk itself takes the deepest row and a row added later is walked without editing this file (#429).",
       "'env' is the image tools/check_task_stack_chains.py re-walks for that arm - always the product image for the chip. 'chain_bytes' is the recorded constant and equals the DEEPER of the product and profiler images, because include/config.h is compiled into both; 'deeper_image' records that substitution where the two differ.",
-      "Every figure is a LOWER bound: indirect calls are not followed and call-graph cycles are cut. On artoo-esp32 objdump additionally emits ~37% of function bodies as data (.xt.prop) and counts their frames as zero; the ESP32-P4 image decodes whole. So a chain can be missed and cannot be overstated, which is what makes the re-walk safe to fail a build on.",
+      "Every figure is a LOWER bound: indirect calls that are not stitched are not followed, and call-graph cycles are cut. On artoo-esp32 objdump additionally emits ~37% of function bodies as data (.xt.prop) and counts their frames as zero; the ESP32-P4 image decodes whole. So a chain can be missed and cannot be overstated, which is what makes the re-walk safe to fail a build on.",
       "Interrupt and exception frames are not counted: both ports spill some state to the interrupted task's stack before switching to the ISR stack. The rule's 25% is what covers that, so an arm that declines the rule has less cover for it than one that does not.",
       "Every figure here is from the BOUNDED walk (#271): tools/stack_usage_report.py reads each function body to its ELF symbol size rather than to the next symbol objdump prints. Before that, a literal-pool word decoding as a call to a real entry became a followed edge, and which words did so changed when the image was relinked - two builds of identical source returned WebEvents chains 688 B apart. Figures recorded by #245, #248, #250 and #256 predate the bound and were not necessarily reproducible; the chains here were re-derived and are identical across two builds whose ELF layouts differ.",
       "Measured at #271 against artoo_esp32 / artoo_esp32_profiler (Xtensa) and firebeetle2 / firebeetle2_profiler (RISC-V), each built with PLATFORMIO_BUILD_SRC_FLAGS=\"-Wall -Wextra -Werror -fstack-usage\"."
@@ -134,7 +134,7 @@
           "product_bytes": 2992,
           "profiler_bytes": 2992,
           "rule": "declined",
-          "reason": "#248's tight-heap reason: the rule (4608) costs +1536 B against ~42.7 KB of measured free heap, for margin the Xtensa walk cannot confirm. This is the thinnest floor in the table - 80 B, which is under the cost of one interrupt entry - and it is the pre-existing shipping value, recorded as a known exposure rather than raised by #271."
+          "reason": "#248's tight-heap reason: the rule (4096) costs +1024 B against ~42.7 KB of measured free heap, for margin the Xtensa walk cannot confirm. This is the thinnest floor in the table - 80 B, which is under the cost of one interrupt entry - and it is the pre-existing shipping value, recorded as a known exposure rather than raised by #271."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -323,7 +323,13 @@
             "consoleTask",
             "embeddedCliProcess"
           ],
-          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement.",
+          "tables": [
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_statusExecutors"
+            }
+          ],
+          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
           "chain_bytes": 7456,
           "product_bytes": 7456,
           "profiler_bytes": 7456,
@@ -344,7 +350,13 @@
             "consoleTask",
             "embeddedCliProcess"
           ],
-          "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`.",
+          "tables": [
+            {
+              "caller": "consoleExecuteCommand",
+              "table": "g_statusExecutors"
+            }
+          ],
+          "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status or api op through a pointer read from g_statusExecutors.",
           "chain_bytes": 8464,
           "product_bytes": 8464,
           "profiler_bytes": 8464,

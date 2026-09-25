@@ -630,11 +630,14 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //
 // Reproducing it needs the two halves stitched by hand, because embedded-cli
 // reaches the command callback through `cli->onCommand`, an indirect call the
-// walker does not follow:
+// walker does not follow. Below onCliCommand, a status or api op is called
+// through a pointer read from g_statusExecutors, which --stitch-table walks
+// (#429):
 //
 //   export PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage"
 //   make build BUILD_ENV=<env>
 //   python3 tools/stack_usage_report.py --env <env> --root onCliCommand
+//     --stitch-table consoleExecuteCommand=g_statusExecutors   (one command)
 //   python3 tools/stack_usage_report.py --env <env> --root consoleTask --frames embeddedCliProcess
 //
 // chain = onCliCommand total + consoleTask frame + embeddedCliProcess frame
@@ -832,7 +835,7 @@ constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5616 -> 7020 -> 7
 constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3216;
 constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
 constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
-// rule declined (4608, +1536 B): #248's tight-heap reason. This is the thinnest
+// rule declined (4096, +1024 B): #248's tight-heap reason. This is the thinnest
 // floor in the block -- 80 B on a lower-bound walk, which is under the cost of
 // one interrupt entry -- and it is the pre-existing shipping value, recorded
 // here as a known exposure rather than raised by this ticket (#271).

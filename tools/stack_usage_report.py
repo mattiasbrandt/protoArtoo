@@ -108,7 +108,10 @@ WHAT IT CANNOT SEE, AND SAYS SO
   from a literal, ``jalr`` on RISC-V through a computed address). Every one
   encountered is listed by address and source line. A chain through an
   indirect call is not followed, so a reported total is a lower bound unless
-  the indirect-call list is empty.
+  the indirect-call list is empty. The one exception is a call through a
+  dispatch table named with ``--stitch-table CALLER=TABLE``: every function the
+  table holds in the image is walked as a callee of CALLER
+  (``Image.stitch_table()``). The ``callx``/``jalr`` itself is still listed.
 - Code in a region carrying no function symbol at all. It is attributed to
   nothing rather than to whichever symbol precedes it, so a chain through one
   stops there: a lower bound rather than an invented path.
@@ -291,6 +294,10 @@ class Image:
         self.misframed_funcs: set[str] = set()
         self.unvalidated_bodies: set[str] = set()
         self.suppressed_calls: list[tuple[str, int, int, str | None]] = []
+        # Data objects by name, read on the first `table_entries()` call only:
+        # a walk that stitches no table does not pay for a second symbol read.
+        self._objdump = objdump
+        self._objects: dict[str, list[tuple[int, int]]] | None = None
         self._disassemble(objdump)
         self._starts = sorted(self.funcs)
         self._drop_internal_branches()
@@ -367,6 +374,93 @@ class Image:
             # An alias at the same address must not shrink the extent.
             sizes[addr] = max(sizes.get(addr, 0), size)
         return sizes
+
+    # -- dispatch tables ----------------------------------------------------
+    def table_entries(self, table: str) -> list[int]:
+        """Function entries held by one data object in the image, in order.
+
+        A dispatch table is an array of rows in read-only data, and a row's
+        function pointer is a word equal to some function's entry address. So
+        the object's bytes are read out of the image and every aligned
+        little-endian word that is a function entry is taken; the other words
+        (a row's name pointer, padding) name no entry and fall away. Reading the
+        table rather than listing its rows in a recipe is what keeps a new row
+        from being missed.
+
+        Raises KeyError when the object is absent, Fatal when its name is
+        ambiguous or its bytes cannot be read.
+        """
+        if self._objects is None:
+            self._objects = {}
+            for line in self._run([str(self._objdump), "-t", "-C", str(self.elf)]):
+                head, sep, tail = line.partition("\t")
+                if not sep or " O " not in head:
+                    continue
+                size_name = tail.split(None, 1)
+                if len(size_name) != 2:
+                    continue
+                try:
+                    addr = int(head.split()[0], 16)
+                    size = int(size_name[0], 16)
+                except (ValueError, IndexError):
+                    continue
+                self._objects.setdefault(size_name[1].strip(), []).append((addr, size))
+        found = self._objects.get(table)
+        if not found:
+            raise KeyError(table)
+        if len(found) != 1:
+            raise Fatal(f"{len(found)} data objects are named {table} in {self.elf}; "
+                        "a stitched table must name one")
+        addr, size = found[0]
+        if addr % 4 or size % 4:
+            raise Fatal(f"{table} at 0x{addr:08x} ({size} B) is not word-aligned; "
+                        "it does not read as a table of pointers")
+        data: dict[int, int] = {}
+        for line in self._run([str(self._objdump), "-s",
+                               f"--start-address=0x{addr:x}",
+                               f"--stop-address=0x{addr + size:x}", str(self.elf)]):
+            # ` 3f42d4b0 2565403f 30e10e40 6c65403f 44e00e40  %e@?0..@le@?D..@`:
+            # address, up to four groups of bytes in memory order, two spaces,
+            # the ASCII column.
+            if not line.startswith(" "):
+                continue
+            fields = line[1:].split("  ", 1)[0].split()
+            try:
+                at = int(fields[0], 16)
+                raw = bytes.fromhex("".join(fields[1:]))
+            except (ValueError, IndexError):
+                continue
+            for offset, value in enumerate(raw):
+                data[at + offset] = value
+        entries = []
+        for at in range(addr, addr + size, 4):
+            if any(at + i not in data for i in range(4)):
+                raise Fatal(f"objdump -s did not cover {table} at 0x{at:08x}")
+            word = int.from_bytes(bytes(data[at + i] for i in range(4)), "little")
+            if word in self.funcs:
+                entries.append(word)
+        return entries
+
+    def stitch_table(self, caller: str, table: str) -> list[Function]:
+        """Add a call edge from `caller` to every function `table` holds.
+
+        For an indirect call the walker cannot follow on its own: a call
+        through a pointer loaded from a dispatch table. Every row's function
+        becomes a callee of every symbol named `caller`, so the walk takes the
+        deepest row and the report shows it. The edge is marked `stitched via
+        <table>` in the chain. Raises KeyError when the caller or the table is
+        absent, Fatal when the table holds no function entry at all.
+        """
+        callers = self.by_name(caller)
+        if not callers:
+            raise KeyError(caller)
+        targets = self.table_entries(table)
+        if not targets:
+            raise Fatal(f"{table} holds no function entry; it is not a dispatch table")
+        for fn in callers:
+            for target in targets:
+                fn.calls.append((target, f"stitched via {table}", None))
+        return [self.funcs[target] for target in targets]
 
     def _disassemble(self, objdump: Path) -> None:
         """Read the listing into one Function per symbol, body by body.
@@ -478,14 +572,15 @@ class Image:
     MAX_PAD_BYTES = 3
 
     # Rounds of the anchor fixpoint in `_framing()`. The cap is what
-    # guarantees termination, and that is not belt-and-braces: a round can ADD
-    # anchors as well as drop them, because dropping one lengthens the run
-    # before it and that can make instructions real which were not, and those
-    # name anchors of their own. Measured on the artoo-esp32 image, the
-    # unsized region objdump calls `softUartRxIsr()-0x1028` oscillates between
-    # 88 and 92 anchors and never settles; `_stext` settles at round 5. A body
-    # that has not settled is reported as unvalidated and keeps every edge
-    # objdump gave it, rather than being half-judged.
+    # guarantees termination, and that is not belt-and-braces: a round can DROP
+    # anchors as well as add them, because an added one splits the run it
+    # lands in and that can take instructions out of the real set which named
+    # anchors of their own. Measured on the artoo-esp32 image (#429): of the
+    # bodies framed, 1,469 settle in one round, 3,080 in two and 9 in three;
+    # the unsized region objdump calls `clearRxEdgeLatch()-0x1044` oscillates
+    # between 94 and 97 anchors and never settles. A body that has not settled
+    # is reported as unvalidated and keeps every edge objdump gave it, rather
+    # than being half-judged.
     ANCHOR_ROUNDS = 8
 
     def _is_uncond(self, mnem: str) -> bool:
@@ -545,24 +640,35 @@ class Image:
         phantom `blti` named 0x400e2305 and took a real `call8
         String::indexOf` down with it.
 
-        So the two are solved together, by a fixpoint: frame with every
-        candidate anchor, keep only the anchors named by instructions the
-        framing says are real, and repeat. Where it settles, it settles on the
-        anchors named by correctly framed instructions, which are exactly the
-        ones the hardware guarantees.
+        So the two are solved together, by a fixpoint grown FROM THE ENTRY:
+        frame from the anchors proven so far, collect the anchors named by
+        instructions that framing says are real, and repeat until the set stops
+        changing. The entry is the one boundary known without asking objdump,
+        so every anchor admitted is one a framed instruction names.
+
+        It used to start from the other end, with every candidate anchor, and
+        drop the ones no real instruction named. That keeps a bogus anchor
+        whenever phantoms name each other, and a desynchronised window can do
+        exactly that: framing from the bogus anchor is what makes the phantom
+        naming it "real". `seqStorePrepare` in the artoo-esp32 image held such
+        a set -- a phantom `bany` naming the address one byte past the real
+        resume point, from which the run reaches that `bany` again -- and the
+        bogus anchor it also named, one byte into a real `l32i`, condemned the
+        calls to seqJsonParseVariant, protocolCheck, unlock and stagingFree
+        (src/seq_store.cpp:276-281). SeqDisp walked 3,680 B against its
+        recorded 4,432 B (#429). Grown from the entry, a phantom is admitted
+        only if the framing already reached it from a proven boundary, which
+        the pad skip in `_true_boundaries()` keeps it from doing.
 
         It is NOT monotone, and assuming it was is a mistake this comment used
-        to carry: dropping an anchor lengthens the run before it, which can
-        make instructions real that were not, and those name anchors of their
-        own. One body in the artoo-esp32 image's 7,019 does not settle inside
-        `ANCHOR_ROUNDS` -- the unsized region objdump calls
-        `softUartRxIsr()-0x1028`, which oscillates between 88 and 92 anchors.
-        It returns None here and keeps every edge. (`_stext` is unvalidated
-        too, but for the other reason in `_read_body()`: its entry address
-        carries no instruction line for this to start from. It settles at
-        round 5 when seeded.)
+        to carry: an anchor added splits the run it lands in, which can take
+        instructions out of the real set that named anchors of their own. The
+        round cap is what guarantees termination. A body that has not settled
+        within `ANCHOR_ROUNDS` returns None here and keeps every edge. (`_stext`
+        is unvalidated for the other reason in `_read_body()`: its entry
+        address carries no instruction line for this to start from.)
         """
-        anchors = self._anchors(entry, entry, hi, insns)
+        anchors = {entry}
         for _ in range(self.ANCHOR_ROUNDS):
             real = self._true_boundaries(sorted(anchors), hi, body_bytes, insns)
             if real is None:
@@ -712,6 +818,9 @@ class Image:
         # keeps a mid-function `addi sp,sp,-N` (an alloca, or the epilogue's
         # restore) out of the frame figure.
         prologue_left = 24
+        # RISC-V: registers the prologue has loaded with a known constant, so a
+        # register-sized `add sp,sp,rX` can still be read as a fixed frame.
+        prologue_consts: dict[str, int] = {}
 
         for pc in order:
             nbytes, mnem, ops = insns[pc]
@@ -755,7 +864,7 @@ class Image:
                     prologue_left = 0
                 else:
                     prologue_left -= 1
-                    self._maybe_frame(fn, mnem, ops)
+                    self._maybe_frame(fn, mnem, ops, prologue_consts)
             if self.arch == "xtensa":
                 self._invalidate(XTENSA_NON_WRITING, r"a\d+", mnem, ops, pending_lit)
                 self._xtensa_flow(fn, pc, mnem, ops, srclines[pc], pending_lit)
@@ -823,7 +932,8 @@ class Image:
         return False
 
 
-    def _maybe_frame(self, fn: Function, mnem: str, ops: str) -> None:
+    def _maybe_frame(self, fn: Function, mnem: str, ops: str,
+                     consts: dict[str, int] | None = None) -> None:
         """Accumulate the prologue's stack-pointer adjustments into fn.frame.
 
         A frame is NOT always one instruction. GCC splits an allocation that
@@ -864,7 +974,7 @@ class Image:
                 fn.frame_kind = "dynamic"
             return
         # RISC-V: `addi sp,sp,-N`; objdump prints the compressed c.addi16sp the
-        # same way. A register-sized adjustment is a variable-length frame.
+        # same way.
         m = re.match(r"^sp,\s*sp,\s*" + IMM_RE + r"$", ops)
         if mnem in ("addi", "c.addi16sp", "c.addi4spn") and m:
             delta = parse_imm(m.group(1))
@@ -872,8 +982,45 @@ class Image:
                 fn.frame += -delta
                 fn.frame_kind = "fixed"
             return
-        if mnem in ("add", "sub") and ops.startswith("sp,sp,"):
-            fn.frame_kind = "dynamic"
+        # A frame past `addi`'s reach can also arrive through a register the
+        # prologue loads with a constant first:
+        #
+        #   consoleExecuteDomeApiGetSequenceLastRun:
+        #       addi sp,sp,-144   ...   lui t0,0xffffe   ...   add sp,sp,t0
+        #
+        # is a fixed 144 + 8192 B frame, not a variable one. Reading it as
+        # "dynamic" counted 144 B and hid the 8 KB that overflowed the ESP32-P4
+        # Console (#427, #429). So constants loaded by `lui`/`li`/`addi` are
+        # tracked, and only an adjustment by a register holding something else
+        # is a variable-length frame.
+        if consts is None:
+            consts = {}
+        m = re.match(r"^sp,\s*sp,\s*(\w+)$", ops)
+        if mnem in ("add", "c.add", "sub") and m:
+            value = consts.get(m.group(1))
+            if value is None:
+                fn.frame_kind = "dynamic"
+                return
+            delta = value if mnem != "sub" else -value
+            if delta < 0:
+                fn.frame += -delta
+                fn.frame_kind = "fixed"
+            return
+        m = re.match(r"^(\w+),\s*(?:(\w+),\s*)?" + IMM_RE + r"$", ops)
+        if m and mnem in ("lui", "c.lui") and m.group(2) is None:
+            value = (parse_imm(m.group(3)) & 0xFFFFF) << 12
+            consts[m.group(1)] = value - (1 << 32) if value & 0x80000000 else value
+            return
+        if m and mnem in ("li", "c.li") and m.group(2) is None:
+            consts[m.group(1)] = parse_imm(m.group(3))
+            return
+        if m and mnem in ("addi", "c.addi") and m.group(2) in consts:
+            consts[m.group(1)] = consts[m.group(2)] + parse_imm(m.group(3))
+            return
+        # Anything else writing a tracked register makes it unknown again.
+        dest = re.match(r"^(\w+)\s*(,|$)", ops)
+        if dest and not RISCV_NON_WRITING.match(mnem):
+            consts.pop(dest.group(1), None)
 
     # -- control flow -------------------------------------------------------
     def _xtensa_flow(self, fn, pc, mnem, ops, srcline, pending_lit) -> None:
@@ -1175,6 +1322,11 @@ def main(argv=None) -> int:
                          "Per-function reads of the linked image, independent of "
                          "the call graph -- use when comparing the same chain "
                          "across targets.")
+    ap.add_argument("--stitch-table", action="append", default=[],
+                    metavar="CALLER=TABLE",
+                    help="follow an indirect call through a dispatch table: every "
+                         "function TABLE holds becomes a callee of CALLER "
+                         "(repeatable; the 'tables' of a task_stack_recipes.json arm)")
     args = ap.parse_args(argv)
     prune = () if args.no_prune else DEFAULT_PRUNE
 
@@ -1186,6 +1338,15 @@ def main(argv=None) -> int:
         images.append(Image("rom", rom_elf, objdump, arch))
     walker = Walker(images, prune)
     img = images[0]
+    stitched = []
+    for spec in args.stitch_table:
+        caller, sep, table = spec.partition("=")
+        if not sep or not caller or not table:
+            raise Fatal(f"--stitch-table wants CALLER=TABLE, got {spec!r}")
+        try:
+            stitched.append((caller, table, len(img.stitch_table(caller, table))))
+        except KeyError as exc:
+            raise Fatal(f"--stitch-table {spec}: {exc.args[0]} is not in the image") from exc
 
     ver = subprocess.run([str(objdump), "--version"], capture_output=True, text=True,
                          check=True).stdout.splitlines()[0]
@@ -1198,6 +1359,8 @@ def main(argv=None) -> int:
         print(f"  rom elf  {rom_elf.name}  sha256:{sha256(rom_elf)}")
     print(f"  objdump  {ver}")
     print(f"  .su      {len(su)} records under {build_dir.relative_to(ROOT)}")
+    for caller, table, count in stitched:
+        print(f"  stitched {caller} -> every row of {table} ({count} functions)")
     print("=" * 78)
 
     status = 0
