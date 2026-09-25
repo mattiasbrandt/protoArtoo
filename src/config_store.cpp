@@ -1346,6 +1346,39 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     return ok;
 }
 
+bool configPersist(const ConfigSnapshot& snapshot, const ConfigSaveExtras& extras) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN("config", "config not saved: namespace did not open");
+        return false;
+    }
+    // The order, and why it is this one: include/config_store.h, "Store-opened
+    // saves". Each step runs only when every step before it landed.
+    bool ok = configSaveServoOutputs(prefs);
+    ok = ok && configSave(prefs, snapshot);
+    ok = ok && (!extras.droidBuild || configSaveDroidBuild(prefs));
+    ok = ok && (!extras.guidedSetup || configSaveGuidedSetup(prefs));
+    prefs.end();
+    return ok;
+}
+
+bool saveConfigToNvs() {
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    return configPersist(snap, ConfigSaveExtras{});
+}
+
+bool configPersistSystem(const SystemConfig& system) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN("config", "system config not saved: namespace did not open");
+        return false;
+    }
+    const bool ok = configSaveSystem(prefs, system);
+    prefs.end();
+    return ok;
+}
+
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
     configWriteWindowExpectHeld("configSaveDrive");
     PrefsWriter writer(prefs);

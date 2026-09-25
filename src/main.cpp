@@ -389,28 +389,6 @@ void loadConfigToState() {
     robotState.stationary = snap.system.stationary;
 }
 
-bool saveConfigToNvs() {
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
-
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
-        return false;
-    }
-
-    // Rows first, and the fixed field sets only once the rows are down. While
-    // both forms are stored, the fixed sets are the copy of what is being
-    // replaced: a row write that fails leaves both stores holding the same
-    // older value, where the other order would leave stale rows winning over a
-    // field set that already carried the new number (#286, ADR 0041).
-    bool ok = configSaveServoOutputs(prefs);
-    if (ok) {
-        ok = configSave(prefs, snap);
-    }
-    prefs.end();
-    return ok;
-}
-
 void requestSystemRestart(uint32_t delayMs) {
     taskENTER_CRITICAL(&restartMux);
     restartRequested = true;

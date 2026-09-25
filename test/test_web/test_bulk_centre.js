@@ -93,9 +93,9 @@ test("the estop ends the run, and no row goes on showing a commanded position as
   // Every enabled Output has been released (ADR 0043), so none of their marks
   // is current - not the two the sweep reached, and not the ones it never did.
   ["ledc:0", "ledc:1", "ledc:3", "ledc:4", "ledc:5"].forEach((address) => {
-    assert.equal(
+    assert.doesNotMatch(
       env.text(address, "outputs-us"),
-      "Stopped — finding out where it is",
+      /µs/,
       `${address} must stop reading as a live commanded position`,
     );
     assert.equal(env.cell(address, "outputs-bar").className.includes("is-stale"), true);

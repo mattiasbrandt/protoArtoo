@@ -76,6 +76,32 @@ test("one read of the droid's answer a second feeds the table, and stops when Se
   assert.ok(env.cleared.includes(feed.id), "and it stops asking when the operator leaves Servos");
 });
 
+// Every read of the Outputs publishes once, and the page paints from that and
+// nowhere else. Until #421 a bench-feed read published (which repainted every
+// row through the page's onChange listener) and then the feed painted the rows
+// again itself, so each row was written twice a second.
+test("one read of the droid's answer paints each row once", async () => {
+  const env = await bootServos();
+  const cell = env.cell("ledc:0", "outputs-release");
+  const shown = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(cell), "textContent");
+  let paints = 0;
+  Object.defineProperty(cell, "textContent", {
+    configurable: true,
+    get() {
+      return shown.get.call(this);
+    },
+    set(value) {
+      paints += 1;
+      shown.set.call(this, value);
+    },
+  });
+
+  const before = env.gets.get("/api/servo/outputs");
+  await env.frame();
+  assert.equal(env.gets.get("/api/servo/outputs"), before + 1, "one read");
+  assert.equal(paints, 1, "one read of the droid paints the row once");
+});
+
 test("a firmware that reports no position is not shown as an Output with no pulse", async () => {
   const outputs = freshOutputs().map(({ address, name, parts }) => ({ address, name, parts }));
   outputs[2].parts = ["utilUp"];

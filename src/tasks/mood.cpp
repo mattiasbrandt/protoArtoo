@@ -51,9 +51,17 @@ void applyMood(uint8_t moodId, bool fromDome) {
     // command arrives from dome serial. Flash writes take a few ms and will
     // briefly stall DomeLinkTask. This is acceptable because mood changes are
     // rare (user-initiated) and DomeLinkTask is not safety-critical real-time.
+    //
+    // A failure is logged and nothing else: the mood is already applied and in
+    // shared state, so the only cost is that the next boot starts from the old
+    // one. No retry and no wait here - this may be DomeLinkTask on Core 1.
     Preferences prefs;
-    if (prefs.begin(NVS_NAMESPACE, false)) {
-        prefs.putUChar("last_mood", moodId);
-        prefs.end();
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN(TAG, "mood %u not saved: config namespace did not open", (unsigned)moodId);
+        return;
     }
+    if (prefs.putUChar("last_mood", moodId) == 0) {
+        PA_LOG_WARN(TAG, "mood %u not saved: last_mood write failed", (unsigned)moodId);
+    }
+    prefs.end();
 }

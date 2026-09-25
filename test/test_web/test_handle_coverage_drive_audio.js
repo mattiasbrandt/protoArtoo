@@ -19,7 +19,6 @@ import { createRequire } from "node:module";
 // The sound link's word and light come from the health-signal model, which
 // every page loads ahead of the shell (data/health_signals.js).
 const PAHealthSignals = createRequire(import.meta.url)("../../data/health_signals.js");
-import { outputsModule } from "./helpers/fake_droid.js";
 
 // Test payloads for each module
 const CONFIG_PAYLOAD = {
@@ -96,7 +95,8 @@ test("servo-outputs loader issues its request through the handle, not PAApi", as
   let env = null;
   env = loadPageModule("servo.js", {
     respond: () => ({ data: OUTPUTS_PAYLOAD }),
-    overrides: { ...partsGlobals(), PAOutputs: outputsModule(() => env.window.PAApi) },
+    overrides: partsGlobals(),
+    chain: ["outputs.js"],
   });
   const { calls, handle } = makeRecordingHandle(OUTPUTS_PAYLOAD);
 

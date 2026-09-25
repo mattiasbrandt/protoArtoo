@@ -16,7 +16,6 @@
 #include "config_store.h"
 #include "config_cache.h"
 #include "config_nvsio.h"
-#include "config_save_test_hooks.h"
 #include "config_serializer.h"
 #include "output_wire.h"
 #include "robot_state.h"
@@ -30,6 +29,9 @@ extern RobotState robotState;
 
 void setUp() {
     memset(&robotState, 0, sizeof(RobotState));
+    // The NVS double keeps its keys per namespace for the whole binary, as
+    // flash does; every test here starts from an erased partition.
+    Preferences::eraseFlash();
 }
 
 void tearDown() {
@@ -351,6 +353,40 @@ void test_a_failed_row_write_keeps_the_legacy_keys() {
     prefs.end();
 }
 
+// Test: a row write that fails stops the save before the fixed field sets (#424)
+//
+// The store's own full save, not a copy of its sequence. Rows first, and the
+// fixed field sets only once every row is down (#286, ADR 0041): a row that
+// did not land must leave the snapshot's keys - and the extras behind them -
+// exactly as they were, so both stores still agree on the older value.
+void test_a_failed_row_write_stops_the_save_before_the_fixed_field_sets() {
+    Preferences prefs;
+    prefs.begin(NVS_NAMESPACE, false);
+    ServoOutputRepairReport report = {};
+    configLoadServoOutputs(prefs, &report);  // the five default rows, live
+    prefs.failNextStringWrites(1);           // the first row's write
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    configCacheApply(snap);
+    ConfigSaveExtras extras;
+    extras.droidBuild = true;
+    extras.guidedSetup = true;
+    TEST_ASSERT_FALSE(configPersist(snap, extras));
+
+    prefs.begin(NVS_NAMESPACE, true);
+    // The rows were written, and the failed one did not land ...
+    TEST_ASSERT_FALSE(prefs.isKey("so00"));
+    TEST_ASSERT_TRUE(prefs.isKey("so01"));
+    // ... so nothing of the fixed field sets was: not the first key of the
+    // snapshot, not the system set's, not the schema stamp that closes it.
+    TEST_ASSERT_FALSE(prefs.isKey("spd_max"));
+    TEST_ASSERT_FALSE(prefs.isKey("droid_name"));
+    TEST_ASSERT_FALSE(prefs.isKey(CONFIG_SCHEMA_VERSION_KEY));
+    prefs.end();
+}
+
 // --- the upgrade from `main` (#417) -------------------------------------------
 
 namespace {
@@ -491,7 +527,7 @@ static void walkTheUpgradeFromMain(bool litWireTicked) {
     char tickKey[16] = {};
     snprintf(tickKey, sizeof(tickKey), "en_%s", BOARD_OUTPUTS[lit].id);
 
-    Preferences& prefs = g_test_config_prefs;
+    Preferences prefs;
     prefs.begin(NVS_NAMESPACE, false);
     prefs.clear();
     prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);  // 3 on `main` too
@@ -1883,6 +1919,7 @@ int main() {
     RUN_TEST(test_a_saved_config_removes_the_retired_sequence_dwell_keys);
     RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
     RUN_TEST(test_a_failed_row_write_keeps_the_legacy_keys);
+    RUN_TEST(test_a_failed_row_write_stops_the_save_before_the_fixed_field_sets);
     RUN_TEST(test_a_narrowed_pair_keeps_its_keys_until_that_output_is_saved);
     RUN_TEST(test_the_upgrade_from_main_keeps_a_ticked_lit_wire_and_both_pairs);
     RUN_TEST(test_the_upgrade_from_main_keeps_an_unticked_lit_wire_lit);

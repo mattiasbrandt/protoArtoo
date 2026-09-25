@@ -33,6 +33,7 @@
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config_cache.h"
+#include "config_store.h"  // saveConfigToNvs()
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "drive_arbiter.h"
@@ -44,9 +45,6 @@
 #include "robot_state.h"
 #include "sequence_dispatcher.h"
 #include "web_server.h"
-
-// External declaration for saveConfigToNvs
-extern bool saveConfigToNvs();
 
 static const char* TAG = "WebServer";
 

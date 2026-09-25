@@ -15,7 +15,6 @@
 
 #include "api_identity.h"
 
-#include <Preferences.h>
 #include <stdio.h>
 
 #include "api_helpers.h"
@@ -69,16 +68,9 @@ IdentitySetCommitOutcome identitySetCommitApplied(ConfigSnapshot* working) {
     IdentitySetCommitOutcome outcome;
     configCacheApply(*working);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
+    if (!configPersistSystem(working->system)) {
         return outcome;
     }
-
-    if (!configSaveSystem(prefs, working->system)) {
-        prefs.end();
-        return outcome;
-    }
-    prefs.end();
 
     PA_LOG_INFO(TAG, "[IDENTITY] name=%s mdnsUseName=%s", working->system.droid_name,
                 working->system.mdns_use_name ? "true" : "false");

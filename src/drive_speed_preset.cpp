@@ -4,10 +4,9 @@
 #include "audio_task.h"
 #include "config.h"
 #include "config_cache.h"
+#include "config_store.h"  // saveConfigToNvs()
 #include "logging.h"
 #include "robot_state.h"
-
-extern bool saveConfigToNvs();
 
 namespace {
 

@@ -10,6 +10,9 @@
 // - All cfg_* NVS keys are defined and owned by this module.
 // - Schema versioning: Version 0 (legacy) -> 1 (current). Bump on rename/removal/type change.
 // - configLoad/configSave are caller-opened (Preferences lifecycle managed by caller).
+//   The saves a Commit Step makes are not: configPersist(), saveConfigToNvs() and
+//   configPersistSystem() open the namespace themselves and write in the store's
+//   one order (#424).
 // - configSave() performs no mutex lock and no robotState reads; callers capture snapshot.
 // - configValidate() handles scalar fields only (int/float/bool/enum). Complex structs
 //   (RcBindingConfig, RcTriggerBinding) are validated in the API layer.
@@ -547,6 +550,55 @@ bool configSaveAudio(Preferences& prefs, const AudioConfig& config);
 bool configSaveDome(Preferences& prefs, const DomeConfig& config);
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 bool configSaveWifi(Preferences& prefs, const WifiConfig& config);
+
+// -----------------------------------------------------------------------------
+// Store-opened saves (#424)
+//
+// Every full save and every system-only save goes through one of these three.
+// (Device WiFi Settings and the audio saves keep their own namespace opens, so
+// this module never learns the CHIRP binding keys.) Each opens the config
+// namespace itself, writes in the order below, closes it, and answers saved or
+// not; a namespace that will not open is a save that did not happen. What a
+// caller decides is WHAT changed - which records its request said something
+// about (ADR 0011, 2026-08-27 amendment) - never the order they land in or
+// which handle they land through.
+//
+// The order is rows first, and the fixed field sets only once the rows are
+// down. While both forms are stored, the fixed sets are the copy of what is
+// being replaced, and a failed save has to stop the replace: a row write that
+// fails leaves both stores holding the same older value, which is
+// recoverable, where the other order would leave the rows stale and winning
+// over a field set that already carried the new number (#286, ADR 0041).
+// Nothing after a failed write is attempted.
+//
+// Like the caller-opened writers above, each runs inside a Write Window; the
+// writers they call check the lock is held.
+// -----------------------------------------------------------------------------
+
+// The records a full save writes after the Configuration only when the
+// request said something about them. Absence is an answer for both - no
+// Fitted Parts record tells the next boot nobody has answered yet, and no
+// visited record tells it guided Setup was never drawn - so a save that was
+// about the log level must not write one.
+struct ConfigSaveExtras {
+    bool droidBuild = false;   // configSaveDroidBuild(), from the live copy
+    bool guidedSetup = false;  // configSaveGuidedSetup(), from the live copy
+};
+
+// The Servo Output rows and `snapshot`, in that order, then the extras named.
+// The rows, the Droid Build and the guided Setup record are written from the
+// config cache's live copies; `snapshot` is expected to be the cache as it
+// stands too, which is what every caller passes.
+bool configPersist(const ConfigSnapshot& snapshot, const ConfigSaveExtras& extras);
+
+// configPersist() of the config cache as it stands, and no extras: the save a
+// runtime change to one field makes (a mode, a speed preset, the volume).
+bool saveConfigToNvs();
+
+// The system field set alone, for a change that touches nothing else (the RC
+// Map, the droid's identity). The rows are not rewritten, so there is no order
+// to keep.
+bool configPersistSystem(const SystemConfig& system);
 
 // configValidate: Validate a scalar field value before writing.
 // Covers int, float, bool, and enum fields only.
