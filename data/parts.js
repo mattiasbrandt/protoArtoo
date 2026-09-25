@@ -73,6 +73,10 @@
   const esc = (value) => window.PAUtils.escapeHtml(String(value));
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
+  // Until the table answers, the summary says so in the one word for it
+  // (data/outputs.js live()); the page's markup carries none.
+  summary.textContent = OUTPUTS.live(null).word;
+
   // ---------------------------------------------------------------------------
   // Built once
   // ---------------------------------------------------------------------------

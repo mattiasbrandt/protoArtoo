@@ -99,6 +99,11 @@
   const esc = (value) => window.PAUtils.escapeHtml(String(value));
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
+  // Until the table answers, the section and the part picker say so in the
+  // one word for it (data/outputs.js live()); the page's markup carries none.
+  if (tiersNode) tiersNode.textContent = OUTPUTS.live(null).word;
+  findPick.innerHTML = `<option value="">${esc(OUTPUTS.live(null).word)}</option>`;
+
   // The Outputs this page draws a row for are data/outputs.js's list, in the
   // order it gives them, each carrying whether it is wired and what it
   // carries; this page keeps no copy of its own.

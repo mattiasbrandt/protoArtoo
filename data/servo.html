@@ -41,7 +41,7 @@
          drawn by data/servo.js from the firmware's answer; this page names no
          Output of its own. -->
     <div class="card" id="outputs-card">
-      <div class="sect"><h2>Outputs</h2><span class="sub outputs-tiers" id="outputs-tiers" role="status" aria-live="polite">finding out</span></div>
+      <div class="sect"><h2>Outputs</h2><span class="sub outputs-tiers" id="outputs-tiers" role="status" aria-live="polite"></span></div>
       <!-- The one visible explanation at the controls that move something
            (ADR 0059), and rule 7 of the maker voice: both marks are what the
            controller told the servo, never where it is. -->
@@ -52,7 +52,6 @@
       </div>
       <div class="outputs-find" id="outputs-find">
         <select class="parts-output outputs-find-part" id="outputs-find-part" aria-label="The part to find the output of" disabled>
-          <option value="">Finding out...</option>
         </select>
         <button class="btn btn-sm parts-find" type="button" aria-label="Find the output that moves this part by nudging each spare output" disabled aria-disabled="true">find by moving</button>
       </div>
