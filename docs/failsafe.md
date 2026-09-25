@@ -135,17 +135,21 @@ protoArtoo runs on dual-core processors (ESP32 classic or ESP32-P4). Real-time
 drive control and SBUS input processing are pinned to Core 1 to avoid
 contention with WiFi, web API, and housekeeping tasks.
 
+Stack sizes differ per chip. The tables below give the artoo-esp32 value; the
+ESP32-P4 value, and the measured call chain each one is sized from, are in
+`include/config.h` (ADR 0040).
+
 **Core 1 (Real-Time Control Loop - 50 Hz drive frame rate):**
 - All tasks in this section must not allocate memory after startup.
 - Priorities are relative within Core 1; lower priority tasks yield to higher.
 
 | Task | Priority | Stack | Chip-Specific? | Rationale |
 |------|----------|-------|---|---|
-| **DriveTask** | 5 | 4096 B | No | 50 Hz hoverboard frame transmission + TWDT reset. Core-critical. Runs every 20 ms. Must complete within period or hoverboard coasts. |
-| **RCInputTask** | 5 | 7168 B | No | ~200 Hz RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. |
-| **ServoTask** | 4 | 4096 B | No | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes queue without blocking. |
-| **DomeTask** | 4 | 3072 B | No | 50 Hz dome ESC command application. Processes queue, applies speed presets, respects estop. |
-| **DomeLinkTask** | 3 | 6144 B | No | Bidirectional UART2 to dome controller (AstroPixelsPlus). Coordinates transport arbiter (UART vs WiFi fallback). Non-blocking I/O. |
+| **DriveTask** | 5 | 5632 B | Yes | 50 Hz hoverboard frame transmission + TWDT reset. Core-critical. Runs every 20 ms. Must complete within period or hoverboard coasts. |
+| **RCInputTask** | 5 | 6656 B | Yes | ~200 Hz RC poll (SBUS or PWM). Decodes frames and routes to failsafe/arbiter. Core-critical. |
+| **ServoTask** | 4 | 4096 B | Yes | 50 Hz servo/ESC PWM updates for arms and dome ESC. Processes queue without blocking. |
+| **DomeTask** | 4 | 4096 B | Yes | 50 Hz dome ESC command application. Processes queue, applies speed presets, respects estop. |
+| **DomeLinkTask** | 3 | 6144 B | Yes | Bidirectional UART2 to dome controller (AstroPixelsPlus). Coordinates transport arbiter (UART vs WiFi fallback). Non-blocking I/O. |
 
 **Core 0 (Housekeeping, Web, OTA):**
 - Non-real-time tasks that handle WiFi, HTTP, SSE, OTA, audio, and logging.
@@ -154,12 +158,12 @@ contention with WiFi, web API, and housekeeping tasks.
 
 | Task | Priority | Stack | Chip-Specific? | Rationale |
 |------|----------|-------|---|---|
-| **AudioTask** | 3 | 6144 B | No | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:350-351`). Conditional on enable_audio. |
-| **SequenceDispatcherTask** | 3 | 4096 B | No | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
-| **AuxLedTask** | 2 | 4096 B | No | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
-| **SafetyMonitorTask** | 2 | 3072 B | No | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
-| **WebEvents** | 1 | 6144 B | No | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
-| **ArduinoOTA** | 1 | 4096 B | No | OTA firmware/filesystem updates. Started from WiFi event callback, runs in background. |
+| **AudioTask** | 3 | 6144 B | Yes | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:350-351`). Conditional on enable_audio. |
+| **SequenceDispatcherTask** | 3 | 5632 B | Yes | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
+| **AuxLedTask** | 2 | 4096 B | Yes | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
+| **SafetyMonitorTask** | 2 | 4096 B | Yes | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
+| **WebEvents** | 1 | 6144 B | Yes | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
+| **ArduinoOTA** | 1 | 4096 B | Yes | OTA firmware/filesystem updates. Started from WiFi event callback, runs in background. |
 
 **Pinning Mechanism Validity on ESP32-P4:**
 - Dual-core verified: `SOC_CPU_CORES_NUM = 2U` (components/soc/esp32p4/include/soc/soc_caps.h:179)

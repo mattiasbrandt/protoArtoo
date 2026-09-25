@@ -12,7 +12,11 @@ and, through relocations, everything its literal pool loads.
 `Image.adopt_archive_bodies()` walks such a body from the member: the frame from
 `entry`, callees from the relocations, a referenced table of pointers expanded
 to its rows (through `pointer_tables` when the program only sets the pointer at
-run time), and undecoded callees adopted the same way.
+run time), and undecoded callees adopted the same way. A table that cannot be
+read stops the walk rather than dropping its rows unannounced (#430).
+
+The opposite edit: `Image.drop_infeasible_calls()` removes an edge the listing
+shows but that cannot execute, and refuses an entry whose edge is gone (#430).
 """
 
 import sys
@@ -46,6 +50,20 @@ SYMBOLS = [
     f"{TABLE_ROW:08x} g     F .flash.text\t00000005 osi_take",
     f"{TABLE:08x} g     O .dram0.data\t00000008 g_osi_table",
     f"{POINTER:08x} g     O .dram0.bss\t00000004 g_osi_ptr",
+    # Two objects under one name: a table that cannot be told apart.
+    "3ffb0300 l     O .dram0.data\t00000008 g_twice",
+    "3ffb0400 l     O .dram0.data\t00000008 g_twice",
+    # A table in .bss holds nothing until the program runs.
+    "3ffc0000 g     O .dram0.bss\t00000008 g_bss_table",
+]
+
+SECTIONS = [
+    "Sections:",
+    "Idx Name          Size      VMA       LMA       File off  Algn",
+    "  9 .dram0.data   0000664c  3ffb0000  3ffb0000  0005e000  2**4",
+    "                  CONTENTS, ALLOC, LOAD, DATA",
+    " 13 .dram0.bss    00011520  3ffc0000  3ffc0000  00000000  2**3",
+    "                  ALLOC",
 ]
 
 
@@ -92,6 +110,8 @@ class ShutdownImage(sur.Image):
             return iter(SYMBOLS)
         if "-s" in argv:
             return iter(TABLE_DUMP)
+        if "-h" in argv:
+            return iter(SECTIONS)
         return iter(LISTING)
 
 
@@ -159,6 +179,57 @@ class AnUndecodedBodyIsWalkedFromItsArchiveMember(unittest.TestCase):
     def test_a_function_no_member_defines_is_refused(self):
         with self.assertRaises(sur.Fatal):
             self.image.adopt_archive_bodies(["closed_missing"], FakeArchives())
+
+    def test_a_table_that_cannot_be_read_stops_the_walk(self):
+        class Ambiguous(FakeArchives):
+            BODIES = {"closed_stop": (CLOSED_FRAME, {"g_twice"})}
+
+        with self.assertRaises(sur.Fatal):
+            self.image.adopt_archive_bodies(["closed_stop"], Ambiguous())
+
+    def test_a_table_in_bss_names_no_function(self):
+        class InBss(FakeArchives):
+            BODIES = {"closed_stop": (CLOSED_FRAME, {"g_bss_table"})}
+
+        self.image.adopt_archive_bodies(["closed_stop"], InBss())
+        self.assertEqual(self.image.funcs[CLOSED].calls, [])
+
+
+class AnEdgeThatCannotExecuteIsDropped(unittest.TestCase):
+    def setUp(self):
+        self.image = ShutdownImage("fake", Path("fake.elf"), Path("objdump"), "xtensa")
+        self.image.stitch_calls("esp_restart", ["sync_timers", "osi_take"])
+
+    def test_the_named_edge_goes_and_the_other_stays(self):
+        dropped = self.image.drop_infeasible_calls("esp_restart", ["osi_take"])
+        self.assertEqual(dropped, [("esp_restart", "osi_take")])
+        walker = sur.Walker([self.image], sur.DEFAULT_PRUNE)
+        total, chain, _ = walker.depth(self.image, self.image.funcs[RESTART])
+        self.assertEqual(total, HANDLER_FRAME)
+        self.assertEqual([step[0] for step in chain], ["sync_timers"])
+
+    def test_a_stale_entry_is_refused(self):
+        with self.assertRaises(sur.Fatal):
+            self.image.drop_infeasible_calls("esp_restart", ["closed_inner"])
+
+    def test_an_absent_symbol_is_reported(self):
+        with self.assertRaises(KeyError):
+            self.image.drop_infeasible_calls("esp_restart", ["renamed_log"])
+
+    def test_the_gate_row_fails_on_a_stale_entry(self):
+        import check_task_stack_chains as checker
+
+        recipes = {"infeasible_calls": [
+            {"caller": "esp_restart", "callees": ["osi_take", "closed_inner"],
+             "chips": ["esp32"]},
+        ]}
+        dropped, failures = checker.drop_infeasible_calls(self.image, recipes, "esp32")
+        self.assertEqual(dropped, [("esp_restart", "osi_take")])
+        self.assertEqual(len(failures), 1)
+        self.assertIn("closed_inner", failures[0])
+        # An entry for the other chip is not applied here.
+        self.assertEqual(checker.drop_infeasible_calls(self.image, recipes, "esp32p4"),
+                         ([], []))
 
 
 if __name__ == "__main__":

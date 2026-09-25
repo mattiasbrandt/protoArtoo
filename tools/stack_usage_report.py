@@ -336,10 +336,13 @@ class Image:
         # static function's name is not unique in the image.
         self.data_bodies: set[int] = set()
         self.recovered_bodies: set[int] = set()
+        # (caller, callee) edges `drop_infeasible_calls()` removed.
+        self.dropped_calls: list[tuple[str, str]] = []
         # Data objects by name, read on the first `table_entries()` call only:
         # a walk that stitches no table does not pay for a second symbol read.
         self._objdump = objdump
-        self._objects: dict[str, list[tuple[int, int]]] | None = None
+        self._objects: dict[str, list[tuple[int, int, str]]] | None = None
+        self._empty_sections: set[str] | None = None
         self._disassemble(objdump)
         if self.arch == "xtensa" and self.data_bodies:
             self._recover_data_bodies(objdump)
@@ -421,8 +424,8 @@ class Image:
         return sizes
 
     # -- dispatch tables ----------------------------------------------------
-    def _data_objects(self) -> dict[str, list[tuple[int, int]]]:
-        """Data objects in the image by name: [(address, size)], read once."""
+    def _data_objects(self) -> dict[str, list[tuple[int, int, str]]]:
+        """Data objects in the image by name: [(address, size, section)], read once."""
         if self._objects is None:
             self._objects = {}
             for line in self._run([str(self._objdump), "-t", "-C", str(self.elf)]):
@@ -437,8 +440,29 @@ class Image:
                     size = int(size_name[0], 16)
                 except (ValueError, IndexError):
                     continue
-                self._objects.setdefault(size_name[1].strip(), []).append((addr, size))
+                self._objects.setdefault(size_name[1].strip(), []).append(
+                    (addr, size, head.split()[-1]))
         return self._objects
+
+    def _sections_without_contents(self) -> set[str]:
+        """Sections the ELF allocates but stores no bytes for (.bss, .noinit).
+
+        `objdump -h` prints each section's flags on the line after it; one
+        without CONTENTS is zero, or uninitialised, until the program runs.
+        """
+        if self._empty_sections is None:
+            self._empty_sections = set()
+            name = None
+            for line in self._run([str(self._objdump), "-h", str(self.elf)]):
+                fields = line.split()
+                if len(fields) >= 7 and fields[0].isdigit():
+                    name = fields[1]
+                    continue
+                if name is not None and line.startswith(" "):
+                    if "CONTENTS" not in line:
+                        self._empty_sections.add(name)
+                    name = None
+        return self._empty_sections
 
     def table_entries(self, table: str) -> list[int]:
         """Function entries held by one data object in the image, in order.
@@ -460,7 +484,12 @@ class Image:
         if len(found) != 1:
             raise Fatal(f"{len(found)} data objects are named {table} in {self.elf}; "
                         "a stitched table must name one")
-        addr, size = found[0]
+        addr, size, section = found[0]
+        if section in self._sections_without_contents():
+            # A table in .bss holds nothing until the program fills it, so the
+            # image names no function in it; a pointer set at run time is what
+            # `pointer_tables` is for.
+            return []
         if addr % 4 or size % 4:
             raise Fatal(f"{table} at 0x{addr:08x} ({size} B) is not word-aligned; "
                         "it does not read as a table of pointers")
@@ -578,6 +607,46 @@ class Image:
                 fn.calls.append((target.addr, f"stitched via {pointer}", None))
         return sorted(callers, key=lambda f: f.addr)
 
+    def drop_infeasible_calls(self, caller: str, callees: list[str]) -> list[tuple[str, str]]:
+        """Remove the call edges from `caller` to each of `callees`.
+
+        For a call the listing shows but that cannot execute, which the walk
+        has no way to tell from one that can: a log statement behind a check
+        its only caller always passes. ESP-IDF's esp_cache_get_alignment()
+        opens with ESP_RETURN_ON_FALSE(out_alignment, ..., "null pointer")
+        (esp_cache_msync.c:281), and every caller in the linked images -
+        esp_heap_adjust_alignment_to_hw() (heap_align_hw.c:54), and on the
+        ESP32-P4 sdmmc_host_check_buffer_alignment() too - passes the address
+        of a local. The log call behind it is reachable from every
+        malloc in the image, and with the IDF log hook stitched it put the
+        hook on eleven of twelve artoo-esp32 chains (#430). The recipe that
+        names an edge carries that evidence beside it.
+
+        Every named edge must exist: a callee this caller no longer calls
+        raises Fatal, so an entry that has gone stale fails loudly rather than
+        pruning nothing and reading as a fact. Raises KeyError naming an absent
+        symbol. Returns the (caller, callee) pairs removed.
+        """
+        callers = self.by_name(caller)
+        if not callers:
+            raise KeyError(caller)
+        dropped: list[tuple[str, str]] = []
+        for name in callees:
+            targets = {fn.addr for fn in self.by_name(name)}
+            if not targets:
+                raise KeyError(name)
+            removed = 0
+            for fn in callers:
+                kept = [call for call in fn.calls if call[0] not in targets]
+                removed += len(fn.calls) - len(kept)
+                fn.calls = kept
+            if not removed:
+                raise Fatal(f"{caller} no longer calls {name} in {self.elf}; "
+                            "the infeasible-call entry is stale")
+            dropped.append((caller, name))
+        self.dropped_calls.extend(dropped)
+        return dropped
+
     def adopt_archive_bodies(self, names: list[str], archives: "ArchiveBodies",
                              pointer_tables: dict[str, str] | None = None) -> list[str]:
         """Walk bodies the product listing printed as data from their archive members.
@@ -638,17 +707,31 @@ class Image:
                 targets = self.by_name(ref)
                 if not targets:
                     table = pointer_tables.get(ref, ref)
-                    if table in self._data_objects():
-                        try:
-                            targets = [self.funcs[a] for a in self.table_entries(table)]
-                        except Fatal:
-                            targets = []
+                    if self._could_be_pointer_table(table):
+                        # table_entries() raises on an ambiguous name or an
+                        # unreadable object; that propagates, because walking
+                        # on would drop this body's callees without saying so.
+                        targets = [self.funcs[a] for a in self.table_entries(table)]
                 for target in targets:
                     fn.calls.append((target.addr, "archive reloc", None))
                     if self._printed_as_data(target) and target.addr not in seen:
                         queue.append(target)
             adopted.append(fn.name)
         return adopted
+
+    def _could_be_pointer_table(self, name: str) -> bool:
+        """Whether a data object a relocation names can hold function pointers.
+
+        Only a word-aligned object of whole words can; a string, a byte buffer
+        or a packed struct a closed library's literal pool also names cannot,
+        and is not a table. Decided here rather than by catching
+        `table_entries()`'s refusal, so that its other refusals - an ambiguous
+        name, bytes objdump did not cover - still stop the walk.
+        """
+        found = self._data_objects().get(name)
+        if not found:
+            return False
+        return all(addr % 4 == 0 and size % 4 == 0 for addr, size, _section in found)
 
     def _printed_as_data(self, fn: Function) -> bool:
         """Whether the product listing printed this body as data, recovered or not."""
@@ -1524,7 +1607,10 @@ class Walker:
     def __init__(self, images: list[Image], prune: tuple[str, ...] = ()):
         self.images = images
         self.prune = set(prune)
-        self._memo: dict[int, tuple[int, list]] = {}
+        # (entry, stack members in its cycle) -> result; see depth().
+        self._memo: dict[tuple[int, frozenset[int]], tuple[int, list, bool]] = {}
+        self._components: dict[int, frozenset[int]] | None = None
+        self._states: dict[frozenset[int], int] = {}
         self.cut_cycles: list[str] = []
         self.pruned: set[str] = set()
         self.unresolved: list[tuple[str, int]] = []  # (function name, target addr)
@@ -1554,28 +1640,139 @@ class Walker:
                 return img, img.funcs[addr]
         return None
 
-    def depth(self, img: Image, fn: Function, stack: tuple[int, ...] = ()):
+    # Distinct (function, cycle context) states one strongly connected
+    # component may take before the walk refuses to go on. See depth(): the
+    # count is exponential in the size of a component only in the worst case,
+    # and a call graph is nowhere near it -- measured at #430 with the IDF log
+    # hook stitched, the largest artoo-esp32 component (49 functions) takes
+    # 14,921 states and the largest firebeetle2 one (44) 20,725, and each walk
+    # finishes in under a second. The cap is what makes the walk bounded in time
+    # whatever a future stitch does to the graph, and reaching it is a Fatal
+    # rather than a quietly shallower answer.
+    MAX_COMPONENT_STATES = 1_000_000
+
+    def _component(self, addr: int) -> frozenset[int]:
+        """The strongly connected component of the call graph holding addr.
+
+        Computed once, over every function in every image, on the first walk:
+        like the memo, it assumes every stitch is in place before the first
+        depth() call, which is the order every caller here keeps. Iterative
+        Tarjan, because the graph is deeper than Python's recursion limit
+        allows a recursive one to be.
+        """
+        if self._components is None:
+            nodes = {}
+            for img in self.images:
+                for a, fn in img.funcs.items():
+                    nodes.setdefault(a, fn)
+
+            def successors(a: int) -> list[int]:
+                out = []
+                for target, _insn, _src in nodes[a].calls:
+                    found = self.lookup(target)
+                    if found is None or self.is_pruned(found[1]):
+                        continue
+                    out.append(found[1].addr)
+                return out
+
+            index: dict[int, int] = {}
+            low: dict[int, int] = {}
+            on_stack: set[int] = set()
+            stack: list[int] = []
+            components: dict[int, frozenset[int]] = {}
+            counter = 0
+            for start in nodes:
+                if start in index:
+                    continue
+                index[start] = low[start] = counter
+                counter += 1
+                stack.append(start)
+                on_stack.add(start)
+                work = [(start, iter(successors(start)))]
+                while work:
+                    v, it = work[-1]
+                    for w in it:
+                        if w not in index:
+                            index[w] = low[w] = counter
+                            counter += 1
+                            stack.append(w)
+                            on_stack.add(w)
+                            work.append((w, iter(successors(w))))
+                            break
+                        if w in on_stack:
+                            low[v] = min(low[v], index[w])
+                    else:
+                        work.pop()
+                        if work:
+                            parent = work[-1][0]
+                            low[parent] = min(low[parent], low[v])
+                        if low[v] == index[v]:
+                            members = []
+                            while True:
+                                w = stack.pop()
+                                on_stack.discard(w)
+                                members.append(w)
+                                if w == v:
+                                    break
+                            comp = frozenset(members)
+                            for w in members:
+                                components[w] = comp
+            self._components = components
+        return self._components.get(addr, frozenset((addr,)))
+
+    def depth(self, img: Image, fn: Function, stack=()):
         """(bytes, chain, cut_below) for the deepest path from fn.
 
-        ``cut_below`` says whether this result was shortened by a recursion cut
-        anywhere beneath it. Only results with no cut below them are memoised.
+        A call to a function already on the call stack is a real call, so its
+        frame is counted, but the walk does not go round the cycle again: the
+        edge is cut and reported, and ``cut_below`` says whether this result was
+        shortened by such a cut anywhere beneath it. `stack` is the functions
+        above this one on the path being walked.
 
-        That distinction is the whole point of the third element. A cut result
-        is valid ONLY for the call stack that produced it -- the same function
-        reached from somewhere else may complete the cycle differently, or not
-        enter it at all. Caching one and reusing it elsewhere made the report
-        depend on the order roots were passed on the command line: on the
-        firebeetle2 image `--root domeTask` alone gave 3008 bytes but 3296 when
-        safetyMonitorTask was walked first, and safetyMonitorTask gave 2768
-        alone against 2480 after domeTask. Both #245's table and #248's issue
-        body were measured with that bug present.
+        WHAT A RESULT DEPENDS ON
+        ------------------------
+        Not the whole stack: only the part of it inside fn's own strongly
+        connected component. A function on the stack that fn can reach again
+        is, by definition, in fn's component - everything above it that is
+        not is unreachable from here, and cannot be what a cut cuts. So a
+        result is memoised under (fn, the stack's members in fn's component),
+        and is correct wherever that key recurs. Outside any cycle the key is
+        (fn, nothing), which is the plain memo this walk always had.
+
+        That fixes two faults this method has had, without trading one for
+        the other:
+
+        - A cut result used to be memoised by fn alone and reused under a
+          different stack, which made the report depend on the order roots
+          were passed: on the firebeetle2 image `--root domeTask` alone gave
+          3008 bytes but 3296 when safetyMonitorTask was walked first (#245,
+          #248 were measured with that bug). The key now carries the stack
+          the cut depended on, so the order cannot matter.
+        - The fix for that stopped memoising cut results at all, and every
+          ancestor of a cycle then re-walked its whole subtree once per path
+          reaching it: exponential. With the IDF log hook stitched, the
+          firebeetle2 walk did not finish in 20 minutes (#430).
+
+        The number of keys in one component is bounded by
+        MAX_COMPONENT_STATES; reaching it raises Fatal.
         """
-        if fn.addr in stack:
+        comp = self._component(fn.addr)
+        local = frozenset(a for a in stack if a in comp)
+        if fn.addr in local:
             self.cut_cycles.append(fn.name)
             return 0, [("<recursion cut>", 0, None)], True
-        if fn.addr in self._memo:
-            sub, chain = self._memo[fn.addr]
-            return sub, chain, False
+        key = (fn.addr, local)
+        if key in self._memo:
+            return self._memo[key]
+        if len(comp) > 1:
+            states = self._states.get(comp, 0) + 1
+            if states > self.MAX_COMPONENT_STATES:
+                raise Fatal(
+                    f"the {len(comp)}-function cycle through {fn.name} took more than "
+                    f"{self.MAX_COMPONENT_STATES} walk states; a stitch has made the "
+                    "call graph too cyclic to walk exactly")
+            self._states[comp] = states
+        below = local | {fn.addr}
         best_sub, best_chain, best_edge = 0, [], None
         cut_below = False
         for target, insn, srcline in fn.calls:
@@ -1586,7 +1783,7 @@ class Walker:
             timg, tfn = found
             if self.is_pruned(tfn):
                 continue
-            sub, chain, sub_cut = self.depth(timg, tfn, stack + (fn.addr,))
+            sub, chain, sub_cut = self.depth(timg, tfn, below if tfn.addr in comp else ())
             # Any cut anywhere among the branches can have suppressed the one
             # that would have won, so the maximum itself is suspect, not just
             # the branch that was cut.
@@ -1595,13 +1792,13 @@ class Walker:
             if total > best_sub:
                 best_sub, best_chain, best_edge = total, chain, (tfn, insn, srcline)
         if best_edge is None:
-            result = (0, [])
+            result = (0, [], cut_below)
         else:
             tfn, insn, srcline = best_edge
-            result = (best_sub, [(tfn.name, tfn.frame, srcline, insn)] + best_chain)
-        if not cut_below:
-            self._memo[fn.addr] = result
-        return result[0], result[1], cut_below
+            result = (best_sub, [(tfn.name, tfn.frame, srcline, insn)] + best_chain,
+                      cut_below)
+        self._memo[key] = result
+        return result
 
     def callsite_table(self, img: Image, fn: Function) -> list[tuple]:
         rows = []
@@ -1713,6 +1910,11 @@ def main(argv=None) -> int:
                          "time: CALLEE becomes a callee of each function that loads "
                          "POINTER and calls indirectly (repeatable; the 'pointer_calls' "
                          "of task_stack_recipes.json)")
+    ap.add_argument("--drop-call", action="append", default=[],
+                    metavar="CALLER=CALLEE",
+                    help="remove a call edge that cannot execute (repeatable; the "
+                         "'infeasible_calls' of task_stack_recipes.json, with the "
+                         "evidence it cannot run)")
     ap.add_argument("--archive-body", action="append", default=[], metavar="FUNCTION",
                     help="walk an undecoded body from its archive member (repeatable; "
                          "the 'archive_bodies' of a task_stack_recipes.json arm)")
@@ -1767,6 +1969,14 @@ def main(argv=None) -> int:
         except KeyError as exc:
             raise Fatal(f"--stitch-pointer {spec}: {exc.args[0]} is not in the image") from exc
         pointer_callers.append((pointer, callee, [fn.name for fn in callers]))
+    for spec in args.drop_call:
+        caller, sep, callee = spec.partition("=")
+        if not sep or not caller or not callee:
+            raise Fatal(f"--drop-call wants CALLER=CALLEE, got {spec!r}")
+        try:
+            img.drop_infeasible_calls(caller, [callee])
+        except KeyError as exc:
+            raise Fatal(f"--drop-call {spec}: {exc.args[0]} is not in the image") from exc
 
     ver = subprocess.run([str(objdump), "--version"], capture_output=True, text=True,
                          check=True).stdout.splitlines()[0]
@@ -1784,6 +1994,8 @@ def main(argv=None) -> int:
     for pointer, callee, callers in pointer_callers:
         print(f"  stitched every call through {pointer} -> {callee}"
               f" (from {', '.join(callers)})")
+    for caller, callee in img.dropped_calls:
+        print(f"  dropped {caller} -> {callee} (cannot execute)")
     print("=" * 78)
 
     status = 0

@@ -46,6 +46,13 @@ reach an ESP-IDF log call walks the hook, on each chip the entry names. It is
 applied after every arm's stitches and archive bodies, which rewrite a body's
 calls, and before the first walk.
 
+The opposite correction is image-wide too: `infeasible_calls`, call edges the
+listing shows but that cannot execute - a log statement behind a check its only
+caller always passes - each with its reason and the sites that prove it
+(`Image.drop_infeasible_calls()`, #430). They are removed after every stitch and
+before the first walk. An entry whose edge is no longer in the image fails the
+row, like an absent root, so a stale entry cannot hide anything.
+
 The recipe file does not carry the log-hook entry yet. Stitched, it moves
 eleven of twelve artoo-esp32 chains past their recorded constants, and the
 stack raises that would follow cost more heap than #430 may spend without an
@@ -90,8 +97,8 @@ no longer describes the image and a silent pass would be the drift this exists
 to catch:
 
 - a root, stitched-frame, stitched-table or table-caller symbol is absent
-  (renamed, or inlined away), or a stitched pointer is absent or nothing in
-  the image calls through it any more;
+  (renamed, or inlined away), a stitched pointer is absent or nothing in the
+  image calls through it any more, or an infeasible call is no longer there;
 - a covered root's body is emitted as data in the very image the recipe names,
   so the walk that produced the recorded figure cannot be reproduced.
 
@@ -369,6 +376,31 @@ def stitch_pointer_calls(img: sur.Image, recipes: dict, chip: str
     return applied, failures
 
 
+def drop_infeasible_calls(img: sur.Image, recipes: dict, chip: str
+                          ) -> tuple[list[tuple[str, str]], list[str]]:
+    """Apply the recipe file's image-wide `infeasible_calls` for this chip.
+
+    Returns ([(caller, callee) removed], [failure reasons]). An absent symbol or
+    an edge the image no longer has is a failure: the entry no longer describes
+    the image, and it must be re-recorded or removed, never skipped.
+    """
+    dropped: list[tuple[str, str]] = []
+    failures: list[str] = []
+    for entry in recipes.get("infeasible_calls", []):
+        if chip not in entry["chips"]:
+            continue
+        for callee in entry["callees"]:
+            try:
+                dropped.extend(img.drop_infeasible_calls(entry["caller"], [callee]))
+            except KeyError as exc:
+                failures.append(
+                    f"infeasible_calls {entry['caller']} -> {callee}: {exc.args[0]} is "
+                    "absent from the image -- re-record or remove the entry")
+            except sur.Fatal as exc:
+                failures.append(f"infeasible_calls {entry['caller']} -> {callee}: {exc}")
+    return dropped, failures
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -422,6 +454,7 @@ def main(argv=None) -> int:
                 arm["archive_bodies"], arm.get("pointer_tables", {})))
 
     pointer_calls, pointer_failures = stitch_pointer_calls(image.img, recipes, chip)
+    dropped, drop_failures = drop_infeasible_calls(image.img, recipes, chip)
 
     undec, recovered, total_funcs = undecoded_share(image.img)
     print(f"check_task_stack_chains  env={args.env}  chip={chip}  arch={image.arch}")
@@ -442,13 +475,15 @@ def main(argv=None) -> int:
     for pointer, callee, callers in pointer_calls:
         print(f"  stitched every call through {pointer} -> {callee}"
               f" (from {', '.join(callers)})")
+    for caller, callee in dropped:
+        print(f"  dropped {caller} -> {callee} (cannot execute; see infeasible_calls)")
     if adopted:
         print(f"  walked from their archive members: {len(adopted)} undecoded bodies"
               f" ({', '.join(sorted(set(adopted))[:6])}{', ...' if len(set(adopted)) > 6 else ''})")
     print()
 
     rows: list[tuple[str, str, str]] = []
-    failures: list[str] = list(pointer_failures)
+    failures: list[str] = pointer_failures + drop_failures
     notes: list[str] = []
     covered = 0
 
