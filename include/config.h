@@ -835,7 +835,7 @@ constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5616 -> 7020 -> 7
 constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3216;
 constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
 constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
-// rule declined (4608, +1536 B): #248's tight-heap reason. This is the thinnest
+// rule declined (4096, +1024 B): #248's tight-heap reason. This is the thinnest
 // floor in the block -- 80 B on a lower-bound walk, which is under the cost of
 // one interrupt entry -- and it is the pre-existing shipping value, recorded
 // here as a known exposure rather than raised by this ticket (#271).

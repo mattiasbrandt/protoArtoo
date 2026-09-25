@@ -557,9 +557,7 @@ void setup() {
                             nullptr, 1);
     if (rcPlan.taskEnabled) {
         // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES in include/config.h
-        // carries the measured chain. The #248 rule lands on 7168 on both chips
-        // (ESP32-P4 5376 * 1.25 = 6720 -> 7168); ESP32 is the existing 7168, not
-        // a lowering to its own 5248-chain figure, which is a Xtensa lower bound.
+        // carries the measured chain and the sizing rule on each chip.
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
                                 nullptr, 5, nullptr, 1);
     }
@@ -587,8 +585,8 @@ void setup() {
     // task at all is the preferred form).
     if (bootCfg.system.enable_audio) {
         // Size is chip-target specific; AUDIO_TASK_STACK_BYTES in include/config.h
-        // carries the measured chain. The #248 rule lands on 6144 on both chips
-        // (ESP32-P4 4848 * 1.25 = 6060 -> 6144).
+        // carries the measured chain and, per chip, the sizing rule or why it is
+        // declined.
         xTaskCreatePinnedToCore(audioTask, "AudioTask", AUDIO_TASK_STACK_BYTES, nullptr, 3,
                                 nullptr, 0);
     }
@@ -607,8 +605,9 @@ void setup() {
     // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES in include/config.h.
     // The old note here -- "4096: profiler measured 988 B free at 3072 B ... HTTPClient
     // call-chain needs 3 KB+" -- was reasoned from a high-water mark, which only ever
-    // reports the deepest path that actually ran. The static worst case is 5856 B on
-    // ESP32 and 7360 B on ESP32-P4, so 6144 never covered the P4 at all (#250).
+    // reports the deepest path that actually ran. The static worst case is
+    // DOME_LINK_TASK_MEASURED_CHAIN_BYTES there, per chip, and on the ESP32-P4 it is
+    // past 6144, so 6144 never covered the P4 at all (#250).
     xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", DOME_LINK_TASK_STACK_BYTES,
                             nullptr, 3, nullptr, 1);
 

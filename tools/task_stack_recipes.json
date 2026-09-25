@@ -134,7 +134,7 @@
           "product_bytes": 2992,
           "profiler_bytes": 2992,
           "rule": "declined",
-          "reason": "#248's tight-heap reason: the rule (4608) costs +1536 B against ~42.7 KB of measured free heap, for margin the Xtensa walk cannot confirm. This is the thinnest floor in the table - 80 B, which is under the cost of one interrupt entry - and it is the pre-existing shipping value, recorded as a known exposure rather than raised by #271."
+          "reason": "#248's tight-heap reason: the rule (4096) costs +1024 B against ~42.7 KB of measured free heap, for margin the Xtensa walk cannot confirm. This is the thinnest floor in the table - 80 B, which is under the cost of one interrupt entry - and it is the pre-existing shipping value, recorded as a known exposure rather than raised by #271."
         },
         "esp32p4": {
           "env": "firebeetle2",
