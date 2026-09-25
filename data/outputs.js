@@ -317,6 +317,21 @@
 
   const at = (address) => outputs.find((output) => output.address === address) || null;
 
+  // The Part a refused row shares with another row that was sent, by the name
+  // the catalog gives it (data/droid_parts.js), or "" when the rows sent do not
+  // show one - the droid's refusal names the row, never the Part, and this page
+  // holds what it posted. Never the id: that is wire vocabulary too.
+  const sharedPartName = (address, sentRows) => {
+    const rowsSent = Array.isArray(sentRows) ? sentRows : [];
+    const refused = rowsSent.find((row) => row && row.address === address);
+    const listed = (row) => (row && Array.isArray(row.parts) ? row.parts : []);
+    const shared = listed(refused).find((part) =>
+      rowsSent.some((row) => row !== refused && listed(row).includes(part)));
+    const catalog = window.DroidParts && Array.isArray(window.DroidParts.parts) ? window.DroidParts.parts : [];
+    const entry = catalog.find((part) => part.id === shared);
+    return entry && typeof entry.name === "string" ? entry.name : "";
+  };
+
   /**
    * A refusal about one of an Output row's fields, put in the page's words: the
    * Output's name and the setting's, and what it takes. Read from the keys the
@@ -326,9 +341,11 @@
    * web_api.js's messageFor().
    *
    * @param {Error} error - what PAApi threw
+   * @param {object[]} [sentRows] - the `outputs` rows the refused request sent,
+   *   so a Part the droid refused on two Outputs can be named
    * @returns {Error} the same error, reworded where it was about a row
    */
-  const sayRefusal = (error) => {
+  const sayRefusal = (error, sentRows = []) => {
     const field = typeof error?.field === "string" ? error.field : "";
     const dot = field.lastIndexOf(".");
     const address = dot > 0 ? field.slice(0, dot) : "";
@@ -337,9 +354,13 @@
     const output = at(address);
     const name = output ? output.name : address;
     // A Part is on at most one Output (CONTEXT.md "Part"): a row set that puts
-    // one on two is refused as a conflict, and says so in a sentence of its own.
+    // one on two is refused as a conflict, and says so in a sentence of its own,
+    // naming the Part when the rows sent show which one it is.
     if (error.reason === "conflict" && key === "parts") {
-      error.message = `${name} and another output list the same part`;
+      const part = sharedPartName(address, sentRows);
+      error.message = part
+        ? `${part} is on ${name} and another output`
+        : `${name} and another output list the same part`;
       return error;
     }
     const setting = `${name}'s ${SETTING_WORDS[key]}`;
@@ -400,7 +421,7 @@
         } catch (reloadError) {
           console.error("[outputs] reading the outputs after a failed save failed:", reloadError);
         }
-        throw sayRefusal(error);
+        throw sayRefusal(error, body.outputs);
       }
       publish();
       return outputs;

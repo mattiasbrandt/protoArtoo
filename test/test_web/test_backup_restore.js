@@ -24,7 +24,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-import { loadPageModule } from "./helpers/page_module_env.js";
+import { loadPageModule, partsGlobals } from "./helpers/page_module_env.js";
 import { servoRow, outputsModule } from "./helpers/fake_droid.js";
 
 const require = createRequire(import.meta.url);
@@ -151,6 +151,48 @@ test("an Output the backup names and this droid lacks is not sent, and the recei
   assert.ok(!sent.includes("pca:3"), "a row for an Output this droid lacks is not sent");
   assert.equal(sent.length, 5, "and every Output it has is");
   assert.match(receipt, /Core config: partial — pca:3 not on this droid/);
+});
+
+// A backup that puts one Part on two Outputs is refused by the droid as a
+// conflict, and the refusal names only the row (`ledc:3.parts`). The builder
+// is told which Part, by the name the catalog gives it - never its id, and
+// never the row key - found from the rows the restore itself sent.
+test("a backup with one Part on two Outputs says which Part, in the builder's words", async () => {
+  const backup = structuredClone(OLDER_BACKUP);
+  const aux1 = backup.servo_outputs.outputs.find((row) => row.address === "ledc:3");
+  aux1.parts = ["doorFL"];  // doorFL is on ARM1 in the fixture too
+  const { DroidParts } = partsGlobals();
+  const partName = DroidParts.parts.find((part) => part.id === "doorFL").name;
+
+  let env = null;
+  env = loadPageModule("maintenance.js", {
+    respond: (path, opts) => {
+      if (opts.method === "POST" && path === "/api/config") {
+        throw Object.assign(new Error("ledc:3.parts names a Part another row names too"), {
+          kind: "http", status: 400, field: "ledc:3.parts", reason: "conflict", accepts: null,
+        });
+      }
+      if (path === "/api/servo/outputs") return { data: { outputs: freshDroid() } };
+      return { data: {} };
+    },
+    overrides: {
+      PAFeatureAvailability: createFeatureAvailability(),
+      FileReader: FileReaderNow,
+      DroidParts,
+      PAOutputs: outputsModule(() => env.window.PAApi, { DroidParts }),
+    },
+  });
+  await env.settle();
+  env.element("backup-file-input").files = [{ text: JSON.stringify(backup) }];
+  env.emitOn("backup-file-input", "change");
+  env.emitOn("backup-restore-btn", "click");
+  await env.settle(40);
+  const receipt = env.element("backup-feedback").textContent;
+
+  assert.match(receipt, /Core config: FAILED/);
+  assert.ok(receipt.includes(partName), `the Part is not named as the builder knows it: ${receipt}`);
+  assert.ok(receipt.includes("ARM3"), `the Output is not named as the board prints it: ${receipt}`);
+  assert.doesNotMatch(receipt, /doorFL|ledc:/, "no id and no row key reaches the builder");
 });
 
 // "restored" is a claim that every part of the section landed. Before #417 it

@@ -362,7 +362,14 @@
   const restoreConfiguration = async (backup) => {
     const { outputs } = await window.PAOutputs.load();
     const { rows, missing } = rowsToRestore(backup, outputs);
-    await window.PAApi.postJson('/api/config', { ...backup.config, outputs: rows }, { timeoutMs: 10000 });
+    try {
+      await window.PAApi.postJson('/api/config', { ...backup.config, outputs: rows }, { timeoutMs: 10000 });
+    } catch (error) {
+      // A refusal about an Output's row is worded by the module that knows the
+      // Outputs, from the rows this restore sent; anything else is said as the
+      // droid said it.
+      throw window.PAOutputs.sayRefusal(error, rows);
+    }
     const gaps = missing.map((name) => `${name} not on this droid`);
     // A file from before backups carried the Outputs' rows has no centre,
     // calibration or Part map to give back.
@@ -448,9 +455,7 @@
         const gaps = await restoreConfiguration(parsedBackup);
         lines.push(gaps.length === 0 ? 'Core config: restored' : `Core config: partial — ${gaps.join(', ')}`);
       } catch (err) {
-        // A refusal about an Output's row is worded by the module that knows
-        // the Outputs; anything else is said as the droid said it.
-        lines.push(`Core config: FAILED — ${window.PAApi.messageFor(window.PAOutputs.sayRefusal(err))}`);
+        lines.push(`Core config: FAILED — ${window.PAApi.messageFor(err)}`);
       }
     }
 

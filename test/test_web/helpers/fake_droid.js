@@ -152,9 +152,11 @@ export const applyRowSave = (rows, body) => {
  * The shipped data/outputs.js, run on its own. `api` hands it the PAApi it
  * reads and saves through when a caller gives it no handle; it is asked at the
  * moment of the request, so it may name an object made after this one.
+ * `globals` are other browser modules the page loads beside it, such as the
+ * parts catalog (`{ DroidParts }`).
  */
-export const outputsModule = (api = () => undefined) => {
-  const window = {};
+export const outputsModule = (api = () => undefined, globals = {}) => {
+  const window = { ...globals };
   Object.defineProperty(window, "PAApi", { get: api });
   const context = { window, console, URLSearchParams };
   vm.runInNewContext(readFileSync(join(dataDir, "outputs.js"), "utf-8"), context, { filename: "outputs.js" });
