@@ -360,15 +360,16 @@ class TaskStackRecipes(unittest.TestCase):
                         )
 
     def test_a_stitched_frame_carries_the_reason_it_is_stitched(self):
-        """A hand-added frame is a hole in the walk, so it must say which one."""
+        """A hand-added frame or table is a hole in the walk, so it must say which one."""
         for name, entry in self.by_task.items():
             for chip, arm in entry["chips"].items():
                 with self.subTest(chip=chip, task=name):
-                    if not arm.get("frames"):
+                    stitches = arm.get("frames", []) + arm.get("tables", [])
+                    if not stitches:
                         continue
                     self.assertTrue(
                         arm.get("stitch_reason", "").strip(),
-                        f"{name} on {chip} stitches {arm['frames']} into its "
+                        f"{name} on {chip} stitches {stitches} into its "
                         "chain without saying what the walker could not follow",
                     )
 

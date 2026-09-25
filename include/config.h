@@ -630,11 +630,14 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //
 // Reproducing it needs the two halves stitched by hand, because embedded-cli
 // reaches the command callback through `cli->onCommand`, an indirect call the
-// walker does not follow:
+// walker does not follow. Below onCliCommand, a status or api op is called
+// through a pointer read from g_statusExecutors, which --stitch-table walks
+// (#429):
 //
 //   export PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage"
 //   make build BUILD_ENV=<env>
 //   python3 tools/stack_usage_report.py --env <env> --root onCliCommand
+//     --stitch-table consoleExecuteCommand=g_statusExecutors   (one command)
 //   python3 tools/stack_usage_report.py --env <env> --root consoleTask --frames embeddedCliProcess
 //
 // chain = onCliCommand total + consoleTask frame + embeddedCliProcess frame

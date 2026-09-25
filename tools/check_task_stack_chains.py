@@ -17,10 +17,18 @@ WHAT A RECIPE IS
 ----------------
 `tools/task_stack_recipes.json` records, per task and per chip arm: the
 PlatformIO environment the figure was measured on, the root symbols walked, and
-any own-frames stitched in by hand because the walker cannot follow the
-indirect call that reaches them. The chain is
+the two ways an indirect call the walker cannot follow is stitched back in:
 
-    chain = max over roots of (that root's total worst-case chain)
+- `frames`: own frames ABOVE the root, added by hand, where the call through a
+  pointer is what reaches the root (the Console's `cli->onCommand`);
+- `tables`: a dispatch table BELOW the root. Every function the table holds
+  becomes a callee of the function that calls through it, so the walk takes
+  the deepest row itself (`stack_usage_report.Image.stitch_table()`).
+
+The chain is
+
+    chain = max over roots of (that root's total worst-case chain,
+                               walked with every stitched table's rows)
           + sum over stitched frames of (that symbol's own frame)
 
 which is exactly what the two `tools/stack_usage_report.py` invocations in
@@ -53,7 +61,8 @@ Two conditions fail beyond an exceedance, because both mean the recorded recipe
 no longer describes the image and a silent pass would be the drift this exists
 to catch:
 
-- a root or stitched-frame symbol is absent (renamed, or inlined away);
+- a root, stitched-frame, stitched-table or table-caller symbol is absent
+  (renamed, or inlined away);
 - a covered root's body is emitted as data in the very image the recipe names,
   so the walk that produced the recorded figure cannot be reproduced.
 
@@ -227,6 +236,14 @@ class ImageChains:
             if addr in self.img.funcs
         }
 
+    def stitch_table(self, caller: str, table: str) -> int:
+        """Stitch one dispatch table into the call graph; the row count.
+
+        Applied before any chain is walked: the walker memoises a function's
+        depth, and a depth taken before the edges existed would be reused after.
+        """
+        return len(self.img.stitch_table(caller, table))
+
     def chain_total(self, name: str) -> tuple[int, list[str]]:
         """(worst-case chain from this root, notes). Raises when absent.
 
@@ -303,6 +320,24 @@ def main(argv=None) -> int:
     if chip not in constants:
         raise Fatal(f"no config.h arm for platform '{chip}'")
 
+    # A stitched table is a fact about the image, not about one task - the
+    # call it stands for is made whichever task reaches it - so each is applied
+    # once, and all of them before the first walk (see ImageChains.stitch_table).
+    stitched: dict[tuple[str, str], int] = {}
+    stitch_missing: dict[tuple[str, str], str] = {}
+    for task in recipes["tasks"]:
+        arm = task["chips"].get(chip)
+        if arm is None or arm["env"] != args.env:
+            continue
+        for stitch in arm.get("tables", []):
+            key = (stitch["caller"], stitch["table"])
+            if key in stitched or key in stitch_missing:
+                continue
+            try:
+                stitched[key] = image.stitch_table(*key)
+            except KeyError as exc:
+                stitch_missing[key] = str(exc.args[0])
+
     undec, total_funcs = undecoded_share(image.img)
     print(f"check_task_stack_chains  env={args.env}  chip={chip}  arch={image.arch}")
     print(f"  image  {image.elf.relative_to(ROOT)}")
@@ -311,6 +346,8 @@ def main(argv=None) -> int:
         f"  function bodies objdump emitted as data: {undec} of {total_funcs}"
         f" -- every chain below is a LOWER bound"
     )
+    for (caller, table), count in sorted(stitched.items()):
+        print(f"  stitched {caller} -> every row of {table} ({count} functions)")
     print()
 
     rows: list[tuple[str, str, str]] = []
@@ -348,6 +385,11 @@ def main(argv=None) -> int:
         row_notes: list[str] = []
         missing: list[str] = []
         blind = False
+        missing.extend(
+            stitch_missing[(s["caller"], s["table"])]
+            for s in arm.get("tables", [])
+            if (s["caller"], s["table"]) in stitch_missing
+        )
         try:
             for root in arm["roots"]:
                 sub, sub_notes = image.chain_total(root)
