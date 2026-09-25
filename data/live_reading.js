@@ -72,6 +72,15 @@
   // of a verified frame, so a field that did not arrive never answers it.
   const latchedIn = (status) => status.estop === true;
 
+  // Whether the radio's failsafe holds the feet: the receiver reports failsafe,
+  // or the drive watchdog has heard no frame (src/failsafe_gate.cpp). Either
+  // one zeroes EVERY drive source, the browser's included, and only a radio
+  // frame ends it, so a browser drive act cannot move the feet while it holds.
+  // The web-drive timeout is not here on purpose: the browser's next drive
+  // command is what ends that one (src/drive_arbiter.cpp).
+  const radioHoldsFeetIn = (status) =>
+    status.sbusHwFailsafe === true || status.sbusSignalLost === true;
+
   // The last verified frame, and when it ARRIVED -- which the transport
   // supplies, so a frame handed out again on a reconnect keeps the age it was
   // measured at rather than claiming a reading nobody took.
@@ -267,5 +276,7 @@
     // from one frame's facts -- the Status Plate's DRIVE chip. A move act is
     // never gated on it: that is reading.estop, which knows contact was lost.
     latchedIn,
+    // Asked of one verified frame, by the DRIVE chip and by Foot Drive's acts.
+    radioHoldsFeetIn,
   };
 })();

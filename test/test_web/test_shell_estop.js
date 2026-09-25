@@ -595,3 +595,31 @@ test("Drive keeps the release, sends it off the request queue, and no longer lat
     "the release is still here, and still skips the request slot",
   );
 });
+
+// Foot Drive's acts follow what holds the feet (the shell's feetAreHeld(),
+// data/shell.js): the radio's failsafe zeroes the browser's drive as well, so
+// the acts are held with it. The web-drive timeout does NOT hold them -- the
+// next act is the thing that ends it, so a held button could never end it.
+test("Foot Drive holds its drive acts while the radio's failsafe holds the feet, and only then", async () => {
+  const cases = [
+    { changes: {}, drive: true, why: "nothing holds the feet" },
+    { changes: { sbusSignalLost: true }, drive: false, why: "the drive watchdog heard no radio frame" },
+    { changes: { sbusHwFailsafe: true }, drive: false, why: "the receiver reports failsafe" },
+    { changes: { webDriveExpired: true }, drive: true, why: "the next act ends the web-drive timeout" },
+  ];
+  for (const { changes, drive, why } of cases) {
+    const gated = [];
+    const status = statusFrame({ webControlEnabled: true, drive: {}, ...changes });
+    const env = loadPageModule("drive.js", {
+      overrides: {
+        PAApi: { ...apiFor([], status), gateControls: (controls, enabled) => gated.push(enabled) },
+      },
+    });
+    await env.window.PALiveReading.read();
+    await env.settle();
+    // updateDriveControlsEnabled() gates the drive buttons, then the presets.
+    const [driveEnabled, presetsEnabled] = gated.slice(-3);
+    assert.equal(driveEnabled, drive, `drive acts when ${why}`);
+    assert.equal(presetsEnabled, true, `presets move nothing, so they stay live when ${why}`);
+  }
+});

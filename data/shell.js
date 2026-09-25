@@ -534,9 +534,7 @@
   // this half: the estop has a row of its own that names the more specific
   // reason, and that row must not be shadowed by the general one.
   const feetHeldBesidesEstop = (status) =>
-    status.sbusHwFailsafe === true ||
-    status.sbusSignalLost === true ||
-    status.webDriveExpired === true;
+    LIVE.radioHoldsFeetIn(status) || status.webDriveExpired === true;
 
   // Everything that can hold the feet, the estop included. The DRIVE chip
   // reads this: a chip that watched one of the five would sit dark while the

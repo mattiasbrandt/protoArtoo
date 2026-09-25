@@ -61,6 +61,10 @@
   // on a heard latch.
   let moveActsLive = false;
   let estopLatched = false;
+  // The radio's failsafe zeroes the browser's drive too, so the acts are held
+  // with it. The web-drive timeout is not: the next act is what ends it
+  // (data/live_reading.js, radioHoldsFeetIn).
+  let radioHoldsFeet = false;
   let saveInFlight = false;
   let saveQueued = false;
   let currentSpeedLimitMax = null;
@@ -178,9 +182,10 @@
   };
 
   const updateDriveControlsEnabled = () => {
-    const driveEnabled = driveHardwareEnabled && webControlEnabled && moveActsLive;
+    const presetsEnabled = driveHardwareEnabled && webControlEnabled && moveActsLive;
+    const driveEnabled = presetsEnabled && !radioHoldsFeet;
     window.PAApi.gateControls(Array.from(driveButtons), driveEnabled);
-    window.PAApi.gateControls(Array.from(presetButtons), driveEnabled);
+    window.PAApi.gateControls(Array.from(presetButtons), presetsEnabled);
 
     const controlsEnabled = driveHardwareEnabled;
     const gatedControls = [
@@ -388,6 +393,7 @@
       return;
     }
     webControlEnabled = !!payload.webControlEnabled;
+    radioHoldsFeet = window.PALiveReading.radioHoldsFeetIn(payload);
     // /api/status omits the "drive" key entirely when the peripheral is
     // disabled. Key presence = enabled; absence = disabled. This differs from
     // renderConfig() which reads components.drive.enabled explicitly.
