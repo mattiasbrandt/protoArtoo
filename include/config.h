@@ -856,12 +856,15 @@ constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 6656;  // rule: 4944 -> 6180 -> 6
 // 4096 this arm already held, leaving 880 B spare.
 constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3216;
 constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3216 -> 4020 -> 4096
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 2992;
-// rule declined (4096, +1024 B): #248's tight-heap reason. This is the thinnest
-// floor in the block -- 80 B on a lower-bound walk, which is under the cost of
-// one interrupt entry -- and it is the pre-existing shipping value, recorded
-// here as a known exposure rather than raised by this ticket (#271).
-constexpr uint32_t DOME_TASK_STACK_BYTES = 3072;
+// Re-derived 2026-09-25 (#430): 2992 -> 3264. The walk now decodes the function
+// bodies objdump used to print as data, and this chain runs through one of them:
+// __wrap_log_printf (esp_diagnostics, a 128 B frame), reached from real
+// error-log paths. The 3072 it had stood on since before #271 was declined off
+// the rule on #248's tight-heap reason with an 80 B floor, and the fuller walk
+// puts the chain 192 B OVER it. Operator decision 2026-09-25: raise to the rule,
+// paid from the heap #428 freed.
+constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3264;
+constexpr uint32_t DOME_TASK_STACK_BYTES = 4096;  // rule: 3264 -> 4080 -> 4096
 constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 5280;
 // rule declined (6656, +512 B): #248's tight-heap reason. The chain grew 608 B
 // when #226 wave 10 landed, and the growth is the walk seeing further rather
@@ -872,9 +875,11 @@ constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
 constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 3504;
 // rule declined (4608, +512 B): #248's tight-heap reason. Floor holds by 592 B.
 constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 5872;
+constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 5904;
 // rule declined (7680, +1536 B): #248's tight-heap reason, named on #250. Floor
-// holds by 272 B.
+// holds by 240 B. Re-derived 2026-09-25 (#430) from 5872: the walk decodes the
+// bodies objdump used to print as data, and the chain gains 32 B through
+// __wrap_log_printf; the decline stands (operator decision 2026-09-25).
 constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
 // Walked again 2026-09-25 (#428): since #428 this task runs esp_restart(), and
 // with it every registered shutdown handler. The recipe stitches the two this
@@ -943,9 +948,12 @@ constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 5904;
 // the deepest in this chain, and publishing failedAllocs and queueOverflowCount
 // grew it 16 B. Xtensa only -- the ESP32-P4 arm re-walked unchanged.
 constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3696;
+constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3904;
 // rule declined (5120, +1024 B): #248's tight-heap reason, applied to this
-// task's first measurement (#271). Floor holds by 400 B.
+// task's first measurement (#271). Floor holds by 192 B, the thinnest declined
+// floor in the block. Re-derived 2026-09-25 (#430) from 3696: the walk decodes
+// the bodies objdump used to print as data, and the chain gains 208 B through
+// __wrap_log_printf; the decline stands (operator decision 2026-09-25).
 constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;
 #else
   #error "task stack sizes have no value for this chip target"
