@@ -21,6 +21,8 @@
 #include "servo_motion_ramp.h"  // ServoMotionProfile - what a move is planned from
 #include "wifi_boot_decision.h"  // For WifiBootPosture (#189)
 
+struct RcAudioCategorySnapshot;  // include/rc_action_dispatcher.h
+
 // =============================================================================
 // Cache read-write (live runtime state)
 // =============================================================================
@@ -41,6 +43,21 @@ bool configCacheServoAnyEnabled();
 // without copying a 944 B snapshot onto the caller's frame to ask one bit.
 bool configCacheOutputIsWired(size_t boardOutputIndex);
 void configCacheReadWifi(WifiConfig* out);
+
+// The narrow reads an RC dispatch makes on Core 1 (src/tasks/rc_input.cpp),
+// each by field so a dispatch copies what it uses rather than a 916 B
+// ConfigSnapshot onto the real-time task's stack or into a static (#428).
+//
+// configCacheReadRcActionContext: the twelve sound-category ranges an RC
+// action picks a random track from, and the active speed preset, in one
+// configCacheMux section. Either pointer may be null.
+void configCacheReadRcActionContext(RcAudioCategorySnapshot* categories,
+                                    SpeedPresetId* speedPresetActive);
+// configCacheReadRcTriggerSlots: rcTriggerSlotsCopy() on the live config.
+size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
+// configCacheSbusTimeoutMs: drive.sbusTimeoutMs, the RC signal watchdog's
+// timeout.
+uint32_t configCacheSbusTimeoutMs();
 
 // The addressed Servo Output rows (ADR 0041). They sit outside ConfigSnapshot,
 // on their own NVS keys -- see include/config_serializer.h for why the table is

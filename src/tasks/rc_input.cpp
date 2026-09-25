@@ -153,11 +153,9 @@ static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) 
         return;
     }
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
     static_assert(RC_TRIGGER_MAX >= RC_TRIGGER_SLOT_COUNT,
                   "trigger buffer must hold every config slot");
-    *count = rcTriggerSlotsCopy(cfg.system, bindings, RC_TRIGGER_MAX);
+    *count = configCacheReadRcTriggerSlots(bindings, RC_TRIGGER_MAX);
 }
 
 static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcessorConfig* out) {
@@ -165,37 +163,15 @@ static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcesso
     out->mapping = rcGetMappingConfig(active);
     loadTier2TriggerBindings(out->triggers, &out->triggerCount);
 
-    static ConfigSnapshot snap = {};
-    configCacheRead(&snap);
-    out->categories.gen_lo   = snap.audio.snd_cat_gen_lo;
-    out->categories.gen_hi   = snap.audio.snd_cat_gen_hi;
-    out->categories.chat_lo  = snap.audio.snd_cat_chat_lo;
-    out->categories.chat_hi  = snap.audio.snd_cat_chat_hi;
-    out->categories.hap_lo   = snap.audio.snd_cat_hap_lo;
-    out->categories.hap_hi   = snap.audio.snd_cat_hap_hi;
-    out->categories.proc_lo  = snap.audio.snd_cat_proc_lo;
-    out->categories.proc_hi  = snap.audio.snd_cat_proc_hi;
-    out->categories.sad_lo   = snap.audio.snd_cat_sad_lo;
-    out->categories.sad_hi   = snap.audio.snd_cat_sad_hi;
-    out->categories.sent_lo  = snap.audio.snd_cat_sent_lo;
-    out->categories.sent_hi  = snap.audio.snd_cat_sent_hi;
-    out->categories.hum_lo   = snap.audio.snd_cat_hum_lo;
-    out->categories.hum_hi   = snap.audio.snd_cat_hum_hi;
-    out->categories.scrm_lo  = snap.audio.snd_cat_scrm_lo;
-    out->categories.scrm_hi  = snap.audio.snd_cat_scrm_hi;
-    out->categories.ooh_lo   = snap.audio.snd_cat_ooh_lo;
-    out->categories.ooh_hi   = snap.audio.snd_cat_ooh_hi;
-    out->categories.alrm_lo  = snap.audio.snd_cat_alrm_lo;
-    out->categories.alrm_hi  = snap.audio.snd_cat_alrm_hi;
-    out->categories.snarky_lo = snap.audio.snd_cat_snarky_lo;
-    out->categories.snarky_hi = snap.audio.snd_cat_snarky_hi;
-    out->categories.whis_lo  = snap.audio.snd_cat_whis_lo;
-    out->categories.whis_hi  = snap.audio.snd_cat_whis_hi;
+    // By field, not a whole ConfigSnapshot: the ranges and the preset are all
+    // a dispatch reads of it (#428).
+    SpeedPresetId speedPresetActive = SpeedPresetId::Normal;
+    configCacheReadRcActionContext(&out->categories, &speedPresetActive);
 
     taskENTER_CRITICAL(&robotStateMux);
     out->estopActive        = robotState.estop;
     out->currentSleepMode   = robotState.sleepMode;
-    out->currentSpeedPreset = normalizeSpeedPresetId((uint8_t)snap.drive.speedPresetActive);
+    out->currentSpeedPreset = normalizeSpeedPresetId((uint8_t)speedPresetActive);
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -249,36 +225,12 @@ static RcDispatchOutcome processTriggerAction(RobotActionId target, const char* 
     ap.pressed = pressed;
     ap.randomSeed = (uint32_t)esp_random();
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    ap.categories.gen_lo = cfg.audio.snd_cat_gen_lo;
-    ap.categories.gen_hi = cfg.audio.snd_cat_gen_hi;
-    ap.categories.chat_lo = cfg.audio.snd_cat_chat_lo;
-    ap.categories.chat_hi = cfg.audio.snd_cat_chat_hi;
-    ap.categories.hap_lo = cfg.audio.snd_cat_hap_lo;
-    ap.categories.hap_hi = cfg.audio.snd_cat_hap_hi;
-    ap.categories.proc_lo = cfg.audio.snd_cat_proc_lo;
-    ap.categories.proc_hi = cfg.audio.snd_cat_proc_hi;
-    ap.categories.sad_lo = cfg.audio.snd_cat_sad_lo;
-    ap.categories.sad_hi = cfg.audio.snd_cat_sad_hi;
-    ap.categories.sent_lo = cfg.audio.snd_cat_sent_lo;
-    ap.categories.sent_hi = cfg.audio.snd_cat_sent_hi;
-    ap.categories.hum_lo = cfg.audio.snd_cat_hum_lo;
-    ap.categories.hum_hi = cfg.audio.snd_cat_hum_hi;
-    ap.categories.scrm_lo = cfg.audio.snd_cat_scrm_lo;
-    ap.categories.scrm_hi = cfg.audio.snd_cat_scrm_hi;
-    ap.categories.ooh_lo = cfg.audio.snd_cat_ooh_lo;
-    ap.categories.ooh_hi = cfg.audio.snd_cat_ooh_hi;
-    ap.categories.alrm_lo = cfg.audio.snd_cat_alrm_lo;
-    ap.categories.alrm_hi = cfg.audio.snd_cat_alrm_hi;
-    ap.categories.snarky_lo = cfg.audio.snd_cat_snarky_lo;
-    ap.categories.snarky_hi = cfg.audio.snd_cat_snarky_hi;
-    ap.categories.whis_lo = cfg.audio.snd_cat_whis_lo;
-    ap.categories.whis_hi = cfg.audio.snd_cat_whis_hi;
+    SpeedPresetId speedPresetActive = SpeedPresetId::Normal;
+    configCacheReadRcActionContext(&ap.categories, &speedPresetActive);
     taskENTER_CRITICAL(&robotStateMux);
     ap.estopActive = robotState.estop;
     ap.currentSleepMode = robotState.sleepMode;
-    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
+    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)speedPresetActive);
     taskEXIT_CRITICAL(&robotStateMux);
 
     RcActionResult res = rcDispatchAction(ap);
@@ -347,10 +299,9 @@ static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {
 
     // PWM failsafe: check if we have recent valid PWM input before processing drive commands
     bool pwmSignalLost = false;
-    ConfigSnapshot cfgSnap = {};
-    configCacheRead(&cfgSnap);
+    const uint32_t signalTimeoutMs = configCacheSbusTimeoutMs();
     taskENTER_CRITICAL(&robotStateMux);
-    pwmSignalLost = pwmSignalLostCheck(robotState.lastPwmMs, pwmCheckMs, cfgSnap.drive.sbusTimeoutMs);
+    pwmSignalLost = pwmSignalLostCheck(robotState.lastPwmMs, pwmCheckMs, signalTimeoutMs);
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (pwmSignalLost) {
@@ -618,9 +569,7 @@ void rcInputTask(void* pvParameters) {
         uint32_t nowMs = millis();
         uint32_t timeoutMs = 0;
         if (driveWatchdogEnabled || domeSbusEnabled) {
-            ConfigSnapshot watchdogCfg = {};
-            configCacheRead(&watchdogCfg);
-            timeoutMs = watchdogCfg.drive.sbusTimeoutMs;
+            timeoutMs = configCacheSbusTimeoutMs();
         }
 
         uint32_t lastSbus1 = 0;
