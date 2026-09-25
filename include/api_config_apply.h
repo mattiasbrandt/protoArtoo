@@ -121,13 +121,13 @@ struct ConfigAppliedFields {
 // through configCacheApplyServoOutputEdits(). Nothing stores an endpoint on the
 // way: since #345 the row is the only place one lives.
 //
-// One entry per Output Address the request named, so a POST that carries one
-// arm changes one row. `count` is zero on a request that named none.
-// The five legacy field sets can each produce one edit, and a request may carry
-// a capture and a reverse besides (#364) -- each addressed at any Output,
-// including a row the five names cannot reach. Hence the + 2.
+// One typed entry per Output Address the request named, so a POST that
+// carries one arm changes one row. `count` is zero on a request that named
+// none. The row door (ADR 0068) can name every row a table holds, the five
+// legacy field sets can each add an address of their own, and a request may
+// carry a capture and a reverse besides (#364) -- each addressed at any Output.
 struct ConfigServoOutputEdits {
-    ServoOutputEdit edits[SERVO_LEGACY_FIELD_SET_COUNT + 2];
+    ServoOutputEdit edits[SERVO_OUTPUT_ROW_MAX + SERVO_LEGACY_FIELD_SET_COUNT + 2];
     size_t count = 0;
 };
 

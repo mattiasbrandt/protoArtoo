@@ -63,12 +63,13 @@ struct ConfigCommitOutcome {
     // config adapter carries exactly one field that is never movePart, so today
     // the REST route is the one caller that meets it.
     const char* refusal = nullptr;
-    // Rows whose open or close end the component band moved on the way in, by
-    // row index (ServoOutputRepairReport::openMovedRows). The clamp is
-    // deliberate (#286); what the REST answer owes is saying so, which
-    // sendConfigSnapshot() does as `clamped` (#417).
+    // Rows whose open end, close end or stated centre the component band moved
+    // on the way in, by row index (ServoOutputRepairReport::openMovedRows). The
+    // clamp is deliberate (#286); what the REST answer owes is saying so, which
+    // sendConfigSnapshot() does as `clamped` (#417, ADR 0068).
     uint32_t openClampedRows = 0;
     uint32_t closeClampedRows = 0;
+    uint32_t centreClampedRows = 0;
 };
 
 // Write Window for a config write (ADR 0011, amended 2026-09-24; CONTEXT.md
@@ -108,6 +109,16 @@ ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, Confi
 // bytes the REST handler renders - whether or not persistence succeeded.
 ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApplyResult& result,
                                          CommandSource source);
+
+// The largest body POST /api/config buffers. A restore posts a whole
+// Configuration back in the shape it was read (ADR 0068): GET /api/config,
+// measured at about 3.4 KB at its worst (test_api_config_get), with an `outputs`
+// row set beside it. The five rows this controller drives add about 2 KB as
+// GET /api/servo/outputs reads them; a full expander's twenty-four, sent as
+// the rows a restore posts - the settings, without the readings - about 6 KB.
+// 12 KB holds that with headroom, and is the ceiling the server already
+// buffers for POST /api/seq on this chip, so no route's allocation grows for it.
+constexpr size_t kConfigPostMaxBodyBytes = 12288;
 
 void handleConfigGet(WebRequest& req);
 void handleConfigPost(WebRequest& req);

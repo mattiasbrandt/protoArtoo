@@ -36,6 +36,10 @@ void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
 bool configCacheServoAnyEnabled();
+// Whether the Output at `boardOutputIndex` in include/board_outputs.h's
+// BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
+// without copying a 944 B snapshot onto the caller's frame to ask one bit.
+bool configCacheOutputIsWired(size_t boardOutputIndex);
 void configCacheReadWifi(WifiConfig* out);
 
 // The addressed Servo Output rows (ADR 0041). They sit outside ConfigSnapshot,
