@@ -412,7 +412,7 @@
 
     let servo;
     if (output) servo = `On a servo (${output.name})`;
-    else if (marker.target) servo = "On a servo (dome-link)";
+    else if (marker.target) servo = "On a servo (protoR2link)";
     else if (!answered()) servo = OUTPUTS.live(null).word;
     else servo = "No output mapped";
 
