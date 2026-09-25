@@ -684,30 +684,6 @@ bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t c
     return found;
 }
 
-// Field by field out of the live table, like the pair above, and the stored
-// ease rather than servoOutputEffectiveEasing()'s: this answers what the builder
-// chose, for a surface to show, not how the Output will move.
-bool configCacheReadServoOutputMotionSettings(ServoOutputDriver driver, uint8_t channel,
-                                              uint16_t* throwMs, uint16_t* accelMs,
-                                              ServoEasing* easing, ServoBootBehaviour* boot) {
-    if (throwMs == nullptr || accelMs == nullptr || easing == nullptr || boot == nullptr) {
-        return false;
-    }
-    bool found;
-    taskENTER_CRITICAL(&configCacheMux);
-    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
-    found = index < SERVO_OUTPUT_ROW_MAX;
-    if (found) {
-        const ServoOutputRow& row = servoOutputCache.rows[index];
-        *throwMs = row.throw_ms;
-        *accelMs = row.accel_ms;
-        *easing = row.easing;
-        *boot = row.boot;
-    }
-    taskEXIT_CRITICAL(&configCacheMux);
-    return found;
-}
-
 ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver, uint8_t channel) {
     ServoComponentType component = SERVO_COMP_NONE;
     taskENTER_CRITICAL(&configCacheMux);
