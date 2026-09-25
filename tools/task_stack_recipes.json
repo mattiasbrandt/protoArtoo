@@ -9,6 +9,7 @@
       "chain = max over 'roots' of that root's total worst-case chain, plus the sum of the own frames named in 'frames'. A frame is stitched by hand only where the walker cannot follow the call that reaches it (an indirect call through a function pointer); 'stitch_reason' says which call and why. An indirect call BELOW a root, through a pointer read from a dispatch table, is stitched by 'tables': every function the named table holds in the image becomes a callee of 'caller', so the walk itself takes the deepest row and a row added later is walked without editing this file (#429).",
       "'env' is the image tools/check_task_stack_chains.py re-walks for that arm - always the product image for the chip. 'chain_bytes' is the recorded constant and equals the DEEPER of the product and profiler images, because include/config.h is compiled into both; 'deeper_image' records that substitution where the two differ.",
       "Every figure is a floor: indirect calls that are not stitched are not followed, and call-graph cycles are cut. On artoo-esp32 objdump prints a third of the function bodies as data, because the linked image keeps only part of its .xt.prop property table and objdump decodes an address in a gap between records by the NEXT record's flags (#430); tools/stack_usage_report.py decodes those bodies from a copy of the image without .xt.prop/.xt.lit, taking only them from it, and the gate row counts the bodies recovered and any still printed as data, whose frames read as zero. The ESP32-P4 image decodes whole. So a chain can be missed and cannot be overstated, which is what makes the re-walk safe to fail a build on.",
+      "'pointer_calls' (top level, not per task) stitches a function pointer the program sets at run time and a library calls through from several places: every function the listing shows loading 'pointer' and calling indirectly becomes a caller of each of 'callees', on every chip in 'chips', for every task (stack_usage_report.Image.stitch_pointer_calls(), #430). The callers are found, not listed, so a library update that adds one is walked without editing this file, and a pointer nothing calls through any more fails the gate row.",
       "'infeasible_calls' (top level, not per task) removes call edges the listing shows but that cannot execute, each with its reason and the two sites that prove it: the call and the caller that makes it impossible. Removing an edge can only lower a walk, so every entry is evidence the operator can check, not a convenience; an entry whose edge is no longer in the image fails the gate row (stack_usage_report.Image.drop_infeasible_calls(), #430).",
       "Interrupt and exception frames are not counted: both ports spill some state to the interrupted task's stack before switching to the ISR stack. The rule's 25% is what covers that, so an arm that declines the rule has less cover for it than one that does not.",
       "Every figure here is from the BOUNDED walk (#271): tools/stack_usage_report.py reads each function body to its ELF symbol size rather than to the next symbol objdump prints. Before that, a literal-pool word decoding as a call to a real entry became a followed edge, and which words did so changed when the image was relinked - two builds of identical source returned WebEvents chains 688 B apart. Figures recorded by #245, #248, #250 and #256 predate the bound and were not necessarily reproducible; the chains here were re-derived and are identical across two builds whose ELF layouts differ.",
@@ -25,6 +26,18 @@
       }
     }
   },
+  "pointer_calls": [
+    {
+      "pointer": "esp_log_vprint_func",
+      "callees": [
+        "paLogIdfVprintf"
+      ],
+      "chips": [
+        "esp32"
+      ],
+      "reason": "src/main.cpp paLogInit() installs paLogIdfVprintf with esp_log_set_vprintf(), which stores it in esp_log_vprint_func (ESP-IDF components/log/src/os/log_write.c). Every ESP-IDF log line is printed through that pointer: esp_log_va() calls it (log.c, CONFIG_LOG_VERSION=1 on both chips) and so does esp_log(), into which the compiler inlines the same call; esp_log_writev() and esp_log_write() reach it through esp_log_va(). The hook formats into a PA_LOG_SERIAL_LINE_MAX buffer on the calling task's stack and runs paLogLine(), 2544 B on artoo-esp32 (#428), so a task that reaches any ESP-IDF log call carries it. At #430 both images call through the pointer from esp_log_va and esp_log only; esp_log_set_vprintf stores it and makes no call. Switched on for artoo-esp32 only (#430, 2026-09-26): there newlib nano printf pays for it and every chain still fits its stack. On the ESP32-P4 the hook-on walk needs nine raises by the allocation rule, +16896 B, over the 16 KB #430 may spend without a decision, so 'esp32p4' is not listed yet; adding it is the whole switch, and it fails the firebeetle2 row until those stacks are raised."
+    }
+  ],
   "infeasible_calls": [
     {
       "caller": "esp_cache_get_alignment",
@@ -58,7 +71,8 @@
           "product_bytes": 4080,
           "profiler_bytes": 4080,
           "rule": "above",
-          "reason": "#250 raised the 50 Hz drive loop on both chips rather than only where an overrun is provable, because the Xtensa figure is the floor of an unknown. Lowering this arm onto the rule (5120) would undo that decision."
+          "reason": "#250 raised the 50 Hz drive loop on both chips rather than only where an overrun is provable, because the Xtensa figure is the floor of an unknown. Lowering this arm onto the rule (5120) would undo that decision.",
+          "note": "Re-derived 2026-09-26 (#430) at the same 4080: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 4080. The arm stays above the rule (5120)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -85,11 +99,11 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 4944,
-          "product_bytes": 4944,
-          "profiler_bytes": 4944,
+          "chain_bytes": 5152,
+          "product_bytes": 5152,
+          "profiler_bytes": 5152,
           "rule": "applied",
-          "note": "Re-derived 2026-09-25 (#428) from 5616: the RC dispatch reads the config fields it uses by name instead of three 916 B ConfigSnapshot copies (loadTier2TriggerBindings, the PWM signal check, the RC watchdog). The artoo_esp32 walk gives 4944. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: the stack follows the rule down, 7168 -> 6656 (4944 -> 6180 -> 6656)."
+          "note": "Re-derived 2026-09-25 (#428) from 5616: the RC dispatch reads the config fields it uses by name instead of three 916 B ConfigSnapshot copies (loadTier2TriggerBindings, the PWM signal check, the RC watchdog). The artoo_esp32 walk gives 4944. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: the stack follows the rule down, 7168 -> 6656 (4944 -> 6180 -> 6656). Re-derived 2026-09-26 (#430) from 4944: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 5152. The rule stays on 6656 (5152 -> 6440 -> 6656)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -117,10 +131,11 @@
             "servoTask"
           ],
           "frames": [],
-          "chain_bytes": 3216,
-          "product_bytes": 3216,
-          "profiler_bytes": 3216,
-          "rule": "applied"
+          "chain_bytes": 3184,
+          "product_bytes": 3184,
+          "profiler_bytes": 3184,
+          "rule": "applied",
+          "note": "Re-derived 2026-09-26 (#430) from 3216: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 3184. The rule stays on 4096 (3184 -> 3980 -> 4096)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -148,11 +163,11 @@
             "domeTask"
           ],
           "frames": [],
-          "chain_bytes": 3264,
-          "product_bytes": 3264,
-          "profiler_bytes": 3264,
+          "chain_bytes": 3200,
+          "product_bytes": 3200,
+          "profiler_bytes": 3200,
           "rule": "applied",
-          "note": "Re-derived 2026-09-25 (#430) from 2992: the walk decodes the function bodies objdump used to print as data (.xt.prop), and this chain runs through one of them, __wrap_log_printf (esp_diagnostics, 128 B frame), reached from real error-log paths. The artoo_esp32 walk gives 3264. The profiler image was not walked and is recorded equal to the product image. The rule had been declined on #248's tight-heap reason with an 80 B floor, the thinnest in the table, and the fuller walk put the chain 192 B over the 3072 stack. Operator decision 2026-09-25: raise to the rule, 3072 -> 4096 (3264 -> 4080 -> 4096), +1024 B of heap freed by #428."
+          "note": "Re-derived 2026-09-25 (#430) from 2992: the walk decodes the function bodies objdump used to print as data (.xt.prop), and this chain runs through one of them, __wrap_log_printf (esp_diagnostics, 128 B frame), reached from real error-log paths. The artoo_esp32 walk gives 3264. The profiler image was not walked and is recorded equal to the product image. The rule had been declined on #248's tight-heap reason with an 80 B floor, the thinnest in the table, and the fuller walk put the chain 192 B over the 3072 stack. Operator decision 2026-09-25: raise to the rule, 3072 -> 4096 (3264 -> 4080 -> 4096), +1024 B of heap freed by #428. Re-derived again 2026-09-26 (#430) from 3264: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 3200. The rule stays on 4096 (3200 -> 4000 -> 4096)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -179,12 +194,12 @@
             "audioTask"
           ],
           "frames": [],
-          "chain_bytes": 5280,
-          "product_bytes": 4528,
-          "profiler_bytes": 5280,
-          "deeper_image": "artoo_esp32_profiler - 5280 B against the product image's 4528 B. The extra depth is an ESP-IDF log/queue tail below esp_cache_get_alignment() that the product image's walk does not reach, because a body on the way is emitted as data there. The constant is compiled into both images, so it takes the deeper one.",
-          "rule": "declined",
-          "reason": "#248's tight-heap reason: the rule (6656) costs +512 B for margin the Xtensa walk cannot confirm. Floor holds by 864 B. This arm was on the rule until #226 wave 10 landed and the profiler-image chain grew 608 B."
+          "chain_bytes": 4240,
+          "product_bytes": 4240,
+          "profiler_bytes": 4240,
+          "rule": "above",
+          "reason": "#248 declined the rule here (6656) on its tight-heap reason, when the profiler image walked 5280. Since #430 both images walk 4240 and the rule is 5632, so the 6144 stack sits above it; #430 changed no stack for heap, and lowering it is a separate decision.",
+          "note": "Re-derived 2026-09-26 (#430) from 5280: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. The profiler image's extra depth (the deeper_image note) was that null-pointer log tail, so both images now walk 4240."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -211,11 +226,12 @@
             "auxLedTask"
           ],
           "frames": [],
-          "chain_bytes": 3504,
-          "product_bytes": 3504,
-          "profiler_bytes": 3504,
-          "rule": "declined",
-          "reason": "#248's tight-heap reason: the rule (4608) costs +512 B for margin the Xtensa walk cannot confirm. Floor holds by 592 B."
+          "chain_bytes": 2752,
+          "product_bytes": 2752,
+          "profiler_bytes": 2752,
+          "rule": "above",
+          "reason": "#248 declined the rule here (4608) on its tight-heap reason. Since #430 the chain walks 2752 and the rule is 3584, so the 4096 stack sits above it; #430 changed no stack for heap, and lowering it is a separate decision.",
+          "note": "Re-derived 2026-09-26 (#430) from 3504: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 2752."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -242,12 +258,12 @@
             "domeLinkTask"
           ],
           "frames": [],
-          "chain_bytes": 5904,
-          "product_bytes": 5904,
-          "profiler_bytes": 5904,
+          "chain_bytes": 6112,
+          "product_bytes": 6112,
+          "profiler_bytes": 6112,
           "rule": "declined",
-          "reason": "#248's tight-heap reason, named on #250: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 240 B.",
-          "note": "Re-derived 2026-09-25 (#430) from 5872: the walk decodes the bodies objdump used to print as data, and the chain gains 32 B through __wrap_log_printf. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: re-derive the figure only; the stack still covers the walk and the decline stands."
+          "reason": "#248's tight-heap reason, named on #250: the rule (7680) costs +1536 B for margin the walk cannot confirm. Floor holds by 32 B, the thinnest declined floor in the table.",
+          "note": "Re-derived 2026-09-25 (#430) from 5872: the walk decodes the bodies objdump used to print as data, and the chain gains 32 B through __wrap_log_printf. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: re-derive the figure only; the stack still covers the walk and the decline stands. Re-derived again 2026-09-26 (#430) from 5904: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 6112. The chain still fits 6144, so the decline stands."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -275,10 +291,10 @@
             "safetyMonitorTask"
           ],
           "frames": [],
-          "chain_bytes": 3088,
-          "product_bytes": 2944,
-          "profiler_bytes": 3088,
-          "deeper_image": "artoo_esp32_profiler - 3088 B against the product image's 2944 B. This is the one arm in the table where the floor did NOT already hold: the constant was 3072, which the profiler image exceeds by 16 B. Raised by the rule at #271.",
+          "chain_bytes": 3280,
+          "product_bytes": 3088,
+          "profiler_bytes": 3280,
+          "deeper_image": "artoo_esp32_profiler - 3280 B against the product image's 3088 B (#430). The constant is compiled into both images, so it takes the deeper one; it was the profiler image here at #271 too.",
           "rule": "applied",
           "calls": [
             {
@@ -295,7 +311,8 @@
           "pointer_tables": {
             "g_osi_funcs_p": "g_wifi_osi_funcs"
           },
-          "stitch_reason": "Since #428 this task carries out an operator-requested restart, and esp_restart() runs every handler registered with esp_register_shutdown_handler() on the calling task, through a pointer array filled at run time. This image registers two: esp_sync_timekeeping_timers (esp_timer's system_time.c, because both CONFIG_ESP_TIME_FUNCS_USE_ESP_TIMER and _RTC_TIMER are set) and esp_wifi_stop (esp_wifi's wifi_default.c:273). libbt's handler is not linked (CONFIG_BT_ENABLED=n) and the Arduino core's usb_persist_shutdown_handler is registered only by usb_persist_restart(), which nothing calls. esp_wifi_stop is libnet80211.a's (ieee80211_api.o) and objdump emits its body in this image as data, so it and every closed body it reaches are walked from their archive members; the closed code calls the OS adapter through g_osi_funcs_p, which esp_wifi_init() points at g_wifi_osi_funcs at run time. Measured 2026-09-25: esp_wifi_stop 2016 B, esp_sync_timekeeping_timers 1680 B, the restart branch 368 + 32 (EspClass::restart) + 32 (esp_restart) + 2016 = 2448 B, under the 2880 B failedAllocTrackerInit() branch. Not followed, as in every other chain here: the IDF log print hook (paLogIdfVprintf, installed with esp_log_set_vprintf()), which esp_wifi_stop's error paths reach through wifi_log -> esp_log_writev; with it the restart branch is 3616 B."
+          "stitch_reason": "Since #428 this task carries out an operator-requested restart, and esp_restart() runs every handler registered with esp_register_shutdown_handler() on the calling task, through a pointer array filled at run time. This image registers two: esp_sync_timekeeping_timers (esp_timer's system_time.c, because both CONFIG_ESP_TIME_FUNCS_USE_ESP_TIMER and _RTC_TIMER are set) and esp_wifi_stop (esp_wifi's wifi_default.c:273). libbt's handler is not linked (CONFIG_BT_ENABLED=n) and the Arduino core's usb_persist_shutdown_handler is registered only by usb_persist_restart(), which nothing calls. esp_wifi_stop is libnet80211.a's (ieee80211_api.o) and objdump emits its body in this image as data, so it and every closed body it reaches are walked from their archive members; the closed code calls the OS adapter through g_osi_funcs_p, which esp_wifi_init() points at g_wifi_osi_funcs at run time. Measured 2026-09-25: esp_wifi_stop 2016 B, esp_sync_timekeeping_timers 1680 B, the restart branch 368 + 32 (EspClass::restart) + 32 (esp_restart) + 2016 = 2448 B, under the 2880 B failedAllocTrackerInit() branch. Not followed, as in every other chain here: the IDF log print hook (paLogIdfVprintf, installed with esp_log_set_vprintf()), which esp_wifi_stop's error paths reach through wifi_log -> esp_log_writev; with it the restart branch is 3616 B. Since #430 the hook is walked from every ESP-IDF log call (the top-level pointer_calls entry).",
+          "note": "Re-derived 2026-09-26 (#430) from 3088: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. The product image walks 3088 and the profiler image 3280, and the constant takes the deeper. The rule moves one step, 3280 -> 4100 -> 4608, and this arm follows the rule, so the stack is raised 4096 -> 4608 (+512 B)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -333,11 +350,11 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 4432,
-          "product_bytes": 4432,
-          "profiler_bytes": 4432,
+          "chain_bytes": 3888,
+          "product_bytes": 3888,
+          "profiler_bytes": 3888,
           "rule": "applied",
-          "note": "The depth is the Learned Sequence load on this task's own stack: seqStorePrepare -> protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use heap/log-mutex tail (#250), 3808 B below a 608 B root frame. Re-derived 2026-09-17 (#365) from 4336: the root frame grew 528 -> 608 B because centreOneOutput() is a single-caller static the compiler inlines, so the bulk centre's 70-byte ServoOutputRow is reserved there (80 B at Xtensa's 16-byte stack alignment). The chain below the root did not move. Re-derived 2026-09-23 (#414) to 4432: the boot pass shares the cursor, and the owed release's ServoCommandedPosition copy lands on the same inlined root frame, 608 -> 624 B; the 3808 B below it is unchanged. The stack stays 5632 (4432 -> 5540 -> 5632)."
+          "note": "The depth is the Learned Sequence load on this task's own stack: seqStorePrepare -> protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use heap/log-mutex tail (#250), 3808 B below a 608 B root frame. Re-derived 2026-09-17 (#365) from 4336: the root frame grew 528 -> 608 B because centreOneOutput() is a single-caller static the compiler inlines, so the bulk centre's 70-byte ServoOutputRow is reserved there (80 B at Xtensa's 16-byte stack alignment). The chain below the root did not move. Re-derived 2026-09-23 (#414) to 4432: the boot pass shares the cursor, and the owed release's ServoCommandedPosition copy lands on the same inlined root frame, 608 -> 624 B; the 3808 B below it is unchanged. The stack stays 5632 (4432 -> 5540 -> 5632). Re-derived 2026-09-26 (#430) from 4432: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 3888; the Learned Sequence load's snprintf float tail is the part that shrank. This arm follows the rule, so the stack follows it down, 5632 -> 5120 (3888 -> 4860 -> 5120), and 512 B goes back to the heap."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -407,16 +424,16 @@
             }
           ],
           "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). A direct action, an audio config write and a scalar config write are reached the same way, through a pointer found in one of the six g_*DirectActionExecutors tables, g_audioConfigExecutors or g_scalarConfigExecutors, so those rows are stitched too (#428). Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
-          "chain_bytes": 8688,
-          "product_bytes": 8688,
-          "profiler_bytes": 8688,
+          "chain_bytes": 8896,
+          "product_bytes": 8896,
+          "profiler_bytes": 8896,
           "components": {
             "onCliCommand": 8288,
             "consoleTask": 320,
             "embeddedCliProcess": 80
           },
           "rule": "applied",
-          "note": "Re-derived 2026-09-25 (#425) from 7376: every Apply Core refusal carries its field, reason and accepts (an 81 B ApplyRefusal), and consoleWriteAudioTracksField's AudioTracksApplyResult holds one. The artoo_esp32 walk gives onCliCommand 7056 against the recorded 6976, its deepest route consoleWriteAudioTracksField (1248 B) -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 9728 (7456 -> 9320 -> 9728). Re-derived again 2026-09-25 (#428) to 8688: the walk now follows the six direct-action tables and the audio-config and scalar-config tables consoleExecuteCommand() calls through, besides g_statusExecutors. onCliCommand walks 8288, its deepest route consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist -> configSaveGuidedSetup -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: the stack is raised to the rule, 9728 -> 11264 (8688 -> 10860 -> 11264)."
+          "note": "Re-derived 2026-09-25 (#425) from 7376: every Apply Core refusal carries its field, reason and accepts (an 81 B ApplyRefusal), and consoleWriteAudioTracksField's AudioTracksApplyResult holds one. The artoo_esp32 walk gives onCliCommand 7056 against the recorded 6976, its deepest route consoleWriteAudioTracksField (1248 B) -> audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. The stack stays 9728 (7456 -> 9320 -> 9728). Re-derived again 2026-09-25 (#428) to 8688: the walk now follows the six direct-action tables and the audio-config and scalar-config tables consoleExecuteCommand() calls through, besides g_statusExecutors. onCliCommand walks 8288, its deepest route consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist -> configSaveGuidedSetup -> configWriteWindowExpectHeld's log line -> the snprintf/_dtoa_r tail; the stitched frames are unchanged. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: the stack is raised to the rule, 9728 -> 11264 (8688 -> 10860 -> 11264). Re-derived 2026-09-26 (#430) from 8688: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 8896 (onCliCommand plus the two stitched frames). The rule stays on 11264 (8896 -> 11120 -> 11264)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -492,12 +509,12 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 5904,
-          "product_bytes": 5904,
-          "profiler_bytes": 5904,
+          "chain_bytes": 4992,
+          "product_bytes": 4992,
+          "profiler_bytes": 4992,
           "rule": "declined",
-          "reason": "#248's tight-heap reason, named on #256: the rule (7680) costs +1536 B for margin the Xtensa walk cannot confirm. Floor holds by 240 B.",
-          "note": "Re-walked at #228 from 5888: buildStatusJson()'s frame, the deepest in this chain, grew 16 B when failedAllocs and queueOverflowCount joined the /api/status payload. Both images walk 5904. #256 recorded this arm from the profiler image because the product image's body was emitted as data (.xt.prop) then. It decodes in both images at this tip and they agree, so the arm is walked from the product image."
+          "reason": "#248's tight-heap reason, named on #256: the rule (6656) costs +512 B for margin the walk cannot confirm. Floor holds by 1152 B.",
+          "note": "Re-walked at #228 from 5888: buildStatusJson()'s frame, the deepest in this chain, grew 16 B when failedAllocs and queueOverflowCount joined the /api/status payload. Both images walk 5904. #256 recorded this arm from the profiler image because the product image's body was emitted as data (.xt.prop) then. It decodes in both images at this tip and they agree, so the arm is walked from the product image. Re-derived 2026-09-26 (#430) from 5904: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 4992."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -526,12 +543,12 @@
             "otaServiceTask"
           ],
           "frames": [],
-          "chain_bytes": 3904,
-          "product_bytes": 3904,
-          "profiler_bytes": 3904,
+          "chain_bytes": 3440,
+          "product_bytes": 3440,
+          "profiler_bytes": 3440,
           "rule": "declined",
-          "reason": "#248's tight-heap reason applied to this task's first measurement: the rule (5120) costs +1024 B for margin the Xtensa walk cannot confirm. Floor holds by 192 B.",
-          "note": "The task entry was an anonymous lambda until #271. Its root symbol was then `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)`, which renumbers if a lambda is added above it in that function, and which no name-extracting scan of the xTaskCreatePinnedToCore() call site can reach past. Hoisted to a named static function so both this recipe and test/test_tools/test_profiler_task_list.py have something stable to read. Re-derived 2026-09-25 (#430) from 3696: the walk decodes the bodies objdump used to print as data, and the chain gains 208 B through __wrap_log_printf. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: re-derive the figure only; the stack still covers the walk and the decline stands."
+          "reason": "#248's tight-heap reason applied to this task's first measurement: the rule (4608) costs +512 B for margin the walk cannot confirm. Floor holds by 656 B.",
+          "note": "The task entry was an anonymous lambda until #271. Its root symbol was then `startHttpServerOnce()::{lambda(void*)#1}::_FUN(void*)`, which renumbers if a lambda is added above it in that function, and which no name-extracting scan of the xTaskCreatePinnedToCore() call site can reach past. Hoisted to a named static function so both this recipe and test/test_tools/test_profiler_task_list.py have something stable to read. Re-derived 2026-09-25 (#430) from 3696: the walk decodes the bodies objdump used to print as data, and the chain gains 208 B through __wrap_log_printf. The profiler image was not walked and is recorded equal to the product image. Operator decision 2026-09-25: re-derive the figure only; the stack still covers the walk and the decline stands. Re-derived 2026-09-26 (#430) from 3904: the image links newlib nano printf (about 430 B shallower on every worst chain), the walk follows the IDF log hook (paLogIdfVprintf) from every ESP-IDF log call, and ESP-IDF's impossible null-pointer log under esp_cache_get_alignment() is no longer walked. Both images walk 3440."
         },
         "esp32p4": {
           "env": "firebeetle2",

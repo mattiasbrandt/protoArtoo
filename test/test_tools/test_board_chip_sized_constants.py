@@ -70,10 +70,12 @@ EXPECTED_BY_BOARD = {
         "log_ladder": (16, 20, 24, 48),
         "log_ring_max_lines": 48,
         # Pre-#256 literals, unchanged but for RCInputTask. WebEvents is 6144
-        # here even though the #248 rule on its 5904 B chain would raise it --
-        # the tight-heap decline recorded beside the constant in
-        # include/config.h. RCInputTask followed the rule down at #428 on its
-        # shorter chain, 4944 -> 6656.
+        # here even though the #248 rule on its chain would raise it (4992 B
+        # -> 6656 since #430) -- the tight-heap decline recorded beside the
+        # constant in include/config.h. AudioTask's 6144 is above the rule on
+        # its #430 chain (4240 -> 5632) and was not lowered. RCInputTask
+        # followed the rule down at #428 on its shorter chain, 4944 -> 6656,
+        # and #430's 5152 lands on the same step.
         "rc_input_stack": 6656,
         "audio_stack": 6144,
         "web_events_stack": 6144,
@@ -86,7 +88,8 @@ EXPECTED_BY_BOARD = {
         # 7376 * 1.25 = 9220 -> 9728. #425's refusal data moved the chain to
         # 7456, and 7456 * 1.25 = 9320 lands on the same step. #428's walk
         # follows every executor table the Console dispatches through:
-        # 8688 * 1.25 = 10860 -> 11264.
+        # 8688 * 1.25 = 10860 -> 11264. #430's nano, log-hook walk:
+        # 8896 * 1.25 = 11120 -> the same 11264.
         "console_stack": 11264,
     },
     # Re-derived from the sequence model's own ceilings. See the derivations in

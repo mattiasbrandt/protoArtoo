@@ -68,12 +68,12 @@ void test_chip_target_mapped_for_artoo_esp32() {
 // margin question #248 declined, so the arm was raised by the rule.
 //
 // Pinned rather than derived, in the file that pins the artoo arm against
-// convergence with the P4: the two arms are both 4096 now, and the assertion
-// that each follows the rule for its OWN chain lives in
-// test/test_tools/test_task_stack_recipes.py.
+// convergence with the P4: #430 took the artoo arm to 4608 on its own 3280 B
+// profiler-image chain, and the assertion that each arm follows the rule for its
+// OWN chain lives in test/test_tools/test_task_stack_recipes.py.
 void test_safety_monitor_stack_covers_its_measured_chain_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(3088U, SAFETY_MONITOR_MEASURED_CHAIN_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(4096U, SAFETY_MONITOR_STACK_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(3280U, SAFETY_MONITOR_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(4608U, SAFETY_MONITOR_STACK_BYTES);
 }
 
 // Same guard for the two stacks #248 raised on the P4. Both ESP32 branches stay
@@ -107,7 +107,8 @@ void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
 // #425 moved the chain 7376 -> 7456 (every Apply Core refusal carries its data,
 // on the audio-tracks write route); the rule lands on the same 9728. #428 made
 // the walk follow every executor table the Console dispatches through, 7456 ->
-// 8688, and the rule takes 9728 -> 11264.
+// 8688, and the rule takes 9728 -> 11264. #430 re-derived it on the nano,
+// log-hook walk, 8688 -> 8896; the rule lands on the same 11264.
 //
 // Each assertion guards a different way the raise could be undone. The ESP32
 // arm is pinned so it cannot be "simplified" onto a later P4 change. The chain
@@ -125,7 +126,7 @@ void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
 // env:native always builds PA_BOARD_ARTOO_ESP32); it is proven by the
 // cross-board compiler probe in test/test_tools/test_board_chip_sized_constants.py.
 void test_console_stack_covers_its_measured_chain_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(8688U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
+    TEST_ASSERT_EQUAL_UINT32(8896U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
     TEST_ASSERT_EQUAL_UINT32(11264U, CONSOLE_TASK_STACK_BYTES);
 
     // #248 rule: worst-case chain + 25%, rounded up to the next 512 bytes.
