@@ -239,3 +239,16 @@ bool seqEvidenceSnapshot(SeqRunEvidence& out) {
     taskEXIT_CRITICAL(&seqEvidenceMux);
     return out.valid;
 }
+
+bool seqEvidenceSummary(SeqRunSummary& out) {
+    taskENTER_CRITICAL(&seqEvidenceMux);
+    out.valid = g.valid;
+    out.outcome = g.outcome;
+    memcpy(out.name, g.name, sizeof(out.name));
+    out.source = g.source;
+    memcpy(out.reason, g.reason, sizeof(out.reason));
+    out.startMs = g.startMs;
+    out.endMs = g.endMs;
+    taskEXIT_CRITICAL(&seqEvidenceMux);
+    return out.valid;
+}
