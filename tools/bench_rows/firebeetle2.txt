@@ -273,7 +273,7 @@ send sound.status.current
 # A2/A3/A4 (#338 #342 #345) with A8 (#375) and A9 (#376) - the migration PATH on
 # a second board's real NVS. system.action.set-mode calls saveConfigToNvs()
 # (include/console_direct_action_system.h), which runs configSaveServoOutputs()
-# before configSave() (src/main.cpp) -- so an ordinary mode change IS a full
+# before configSave() (src/config_store.cpp) -- so an ordinary mode change IS a full
 # config save and performs the migration, which is why "don't touch servo
 # settings" is not sufficient guidance to a bench operator. Native tests reach
 # this sequence against a stubbed Preferences; what they cannot reach is flash,

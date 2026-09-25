@@ -400,7 +400,7 @@ extern QueueHandle_t sequenceQueue;
 // Load NVS config into the config cache
 void loadConfigToState();
 
-bool saveConfigToNvs();
+// saveConfigToNvs() is a config store call: include/config_store.h.
 
 // ----------------------------------------------------------------------------
 // driveFeedbackIsStale()
