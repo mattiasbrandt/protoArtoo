@@ -1834,12 +1834,10 @@
 
   // A Setting's input carries no range of its own: the droid holds it, and a
   // value it will not take comes back as a refusal messageFor() words (ADR
-  // 0068, amended 2026-09-26). min and max are for inputs that are not one.
-  const createNumberInput = ({ id, min = null, max = null, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
+  // 0068, amended 2026-09-26).
+  const createNumberInput = ({ id, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
     const input = document.createElement("input");
     input.type = "number";
-    if (min !== null) input.min = String(min);
-    if (max !== null) input.max = String(max);
     input.className = className;
     if (id) input.id = id;
     if (datasetKey) input.dataset.key = datasetKey;
