@@ -58,11 +58,18 @@ struct ConfigCommitOutcome {
     // Part is not on the Output the move named, the destination is full, or no
     // row is addressed there (servoOutputTableMovePart()). Nothing in the request
     // was applied and nothing was persisted; the caller answers 409 with this
-    // sentence, and `working` is not the committed state so is not rendered.
+    // sentence and, beside it, the act field it is about and why, which are
+    // what a page words it from (ADR 0068, second amendment). `working` is not
+    // the committed state so is not rendered.
     // Only a request naming movePart can be refused, and the Console's scalar
     // config adapter carries exactly one field that is never movePart, so today
     // the REST route is the one caller that meets it.
     const char* refusal = nullptr;
+    // The field and reason, as static strings and a token rather than an
+    // ApplyRefusal: this outcome is a local on the Console's config-write chain,
+    // and the accepts a move's refusal would carry is always empty.
+    const char* refusalField = nullptr;
+    ApplyRefusalReason refusalReason = ApplyRefusalReason::None;
     // Rows whose open end, close end or stated centre the component band moved
     // on the way in, by row index (ServoOutputRepairReport::openMovedRows). The
     // clamp is deliberate (#286); what the REST answer owes is saying so, which

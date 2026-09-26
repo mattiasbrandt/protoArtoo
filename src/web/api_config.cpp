@@ -597,27 +597,45 @@ void addActiveFields(JsonDocument& doc) {
 }
 
 // -----------------------------------------------------------------------------
-// partMoveRefusal()
-// What a refused Part move says, or nullptr for a move that landed or had
-// nothing to do. Each sentence names the next move: the caller that meets one is
-// a surface whose table has changed since it read it, or one sending an address
-// it did not read.
+// refusePartMove()
+// A refused Part move as a refusal like any other (ADR 0068, second amendment):
+// the act field it is about and why, so a page words it from those and never
+// from the sentence. False for a move that landed or had nothing to do.
+//
+// A Part that is not where the move says, and a destination already full, are
+// each a value fine on its own that clashes with the table as it stands:
+// `conflict`. The caller that meets one is a surface whose table has changed
+// since it read it. An address nothing answers at, and a Part this build does
+// not model, are values the field does not take.
 // -----------------------------------------------------------------------------
-const char* partMoveRefusal(ServoPartMoveOutcome outcome) {
+bool refusePartMove(ServoPartMoveOutcome outcome, ConfigCommitOutcome* commit) {
     switch (outcome) {
         case SERVO_PART_MOVED:
         case SERVO_PART_ALREADY_THERE:
-            return nullptr;
+            return false;
         case SERVO_PART_NOT_WHERE_STATED:
-            return "that Part is not on the Output movePartFrom names - read the outputs again, "
-                   "then move it";
+            commit->refusal = "that Part is not on the Output movePartFrom names - read the outputs "
+                              "again, then move it";
+            commit->refusalField = "movePartFrom";
+            commit->refusalReason = ApplyRefusalReason::Conflict;
+            return true;
         case SERVO_PART_OUTPUT_FULL:
-            return "that Output already drives as many Parts as it can - move one off it first";
+            commit->refusal = "that Output already drives as many Parts as it can - move one off it "
+                              "first";
+            commit->refusalField = "movePartTo";
+            commit->refusalReason = ApplyRefusalReason::Conflict;
+            return true;
         case SERVO_PART_NO_SUCH_OUTPUT:
-            return "no Output is addressed at movePartTo";
+            commit->refusal = "no Output is addressed at movePartTo";
+            commit->refusalField = "movePartTo";
+            commit->refusalReason = ApplyRefusalReason::OutOfRange;
+            return true;
         case SERVO_PART_NOT_A_PART:
         default:
-            return "movePart names a Part this build does not model";
+            commit->refusal = "movePart names a Part this build does not model";
+            commit->refusalField = "movePart";
+            commit->refusalReason = ApplyRefusalReason::OutOfRange;
+            return true;
     }
 }
 
@@ -762,8 +780,7 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // lock across this call, so no other writer can move the Part between this
     // answer and the write.
     if (result.partMove.requested) {
-        outcome.refusal = partMoveRefusal(configCacheMoveServoOutputPart(result.partMove.move));
-        if (outcome.refusal != nullptr) {
+        if (refusePartMove(configCacheMoveServoOutputPart(result.partMove.move), &outcome)) {
             PA_LOG_WARN(TAG, "movePart %s refused: %s", result.partMove.move.part,
                         outcome.refusal);
             return outcome;
@@ -998,7 +1015,9 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
     if (commit.refusal != nullptr) {
-        webSendJsonError(req, 409, commit.refusal);
+        ApplyRefusal refusal;
+        applyRefusalSet(&refusal, commit.refusalReason, commit.refusalField);
+        webSendApplyRefusal(req, 409, commit.refusal, refusal);
         return;
     }
     if (!commit.persisted) {

@@ -121,6 +121,49 @@ bool paramUint16(const ConfigParamSource& params, const char* name, uint16_t min
 }
 
 // -----------------------------------------------------------------------------
+// The acts' fields (ADR 0068, second amendment)
+//
+// An act - move a Part, capture an end, reverse an Output - is not a Setting
+// and stores no value of its own, but a refusal of one names a field just as a
+// Setting's does, so each field is declared here with what it takes. A refusal
+// reads its accepts from this table, and tools/check_setting_words.py reads it
+// too, so a field an act can refuse has words in the browser or the build says
+// so. An Output Address or a Part id takes no fixed list, so those take "".
+// -----------------------------------------------------------------------------
+struct ConfigActField {
+    const char* form;
+    const char* accepts;
+};
+
+// The widest a servo takes, as for a typed end: the fitted component's band is
+// applied on the row. Pinned to the constants it states.
+static_assert(SERVO_PULSE_MIN_US == 500 && SERVO_PULSE_MAX_US == 2500,
+              "captureUs's accepts states SERVO_PULSE_MIN_US..MAX_US");
+
+enum ActField : uint8_t {
+    MovePart,
+    MovePartFrom,
+    MovePartTo,
+    CaptureOutput,
+    CaptureEnd,
+    CaptureUs,
+    ReverseOutput,
+    ActFieldCount,
+};
+
+constexpr ConfigActField kActFields[ActFieldCount] = {
+    {"movePart", ""},
+    {"movePartFrom", ""},
+    {"movePartTo", ""},
+    {"captureOutput", ""},
+    {"captureEnd", "open,centre,close"},
+    {"captureUs", "500..2500"},
+    {"reverseOutput", ""},
+};
+
+constexpr const char* actForm(ActField field) { return kActFields[field].form; }
+
+// -----------------------------------------------------------------------------
 // parsePartMoveEnd()
 // One end of a Part move: `none`, or an Output Address a driver actually has.
 // Anything else - an absent field included - is not an end.
@@ -791,10 +834,11 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     // a move that names only where a Part is going cannot say which Output it is
     // taking the Part away from, and that half is the one a builder has to be
     // told about before it happens.
-    if (configParamHas(params, "movePart") || configParamHas(params, "movePartFrom") ||
-        configParamHas(params, "movePartTo")) {
-        static const char* const kMoveFields[] = {"movePart", "movePartFrom", "movePartTo"};
-        const char* part = configParamGet(params, "movePart");
+    if (configParamHas(params, actForm(MovePart)) || configParamHas(params, actForm(MovePartFrom)) ||
+        configParamHas(params, actForm(MovePartTo))) {
+        static const char* const kMoveFields[] = {actForm(MovePart), actForm(MovePartFrom),
+                                                  actForm(MovePartTo)};
+        const char* part = configParamGet(params, actForm(MovePart));
         ServoOutputPartMove move = {};
         const char* refused = firstMissing(params, kMoveFields,
                                            sizeof(kMoveFields) / sizeof(kMoveFields[0]));
@@ -803,13 +847,13 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
             why = ApplyRefusalReason::OutOfRange;
             if (part[0] == '\0' || strlen(part) > SERVO_OUTPUT_PART_ID_MAX ||
                 !servoOutputPartIdIsValid(part)) {
-                refused = "movePart";
-            } else if (!parsePartMoveEnd(configParamGet(params, "movePartFrom"), &move.fromOutput,
-                                         &move.fromDriver, &move.fromChannel)) {
-                refused = "movePartFrom";
-            } else if (!parsePartMoveEnd(configParamGet(params, "movePartTo"), &move.toOutput,
+                refused = actForm(MovePart);
+            } else if (!parsePartMoveEnd(configParamGet(params, actForm(MovePartFrom)),
+                                         &move.fromOutput, &move.fromDriver, &move.fromChannel)) {
+                refused = actForm(MovePartFrom);
+            } else if (!parsePartMoveEnd(configParamGet(params, actForm(MovePartTo)), &move.toOutput,
                                          &move.toDriver, &move.toChannel)) {
-                refused = "movePartTo";
+                refused = actForm(MovePartTo);
             }
         }
         if (refused != nullptr) {
@@ -822,7 +866,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         result->partMove.requested = true;
         result->partMove.move = move;
         appendApplied(&result->applied, "[CFG] movePart %s to %s", move.part,
-                      configParamGet(params, "movePartTo"));
+                      configParamGet(params, actForm(MovePartTo)));
         result->changed = true;
     }
 
@@ -849,21 +893,18 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     // The bounds are the widest a servo takes, as they are for a typed endpoint:
     // the authoritative clamp is the fitted component's band, applied on the row
     // where it can report having moved the number.
-    if (configParamHas(params, "captureOutput") || configParamHas(params, "captureEnd") ||
-        configParamHas(params, "captureUs")) {
+    if (configParamHas(params, actForm(CaptureOutput)) ||
+        configParamHas(params, actForm(CaptureEnd)) || configParamHas(params, actForm(CaptureUs))) {
         ServoOutputEdit capture = {};
         ServoOutputEnd end = SERVO_END_CENTRE;
         uint16_t capturedUs = 0;
-        static const char* const kCaptureFields[] = {"captureOutput", "captureEnd", "captureUs"};
-        // The widest a servo takes, as for a typed end: the fitted component's
-        // band is applied on the row. A literal, not a buffer - this frame is on
-        // the Console chain - and pinned to the constants it states.
-        static_assert(SERVO_PULSE_MIN_US == 500 && SERVO_PULSE_MAX_US == 2500,
-                      "the capture refusal's sentence states SERVO_PULSE_MIN_US..MAX_US");
+        static const char* const kCaptureFields[] = {actForm(CaptureOutput), actForm(CaptureEnd),
+                                                     actForm(CaptureUs)};
+        // A literal, not a buffer - this frame is on the Console chain.
         static const char* const kCaptureRefusal =
             "captureOutput, captureEnd and captureUs must be sent together: an Output "
             "Address, one of open/centre/close, and a width 500..2500";
-        const char* address = configParamGet(params, "captureOutput");
+        const char* address = configParamGet(params, actForm(CaptureOutput));
         const char* missing = firstMissing(params, kCaptureFields,
                                            sizeof(kCaptureFields) / sizeof(kCaptureFields[0]));
         if (missing != nullptr) {
@@ -871,17 +912,18 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
             return;
         }
         if (!servoOutputParseAddress(address, &capture.driver, &capture.channel)) {
-            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, "captureOutput");
+            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, actForm(CaptureOutput));
             return;
         }
-        if (!servoParseOutputEnd(configParamGet(params, "captureEnd"), &end)) {
-            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, "captureEnd",
-                     "open,centre,close");
+        if (!servoParseOutputEnd(configParamGet(params, actForm(CaptureEnd)), &end)) {
+            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, actForm(CaptureEnd),
+                     kActFields[CaptureEnd].accepts);
             return;
         }
-        if (!paramUint16(params, "captureUs", SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, &capturedUs)) {
-            setRangeError(result, kCaptureRefusal, "captureUs", SERVO_PULSE_MIN_US,
-                          SERVO_PULSE_MAX_US);
+        if (!paramUint16(params, actForm(CaptureUs), SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US,
+                         &capturedUs)) {
+            setError(result, kCaptureRefusal, ApplyRefusalReason::OutOfRange, actForm(CaptureUs),
+                     kActFields[CaptureUs].accepts);
             return;
         }
         capture.kind = SERVO_EDIT_CAPTURE;
@@ -902,7 +944,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         }
         result->servoOutputs.edits[result->servoOutputs.count++] = capture;
         appendApplied(&result->applied, "[CFG] capture %s %s at %u us", address,
-                      configParamGet(params, "captureEnd"), (unsigned)capturedUs);
+                      configParamGet(params, actForm(CaptureEnd)), (unsigned)capturedUs);
         result->changed = true;
     }
 
@@ -911,13 +953,13 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     // else -- no width travels with it, so a page working from a second-old
     // copy of the pair cannot write a stale number back, and the swap is made
     // on the row from what the row holds.
-    if (configParamHas(params, "reverseOutput")) {
+    if (configParamHas(params, actForm(ReverseOutput))) {
         ServoOutputEdit reverse = {};
-        const char* address = configParamGet(params, "reverseOutput");
+        const char* address = configParamGet(params, actForm(ReverseOutput));
         if (address == nullptr ||
             !servoOutputParseAddress(address, &reverse.driver, &reverse.channel)) {
             setError(result, "reverseOutput must be an Output Address", ApplyRefusalReason::OutOfRange,
-                     "reverseOutput");
+                     actForm(ReverseOutput));
             return;
         }
         reverse.kind = SERVO_EDIT_REVERSE;

@@ -1314,9 +1314,10 @@ void test_a_move_from_an_output_the_part_is_not_on_changes_nothing() {
     TEST_ASSERT_EQUAL_INT(409, backend.sentCode);
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
-    TEST_ASSERT_EQUAL_STRING(
-        "that Part is not on the Output movePartFrom names - read the outputs again, then move it",
-        doc["error"] | "");
+    // Refused like any other refusal, with the act field it is about and why,
+    // so the page words it from those rather than from the sentence (#432).
+    TEST_ASSERT_EQUAL_STRING("movePartFrom", doc["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"] | "");
     TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM1, rowDriving("doorFL"));
     TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
     // The Commit Step stopped before its save, so it never broadcast either.
