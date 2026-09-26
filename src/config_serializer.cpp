@@ -495,7 +495,9 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->rc_free2  = loadRcTrigger(r, "rc_free2", def.rc_free2);
     out->rc_free3  = loadRcTrigger(r, "rc_free3", def.rc_free3);
 
-    if (out->rc_input_mode > RC_INPUT_DUAL_SBUS) {
+    // ELRS is the last mode, not DUAL_SBUS: a bound of DUAL_SBUS read every
+    // stored ELRS answer back as dual_sbus on the next boot.
+    if (out->rc_input_mode > RC_INPUT_ELRS) {
         out->rc_input_mode = RC_INPUT_DUAL_SBUS;
     }
 }

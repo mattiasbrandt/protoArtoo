@@ -548,6 +548,23 @@ void test_an_out_of_order_stored_dome_pulse_set_loads_as_the_defaults(void) {
     TEST_ASSERT_FALSE(configDomePulsesStoredOutOfOrder(ordered));
 }
 
+// A stored ELRS receiver mode loads as ELRS. The loader's bound once stopped at
+// dual_sbus, so every droid set to ELRS came back as dual_sbus after a reboot.
+void test_a_stored_elrs_mode_loads_as_elrs(void) {
+    MapReader reader;
+    reader.setSchemaVersion(CONFIG_SCHEMA_VERSION);
+    reader.set("rc_mode", (uint32_t)RC_INPUT_ELRS);
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configDeserialize(reader, &snap));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_ELRS, (uint8_t)snap.system.rc_input_mode);
+
+    MapReader unknown;
+    unknown.setSchemaVersion(CONFIG_SCHEMA_VERSION);
+    unknown.set("rc_mode", (uint32_t)9);
+    TEST_ASSERT_TRUE(configDeserialize(unknown, &snap));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_DUAL_SBUS, (uint8_t)snap.system.rc_input_mode);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_default_snapshot_round_trip);
@@ -568,5 +585,6 @@ int main(void) {
     RUN_TEST(test_a_saved_row_is_not_overwritten_by_the_retired_light_keys);
     RUN_TEST(test_a_row_stored_before_the_light_joined_it_still_adopts_the_light);
     RUN_TEST(test_an_out_of_order_stored_dome_pulse_set_loads_as_the_defaults);
+    RUN_TEST(test_a_stored_elrs_mode_loads_as_elrs);
     return UNITY_END();
 }
