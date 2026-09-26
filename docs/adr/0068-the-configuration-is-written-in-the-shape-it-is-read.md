@@ -245,3 +245,9 @@ the browser. Three things stayed outside it, measured on
   nothing says so.
 - The first amendment's rejected "words in the firmware declaration" is not
   reopened: the firmware declares a timing token, never words.
+- **Known exception (operator, 2026-09-26, #432):** the Device WiFi Settings and the
+  droid's name save through their own doors (`/api/wifi`, `/api/identity`), which
+  declare no Settings. So guided Setup's WiFi and Name steps and the Configuration
+  page's hostname row still state their own timing, each with a comment saying
+  why. Bringing those doors under a declaration was offered and left out; it
+  changes nothing the builder sees.
