@@ -125,5 +125,7 @@ because it is an execution-time answer and always was. Whether a given
 `type:` has a runtime path at all is decided in
 `src/console/console_module.cpp` — its status-executor table for
 `type: status`, the six per-domain executor headers plus the
-`ACTION_REGISTRY[]` lookup and guard for `type: action`, and
-`g_scalarConfigExecutors[]` for `type: config`.
+`ACTION_REGISTRY[]` lookup and guard for `type: action`, and the
+`CONSOLE_OP_CONFIG` cascade for `type: config` - a single-field op onto one
+Setting is a row of `g_settingOps[]`, read and written through that Setting's
+declaration (`src/config_settings.cpp`).

@@ -9,12 +9,14 @@
 // it: the shipped shell mounts the shipped Servos surface against a fake droid
 // (helpers/parts_surface.js).
 //
-// Four invariants earn their place:
+// Five invariants earn their place:
 //   - A press names the Output by the word the firmware gave for it, exactly:
 //     the board's own label, a space included (GPIO 5 on the FireBeetle 2),
 //     which is what POST /api/servo takes (ADR 0033 Amendment 2026-09-19). A
 //     page that derived the word from an id, or folded it, sends a word the
 //     firmware refuses. The typed width goes out as typed.
+//   - A width past what a servo takes goes out too: the droid holds the range
+//     and refuses it, and the page keeps no copy (ADR 0068).
 //   - Driving writes no configuration: an end is recorded only by the dial.
 //   - The drive acts appear only where the firmware's answer says a servo is
 //     there: an Output carrying the LED strip, or not wired, offers none -
@@ -65,6 +67,20 @@ test("a typed width and open go out under the board's own word, space and all, a
     [],
     "driving records nothing: an end is set with the dial",
   );
+});
+
+// The droid rules on the width (ADR 0068, amended 2026-09-26): the page keeps
+// no copy of its range, so a width past it goes out as typed and the droid's
+// refusal is what the builder reads.
+test("a width the droid will not take still goes out as typed", async () => {
+  const env = await bootServos({ outputs: FIREBEETLE(), say: SAY });
+  await sleep(20);
+
+  env.row("ledc:0").querySelector(".outputs-width").value = "4000";
+  env.region().fire("click", { target: drive(env, "ledc:0", "position") });
+  await sleep(20);
+
+  assert.deepStrictEqual(servoPosts(env), [{ arm: "GPIO 49", action: "position", positionUs: "4000" }]);
 });
 
 test("an Output carrying the LED strip, or not wired, offers no drive at all", async () => {

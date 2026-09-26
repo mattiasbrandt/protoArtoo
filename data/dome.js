@@ -207,51 +207,17 @@
     }
   };
 
-  const clampInt = (value, min, max) => Math.max(min, Math.min(max, value));
+  // What goes out is what the builder typed: the droid holds the ranges and
+  // the pulse order, and a value it will not take comes back as a refusal
+  // worded by PAApi.messageFor() (ADR 0068, amended 2026-09-26).
+  const typed = (input) => String(input?.value ?? "").trim();
 
-  const parseEscField = (input, min, max, label) => {
-    const rawText = String(input?.value ?? "").trim();
-    if (!rawText) {
-      return { error: `${label} is required.` };
-    }
-    const parsed = Number.parseInt(rawText, 10);
-    if (!Number.isFinite(parsed)) {
-      return { error: `${label} must be a whole number.` };
-    }
-    const clamped = clampInt(parsed, min, max);
-    return { value: clamped };
-  };
-
-  const validateEscConfig = () => {
-    const neutral = parseEscField(domeNeutral, 1000, 2000, "Neutral pulse");
-    if (neutral.error) return { ok: false, error: neutral.error };
-
-    const minPulse = parseEscField(domeMinPulse, 1000, 2000, "Minimum pulse");
-    if (minPulse.error) return { ok: false, error: minPulse.error };
-
-    const maxPulse = parseEscField(domeMaxPulse, 1000, 2000, "Maximum pulse");
-    if (maxPulse.error) return { ok: false, error: maxPulse.error };
-
-    const speedLimit = parseEscField(domeSpeedLimit, 0, 100, "Speed limit");
-    if (speedLimit.error) return { ok: false, error: speedLimit.error };
-
-    if (minPulse.value > maxPulse.value) {
-      return { ok: false, error: "Minimum pulse must be less than or equal to maximum pulse." };
-    }
-    if (neutral.value < minPulse.value || neutral.value > maxPulse.value) {
-      return { ok: false, error: "Neutral pulse must be within the minimum and maximum pulse range." };
-    }
-
-    return {
-      ok: true,
-      payload: {
-        domeEscNeutralUs: String(neutral.value),
-        domeEscMinPulseUs: String(minPulse.value),
-        domeEscMaxPulseUs: String(maxPulse.value),
-        domeEscSpeedLimitPct: String(speedLimit.value),
-      },
-    };
-  };
+  const escPayload = () => ({
+    domeEscNeutralUs: typed(domeNeutral),
+    domeEscMinPulseUs: typed(domeMinPulse),
+    domeEscMaxPulseUs: typed(domeMaxPulse),
+    domeEscSpeedLimitPct: typed(domeSpeedLimit),
+  });
 
   const saveEscConfig = async () => {
     if (!window.PAApi) return;
@@ -260,18 +226,12 @@
       return;
     }
 
-    const validation = validateEscConfig();
-    if (!validation.ok) {
-      showFeedback(escFeedback, validation.error, "warning");
-      return;
-    }
-
     showFeedback(escFeedback, "Saving...");
 
     try {
       await window.PAApi.postForm(
         "/api/config",
-        validation.payload,
+        escPayload(),
         { timeoutMs: 3000 },
       );
 
@@ -281,34 +241,13 @@
     }
   };
 
-  const validateRndDomeConfig = () => {
-    const speedVal = parseEscField(domeRndSpeed, 5, 100, "Speed");
-    if (speedVal.error) return { ok: false, error: speedVal.error };
-
-    const pauseMinVal = parseEscField(domeRndPauseMin, 1, 120, "Min pause");
-    if (pauseMinVal.error) return { ok: false, error: pauseMinVal.error };
-
-    const pauseMaxVal = parseEscField(domeRndPauseMax, 1, 120, "Max pause");
-    if (pauseMaxVal.error) return { ok: false, error: pauseMaxVal.error };
-
-    const moveVal = parseEscField(domeRndMoveMs, 500, 10000, "Move duration");
-    if (moveVal.error) return { ok: false, error: moveVal.error };
-
-    if (pauseMinVal.value > pauseMaxVal.value) {
-      return { ok: false, error: "Min pause must be less than or equal to max pause." };
-    }
-
-    return {
-      ok: true,
-      payload: {
-        domeEscRndEnable: domeRndEnable?.checked ? "true" : "false",
-        domeEscRndSpeedPct: String(speedVal.value),
-        domeEscRndPauseMin: String(pauseMinVal.value),
-        domeEscRndPauseMax: String(pauseMaxVal.value),
-        domeEscRndMoveMs: String(moveVal.value),
-      },
-    };
-  };
+  const rndPayload = () => ({
+    domeEscRndEnable: domeRndEnable?.checked ? "true" : "false",
+    domeEscRndSpeedPct: typed(domeRndSpeed),
+    domeEscRndPauseMin: typed(domeRndPauseMin),
+    domeEscRndPauseMax: typed(domeRndPauseMax),
+    domeEscRndMoveMs: typed(domeRndMoveMs),
+  });
 
   const saveRndDomeConfig = async () => {
     if (!window.PAApi) return;
@@ -317,18 +256,12 @@
       return;
     }
 
-    const validation = validateRndDomeConfig();
-    if (!validation.ok) {
-      showFeedback(rndFeedback, validation.error, "warning");
-      return;
-    }
-
     showFeedback(rndFeedback, "Saving...");
 
     try {
       await window.PAApi.postForm(
         "/api/config",
-        validation.payload,
+        rndPayload(),
         { timeoutMs: 3000 },
       );
 

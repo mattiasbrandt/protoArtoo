@@ -28,6 +28,9 @@
 #include "config_write_window_check.h"  // the holder check this suite arms (#418)
 #include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
 #include "../../../test/stubs/config/servo_output_table_writer.h"
+#include "../../../test/stubs/config/setting_samples.h"
+#include "config_settings.h"
+#include "drive_speed_preset.h"
 
 extern bool g_test_commanded_stationary;
 extern unsigned g_test_status_broadcast_count;
@@ -99,6 +102,26 @@ void test_config_post_applies_a_field_and_echoes_the_snapshot() {
     TEST_ASSERT_EQUAL_INT(80, doc["drive"]["speedLimitMax"].as<int>());
     TEST_ASSERT_FALSE(doc["wifi"]["pendingApply"].isNull());
     TEST_ASSERT_FALSE(doc["wifi"]["networkRecovery"].isNull());
+}
+
+// A Setting that takes words takes the same words at every door (ADR 0068,
+// amended 2026-09-26): the log level takes `debug` over HTTP as the Console
+// does, and GET still reads it as the number, so a backup round-trips.
+void test_the_log_level_takes_its_words_over_http_and_reads_back_as_its_number() {
+    const WebRequestTestParam params[] = {{"logLevel", "debug"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 1;
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT8(PA_LOG_LEVEL_DEBUG, readSnapshot().system.logLevel);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_TRUE(doc["system"]["logLevel"].is<int>());
+    TEST_ASSERT_EQUAL_INT(PA_LOG_LEVEL_DEBUG, doc["system"]["logLevel"].as<int>());
 }
 
 void test_config_post_rejects_an_out_of_range_value_without_applying_it() {
@@ -344,10 +367,10 @@ ServoOutputTable rowsUnlikeSetUp() {
     return table;
 }
 
-// Every scalar POST /api/config sets, each moved off the value setUp() leaves,
-// plus the Droid Build and Guided Setup's record that travel with a backup. A
-// field GET reports and POST cannot take back stays at its setUp() value, and
-// the comparison after the round trip finds it.
+// Every declared Setting, each moved off the value setUp() leaves, plus the
+// Droid Build and Guided Setup's record that travel with a backup. A Setting
+// GET reports and POST cannot take back stays at its setUp() value, and the
+// comparison after the round trip finds it.
 struct Configuration {
     ConfigSnapshot snap;
     DroidBuildConfig build;
@@ -375,51 +398,74 @@ void applyConfiguration(const Configuration& config) {
 Configuration configurationUnlikeSetUp(const Configuration& base) {
     Configuration want = base;
     want.rows = rowsUnlikeSetUp();
-    DriveConfig& drive = want.snap.drive;
-    drive.speedPresetSlow = 120;
-    drive.speedPresetNormal = 340;
-    drive.speedPresetTurbo = 560;
-    drive.speedLimitMax = 560;
-    drive.speedPresetActive = SpeedPresetId::Turbo;  // what POST derives from 560
-    drive.webDriveTimeoutMs = 750;
-    drive.sbusTimeoutMs = 333;
 
-    SystemConfig& system = want.snap.system;
-    system.stationary = true;
-    system.single_sbus_use_ch2 = true;
-    system.rc_input_mode = RC_INPUT_ELRS;
-    system.rc_member = componentPartById("rc_transmitter_elrs")->value;
-    system.sound_member = componentPartById("mp3_trigger")->value;
-    system.logLevel = 4;
-    // Each Output's wired tick, which is a field of its row (ADR 0068).
-    system.enable_arm1 = true;
-    system.enable_arm2 = true;
-    system.enable_aux1 = true;
-    system.enable_aux2 = true;
-    system.enable_aux3 = true;
-    system.enable_dome_esc = true;
-    system.enable_rc_ch1 = true;
-    system.enable_rc_ch2 = true;
-    system.enable_rc_ch3 = true;
-    system.enable_rc_ch4 = true;
-    system.enable_rc_ch5 = true;
-    system.enable_rc_ch6 = true;
-    system.enable_drive = true;
-    system.enable_audio = true;
-    system.enable_protor2link = true;
+    // Every droid Setting moved off what setUp() left, by its declaration and
+    // through its own check - never a hand list, so a Setting declared with no
+    // GET or POST handling stays at its setUp() value and the comparison after
+    // the round trip finds it.
+    for (size_t i = 0; i < configSettingCount(); ++i) {
+        const ConfigSetting& setting = configSettingAt(i);
+        char text[24] = {};
+        TEST_ASSERT_TRUE_MESSAGE(settingOtherText(setting, base.snap, i, text, sizeof(text)),
+                                 setting.form);
+        ApplyRefusal refusal;
+        char sentence[CONFIG_SETTING_SENTENCE_MAX] = {};
+        TEST_ASSERT_TRUE_MESSAGE(
+            configSettingApply(setting, text, &want.snap, &refusal, sentence, sizeof(sentence)),
+            setting.form);
+        char before[24] = {};
+        char after[24] = {};
+        configSettingFormat(setting, base.snap, before, sizeof(before));
+        configSettingFormat(setting, want.snap, after, sizeof(after));
+        TEST_ASSERT_FALSE_MESSAGE(strcmp(before, after) == 0, setting.form);
+    }
 
+    // The rules across Settings, as configApply() judges them beside its loop:
+    // the dome pulses in order, the idle pauses shortest first, and the active
+    // preset the limit names.
+    if (want.snap.dome.dome_rnd_pause_min > want.snap.dome.dome_rnd_pause_max) {
+        const uint8_t shortest = want.snap.dome.dome_rnd_pause_max;
+        want.snap.dome.dome_rnd_pause_max = want.snap.dome.dome_rnd_pause_min;
+        want.snap.dome.dome_rnd_pause_min = shortest;
+    }
     DomeConfig& dome = want.snap.dome;
-    dome.dome_neutral_us = 1490;
-    dome.dome_min_pulse_us = 1100;
-    dome.dome_max_pulse_us = 1900;
-    dome.dome_speed_limit_pct = 70;
-    dome.dome_rnd_enable = true;
-    dome.dome_rnd_speed_pct = 40;
-    dome.dome_rnd_pause_min = 7;
-    dome.dome_rnd_pause_max = 33;
-    dome.dome_rnd_move_ms = 2500;
-    snprintf(dome.dome_wifi_peer_ip, sizeof(dome.dome_wifi_peer_ip), "%s", "10.1.2.3");
+    uint16_t pulses[3] = {dome.dome_min_pulse_us, dome.dome_neutral_us, dome.dome_max_pulse_us};
+    for (int a = 0; a < 3; ++a) {
+        for (int b = a + 1; b < 3; ++b) {
+            if (pulses[b] < pulses[a]) {
+                const uint16_t t = pulses[a];
+                pulses[a] = pulses[b];
+                pulses[b] = t;
+            }
+        }
+    }
+    dome.dome_min_pulse_us = pulses[0];
+    dome.dome_neutral_us = pulses[1];
+    dome.dome_max_pulse_us = pulses[2];
+    DriveConfig& drive = want.snap.drive;
+    if (!resolveSpeedPresetForLimit(drive.speedLimitMax, drive.speedPresetSlow,
+                                    drive.speedPresetNormal, drive.speedPresetTurbo,
+                                    &drive.speedPresetActive)) {
+        drive.speedPresetActive = SpeedPresetId::Normal;
+    }
 
+    // Every Output row Setting moved on some row, so one added to the
+    // declarations without a value here is caught rather than carried untested.
+    for (size_t s = 0; s < outputRowSettingCount(); ++s) {
+        const OutputRowSetting& setting = outputRowSettingAt(s);
+        if (setting.store != RowSettingStore::Row) {
+            continue;
+        }
+        bool moved = false;
+        for (uint8_t r = 0; r < want.rows.count; ++r) {
+            moved = moved || outputRowSettingNumber(setting, want.rows.rows[r]) !=
+                                 outputRowSettingNumber(setting, base.rows.rows[r]);
+        }
+        TEST_ASSERT_TRUE_MESSAGE(moved, setting.key);
+    }
+
+    // The Droid Build and Guided Setup's record travel with a backup too; they
+    // are records outside the Configuration, not Settings.
     TEST_ASSERT_TRUE(droidDesignChoiceSet(&want.build.dome, "mk4", "basic"));
     TEST_ASSERT_TRUE(droidDesignChoiceSet(&want.build.body, "own", ""));
     droidFittedPartsClear(&want.build.fitted);
@@ -1164,6 +1210,7 @@ int main() {
     RUN_TEST(test_a_part_a_row_states_comes_off_the_output_it_was_on);
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
+    RUN_TEST(test_the_log_level_takes_its_words_over_http_and_reads_back_as_its_number);
     RUN_TEST(test_config_post_refuses_clashing_speed_presets_as_a_conflict);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
     RUN_TEST(test_a_configuration_read_by_get_comes_back_whole_through_post);

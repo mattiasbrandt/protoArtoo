@@ -189,7 +189,9 @@ void handleServoPost(WebRequest& req) {
             char errMsg[80];
             snprintf(errMsg, sizeof(errMsg), "Missing positionUs parameter for %s action",
                      spec->name);
-            webSendJsonError(req, 400, errMsg);
+            ApplyRefusal refusal;
+            applyRefusalSet(&refusal, ApplyRefusalReason::MissingArgument, "positionUs");
+            webSendApplyRefusal(req, 400, errMsg, refusal);
             return;
         }
         // Unparseable input lands on the same range error a numerically
@@ -198,11 +200,16 @@ void handleServoPost(WebRequest& req) {
         uint32_t parsed = 0;
         if (!parseUint32Value(positionRaw, &parsed) || parsed < SERVO_PULSE_MIN_US ||
             parsed > SERVO_PULSE_MAX_US) {
+            // With its field, reason and range as data (#425), so a page words
+            // the refusal itself rather than keeping its own copy of the range
+            // (ADR 0068, amended 2026-09-26).
             char errMsg[64];
             snprintf(errMsg, sizeof(errMsg),
                      "positionUs must be between %u and %u",
                      (unsigned)SERVO_PULSE_MIN_US, (unsigned)SERVO_PULSE_MAX_US);
-            webSendJsonError(req, 400, errMsg);
+            ApplyRefusal refusal;
+            applyRefusalSetRange(&refusal, "positionUs", SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US);
+            webSendApplyRefusal(req, 400, errMsg, refusal);
             return;
         }
         positionUs = (uint16_t)parsed;

@@ -20,9 +20,9 @@
 //     row key it saves it under (`ledc:0.throwMs`), that name never reaches a
 //     builder (#414, the rule #348 set for refusal tokens) - and the page's
 //     words come from the refusal's keys, never from its sentence, so a
-//     reworded firmware sentence cannot bring the key back (#425). A refusal
-//     about a field that is not an Output's is the droid's own answer and is
-//     left as it came.
+//     reworded firmware sentence cannot bring the key back (#425). The same
+//     holds for every Setting of the droid's, worded by data/web_api.js's one
+//     words table (#431).
 // =============================================================================
 
 import { test } from "node:test";
@@ -172,11 +172,40 @@ test("a value the droid refuses is said from the refusal's keys with the Output'
   }
 });
 
-test("a refusal about a field that is not an Output's is left as the droid said it", async () => {
-  const { outputs } = boot();
-  await outputs.load();
-  const error = Object.assign(new Error("speedLimitMax must be 0..600"), {
-    field: "speedLimitMax", reason: "out-of-range", accepts: "0..600",
-  });
-  assert.equal(outputs.sayRefusal(error).message, "speedLimitMax must be 0..600");
+// The shipped defect this guards (ADR 0059, #431): every page but this one showed
+// the droid's sentence, wire name and all (`speedLimitMax must be 0..600`).
+// Every Setting's refusal is worded by data/web_api.js from its field, reason
+// and accepts - a droid Setting by its form name or its GET path, an Output's
+// by its row key, a clash between Settings - and none reaches the page as a
+// name or a token the droid uses on the wire.
+test("a refused Setting reaches the page in the builder's words, never its wire name", async () => {
+  const answer = droid();
+  const refusals = [
+    { field: "speedLimitMax", reason: "out-of-range", accepts: "0..600", says: "0 to 600" },
+    { field: "rc.sbusTimeoutMs", reason: "out-of-range", accepts: "50..5000", says: "50 to 5000 ms" },
+    { field: "rcInputMode", reason: "out-of-range", accepts: "standard_pwm,single_sbus,dual_sbus,elrs",
+      says: "two SBUS" },
+    { field: "ledc:4.throwMs", reason: "out-of-range", accepts: "20..10000", says: "GPIO 5" },
+    { field: "speedPresetSlow", reason: "conflict", accepts: null, says: "slow preset" },
+    // An audio Setting, named by the key its door takes (#431 addendum).
+    { field: "snd_int_quiet", reason: "out-of-range", accepts: "0..3600", says: "0 to 3600 s" },
+  ];
+  for (const refusal of refusals) {
+    const api = shippedApi((path, init) => {
+      if (init?.method === "POST") {
+        return { status: 400, body: { ok: false, error: `${refusal.field} is refused`, ...refusal } };
+      }
+      if (path === "/api/config") return { status: 200, body: answer.config };
+      return { status: 200, body: { outputs: answer.rows } };
+    });
+    // The Outputs are read first, as on a page, so a row's refusal can name one.
+    const outputs = outputsModule(() => api);
+    await outputs.load();
+
+    const error = await api.postForm("/api/config", {}).then(() => null, (thrown) => thrown);
+    const said = api.messageFor(error);
+    const wire = [refusal.field, ...(refusal.accepts || "").split(",").filter((t) => t.includes("_"))];
+    wire.forEach((name) => assert.ok(!said.includes(name), `"${name}" reached the page: ${said}`));
+    assert.ok(said.toLowerCase().includes(refusal.says.toLowerCase()), `"${refusal.says}" is not in: ${said}`);
+  }
 });

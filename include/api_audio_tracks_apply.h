@@ -5,10 +5,12 @@
 //
 // audioTracksApply(): pure function - no FreeRTOS, no request object,
 //   no NVS, no logging. Reads key/track and the optional bank/page through
-//   a ConfigParamSource, classifies the key (interval / banked / plain
-//   named-or-category track, with the zero-allowed exception list), and
-//   mutates `working` in place. Error messages word for word the legacy
-//   handler's, each with its field, reason and accepts as data.
+//   a ConfigParamSource, checks the track against the key's audio Setting
+//   (include/config_settings.h: its range, and whether 0 is taken) or, for a
+//   CHIRP catalog binding, the binding's own 1..65535, and mutates `working` in
+//   place. A refusal of the value names the Setting - the key, `scream` or
+//   `snd_int_quiet` - with its reason and accepts, so a page can say which
+//   sound it was about.
 //
 // `catalogSupported` is a live input the shell must snapshot before calling
 // (audioCatalogSupported() queries the live AudioDriver), same reasoning as

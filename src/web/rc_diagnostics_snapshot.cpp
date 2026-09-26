@@ -33,20 +33,6 @@ bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enabl
 
 namespace {
 
-const char* rcInputModeLabel(RcInputMode mode) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return "standard_pwm";
-        case RC_INPUT_SINGLE_SBUS:
-            return "single_sbus";
-        case RC_INPUT_ELRS:
-            return "elrs";
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return "dual_sbus";
-    }
-}
-
 struct RcActionBindingSpec {
     const char* name;
     RcBindingConfig binding;
@@ -162,7 +148,7 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     bool anyPwmEnabled =
         enableRcCh1 || enableRcCh2 || enableRcCh3 || enableRcCh4 || enableRcCh5 || enableRcCh6;
 
-    snap.mode = rcInputModeLabel(rcInputMode);
+    snap.mode = rcInputModeToString(rcInputMode);
     snap.updatedMs = lastPwmMs;
     if (lastSbus1Ms > snap.updatedMs) {
         snap.updatedMs = lastSbus1Ms;

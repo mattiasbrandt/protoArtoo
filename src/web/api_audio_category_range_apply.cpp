@@ -7,26 +7,14 @@
 
 #include "api_audio_category_range_apply.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "api_helpers.h"
+#include "config_settings.h"  // each category bound's check
 #include "chirp_binding_keys.h"
 
 namespace {
-
-bool parseChirpPage(const char* raw, char* pageOut) {
-    if (raw == nullptr || pageOut == nullptr || strlen(raw) != 1) {
-        return false;
-    }
-    char page = (char)toupper((unsigned char)raw[0]);
-    if (page < 'A' || page > 'Z') {
-        return false;
-    }
-    *pageOut = page;
-    return true;
-}
 
 // The sentence, and what it says as data (#425): the reason is a parameter,
 // so no error write can leave it unset.
@@ -35,13 +23,6 @@ void setError(AudioCategoryRangeApplyResult* result, const char* message,
     result->error.hasError = true;
     snprintf(result->error.message, sizeof(result->error.message), "%s", message);
     applyRefusalSet(&result->error.refusal, reason, field, accepts);
-}
-
-void setRangeError(AudioCategoryRangeApplyResult* result, const char* message, const char* field,
-                   long lo, long hi) {
-    result->error.hasError = true;
-    snprintf(result->error.message, sizeof(result->error.message), "%s", message);
-    applyRefusalSetRange(&result->error.refusal, field, lo, hi);
 }
 
 // The fitted module has no catalog to bind into; the shell answers 404.
@@ -117,40 +98,49 @@ void audioCategoryRangeApply(const ConfigParamSource& params, bool catalogSuppor
             setNotFoundError(result, "catalog unsupported by active backend", "bank");
             return;
         }
-        uint32_t bankValue = 0;
-        if (!parseUint32Value(bankRaw, &bankValue) || bankValue < 1 || bankValue > 6) {
-            setRangeError(result, "bank must be 1-6", "bank", 1, 6);
-            return;
-        }
-        if (!parseChirpPage(pageRaw, &categoryPage)) {
-            setError(result, "page must be a single letter A-Z", ApplyRefusalReason::OutOfRange,
-                     "page", "A..Z");
+        // The binding's bank and page, each by its declaration
+        // (include/config_settings.h).
+        int32_t bankValue = 0;
+        int32_t pageValue = 0;
+        if (!configSettingCheck(*catalogBindingSetting("bank"), bankRaw, "bank", &bankValue,
+                                &result->error.refusal, result->error.message,
+                                sizeof(result->error.message)) ||
+            !configSettingCheck(*catalogBindingSetting("page"), pageRaw, "page", &pageValue,
+                                &result->error.refusal, result->error.message,
+                                sizeof(result->error.message))) {
+            result->error.hasError = true;
             return;
         }
         categoryBank = (uint8_t)bankValue;
+        categoryPage = (char)pageValue;
     } else if (clearBinding && !catalogSupported) {
         setNotFoundError(result, "catalog unsupported by active backend", "clear_binding");
         return;
     }
 
-    uint32_t loTrack = 0;
-    uint32_t hiTrack = 0;
-    const bool loParsed = parseUint32Value(loRaw, &loTrack);
-    if (!loParsed || !parseUint32Value(hiRaw, &hiTrack)) {
-        setRangeError(result, "range values must be non-negative integers", loParsed ? "hi" : "lo",
-                      0, 999);
+    // Each bound by its own Setting (include/config_settings.h), refused under
+    // its key so a page can say which category and which end it was.
+    const ConfigSetting* loSetting = audioSettingByName(loKey, SettingDoor::AudioTracks);
+    const ConfigSetting* hiSetting = audioSettingByName(hiKey, SettingDoor::AudioTracks);
+    if (loSetting == nullptr || hiSetting == nullptr) {
+        setError(result, "unknown category key", ApplyRefusalReason::OutOfRange, "lo_key");
         return;
     }
-    if (loTrack > 999U || hiTrack > 999U) {
-        setRangeError(result, "range values must be 0-999", loTrack > 999U ? "lo" : "hi", 0, 999);
+    int32_t loTrack = 0;
+    int32_t hiTrack = 0;
+    if (!configSettingCheck(*loSetting, loRaw, loKey, &loTrack, &result->error.refusal,
+                            result->error.message, sizeof(result->error.message)) ||
+        !configSettingCheck(*hiSetting, hiRaw, hiKey, &hiTrack, &result->error.refusal,
+                            result->error.message, sizeof(result->error.message))) {
+        result->error.hasError = true;
         return;
     }
     // Each bound is fine on its own here; the pair clashes (lo above hi, or one
-    // end off while the other is on), so it is a conflict named on `lo`.
-    if (!((loTrack == 0U && hiTrack == 0U) ||
-          (loTrack >= 1U && hiTrack >= 1U && loTrack <= hiTrack))) {
+    // end off while the other is on), a rule across the two Settings, so it is
+    // a conflict named on the low one.
+    if (!((loTrack == 0 && hiTrack == 0) || (loTrack >= 1 && hiTrack >= 1 && loTrack <= hiTrack))) {
         setError(result, "range must be 0/0 or 1-999 with lo <= hi", ApplyRefusalReason::Conflict,
-                 "lo");
+                 loKey);
         return;
     }
 

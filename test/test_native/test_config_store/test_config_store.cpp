@@ -155,60 +155,6 @@ void test_configResolvedMdnsHostname_falls_back_to_board_default() {
     TEST_ASSERT_EQUAL_STRING("artoo", hostname);
 }
 
-// Test: configValidate rejects out-of-range speed limit
-void test_configValidate_speed_limit_out_of_range() {
-    ConfigValidationResult result = configValidate(ConfigKey::SPEED_LIMIT_MAX, SPEED_LIMIT_MAX + 1);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SPEED_LIMIT_MAX, -1);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
-// Test: configValidate accepts valid speed limit
-void test_configValidate_speed_limit_valid() {
-    ConfigValidationResult result = configValidate(ConfigKey::SPEED_LIMIT_MAX, 0);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SPEED_LIMIT_MAX, SPEED_LIMIT_MAX);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SPEED_LIMIT_MAX, 300);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-}
-
-// Test: configValidate rejects invalid SBUS timeout
-void test_configValidate_sbus_timeout_out_of_range() {
-    ConfigValidationResult result = configValidate(ConfigKey::SBUS_TIMEOUT_MS, 40);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SBUS_TIMEOUT_MS, 5001);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
-// Test: configValidate accepts valid SBUS timeout
-void test_configValidate_sbus_timeout_valid() {
-    ConfigValidationResult result = configValidate(ConfigKey::SBUS_TIMEOUT_MS, 50);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SBUS_TIMEOUT_MS, 200);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SBUS_TIMEOUT_MS, 5000);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-}
-
-// Test: configValidate audio volume
-void test_configValidate_audio_volume() {
-    ConfigValidationResult result = configValidate(ConfigKey::AUDIO_VOLUME, 0);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::AUDIO_VOLUME, 30);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::AUDIO_VOLUME, 31);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
 // Test: a config save writes no fixed servo key at all (#345)
 //
 // The contract half of the refactor, asked of the thing that would betray it
@@ -613,33 +559,6 @@ void test_an_empty_string_stores_and_a_failed_write_does_not() {
     prefs.end();
 }
 
-// Test: configValidate dome speed limits
-void test_configValidate_dome_speed() {
-    ConfigValidationResult result = configValidateFloat(ConfigKey::DOME_MIN_SPEED, 0.0f);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidateFloat(ConfigKey::DOME_MAX_SPEED, 1.0f);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidateFloat(ConfigKey::DOME_MIN_SPEED, -0.1f);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-
-    result = configValidateFloat(ConfigKey::DOME_MAX_SPEED, 1.1f);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
-// Test: configValidate booleans
-void test_configValidate_booleans() {
-    ConfigValidationResult result = configValidateBool(ConfigKey::ENABLE_ARM1, true);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidateBool(ConfigKey::ENABLE_ARM1, false);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidateBool(ConfigKey::STATIONARY, true);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-}
-
 // Test: Schema version 0 (legacy) loads and stamps as v1
 void test_configLoad_legacy_schema_v0() {
     Preferences prefs;
@@ -744,111 +663,6 @@ void test_configLoad_save_feature_toggles() {
     TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_rc_ch1);
     TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_drive);
     TEST_ASSERT_EQUAL_INT(true, snap2.system.stationary);
-}
-
-// Test: configValidate dome speed percentage
-void test_configValidate_dome_speed_pct() {
-    ConfigValidationResult result = configValidate(ConfigKey::DOME_SPEED_LIMIT_PCT, 0);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::DOME_SPEED_LIMIT_PCT, 100);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::DOME_SPEED_LIMIT_PCT, 101);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
-// Test: configValidate holds the four fields whose bounds had drifted from the
-// Apply Core's to the Apply Core's bounds, both edges of each.
-void test_configValidate_matches_apply_core_bounds() {
-    struct Bound {
-        ConfigKey key;
-        int32_t lo;
-        int32_t hi;
-    };
-    const Bound bounds[] = {
-        {ConfigKey::LOG_LEVEL, 1, 4},
-        {ConfigKey::DOME_RND_SPEED_PCT, 5, 100},
-        {ConfigKey::DOME_RND_PAUSE_MIN, 1, 120},
-        {ConfigKey::DOME_RND_PAUSE_MAX, 1, 120},
-        {ConfigKey::DOME_RND_MOVE_MS, 500, 10000},
-    };
-    for (const Bound& b : bounds) {
-        TEST_ASSERT_TRUE(configValidate(b.key, b.lo) == ConfigValidationResult::OK);
-        TEST_ASSERT_TRUE(configValidate(b.key, b.hi) == ConfigValidationResult::OK);
-        TEST_ASSERT_FALSE(configValidate(b.key, b.lo - 1) == ConfigValidationResult::OK);
-        TEST_ASSERT_FALSE(configValidate(b.key, b.hi + 1) == ConfigValidationResult::OK);
-    }
-}
-
-// Test: configValidate aux LED pin
-void test_configValidate_light_led_count() {
-    ConfigValidationResult result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MIN);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MAX);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    // Zero is the one that matters: a strip configured to render nothing reads
-    // as a strip that is simply off.
-    result = configValidate(ConfigKey::LIGHT_LED_COUNT, SERVO_LIGHT_LEDS_MIN - 1);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
-// Test: configValidate sequence timing
-void test_configValidate_sequence_timing() {
-    ConfigValidationResult result = configValidate(ConfigKey::SEQ_OPEN_MS, 100);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SEQ_OPEN_MS, 5000);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SEQ_OPEN_MS, 99);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-
-    result = configValidate(ConfigKey::SEQ_OPEN_MS, 5001);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE, (uint8_t)result);
-}
-
-// Test: configValidate RC input mode
-void test_configValidate_rc_input_mode() {
-    ConfigValidationResult result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_STANDARD_PWM);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_DUAL_SBUS);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_ELRS);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK, (uint8_t)result);
-
-    result = configValidate(ConfigKey::RC_INPUT_MODE, RC_INPUT_ELRS + 1);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE, (uint8_t)result);
-}
-
-// Test: the Sound Component Member is validated against the Component Registry,
-// not against a numeric range. The picker offers the registry's rows, so the
-// door has to refuse exactly the rows it does not offer: a roadmap part, and a
-// selectable part belonging to another family.
-void test_configValidate_sound_member_asks_the_registry() {
-    const ComponentPartEntry* chirp = componentPartById("chirp");
-    TEST_ASSERT_NOT_NULL(chirp);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OK,
-                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, chirp->value));
-
-    const ComponentPartEntry* dfplayer = componentPartById("dfplayer_mini");
-    TEST_ASSERT_NOT_NULL(dfplayer);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE,
-                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, dfplayer->value));
-
-    const ComponentPartEntry* hoverboard = componentPartById("hoverboard");
-    TEST_ASSERT_NOT_NULL(hoverboard);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE,
-                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, hoverboard->value));
-
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::INVALID_VALUE,
-                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, 250));
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ConfigValidationResult::OUT_OF_RANGE,
-                            (uint8_t)configValidate(ConfigKey::SOUND_MEMBER, 256));
 }
 
 // Test: a Component Member survives a reboot -- the acceptance criterion in one
@@ -1934,11 +1748,6 @@ int main() {
     RUN_TEST(test_configLoad_save_identity_rejects_uppercase_to_default);
     RUN_TEST(test_configResolvedMdnsHostname_uses_identity_name);
     RUN_TEST(test_configResolvedMdnsHostname_falls_back_to_board_default);
-    RUN_TEST(test_configValidate_speed_limit_out_of_range);
-    RUN_TEST(test_configValidate_speed_limit_valid);
-    RUN_TEST(test_configValidate_sbus_timeout_out_of_range);
-    RUN_TEST(test_configValidate_sbus_timeout_valid);
-    RUN_TEST(test_configValidate_audio_volume);
     RUN_TEST(test_a_saved_config_writes_no_fixed_servo_key);
     RUN_TEST(test_a_saved_config_removes_the_retired_sequence_dwell_keys);
     RUN_TEST(test_a_saved_row_removes_the_key_set_it_replaced);
@@ -1948,8 +1757,6 @@ int main() {
     RUN_TEST(test_the_upgrade_from_main_keeps_a_ticked_lit_wire_and_both_pairs);
     RUN_TEST(test_the_upgrade_from_main_keeps_an_unticked_lit_wire_lit);
     RUN_TEST(test_an_empty_string_stores_and_a_failed_write_does_not);
-    RUN_TEST(test_configValidate_dome_speed);
-    RUN_TEST(test_configValidate_booleans);
     RUN_TEST(test_configLoad_legacy_schema_v0);
     RUN_TEST(test_configLoad_schema_v1_migrates_info_log_level);
     RUN_TEST(test_configLoad_schema_v1_migrates_debug_log_level);
@@ -1958,12 +1765,6 @@ int main() {
     RUN_TEST(test_configLoad_schema_mismatch);
     RUN_TEST(test_configLoad_save_audio_tracks);
     RUN_TEST(test_configLoad_save_feature_toggles);
-    RUN_TEST(test_configValidate_dome_speed_pct);
-    RUN_TEST(test_configValidate_matches_apply_core_bounds);
-    RUN_TEST(test_configValidate_light_led_count);
-    RUN_TEST(test_configValidate_sequence_timing);
-    RUN_TEST(test_configValidate_rc_input_mode);
-    RUN_TEST(test_configValidate_sound_member_asks_the_registry);
     RUN_TEST(test_sound_member_survives_a_save_and_load);
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip);
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip_empty);

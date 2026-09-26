@@ -87,7 +87,7 @@
 // -----------------------------------------------------------------------------
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_CONTROLLER,       "body_controller",       "Body Controller",       nullptr)
 // The Radio Controller's member is the radio a builder holds (operator,
-// 2026-09-18 on #369). "rc_member" is its NVS key (ConfigKey::RC_MEMBER).
+// 2026-09-18 on #369). "rc_member" is its NVS key (the rcMember Setting, src/config_settings.cpp).
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_RADIO_CONTROLLER,      "radio_controller",      "Radio Controller",      "rc_member")
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "body_servo_controller", "Body servo controller", nullptr)
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_DOME_ROTATION,         "dome_rotation",         "Dome Rotation",         nullptr)
@@ -95,7 +95,7 @@ PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_DOME_CONTROLLER,       "dome_controller
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_FOOT_DRIVE,            "foot_drive",            "Foot Drive",            nullptr)
 // Sound carries more than one selectable member, so it has a Component Member
 // setting. "snd_member" is its NVS key
-// (include/config_store.h, ConfigKey::SOUND_MEMBER); 10 characters, clear of
+// (the soundMember Setting, src/config_settings.cpp); 10 characters, clear of
 // the 15-character Preferences ceiling.
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_SOUND,                 "sound",                 "Sound",                 "snd_member")
 

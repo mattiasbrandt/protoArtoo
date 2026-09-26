@@ -10,6 +10,7 @@
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "config.h"
+#include "config_settings.h"  // every Setting's NVS key, its check and its default
 #include "dome_math.h"  // domePulsesInOrder()
 #include "rc_mapping.h"
 #include "board_outputs.h"            // which Output a retired aux_led_pin slot named
@@ -263,115 +264,35 @@ void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& d
 
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def) {
     *out = def;
-    out->speedLimitMax     = r.readI16("spd_max",   def.speedLimitMax);
-    out->speedPresetSlow   = r.readI16("spd_pre_s", def.speedPresetSlow);
-    out->speedPresetNormal = r.readI16("spd_pre_n", def.speedPresetNormal);
-    out->speedPresetTurbo  = r.readI16("spd_pre_t", def.speedPresetTurbo);
+    // Every Setting read under its key and held to what its door takes - the
+    // speeds to the project's absolute drive cap (SPEED_LIMIT_MAX), which no
+    // drive backend can raise, and the timeouts to their windows - so a corrupt
+    // NVS value never reaches DriveTask.
+    configSettingsRead(SettingSection::Drive, r, out);
+    // Which preset is active is derived from the speed limit, not a Setting.
     out->speedPresetActive =
         normalizeSpeedPresetId(r.readU8("spd_pre_a", (uint8_t)def.speedPresetActive));
-    out->sbusTimeoutMs     = r.readU32("sbus_tmo", def.sbusTimeoutMs);
-    out->webDriveTimeoutMs = r.readU32("web_tmo",  def.webDriveTimeoutMs);
-
-    // Clamp to the project's absolute drive cap (SPEED_LIMIT_MAX, include/config.h)
-    // and valid timeout windows; guards against corrupt NVS values reaching
-    // DriveTask. The cap is generic and no drive backend can raise it.
-    out->speedLimitMax     = constrain(out->speedLimitMax,     (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->speedPresetSlow   = constrain(out->speedPresetSlow,   (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->speedPresetNormal = constrain(out->speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->speedPresetTurbo  = constrain(out->speedPresetTurbo,  (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->sbusTimeoutMs     = constrain(out->sbusTimeoutMs,     (uint32_t)50,  (uint32_t)5000);
-    out->webDriveTimeoutMs = constrain(out->webDriveTimeoutMs, (uint32_t)100, (uint32_t)5000);
 }
 
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def) {
     *out = def;
-    out->audioVolume = r.readU8("aud_vol", def.audioVolume);
-    out->snd_scream = r.readU16("snd_scream", def.snd_scream);
-    out->snd_faint = r.readU16("snd_faint", def.snd_faint);
-    out->snd_leia = r.readU16("snd_leia", def.snd_leia);
-    out->snd_cantina_s = r.readU16("snd_cantina_s", def.snd_cantina_s);
-    out->snd_sw_theme = r.readU16("snd_sw", def.snd_sw_theme);
-    out->snd_imp_march = r.readU16("snd_march", def.snd_imp_march);
-    out->snd_cantina_l = r.readU16("snd_cantina_l", def.snd_cantina_l);
-    out->snd_startup = r.readU16("snd_startup", def.snd_startup);
-    out->snd_doodoo = r.readU16("snd_doodoo", def.snd_doodoo);
-    out->snd_failure = r.readU16("snd_failure", def.snd_failure);
-    out->snd_disco = r.readU16("snd_disco", def.snd_disco);
+    // Every audio Setting under its key. The volume is held to the DFPlayer
+    // Mini's 0..30 and a mood mask to its twelve bits (its upper nibble once
+    // carried category flags); a track, an interval and a category bound are
+    // read as stored, since a track can hold a CHIRP catalog index past 999
+    // (repairOnLoad, include/config_settings.h).
+    configSettingsRead(SettingSection::Audio, r, out);
+    // Not a Setting: nothing writes it after its default (config_settings.h).
     out->snd_happy = r.readU16("snd_happy", def.snd_happy);
-    out->snd_mahna = r.readU16("snd_mahna", def.snd_mahna);
-    out->snd_inlove = r.readU16("snd_inlove", def.snd_inlove);
-    out->snd_macho = r.readU16("snd_macho", def.snd_macho);
-    out->snd_gangnam = r.readU16("snd_gangnam", def.snd_gangnam);
-    out->snd_uptown = r.readU16("snd_uptown", def.snd_uptown);
-    out->snd_celebr = r.readU16("snd_celebr", def.snd_celebr);
-    out->snd_stayin = r.readU16("snd_stayin", def.snd_stayin);
-    out->snd_harlem = r.readU16("snd_harlem", def.snd_harlem);
-    out->snd_pbjtime = r.readU16("snd_pbjtime", def.snd_pbjtime);
-    out->snd_sys_boot = r.readU16("snd_sys_boot", def.snd_sys_boot);
-    out->snd_sys_mode_n = r.readU16("snd_sys_mode_n", def.snd_sys_mode_n);
-    out->snd_sys_mode_s = r.readU16("snd_sys_mode_s", def.snd_sys_mode_s);
-    out->snd_sys_mode_t = r.readU16("snd_sys_mode_t", def.snd_sys_mode_t);
-    out->snd_sys_drv_on = r.readU16("snd_sys_drv_on", def.snd_sys_drv_on);
-    out->snd_sys_dome_on = r.readU16("snd_sys_dome_on", def.snd_sys_dome_on);
-    // "snd_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
-    // Preferences key length ceiling (#189).
-    out->snd_sys_net_down = r.readU16("snd_sys_netdown", def.snd_sys_net_down);
-    out->snd_rand_min = r.readU16("snd_rand_min", def.snd_rand_min);
-    out->snd_rand_max = r.readU16("snd_rand_max", def.snd_rand_max);
-    out->snd_int_quiet = r.readU16("snd_int_quiet", def.snd_int_quiet);
-    out->snd_int_mid = r.readU16("snd_int_mid", def.snd_int_mid);
-    out->snd_int_full = r.readU16("snd_int_full", def.snd_int_full);
-    out->snd_int_awake = r.readU16("snd_int_awake", def.snd_int_awake);
-    // Upper nibble carries category flags (stripped on write); mask defensively on read too
-    out->snd_moodcat_quiet     = r.readU16("snd_moodcat_q", def.snd_moodcat_quiet)     & 0x0FFF;
-    out->snd_moodcat_mid       = r.readU16("snd_moodcat_m", def.snd_moodcat_mid)       & 0x0FFF;
-    out->snd_moodcat_full      = r.readU16("snd_moodcat_f", def.snd_moodcat_full)      & 0x0FFF;
-    out->snd_moodcat_awakeplus = r.readU16("snd_moodcat_a", def.snd_moodcat_awakeplus) & 0x0FFF;
-    out->snd_cat_gen_lo = r.readU16("snd_cat_gen_lo", def.snd_cat_gen_lo);
-    out->snd_cat_gen_hi = r.readU16("snd_cat_gen_hi", def.snd_cat_gen_hi);
-    out->snd_cat_chat_lo = r.readU16("snd_cat_chat_lo", def.snd_cat_chat_lo);
-    out->snd_cat_chat_hi = r.readU16("snd_cat_chat_hi", def.snd_cat_chat_hi);
-    out->snd_cat_hap_lo = r.readU16("snd_cat_hap_lo", def.snd_cat_hap_lo);
-    out->snd_cat_hap_hi = r.readU16("snd_cat_hap_hi", def.snd_cat_hap_hi);
-    out->snd_cat_proc_lo = r.readU16("snd_cat_proc_lo", def.snd_cat_proc_lo);
-    out->snd_cat_proc_hi = r.readU16("snd_cat_proc_hi", def.snd_cat_proc_hi);
-    out->snd_cat_sad_lo = r.readU16("snd_cat_sad_lo", def.snd_cat_sad_lo);
-    out->snd_cat_sad_hi = r.readU16("snd_cat_sad_hi", def.snd_cat_sad_hi);
-    out->snd_cat_sent_lo = r.readU16("snd_cat_sent_lo", def.snd_cat_sent_lo);
-    out->snd_cat_sent_hi = r.readU16("snd_cat_sent_hi", def.snd_cat_sent_hi);
-    out->snd_cat_hum_lo = r.readU16("snd_cat_hum_lo", def.snd_cat_hum_lo);
-    out->snd_cat_hum_hi = r.readU16("snd_cat_hum_hi", def.snd_cat_hum_hi);
-    out->snd_cat_scrm_lo = r.readU16("snd_cat_scrm_lo", def.snd_cat_scrm_lo);
-    out->snd_cat_scrm_hi = r.readU16("snd_cat_scrm_hi", def.snd_cat_scrm_hi);
-    out->snd_cat_ooh_lo = r.readU16("snd_cat_ooh_lo", def.snd_cat_ooh_lo);
-    out->snd_cat_ooh_hi = r.readU16("snd_cat_ooh_hi", def.snd_cat_ooh_hi);
-    out->snd_cat_alrm_lo = r.readU16("snd_cat_alrm_lo", def.snd_cat_alrm_lo);
-    out->snd_cat_alrm_hi = r.readU16("snd_cat_alrm_hi", def.snd_cat_alrm_hi);
-    out->snd_cat_snarky_lo = r.readU16("snd_cat_snrk_lo", def.snd_cat_snarky_lo);
-    out->snd_cat_snarky_hi = r.readU16("snd_cat_snrk_hi", def.snd_cat_snarky_hi);
-    out->snd_cat_whis_lo = r.readU16("snd_cat_whis_lo", def.snd_cat_whis_lo);
-    out->snd_cat_whis_hi = r.readU16("snd_cat_whis_hi", def.snd_cat_whis_hi);
-
-    out->audioVolume = constrain(out->audioVolume, (uint8_t)0, (uint8_t)30);  // DFPlayer Mini range
-}
-
-
-// The three ESC pulse widths as stored, each held to 1000..2000 on its own. The
-// order between them is the caller's to judge (domePulsesInOrder()).
-void readDomePulses(const ConfigReader& r, const DomeConfig& def, DomeConfig* out) {
-    out->dome_neutral_us = constrain(r.readU16("dome_neu", def.dome_neutral_us), (uint16_t)1000,
-                                     (uint16_t)2000);
-    out->dome_min_pulse_us = constrain(r.readU16("dome_minp", def.dome_min_pulse_us),
-                                       (uint16_t)1000, (uint16_t)2000);
-    out->dome_max_pulse_us = constrain(r.readU16("dome_maxp", def.dome_max_pulse_us),
-                                       (uint16_t)1000, (uint16_t)2000);
 }
 
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
     *out = def;
     out->dome_min_speed = floatFromBits(r.readU32("dome_min", floatToBits(def.dome_min_speed)));
     out->dome_max_speed = floatFromBits(r.readU32("dome_max", floatToBits(def.dome_max_speed)));
-    readDomePulses(r, def, out);
+    // Every Setting, each held to what its door takes: the three ESC pulse
+    // widths to 1000..2000 on their own, the order between them below.
+    configSettingsRead(SettingSection::Dome, r, out);
     // A set stored out of order - before the config door refused one (#417) -
     // cannot put a stop on the ESC, so all three take the defaults rather than
     // one being picked to move: which of them is wrong is not something the
@@ -382,25 +303,11 @@ void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& d
         out->dome_min_pulse_us = def.dome_min_pulse_us;
         out->dome_max_pulse_us = def.dome_max_pulse_us;
     }
-    out->dome_speed_limit_pct = r.readU8("dome_pct", def.dome_speed_limit_pct);
-    out->dome_rnd_enable = r.readBool("dome_rnd_en", def.dome_rnd_enable);
-    out->dome_rnd_speed_pct = r.readU8("dome_rnd_spd", def.dome_rnd_speed_pct);
-    out->dome_rnd_pause_min = r.readU8("dome_rnd_pmin", def.dome_rnd_pause_min);
-    out->dome_rnd_pause_max = r.readU8("dome_rnd_pmax", def.dome_rnd_pause_max);
-    out->dome_rnd_move_ms = r.readU16("dome_rnd_ms", def.dome_rnd_move_ms);
-
-    // Reject overlong IP strings before copying into fixed-size buffer
-    String domeWifiPeerIp = r.readStr("dome_wip", "");
-    if (domeWifiPeerIp.length() >= sizeof(out->dome_wifi_peer_ip)) {
-        domeWifiPeerIp = String("");
-    }
-    snprintf(out->dome_wifi_peer_ip, sizeof(out->dome_wifi_peer_ip), "%s", domeWifiPeerIp.c_str());
 
     if (out->dome_min_speed < 0.0f)
         out->dome_min_speed = 0.0f;
     if (out->dome_max_speed > 1.0f)
         out->dome_max_speed = 1.0f;
-    out->dome_speed_limit_pct = constrain(out->dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
 }
 
 // Parse a stored RC analog binding. Starts from def so fields absent from the encoded
@@ -443,32 +350,13 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     }
 
     out->mdns_use_name        = r.readBool("mdns_use_name",  def.mdns_use_name);
-    out->logLevel             = r.readU8  ("log_level",       def.logLevel);
-    out->enable_arm1          = r.readBool("en_arm1",         def.enable_arm1);
-    out->enable_arm2          = r.readBool("en_arm2",         def.enable_arm2);
-    out->enable_aux1          = r.readBool("en_aux1",         def.enable_aux1);
-    out->enable_aux2          = r.readBool("en_aux2",         def.enable_aux2);
-    out->enable_aux3          = r.readBool("en_aux3",         def.enable_aux3);
-    out->enable_dome_esc      = r.readBool("en_dome_esc",     def.enable_dome_esc);
-    out->enable_rc_ch1        = r.readBool("en_rc_ch1",       def.enable_rc_ch1);
-    out->enable_rc_ch2        = r.readBool("en_rc_ch2",       def.enable_rc_ch2);
-    out->enable_rc_ch3        = r.readBool("en_rc_ch3",       def.enable_rc_ch3);
-    out->enable_rc_ch4        = r.readBool("en_rc_ch4",       def.enable_rc_ch4);
-    out->enable_rc_ch5        = r.readBool("en_rc_ch5",       def.enable_rc_ch5);
-    out->enable_rc_ch6        = r.readBool("en_rc_ch6",       def.enable_rc_ch6);
-    out->single_sbus_use_ch2  = r.readBool("sbus_recv_ch2",   def.single_sbus_use_ch2);
-    out->enable_drive         = r.readBool("en_drive",        def.enable_drive);
-    out->enable_audio         = r.readBool("en_audio",        def.enable_audio);
-    out->enable_protor2link   = r.readBool("en_r2link",       def.enable_protor2link);
-    out->stationary           = r.readBool("op_mode",          def.stationary);
-    out->rc_input_mode        = (RcInputMode)r.readU8("rc_mode", (uint8_t)def.rc_input_mode);
-    // The Sound Component Member, as a Component Registry part `value`. Read
-    // raw: whether this image can still drive the stored product is
-    // componentResolveMember()'s question, not the serializer's, so a member
-    // cut from one image and restored in the next survives the round trip.
-    out->sound_member         = r.readU8  ("snd_member",      def.sound_member);
-    // The Radio Controller Component Member, read raw for the same reason.
-    out->rc_member            = r.readU8  ("rc_member",       def.rc_member);
+    // Every Setting under its key, held to what its door takes. The Component
+    // Members are read as stored: whether this image can still drive the stored
+    // product is componentResolveMember()'s question, not the serializer's, so
+    // a member cut from one image and restored in the next survives the round
+    // trip. An RC receiver mode this image has no word for reads as the
+    // default.
+    configSettingsRead(SettingSection::System, r, out);
 
     out->rc_pwm_drive_speed  = loadRcBinding(r, "rcp_drv", def.rc_pwm_drive_speed);
     out->rc_pwm_drive_steer  = loadRcBinding(r, "rcp_str", def.rc_pwm_drive_steer);
@@ -494,10 +382,6 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     out->rc_free1  = loadRcTrigger(r, "rc_free1", def.rc_free1);
     out->rc_free2  = loadRcTrigger(r, "rc_free2", def.rc_free2);
     out->rc_free3  = loadRcTrigger(r, "rc_free3", def.rc_free3);
-
-    if (out->rc_input_mode > RC_INPUT_DUAL_SBUS) {
-        out->rc_input_mode = RC_INPUT_DUAL_SBUS;
-    }
 }
 
 void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def) {
@@ -583,109 +467,22 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer) {
 }
 
 bool configSerializeDrive(const DriveConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    ok = w.writeI16("spd_max", cfg.speedLimitMax) && ok;
-    ok = w.writeI16("spd_pre_s", cfg.speedPresetSlow) && ok;
-    ok = w.writeI16("spd_pre_n", cfg.speedPresetNormal) && ok;
-    ok = w.writeI16("spd_pre_t", cfg.speedPresetTurbo) && ok;
+    bool ok = configSettingsWrite(SettingSection::Drive, &cfg, w);
     ok = w.writeU8("spd_pre_a", (uint8_t)cfg.speedPresetActive) && ok;
-    ok = w.writeU32("sbus_tmo", cfg.sbusTimeoutMs) && ok;
-    ok = w.writeU32("web_tmo", cfg.webDriveTimeoutMs) && ok;
     return ok;
 }
 
 bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    ok = w.writeU8("aud_vol", cfg.audioVolume) && ok;
-    ok = w.writeU16("snd_scream", cfg.snd_scream) && ok;
-    ok = w.writeU16("snd_faint", cfg.snd_faint) && ok;
-    ok = w.writeU16("snd_leia", cfg.snd_leia) && ok;
-    ok = w.writeU16("snd_cantina_s", cfg.snd_cantina_s) && ok;
-    ok = w.writeU16("snd_sw", cfg.snd_sw_theme) && ok;
-    ok = w.writeU16("snd_march", cfg.snd_imp_march) && ok;
-    ok = w.writeU16("snd_cantina_l", cfg.snd_cantina_l) && ok;
-    ok = w.writeU16("snd_startup", cfg.snd_startup) && ok;
-    ok = w.writeU16("snd_doodoo", cfg.snd_doodoo) && ok;
-    ok = w.writeU16("snd_failure", cfg.snd_failure) && ok;
-    ok = w.writeU16("snd_disco", cfg.snd_disco) && ok;
-    ok = w.writeU16("snd_mahna", cfg.snd_mahna) && ok;
-    ok = w.writeU16("snd_inlove", cfg.snd_inlove) && ok;
-    ok = w.writeU16("snd_macho", cfg.snd_macho) && ok;
-    ok = w.writeU16("snd_gangnam", cfg.snd_gangnam) && ok;
-    ok = w.writeU16("snd_uptown", cfg.snd_uptown) && ok;
-    ok = w.writeU16("snd_celebr", cfg.snd_celebr) && ok;
-    ok = w.writeU16("snd_stayin", cfg.snd_stayin) && ok;
-    ok = w.writeU16("snd_harlem", cfg.snd_harlem) && ok;
-    ok = w.writeU16("snd_pbjtime", cfg.snd_pbjtime) && ok;
-    ok = w.writeU16("snd_sys_boot", cfg.snd_sys_boot) && ok;
-    ok = w.writeU16("snd_sys_mode_n", cfg.snd_sys_mode_n) && ok;
-    ok = w.writeU16("snd_sys_mode_s", cfg.snd_sys_mode_s) && ok;
-    ok = w.writeU16("snd_sys_mode_t", cfg.snd_sys_mode_t) && ok;
-    ok = w.writeU16("snd_sys_drv_on", cfg.snd_sys_drv_on) && ok;
-    ok = w.writeU16("snd_sys_dome_on", cfg.snd_sys_dome_on) && ok;
-    ok = w.writeU16("snd_sys_netdown", cfg.snd_sys_net_down) && ok;
-    ok = w.writeU16("snd_rand_min", cfg.snd_rand_min) && ok;
-    ok = w.writeU16("snd_rand_max", cfg.snd_rand_max) && ok;
-    ok = w.writeU16("snd_int_quiet", cfg.snd_int_quiet) && ok;
-    ok = w.writeU16("snd_int_mid", cfg.snd_int_mid) && ok;
-    ok = w.writeU16("snd_int_full", cfg.snd_int_full) && ok;
-    ok = w.writeU16("snd_int_awake", cfg.snd_int_awake) && ok;
-    ok = w.writeU16("snd_moodcat_q", cfg.snd_moodcat_quiet & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_m", cfg.snd_moodcat_mid & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_f", cfg.snd_moodcat_full & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_a", cfg.snd_moodcat_awakeplus & 0x0FFF) && ok;
-    ok = w.writeU16("snd_cat_gen_lo", cfg.snd_cat_gen_lo) && ok;
-    ok = w.writeU16("snd_cat_gen_hi", cfg.snd_cat_gen_hi) && ok;
-    ok = w.writeU16("snd_cat_chat_lo", cfg.snd_cat_chat_lo) && ok;
-    ok = w.writeU16("snd_cat_chat_hi", cfg.snd_cat_chat_hi) && ok;
-    ok = w.writeU16("snd_cat_hap_lo", cfg.snd_cat_hap_lo) && ok;
-    ok = w.writeU16("snd_cat_hap_hi", cfg.snd_cat_hap_hi) && ok;
-    ok = w.writeU16("snd_cat_proc_lo", cfg.snd_cat_proc_lo) && ok;
-    ok = w.writeU16("snd_cat_proc_hi", cfg.snd_cat_proc_hi) && ok;
-    ok = w.writeU16("snd_cat_sad_lo", cfg.snd_cat_sad_lo) && ok;
-    ok = w.writeU16("snd_cat_sad_hi", cfg.snd_cat_sad_hi) && ok;
-    ok = w.writeU16("snd_cat_sent_lo", cfg.snd_cat_sent_lo) && ok;
-    ok = w.writeU16("snd_cat_sent_hi", cfg.snd_cat_sent_hi) && ok;
-    ok = w.writeU16("snd_cat_hum_lo", cfg.snd_cat_hum_lo) && ok;
-    ok = w.writeU16("snd_cat_hum_hi", cfg.snd_cat_hum_hi) && ok;
-    ok = w.writeU16("snd_cat_scrm_lo", cfg.snd_cat_scrm_lo) && ok;
-    ok = w.writeU16("snd_cat_scrm_hi", cfg.snd_cat_scrm_hi) && ok;
-    ok = w.writeU16("snd_cat_ooh_lo", cfg.snd_cat_ooh_lo) && ok;
-    ok = w.writeU16("snd_cat_ooh_hi", cfg.snd_cat_ooh_hi) && ok;
-    ok = w.writeU16("snd_cat_alrm_lo", cfg.snd_cat_alrm_lo) && ok;
-    ok = w.writeU16("snd_cat_alrm_hi", cfg.snd_cat_alrm_hi) && ok;
-    ok = w.writeU16("snd_cat_snrk_lo", cfg.snd_cat_snarky_lo) && ok;
-    ok = w.writeU16("snd_cat_snrk_hi", cfg.snd_cat_snarky_hi) && ok;
-    ok = w.writeU16("snd_cat_whis_lo", cfg.snd_cat_whis_lo) && ok;
-    ok = w.writeU16("snd_cat_whis_hi", cfg.snd_cat_whis_hi) && ok;
-    return ok;
+    // snd_happy is read and never written, as it has always been: it is not a
+    // Setting, and a write would add a key no controller stores today.
+    return configSettingsWrite(SettingSection::Audio, &cfg, w);
 }
-
 
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w) {
     bool ok = true;
     ok = w.writeU32("dome_min", floatToBits(cfg.dome_min_speed)) && ok;
     ok = w.writeU32("dome_max", floatToBits(cfg.dome_max_speed)) && ok;
-    ok = w.writeU16("dome_neu", cfg.dome_neutral_us) && ok;
-    ok = w.writeU16("dome_minp", cfg.dome_min_pulse_us) && ok;
-    ok = w.writeU16("dome_maxp", cfg.dome_max_pulse_us) && ok;
-    ok = w.writeU8("dome_pct", cfg.dome_speed_limit_pct) && ok;
-    ok = w.writeBool("dome_rnd_en", cfg.dome_rnd_enable) && ok;
-    ok = w.writeU8("dome_rnd_spd", cfg.dome_rnd_speed_pct) && ok;
-    ok = w.writeU8("dome_rnd_pmin", cfg.dome_rnd_pause_min) && ok;
-    ok = w.writeU8("dome_rnd_pmax", cfg.dome_rnd_pause_max) && ok;
-    ok = w.writeU16("dome_rnd_ms", cfg.dome_rnd_move_ms) && ok;
-    // Written unconditionally, empty included. An empty peer IP is the "not configured"
-    // state, and it must overwrite whatever an earlier save stored: NVS keeps every key a
-    // save does not touch, so skipping the key here would leave the old address to come
-    // back on the next cold boot. Writing "" is a real store, not a no-op:
-    // Preferences::putString only short-circuits on a null pointer, then calls
-    // nvs_set_str (arduino-esp32 3.3.7, libraries/Preferences/src/Preferences.cpp:264-279),
-    // which stores strlen(value) + 1 bytes -- one byte for "" (ESP-IDF 5.5,
-    // components/nvs_flash/src/nvs_handle_simple.cpp:31-37). PrefsWriter::writeStr already
-    // treats putString's 0 return for an empty string as success, and the WiFi serializer
-    // relies on the same path for an empty STA SSID.
-    ok = w.writeStr("dome_wip", cfg.dome_wifi_peer_ip) && ok;
+    ok = configSettingsWrite(SettingSection::Dome, &cfg, w) && ok;
     return ok;
 }
 
@@ -693,27 +490,7 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     bool ok = true;
     ok = w.writeStr("droid_name", cfg.droid_name) && ok;
     ok = w.writeBool("mdns_use_name", cfg.mdns_use_name) && ok;
-    ok = w.writeU8("log_level", cfg.logLevel) && ok;
-    ok = w.writeBool("en_arm1", cfg.enable_arm1) && ok;
-    ok = w.writeBool("en_arm2", cfg.enable_arm2) && ok;
-    ok = w.writeBool("en_aux1", cfg.enable_aux1) && ok;
-    ok = w.writeBool("en_aux2", cfg.enable_aux2) && ok;
-    ok = w.writeBool("en_aux3", cfg.enable_aux3) && ok;
-    ok = w.writeBool("en_dome_esc", cfg.enable_dome_esc) && ok;
-    ok = w.writeBool("en_rc_ch1", cfg.enable_rc_ch1) && ok;
-    ok = w.writeBool("en_rc_ch2", cfg.enable_rc_ch2) && ok;
-    ok = w.writeBool("en_rc_ch3", cfg.enable_rc_ch3) && ok;
-    ok = w.writeBool("en_rc_ch4", cfg.enable_rc_ch4) && ok;
-    ok = w.writeBool("en_rc_ch5", cfg.enable_rc_ch5) && ok;
-    ok = w.writeBool("en_rc_ch6", cfg.enable_rc_ch6) && ok;
-    ok = w.writeBool("sbus_recv_ch2", cfg.single_sbus_use_ch2) && ok;
-    ok = w.writeBool("en_drive", cfg.enable_drive) && ok;
-    ok = w.writeBool("en_audio", cfg.enable_audio) && ok;
-    ok = w.writeBool("en_r2link", cfg.enable_protor2link) && ok;
-    ok = w.writeBool("op_mode", cfg.stationary) && ok;
-    ok = w.writeU8("rc_mode", (uint8_t)cfg.rc_input_mode) && ok;
-    ok = w.writeU8("snd_member", cfg.sound_member) && ok;
-    ok = w.writeU8("rc_member", cfg.rc_member) && ok;
+    ok = configSettingsWrite(SettingSection::System, &cfg, w) && ok;
 
     // RC bindings  --  format and write as strings
     char encoded[48] = {};
@@ -822,7 +599,7 @@ void configDeserializeDome(const ConfigReader& r, DomeConfig* out) {
 
 bool configDomePulsesStoredOutOfOrder(const ConfigReader& r) {
     DomeConfig stored = getDefaults().dome;
-    readDomePulses(r, stored, &stored);
+    configSettingsRead(SettingSection::Dome, r, &stored);
     return !domePulsesInOrder(stored.dome_min_pulse_us, stored.dome_neutral_us,
                               stored.dome_max_pulse_us);
 }

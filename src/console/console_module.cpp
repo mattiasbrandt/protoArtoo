@@ -58,6 +58,7 @@
                                // (ADR 0011, amended 2026-09-24), shared verbatim with
                                // handleConfigPost: configApply() and its Commit Step under the
                                // one config write lock
+#include "config_settings.h"   // every Setting's declaration - the single-field ops read and write by it
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
 #include "api_wifi_apply.h"    // wifiWriteWindow() - the POST /api/wifi Apply Core and its
                                // ADR 0036 Commit Step under the config write lock, shared
@@ -1527,6 +1528,54 @@ static void consoleEmitApplyRefusal(uint32_t requestId, const char* operationNam
                           consoleReasonFromApplyRefusal(refusal.reason), sink, refusal.accepts);
 }
 
+// The registry schema's answer for an op that writes a Setting. It rules on
+// the op's arguments - one it does not take, one it needs and was not sent, a
+// word outside a selector's enum (`key=` scoping which Settings a row writes) -
+// but not on a Setting's VALUE: a number the schema's type cannot hold is left
+// to the Setting's declaration (src/config_settings.cpp), which refuses it
+// with what it takes, as HTTP does (ADR 0068, amended 2026-09-26). The
+// registry carries no range for a Setting's param, so the type is the only
+// value check the schema could make. True when it answered.
+static bool consoleRefuseSettingArgKeys(uint32_t requestId, const char* operationName,
+                                        const ConsoleParamDescriptor* params,
+                                        ConsoleArgSchemaStatus status, const char* badKey,
+                                        const ConsoleRecordSink* sink) {
+    if (status == CONSOLE_ARG_SCHEMA_OK) {
+        return false;
+    }
+    if (status == CONSOLE_ARG_SCHEMA_OUT_OF_RANGE && params != nullptr) {
+        for (const ConsoleParamDescriptor* p = params; p->name != nullptr; ++p) {
+            if (strcmp(p->name, badKey) == 0 && p->enum_values == nullptr && !p->board_output) {
+                return false;  // a Setting's value: its declaration answers
+            }
+        }
+    }
+    const ConsoleReason reason = status == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY
+                                     ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                                 : status == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED
+                                     ? CONSOLE_REASON_MISSING_ARGUMENT
+                                     : CONSOLE_REASON_OUT_OF_RANGE;
+    consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    return true;
+}
+
+// A value checked by its Setting's declaration, the check HTTP makes: false,
+// with the refusal answered on `argument` with the Setting's reason and accepts.
+// noinline, deliberately: the refusal is live only here, so it never joins the
+// frame of an executor on the Console chain's deepest route (the volume write,
+// tools/task_stack_recipes.json). No sentence is formatted - the Console answers
+// from the refusal's data.
+static bool __attribute__((noinline)) consoleCheckSettingArg(
+    uint32_t requestId, const char* operationName, const char* argument,
+    const ConfigSetting& setting, const char* raw, int32_t* value, const ConsoleRecordSink* sink) {
+    ApplyRefusal refusal;
+    if (configSettingCheck(setting, raw, setting.form, value, &refusal, nullptr, 0)) {
+        return true;
+    }
+    consoleEmitApplyRefusal(requestId, operationName, argument, refusal, sink);
+    return false;
+}
+
 // Argument-parse failures (malformed quoting/escaping/UTF-8, or too many
 // key=value pairs) have no single offending key - consoleParseArgs() never
 // got far enough to resolve one - so this answers without a field record,
@@ -1773,8 +1822,8 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // is needed here. It is released before this module's answer is emitted.
 static ConfigApplyResult s_consoleConfigApplyResult;
 
-// Bridges a Console write onto the exact param name api_config_apply.cpp's
-// `boolFields[]` table already reads for this field. The wire grammar allows
+// Bridges a Console write onto the Setting's form name, which is what
+// configApply() reads it under (include/config_settings.h). The wire grammar allows
 // both the generic `value=` shorthand (docs/console-protocol.md s.1: "system.
 // config.log-level value=debug") and the underlying named key (criterion 3:
 // "value= (or the named keys)"), so this ctx answers a lookup for `fieldKey`
@@ -1817,15 +1866,22 @@ static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fi
     return true;
 }
 
-// A config write that is one JSON body: the row door's (ADR 0068). The body is
-// the request's `plain`, and nothing else is on it.
-struct RowDoorBody {
-    const char* body;
+// One Setting of one Output, written on the form as the row door's one row
+// (ADR 0068): `outputRow` names the Output Address and the Setting rides beside
+// it under its row key, so the Console reaches the row door's own check without
+// building a body.
+struct OutputRowField {
+    const char* address;
+    const char* key;
+    const char* value;
 };
 
-static const char* consoleRowDoorParamGet(void* ctx, const char* name) {
-    const RowDoorBody* door = static_cast<const RowDoorBody*>(ctx);
-    return strcmp(name, "plain") == 0 ? door->body : nullptr;
+static const char* consoleOutputRowParamGet(void* ctx, const char* name) {
+    const OutputRowField* row = static_cast<const OutputRowField*>(ctx);
+    if (strcmp(name, "outputRow") == 0) {
+        return row->address;
+    }
+    return strcmp(name, row->key) == 0 ? row->value : nullptr;
 }
 
 // The config write every Console config op shares: the config Write Window,
@@ -1951,7 +2007,8 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
     if (!isWrite) {
         ConfigSnapshot snap = {};
         configCacheRead(&snap);
-        const bool saved = snap.system.*(field->field);
+        const ConfigSetting* setting = configSettingByForm(field->paramKey);
+        const bool saved = setting != nullptr && configSettingNumber(*setting, snap) != 0;
         const size_t bitIndex = (size_t)(field - kComponentToggleFields);
         const bool active = configCacheReadActiveComponentToggle(bitIndex);
 
@@ -1978,30 +2035,53 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
 }
 
 // =============================================================================
-// Private: the remaining scalar config.type rows configApply() already
-// handles live (not staged - unlike the Component Toggles above, these
-// fields are read from config_cache every control-loop iteration by their
-// owning task, the same "applied" semantics REST already gives them).
-// Confirmed one at a time by reading src/web/api_config_apply.cpp, not
-// assumed from the registry: sound.config.volume and sound.config.mood-
-// interval-* claim executor: configApply too but that function has no
-// "volume"/"sndIntQuiet"-shaped param at all (volume is set inline in
-// handleAudioPost's action=volume branch; the mood-interval fields have no
-// write path anywhere in this codebase today) - both are registry/
-// implementation gaps flagged in the status comment, not wired here since
-// there is no real Apply Core behind either to reuse.
+// Private: the single-field Setting ops. Each writes one droid Setting live
+// (not staged - unlike the Component Toggles above, these fields are read from
+// config_cache every control-loop iteration by their owning task, the same
+// "applied" semantics REST already gives them), checked by that Setting's
+// declaration (src/config_settings.cpp) through configApply(). The audio
+// Settings' ops are below, through the audio write paths.
 // =============================================================================
 
-// drive.config.speed-limit: value=<0..600> (speedLimitMax).
-static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                          char* rawArgs, ConsoleCommandSource source,
-                                          const ConsoleRecordSink* sink) {
+// A single-field op onto one droid Setting, named by its form name: the read
+// renders the Setting as its declaration writes it (include/config_settings.h),
+// the write goes through configApply(), which checks it by the same
+// declaration - its range, and its words where it takes words, so
+// `system.config.log-level value=debug` and `logLevel=debug` over HTTP are one
+// check (ADR 0068, amended 2026-09-26).
+struct ConsoleSettingOp {
+    const char* operationName;
+    const char* form;
+};
+
+static const ConsoleSettingOp g_settingOps[] = {
+    {"drive.config.speed-limit", "speedLimitMax"},
+    {"rc.config.mode", "rcInputMode"},
+    {"system.config.log-level", "logLevel"},
+};
+
+static const ConfigSetting* consoleFindSettingOp(const char* canonicalName) {
+    for (const ConsoleSettingOp& op : g_settingOps) {
+        if (strcmp(op.operationName, canonicalName) == 0) {
+            return configSettingByForm(op.form);
+        }
+    }
+    return nullptr;
+}
+
+// noinline, deliberately, as consoleExecuteAuxLedCount() below: each is called
+// from one site in consoleExecuteCommand(), and inlined there its locals would
+// join the frame every Console op carries, not only its own (the Console chain,
+// tools/task_stack_recipes.json).
+static void __attribute__((noinline)) consoleExecuteSettingOp(
+    uint32_t requestId, const ConsoleCatalogEntry* entry, const ConfigSetting& setting,
+    char* rawArgs, ConsoleCommandSource source, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
     if (!isWrite) {
         ConfigSnapshot snap = {};
         configCacheRead(&snap);
-        char buf[12] = {};
-        snprintf(buf, sizeof(buf), "%d", (int)snap.drive.speedLimitMax);
+        char buf[24] = {};
+        configSettingFormat(setting, snap, buf, sizeof(buf));
         if (sink->onRecordBegin) {
             sink->onRecordBegin(requestId, entry->name);
         }
@@ -2014,7 +2094,7 @@ static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatal
         }
         return;
     }
-    consoleWriteScalarConfigField(requestId, entry->name, "speedLimitMax", rawArgs, source,
+    consoleWriteScalarConfigField(requestId, entry->name, setting.form, rawArgs, source,
                                   CONSOLE_OUTCOME_APPLIED, sink);
 }
 
@@ -2028,9 +2108,9 @@ static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatal
 //
 // aux.config.led-pin went with the single stored pin. Which Output carries a
 // light is that Output's own stored type now, and a droid may have several.
-static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                      char* rawArgs, ConsoleCommandSource source,
-                                      const ConsoleRecordSink* sink) {
+static void __attribute__((noinline)) consoleExecuteAuxLedCount(
+    uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs, ConsoleCommandSource source,
+    const ConsoleRecordSink* sink) {
     ConsoleArgs parsedArgs = {};
     ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
     if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
@@ -2087,202 +2167,27 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
 
     // The row: its address, and the count as the text it was typed, so the
     // row check refuses anything but a number in range - the same answer a
-    // page's save gets. The value is a JSON string, escaped where it has to be.
+    // page's save gets.
     char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
     servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, output->channel);
-    char body[112] = {};
-    int used = snprintf(body, sizeof(body), "{\"outputs\":[{\"address\":\"%s\",\"ledCount\":\"",
-                        address);
-    for (const char* c = value; *c != '\0' && used > 0 && (size_t)used < sizeof(body); ++c) {
-        const unsigned char ch = (unsigned char)*c;
-        if (ch == '"' || ch == '\\') {
-            used += snprintf(body + used, sizeof(body) - (size_t)used, "\\%c", ch);
-        } else if (ch < 0x20) {
-            used += snprintf(body + used, sizeof(body) - (size_t)used, "\\u%04x", ch);
-        } else {
-            used += snprintf(body + used, sizeof(body) - (size_t)used, "%c", ch);
-        }
-    }
-    if (used > 0 && (size_t)used < sizeof(body)) {
-        used += snprintf(body + used, sizeof(body) - (size_t)used, "\"}]}");
-    }
-    if (used <= 0 || (size_t)used >= sizeof(body)) {
-        // Longer than the row can carry here. A count is at most three digits,
-        // so a value this long is out of range whatever it says, and cutting it
-        // short to send would be sending something the builder did not type.
-        consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    RowDoorBody door{body};
+    OutputRowField row{address, "ledCount", value};
     ConfigParamSource params;
-    params.ctx = &door;
-    params.get = consoleRowDoorParamGet;
+    params.ctx = &row;
+    params.get = consoleOutputRowParamGet;
     char refusalField[APPLY_REFUSAL_FIELD_MAX] = {};
     snprintf(refusalField, sizeof(refusalField), "%s.ledCount", address);
     consoleWriteConfig(requestId, entry->name, params, refusalField, "value", source,
                        CONSOLE_OUTCOME_APPLIED, sink);
 }
 
-// rc.config.mode: value=standard_pwm|single_sbus|dual_sbus|elrs (rcInputMode).
-// The registry used to name this row's executor as rcMapApply, which handles
-// the RC BINDING table rather than the input-mode enum; it now names
-// configApply(), whose own "rcInputMode" param (src/web/api_config_apply.cpp)
-// is the real writer. #221 corrected it once data/console_help.txt was in the
-// same slice's hands - the reason it was only reported before.
-static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs,
-                                 ConsoleCommandSource source, const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        const char* mode = "dual_sbus";
-        switch (snap.system.rc_input_mode) {
-            case RC_INPUT_STANDARD_PWM:
-                mode = "standard_pwm";
-                break;
-            case RC_INPUT_SINGLE_SBUS:
-                mode = "single_sbus";
-                break;
-            case RC_INPUT_ELRS:
-                mode = "elrs";
-                break;
-            case RC_INPUT_DUAL_SBUS:
-            default:
-                mode = "dual_sbus";
-                break;
-        }
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", mode);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "rcInputMode", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// Case-insensitive whole-string equality for the log-level word form below.
-// Written out rather than calling strcasecmp() (POSIX <strings.h>, not part
-// of the freestanding C++ surface this module otherwise sticks to - the same
-// rule consoleStartsWithIgnoringCase() states further down this file for its
-// own WiFi-password-key check; not reused directly here, since that helper
-// is defined after this point in the file and reusing it would need a
-// forward declaration for no real benefit - the two checks serve unrelated
-// domains).
-static bool consoleWordEqualsIgnoringCase(const char* s, const char* lowerWord) {
-    size_t i = 0;
-    for (; lowerWord[i] != '\0'; ++i) {
-        if (tolower((unsigned char)s[i]) != lowerWord[i]) {
-            return false;
-        }
-    }
-    return s[i] == '\0';
-}
-
-// system.config.log-level: value=<1..4> or the human word
-// (error/warning/info/debug) - docs/console-protocol.md s.1's own grammar
-// example is the word form ("system.config.log-level value=debug"). Read
-// renders the live numeric level (configCurrentLogLevel(), the same
-// lock-free byte the log macros read, include/logging.h); write accepts
-// both spellings, translating a recognized word into its digit into a fresh
-// local buffer before handing off to the shared scalar-config write path,
-// so api_config_apply.cpp's paramInt16(1, 4) range check stays the one place
-// that owns what a valid level is - this executor only knows the
-// word<->digit mapping the Apply Core does not.
-static void consoleExecuteSystemLogLevel(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                         char* rawArgs, ConsoleCommandSource source,
-                                         const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        char buf[4] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)configCurrentLogLevel());
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    // Detected on a disposable local copy, never on `rawArgs` itself:
-    // consoleParseArgs() tokenizes in place (NUL-splits key/value substrings
-    // into the same storage), so parsing the real rawArgs here would leave
-    // nothing for consoleWriteScalarConfigField()'s own parse below to split
-    // on. Only a single, exactly-named `value=`/`logLevel=` argument is
-    // translated; anything else (extra or unknown keys, an already-numeric
-    // value) is passed through untouched so the shared write path's own
-    // unknown-key and range checks are still the ones that decide it.
-    char detectBuf[256];
-    snprintf(detectBuf, sizeof(detectBuf), "%s", rawArgs);
-    ConsoleArgs detected = {};
-    char translated[32];
-    char* effectiveArgs = rawArgs;
-    if (consoleParseArgs(detectBuf, &detected) == CONSOLE_ARGS_PARSE_OK && detected.count == 1 &&
-        (strcmp(detected.items[0].key, "value") == 0 ||
-         strcmp(detected.items[0].key, "logLevel") == 0)) {
-        struct LogLevelWord {
-            const char* word;
-            const char* digit;
-        };
-        static const LogLevelWord kLogLevelWords[] = {
-            {"error", "1"},
-            {"warning", "2"},
-            {"info", "3"},
-            {"debug", "4"},
-        };
-        static const size_t kLogLevelWordCount =
-            sizeof(kLogLevelWords) / sizeof(kLogLevelWords[0]);
-        for (size_t i = 0; i < kLogLevelWordCount; ++i) {
-            if (consoleWordEqualsIgnoringCase(detected.items[0].value, kLogLevelWords[i].word)) {
-                snprintf(translated, sizeof(translated), "logLevel=%s", kLogLevelWords[i].digit);
-                effectiveArgs = translated;
-                break;
-            }
-        }
-    }
-
-    consoleWriteScalarConfigField(requestId, entry->name, "logLevel", effectiveArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-typedef void (*ConsoleScalarConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
+typedef void (*ConsoleConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                               char* rawArgs, ConsoleCommandSource source,
                                               const ConsoleRecordSink* sink);
 
-struct ConsoleScalarConfigExecutorEntry {
+struct ConsoleConfigExecutorEntry {
     const char* operationName;
-    ConsoleScalarConfigExecutorFn executor;
+    ConsoleConfigExecutorFn executor;
 };
-
-static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
-    {"drive.config.speed-limit", consoleExecuteDriveSpeedLimit},
-    {"aux.config.led-count", consoleExecuteAuxLedCount},
-    {"rc.config.mode", consoleExecuteRcMode},
-    {"system.config.log-level", consoleExecuteSystemLogLevel},
-};
-static const size_t kScalarConfigExecutorCount =
-    sizeof(g_scalarConfigExecutors) / sizeof(g_scalarConfigExecutors[0]);
-
-static ConsoleScalarConfigExecutorFn consoleFindScalarConfigExecutor(const char* canonicalName) {
-    for (size_t i = 0; i < kScalarConfigExecutorCount; ++i) {
-        if (strcmp(g_scalarConfigExecutors[i].operationName, canonicalName) == 0) {
-            return g_scalarConfigExecutors[i].executor;
-        }
-    }
-    return nullptr;
-}
 
 // system.config.mood (#226): the config-typed view of the same active-mood
 // mechanism system.action.set-mood exposes as an action - both are backed by
@@ -2701,8 +2606,8 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // subset of what REST accepts, never a superset ("no widening").
 //
 // Read field names are GET /api/audio/tracks' and GET /api/audio/mood-map's
-// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the key
-// vocabulary src/config_store.cpp's AUDIO_TRACK_KEYS map uses - so a value a
+// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the name
+// each audio Setting is declared under (src/config_settings.cpp) - so a value a
 // read prints is addressable by a write under the same spelling, and the two
 // halves cannot drift into separate name sets.
 //
@@ -2716,8 +2621,8 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // GET /api/audio/tracks' field order for the 20 named tracks, the 7 system
 // tracks and the 12 category lo/hi pairs (src/web/api_audio.cpp's
 // fillTracksResponse()), split into the three sets the registry splits these
-// rows into. Spellings are that response's keys, which are also
-// AUDIO_TRACK_KEYS' - note snd_cat_snrk_* , whose wire name is the short form
+// rows into. Spellings are that response's keys, which are also the audio
+// Settings' names - note snd_cat_snrk_* , whose wire name is the short form
 // even though the config member is snd_cat_snarky_* .
 static const char* const kSoundNamedTrackKeys[] = {
     "scream",  "faint",  "leia",   "cantina_s", "sw_theme", "imp_march", "cantina_l",
@@ -2751,11 +2656,11 @@ static void consoleEmitAudioTrackField(uint32_t requestId, const AudioConfig& au
                                        const char* key, const ConsoleRecordSink* sink) {
     uint16_t value = 0;
     if (!configAudioGetTrackByKey(audio, key, &value)) {
-        // Unreachable while the tables above hold only keys AUDIO_TRACK_KEYS
-        // declares, which a native test pins. Logged rather than dropped: a
+        // Unreachable while the tables above hold only keys the audio Setting
+        // declarations name, which a native test pins. Logged rather than dropped: a
         // key that stopped resolving would otherwise leave a hole in a read
         // that still reported ok.
-        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not in the track key map", key);
+        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not a declared audio Setting", key);
         return;
     }
     char buf[8] = {};
@@ -2797,20 +2702,12 @@ static bool consoleParseAudioConfigWrite(uint32_t requestId, const ConsoleCatalo
         return false;
     }
 
+    // Every audio config row writes an audio Setting, whose own check rules on
+    // the value (the apply core, or consoleCheckSettingArg() for the volume).
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schema =
+    const ConsoleArgSchemaStatus schema =
         consoleValidateArgsAgainstSchema(entry->params, *outArgs, badKey, sizeof(badKey));
-    if (schema != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = CONSOLE_REASON_OUT_OF_RANGE;
-        if (schema == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY) {
-            reason = CONSOLE_REASON_UNKNOWN_ARGUMENT;
-        } else if (schema == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED) {
-            reason = CONSOLE_REASON_MISSING_ARGUMENT;
-        }
-        consoleEmitArgFailure(requestId, entry->name, badKey, reason, sink);
-        return false;
-    }
-    return true;
+    return !consoleRefuseSettingArgKeys(requestId, entry->name, entry->params, schema, badKey, sink);
 }
 
 // Answer a Commit Step that could not reach NVS. "A failed NVS write is an
@@ -2880,10 +2777,15 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
-        // The core names the field it refused, and these rows' argument keys
-        // are the core's own parameter names, so the field IS the argument.
-        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
-                                result.error.refusal, sink);
+        // The core names the field it refused by its own parameter names, which
+        // are these rows' argument keys - except a refused value, which it names
+        // by the audio Setting it was for (the key, include/config_settings.h).
+        // The builder typed that value as `track=`, so that is what is named.
+        const char* key = consoleAudioTracksParamGet(&adapter, "key");
+        const char* named = (key != nullptr && strcmp(result.error.refusal.field, key) == 0)
+                                ? "track"
+                                : result.error.refusal.field;
+        consoleEmitApplyRefusal(requestId, entry->name, named, result.error.refusal, sink);
         return;
     }
     if (!commit.ok) {
@@ -3007,6 +2909,22 @@ static void consoleExecuteSoundSystemTrackAssignments(uint32_t requestId,
                                       kSoundSystemTrackKeyCount, rawArgs, sink);
 }
 
+// The argument a category-range refusal is pinned on. The core names a refused
+// bound by its audio Setting - the key it was for (include/config_settings.h) -
+// and the builder typed that bound as `lo=` or `hi=`; every other refusal is
+// already in the core's own parameter names, which are the argument keys.
+static const char* consoleAudioBoundArgument(const char* field, const ConsoleArgs& args) {
+    const char* loKey = consoleArgsFind(args, "lo_key");
+    const char* hiKey = consoleArgsFind(args, "hi_key");
+    if (loKey != nullptr && strcmp(field, loKey) == 0) {
+        return "lo";
+    }
+    if (hiKey != nullptr && strcmp(field, hiKey) == 0) {
+        return "hi";
+    }
+    return field;
+}
+
 // sound.config.category-ranges: lo_key=/hi_key=/lo=/hi= through
 // audioCategoryRangeApply() and audioCategoryRangeCommitApplied() - the same
 // pair handleAudioCategoryRangePost() runs, and the same pair
@@ -3050,9 +2968,11 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 
     if (applyHadError) {
         // An unusable key pair, a bound out of range, or a pair that clashes
-        // (lo above hi): the core says which argument and why, in its own
-        // parameter names, which are this row's argument keys.
-        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
+        // (lo above hi): the core says which and why. A bound is named by its
+        // audio Setting (the key it was for); the builder typed it as `lo=` or
+        // `hi=`, so that is the argument named.
+        consoleEmitApplyRefusal(requestId, entry->name,
+                                consoleAudioBoundArgument(result.error.refusal.field, parsedArgs),
                                 result.error.refusal, sink);
         return;
     }
@@ -3069,10 +2989,10 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 // sound.config.mood-category-map: quiet=/mid=/full=/awakeplus= through
 // audioMoodMapApply() and audioMoodMapCommitApplied(). Same relationship to
 // sound.action.set-mood-map as the row above has to
-// sound.action.set-category-range, and the same registry schema - this row's
-// params: predate this ticket and are reused unchanged, ranges included
-// (0-4095 is MOOD_CATEGORY_MASK_MAX, so the schema and the core agree by
-// construction rather than by a second rule).
+// sound.action.set-category-range, and the same registry schema, which names
+// the four masks and carries no range for them: each mask is checked by its
+// Setting's declaration inside the core (src/config_settings.cpp), so a mask it
+// does not take comes back with its range, as over HTTP.
 //
 // This core touches neither the config cache nor a ConfigSnapshot: its Commit
 // Step calls configUpdateAudioMoodMasks(), which bundles validate+apply+persist
@@ -3154,11 +3074,10 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
 // inline in the handler" predated the Commit Step's extraction and is gone
 // with it.
 //
-// Unlike consoleExecuteMoodConfig() above, which hand-checks its enum because
-// its registry row declares no params, this row's `volume` param carries
-// type and range in the registry (uint8, 0-30) - so the shared schema
-// validator is the whole check and there is no second copy of the bound
-// here. `volume` is also POST /api/audio's own parameter spelling for this
+// The level is checked by the volume Setting's declaration
+// (consoleCheckSettingArg(), src/config_settings.cpp), the check POST /api/audio
+// makes, and refused with its range; the registry names the param and carries
+// no range of its own. `volume` is also POST /api/audio's own parameter spelling for this
 // value and GET /api/audio/tracks' JSON key for it, so the read field name
 // is that key verbatim (docs/console-protocol.md s.3.5) and a read is
 // pasteable straight back into a write.
@@ -3193,9 +3112,15 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
         return;
     }
 
-    // Range-checked by the schema above, so this cannot be out of the uint8
-    // the Commit Step takes.
-    const long level = strtol(consoleArgsFind(parsedArgs, "volume"), nullptr, 10);
+    // Checked by the volume Setting's declaration, the check POST /api/audio
+    // makes, and refused with its range (src/config_settings.cpp).
+    const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+    int32_t level = 0;
+    if (volume == nullptr ||
+        !consoleCheckSettingArg(requestId, entry->name, "volume", *volume,
+                                consoleArgsFind(parsedArgs, "volume"), &level, sink)) {
+        return;
+    }
 
     // The Write Window POST /api/audio's volume branch calls (include/api_audio.h).
     AudioSetVolumeCommitOutcome commit;
@@ -3226,10 +3151,9 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
 
 // The rows above that carry their own argument set, rather than having their
 // key fixed by the operation name (g_audioTrackKeyConfigRows[] holds those).
-// Same executor signature as g_scalarConfigExecutors[] so the cascade below
-// dispatches both the same way; a separate table because these are grouped
-// writes through an audio core, not single-field writes through configApply().
-static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
+// A table because these are grouped writes through an audio core, each
+// reached through the executor pointer found here.
+static const ConsoleConfigExecutorEntry g_audioConfigExecutors[] = {
     {"sound.config.track-assignments", consoleExecuteSoundTrackAssignments},
     {"sound.config.system-track-assignments", consoleExecuteSoundSystemTrackAssignments},
     {"sound.config.category-ranges", consoleExecuteSoundCategoryRanges},
@@ -3239,7 +3163,7 @@ static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
 static const size_t kAudioConfigExecutorCount =
     sizeof(g_audioConfigExecutors) / sizeof(g_audioConfigExecutors[0]);
 
-static ConsoleScalarConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
+static ConsoleConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
     for (size_t i = 0; i < kAudioConfigExecutorCount; ++i) {
         if (strcmp(g_audioConfigExecutors[i].operationName, canonicalName) == 0) {
             return g_audioConfigExecutors[i].executor;
@@ -3812,17 +3736,25 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
-            ConsoleScalarConfigExecutorFn audioExecutor =
+            ConsoleConfigExecutorFn audioExecutor =
                 (entry != nullptr) ? consoleFindAudioConfigExecutor(entry->name) : nullptr;
             if (audioExecutor != nullptr) {
                 audioExecutor(request->requestId, entry, rawArgs, request->source, sink);
                 break;
             }
 
-            ConsoleScalarConfigExecutorFn scalarExecutor =
-                (entry != nullptr) ? consoleFindScalarConfigExecutor(entry->name) : nullptr;
-            if (scalarExecutor != nullptr) {
-                scalarExecutor(request->requestId, entry, rawArgs, request->source, sink);
+            const ConfigSetting* setting =
+                (entry != nullptr) ? consoleFindSettingOp(entry->name) : nullptr;
+            if (setting != nullptr) {
+                consoleExecuteSettingOp(request->requestId, entry, *setting, rawArgs,
+                                        request->source, sink);
+                break;
+            }
+
+            // One Setting of one Output: named by its board Output rather than
+            // by a form name, so it is not a row of g_settingOps.
+            if (entry != nullptr && strcmp(entry->name, "aux.config.led-count") == 0) {
+                consoleExecuteAuxLedCount(request->requestId, entry, rawArgs, request->source, sink);
                 break;
             }
 

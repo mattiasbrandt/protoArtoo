@@ -102,7 +102,7 @@ void test_configApply_rcInputMode_enum_reject(void) {
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus, or elrs",
+    TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus or elrs",
                              result.error.message);
 }
 
@@ -713,6 +713,59 @@ void test_configApply_a_part_move_missing_or_misspelling_an_end_is_refused(void)
     }
 }
 
+// The idle turn's shortest pause may not exceed its longest, judged with the
+// value stored beside the one sent. The Dome page held this rule until its
+// page-side checks went (#431); refused here, as a conflict named on the pause
+// that was sent.
+void test_configApply_a_shortest_pause_above_the_longest_is_refused(void) {
+    std::map<std::string, std::string> m = {{"domeEscRndPauseMin", "40"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.dome.dome_rnd_pause_min = 6;
+    snap.dome.dome_rnd_pause_max = 12;
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::Conflict, result.error.refusal.reason);
+    TEST_ASSERT_EQUAL_STRING("domeEscRndPauseMin", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("", result.error.refusal.accepts);
+
+    std::map<std::string, std::string> equal = {{"domeEscRndPauseMax", "6"}};
+    ConfigSnapshot fine = makeDefaultSnap();
+    fine.dome.dome_rnd_pause_min = 6;
+    fine.dome.dome_rnd_pause_max = 12;
+    ConfigApplyResult okResult;
+    configApply(makeSource(&equal), &fine, false, &okResult);
+    TEST_ASSERT_FALSE(okResult.error.hasError);
+}
+
+// Three presets where the normal and turbo clash are refused on one of those
+// two, not on the slow preset because it is read first: the Drive page sends
+// all three, and names what the refusal names.
+void test_configApply_a_preset_clash_names_a_preset_that_clashes(void) {
+    std::map<std::string, std::string> m = {
+        {"speedPresetSlow", "100"}, {"speedPresetNormal", "400"}, {"speedPresetTurbo", "400"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::Conflict, result.error.refusal.reason);
+    TEST_ASSERT_EQUAL_STRING("speedPresetNormal", result.error.refusal.field);
+}
+
+// Two stored presets that clash, and a request that sends only the third: the
+// refusal still names a field the request sent, never none.
+void test_configApply_a_stored_preset_clash_names_the_preset_sent(void) {
+    std::map<std::string, std::string> m = {{"speedPresetSlow", "100"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.drive.speedPresetNormal = 400;
+    snap.drive.speedPresetTurbo = 400;
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::Conflict, result.error.refusal.reason);
+    TEST_ASSERT_EQUAL_STRING("speedPresetSlow", result.error.refusal.field);
+}
+
 // --- the dome ESC pulse set is judged as a set (#417) ---
 //
 // Each width passing 1000..2000 on its own is not enough: out of order, speed 0
@@ -813,5 +866,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_a_part_this_build_cannot_name_is_refused);
     RUN_TEST(test_configApply_without_droid_build_params_records_no_edit);
     RUN_TEST(test_configApply_an_out_of_order_dome_pulse_set_is_refused);
+    RUN_TEST(test_configApply_a_shortest_pause_above_the_longest_is_refused);
+    RUN_TEST(test_configApply_a_preset_clash_names_a_preset_that_clashes);
+    RUN_TEST(test_configApply_a_stored_preset_clash_names_the_preset_sent);
     return UNITY_END();
 }

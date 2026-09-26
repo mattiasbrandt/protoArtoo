@@ -14,8 +14,8 @@
 //   configPersistSystem() open the namespace themselves and write in the store's
 //   one order (#424).
 // - configSave() performs no mutex lock and no robotState reads; callers capture snapshot.
-// - configValidate() handles scalar fields only (int/float/bool/enum). Complex structs
-//   (RcBindingConfig, RcTriggerBinding) are validated in the API layer.
+// - What a Setting accepts, its NVS key and its default are its declaration's
+//   (include/config_settings.h), not this module's.
 // =============================================================================
 #pragma once
 
@@ -43,162 +43,6 @@
 // controller that had already been stamped by one after it.
 constexpr uint8_t CONFIG_SCHEMA_VERSION = 3;
 constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "schema_ver";
-
-// Validation result
-enum class ConfigValidationResult : uint8_t {
-    OK = 0,
-    OUT_OF_RANGE = 1,
-    INVALID_VALUE = 2,
-};
-
-// ConfigKey enum  --  enumerates all scalar cfg_* fields for validation and lookup
-enum class ConfigKey : uint8_t {
-    // Speed control
-    SPEED_LIMIT_MAX = 0,
-    SPEED_PRESET_SLOW = 1,
-    SPEED_PRESET_NORMAL = 2,
-    SPEED_PRESET_TURBO = 3,
-    SPEED_PRESET_ACTIVE = 4,
-
-    // Timeouts
-    SBUS_TIMEOUT_MS = 5,
-    WEB_DRIVE_TIMEOUT_MS = 6,
-
-    // Audio
-    AUDIO_VOLUME = 7,
-    LOG_LEVEL = 8,
-    SND_SCREAM = 9,
-    SND_FAINT = 10,
-    SND_LEIA = 11,
-    SND_CANTINA_S = 12,
-    SND_SW_THEME = 13,
-    SND_IMP_MARCH = 14,
-    SND_CANTINA_L = 15,
-    SND_STARTUP = 16,
-    SND_DOODOO = 17,
-    SND_FAILURE = 18,
-    SND_DISCO = 19,
-    SND_MAHNA = 20,
-    SND_INLOVE = 21,
-    SND_MACHO = 22,
-    SND_GANGNAM = 23,
-    SND_UPTOWN = 24,
-    SND_CELEBR = 25,
-    SND_STAYIN = 26,
-    SND_HARLEM = 27,
-    SND_PBJTIME = 28,
-    SND_SYS_BOOT = 29,
-    SND_SYS_MODE_N = 30,
-    SND_SYS_MODE_S = 31,
-    SND_SYS_MODE_T = 32,
-    SND_SYS_DRV_ON = 33,
-    SND_SYS_DOME_ON = 34,
-    SND_RAND_MIN = 35,
-    SND_RAND_MAX = 36,
-    SND_INT_QUIET = 37,
-    SND_INT_MID = 38,
-    SND_INT_FULL = 39,
-    SND_INT_AWAKE = 40,
-    SND_MOODCAT_QUIET = 41,
-    SND_MOODCAT_MID = 42,
-    SND_MOODCAT_FULL = 43,
-    SND_MOODCAT_AWAKEPLUS = 44,
-    SND_CAT_GEN_LO = 45,
-    SND_CAT_GEN_HI = 46,
-    SND_CAT_CHAT_LO = 47,
-    SND_CAT_CHAT_HI = 48,
-    SND_CAT_HAP_LO = 49,
-    SND_CAT_HAP_HI = 50,
-    SND_CAT_PROC_LO = 51,
-    SND_CAT_PROC_HI = 52,
-    SND_CAT_SAD_LO = 53,
-    SND_CAT_SAD_HI = 54,
-    SND_CAT_SENT_LO = 55,
-    SND_CAT_SENT_HI = 56,
-    SND_CAT_HUM_LO = 57,
-    SND_CAT_HUM_HI = 58,
-    SND_CAT_SCRM_LO = 59,
-    SND_CAT_SCRM_HI = 60,
-    SND_CAT_OOH_LO = 61,
-    SND_CAT_OOH_HI = 62,
-    SND_CAT_ALRM_LO = 63,
-    SND_CAT_ALRM_HI = 64,
-    SND_CAT_SNARKY_LO = 65,
-    SND_CAT_SNARKY_HI = 66,
-    SND_CAT_WHIS_LO = 67,
-    SND_CAT_WHIS_HI = 68,
-
-    // Servo calibration has no entry here. An endpoint and the component type
-    // beside it live on an addressed Servo Output row, whose validator is
-    // servoOutputRowNormalise() -- one validator at every door, and this enum
-    // is not one of them (#345, ADR 0041).
-
-    // Dome
-    DOME_MIN_SPEED = 69,
-    DOME_MAX_SPEED = 70,
-    DOME_NEUTRAL_US = 71,
-    DOME_MIN_PULSE_US = 72,
-    DOME_MAX_PULSE_US = 73,
-    DOME_SPEED_LIMIT_PCT = 74,
-    DOME_RND_ENABLE = 75,
-    DOME_RND_SPEED_PCT = 76,
-    DOME_RND_PAUSE_MIN = 77,
-    DOME_RND_PAUSE_MAX = 78,
-    DOME_RND_MOVE_MS = 79,
-    DOME_WIFI_PEER_IP = 80,
-
-    // Sequence timing
-    SEQ_OPEN_MS = 81,
-    SEQ_CLOSE_MS = 82,
-
-    // A light's settings. 83 was AUX_LED_PIN, which Output carried the one
-    // strip; #413 made a Light Type an Output's own answer, so there is no
-    // scalar to validate any more and the number is left unused rather than
-    // reissued to something unrelated.
-    LIGHT_LED_COUNT = 84,
-
-    // Feature toggles
-    ENABLE_ARM1 = 85,
-    ENABLE_ARM2 = 86,
-    ENABLE_AUX1 = 87,
-    ENABLE_AUX2 = 88,
-    ENABLE_AUX3 = 89,
-    ENABLE_DOME = 90,
-    ENABLE_RC_CH1 = 91,
-    ENABLE_RC_CH2 = 92,
-    ENABLE_RC_CH3 = 93,
-    ENABLE_RC_CH4 = 94,
-    ENABLE_RC_CH5 = 95,
-    ENABLE_RC_CH6 = 96,
-    SINGLE_SBUS_USE_CH2 = 97,
-    // The three serial-component toggles carry generic project vocabulary, not
-    // the artoo.uk PCB's S1/S2/S3 silkscreen legend (ADR 0033). Their persisted
-    // keys have been en_drive / en_audio / en_r2link since the schema 2 -> 3
-    // migration, so these identifiers were the last place the board's own
-    // labels survived and renaming them migrates nothing.
-    ENABLE_DRIVE = 98,
-    ENABLE_AUDIO = 99,
-    ENABLE_PROTOR2LINK = 100,
-    STATIONARY = 101,
-    RC_INPUT_MODE = 102,
-
-    // The Sound family's Component Member, beside ENABLE_AUDIO rather than
-    // inside it: the toggle says a sound module is fitted, the member says
-    // which product it is, and the two are independent in both directions
-    // (ADR 0042). Validated against the Component Registry, not against a
-    // numeric range -- see configValidate().
-    SOUND_MEMBER = 103,
-
-    // The Radio Controller family's Component Member: which radio the builder
-    // drives with. Beside RC_INPUT_MODE rather than inside it: the member says
-    // which product it is, the mode says how its receiver is wired to the
-    // controller (operator, 2026-09-18 on #369). Validated against the
-    // Component Registry like SOUND_MEMBER.
-    RC_MEMBER = 104,
-
-    // Total count for array bounds
-    _COUNT = 105,
-};
 
 struct DriveConfig {
     int16_t speedLimitMax;
@@ -599,11 +443,3 @@ bool saveConfigToNvs();
 // Map, the droid's identity). The rows are not rewritten, so there is no order
 // to keep.
 bool configPersistSystem(const SystemConfig& system);
-
-// configValidate: Validate a scalar field value before writing.
-// Covers int, float, bool, and enum fields only.
-// Complex struct fields (RcBindingConfig, RcTriggerBinding) are validated in API layer.
-// Returns ConfigValidationResult enum.
-ConfigValidationResult configValidate(ConfigKey key, int32_t value);
-ConfigValidationResult configValidateFloat(ConfigKey key, float value);
-ConfigValidationResult configValidateBool(ConfigKey key, bool value);

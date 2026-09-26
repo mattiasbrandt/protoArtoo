@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -148,6 +148,11 @@ check: ## Static analysis with cppcheck
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
+
+# Every Setting the firmware declares has words in the browser (ADR 0068).
+# check-action-drift runs it too, which is how the slice gate carries it.
+check-setting-words: ## Check every declared Setting has browser words for its refusals
+	python3 tools/check_setting_words.py
 
 # Report, never rewrite - the same convention check-action-drift follows, and
 # an operator reads the two the same way. It runs the real generator with its

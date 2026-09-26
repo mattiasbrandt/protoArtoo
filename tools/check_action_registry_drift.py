@@ -12,6 +12,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from registry_yaml import load_registry_yaml
+import check_setting_words  # noqa: E402  (after the path insert above)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -599,41 +600,6 @@ def check_executor_symbols(doc: dict, errors: list[str]) -> None:
         )
 
 
-# ESP-IDF NVS keys are at most 15 characters (NVS_KEY_NAME_MAX_SIZE - 1).
-NVS_KEY_MAX_LEN = 15
-
-
-def check_nvs_keys(doc: dict, errors: list[str]) -> None:
-    """Validate that every registry nvs_key / nvs_keys value is a key the firmware uses.
-
-    A key is accepted when it appears as a string literal somewhere in src/ or
-    include/ - the same bar check_executor_symbols() sets for an executor. Nine
-    keys once named things like cfg_spdMax that no code reads or writes.
-    """
-    literals: set[str] = set()
-    for root_dir in ("src", "include"):
-        for path in (ROOT / root_dir).rglob("*"):
-            if path.suffix in (".cpp", ".h", ".inc") and path.is_file():
-                literals.update(re.findall(r'"([^"\\\n]*)"', path.read_text(errors="replace")))
-
-    for entry in doc.get("entries", []):
-        keys = []
-        if entry.get("nvs_key"):
-            keys.append(entry["nvs_key"])
-        keys.extend(entry.get("nvs_keys") or [])
-        for key in keys:
-            if len(key) > NVS_KEY_MAX_LEN:
-                errors.append(
-                    f"{entry.get('name')} nvs key {key!r} is {len(key)} characters; "
-                    f"NVS keys are at most {NVS_KEY_MAX_LEN}"
-                )
-            elif key not in literals:
-                errors.append(
-                    f"{entry.get('name')} nvs key {key!r} appears in no string literal in "
-                    f"src/ or include/ - no code reads or writes it"
-                )
-
-
 def check_none_executor_evidence(doc: dict, errors: list[str]) -> None:
     """Validate that every entry claiming executor: none has evidence in the inventory.
 
@@ -1009,11 +975,13 @@ def main() -> int:
     check_status_query_classification(doc, errors)
     check_no_bool_enum_values(doc, errors)
     check_executor_symbols(doc, errors)
-    check_nvs_keys(doc, errors)
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)
     check_console_help_file(doc, errors)
     check_output_placeholders(doc, errors)
+    # Every declared Setting has words in the browser (ADR 0068, amended
+    # 2026-09-26): run here so the slice gate's drift stage carries it.
+    check_setting_words.check(errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

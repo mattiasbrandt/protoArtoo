@@ -59,7 +59,11 @@ void test_audioTracksApply_non_integer_track_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("track must be a non-negative integer", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("scream must be 1..999", result.error.message);
+    // The refusal names the Setting the value was for, not the parameter it
+    // travelled under, so a page can say which sound it was.
+    TEST_ASSERT_EQUAL_STRING("scream", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("1..999", result.error.refusal.accepts);
 }
 
 // --- plain named track: 0 rejected unless zero-allowed ---
@@ -69,7 +73,7 @@ void test_audioTracksApply_named_track_zero_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("track must be 1-999", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("scream must be 1..999", result.error.message);
 }
 
 void test_audioTracksApply_zero_allowed_key_accepts_zero(void) {
@@ -105,7 +109,7 @@ void test_audioTracksApply_named_track_over_999_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("track must be 0-999", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("scream must be 1..999", result.error.message);
 }
 
 void test_audioTracksApply_named_track_success(void) {
@@ -127,7 +131,9 @@ void test_audioTracksApply_interval_over_3600_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("interval must be 0-3600 s", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("snd_int_quiet must be 0..3600", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("snd_int_quiet", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("0..3600", result.error.refusal.accepts);
 }
 
 void test_audioTracksApply_interval_zero_allowed(void) {
@@ -186,7 +192,8 @@ void test_audioTracksApply_bank_out_of_range_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("bank must be 1-6", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("bank must be 1..6", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("1..6", result.error.refusal.accepts);
 }
 
 void test_audioTracksApply_banked_index_zero_rejected(void) {
@@ -196,7 +203,10 @@ void test_audioTracksApply_banked_index_zero_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("banked index must be 1-65535", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("scream must be 1..65535", result.error.message);
+    // The binding's index, refused under the action it binds.
+    TEST_ASSERT_EQUAL_STRING("scream", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("1..65535", result.error.refusal.accepts);
 }
 
 void test_audioTracksApply_banked_success(void) {

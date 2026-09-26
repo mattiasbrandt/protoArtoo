@@ -67,15 +67,18 @@ Example with hint and field:
 ### Refusals from a settings write
 
 The settings writes - `POST /api/config`, `POST /api/wifi`,
-`POST /api/audio/tracks`, `POST /api/audio/category-range` and
-`POST /api/audio/mood-map` - answer a refused value (`400`, or `404` where a
+`POST /api/audio/tracks`, `POST /api/audio/category-range`,
+`POST /api/audio/mood-map` and `POST /api/audio` `action=volume` - answer a refused value (`400`, or `404` where a
 route says so) with three more keys beside `error`:
 
 - `"field"`: the request field the refusal is about, by the name it was sent
   under - a form name, the form name of a field sent in the GET shape
   (`sbusTimeoutMs` for `rc.sbusTimeoutMs`), or `<address>.<key>` for a field of
-  an Output row (`ledc:3.ledCount`). Absent when no one field is to blame (a
-  request that sent nothing usable).
+  an Output row (`ledc:3.ledCount`). An audio value that travels under a
+  generic parameter is named by the Setting it was for instead: the key a
+  `track` or a category bound was sent for (`scream`, `snd_int_quiet`,
+  `snd_cat_gen_lo`), and `volume` for `level`. Absent when no one field is to
+  blame (a request that sent nothing usable).
 - `"reason"`: why, always present. One of `out-of-range` (not a value this field
   takes), `missing-argument` (a field this write needs was not sent - `field`
   names the missing one), `conflict` (the value is fine on its own and clashes
@@ -89,7 +92,18 @@ route says so) with three more keys beside `error`:
   `conflict`.
 
 `error` stays the sentence it has always been. A client reads the three keys
-for what was wrong and never parses the sentence for them:
+for what was wrong and never parses the sentence for them. `POST /api/servo`'s
+width (`positionUs`) is refused the same way.
+
+**The words table is the only place a field reaches a screen.** `field` is the
+droid's own name for a Setting and never shown: `data/web_api.js` words every
+refusal from `field`, `reason` and `accepts` through its one table of Settings -
+`SETTING_WORDS` by form name or GET path, `ROW_SETTING_WORDS` by row key - so a
+page says "Maximum speed limit must be 0 to 600" and never `speedLimitMax`. Each Setting
+is declared once in the firmware (`src/config_settings.cpp`, ADR 0068 amended
+2026-09-26), and `make check-setting-words` (run by `make check-action-drift`)
+fails when a declared Setting has no words there. No page keeps its own copy of
+a Setting's range: what the builder typed is sent, and the droid rules on it.
 
 ```json
 {"ok":false,"error":"speedLimitMax must be 0..600","field":"speedLimitMax","reason":"out-of-range","accepts":"0..600"}
@@ -590,7 +604,7 @@ Queues servo command.
   `{"ok":false,"error":"No output called arm1 on this board. Use GPIO 49, GPIO 50, GPIO 4, GPIO 5, GPIO 51, or both"}`
 - `400` `{"ok":false,"error":"Invalid action. Use: open, close, stop, position, nudge, travel, hold, or release"}`
 - `400` `{"ok":false,"error":"A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"}` (the running board's words; the same sentence names `hold` and `travel`)
-- `400` missing/invalid `positionUs`
+- `400` missing/invalid `positionUs`, with `field`, `reason` and `accepts` (`500..2500`) as in "Refusals from a settings write"
 - `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
@@ -908,7 +922,8 @@ Action endpoint.
 - `action=stop`
 - no extra field
 - `action=volume`
-- requires `level` in `0..30`
+- requires `level` in `0..30`; a refused level carries `"field":"volume"`,
+  `reason` and `accepts` (see "Refusals from a settings write")
 - persists to NVS
 - `action=dollar`
 - requires `cmd` starting with `$`, max length 9 chars
@@ -1023,10 +1038,11 @@ Updates one persisted key.
 - `key`: track/tuning key
 - `track`: non-negative integer
 - optional CHIRP fields: `bank` (`1..6`) and `page` (`A..Z`) together
-- Validation highlights:
-- interval keys: `0..3600`
-- normal non-banked track keys: `0..999` (some keys allow `0`, others require `1..999`)
-- CHIRP banked index: `1..65535`
+- Validation: each key is an audio Setting declared once
+  (`src/config_settings.cpp`) with its own range - a sound action's track
+  `1..999`, or `0..999` where `0` means "no sound"; the random range `1..999`; a
+  chatter interval `0..3600` s; a category bound `0..999` - and a refused track
+  names the key as its `field`. A CHIRP banked index is `1..65535`.
 - Success: `200` `{"ok":true}`
 - Errors include:
 - missing key/track, unknown key
@@ -1568,7 +1584,7 @@ Updates supported config fields and persists to NVS.
 
 - Supported form fields include:
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
-- system: `logLevel(1..4)` — 1 Error, 2 Warning, 3 Info, 4 Debug. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
+- system: `logLevel(1..4|error|warning|info|debug)` — 1 Error, 2 Warning, 3 Info, 4 Debug; the words are taken as well as the numbers, at every door (the Console's `system.config.log-level` takes the same), and GET always reads the number. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
 - components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`. The first five are the Outputs' wired ticks - the Controller Console's form names for them - and an Output row's `wired` (below) reaches the same check
 - components (Component Member): `soundMember` — a Component Registry part id
@@ -1648,8 +1664,12 @@ Updates supported config fields and persists to NVS.
   one per Output, each named by its `address`; every key a row can set is
   set, and the rest of a row - `name`, `id`, the band, where it was told to be -
   is a reading and is ignored, so a row read by GET can be posted back as it
-  stands. This is the one door onto an Output's settings: pages, the Controller
-  Console's `aux.config.led-count` and a restore all send rows.
+  stands. This is the one door onto an Output's settings: pages and a restore
+  send rows. A form can carry one row too: `outputRow` names its Output Address
+  and the row's keys ride beside it by name (`outputRow=ledc:3&ledCount=30`),
+  which is how the Controller Console's `aux.config.led-count` writes one; it is
+  checked exactly as a row in `outputs` is, and counts against one row per
+  Output.
   - `wired`: its wired tick (the same check as `enableArm1` and its siblings);
     an Output with no tick takes only `true`.
   - `component`: what is on the wire, `none|mg996r|mg90s|rgb`. `rgb` is a

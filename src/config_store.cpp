@@ -9,9 +9,9 @@
 
 #include "audio_dollar_parser.h"
 #include "board_output_enabled.h"  // boardOutputIsWired() - configCacheOutputIsWired()
-#include "component_registry.h"  // the Sound Component Member's only source of valid values
 #include "config.h"
 #include "config_serializer.h"
+#include "config_settings.h"  // every Setting's default
 #include "config_nvsio.h"
 #include "config_write_window_check.h"  // every config writer below checks it runs in a Write Window
 #include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
@@ -29,83 +29,6 @@
 #endif
 
 namespace {
-
-struct AudioTrackKeyMapEntry {
-    const char* key;
-    uint16_t AudioConfig::*field;
-};
-
-constexpr AudioTrackKeyMapEntry AUDIO_TRACK_KEYS[] = {
-    {"scream", &AudioConfig::snd_scream},
-    {"faint", &AudioConfig::snd_faint},
-    {"leia", &AudioConfig::snd_leia},
-    {"cantina_s", &AudioConfig::snd_cantina_s},
-    {"sw_theme", &AudioConfig::snd_sw_theme},
-    {"imp_march", &AudioConfig::snd_imp_march},
-    {"cantina_l", &AudioConfig::snd_cantina_l},
-    {"startup", &AudioConfig::snd_startup},
-    {"doodoo", &AudioConfig::snd_doodoo},
-    {"failure", &AudioConfig::snd_failure},
-    {"disco", &AudioConfig::snd_disco},
-    {"mahna", &AudioConfig::snd_mahna},
-    {"inlove", &AudioConfig::snd_inlove},
-    {"macho", &AudioConfig::snd_macho},
-    {"gangnam", &AudioConfig::snd_gangnam},
-    {"uptown", &AudioConfig::snd_uptown},
-    {"celebr", &AudioConfig::snd_celebr},
-    {"stayin", &AudioConfig::snd_stayin},
-    {"harlem", &AudioConfig::snd_harlem},
-    {"pbjtime", &AudioConfig::snd_pbjtime},
-    {"sys_boot", &AudioConfig::snd_sys_boot},
-    {"sys_mode_n", &AudioConfig::snd_sys_mode_n},
-    {"sys_mode_s", &AudioConfig::snd_sys_mode_s},
-    {"sys_mode_t", &AudioConfig::snd_sys_mode_t},
-    {"sys_drv_on", &AudioConfig::snd_sys_drv_on},
-    {"sys_dome_on", &AudioConfig::snd_sys_dome_on},
-    {"sys_net_down", &AudioConfig::snd_sys_net_down},
-    {"rand_min", &AudioConfig::snd_rand_min},
-    {"rand_max", &AudioConfig::snd_rand_max},
-    {"snd_int_quiet", &AudioConfig::snd_int_quiet},
-    {"snd_int_mid", &AudioConfig::snd_int_mid},
-    {"snd_int_full", &AudioConfig::snd_int_full},
-    {"snd_int_awake", &AudioConfig::snd_int_awake},
-    {"snd_cat_gen_lo", &AudioConfig::snd_cat_gen_lo},
-    {"snd_cat_gen_hi", &AudioConfig::snd_cat_gen_hi},
-    {"snd_cat_chat_lo", &AudioConfig::snd_cat_chat_lo},
-    {"snd_cat_chat_hi", &AudioConfig::snd_cat_chat_hi},
-    {"snd_cat_hap_lo", &AudioConfig::snd_cat_hap_lo},
-    {"snd_cat_hap_hi", &AudioConfig::snd_cat_hap_hi},
-    {"snd_cat_proc_lo", &AudioConfig::snd_cat_proc_lo},
-    {"snd_cat_proc_hi", &AudioConfig::snd_cat_proc_hi},
-    {"snd_cat_sad_lo", &AudioConfig::snd_cat_sad_lo},
-    {"snd_cat_sad_hi", &AudioConfig::snd_cat_sad_hi},
-    {"snd_cat_sent_lo", &AudioConfig::snd_cat_sent_lo},
-    {"snd_cat_sent_hi", &AudioConfig::snd_cat_sent_hi},
-    {"snd_cat_hum_lo", &AudioConfig::snd_cat_hum_lo},
-    {"snd_cat_hum_hi", &AudioConfig::snd_cat_hum_hi},
-    {"snd_cat_scrm_lo", &AudioConfig::snd_cat_scrm_lo},
-    {"snd_cat_scrm_hi", &AudioConfig::snd_cat_scrm_hi},
-    {"snd_cat_ooh_lo", &AudioConfig::snd_cat_ooh_lo},
-    {"snd_cat_ooh_hi", &AudioConfig::snd_cat_ooh_hi},
-    {"snd_cat_alrm_lo", &AudioConfig::snd_cat_alrm_lo},
-    {"snd_cat_alrm_hi", &AudioConfig::snd_cat_alrm_hi},
-    {"snd_cat_snrk_lo", &AudioConfig::snd_cat_snarky_lo},
-    {"snd_cat_snrk_hi", &AudioConfig::snd_cat_snarky_hi},
-    {"snd_cat_whis_lo", &AudioConfig::snd_cat_whis_lo},
-    {"snd_cat_whis_hi", &AudioConfig::snd_cat_whis_hi},
-};
-
-const AudioTrackKeyMapEntry* audioTrackKeyEntry(const char* key) {
-    if (key == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0; i < sizeof(AUDIO_TRACK_KEYS) / sizeof(AUDIO_TRACK_KEYS[0]); ++i) {
-        if (strcmp(AUDIO_TRACK_KEYS[i].key, key) == 0) {
-            return &AUDIO_TRACK_KEYS[i];
-        }
-    }
-    return nullptr;
-}
 
 // Schema 2 -> 3 migration: component toggle identity rename (ADR 0033)
 // Migrates old NVS keys to new keys, then deletes the old keys.
@@ -156,81 +79,18 @@ void migrateSchema2To3(Preferences& prefs) {
 
 }  // namespace
 
-// Helper: Populate ConfigSnapshot with defaults
+// Helper: Populate ConfigSnapshot with defaults. Every Setting's default is its
+// declaration's (include/config_settings.h); what is set by hand here is the
+// rest of the Configuration - the sound bindings, the RC Map, Device WiFi
+// Settings, the droid's identity.
 void configSnapshotDefaults(ConfigSnapshot* snap) {
+    configSettingsDefaults(snap);
     snprintf(snap->system.droid_name, sizeof(snap->system.droid_name), "%s", DROID_NAME_DEFAULT);
     snap->system.mdns_use_name = false;
-    snap->drive.speedLimitMax = SPEED_LIMIT_MAX;
-    snap->drive.speedPresetSlow = SPEED_PRESET_SLOW;
-    snap->drive.speedPresetNormal = SPEED_PRESET_NORMAL;
-    snap->drive.speedPresetTurbo = SPEED_PRESET_TURBO;
     snap->drive.speedPresetActive = SpeedPresetId::Normal;
-    snap->drive.sbusTimeoutMs = SBUS_TIMEOUT_MS;
-    snap->drive.webDriveTimeoutMs = WEB_DRIVE_TIMEOUT_MS;
-    snap->audio.audioVolume = 20;
-    snap->system.logLevel = PA_LOG_LEVEL;
-    snap->audio.snd_scream = AUDIO_TRACK_SCREAM;
-    snap->audio.snd_faint = AUDIO_TRACK_FAINT;
-    snap->audio.snd_leia = AUDIO_TRACK_LEIA;
-    snap->audio.snd_cantina_s = AUDIO_TRACK_CANTINA_S;
-    snap->audio.snd_sw_theme = AUDIO_TRACK_SW_THEME;
-    snap->audio.snd_imp_march = AUDIO_TRACK_IMP_MARCH;
-    snap->audio.snd_cantina_l = AUDIO_TRACK_CANTINA_L;
-    snap->audio.snd_startup = AUDIO_TRACK_STARTUP;
-    snap->audio.snd_doodoo = 0;
-    snap->audio.snd_failure = 0;
-    snap->audio.snd_disco = 0;
+    // The one audio track that is not a Setting: nothing writes it after its
+    // default, so it has no declaration (include/config_settings.h).
     snap->audio.snd_happy = AUDIO_TRACK_HAPPY;
-    snap->audio.snd_mahna = 0;
-    snap->audio.snd_inlove = 0;
-    snap->audio.snd_macho = 0;
-    snap->audio.snd_gangnam = 0;
-    snap->audio.snd_uptown = 0;
-    snap->audio.snd_celebr = 0;
-    snap->audio.snd_stayin = 0;
-    snap->audio.snd_harlem = 0;
-    snap->audio.snd_pbjtime = 0;
-    snap->audio.snd_sys_boot = 0;
-    snap->audio.snd_sys_mode_n = 0;
-    snap->audio.snd_sys_mode_s = 0;
-    snap->audio.snd_sys_mode_t = 0;
-    snap->audio.snd_sys_drv_on = 0;
-    snap->audio.snd_sys_dome_on = 0;
-    snap->audio.snd_sys_net_down = 0;
-    snap->audio.snd_rand_min = AUDIO_RAND_TRACK_MIN;
-    snap->audio.snd_rand_max = AUDIO_RAND_TRACK_MAX;
-    snap->audio.snd_int_quiet = AUDIO_RAND_INT_QUIET;
-    snap->audio.snd_int_mid = AUDIO_RAND_INT_MID;
-    snap->audio.snd_int_full = AUDIO_RAND_INT_FULL;
-    snap->audio.snd_int_awake = AUDIO_RAND_INT_AWAKE;
-    snap->audio.snd_moodcat_quiet = 0x0048;
-    snap->audio.snd_moodcat_mid = 0x004F;
-    snap->audio.snd_moodcat_full = 0x090F;
-    snap->audio.snd_moodcat_awakeplus = 0x0F8F;
-    snap->audio.snd_cat_gen_lo = 0;
-    snap->audio.snd_cat_gen_hi = 0;
-    snap->audio.snd_cat_chat_lo = 0;
-    snap->audio.snd_cat_chat_hi = 0;
-    snap->audio.snd_cat_hap_lo = 0;
-    snap->audio.snd_cat_hap_hi = 0;
-    snap->audio.snd_cat_proc_lo = 0;
-    snap->audio.snd_cat_proc_hi = 0;
-    snap->audio.snd_cat_sad_lo = 0;
-    snap->audio.snd_cat_sad_hi = 0;
-    snap->audio.snd_cat_sent_lo = 0;
-    snap->audio.snd_cat_sent_hi = 0;
-    snap->audio.snd_cat_hum_lo = 0;
-    snap->audio.snd_cat_hum_hi = 0;
-    snap->audio.snd_cat_scrm_lo = 0;
-    snap->audio.snd_cat_scrm_hi = 0;
-    snap->audio.snd_cat_ooh_lo = 0;
-    snap->audio.snd_cat_ooh_hi = 0;
-    snap->audio.snd_cat_alrm_lo = 0;
-    snap->audio.snd_cat_alrm_hi = 0;
-    snap->audio.snd_cat_snarky_lo = 0;
-    snap->audio.snd_cat_snarky_hi = 0;
-    snap->audio.snd_cat_whis_lo = 0;
-    snap->audio.snd_cat_whis_hi = 0;
 
     // No servo endpoints or component types here: a defaulted Servo Output row
     // carries both, and servoOutputTableDefaults() is where they are stated
@@ -238,16 +98,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
 
     snap->dome.dome_min_speed = 0.0f;
     snap->dome.dome_max_speed = 1.0f;
-    snap->dome.dome_neutral_us = 1500;
-    snap->dome.dome_min_pulse_us = 1000;
-    snap->dome.dome_max_pulse_us = 2000;
-    snap->dome.dome_speed_limit_pct = 100;
-    snap->dome.dome_rnd_enable = false;
-    snap->dome.dome_rnd_speed_pct = 30;
-    snap->dome.dome_rnd_pause_min = 6;
-    snap->dome.dome_rnd_pause_max = 12;
-    snap->dome.dome_rnd_move_ms = 2500;
-    snap->dome.dome_wifi_peer_ip[0] = '\0';
 
     // Device WiFi Settings default to an Unprovisioned Controller (ADR 0015):
     // no saved posture yet, AP identity pre-filled with the documented,
@@ -259,29 +109,6 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->wifi.ap_ssid, sizeof(snap->wifi.ap_ssid), "%s", WIFI_AP_SSID);
     snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
 
-    snap->system.enable_arm1 = false;
-    snap->system.enable_arm2 = false;
-    snap->system.enable_aux1 = false;
-    snap->system.enable_aux2 = false;
-    snap->system.enable_aux3 = false;
-    snap->system.enable_dome_esc = false;
-    snap->system.enable_rc_ch1 = false;
-    snap->system.enable_rc_ch2 = false;
-    snap->system.enable_rc_ch3 = false;
-    snap->system.enable_rc_ch4 = false;
-    snap->system.enable_rc_ch5 = false;
-    snap->system.enable_rc_ch6 = false;
-    snap->system.single_sbus_use_ch2 = false;
-    snap->system.enable_drive = false;
-    snap->system.enable_audio = false;
-    snap->system.enable_protor2link = false;
-    snap->system.stationary = false;
-    snap->system.rc_input_mode = RC_INPUT_DUAL_SBUS;
-    // A controller that has never been asked which sound module it has starts
-    // on the one its build names (PA_AUDIO_DRIVER), which is all that flag
-    // still decides.
-    snap->system.sound_member = componentCategoryDefaultMember(COMPONENT_CATEGORY_SOUND);
-    snap->system.rc_member = componentCategoryDefaultMember(COMPONENT_CATEGORY_RADIO_CONTROLLER);
 
     snap->system.rc_pwm_drive_speed = defaultPwmBinding(1);
     snap->system.rc_pwm_drive_steer = defaultPwmBinding(2);
@@ -1059,27 +886,26 @@ void configCacheResolvedMdnsHostname(char* out, size_t outSize) {
     configResolvedMdnsHostname(snap.system, out, outSize);
 }
 
+// A track, an interval or a category bound, by the key POST /api/audio/tracks
+// takes it under: the tracks door's own audio Settings (include/config_settings.h),
+// never the volume or a mood mask.
 bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out) {
-    if (out == nullptr) {
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioTracks);
+    if (setting == nullptr || out == nullptr) {
         return false;
     }
-    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
-    if (entry == nullptr) {
-        return false;
-    }
-    *out = config.*(entry->field);
+    uint16_t value = 0;
+    memcpy(&value, reinterpret_cast<const uint8_t*>(&config) + setting->offset, sizeof(value));
+    *out = value;
     return true;
 }
 
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value) {
-    if (config == nullptr) {
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioTracks);
+    if (setting == nullptr || config == nullptr) {
         return false;
     }
-    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
-    if (entry == nullptr) {
-        return false;
-    }
-    config->*(entry->field) = value;
+    memcpy(reinterpret_cast<uint8_t*>(config) + setting->offset, &value, sizeof(value));
     return true;
 }
 
@@ -1116,12 +942,17 @@ const char* configAudioCategoryCompanionKey(const char* key) {
 bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
                                 uint16_t awakeplus) {
     configWriteWindowExpectHeld("configUpdateAudioMoodMasks");
-    if (configValidate(ConfigKey::SND_MOODCAT_QUIET, quiet) != ConfigValidationResult::OK ||
-        configValidate(ConfigKey::SND_MOODCAT_MID, mid) != ConfigValidationResult::OK ||
-        configValidate(ConfigKey::SND_MOODCAT_FULL, full) != ConfigValidationResult::OK ||
-        configValidate(ConfigKey::SND_MOODCAT_AWAKEPLUS, awakeplus) !=
-            ConfigValidationResult::OK) {
-        return false;
+    // Each mask held to its own Setting's check (include/config_settings.h),
+    // the one POST /api/audio/mood-map and the Console apply before here.
+    const struct {
+        const char* name;
+        uint16_t value;
+    } masks[] = {{"quiet", quiet}, {"mid", mid}, {"full", full}, {"awakeplus", awakeplus}};
+    for (const auto& mask : masks) {
+        const ConfigSetting* setting = audioSettingByName(mask.name, SettingDoor::AudioMoodMap);
+        if (setting == nullptr || mask.value < setting->lo || mask.value > setting->hi) {
+            return false;
+        }
     }
 
     ConfigSnapshot snap = {};
@@ -1452,231 +1283,4 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
     }
 
     return ok;
-}
-
-ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
-    switch (key) {
-        // Speed
-        case ConfigKey::SPEED_LIMIT_MAX:
-            return (value >= 0 && value <= SPEED_LIMIT_MAX) ? ConfigValidationResult::OK
-                                                             : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::SPEED_PRESET_SLOW:
-        case ConfigKey::SPEED_PRESET_NORMAL:
-        case ConfigKey::SPEED_PRESET_TURBO:
-            return (value >= 0 && value <= SPEED_LIMIT_MAX) ? ConfigValidationResult::OK
-                                                             : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::SPEED_PRESET_ACTIVE:
-            return (value >= 0 && value <= 2) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
-
-        // Timeouts
-        case ConfigKey::SBUS_TIMEOUT_MS:
-            return (value >= 50 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::WEB_DRIVE_TIMEOUT_MS:
-            return (value >= 100 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Audio
-        case ConfigKey::AUDIO_VOLUME:
-            return (value >= 0 && value <= 30) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        // 1 (Error) .. 4 (Debug) since schema 2 (the migration in configLoad()).
-        case ConfigKey::LOG_LEVEL:
-            return (value >= PA_LOG_LEVEL_ERROR && value <= PA_LOG_LEVEL_DEBUG) ? ConfigValidationResult::OK
-                                                                              : ConfigValidationResult::INVALID_VALUE;
-
-        // Audio tracks (uint16, 0..65535  --  accept all)
-        case ConfigKey::SND_SCREAM:
-        case ConfigKey::SND_FAINT:
-        case ConfigKey::SND_LEIA:
-        case ConfigKey::SND_CANTINA_S:
-        case ConfigKey::SND_SW_THEME:
-        case ConfigKey::SND_IMP_MARCH:
-        case ConfigKey::SND_CANTINA_L:
-        case ConfigKey::SND_STARTUP:
-        case ConfigKey::SND_DOODOO:
-        case ConfigKey::SND_FAILURE:
-        case ConfigKey::SND_DISCO:
-        case ConfigKey::SND_MAHNA:
-        case ConfigKey::SND_INLOVE:
-        case ConfigKey::SND_MACHO:
-        case ConfigKey::SND_GANGNAM:
-        case ConfigKey::SND_UPTOWN:
-        case ConfigKey::SND_CELEBR:
-        case ConfigKey::SND_STAYIN:
-        case ConfigKey::SND_HARLEM:
-        case ConfigKey::SND_PBJTIME:
-        case ConfigKey::SND_SYS_BOOT:
-        case ConfigKey::SND_SYS_MODE_N:
-        case ConfigKey::SND_SYS_MODE_S:
-        case ConfigKey::SND_SYS_MODE_T:
-        case ConfigKey::SND_SYS_DRV_ON:
-        case ConfigKey::SND_SYS_DOME_ON:
-        case ConfigKey::SND_RAND_MIN:
-        case ConfigKey::SND_RAND_MAX:
-        case ConfigKey::SND_INT_QUIET:
-        case ConfigKey::SND_INT_MID:
-        case ConfigKey::SND_INT_FULL:
-        case ConfigKey::SND_INT_AWAKE:
-            return (value >= 0 && value <= 0xFFFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Mood categories (12-bit masks)
-        case ConfigKey::SND_MOODCAT_QUIET:
-        case ConfigKey::SND_MOODCAT_MID:
-        case ConfigKey::SND_MOODCAT_FULL:
-        case ConfigKey::SND_MOODCAT_AWAKEPLUS:
-            return (value >= 0 && value <= 0x0FFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Sound category ranges (lo/hi)
-        case ConfigKey::SND_CAT_GEN_LO:
-        case ConfigKey::SND_CAT_GEN_HI:
-        case ConfigKey::SND_CAT_CHAT_LO:
-        case ConfigKey::SND_CAT_CHAT_HI:
-        case ConfigKey::SND_CAT_HAP_LO:
-        case ConfigKey::SND_CAT_HAP_HI:
-        case ConfigKey::SND_CAT_PROC_LO:
-        case ConfigKey::SND_CAT_PROC_HI:
-        case ConfigKey::SND_CAT_SAD_LO:
-        case ConfigKey::SND_CAT_SAD_HI:
-        case ConfigKey::SND_CAT_SENT_LO:
-        case ConfigKey::SND_CAT_SENT_HI:
-        case ConfigKey::SND_CAT_HUM_LO:
-        case ConfigKey::SND_CAT_HUM_HI:
-        case ConfigKey::SND_CAT_SCRM_LO:
-        case ConfigKey::SND_CAT_SCRM_HI:
-        case ConfigKey::SND_CAT_OOH_LO:
-        case ConfigKey::SND_CAT_OOH_HI:
-        case ConfigKey::SND_CAT_ALRM_LO:
-        case ConfigKey::SND_CAT_ALRM_HI:
-        case ConfigKey::SND_CAT_SNARKY_LO:
-        case ConfigKey::SND_CAT_SNARKY_HI:
-        case ConfigKey::SND_CAT_WHIS_LO:
-        case ConfigKey::SND_CAT_WHIS_HI:
-            return (value >= 0 && value <= 0xFFFF) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Servo pulse widths and component types are not here. They are a Servo
-        // Output row's, and servoOutputRowNormalise() is their validator: it
-        // bounds a pulse by the band the fitted component takes rather than by
-        // one pair of numbers for every part (#345, ADR 0041).
-
-        // Dome ESC pulse widths
-        case ConfigKey::DOME_NEUTRAL_US:
-        case ConfigKey::DOME_MIN_PULSE_US:
-        case ConfigKey::DOME_MAX_PULSE_US:
-            return (value >= 1000 && value <= 2000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_SPEED_LIMIT_PCT:
-            return (value >= 0 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // The random dome move's three ranges are the Apply Core's
-        // (src/web/api_config_apply.cpp), which is what a save is held to.
-        case ConfigKey::DOME_RND_SPEED_PCT:
-            return (value >= 5 && value <= 100) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_RND_PAUSE_MIN:
-        case ConfigKey::DOME_RND_PAUSE_MAX:
-            return (value >= 1 && value <= 120) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        case ConfigKey::DOME_RND_MOVE_MS:
-            return (value >= 500 && value <= 10000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // Sequence timing
-        case ConfigKey::SEQ_OPEN_MS:
-        case ConfigKey::SEQ_CLOSE_MS:
-            return (value >= 100 && value <= 5000) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-
-        // A light's settings
-        case ConfigKey::LIGHT_LED_COUNT:
-            return (value >= SERVO_LIGHT_LEDS_MIN && value <= SERVO_LIGHT_LEDS_MAX) ? ConfigValidationResult::OK
-                                                                                     : ConfigValidationResult::OUT_OF_RANGE;
-
-        // RC Input Mode
-        case ConfigKey::RC_INPUT_MODE:
-            return (value >= 0 && value <= RC_INPUT_ELRS) ? ConfigValidationResult::OK
-                                                                : ConfigValidationResult::INVALID_VALUE;
-
-        // Component Member. Not a numeric range: the only valid values are the
-        // Sound rows this image can actually drive, so the registry answers and
-        // this switch does not carry a second copy of the lineup. A roadmap row
-        // and a member from another family are both rejected here, which is why
-        // the picker can offer the registry's rows and trust the reply.
-        case ConfigKey::SOUND_MEMBER:
-        case ConfigKey::RC_MEMBER: {
-            if (value < 0 || value > 255) {
-                return ConfigValidationResult::OUT_OF_RANGE;
-            }
-            const ComponentCategoryId family = key == ConfigKey::SOUND_MEMBER
-                                                   ? COMPONENT_CATEGORY_SOUND
-                                                   : COMPONENT_CATEGORY_RADIO_CONTROLLER;
-            const ComponentPartEntry* part = componentPartByValue((uint8_t)value);
-            return (part != nullptr && part->category == family && componentPartIsSelectable(*part))
-                       ? ConfigValidationResult::OK
-                       : ConfigValidationResult::INVALID_VALUE;
-        }
-
-        // Booleans are handled separately in configValidateBool
-        case ConfigKey::ENABLE_ARM1:
-        case ConfigKey::ENABLE_ARM2:
-        case ConfigKey::ENABLE_AUX1:
-        case ConfigKey::ENABLE_AUX2:
-        case ConfigKey::ENABLE_AUX3:
-        case ConfigKey::ENABLE_DOME:
-        case ConfigKey::ENABLE_RC_CH1:
-        case ConfigKey::ENABLE_RC_CH2:
-        case ConfigKey::ENABLE_RC_CH3:
-        case ConfigKey::ENABLE_RC_CH4:
-        case ConfigKey::ENABLE_RC_CH5:
-        case ConfigKey::ENABLE_RC_CH6:
-        case ConfigKey::SINGLE_SBUS_USE_CH2:
-        case ConfigKey::ENABLE_DRIVE:
-        case ConfigKey::ENABLE_AUDIO:
-        case ConfigKey::ENABLE_PROTOR2LINK:
-        case ConfigKey::STATIONARY:
-        case ConfigKey::DOME_RND_ENABLE:
-            return (value == 0 || value == 1) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
-
-        // Float fields handled separately
-        case ConfigKey::DOME_MIN_SPEED:
-        case ConfigKey::DOME_MAX_SPEED:
-        case ConfigKey::DOME_WIFI_PEER_IP:
-            return ConfigValidationResult::INVALID_VALUE;
-
-        default:
-            return ConfigValidationResult::INVALID_VALUE;
-    }
-}
-
-ConfigValidationResult configValidateFloat(ConfigKey key, float value) {
-    switch (key) {
-        case ConfigKey::DOME_MIN_SPEED:
-            return (value >= 0.0f && value <= 1.0f) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        case ConfigKey::DOME_MAX_SPEED:
-            return (value >= 0.0f && value <= 1.0f) ? ConfigValidationResult::OK : ConfigValidationResult::OUT_OF_RANGE;
-        default:
-            return ConfigValidationResult::INVALID_VALUE;
-    }
-}
-
-ConfigValidationResult configValidateBool(ConfigKey key, bool value) {
-    (void)value;  // All booleans are valid (true or false)
-    switch (key) {
-        case ConfigKey::ENABLE_ARM1:
-        case ConfigKey::ENABLE_ARM2:
-        case ConfigKey::ENABLE_AUX1:
-        case ConfigKey::ENABLE_AUX2:
-        case ConfigKey::ENABLE_AUX3:
-        case ConfigKey::ENABLE_DOME:
-        case ConfigKey::ENABLE_RC_CH1:
-        case ConfigKey::ENABLE_RC_CH2:
-        case ConfigKey::ENABLE_RC_CH3:
-        case ConfigKey::ENABLE_RC_CH4:
-        case ConfigKey::ENABLE_RC_CH5:
-        case ConfigKey::ENABLE_RC_CH6:
-        case ConfigKey::SINGLE_SBUS_USE_CH2:
-        case ConfigKey::ENABLE_DRIVE:
-        case ConfigKey::ENABLE_AUDIO:
-        case ConfigKey::ENABLE_PROTOR2LINK:
-        case ConfigKey::STATIONARY:
-        case ConfigKey::DOME_RND_ENABLE:
-            return ConfigValidationResult::OK;
-        default:
-            return ConfigValidationResult::INVALID_VALUE;
-    }
 }

@@ -82,6 +82,31 @@ enum RcInputMode : uint8_t {
     RC_INPUT_ELRS,
 };
 
+// The RC receiver modes' words - the one home for them (ADR 0068, amended
+// 2026-09-26): the rcInputMode Setting accepts exactly these, and every answer
+// that reports a mode reads it from here. nullptr for a number that is no mode.
+inline const char* rcInputModeName(uint8_t mode) {
+    switch (mode) {
+        case RC_INPUT_STANDARD_PWM:
+            return "standard_pwm";
+        case RC_INPUT_SINGLE_SBUS:
+            return "single_sbus";
+        case RC_INPUT_DUAL_SBUS:
+            return "dual_sbus";
+        case RC_INPUT_ELRS:
+            return "elrs";
+        default:
+            return nullptr;
+    }
+}
+
+// A mode as an answer reports it. The loader repairs an unknown stored number to
+// dual_sbus, so that is what a number that is no mode reads as.
+inline const char* rcInputModeToString(uint8_t mode) {
+    const char* name = rcInputModeName(mode);
+    return name != nullptr ? name : "dual_sbus";
+}
+
 enum DomeUartOwner : uint8_t {
     DOME_UART_NONE = 0,
     DOME_UART_DOME,

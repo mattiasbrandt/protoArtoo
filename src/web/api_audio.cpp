@@ -24,19 +24,19 @@
 // POST /api/audio params:
 //   action=play   &track=N      - play track N (1-based)
 //   action=stop                 - stop playback
-//   action=volume &level=N      - set absolute volume (0-30)
+//   action=volume &level=N      - set the volume Setting
 //   action=dollar &cmd=$R       - raw $ command (any from the $ command set)
 //
 // POST /api/audio/tracks params:
-//   key=<name>   &track=N       - set named/category/system track (1-999, or 0-999 where allowed)
-//   key=rand_min &track=N       - set random pool minimum
-//   key=rand_max &track=N       - set random pool maximum
+//   key=<name>   &track=N       - set one audio Setting on the tracks door: a
+//                                 sound action's or system track, the random
+//                                 range (rand_min, rand_max), a random-chatter
+//                                 interval (snd_int_*) or a category bound
+//                                 (snd_cat_*_lo/_hi), optionally as a CHIRP
+//                                 catalog binding (bank, page)
 //
-// Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
-//                  startup doodoo failure disco mahna inlove macho gangnam
-//                  uptown celebr stayin harlem pbjtime
-//                  sys_boot sys_mode_n sys_mode_s sys_mode_t sys_drv_on sys_dome_on sys_net_down
-//                  snd_cat_*_lo snd_cat_*_hi, rand_min rand_max
+// Which keys exist and what each takes is their declaration's
+// (src/config_settings.cpp, kAudioSettings), never restated here.
 // =============================================================================
 
 #include "api_audio.h"
@@ -49,6 +49,7 @@
 
 #include "api_audio_category_range_apply.h"
 #include "api_audio_mood_map_apply.h"
+#include "config_settings.h"  // the volume Setting's check
 #include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
 #include "api_json_response.h"
@@ -1188,12 +1189,21 @@ void handleAudioPost(WebRequest& req) {
     if (strcmp(action, "volume") == 0) {
         char levelRaw[16] = {};
         if (!req.param("level", levelRaw, sizeof(levelRaw))) {
-            webSendJsonError(req, 400, "volume requires level parameter");
+            ApplyRefusal refusal;
+            applyRefusalSet(&refusal, ApplyRefusalReason::MissingArgument, "volume");
+            webSendApplyRefusal(req, 400, "volume requires level parameter", refusal);
             return;
         }
-        uint32_t level = 0;
-        if (!parseUint32Value(levelRaw, &level) || level > 30) {
-            webSendJsonError(req, 400, "level must be 0-30");
+        // The volume Setting's own check (include/config_settings.h), refused
+        // with its field, reason and range so the Sound page can word it.
+        const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+        int32_t level = 0;
+        ApplyRefusal refusal;
+        char sentence[CONFIG_SETTING_SENTENCE_MAX] = {};
+        if (volume == nullptr ||
+            !configSettingCheck(*volume, levelRaw, "volume", &level, &refusal, sentence,
+                                sizeof(sentence))) {
+            webSendApplyRefusal(req, 400, sentence, refusal);
             return;
         }
 

@@ -8,9 +8,8 @@
 //   full, awakeplus) through a ConfigParamSource, accepting either the
 //   form-field shape or a "plain" JSON body (matching the legacy handler's
 //   precedence: form fields first, JSON body second, neither -> error), and
-//   validates each against MOOD_CATEGORY_MASK_MAX. Error messages word for
-//   word the legacy handler's, each with its field, reason and accepts as
-//   data.
+//   checks each against its own mood mask Setting (include/config_settings.h):
+//   a refusal names the mask (`quiet`) with its reason and accepts.
 //
 // This core does not touch NVS or the config cache - the existing
 // configUpdateAudioMoodMasks(Preferences&, ...) domain function

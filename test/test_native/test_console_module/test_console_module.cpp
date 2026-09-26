@@ -56,6 +56,7 @@
 #include "api_status.h"
 #include "audio_task.h"
 #include "config_cache.h"
+#include "config_settings.h"  // configSettingByForm() - each op's Setting
 #include "component_registry.h"
 #include "console_config_fields.h"  // kComponentToggleFields[] - defect 2 rework:
                                     // proves the table matches configApply() by
@@ -2419,10 +2420,9 @@ void test_component_toggle_write_rejects_a_malformed_boolean() {
 // =============================================================================
 // Component Toggle table drift check (#226 rework, defect 2)
 //
-// include/console_config_fields.h's kComponentToggleFields[] says, in prose,
-// that its paramKey values are "copied verbatim from api_config_apply.cpp's
-// boolFields[] array" and that a rename in one needs a matching edit in the
-// other. Nothing enforced that. This drives configApply() - the real Apply
+// include/console_config_fields.h's kComponentToggleFields[] names each toggle
+// by its Setting's form name (src/config_settings.cpp), and a rename in one
+// needs a matching edit in the other. Nothing else enforces that. This drives configApply() - the real Apply
 // Core, bypassing the Console dispatch layer entirely - directly with each
 // of the 15 entries' paramKey and asserts the named SystemConfig field
 // actually flips. A rename in either table without the other breaks this
@@ -2446,6 +2446,54 @@ const char* singleParamGet(void* ctx, const char* name) {
     return strcmp(name, c->key) == 0 ? c->value : nullptr;
 }
 }  // namespace
+
+// A Setting refuses a value identically at both doors (ADR 0068, amended
+// 2026-09-26): each of the Console's single-field Setting ops answers a value
+// its Setting does not take with the reason and the accepts configApply() - the
+// Apply Core POST /api/config answers from - gives for the same value under the
+// form name. Only the argument the Console names differs: the builder typed
+// `value=`, never the form name.
+void test_every_single_field_setting_op_refuses_as_the_http_door_does() {
+    struct Op {
+        const char* operationName;
+        const char* form;
+    };
+    Op ops[3 + kComponentToggleFieldCount] = {
+        {"drive.config.speed-limit", "speedLimitMax"},
+        {"rc.config.mode", "rcInputMode"},
+        {"system.config.log-level", "logLevel"},
+    };
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        ops[3 + i] = {kComponentToggleFields[i].operationName, kComponentToggleFields[i].paramKey};
+    }
+
+    static ConfigApplyResult result;
+    for (const Op& op : ops) {
+        const ConfigSetting* setting = configSettingByForm(op.form);
+        TEST_ASSERT_NOT_NULL_MESSAGE(setting, op.form);
+        const char* bad = setting->rule == SettingRule::Bool ? "maybe" : "99999";
+
+        char line[96] = {};
+        snprintf(line, sizeof(line), "%s value=%s", op.operationName, bad);
+        runQuery(line);
+
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        SingleParamCtx ctx{op.form, bad};
+        ConfigParamSource params;
+        params.ctx = &ctx;
+        params.get = singleParamGet;
+        configApply(params, &working, working.system.enable_dome_esc, &result);
+
+        TEST_ASSERT_TRUE_MESSAGE(result.error.hasError, op.operationName);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, op.operationName);
+        TEST_ASSERT_EQUAL_MESSAGE(consoleReasonFromApplyRefusal(result.error.refusal.reason),
+                                  g_cap.reason, op.operationName);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(result.error.refusal.accepts, capturedValue("accepts"),
+                                         op.operationName);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("value", capturedValue("argument"), op.operationName);
+    }
+}
 
 void test_component_toggle_table_paramkeys_match_config_apply() {
     for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
@@ -2600,8 +2648,8 @@ void test_rc_mode_rejects_an_unknown_mode_string() {
 }
 
 // system.config.log-level (#225): read renders the live numeric level;
-// write accepts the raw 1..4 integer api_config_apply.cpp's paramInt16
-// validates.
+// write accepts the raw 1..4 integer its Setting's declaration checks
+// (src/config_settings.cpp).
 void test_log_level_read_and_write_the_integer() {
     runQuery("system.config.log-level value=3");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
@@ -2656,7 +2704,7 @@ void test_log_level_word_form_is_case_insensitive() {
 }
 
 // The named key (logLevel=) works exactly like value= - the same
-// ScalarConfigArg bridge every other row in g_scalarConfigExecutors[] shares
+// ScalarConfigArg bridge every Setting op in g_settingOps[] shares
 // (src/console/console_module.cpp).
 void test_log_level_accepts_the_named_key() {
     runQuery("system.config.log-level logLevel=info");
@@ -2688,10 +2736,9 @@ void test_log_level_rejects_an_unknown_argument() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
 }
 
-// An extra key alongside a valid value= must still be rejected as unknown -
-// the word-form translator only fires for an exactly-one-argument write
-// (consoleExecuteSystemLogLevel()'s own comment, src/console/console_module.cpp),
-// so this also proves the translator does not silently swallow the second key.
+// An extra key alongside a valid value= must still be rejected as unknown: a
+// word the Setting takes (src/config_settings.cpp) does not let a second key
+// through the single-field write's argument check.
 void test_log_level_rejects_an_extra_argument_even_with_a_valid_word() {
     runQuery("system.config.log-level value=debug bogus=1");
 
@@ -3796,6 +3843,33 @@ void test_sound_set_volume_rejects_an_out_of_range_level() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("0..30", capturedValue("accepts"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+}
+
+// The volume and the mood masks are refused at the Console exactly as over
+// HTTP (ADR 0068, amended 2026-09-26): by their Settings' declarations, with
+// what each takes - never by a range copied into the registry schema, which
+// refused with no accepts. A value the schema's type cannot hold (`abc`) is
+// the declaration's to answer too.
+void test_audio_setting_ops_refuse_with_what_the_setting_takes() {
+    const struct {
+        const char* line;
+        const char* argument;
+        const char* accepts;
+    } cases[] = {
+        {"sound.config.volume volume=31", "volume", "0..30"},
+        {"sound.action.set-volume volume=abc", "volume", "0..30"},
+        {"sound.config.mood-category-map quiet=5000 mid=2 full=3 awakeplus=4", "quiet", "0..4095"},
+        {"sound.action.set-mood-map quiet=1 mid=70000 full=3 awakeplus=4", "mid", "0..4095"},
+    };
+    for (const auto& c : cases) {
+        runQuery(c.line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, c.line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason, c.line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.argument, capturedValue("argument"), c.line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.accepts, capturedValue("accepts"), c.line);
+    }
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
 }
 
@@ -4065,6 +4139,7 @@ void test_sound_set_mood_map_rejects_an_out_of_range_mask() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("0..4095", capturedValue("accepts"));
 }
 
 void test_sound_set_category_range_applies_and_persists() {
@@ -4098,6 +4173,17 @@ void test_sound_set_category_range_rejects_lo_greater_than_hi() {
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_CONFLICT, g_cap.reason);
     TEST_ASSERT_EQUAL_STRING("lo", capturedValue("argument"));
+}
+
+// A bound out of range is named by its Setting in the core (the key it was
+// for); on the Console it is the `hi=` the builder typed.
+void test_sound_set_category_range_names_an_out_of_range_bound_by_its_argument() {
+    runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=1 hi=1000");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("hi", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("0..999", capturedValue("accepts"));
 }
 
 void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
@@ -4993,7 +5079,7 @@ static void seedAudioTrack(const char* key, uint16_t value) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     TEST_ASSERT_TRUE_MESSAGE(configAudioSetTrackByKey(&snap.audio, key, value),
-                             "test seed used a key AUDIO_TRACK_KEYS does not declare");
+                             "test seed used a key no audio Setting declares");
     {
         const ConfigWriteWindowForTest seed;
         configCacheReplace(snap);
@@ -5005,7 +5091,7 @@ static uint16_t audioTrackValue(const char* key) {
     configCacheRead(&snap);
     uint16_t value = 0;
     TEST_ASSERT_TRUE_MESSAGE(configAudioGetTrackByKey(snap.audio, key, &value),
-                             "read-back used a key AUDIO_TRACK_KEYS does not declare");
+                             "read-back used a key no audio Setting declares");
     return value;
 }
 
@@ -5034,9 +5120,9 @@ void test_sound_config_random_min_write_reaches_the_tracks_core() {
 
 // The core is the only gate on the value, not a copy of its rules in this
 // module: these two rows take the identical argument and get opposite
-// verdicts, because audioTracksApply()'s zero-allowed key list contains
-// sys_boot and not startup (src/web/api_audio_tracks_apply.cpp). No
-// adapter-side check could tell them apart without duplicating that list.
+// verdicts, because the startup Setting takes 1..999 and sys_boot 0..999
+// (src/config_settings.cpp). No adapter-side check could tell them apart
+// without duplicating those declarations.
 void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
     seedAudioTrack("startup", 5);
 
@@ -5045,6 +5131,10 @@ void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    // The core names the refused value by its Setting (`startup`); the builder
+    // typed it as `track=`, and that is the argument named, with the range.
+    TEST_ASSERT_EQUAL_STRING("track", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("1..999", capturedValue("accepts"));
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(5, audioTrackValue("startup"),
                                      "a refused write must not have reached the config cache");
 }
@@ -5575,6 +5665,7 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
     RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
     RUN_TEST(test_component_toggle_table_paramkeys_match_config_apply);
+    RUN_TEST(test_every_single_field_setting_op_refuses_as_the_http_door_does);
     RUN_TEST(test_drive_speed_limit_read_and_write);
     RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
     RUN_TEST(test_aux_led_count_read_and_write_names_its_output);
@@ -5706,6 +5797,7 @@ int main(int, char**) {
     RUN_TEST(test_sound_play_track_reports_a_full_queue);
     RUN_TEST(test_sound_set_volume_applies_and_persists);
     RUN_TEST(test_sound_set_volume_rejects_an_out_of_range_level);
+    RUN_TEST(test_audio_setting_ops_refuse_with_what_the_setting_takes);
     RUN_TEST(test_sound_set_volume_reports_a_full_queue);
 
     RUN_TEST(test_sound_named_track_shortcuts_send_the_right_dollar_command);
@@ -5733,6 +5825,7 @@ int main(int, char**) {
     RUN_TEST(test_sound_set_category_range_applies_and_persists);
     RUN_TEST(test_sound_set_category_range_rejects_a_mismatched_key_pair);
     RUN_TEST(test_sound_set_category_range_rejects_lo_greater_than_hi);
+    RUN_TEST(test_sound_set_category_range_names_an_out_of_range_bound_by_its_argument);
     RUN_TEST(test_sound_set_category_range_rejects_bank_as_an_unknown_argument);
 
     RUN_TEST(test_aux_led_color_queues_a_valid_rgb_triple);

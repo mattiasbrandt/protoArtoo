@@ -276,11 +276,11 @@
       <div class="sound-inline-row wrap">
         <div>
           <label class="form-label" for="rand-min">Min track</label>
-          <input type="number" id="rand-min" min="1" max="999" value="1" class="sound-track-input-md">
+          <input type="number" id="rand-min" value="1" class="sound-track-input-md">
         </div>
         <div>
           <label class="form-label" for="rand-max">Max track</label>
-          <input type="number" id="rand-max" min="1" max="999" value="100" class="sound-track-input-md">
+          <input type="number" id="rand-max" value="100" class="sound-track-input-md">
         </div>
         <div class="sound-align-end">
           <button class="btn" id="btn-rand-save" type="button">Save range</button>
@@ -307,28 +307,28 @@
               <td>Quiet</td>
               <td class="sound-mono">:SE10</td>
               <td>
-                <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
+                <input type="number" id="int-quiet" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
               </td>
             </tr>
             <tr class="sound-row-divider">
               <td>Mid-Awake</td>
               <td class="sound-mono">:SE13</td>
               <td>
-                <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" class="sound-track-input-md" aria-label="Mid-Awake mood interval seconds">
+                <input type="number" id="int-mid" step="1" value="30" class="sound-track-input-md" aria-label="Mid-Awake mood interval seconds">
               </td>
             </tr>
             <tr class="sound-row-divider">
               <td>Full-Awake</td>
               <td class="sound-mono">:SE11</td>
               <td>
-                <input type="number" id="int-full" min="0" max="3600" step="1" value="20" class="sound-track-input-md" aria-label="Full-Awake mood interval seconds">
+                <input type="number" id="int-full" step="1" value="20" class="sound-track-input-md" aria-label="Full-Awake mood interval seconds">
               </td>
             </tr>
             <tr>
               <td>Awake+</td>
               <td class="sound-mono">:SE14</td>
               <td>
-                <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" class="sound-track-input-md" aria-label="Awake Plus mood interval seconds">
+                <input type="number" id="int-awake" step="1" value="10" class="sound-track-input-md" aria-label="Awake Plus mood interval seconds">
               </td>
             </tr>
           </tbody>

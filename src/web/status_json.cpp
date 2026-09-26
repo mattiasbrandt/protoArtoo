@@ -24,20 +24,6 @@ namespace {
 // The answer both senders give when the document does not fit.
 const char kStatusOverflowBody[] = "{\"ok\":false,\"error\":\"status payload overflow\"}";
 
-const char* rcInputModeLabel(RcInputMode mode) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return "standard_pwm";
-        case RC_INPUT_SINGLE_SBUS:
-            return "single_sbus";
-        case RC_INPUT_ELRS:
-            return "elrs";
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return "dual_sbus";
-    }
-}
-
 const char* domeTransportLabel(DomeLinkTransport transport) {
     switch (transport) {
         case DOME_LINK_TRANSPORT_UART:
@@ -325,7 +311,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         if (in.enableRcCh3) {
             snprintf(detail, sizeof(detail),
                      "CH3 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(in.rcInputMode));
+                     rcInputModeToString(in.rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh3",
                                         in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
                                         detail) &&
@@ -334,7 +320,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         if (in.enableRcCh4) {
             snprintf(detail, sizeof(detail),
                      "CH4 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(in.rcInputMode));
+                     rcInputModeToString(in.rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh4",
                                         in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
                                         detail) &&
@@ -343,7 +329,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         if (in.enableRcCh5) {
             snprintf(detail, sizeof(detail),
                      "CH5 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(in.rcInputMode));
+                     rcInputModeToString(in.rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh5",
                                         in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
                                         detail) &&
@@ -352,7 +338,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         if (in.enableRcCh6) {
             snprintf(detail, sizeof(detail),
                      "CH6 enabled; %s routing is configurable via /api/config",
-                     rcInputModeLabel(in.rcInputMode));
+                     rcInputModeToString(in.rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh6",
                                         in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
                                         detail) &&

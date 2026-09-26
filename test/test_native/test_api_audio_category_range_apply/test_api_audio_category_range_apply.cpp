@@ -117,7 +117,9 @@ void test_audioCategoryRangeApply_bank_out_of_range_rejected(void) {
     AudioCategoryRangeApplyResult result;
     audioCategoryRangeApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("bank must be 1-6", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("bank must be 1..6", result.error.message);
+    // The CHIRP binding's bank, by its declaration (include/config_settings.h).
+    TEST_ASSERT_EQUAL_STRING("1..6", result.error.refusal.accepts);
 }
 
 void test_audioCategoryRangeApply_invalid_page_rejected(void) {
@@ -132,6 +134,7 @@ void test_audioCategoryRangeApply_invalid_page_rejected(void) {
     audioCategoryRangeApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
     TEST_ASSERT_EQUAL_STRING("page must be a single letter A-Z", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("A..Z", result.error.refusal.accepts);
 }
 
 void test_audioCategoryRangeApply_non_integer_range_rejected(void) {
@@ -141,7 +144,9 @@ void test_audioCategoryRangeApply_non_integer_range_rejected(void) {
     AudioCategoryRangeApplyResult result;
     audioCategoryRangeApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("range values must be non-negative integers", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo must be 0..999", result.error.message);
+    // Named by the bound's own Setting, so a page can say which category.
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo", result.error.refusal.field);
 }
 
 void test_audioCategoryRangeApply_range_over_999_rejected(void) {
@@ -151,7 +156,8 @@ void test_audioCategoryRangeApply_range_over_999_rejected(void) {
     AudioCategoryRangeApplyResult result;
     audioCategoryRangeApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("range values must be 0-999", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo must be 0..999", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("0..999", result.error.refusal.accepts);
 }
 
 void test_audioCategoryRangeApply_lo_greater_than_hi_rejected(void) {

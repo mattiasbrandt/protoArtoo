@@ -206,38 +206,45 @@ class MemberKeys(unittest.TestCase):
     def category(self, member_key):
         return ["COMPONENT_CATEGORY_SOUND", '"sound"', '"Sound"', member_key]
 
-    def run_check(self, categories, serializer_text):
+    def run_check(self, categories, settings_text):
         with tempfile.TemporaryDirectory() as tmp:
-            serializer = write(tmp, "config_serializer.cpp", serializer_text)
+            settings = write(tmp, "config_settings.cpp", settings_text)
             errors: list[str] = []
-            drift.check_member_keys(categories, errors, serializer=serializer)
+            drift.check_member_keys(categories, errors, settings=settings)
         return errors
 
-    def test_a_key_both_read_and_written_passes(self):
+    @staticmethod
+    def settings(entries):
+        return "const ConfigSetting kConfigSettings[] = {\n" + entries + "\n};\n"
+
+    def test_the_key_of_a_member_setting_passes(self):
         errors = self.run_check(
             [self.category('"snd_member"')],
-            'r.readU8("snd_member", def.sound_member);\n'
-            'w.writeU8("snd_member", cfg.sound_member);\n',
+            self.settings('    PA_MEMBER("soundMember", "components.audio.member", "snd_member", '
+                          'System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
         )
         self.assertEqual([], errors)
 
-    def test_a_key_only_written_is_reported(self):
+    def test_a_key_no_member_setting_declares_is_reported(self):
         # Rename either half alone and the member silently stops surviving a
         # reboot, with nothing else failing.
         errors = self.run_check(
             [self.category('"snd_member"')],
-            'w.writeU8("snd_member", cfg.sound_member);\n',
+            self.settings('    PA_MEMBER("soundMember", "components.audio.member", "snd_membr", '
+                          'System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
         )
         self.assertEqual(1, len(errors), errors)
         self.assertIn("snd_member", errors[0])
-        self.assertIn("1 time(s)", errors[0])
 
-    def test_a_key_the_serializer_never_mentions_is_reported(self):
-        errors = self.run_check([self.category('"snd_member"')], "// nothing\n")
+    def test_the_key_of_a_setting_that_is_not_a_member_is_reported(self):
+        errors = self.run_check(
+            [self.category('"snd_member"')],
+            self.settings('    PA_BOOL("x", "a.b", "snd_member", System, SystemConfig, x, false),'),
+        )
         self.assertEqual(1, len(errors), errors)
 
     def test_a_family_with_no_member_setting_is_not_asked_for_one(self):
-        errors = self.run_check([self.category("nullptr")], "// nothing\n")
+        errors = self.run_check([self.category("nullptr")], self.settings(""))
         self.assertEqual([], errors)
 
 
@@ -266,7 +273,7 @@ class RealTree(unittest.TestCase):
         drift.check_board_capability_gates(self.parts, errors)
         self.assertEqual([], errors)
 
-    def test_every_declared_member_key_is_read_and_written(self):
+    def test_every_declared_member_key_is_a_member_settings_key(self):
         errors: list[str] = []
         drift.check_member_keys(self.categories, errors)
         self.assertEqual([], errors)
