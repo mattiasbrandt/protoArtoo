@@ -339,6 +339,8 @@
   //   values - the words its accepted tokens are said in, where they are wire
   //            vocabulary themselves
   //   clash  - what a conflict with the Settings beside it says
+  //   valueOnly - worded only when its value is refused; any other refusal
+  //            naming it keeps the droid's own sentence
   //   refused - what a refusal with nothing to accept says, where "was not
   //            saved" says too little: a part the droid does not list, an
   //            address that is not one
@@ -466,9 +468,9 @@
     full: { word: "Full-Awake mood's sound set" },
     awakeplus: { word: "Awake+ mood's sound set" },
     // A catalog binding's bank and page, beside a track.
-    bank: { word: "catalog bank" },
-    page: { word: "catalog page" },
-    index: { word: "catalog index" },
+    bank: { word: "catalog bank", valueOnly: true },
+    page: { word: "catalog page", valueOnly: true },
+    index: { word: "catalog index", valueOnly: true },
   });
 
   // An Output's Settings, by the row key the droid refuses them under
@@ -532,7 +534,7 @@
 
   /**
    * A settings refusal in the builder's words: what they changed, and what it
-   * takes - `Top speed must be 0 to 600`, `GPIO 49's time to full throw must be
+   * takes - `Maximum speed limit must be 0 to 600`, `GPIO 49's time to full throw must be
    * 20 to 10000 ms`. Read from the refusal's field, reason and accepts, never
    * from its sentence.
    *
@@ -541,9 +543,15 @@
    */
   const sayRefusal = (error) => {
     if (!(error instanceof Error)) return null;
+    // "The fitted module has no catalog" is not about any value, and its
+    // sentence carries no wire name: it is left as the droid said it.
+    if (error.reason === "not-in-this-build") return null;
     const setting = settingFor(error.field);
     if (!setting) return null;
     const { words, address } = setting;
+    // A part named only for its value: "bank and page must be provided
+    // together" is not a refusal of the bank the builder chose.
+    if (words.valueOnly && error.reason !== "out-of-range") return null;
     const owner = address ? outputName(address) || "This output" : null;
     const name = owner ? `${owner}'s ${words.word}` : capitalise(words.word);
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
