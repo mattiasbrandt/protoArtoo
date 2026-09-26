@@ -18,6 +18,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
 import { bootedDroid } from "./booted_droid.js";
+import { shippedWords } from "./shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
@@ -162,6 +163,8 @@ export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true
     PAAssetsReady: assetsReady,
     PAIdentity: { droidName: "artoo", mdnsUseName: false, board, board_capabilities: {}, build_flags: {} },
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
         if (path === "/api/config") return { ok: true, data: report("GET", path, config) };

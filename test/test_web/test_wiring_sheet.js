@@ -48,6 +48,7 @@ const identity = (lanes = LANES, capabilities = {}) => ({
 // The droid's Outputs, each its row (helpers/fake_droid.js, #415, ADR 0068).
 // Node loads the ES module helper from this CommonJS file directly.
 const { servoRow: output, freshOutputs, describe } = require("./helpers/fake_droid.js");
+const { shippedWords } = require("./helpers/shipped_words.cjs");
 
 // The Component Toggles the Board Lanes join on, all off, which is what an
 // unprovisioned controller carries (CONTEXT.md "Setup").
@@ -144,6 +145,8 @@ const boot = async ({
     },
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       get: async (path) => {
         env.gets.push(path);
         if (path === "/api/identity") return { data: env.manifest };

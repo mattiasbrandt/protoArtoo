@@ -251,6 +251,13 @@ the patch releases, whose notes live on their own GitHub Release.
   their own, so what you typed is what the droid judged. The log level takes
   `error`, `warning`, `info` or `debug` from any page or tool, and an ELRS
   receiver set on the droid stays ELRS after a reboot.
+- **A part that will not move, a capture that is not recorded, says why.** Move
+  a part on Parts to an output that is full, or record an end the droid will
+  not take, and the page names the part and the output: "Rear-left body door
+  did not move: ARM1 no longer drives it". Each component switch and each
+  sound is called one thing on every page - RC channel 1, Dome link, Short
+  Cantina - and a setting that waits for the next start or a restart says so
+  on every page that shows it.
 - **Every "no" tells you what to do about it.** When something on your droid
   will not run, the screen says which of four things is true and, where there is
   something to do, takes you there. Switched off names the switch and links to

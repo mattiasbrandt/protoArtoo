@@ -25,18 +25,23 @@
 // document and writes nothing. These plates are the one thing on that surface
 // that writes, and they write only through data/outputs.js.
 //
-// WHEN EACH VIEW'S ANSWER BITES differs, and each view says so in the one
-// timing vocabulary (data/apply_timing.js, #370). Whether an output is wired,
-// and which Outputs carry a light, are read once at start (ADR 0027,
-// src/tasks/aux_led.cpp); which servo an output carries lands on its Servo
-// Output row and bounds the very next move (configCommitApplied()).
+// WHEN EACH VIEW'S ANSWER BITES is its row Setting's timing, which the
+// firmware declares and the Setting's entry mirrors (data/web_api.js, #432),
+// said in the one timing vocabulary (data/apply_timing.js, #370). Whether an
+// output is wired is read once at start (ADR 0027); which servo an output
+// carries lands on its Servo Output row and bounds the very next move
+// (configCommitApplied()).
 // =============================================================================
 (() => {
   "use strict";
 
   const OUTPUTS = window.PAOutputs;
   const TIMING = window.PAApplyTiming;
-  const VIEW_TIMING = { wired: TIMING.AT_REBOOT, type: TIMING.IMMEDIATE };
+  // Each view's timing is its row Setting's, read off the entry (data/web_api.js).
+  const VIEW_TIMING = {
+    wired: window.PAApi.rowTimingOf("wired"),
+    type: window.PAApi.rowTimingOf("component"),
+  };
 
   const views = [];
   // What a builder has picked and the droid has not answered yet, by Output

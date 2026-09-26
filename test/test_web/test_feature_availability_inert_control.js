@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const makeElement = () => {
   const listeners = new Map();
@@ -101,6 +102,8 @@ const loadInteractiveSurfaces = ({ identity = null, failIdentity = false } = {})
 
   const windowMock = {
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       ApiError,
       get: (path) => call("GET", path),
       postForm: (path, body) => call("POST", path, body),

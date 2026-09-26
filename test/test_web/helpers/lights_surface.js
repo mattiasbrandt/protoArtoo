@@ -24,6 +24,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./mini_dom.js";
 import { servoRow, describe, applyRowSave, statusFrame } from "./fake_droid.js";
+import { shippedWords } from "./shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "../../..");
@@ -128,6 +129,8 @@ export const boot = ({ answer = droid() } = {}) => {
   const windowMock = {
     document: documentMock,
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
         if (path === "/api/config") return { ok: true, data: answer.config };

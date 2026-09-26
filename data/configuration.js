@@ -27,27 +27,53 @@ const BOARD_LABELS = {
 
 
 (() => {
-  const featureToggle = (id, name) => ({
-    name,
-    input: document.getElementById(`enable-${id}`),
-    status: document.getElementById(`status-${id}`),
-    available: true,
-    state: "off",
-  });
-  const featureToggles = {
-    domeEsc:     featureToggle("dome-esc", "Dome ESC"),
-    rcCh1:       featureToggle("rc-ch1", "RC Channel 1"),
-    rcCh2:       featureToggle("rc-ch2", "RC Channel 2"),
-    rcCh3:       featureToggle("rc-ch3", "RC Channel 3"),
-    rcCh4:       featureToggle("rc-ch4", "RC Channel 4"),
-    rcCh5:       featureToggle("rc-ch5", "RC Channel 5"),
-    rcCh6:       featureToggle("rc-ch6", "RC Channel 6"),
-    drive:       featureToggle("drive", "Foot Drive"),
-    // "Sound" on screen, `audio` in the key and the C++ symbol: display
-    // labels and web UI are on the sound side of the boundary
-    // (docs/action-registry.yaml).
-    audio:       featureToggle("audio", "Sound"),
-    protoR2link: featureToggle("protor2link", "protoR2link"),
+  const TIMING = window.PAApplyTiming;
+
+  // The Component Toggles, each by the form name the droid saves it under and
+  // the id its row's controls carry in configuration.html. That is all this
+  // page knows about one: its label and when it takes effect are its entry's
+  // in the one words table (data/web_api.js), and the key GET reports it under
+  // is its form name without "enable" (enableDomeEsc -> components.domeEsc), the
+  // droid's own rule (addActiveFields(), src/web/api_config.cpp).
+  const TOGGLE_ROWS = {
+    enableDomeEsc: "dome-esc",
+    enableRcCh1: "rc-ch1",
+    enableRcCh2: "rc-ch2",
+    enableRcCh3: "rc-ch3",
+    enableRcCh4: "rc-ch4",
+    enableRcCh5: "rc-ch5",
+    enableRcCh6: "rc-ch6",
+    enableDrive: "drive",
+    enableAudio: "audio",
+    enableProtoR2link: "protor2link",
+  };
+  const componentKey = (form) => form.charAt(6).toLowerCase() + form.slice(7);
+
+  // Keyed by the component key, which is how the droid lists what it started
+  // with (activeToggles).
+  const featureToggles = Object.fromEntries(Object.entries(TOGGLE_ROWS).map(([form, rowId]) => [
+    componentKey(form),
+    {
+      form,
+      // The id the row's label and badge carry: `enable_dome_esc`.
+      rowKey: `enable_${rowId.replace(/-/g, "_")}`,
+      // Read when drawn: the words table is PAApi's, which a page can load
+      // before (data/web_api.js).
+      get name() {
+        return window.PAApi.labelOf(form);
+      },
+      input: document.getElementById(`enable-${rowId}`),
+      status: document.getElementById(`status-${rowId}`),
+      available: true,
+      state: "off",
+    },
+  ]));
+
+  // Every label on this surface a Setting has, from its entry.
+  const paintSettingLabels = () => {
+    document.querySelectorAll("[data-setting-label]").forEach((element) => {
+      element.textContent = window.PAApi.labelOf(element.dataset.settingLabel);
+    });
   };
 
   const featureFeedback = document.getElementById("feature-feedback");
@@ -60,20 +86,6 @@ const BOARD_LABELS = {
   const identityActions = document.getElementById("identity-actions");
   const identityDiagnosis = document.getElementById("identity-diagnosis");
   const mdnsApplyTiming = document.getElementById("mdns-apply-timing");
-
-  // Map from API payload key to featureToggles key
-  const TOGGLE_KEY_MAP = {
-    enableDomeEsc:     "domeEsc",
-    enableRcCh1:       "rcCh1",
-    enableRcCh2:       "rcCh2",
-    enableRcCh3:       "rcCh3",
-    enableRcCh4:       "rcCh4",
-    enableRcCh5:       "rcCh5",
-    enableRcCh6:       "rcCh6",
-    enableDrive:       "drive",
-    enableAudio:       "audio",
-    enableProtoR2link: "protoR2link",
-  };
 
   let saveInFlight = false;
   let saveQueued = false;
@@ -98,10 +110,13 @@ const BOARD_LABELS = {
   // The hostname choice the droid started with, and the one saved since.
   let bootActiveMdnsUseName = null;
   let savedMdnsUseName = null;
-  const TIMING = window.PAApplyTiming;
   // Auto-save state
   let saveTimeout = null;
-  const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
+  // The toggles a change of which waits for a restart the builder makes: the
+  // RC channels, projected once at start into the settings the droid is driven
+  // on. Read off each toggle's timing, never listed.
+  const rcToggleKeys = () => new Set(Object.keys(featureToggles).filter(
+    (key) => window.PAApi.timingOf(featureToggles[key].form) === TIMING.RESTART_REQUIRED));
 
   // The save state, as a pill beside the feedback line it belongs to. The four
   // outcome classes are the anatomy's own: green it saved, amber there is
@@ -442,27 +457,14 @@ const BOARD_LABELS = {
     lastSaved = payload || null;
     if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
 
-    const togglePayload = {
-      enableDomeEsc: components.domeEsc?.enabled,
-      enableRcCh1: components.rcCh1?.enabled,
-      enableRcCh2: components.rcCh2?.enabled,
-      enableRcCh3: components.rcCh3?.enabled,
-      enableRcCh4: components.rcCh4?.enabled,
-      enableRcCh5: components.rcCh5?.enabled,
-      enableRcCh6: components.rcCh6?.enabled,
-      enableDrive: components.drive?.enabled,
-      enableAudio: components.audio?.enabled,
-      enableProtoR2link: components.protoR2link?.enabled,
-    };
-
-    Object.entries(TOGGLE_KEY_MAP).forEach(([payloadKey, toggleKey]) => {
-      const toggle = featureToggles[toggleKey];
-      if (!toggle || !toggle.input || togglePayload[payloadKey] === undefined) return;
+    Object.entries(featureToggles).forEach(([key, toggle]) => {
+      const enabled = components[key]?.enabled;
+      if (!toggle.input || enabled === undefined) return;
       // Do not sync RC toggles after initial load — they are boot-staged and user edits
       // are pending. Syncing them would overwrite pending changes and lose restart tracking.
-      if (!isInitialLoad && RC_TOGGLE_KEYS.has(toggleKey)) return;
-      toggle.input.checked = Boolean(togglePayload[payloadKey]);
-      updateToggleStatus(toggleKey);
+      if (!isInitialLoad && rcToggleKeys().has(key)) return;
+      toggle.input.checked = Boolean(enabled);
+      updateToggleStatus(key);
     });
     // A payload with no RC edit of this page's still on its way says, on its
     // own, whether the droid owes a restart - which is what a page opened after
@@ -470,53 +472,27 @@ const BOARD_LABELS = {
     // save that carries the edit (saveFeatures below).
     if (rcChangeGeneration === savedRcChangeGeneration) rcRestartPending = checkIfRcRestartNeeded();
 
-    // Populate component labels (badges and descriptions) from the config response.
-    // Maps API keys to internal component names used for ID lookups.
-    const apiKeyToComponentName = {
-      drive: "enable_drive",
-      audio: "enable_audio",
-      protoR2link: "enable_protor2link",
-      domeEsc: "enable_dome_esc",
-      rcCh1: "enable_rc_ch1",
-      rcCh2: "enable_rc_ch2",
-      rcCh3: "enable_rc_ch3",
-      rcCh4: "enable_rc_ch4",
-      rcCh5: "enable_rc_ch5",
-      rcCh6: "enable_rc_ch6",
-    };
-
-    const componentLabels = {
-      drive: components.drive?.label,
-      audio: components.audio?.label,
-      protoR2link: components.protoR2link?.label,
-      domeEsc: components.domeEsc?.label,
-      rcCh1: components.rcCh1?.label,
-      rcCh2: components.rcCh2?.label,
-      rcCh3: components.rcCh3?.label,
-      rcCh4: components.rcCh4?.label,
-      rcCh5: components.rcCh5?.label,
-      rcCh6: components.rcCh6?.label,
-    };
-
-    Object.entries(componentLabels).forEach(([apiKey, label]) => {
-      const componentName = apiKeyToComponentName[apiKey];
-      if (!componentName) return;
+    // The Board Component Label beside each toggle: what the running board
+    // prints beside the header it is wired to (ADR 0065), served by the droid,
+    // shown next to the Setting's own label.
+    Object.entries(featureToggles).forEach(([key, toggle]) => {
+      const label = components[key]?.label;
 
       // Update badge: show the label if it exists, hide if it doesn't
-      const badge = document.getElementById(`badge-${componentName}`);
+      const badge = document.getElementById(`badge-${toggle.rowKey}`);
       if (badge) {
         badge.textContent = label || "";
       }
 
       // Update description label element: populate the <strong> tag with the label.
       // If no label exists, remove the entire label-desc span so the description reads correctly.
-      const labelElem = document.getElementById(`label-${componentName}`);
+      const labelElem = document.getElementById(`label-${toggle.rowKey}`);
       if (labelElem) {
         if (label) {
           labelElem.textContent = label;
         } else {
           // No label: remove the entire trailing sentence span
-          const labelDescSpan = document.getElementById(`label-desc-${componentName}`);
+          const labelDescSpan = document.getElementById(`label-desc-${toggle.rowKey}`);
           if (labelDescSpan) {
             // Use parentNode.removeChild for compatibility with test mocks
             const note = labelDescSpan.parentNode;
@@ -557,7 +533,7 @@ const BOARD_LABELS = {
     // If the operator has changed an RC toggle away from boot-active, restart is needed.
     // If they've reverted it back to boot-active, no restart is needed.
     if (bootActiveRcMode && savedRcMode && savedRcMode !== bootActiveRcMode) return true;
-    for (const key of RC_TOGGLE_KEYS) {
+    for (const key of rcToggleKeys()) {
       const toggle = featureToggles[key];
       if (!toggle || !toggle.input) continue;
       const currentValue = Boolean(toggle.input.checked);
@@ -595,20 +571,42 @@ const BOARD_LABELS = {
   };
   const isPending = (stepKey) => Boolean(WAITING[stepKey]?.());
 
+  // The Settings each step host on this surface writes, so when its change
+  // takes effect is read off their entries (data/web_api.js) - the latest of
+  // them - and never typed here. The radio's step writes its receiver and its
+  // channel ticks beside the radio itself.
+  const STEP_SETTINGS = {
+    // The Droid Build is a Record: its fields' entries say when they bite.
+    build: ["domeDesign", "domeVariant", "bodyDesign", "bodyVariant", "fittedParts"],
+    drive: ["enableDrive"],
+    domerot: ["enableDomeEsc"],
+    domectl: ["enableProtoR2link"],
+    sound: ["enableAudio", "soundMember"],
+    get rc() {
+      return ["rcMember", "rcInputMode", ...[...rcToggleKeys()].map((key) => featureToggles[key].form)];
+    },
+  };
+  // When a step's change takes effect. The network is the one step whose
+  // answer is not a declared Setting: Device WiFi Settings are saved on WiFi
+  // through their own door and joined at the next start, as a Staged Network
+  // Switch (ADR 0015).
+  const stepTiming = (stepKey) => (stepKey === "wifi"
+    ? TIMING.AT_REBOOT
+    : TIMING.latest(...STEP_SETTINGS[stepKey].map(window.PAApi.timingOf)));
+
   // The latest timing any waiting change on this page is held to: what a save
   // line and the save pill say.
-  const waitingTiming = () => {
-    if (rcRestartPending) return TIMING.RESTART_REQUIRED;
-    const stagedWaiting = Object.keys(WAITING).some((stepKey) => stepKey !== "rc" && isPending(stepKey));
-    return stagedWaiting ? TIMING.AT_REBOOT : TIMING.IMMEDIATE;
-  };
+  const waitingTiming = () => TIMING.latest(TIMING.IMMEDIATE,
+    ...Object.keys(WAITING).filter(isPending).map(stepTiming));
 
   const timingListeners = new Set();
   const notifyTimingChange = () => timingListeners.forEach((listener) => listener());
 
   // The one row on this surface that is not a guided step: the hostname is
   // read once when mDNS starts with the network (src/web/web_server.cpp),
-  // where the name beside it is read live.
+  // where the name beside it is read live. The identity is saved through its
+  // own door (POST /api/identity), not as a declared Setting, so its timing is
+  // stated here.
   const paintRowTimings = () => {
     TIMING.paint(mdnsApplyTiming, TIMING.AT_REBOOT, {
       pending: bootActiveMdnsUseName !== null && savedMdnsUseName !== bootActiveMdnsUseName,
@@ -617,6 +615,7 @@ const BOARD_LABELS = {
 
   const loadFeatures = async () => {
     if (!window.PAApi) return;
+    paintSettingLabels();
     setFeatureFeedback("Loading component settings...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
@@ -646,10 +645,9 @@ const BOARD_LABELS = {
     setFeatureFeedback("Saving...");
     try {
       const body = new URLSearchParams();
-      Object.entries(featureToggles).forEach(([key, toggle]) => {
+      Object.values(featureToggles).forEach((toggle) => {
         if (toggle.input && toggle.available) {
-          const paramKey = "enable" + key.charAt(0).toUpperCase() + key.slice(1);
-          body.set(paramKey, toggle.input.checked ? "true" : "false");
+          body.set(toggle.form, toggle.input.checked ? "true" : "false");
         }
       });
       Object.entries(pendingPickParams).forEach(([field, value]) => body.set(field, value));
@@ -736,7 +734,7 @@ const BOARD_LABELS = {
     timingListeners.add(listener);
     return () => timingListeners.delete(listener);
   };
-  window.PAConfiguration = { applyComponentPick, isPending, onChange };
+  window.PAConfiguration = { applyComponentPick, isPending, onChange, stepTiming };
 
   // Attach listeners to all toggles and selects
   Object.keys(featureToggles).forEach((key) => {
@@ -746,7 +744,7 @@ const BOARD_LABELS = {
         updateToggleStatus(key);
         if (!toggle.available) return;
         featureEditGeneration += 1;
-        if (RC_TOGGLE_KEYS.has(key)) {
+        if (rcToggleKeys().has(key)) {
           rcChangeGeneration += 1;
         }
         updateEnabledSummary();

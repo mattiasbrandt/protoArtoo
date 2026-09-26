@@ -23,6 +23,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { shippedWords } = require("./helpers/shipped_words.cjs");
 
 const root = path.resolve(__dirname, "../..");
 const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
@@ -157,6 +158,8 @@ function newPage(config, domeResponse) {
   const sandbox = {
     PAAssetsReady: true,
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       get: respond,
       postForm: () => Promise.resolve({ ok: true, data: {} }),
       postJson: () => Promise.resolve({ ok: true, data: {} }),
