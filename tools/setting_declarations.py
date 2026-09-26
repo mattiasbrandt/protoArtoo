@@ -31,9 +31,11 @@ _DROID = re.compile(
     r'(?P<path>nullptr|"[\w.]+"),\s*"(?P<key>\w+)",'
 )
 _BRACE_RULE = re.compile(r"SettingRule::(\w+)")
-# An audio Setting opens as one of the audio helpers, `PA_TRACK("scream", ...`,
-# its first argument the name its door takes it under.
-_AUDIO = re.compile(r'PA_[A-Z_]+\(\s*"(?P<name>\w+)"')
+# An audio Setting opens as one of the audio helpers, `PA_TRACK("scream",
+# "snd_scream", ...`: the name its door takes it under, then its NVS key.
+# PA_INTERVAL's interval is stored under its own name, so it has no second
+# string.
+_AUDIO = re.compile(r'PA_[A-Z_]+\(\s*"(?P<name>\w+)"(?:\s*,\s*"(?P<key>\w+)")?')
 # An Output row Setting opens as `{"key", RowSettingStore::...`.
 _ROW = re.compile(r'\{\s*"(?P<key>\w+)",\s*RowSettingStore::(?P<store>\w+)')
 
@@ -92,8 +94,15 @@ def row_settings(source: Path | None = None) -> list[RowSetting]:
     return [RowSetting(key=m.group("key"), store=m.group("store")) for m in _ROW.finditer(body)]
 
 
-def audio_settings(source: Path | None = None) -> list[str]:
-    """The name each audio Setting is declared under, in table order."""
+@dataclass(frozen=True)
+class AudioSetting:
+    name: str
+    nvs_key: str
+
+
+def audio_settings(source: Path | None = None) -> list[AudioSetting]:
+    """Each audio Setting's name and NVS key, in table order."""
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kAudioSettings")
-    return [m.group("name") for m in _AUDIO.finditer(body)]
+    return [AudioSetting(name=m.group("name"), nvs_key=m.group("key") or m.group("name"))
+            for m in _AUDIO.finditer(body)]

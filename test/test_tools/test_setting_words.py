@@ -89,6 +89,31 @@ class Check(unittest.TestCase):
         self.assertIn("throwMs", errors[0])
 
 
+    def test_a_key_past_fifteen_characters_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Path(tmp) / "config_settings.cpp"
+            settings.write_text(SETTINGS.replace('"snd_scream"', '"snd_scream_longer"'))
+            api = Path(tmp) / "web_api.js"
+            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
+                                   '    scream: { word: "s" },', '    throwMs: { word: "t" },'))
+            errors: list[str] = []
+            words.check(errors, settings=settings, web_api=api)
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("17 characters", errors[0])
+
+    def test_a_key_declared_twice_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Path(tmp) / "config_settings.cpp"
+            settings.write_text(SETTINGS.replace('"snd_scream"', '"spd_max"'))
+            api = Path(tmp) / "web_api.js"
+            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
+                                   '    scream: { word: "s" },', '    throwMs: { word: "t" },'))
+            errors: list[str] = []
+            words.check(errors, settings=settings, web_api=api)
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("both declare", errors[0])
+
+
 class RealTree(unittest.TestCase):
     def test_every_declared_setting_has_words(self):
         errors: list[str] = []

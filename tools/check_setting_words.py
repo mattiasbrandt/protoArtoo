@@ -15,6 +15,11 @@ ADR 0059 forbids - so this fails instead:
 3. every audio Setting has an entry under the name its door takes it under
    (`scream`, `snd_int_quiet`, `volume`), in `SETTING_WORDS` beside the droid's.
 
+And, because the words check is the one place every declaration is read and
+the Preferences double in the native tests enforces neither: no NVS key is
+declared twice, and none runs past the 15 characters an ESP-IDF key may have.
+A longer key is refused by NVS on a droid and nowhere else.
+
 An Output's wired tick has no GET path of its own - it travels on the row as
 `wired` - so it is covered by rule 2, not 1.
 
@@ -33,6 +38,8 @@ import setting_declarations  # tools/, beside this script
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_API = ROOT / "data" / "web_api.js"
+# ESP-IDF NVS keys are at most 15 characters (NVS_KEY_NAME_MAX_SIZE - 1).
+NVS_KEY_MAX_LEN = 15
 
 
 def _object_body(text: str, name: str) -> str:
@@ -95,7 +102,18 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
                 f"{setting.form}'s words name its GET path as "
                 f"{path.group(1) if path else 'nothing'}, but the firmware reads it at {setting.path}"
             )
-    for name in setting_declarations.audio_settings(settings):
+    audio = setting_declarations.audio_settings(settings)
+    keys = [(d.form, d.nvs_key) for d in setting_declarations.droid_settings(settings)]
+    keys += [(a.name, a.nvs_key) for a in audio]
+    seen: dict[str, str] = {}
+    for name, key in keys:
+        if len(key) > NVS_KEY_MAX_LEN:
+            errors.append(f"{name}'s NVS key {key!r} is {len(key)} characters; "
+                          f"NVS keys are at most {NVS_KEY_MAX_LEN}")
+        if key in seen:
+            errors.append(f"{name} and {seen[key]} both declare the NVS key {key!r}")
+        seen.setdefault(key, name)
+    for name in (a.name for a in audio):
         if name not in droid:
             errors.append(
                 f"{name} is a declared audio Setting with no words in SETTING_WORDS "
