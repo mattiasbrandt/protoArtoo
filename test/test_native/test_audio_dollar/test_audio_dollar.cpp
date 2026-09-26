@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unity.h>
 
+#include "config_settings.h"  // audioSettingByName() - each track key's declaration
 #include "audio_dollar_parser.h"
 
 void setUp() {}
@@ -223,147 +224,157 @@ void test_disco_zero_track_is_suppressed() {
 }
 
 // -----------------------------------------------------------------------------
-// audioTrackNvsKey() — API key → NVS key mapping
+// Each track key's NVS key, as its audio Setting declares it
+// (src/config_settings.cpp) - the one home since a hand-written map
+// (nvsKeyOf()) was removed (#431). A key that moved would strand every
+// stored track on a controller in the field.
 // -----------------------------------------------------------------------------
 
+// The NVS key the tracks door's Setting of that name is stored under, or
+// nullptr for a name no such Setting has.
+static const char* nvsKeyOf(const char* name) {
+    const ConfigSetting* setting = audioSettingByName(name, SettingDoor::AudioTracks);
+    return setting != nullptr ? setting->nvsKey : nullptr;
+}
+
 void test_nvs_key_scream() {
-    TEST_ASSERT_EQUAL_STRING("snd_scream", audioTrackNvsKey("scream"));
+    TEST_ASSERT_EQUAL_STRING("snd_scream", nvsKeyOf("scream"));
 }
 void test_nvs_key_faint() {
-    TEST_ASSERT_EQUAL_STRING("snd_faint", audioTrackNvsKey("faint"));
+    TEST_ASSERT_EQUAL_STRING("snd_faint", nvsKeyOf("faint"));
 }
 void test_nvs_key_leia() {
-    TEST_ASSERT_EQUAL_STRING("snd_leia", audioTrackNvsKey("leia"));
+    TEST_ASSERT_EQUAL_STRING("snd_leia", nvsKeyOf("leia"));
 }
 void test_nvs_key_cantina_s() {
-    TEST_ASSERT_EQUAL_STRING("snd_cantina_s", audioTrackNvsKey("cantina_s"));
+    TEST_ASSERT_EQUAL_STRING("snd_cantina_s", nvsKeyOf("cantina_s"));
 }
 void test_nvs_key_sw_theme() {
-    TEST_ASSERT_EQUAL_STRING("snd_sw", audioTrackNvsKey("sw_theme"));
+    TEST_ASSERT_EQUAL_STRING("snd_sw", nvsKeyOf("sw_theme"));
 }
 void test_nvs_key_imp_march() {
-    TEST_ASSERT_EQUAL_STRING("snd_march", audioTrackNvsKey("imp_march"));
+    TEST_ASSERT_EQUAL_STRING("snd_march", nvsKeyOf("imp_march"));
 }
 void test_nvs_key_cantina_l() {
-    TEST_ASSERT_EQUAL_STRING("snd_cantina_l", audioTrackNvsKey("cantina_l"));
+    TEST_ASSERT_EQUAL_STRING("snd_cantina_l", nvsKeyOf("cantina_l"));
 }
 void test_nvs_key_startup() {
-    TEST_ASSERT_EQUAL_STRING("snd_startup", audioTrackNvsKey("startup"));
+    TEST_ASSERT_EQUAL_STRING("snd_startup", nvsKeyOf("startup"));
 }
 void test_nvs_key_rand_min() {
-    TEST_ASSERT_EQUAL_STRING("snd_rand_min", audioTrackNvsKey("rand_min"));
+    TEST_ASSERT_EQUAL_STRING("snd_rand_min", nvsKeyOf("rand_min"));
 }
 void test_nvs_key_rand_max() {
-    TEST_ASSERT_EQUAL_STRING("snd_rand_max", audioTrackNvsKey("rand_max"));
+    TEST_ASSERT_EQUAL_STRING("snd_rand_max", nvsKeyOf("rand_max"));
 }
 void test_nvs_key_snd_int_quiet() {
-    TEST_ASSERT_EQUAL_STRING("snd_int_quiet", audioTrackNvsKey("snd_int_quiet"));
+    TEST_ASSERT_EQUAL_STRING("snd_int_quiet", nvsKeyOf("snd_int_quiet"));
 }
 void test_nvs_key_snd_int_mid() {
-    TEST_ASSERT_EQUAL_STRING("snd_int_mid", audioTrackNvsKey("snd_int_mid"));
+    TEST_ASSERT_EQUAL_STRING("snd_int_mid", nvsKeyOf("snd_int_mid"));
 }
 void test_nvs_key_snd_int_full() {
-    TEST_ASSERT_EQUAL_STRING("snd_int_full", audioTrackNvsKey("snd_int_full"));
+    TEST_ASSERT_EQUAL_STRING("snd_int_full", nvsKeyOf("snd_int_full"));
 }
 void test_nvs_key_snd_int_awake() {
-    TEST_ASSERT_EQUAL_STRING("snd_int_awake", audioTrackNvsKey("snd_int_awake"));
+    TEST_ASSERT_EQUAL_STRING("snd_int_awake", nvsKeyOf("snd_int_awake"));
 }
 void test_nvs_key_doodoo() {
-    TEST_ASSERT_EQUAL_STRING("snd_doodoo", audioTrackNvsKey("doodoo"));
+    TEST_ASSERT_EQUAL_STRING("snd_doodoo", nvsKeyOf("doodoo"));
 }
 void test_nvs_key_failure() {
-    TEST_ASSERT_EQUAL_STRING("snd_failure", audioTrackNvsKey("failure"));
+    TEST_ASSERT_EQUAL_STRING("snd_failure", nvsKeyOf("failure"));
 }
 void test_nvs_key_disco() {
-    TEST_ASSERT_EQUAL_STRING("snd_disco", audioTrackNvsKey("disco"));
+    TEST_ASSERT_EQUAL_STRING("snd_disco", nvsKeyOf("disco"));
 }
 void test_nvs_key_mahna() {
-    TEST_ASSERT_EQUAL_STRING("snd_mahna", audioTrackNvsKey("mahna"));
+    TEST_ASSERT_EQUAL_STRING("snd_mahna", nvsKeyOf("mahna"));
 }
 void test_nvs_key_inlove() {
-    TEST_ASSERT_EQUAL_STRING("snd_inlove", audioTrackNvsKey("inlove"));
+    TEST_ASSERT_EQUAL_STRING("snd_inlove", nvsKeyOf("inlove"));
 }
 void test_nvs_key_macho() {
-    TEST_ASSERT_EQUAL_STRING("snd_macho", audioTrackNvsKey("macho"));
+    TEST_ASSERT_EQUAL_STRING("snd_macho", nvsKeyOf("macho"));
 }
 void test_nvs_key_gangnam() {
-    TEST_ASSERT_EQUAL_STRING("snd_gangnam", audioTrackNvsKey("gangnam"));
+    TEST_ASSERT_EQUAL_STRING("snd_gangnam", nvsKeyOf("gangnam"));
 }
 void test_nvs_key_uptown() {
-    TEST_ASSERT_EQUAL_STRING("snd_uptown", audioTrackNvsKey("uptown"));
+    TEST_ASSERT_EQUAL_STRING("snd_uptown", nvsKeyOf("uptown"));
 }
 void test_nvs_key_celebr() {
-    TEST_ASSERT_EQUAL_STRING("snd_celebr", audioTrackNvsKey("celebr"));
+    TEST_ASSERT_EQUAL_STRING("snd_celebr", nvsKeyOf("celebr"));
 }
 void test_nvs_key_stayin() {
-    TEST_ASSERT_EQUAL_STRING("snd_stayin", audioTrackNvsKey("stayin"));
+    TEST_ASSERT_EQUAL_STRING("snd_stayin", nvsKeyOf("stayin"));
 }
 void test_nvs_key_harlem() {
-    TEST_ASSERT_EQUAL_STRING("snd_harlem", audioTrackNvsKey("harlem"));
+    TEST_ASSERT_EQUAL_STRING("snd_harlem", nvsKeyOf("harlem"));
 }
 void test_nvs_key_pbjtime() {
-    TEST_ASSERT_EQUAL_STRING("snd_pbjtime", audioTrackNvsKey("pbjtime"));
+    TEST_ASSERT_EQUAL_STRING("snd_pbjtime", nvsKeyOf("pbjtime"));
 }
 void test_nvs_key_sys_boot() {
-    TEST_ASSERT_EQUAL_STRING("snd_sys_boot", audioTrackNvsKey("sys_boot"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_boot", nvsKeyOf("sys_boot"));
 }
 void test_nvs_key_sys_mode_n() {
-    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_n", audioTrackNvsKey("sys_mode_n"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_n", nvsKeyOf("sys_mode_n"));
 }
 void test_nvs_key_sys_mode_s() {
-    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_s", audioTrackNvsKey("sys_mode_s"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_s", nvsKeyOf("sys_mode_s"));
 }
 void test_nvs_key_sys_mode_t() {
-    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_t", audioTrackNvsKey("sys_mode_t"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_t", nvsKeyOf("sys_mode_t"));
 }
 void test_nvs_key_sys_drv_on() {
-    TEST_ASSERT_EQUAL_STRING("snd_sys_drv_on", audioTrackNvsKey("sys_drv_on"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_drv_on", nvsKeyOf("sys_drv_on"));
 }
 void test_nvs_key_sys_dome_on() {
-    TEST_ASSERT_EQUAL_STRING("snd_sys_dome_on", audioTrackNvsKey("sys_dome_on"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_dome_on", nvsKeyOf("sys_dome_on"));
 }
 void test_nvs_key_sys_net_down() {
     // "snd_sys_netdown" (no underscore before "down") is exactly 15 chars --
     // the ESP-IDF Preferences key length ceiling (#189).
-    TEST_ASSERT_EQUAL_STRING("snd_sys_netdown", audioTrackNvsKey("sys_net_down"));
+    TEST_ASSERT_EQUAL_STRING("snd_sys_netdown", nvsKeyOf("sys_net_down"));
 }
 
 
 void test_nvs_key_sound_categories() {
-    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo", audioTrackNvsKey("snd_cat_gen_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_hi", audioTrackNvsKey("snd_cat_gen_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_lo", audioTrackNvsKey("snd_cat_chat_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_hi", audioTrackNvsKey("snd_cat_chat_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_lo", audioTrackNvsKey("snd_cat_hap_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_hi", audioTrackNvsKey("snd_cat_hap_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_lo", audioTrackNvsKey("snd_cat_proc_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_hi", audioTrackNvsKey("snd_cat_proc_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_lo", audioTrackNvsKey("snd_cat_sad_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_hi", audioTrackNvsKey("snd_cat_sad_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_lo", audioTrackNvsKey("snd_cat_sent_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_hi", audioTrackNvsKey("snd_cat_sent_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_lo", audioTrackNvsKey("snd_cat_hum_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_hi", audioTrackNvsKey("snd_cat_hum_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_lo", audioTrackNvsKey("snd_cat_scrm_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_hi", audioTrackNvsKey("snd_cat_scrm_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_lo", audioTrackNvsKey("snd_cat_ooh_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_hi", audioTrackNvsKey("snd_cat_ooh_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_lo", audioTrackNvsKey("snd_cat_alrm_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_hi", audioTrackNvsKey("snd_cat_alrm_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_lo", audioTrackNvsKey("snd_cat_snrk_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_hi", audioTrackNvsKey("snd_cat_snrk_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_lo", audioTrackNvsKey("snd_cat_whis_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_hi", audioTrackNvsKey("snd_cat_whis_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo", nvsKeyOf("snd_cat_gen_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_hi", nvsKeyOf("snd_cat_gen_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_lo", nvsKeyOf("snd_cat_chat_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_hi", nvsKeyOf("snd_cat_chat_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_lo", nvsKeyOf("snd_cat_hap_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_hi", nvsKeyOf("snd_cat_hap_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_lo", nvsKeyOf("snd_cat_proc_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_hi", nvsKeyOf("snd_cat_proc_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_lo", nvsKeyOf("snd_cat_sad_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_hi", nvsKeyOf("snd_cat_sad_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_lo", nvsKeyOf("snd_cat_sent_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_hi", nvsKeyOf("snd_cat_sent_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_lo", nvsKeyOf("snd_cat_hum_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_hi", nvsKeyOf("snd_cat_hum_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_lo", nvsKeyOf("snd_cat_scrm_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_hi", nvsKeyOf("snd_cat_scrm_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_lo", nvsKeyOf("snd_cat_ooh_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_hi", nvsKeyOf("snd_cat_ooh_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_lo", nvsKeyOf("snd_cat_alrm_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_hi", nvsKeyOf("snd_cat_alrm_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_lo", nvsKeyOf("snd_cat_snrk_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_hi", nvsKeyOf("snd_cat_snrk_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_lo", nvsKeyOf("snd_cat_whis_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_hi", nvsKeyOf("snd_cat_whis_hi"));
 }
 
 void test_nvs_key_unknown_returns_null() {
-    TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
+    TEST_ASSERT_NULL(nvsKeyOf("bogus"));
 }
 void test_nvs_key_null_returns_null() {
-    TEST_ASSERT_NULL(audioTrackNvsKey(nullptr));
+    TEST_ASSERT_NULL(nvsKeyOf(nullptr));
 }
 void test_nvs_key_empty_returns_null() {
-    TEST_ASSERT_NULL(audioTrackNvsKey(""));
+    TEST_ASSERT_NULL(nvsKeyOf(""));
 }
 void test_nvs_keys_are_15_chars_or_less() {
     // NVS key length limit is 15 chars (ESP-IDF constraint)
@@ -382,7 +393,7 @@ void test_nvs_keys_are_15_chars_or_less() {
         "rand_min","rand_max","snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
-        const char* nvsKey = audioTrackNvsKey(keys[i]);
+        const char* nvsKey = nvsKeyOf(keys[i]);
         TEST_ASSERT_NOT_NULL(nvsKey);
         TEST_ASSERT_TRUE_MESSAGE(strlen(nvsKey) <= 15,
             "NVS key exceeds 15-char ESP-IDF limit");
@@ -435,7 +446,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_disco_plays_custom_named_track);
     RUN_TEST(test_disco_zero_track_is_suppressed);
 
-    // audioTrackNvsKey
+    // Each track key's declared NVS key
     RUN_TEST(test_nvs_key_scream);
     RUN_TEST(test_nvs_key_faint);
     RUN_TEST(test_nvs_key_leia);
