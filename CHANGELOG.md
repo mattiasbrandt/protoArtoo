@@ -244,6 +244,13 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **A value the droid will not take is said in your words.** Save a setting
+  it refuses - on Foot Drive, Dome, Servos or a restored backup - and the page
+  says which setting, and what it takes: "Neutral pulse must be 1000 to 2000
+  µs". The pages no longer quietly move a number you typed into a range of
+  their own, so what you typed is what the droid judged. The log level takes
+  `error`, `warning`, `info` or `debug` from any page or tool, and an ELRS
+  receiver set on the droid stays ELRS after a reboot.
 - **Every "no" tells you what to do about it.** When something on your droid
   will not run, the screen says which of four things is true and, where there is
   something to do, takes you there. Switched off names the switch and links to
