@@ -749,6 +749,11 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
                 }
             }
         }
+        // Two stored presets can clash while the request sent only the third:
+        // the refusal still names what the request sent.
+        if (clashing == nullptr) {
+            clashing = firstSent(params, kPresets, sizeof(kPresets) / sizeof(kPresets[0]));
+        }
         setError(result, "speed presets must be distinct values", ApplyRefusalReason::Conflict,
                  clashing);
         return;

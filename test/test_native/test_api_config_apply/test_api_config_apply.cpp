@@ -752,6 +752,20 @@ void test_configApply_a_preset_clash_names_a_preset_that_clashes(void) {
     TEST_ASSERT_EQUAL_STRING("speedPresetNormal", result.error.refusal.field);
 }
 
+// Two stored presets that clash, and a request that sends only the third: the
+// refusal still names a field the request sent, never none.
+void test_configApply_a_stored_preset_clash_names_the_preset_sent(void) {
+    std::map<std::string, std::string> m = {{"speedPresetSlow", "100"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.drive.speedPresetNormal = 400;
+    snap.drive.speedPresetTurbo = 400;
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL(ApplyRefusalReason::Conflict, result.error.refusal.reason);
+    TEST_ASSERT_EQUAL_STRING("speedPresetSlow", result.error.refusal.field);
+}
+
 // --- the dome ESC pulse set is judged as a set (#417) ---
 //
 // Each width passing 1000..2000 on its own is not enough: out of order, speed 0
@@ -854,5 +868,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_an_out_of_order_dome_pulse_set_is_refused);
     RUN_TEST(test_configApply_a_shortest_pause_above_the_longest_is_refused);
     RUN_TEST(test_configApply_a_preset_clash_names_a_preset_that_clashes);
+    RUN_TEST(test_configApply_a_stored_preset_clash_names_the_preset_sent);
     return UNITY_END();
 }
