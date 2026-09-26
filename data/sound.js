@@ -229,7 +229,6 @@
   const feedbackTimers = new WeakMap();
   const MSG = {
     categoryRangeInvalid: "Use 0/0 or 1–999 with Min ≤ Max",
-    valuesMustBe1To999: "Values must be 1–999",
     minMustBeLeMax: "Min must be ≤ Max",
     saveFailed: "Save failed",
     saved: "Saved",
@@ -1833,11 +1832,14 @@
     return { markSaved, update };
   };
 
-  const createNumberInput = ({ id, min, max, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
+  // A Setting's input carries no range of its own: the droid holds it, and a
+  // value it will not take comes back as a refusal messageFor() words (ADR
+  // 0068, amended 2026-09-26). min and max are for inputs that are not one.
+  const createNumberInput = ({ id, min = null, max = null, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
     const input = document.createElement("input");
     input.type = "number";
-    input.min = String(min);
-    input.max = String(max);
+    if (min !== null) input.min = String(min);
+    if (max !== null) input.max = String(max);
     input.className = className;
     if (id) input.id = id;
     if (datasetKey) input.dataset.key = datasetKey;
@@ -1879,11 +1881,8 @@
       let dirtyTracker = null;
 
       if (sound.editable && sound.key) {
-        const minTrack = sound.trackMin ?? 1;
         rowInput = createNumberInput({
           id: `track-input-${sound.key}`,
-          min: minTrack,
-          max: TRACK_MAX,
           className: "sound-track-input-sm",
           ariaLabel: `${sound.label} track number`,
           datasetKey: sound.key,
@@ -1905,12 +1904,7 @@
           ariaLabel: `Save ${sound.label} track number`,
           className: "btn sound-btn-compact",
           onClick: async () => {
-            const value = Number.parseInt(rowInput.value, 10);
-            if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
-              showFeedback(rowFeedback, MSG.trackRange(minTrack, TRACK_MAX), false);
-              return;
-            }
-            const ok = await postTrack(sound.key, value, rowFeedback);
+            const ok = await postTrack(sound.key, rowInput.value.trim(), rowFeedback);
             if (ok) dirtyTracker?.markSaved();
           },
         });
@@ -1992,8 +1986,6 @@
       const tdMin = document.createElement("td");
       const minInput = createNumberInput({
         id: `cat-min-${category.loKey}`,
-        min: 0,
-        max: TRACK_MAX,
         value: 0,
         className: "sound-track-input-sm",
         ariaLabel: `${category.label} minimum track`,
@@ -2003,8 +1995,6 @@
       const tdMax = document.createElement("td");
       const maxInput = createNumberInput({
         id: `cat-max-${category.hiKey}`,
-        min: 0,
-        max: TRACK_MAX,
         value: 0,
         className: "sound-track-input-sm",
         ariaLabel: `${category.label} maximum track`,
@@ -2023,17 +2013,12 @@
         ariaLabel: `Save ${category.label} range`,
         className: "btn sound-btn-compact",
         onClick: async () => {
-          const minVal = Number.parseInt(minInput.value, 10);
-          const maxVal = Number.parseInt(maxInput.value, 10);
-          if (!isCategoryRangeValid(minVal, maxVal)) {
-            showFeedback(rowFeedback, MSG.categoryRangeInvalid, false);
-            return;
-          }
+          // As typed: the droid judges each bound and the pair.
           const ok = await postCategoryRange(
             category.loKey,
             category.hiKey,
-            minVal,
-            maxVal,
+            minInput.value.trim(),
+            maxInput.value.trim(),
             rowFeedback
           );
           if (ok) dirtyTracker.markSaved();
@@ -2133,8 +2118,6 @@
       const tdTrack = document.createElement("td");
       const input = createNumberInput({
         id: `sys-track-input-${sound.key}`,
-        min: 0,
-        max: TRACK_MAX,
         className: "sound-track-input-sm",
         ariaLabel: `${sound.label} track number`,
         datasetKey: sound.key,
@@ -2158,12 +2141,7 @@
         ariaLabel: `Save ${sound.label} track number`,
         className: "btn sound-btn-compact",
         onClick: async () => {
-          const value = Number.parseInt(input.value, 10);
-          if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
-            showFeedback(rowFeedback, MSG.trackRangeZeroToMax, false);
-            return;
-          }
-          const ok = await postTrack(sound.key, value, rowFeedback);
+          const ok = await postTrack(sound.key, input.value.trim(), rowFeedback);
           if (ok) dirtyTracker.markSaved();
         },
       });
@@ -2454,10 +2432,8 @@
     }
     const maxVal = Number.parseInt(document.getElementById("rand-max")?.value, 10);
 
-    if (!minVal || minVal < 1 || minVal > TRACK_MAX || !maxVal || maxVal < 1 || maxVal > TRACK_MAX) {
-      showFeedback(randFb, MSG.valuesMustBe1To999, false);
-      return;
-    }
+    // The range of each is the droid's to hold; the order between the two is a
+    // rule the droid does not keep, so the page still says it.
     if (minVal > maxVal) {
       showFeedback(randFb, MSG.minMustBeLeMax, false);
       return;
@@ -2466,8 +2442,8 @@
     if (!window.PAApi) return;
     try {
       const [r1, r2] = await Promise.all([
-        window.PAApi.postForm("/api/audio/tracks", { key: "rand_min", track: minVal }, { timeoutMs: 3000 }),
-        window.PAApi.postForm("/api/audio/tracks", { key: "rand_max", track: maxVal }, { timeoutMs: 3000 }),
+        window.PAApi.postForm("/api/audio/tracks", { key: "rand_min", track: document.getElementById("rand-min")?.value ?? "" }, { timeoutMs: 3000 }),
+        window.PAApi.postForm("/api/audio/tracks", { key: "rand_max", track: document.getElementById("rand-max")?.value ?? "" }, { timeoutMs: 3000 }),
       ]);
       const ok = Boolean(r1.data?.ok && r2.data?.ok);
       showFeedback(randFb, ok ? "Range saved" : MSG.saveFailed, ok);
@@ -2489,20 +2465,11 @@
       showFeedback(intFb, SOUND_OFF_LINE, false);
       return;
     }
-    for (const field of INT_FIELDS) {
-      const value = Number.parseInt(document.getElementById(field.id)?.value, 10);
-      if (Number.isNaN(value) || value < 0 || value > 3600) {
-        showFeedback(intFb, `${field.key}: must be 0–3600`, false);
-        return;
-      }
-    }
-
     if (!window.PAApi) return;
     try {
-      const results = await Promise.all(INT_FIELDS.map((field) => {
-        const value = Number.parseInt(document.getElementById(field.id)?.value, 10);
-        return window.PAApi.postForm("/api/audio/tracks", { key: field.key, track: value }, { timeoutMs: 3000 });
-      }));
+      const results = await Promise.all(INT_FIELDS.map((field) =>
+        window.PAApi.postForm("/api/audio/tracks",
+          { key: field.key, track: document.getElementById(field.id)?.value ?? "" }, { timeoutMs: 3000 })));
       const ok = results.every((entry) => entry.data?.ok);
       showFeedback(intFb, ok ? "Intervals saved" : MSG.saveFailed, ok);
     } catch (error) {

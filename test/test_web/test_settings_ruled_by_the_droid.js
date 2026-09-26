@@ -57,3 +57,21 @@ test("the Drive page sends three presets that clash, for the droid to refuse", a
   assert.deepEqual([sent.speedPresetSlow, sent.speedPresetNormal, sent.speedPresetTurbo],
     ["300", "300", "300"]);
 });
+
+// The audio Settings the same way (#431 addendum): a random-chatter interval
+// past what the droid takes goes out as typed, rather than being stopped by a
+// page-side copy that also printed the interval's wire name.
+test("the Sound page sends an interval the droid will refuse exactly as typed", async () => {
+  const env = loadPageModule("sound.js");
+  await env.settle();
+  ["int-quiet", "int-mid", "int-full", "int-awake"].forEach((id) => { env.element(id).value = "10"; });
+  env.element("int-quiet").value = "4000";
+  env.element("btn-int-save").__listeners.filter((l) => l.type === "click").forEach(({ handler }) => handler({}));
+  await env.settle();
+
+  const sent = env.requests.filter((request) => request.method === "POST" && request.path === "/api/audio/tracks")
+    .map((request) => request.opts.body);
+  assert.ok(sent.some((body) => body.key === "snd_int_quiet" && body.track === "4000"),
+    `the typed interval went out: ${JSON.stringify(sent)}`);
+});
+

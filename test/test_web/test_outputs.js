@@ -187,6 +187,8 @@ test("a refused Setting reaches the page in the builder's words, never its wire 
       says: "two SBUS" },
     { field: "ledc:4.throwMs", reason: "out-of-range", accepts: "20..10000", says: "GPIO 5" },
     { field: "speedPresetSlow", reason: "conflict", accepts: null, says: "slow preset" },
+    // An audio Setting, named by the key its door takes (#431 addendum).
+    { field: "snd_int_quiet", reason: "out-of-range", accepts: "0..3600", says: "0 to 3600 s" },
   ];
   for (const refusal of refusals) {
     const api = shippedApi((path, init) => {

@@ -344,6 +344,7 @@
   const PCT = "%";
   const PRESET_CLASH = "must differ from the other presets";
   const PULSE_CLASH = "must sit between the minimum and maximum pulses";
+  const CATEGORY_CLASH = "must be at most the last track, or both 0";
   const SETTING_WORDS = Object.freeze({
     speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },
     speedPresetSlow: { word: "slow preset", path: "drive.speedPresetSlow", clash: PRESET_CLASH },
@@ -384,6 +385,74 @@
     // An act's width, not a stored Setting: POST /api/servo words its
     // refusal the same way.
     positionUs: { word: "width", unit: US },
+
+    // The audio Settings (#431 addendum), by the name their door takes them
+    // under. The Sound page's own labels.
+    volume: { word: "volume" },
+    scream: { word: "Scream track" },
+    faint: { word: "Short Circuit track" },
+    leia: { word: "Leia Message track" },
+    cantina_s: { word: "Short Cantina track" },
+    sw_theme: { word: "Star Wars Theme track" },
+    imp_march: { word: "Imperial March track" },
+    cantina_l: { word: "Long Cantina track" },
+    startup: { word: "boot sound track" },
+    doodoo: { word: "Doo-doo track" },
+    failure: { word: "Failure track" },
+    disco: { word: "Disco track" },
+    mahna: { word: "Mahna Mahna track" },
+    inlove: { word: "In Love track" },
+    macho: { word: "Macho Man track" },
+    gangnam: { word: "Gangnam Style track" },
+    uptown: { word: "Uptown Funk track" },
+    celebr: { word: "Celebration track" },
+    stayin: { word: "Stayin' Alive track" },
+    harlem: { word: "Harlem Shake track" },
+    pbjtime: { word: "PBJ Time track" },
+    sys_boot: { word: "boot complete track" },
+    sys_mode_n: { word: "Normal mode track" },
+    sys_mode_s: { word: "Slow mode track" },
+    sys_mode_t: { word: "Turbo mode track" },
+    sys_drv_on: { word: "drives engaged track" },
+    sys_dome_on: { word: "dome enabled track" },
+    sys_net_down: { word: "link lost track" },
+    rand_min: { word: "random range's first track" },
+    rand_max: { word: "random range's last track" },
+    snd_int_quiet: { word: "Quiet chatter interval", unit: " s" },
+    snd_int_mid: { word: "Mid-Awake chatter interval", unit: " s" },
+    snd_int_full: { word: "Full-Awake chatter interval", unit: " s" },
+    snd_int_awake: { word: "Awake+ chatter interval", unit: " s" },
+    snd_cat_gen_lo: { word: "General first track", clash: CATEGORY_CLASH },
+    snd_cat_gen_hi: { word: "General last track" },
+    snd_cat_chat_lo: { word: "Chatty first track", clash: CATEGORY_CLASH },
+    snd_cat_chat_hi: { word: "Chatty last track" },
+    snd_cat_hap_lo: { word: "Happy first track", clash: CATEGORY_CLASH },
+    snd_cat_hap_hi: { word: "Happy last track" },
+    snd_cat_proc_lo: { word: "Processing first track", clash: CATEGORY_CLASH },
+    snd_cat_proc_hi: { word: "Processing last track" },
+    snd_cat_sad_lo: { word: "Sad first track", clash: CATEGORY_CLASH },
+    snd_cat_sad_hi: { word: "Sad last track" },
+    snd_cat_sent_lo: { word: "Sentimental first track", clash: CATEGORY_CLASH },
+    snd_cat_sent_hi: { word: "Sentimental last track" },
+    snd_cat_hum_lo: { word: "Humming first track", clash: CATEGORY_CLASH },
+    snd_cat_hum_hi: { word: "Humming last track" },
+    snd_cat_scrm_lo: { word: "Scream first track", clash: CATEGORY_CLASH },
+    snd_cat_scrm_hi: { word: "Scream last track" },
+    snd_cat_ooh_lo: { word: "Surprised first track", clash: CATEGORY_CLASH },
+    snd_cat_ooh_hi: { word: "Surprised last track" },
+    snd_cat_alrm_lo: { word: "Alert first track", clash: CATEGORY_CLASH },
+    snd_cat_alrm_hi: { word: "Alert last track" },
+    snd_cat_snrk_lo: { word: "Snarky first track", clash: CATEGORY_CLASH },
+    snd_cat_snrk_hi: { word: "Snarky last track" },
+    snd_cat_whis_lo: { word: "Whistle first track", clash: CATEGORY_CLASH },
+    snd_cat_whis_hi: { word: "Whistle last track" },
+    quiet: { word: "Quiet mood's sound set" },
+    mid: { word: "Mid-Awake mood's sound set" },
+    full: { word: "Full-Awake mood's sound set" },
+    awakeplus: { word: "Awake+ mood's sound set" },
+    // A catalog binding's bank and page, beside a track.
+    bank: { word: "catalog bank" },
+    page: { word: "catalog page" },
   });
 
   // An Output's Settings, by the row key the droid refuses them under
@@ -428,7 +497,7 @@
   // What a Setting takes, from the refusal's `accepts`: `20..10000` is a
   // range, `true,false,1,0` is on or off, anything else the words it takes.
   const sayAccepts = (accepts, words) => {
-    const range = /^(\d+)\.\.(\d+)$/.exec(accepts);
+    const range = /^(\d+|[A-Z])\.\.(\d+|[A-Z])$/.exec(accepts);
     if (range) return `${range[1]} to ${range[2]}${words.unit || ""}`;
     if (accepts === "true,false,1,0") return "on or off";
     const said = accepts.split(",").map((token) => (words.values && words.values[token]) || token);
