@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""The Settings src/config_settings.cpp declares, read out of its two tables.
+"""The Settings src/config_settings.cpp declares, read out of its three tables.
 
 Each Setting is declared once in the firmware (ADR 0068, amended 2026-09-26):
-a droid Setting in `kConfigSettings[]` and an Output row Setting in
-`kOutputRowSettings[]`. The checks that must agree with that one home -
+a droid Setting in `kConfigSettings[]`, an audio Setting in `kAudioSettings[]`
+and an Output row Setting in `kOutputRowSettings[]`. The checks that must agree
+with that one home -
 tools/check_setting_words.py (the browser has words for every Setting) and
 tools/check_component_registry_drift.py (a family's member key is a Setting's
 NVS key) - read it through here rather than each keeping a pattern of its own.
@@ -30,6 +31,9 @@ _DROID = re.compile(
     r'(?P<path>nullptr|"[\w.]+"),\s*"(?P<key>\w+)",'
 )
 _BRACE_RULE = re.compile(r"SettingRule::(\w+)")
+# An audio Setting opens as one of the audio helpers, `PA_TRACK("scream", ...`,
+# its first argument the name its door takes it under.
+_AUDIO = re.compile(r'PA_[A-Z_]+\(\s*"(?P<name>\w+)"')
 # An Output row Setting opens as `{"key", RowSettingStore::...`.
 _ROW = re.compile(r'\{\s*"(?P<key>\w+)",\s*RowSettingStore::(?P<store>\w+)')
 
@@ -86,3 +90,10 @@ def row_settings(source: Path | None = None) -> list[RowSetting]:
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kOutputRowSettings")
     return [RowSetting(key=m.group("key"), store=m.group("store")) for m in _ROW.finditer(body)]
+
+
+def audio_settings(source: Path | None = None) -> list[str]:
+    """The name each audio Setting is declared under, in table order."""
+    text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
+    body = _table(text, "kAudioSettings")
+    return [m.group("name") for m in _AUDIO.finditer(body)]

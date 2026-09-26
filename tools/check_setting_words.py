@@ -11,7 +11,9 @@ ADR 0059 forbids - so this fails instead:
 1. every droid Setting GET reads has an entry under its form name, and that
    entry's `path` is the Setting's GET path (a restore's refusal can be named
    by either);
-2. every Output row Setting has an entry under its row key.
+2. every Output row Setting has an entry under its row key;
+3. every audio Setting has an entry under the name its door takes it under
+   (`scream`, `snd_int_quiet`, `volume`), in `SETTING_WORDS` beside the droid's.
 
 An Output's wired tick has no GET path of its own - it travels on the row as
 `wired` - so it is covered by rule 2, not 1.
@@ -93,6 +95,12 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
                 f"{setting.form}'s words name its GET path as "
                 f"{path.group(1) if path else 'nothing'}, but the firmware reads it at {setting.path}"
             )
+    for name in setting_declarations.audio_settings(settings):
+        if name not in droid:
+            errors.append(
+                f"{name} is a declared audio Setting with no words in SETTING_WORDS "
+                f"({WEB_API.name}) - a refusal of it would reach the Sound page as its wire name"
+            )
     for setting in setting_declarations.row_settings(settings):
         if setting.key not in row:
             errors.append(
@@ -110,7 +118,8 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 1
     print(f"Setting words check passed ({len(setting_declarations.droid_settings())} droid "
-          f"Settings, {len(setting_declarations.row_settings())} Output row Settings).")
+          f"Settings, {len(setting_declarations.audio_settings())} audio Settings, "
+          f"{len(setting_declarations.row_settings())} Output row Settings).")
     return 0
 
 

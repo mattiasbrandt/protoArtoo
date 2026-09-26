@@ -21,6 +21,10 @@ const ConfigSetting kConfigSettings[] = {
     PA_BOOL("enableArm1", nullptr, "en_arm1", System, SystemConfig, enable_arm1, false),
 };
 
+const ConfigSetting kAudioSettings[] = {
+    PA_TRACK("scream", "snd_scream", snd_scream, AUDIO_TRACK_SCREAM),
+};
+
 const OutputRowSetting kOutputRowSettings[] = {
     {"throwMs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
      SERVO_FIELD_THROW_MS, SettingRule::Range, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, nullptr},
@@ -48,19 +52,30 @@ class Check(unittest.TestCase):
 
     def test_words_for_every_setting_pass(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    scream: { word: "Scream track" },',
             '    throwMs: { word: "time to full throw", unit: MS },',
         ))
         self.assertEqual([], errors)
 
     def test_a_droid_setting_with_no_words_is_reported(self):
-        errors = self.run_check(web_api("", '    throwMs: { word: "t" },'))
+        errors = self.run_check(web_api('    scream: { word: "Scream track" },',
+                                        '    throwMs: { word: "t" },'))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("speedLimitMax", errors[0])
 
+    def test_an_audio_setting_with_no_words_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },',
+            '    throwMs: { word: "t" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("scream", errors[0])
+
     def test_words_naming_another_get_path_are_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.topSpeed" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.topSpeed" },\n'
+            '    scream: { word: "Scream track" },',
             '    throwMs: { word: "t" },',
         ))
         self.assertEqual(1, len(errors), errors)
@@ -68,7 +83,8 @@ class Check(unittest.TestCase):
 
     def test_a_row_setting_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },', ""))
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    scream: { word: "Scream track" },', ""))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("throwMs", errors[0])
 
