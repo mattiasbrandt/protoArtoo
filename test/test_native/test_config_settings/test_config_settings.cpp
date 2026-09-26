@@ -23,13 +23,11 @@
 #include "config_settings.h"
 #include "config_store.h"
 #include "dome_math.h"
-#include "robot_state.h"
 #include "../../../test/stubs/config/setting_samples.h"
 
-extern RobotState robotState;
-
 void setUp() {
-    memset(&robotState, 0, sizeof(RobotState));
+    // The NVS double keeps its keys for the whole binary, as flash does; every
+    // test here starts from an erased partition.
     Preferences::eraseFlash();
 }
 
