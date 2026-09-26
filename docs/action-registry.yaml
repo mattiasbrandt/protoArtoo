@@ -32,8 +32,11 @@
 #   Other enums (AudioCommandType, ServoCommandType) are scoped to their subsystem
 #   and do not need to match the registry name format — they are implementation detail.
 #
-# NVS keys are not the registry's to record: each Setting's key lives in its one
-# declaration, src/config_settings.cpp (ADR 0068, amended 2026-09-26).
+# NVS keys are not the registry's to record. Every Setting's key - the droid's
+# and each audio Setting's - lives in its one declaration, src/config_settings.cpp
+# (ADR 0068, amended 2026-09-26). The stored records that are not Settings (the
+# RC Map, the Output rows, Device WiFi Settings, the Droid Build, guided Setup's
+# record, the CHIRP bindings) keep their keys beside their own serializers.
 # `board_capability` and `build_flag` each name at most one declaration from
 # include/board_capabilities.inc and include/build_flags.inc. An absent field
 # means the entry is universal for that compile-time tier (ADR 0029).

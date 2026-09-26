@@ -939,11 +939,11 @@ rows:
   notes: '#225: new row, added to satisfy the ticket''s "log level is the ordinary
     configuration entry it is" criterion (docs/console-protocol.md s.1/s.6). No
     REST endpoint of its own - POST /api/config''s existing logLevel field is the
-    only prior surface. Wired as a Console scalar config row
-    (g_scalarConfigExecutors[], consoleExecuteSystemLogLevel() in
-    src/console/console_module.cpp), which also accepts the word form
-    (error/warning/info/debug) the protocol doc''s own grammar example uses,
-    translated to the stored 1..4 digit before reaching the Apply Core above.'
+    only prior surface. Wired as a Console single-field Setting op
+    (g_settingOps[] in src/console/console_module.cpp since #431); the logLevel
+    Setting''s declaration (src/config_settings.cpp) takes the word form
+    (error/warning/info/debug) the protocol doc''s own grammar example uses, at
+    both doors.'
 - name: system.event.boot-complete
   type: event
   registry_api_path: null

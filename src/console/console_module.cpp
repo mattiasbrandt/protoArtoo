@@ -1987,18 +1987,12 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
 }
 
 // =============================================================================
-// Private: the remaining scalar config.type rows configApply() already
-// handles live (not staged - unlike the Component Toggles above, these
-// fields are read from config_cache every control-loop iteration by their
-// owning task, the same "applied" semantics REST already gives them).
-// Confirmed one at a time by reading src/web/api_config_apply.cpp, not
-// assumed from the registry: sound.config.volume and sound.config.mood-
-// interval-* claim executor: configApply too but that function has no
-// "volume"/"sndIntQuiet"-shaped param at all (volume is set inline in
-// handleAudioPost's action=volume branch; the mood-interval fields have no
-// write path anywhere in this codebase today) - both are registry/
-// implementation gaps flagged in the status comment, not wired here since
-// there is no real Apply Core behind either to reuse.
+// Private: the single-field Setting ops. Each writes one droid Setting live
+// (not staged - unlike the Component Toggles above, these fields are read from
+// config_cache every control-loop iteration by their owning task, the same
+// "applied" semantics REST already gives them), checked by that Setting's
+// declaration (src/config_settings.cpp) through configApply(). The audio
+// Settings' ops are below, through the audio write paths.
 // =============================================================================
 
 // A single-field op onto one droid Setting, named by its form name: the read
@@ -2138,13 +2132,13 @@ static void __attribute__((noinline)) consoleExecuteAuxLedCount(
                        CONSOLE_OUTCOME_APPLIED, sink);
 }
 
-typedef void (*ConsoleScalarConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
+typedef void (*ConsoleConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
                                               char* rawArgs, ConsoleCommandSource source,
                                               const ConsoleRecordSink* sink);
 
-struct ConsoleScalarConfigExecutorEntry {
+struct ConsoleConfigExecutorEntry {
     const char* operationName;
-    ConsoleScalarConfigExecutorFn executor;
+    ConsoleConfigExecutorFn executor;
 };
 
 // system.config.mood (#226): the config-typed view of the same active-mood
@@ -3114,7 +3108,7 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
 // key fixed by the operation name (g_audioTrackKeyConfigRows[] holds those).
 // A table because these are grouped writes through an audio core, each
 // reached through the executor pointer found here.
-static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
+static const ConsoleConfigExecutorEntry g_audioConfigExecutors[] = {
     {"sound.config.track-assignments", consoleExecuteSoundTrackAssignments},
     {"sound.config.system-track-assignments", consoleExecuteSoundSystemTrackAssignments},
     {"sound.config.category-ranges", consoleExecuteSoundCategoryRanges},
@@ -3124,7 +3118,7 @@ static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
 static const size_t kAudioConfigExecutorCount =
     sizeof(g_audioConfigExecutors) / sizeof(g_audioConfigExecutors[0]);
 
-static ConsoleScalarConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
+static ConsoleConfigExecutorFn consoleFindAudioConfigExecutor(const char* canonicalName) {
     for (size_t i = 0; i < kAudioConfigExecutorCount; ++i) {
         if (strcmp(g_audioConfigExecutors[i].operationName, canonicalName) == 0) {
             return g_audioConfigExecutors[i].executor;
@@ -3697,7 +3691,7 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
-            ConsoleScalarConfigExecutorFn audioExecutor =
+            ConsoleConfigExecutorFn audioExecutor =
                 (entry != nullptr) ? consoleFindAudioConfigExecutor(entry->name) : nullptr;
             if (audioExecutor != nullptr) {
                 audioExecutor(request->requestId, entry, rawArgs, request->source, sink);
