@@ -817,8 +817,13 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 7680;  // rule: 5776 -> 722
 // onCliCommand 11056 against the recorded 11040, and the stitched frames
 // (368 + 96) are unchanged. The rule still lands on 14848, so the allocation
 // does not move.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11520;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // rule: 11520 -> 14400 -> 14848
+// Re-derived 2026-09-26 (#432): Console 11520 -> 11536. Each Record is one
+// module the config doors loop over; the coordinator's firebeetle2 walk of the
+// merged tree at 9876614f gives onCliCommand 11072 against the recorded 11056,
+// and the stitched frames (368 + 96) are unchanged. The rule still lands on
+// 14848, so the allocation does not move.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11536;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // rule: 11536 -> 14420 -> 14848
 // Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
 // lit wire on its own (fa8eed74, e277d325), and the chain carries that through
 // the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.
