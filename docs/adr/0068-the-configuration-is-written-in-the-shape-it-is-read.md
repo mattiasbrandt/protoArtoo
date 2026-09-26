@@ -1,6 +1,6 @@
 # The Configuration is written in the shape it is read
 
-Status: accepted (2026-09-25, issue #423; amended 2026-09-26, issue #431, see below). Settled by grilling the operator
+Status: accepted (2026-09-25, issue #423; amended 2026-09-26, issues #431 and #432, see below). Settled by grilling the operator
 after the architecture review of the operator-experience epic's hot spots.
 
 ## Context
@@ -167,3 +167,81 @@ written out by hand at every door. Measured on `epic/operator-experience` @
 - `outputs.js`'s own words for row fields become entries in the one table.
 - This does not reopen the rejected "firmware name table served to the browser":
   nothing is served, and the browser holds only words.
+
+## Amended again 2026-09-26: Records and acts are worded like Settings, and each field is named from one browser entry
+
+Settled by grilling the operator on the same day's architecture review
+(candidates 2, 7 and 8; issue #432).
+
+### Context
+
+The first amendment declared each **Setting** once and worded its refusals in
+the browser. Three things stayed outside it, measured on
+`epic/operator-experience` @ `d3191d03`:
+
+- The **Droid Build** and guided Setup's record are hand-written at every door.
+  One of their fields touches about 8 sites in 5 files: a hand list of form names
+  and GET paths, hand checks, edit structs, the Commit Step merge and its
+  save-if-stated flags, the GET writer, the NVS save and load, and the round trip.
+- The acts (capture an end, reverse an Output, move a Part) refuse with a field
+  that no browser entry names, so the page shows the firmware's sentence. A
+  refused Part move is answered by the Commit Step as a bare sentence with no
+  field at all, and the Parts page shows *"that Part is not on the Output
+  movePartFrom names"*, which ADR 0059 forbids.
+- The browser names one Setting in several places. The Configuration page keeps
+  five parallel tables for the ten Component Toggles, which already disagree with
+  the words table ("protoR2link" against "dome link"); the Sound page repeats
+  about 60 track labels. When a Setting takes effect is written page-side on four
+  pages, although the Commit Step is what decides it.
+
+### Decision
+
+- **A Record is its own thing, not a Setting** (`CONTEXT.md` **Record**): values
+  stated together that only mean something together. Each Record is one module
+  owning its fields end to end - check (field, reason, accepts), merge onto the
+  Working Snapshot, GET answer, NVS save and load, and when it is saved - behind
+  **one interface every Record shares**. The Apply Core, the Commit Step and GET
+  loop over the Records. NVS keys and the GET shape do not change.
+- **Every field a door can refuse is declared** - a Setting, a Record field or an
+  act's field - with what it takes. The Part-move outcome is refused with a field
+  and a reason like any other refusal.
+- **The words check covers every refusable field**, not only the Settings.
+- **One browser entry per field holds everything the screen says about it:** its
+  label, its refusal word, its unit, its value words and when it takes effect.
+  Pages take labels from it and keep none of their own.
+- **Timing is declared in the firmware and mirrored in the browser.** Each
+  declaration states `immediate`, `at-reboot` or `restart-required`; the browser
+  entry states the same, and the words check fails when they differ.
+- **The Board Component Label stays served by the firmware.** It is what the
+  running board prints beside a header (ADR 0065), not a Setting's name; a page
+  shows both.
+
+### Considered and rejected
+
+- **Records as Settings.** One table and one check, but the declaration would
+  grow list and paired-value types, and "a Setting is one value" would stop
+  being true.
+- **Records left hand-written, only their words added.** Closes the screen defect
+  and leaves the 8 sites a Record field costs.
+- **Each Record called by name at every door.** Simpler with two Records, but a
+  third would repeat the edit at three doors, and no generated round trip could
+  cover them all.
+- **The page that made an act words its refusal itself.** Nothing would check that
+  a field has words, which is the failure ADR 0059 was written about.
+- **Labels kept on the pages.** They are how "dome link" and "protoR2link" came
+  to name one toggle.
+- **Timing in the browser only.** Nothing would hold it to what the Commit Step
+  does.
+- **Timing served on GET.** Costs `/api/config` bytes on the artoo-esp32 for a
+  value that never changes at run time.
+
+### Consequences
+
+- `kRecordFields`, the Record edit structs and the Commit Step's hand merge go.
+  The round trip for every Record is generated from the Record list.
+- The Configuration page's five toggle tables, the Sound page's track labels and
+  its `trackMin` copy, and the page-side timing declarations go.
+- A guided Setup step's timing is the latest of its fields'; a step that writes
+  nothing says so.
+- The first amendment's rejected "words in the firmware declaration" is not
+  reopened: the firmware declares a timing token, never words.
