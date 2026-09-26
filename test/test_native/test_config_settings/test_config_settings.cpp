@@ -35,63 +35,67 @@ void tearDown() {}
 
 namespace {
 
-// The NVS key each Setting was stored under before its declaration existed
-// (src/config_serializer.cpp at 464cd119). A key string that changed would
+// The NVS key each Setting was stored under before its declaration existed, and
+// the type it was stored as (src/config_serializer.cpp at 464cd119). A key string that changed would
 // strand every stored value on a controller in the field, so this is the one
 // place a key is written twice: as the pin that says it did not move.
 struct KeyPin {
     const char* form;
     const char* key;
+    // The type it is stored as: taken from the member, so widening a struct
+    // field would silently change it and every droid would fall back to its
+    // defaults (a Preferences read of the wrong type finds nothing).
+    SettingStorage storage;
 };
 
 const KeyPin kStoredKeys[] = {
-    {"speedLimitMax", "spd_max"},       {"speedPresetSlow", "spd_pre_s"},
-    {"speedPresetNormal", "spd_pre_n"}, {"speedPresetTurbo", "spd_pre_t"},
-    {"webDriveTimeoutMs", "web_tmo"},   {"sbusTimeoutMs", "sbus_tmo"},
-    {"stationary", "op_mode"},          {"rcInputMode", "rc_mode"},
-    {"rcMember", "rc_member"},          {"sbusRecvCh2", "sbus_recv_ch2"},
-    {"enableDomeEsc", "en_dome_esc"},   {"enableRcCh1", "en_rc_ch1"},
-    {"enableRcCh2", "en_rc_ch2"},       {"enableRcCh3", "en_rc_ch3"},
-    {"enableRcCh4", "en_rc_ch4"},       {"enableRcCh5", "en_rc_ch5"},
-    {"enableRcCh6", "en_rc_ch6"},       {"enableDrive", "en_drive"},
-    {"enableAudio", "en_audio"},        {"soundMember", "snd_member"},
-    {"enableProtoR2link", "en_r2link"}, {"enableArm1", "en_arm1"},
-    {"enableArm2", "en_arm2"},          {"enableAux1", "en_aux1"},
-    {"enableAux2", "en_aux2"},          {"enableAux3", "en_aux3"},
-    {"domeEscNeutralUs", "dome_neu"},   {"domeEscMinPulseUs", "dome_minp"},
-    {"domeEscMaxPulseUs", "dome_maxp"}, {"domeEscSpeedLimitPct", "dome_pct"},
-    {"domeEscRndEnable", "dome_rnd_en"}, {"domeEscRndSpeedPct", "dome_rnd_spd"},
-    {"domeEscRndPauseMin", "dome_rnd_pmin"}, {"domeEscRndPauseMax", "dome_rnd_pmax"},
-    {"domeEscRndMoveMs", "dome_rnd_ms"}, {"protoR2linkWifiPeerIp", "dome_wip"},
-    {"logLevel", "log_level"},
+    {"speedLimitMax", "spd_max", SettingStorage::I16},       {"speedPresetSlow", "spd_pre_s", SettingStorage::I16},
+    {"speedPresetNormal", "spd_pre_n", SettingStorage::I16}, {"speedPresetTurbo", "spd_pre_t", SettingStorage::I16},
+    {"webDriveTimeoutMs", "web_tmo", SettingStorage::U32},   {"sbusTimeoutMs", "sbus_tmo", SettingStorage::U32},
+    {"stationary", "op_mode", SettingStorage::Bool},          {"rcInputMode", "rc_mode", SettingStorage::U8},
+    {"rcMember", "rc_member", SettingStorage::U8},          {"sbusRecvCh2", "sbus_recv_ch2", SettingStorage::Bool},
+    {"enableDomeEsc", "en_dome_esc", SettingStorage::Bool},   {"enableRcCh1", "en_rc_ch1", SettingStorage::Bool},
+    {"enableRcCh2", "en_rc_ch2", SettingStorage::Bool},       {"enableRcCh3", "en_rc_ch3", SettingStorage::Bool},
+    {"enableRcCh4", "en_rc_ch4", SettingStorage::Bool},       {"enableRcCh5", "en_rc_ch5", SettingStorage::Bool},
+    {"enableRcCh6", "en_rc_ch6", SettingStorage::Bool},       {"enableDrive", "en_drive", SettingStorage::Bool},
+    {"enableAudio", "en_audio", SettingStorage::Bool},        {"soundMember", "snd_member", SettingStorage::U8},
+    {"enableProtoR2link", "en_r2link", SettingStorage::Bool}, {"enableArm1", "en_arm1", SettingStorage::Bool},
+    {"enableArm2", "en_arm2", SettingStorage::Bool},          {"enableAux1", "en_aux1", SettingStorage::Bool},
+    {"enableAux2", "en_aux2", SettingStorage::Bool},          {"enableAux3", "en_aux3", SettingStorage::Bool},
+    {"domeEscNeutralUs", "dome_neu", SettingStorage::U16},   {"domeEscMinPulseUs", "dome_minp", SettingStorage::U16},
+    {"domeEscMaxPulseUs", "dome_maxp", SettingStorage::U16}, {"domeEscSpeedLimitPct", "dome_pct", SettingStorage::U8},
+    {"domeEscRndEnable", "dome_rnd_en", SettingStorage::Bool}, {"domeEscRndSpeedPct", "dome_rnd_spd", SettingStorage::U8},
+    {"domeEscRndPauseMin", "dome_rnd_pmin", SettingStorage::U8}, {"domeEscRndPauseMax", "dome_rnd_pmax", SettingStorage::U8},
+    {"domeEscRndMoveMs", "dome_rnd_ms", SettingStorage::U16}, {"protoR2linkWifiPeerIp", "dome_wip", SettingStorage::Text},
+    {"logLevel", "log_level", SettingStorage::U8},
     // The audio Settings (#431 addendum), by the key their door takes.
-    {"volume", "aud_vol"}, {"scream", "snd_scream"}, {"faint", "snd_faint"},
-    {"leia", "snd_leia"}, {"cantina_s", "snd_cantina_s"}, {"sw_theme", "snd_sw"},
-    {"imp_march", "snd_march"}, {"cantina_l", "snd_cantina_l"}, {"startup", "snd_startup"},
-    {"doodoo", "snd_doodoo"}, {"failure", "snd_failure"}, {"disco", "snd_disco"},
-    {"mahna", "snd_mahna"}, {"inlove", "snd_inlove"}, {"macho", "snd_macho"},
-    {"gangnam", "snd_gangnam"}, {"uptown", "snd_uptown"}, {"celebr", "snd_celebr"},
-    {"stayin", "snd_stayin"}, {"harlem", "snd_harlem"}, {"pbjtime", "snd_pbjtime"},
-    {"sys_boot", "snd_sys_boot"}, {"sys_mode_n", "snd_sys_mode_n"},
-    {"sys_mode_s", "snd_sys_mode_s"}, {"sys_mode_t", "snd_sys_mode_t"},
-    {"sys_drv_on", "snd_sys_drv_on"}, {"sys_dome_on", "snd_sys_dome_on"},
-    {"sys_net_down", "snd_sys_netdown"}, {"rand_min", "snd_rand_min"},
-    {"rand_max", "snd_rand_max"}, {"snd_int_quiet", "snd_int_quiet"},
-    {"snd_int_mid", "snd_int_mid"}, {"snd_int_full", "snd_int_full"},
-    {"snd_int_awake", "snd_int_awake"}, {"quiet", "snd_moodcat_q"}, {"mid", "snd_moodcat_m"},
-    {"full", "snd_moodcat_f"}, {"awakeplus", "snd_moodcat_a"},
-    {"snd_cat_gen_lo", "snd_cat_gen_lo"}, {"snd_cat_gen_hi", "snd_cat_gen_hi"},
-    {"snd_cat_chat_lo", "snd_cat_chat_lo"}, {"snd_cat_chat_hi", "snd_cat_chat_hi"},
-    {"snd_cat_hap_lo", "snd_cat_hap_lo"}, {"snd_cat_hap_hi", "snd_cat_hap_hi"},
-    {"snd_cat_proc_lo", "snd_cat_proc_lo"}, {"snd_cat_proc_hi", "snd_cat_proc_hi"},
-    {"snd_cat_sad_lo", "snd_cat_sad_lo"}, {"snd_cat_sad_hi", "snd_cat_sad_hi"},
-    {"snd_cat_sent_lo", "snd_cat_sent_lo"}, {"snd_cat_sent_hi", "snd_cat_sent_hi"},
-    {"snd_cat_hum_lo", "snd_cat_hum_lo"}, {"snd_cat_hum_hi", "snd_cat_hum_hi"},
-    {"snd_cat_scrm_lo", "snd_cat_scrm_lo"}, {"snd_cat_scrm_hi", "snd_cat_scrm_hi"},
-    {"snd_cat_ooh_lo", "snd_cat_ooh_lo"}, {"snd_cat_ooh_hi", "snd_cat_ooh_hi"},
-    {"snd_cat_alrm_lo", "snd_cat_alrm_lo"}, {"snd_cat_alrm_hi", "snd_cat_alrm_hi"},
-    {"snd_cat_snrk_lo", "snd_cat_snrk_lo"}, {"snd_cat_snrk_hi", "snd_cat_snrk_hi"},
-    {"snd_cat_whis_lo", "snd_cat_whis_lo"}, {"snd_cat_whis_hi", "snd_cat_whis_hi"},
+    {"volume", "aud_vol", SettingStorage::U8}, {"scream", "snd_scream", SettingStorage::U16}, {"faint", "snd_faint", SettingStorage::U16},
+    {"leia", "snd_leia", SettingStorage::U16}, {"cantina_s", "snd_cantina_s", SettingStorage::U16}, {"sw_theme", "snd_sw", SettingStorage::U16},
+    {"imp_march", "snd_march", SettingStorage::U16}, {"cantina_l", "snd_cantina_l", SettingStorage::U16}, {"startup", "snd_startup", SettingStorage::U16},
+    {"doodoo", "snd_doodoo", SettingStorage::U16}, {"failure", "snd_failure", SettingStorage::U16}, {"disco", "snd_disco", SettingStorage::U16},
+    {"mahna", "snd_mahna", SettingStorage::U16}, {"inlove", "snd_inlove", SettingStorage::U16}, {"macho", "snd_macho", SettingStorage::U16},
+    {"gangnam", "snd_gangnam", SettingStorage::U16}, {"uptown", "snd_uptown", SettingStorage::U16}, {"celebr", "snd_celebr", SettingStorage::U16},
+    {"stayin", "snd_stayin", SettingStorage::U16}, {"harlem", "snd_harlem", SettingStorage::U16}, {"pbjtime", "snd_pbjtime", SettingStorage::U16},
+    {"sys_boot", "snd_sys_boot", SettingStorage::U16}, {"sys_mode_n", "snd_sys_mode_n", SettingStorage::U16},
+    {"sys_mode_s", "snd_sys_mode_s", SettingStorage::U16}, {"sys_mode_t", "snd_sys_mode_t", SettingStorage::U16},
+    {"sys_drv_on", "snd_sys_drv_on", SettingStorage::U16}, {"sys_dome_on", "snd_sys_dome_on", SettingStorage::U16},
+    {"sys_net_down", "snd_sys_netdown", SettingStorage::U16}, {"rand_min", "snd_rand_min", SettingStorage::U16},
+    {"rand_max", "snd_rand_max", SettingStorage::U16}, {"snd_int_quiet", "snd_int_quiet", SettingStorage::U16},
+    {"snd_int_mid", "snd_int_mid", SettingStorage::U16}, {"snd_int_full", "snd_int_full", SettingStorage::U16},
+    {"snd_int_awake", "snd_int_awake", SettingStorage::U16}, {"quiet", "snd_moodcat_q", SettingStorage::U16}, {"mid", "snd_moodcat_m", SettingStorage::U16},
+    {"full", "snd_moodcat_f", SettingStorage::U16}, {"awakeplus", "snd_moodcat_a", SettingStorage::U16},
+    {"snd_cat_gen_lo", "snd_cat_gen_lo", SettingStorage::U16}, {"snd_cat_gen_hi", "snd_cat_gen_hi", SettingStorage::U16},
+    {"snd_cat_chat_lo", "snd_cat_chat_lo", SettingStorage::U16}, {"snd_cat_chat_hi", "snd_cat_chat_hi", SettingStorage::U16},
+    {"snd_cat_hap_lo", "snd_cat_hap_lo", SettingStorage::U16}, {"snd_cat_hap_hi", "snd_cat_hap_hi", SettingStorage::U16},
+    {"snd_cat_proc_lo", "snd_cat_proc_lo", SettingStorage::U16}, {"snd_cat_proc_hi", "snd_cat_proc_hi", SettingStorage::U16},
+    {"snd_cat_sad_lo", "snd_cat_sad_lo", SettingStorage::U16}, {"snd_cat_sad_hi", "snd_cat_sad_hi", SettingStorage::U16},
+    {"snd_cat_sent_lo", "snd_cat_sent_lo", SettingStorage::U16}, {"snd_cat_sent_hi", "snd_cat_sent_hi", SettingStorage::U16},
+    {"snd_cat_hum_lo", "snd_cat_hum_lo", SettingStorage::U16}, {"snd_cat_hum_hi", "snd_cat_hum_hi", SettingStorage::U16},
+    {"snd_cat_scrm_lo", "snd_cat_scrm_lo", SettingStorage::U16}, {"snd_cat_scrm_hi", "snd_cat_scrm_hi", SettingStorage::U16},
+    {"snd_cat_ooh_lo", "snd_cat_ooh_lo", SettingStorage::U16}, {"snd_cat_ooh_hi", "snd_cat_ooh_hi", SettingStorage::U16},
+    {"snd_cat_alrm_lo", "snd_cat_alrm_lo", SettingStorage::U16}, {"snd_cat_alrm_hi", "snd_cat_alrm_hi", SettingStorage::U16},
+    {"snd_cat_snrk_lo", "snd_cat_snrk_lo", SettingStorage::U16}, {"snd_cat_snrk_hi", "snd_cat_snrk_hi", SettingStorage::U16},
+    {"snd_cat_whis_lo", "snd_cat_whis_lo", SettingStorage::U16}, {"snd_cat_whis_hi", "snd_cat_whis_hi", SettingStorage::U16},
 };
 
 // Every declared Setting, the droid's and the audio ones, in one list.
@@ -102,10 +106,10 @@ const ConfigSetting& everySettingAt(size_t index) {
                                         : audioSettingAt(index - configSettingCount());
 }
 
-const char* storedKeyOf(const char* form) {
+const KeyPin* storedPinOf(const char* form) {
     for (const KeyPin& pin : kStoredKeys) {
         if (strcmp(pin.form, form) == 0) {
-            return pin.key;
+            return &pin;
         }
     }
     return nullptr;
@@ -174,10 +178,11 @@ void test_every_setting_saved_through_the_store_loads_back_under_its_key() {
 
     for (size_t i = 0; i < everySettingCount(); ++i) {
         const ConfigSetting& setting = everySettingAt(i);
-        const char* pinned = storedKeyOf(setting.form);
+        const KeyPin* pinned = storedPinOf(setting.form);
         TEST_ASSERT_NOT_NULL_MESSAGE(pinned, setting.form);
-        TEST_ASSERT_EQUAL_STRING_MESSAGE(pinned, setting.nvsKey, setting.form);
-        TEST_ASSERT_TRUE_MESSAGE(prefs.isKey(pinned), setting.form);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(pinned->key, setting.nvsKey, setting.form);
+        TEST_ASSERT_EQUAL_MESSAGE((int)pinned->storage, (int)setting.storage, setting.form);
+        TEST_ASSERT_TRUE_MESSAGE(prefs.isKey(pinned->key), setting.form);
     }
 
     ConfigSnapshot loaded = {};
