@@ -374,7 +374,7 @@
     domeEscMinPulseUs: { word: "minimum pulse", unit: US, path: "domeEsc.minPulseUs", clash: PULSE_CLASH },
     domeEscMaxPulseUs: { word: "maximum pulse", unit: US, path: "domeEsc.maxPulseUs", clash: PULSE_CLASH },
     domeEscSpeedLimitPct: { word: "dome speed limit", unit: PCT, path: "domeEsc.speedLimitPct" },
-    domeEscRndEnable: { word: "turning on its own", path: "domeEsc.rndEnable" },
+    domeEscRndEnable: { word: "dome turning on its own", path: "domeEsc.rndEnable" },
     domeEscRndSpeedPct: { word: "turn speed", unit: PCT, path: "domeEsc.rndSpeedPct" },
     domeEscRndPauseMin: { word: "shortest pause", unit: " s", path: "domeEsc.rndPauseMin" },
     domeEscRndPauseMax: { word: "longest pause", unit: " s", path: "domeEsc.rndPauseMax" },
