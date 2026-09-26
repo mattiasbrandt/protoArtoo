@@ -23,9 +23,10 @@
 // or a Component Registry family, or an IPv4 address. A refusal carries the
 // field, the reason and what the Setting accepts as data (#425), identically at
 // every door, and a Setting that takes words takes the same words at every
-// door. The builder's words for each Setting live in the browser
-// (data/setting_words.js), never here; tools/check_setting_words.py fails when a
-// Setting declared here has none.
+// door. The builder's words for each Setting live in the browser, in the words
+// table in data/web_api.js, never here; tools/check_setting_words.py fails when
+// a Setting declared here has none, and when two declare one NVS key or a key
+// runs past NVS's 15 characters.
 //
 // Rules that span Settings - three speed presets that must differ, the dome
 // pulses kept in order, the ends clamped into a component's band - stay

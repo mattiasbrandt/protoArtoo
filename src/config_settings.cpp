@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <type_traits>
+
 #include "api_helpers.h"          // parseDriveValue(), parseUint32Value(), parseBoolValue()
 #include "audio_dollar_parser.h"  // AUDIO_TRACK_*, AUDIO_RAND_* - the audio defaults
 #include "board_outputs.h"
@@ -31,9 +33,9 @@ const char* logLevelName(uint8_t level) {
     switch (level) {
         case PA_LOG_LEVEL_ERROR:
             return "error";
-        case 2:
+        case PA_LOG_LEVEL_WARN:
             return "warning";
-        case 3:
+        case PA_LOG_LEVEL_INFO:
             return "info";
         case PA_LOG_LEVEL_DEBUG:
             return "debug";
@@ -299,8 +301,17 @@ constexpr size_t kConfigSettingCount = sizeof(kConfigSettings) / sizeof(kConfigS
 // it and names what it moved, because the band can narrow after the ends were
 // recorded and refusing would throw a calibration away (ADR 0068).
 // -----------------------------------------------------------------------------
-#define PA_ROW_FIELD(member)                                                     \
-    settingStorageOf<decltype(ServoOutputRow::member)>(),                        \
+// A row Setting's storage, from a row member and the edit member that carries
+// it: one type, or the edit would write a different width than the row reads.
+template <typename RowMember, typename EditMember>
+constexpr SettingStorage rowStorageOf() {
+    static_assert(std::is_same<RowMember, EditMember>::value,
+                  "a row Setting's ServoOutputRow and ServoOutputEdit members must share a type");
+    return settingStorageOf<RowMember>();
+}
+
+#define PA_ROW_FIELD(member)                                                             \
+    rowStorageOf<decltype(ServoOutputRow::member), decltype(ServoOutputEdit::member)>(), \
         (uint16_t)offsetof(ServoOutputRow, member), (uint16_t)offsetof(ServoOutputEdit, member)
 
 const OutputRowSetting kOutputRowSettings[] = {
