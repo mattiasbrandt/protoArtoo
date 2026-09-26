@@ -147,15 +147,14 @@
       pendingPart = move.part;
       onSending(move.part);
       say(`Moving ${label}...`);
+      const form = { movePart: move.part, movePartFrom: move.from, movePartTo: move.to };
       try {
-        await window.PAApi.postForm(
-          "/api/config",
-          { movePart: move.part, movePartFrom: move.from, movePartTo: move.to },
-          { timeoutMs: 4000 }
-        );
+        await window.PAApi.postForm("/api/config", form, { timeoutMs: 4000 });
         say(move.arrives ? `${label} is on ${move.arrives.name}.` : `${label} is not on any output now.`, "success");
       } catch (error) {
-        say(`${label} did not move: ${window.PAApi.messageFor(error)}`, "error");
+        // Worded from the refusal's field and reason, naming the Output from
+        // what this move sent (data/web_api.js sayRefusal()).
+        say(`${label} did not move: ${window.PAApi.messageFor(error, form)}`, "error");
       } finally {
         pendingPart = null;
       }

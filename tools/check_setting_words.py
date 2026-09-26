@@ -14,7 +14,13 @@ ADR 0059 forbids - so this fails instead:
 2. every Output row Setting has an entry under its row key;
 3. every audio Setting has an entry under the name its door takes it under
    (`scream`, `snd_int_quiet`, `volume`), in `SETTING_WORDS` beside the droid's,
-   and so does each CHIRP catalog binding part (`bank`, `page`, `index`).
+   and so does each CHIRP catalog binding part (`bank`, `page`, `index`);
+4. every field of every Record (the Droid Build, guided Setup's record) has an
+   entry under its form name whose `path` is the field's GET path, and every
+   field an act takes (move a Part, capture an end, reverse an Output) has an
+   entry under its form name (ADR 0068, second amendment). A Record is not a
+   Setting and an act stores nothing, but each can be refused, and a refusal
+   of either is worded from the same table.
 
 And, because the words check is the one place every declaration is read and
 the Preferences double in the native tests enforces neither: no NVS key is
@@ -85,7 +91,8 @@ def browser_words(web_api: Path | None = None) -> tuple[dict[str, str], dict[str
             _entries(_object_body(text, "ROW_SETTING_WORDS")))
 
 
-def check(errors: list[str], settings: Path | None = None, web_api: Path | None = None) -> None:
+def check(errors: list[str], settings: Path | None = None, web_api: Path | None = None,
+          records: list[Path] | None = None, acts: Path | None = None) -> None:
     droid, row = browser_words(web_api)
     for setting in setting_declarations.droid_settings(settings):
         if setting.path is None:
@@ -132,6 +139,27 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
                 f"{setting.key} is a declared Output row Setting with no words in "
                 f"ROW_SETTING_WORDS ({WEB_API.name})"
             )
+    for field in setting_declarations.record_fields(records):
+        entry = droid.get(field.form)
+        if entry is None:
+            errors.append(
+                f"{field.form} is a declared Record field ({field.record}) with no words in "
+                f"SETTING_WORDS ({WEB_API.name}) - a refusal of it would reach the page as its "
+                "wire name"
+            )
+            continue
+        path = re.search(r'path:\s*"([\w.]+)"', entry)
+        if path is None or path.group(1) != field.path:
+            errors.append(
+                f"{field.form}'s words name its GET path as "
+                f"{path.group(1) if path else 'nothing'}, but the firmware reads it at {field.path}"
+            )
+    for form in setting_declarations.act_fields(acts):
+        if form not in droid:
+            errors.append(
+                f"{form} is a declared act field with no words in SETTING_WORDS "
+                f"({WEB_API.name}) - a refusal of it would reach the page as its wire name"
+            )
 
 
 def main() -> int:
@@ -144,7 +172,9 @@ def main() -> int:
         return 1
     print(f"Setting words check passed ({len(setting_declarations.droid_settings())} droid "
           f"Settings, {len(setting_declarations.audio_settings())} audio Settings, "
-          f"{len(setting_declarations.row_settings())} Output row Settings).")
+          f"{len(setting_declarations.row_settings())} Output row Settings, "
+          f"{len(setting_declarations.record_fields())} Record fields, "
+          f"{len(setting_declarations.act_fields())} act fields).")
     return 0
 
 

@@ -209,3 +209,62 @@ test("a refused Setting reaches the page in the builder's words, never its wire 
     assert.ok(said.toLowerCase().includes(refusal.says.toLowerCase()), `"${refusal.says}" is not in: ${said}`);
   }
 });
+
+// An act on an Output - move a Part, capture an end, reverse the ends - is
+// refused by its field and reason like a Setting (ADR 0068, second amendment,
+// #432). The Parts page used to show the droid's own sentence for a refused
+// move, wire name and all ("that Part is not on the Output movePartFrom names").
+// The droid still sends that sentence, so it stands in each refusal below as a
+// decoy: what the builder reads is worded from the keys, names the Output from
+// what the page sent, and carries none of it.
+test("a refused act names its Output from what was sent, never in the droid's sentence", async () => {
+  const answer = droid();
+  const acts = [
+    {
+      sent: { movePart: "doorFL", movePartFrom: "ledc:0", movePartTo: "ledc:4" },
+      status: 409,
+      body: { error: "that Part is not on the Output movePartFrom names - read the outputs again, then move it",
+        field: "movePartFrom", reason: "conflict" },
+      says: "GPIO 49",
+    },
+    {
+      sent: { movePart: "doorFL", movePartFrom: "ledc:0", movePartTo: "ledc:4" },
+      status: 409,
+      body: { error: "that Output already drives as many Parts as it can - move one off it first",
+        field: "movePartTo", reason: "conflict" },
+      says: "GPIO 5",
+    },
+    {
+      sent: { captureOutput: "ledc:0", captureEnd: "open", captureUs: "9000" },
+      status: 400,
+      body: { error: "captureOutput, captureEnd and captureUs must be sent together: an Output Address, "
+        + "one of open/centre/close, and a width 500..2500", field: "captureUs", reason: "out-of-range",
+      accepts: "500..2500" },
+      says: "GPIO 49's captured width must be 500 to 2500",
+    },
+    {
+      sent: { reverseOutput: "ledc:4" },
+      status: 400,
+      body: { error: "reverseOutput must be an Output Address", field: "reverseOutput", reason: "out-of-range" },
+      says: "GPIO 5",
+    },
+  ];
+  for (const act of acts) {
+    const api = shippedApi((path, init) => {
+      if (init?.method === "POST") return { status: act.status, body: { ok: false, ...act.body } };
+      if (path === "/api/config") return { status: 200, body: answer.config };
+      return { status: 200, body: { outputs: answer.rows } };
+    });
+    // The Outputs are read first, as on a page, so the act's Output has a name.
+    const outputs = outputsModule(() => api);
+    await outputs.load();
+
+    const error = await api.postForm("/api/config", act.sent).then(() => null, (thrown) => thrown);
+    const said = api.messageFor(error, act.sent);
+    assert.ok(!said.includes(act.body.error), `the droid's sentence reached the page: ${said}`);
+    [act.body.field, "ledc:", "Output Address"].forEach((wire) =>
+      assert.ok(!said.includes(wire), `"${wire}" reached the page: ${said}`));
+    assert.ok(said.includes(act.says), `"${act.says}" is not in: ${said}`);
+  }
+});
+

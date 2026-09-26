@@ -93,7 +93,8 @@ route says so) with three more keys beside `error`:
 
 `error` stays the sentence it has always been. A client reads the three keys
 for what was wrong and never parses the sentence for them. `POST /api/servo`'s
-width (`positionUs`) is refused the same way.
+width (`positionUs`) is refused the same way, and so is a refused Part move on
+`POST /api/config`, which answers `409`.
 
 **The words table is the only place a field reaches a screen.** `field` is the
 droid's own name for a Setting and never shown: `data/web_api.js` words every
@@ -1747,11 +1748,14 @@ Updates supported config fields and persists to NVS.
 - Errors:
 - `400` on invalid value/type or unsupported request with no accepted fields,
   with `field`, `reason` and `accepts` (see "Refusals from a settings write")
-- `409` when a Part move cannot land on the table as it stands — the Part is
-  not on `movePartFrom` (`"that Part is not on the Output movePartFrom names -
-  read the outputs again, then move it"`), the destination already drives as
-  many Parts as it can, or no Output is addressed at `movePartTo`. **Nothing in
-  the request was applied**, including any other field sent beside the move.
+- `409` when a Part move cannot land on the table as it stands, with `field`
+  and `reason` beside `error` as in "Refusals from a settings write": the Part
+  is not on `movePartFrom` (`field` `movePartFrom`, `reason` `conflict`), the
+  destination already drives as many Parts as it can (`movePartTo`,
+  `conflict`), no Output is addressed at `movePartTo` (`movePartTo`,
+  `out-of-range`), or the Part is not one this build models (`movePart`,
+  `out-of-range`). **Nothing in the request was applied**, including any other
+  field sent beside the move.
 - `413` `{"ok":false,"error":"payload too large"}` — a body over 12 KB, which
   the droid does not buffer. A restore's body is the config and each Output's
   settings, well inside it.

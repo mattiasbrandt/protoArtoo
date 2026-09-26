@@ -37,11 +37,39 @@ const OutputRowSetting kOutputRowSettings[] = {
 """
 
 
-def web_api(droid: str, row: str) -> str:
+# One Record module and the act fields, and the words every case carries for
+# them unless it is about them.
+RECORD = """
+const ConfigRecordField kFields[FieldCount] = {
+    {"domeDesign", "droidBuild.domeDesign", "mk41"},
+};
+"""
+
+ACTS = """
+constexpr ConfigActField kActFields[ActFieldCount] = {
+    {"captureUs", "500..2500"},
+};
+"""
+
+RECORD_AND_ACT_WORDS = (
+    '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign" },\n'
+    '    captureUs: { word: "captured width", on: "captureOutput" },'
+)
+
+
+def web_api(droid: str, row: str, records_and_acts: str = RECORD_AND_ACT_WORDS) -> str:
     return (
-        "  const SETTING_WORDS = Object.freeze({\n" + droid + "\n  });\n"
+        "  const SETTING_WORDS = Object.freeze({\n" + droid + "\n" + records_and_acts + "\n  });\n"
         "  const ROW_SETTING_WORDS = Object.freeze({\n" + row + "\n  });\n"
     )
+
+
+def fixtures(tmp: str) -> dict:
+    record = Path(tmp) / "config_record_droid_build.cpp"
+    record.write_text(RECORD)
+    acts = Path(tmp) / "api_config_apply.cpp"
+    acts.write_text(ACTS)
+    return {"records": [record], "acts": acts}
 
 
 class Check(unittest.TestCase):
@@ -52,7 +80,7 @@ class Check(unittest.TestCase):
             api = Path(tmp) / "web_api.js"
             api.write_text(web_text)
             errors: list[str] = []
-            words.check(errors, settings=settings, web_api=api)
+            words.check(errors, settings=settings, web_api=api, **fixtures(tmp))
         return errors
 
     def test_words_for_every_setting_pass(self):
@@ -112,7 +140,7 @@ class Check(unittest.TestCase):
             api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
                                    '    scream: { word: "s" },\n    bank: { word: "b" },', '    throwMs: { word: "t" },'))
             errors: list[str] = []
-            words.check(errors, settings=settings, web_api=api)
+            words.check(errors, settings=settings, web_api=api, **fixtures(tmp))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("17 characters", errors[0])
 
@@ -124,9 +152,40 @@ class Check(unittest.TestCase):
             api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
                                    '    scream: { word: "s" },\n    bank: { word: "b" },', '    throwMs: { word: "t" },'))
             errors: list[str] = []
-            words.check(errors, settings=settings, web_api=api)
+            words.check(errors, settings=settings, web_api=api, **fixtures(tmp))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("both declare", errors[0])
+
+    def test_a_record_field_with_no_words_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t" },',
+            '    captureUs: { word: "captured width" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("domeDesign is a declared Record field", errors[0])
+
+    def test_a_record_field_named_at_another_get_path_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t" },',
+            '    domeDesign: { word: "dome design", path: "droidBuild.dome" },\n'
+            '    captureUs: { word: "captured width" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("droidBuild.domeDesign", errors[0])
+
+    def test_an_act_field_with_no_words_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t" },',
+            '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("captureUs is a declared act field", errors[0])
 
 
 class RealTree(unittest.TestCase):

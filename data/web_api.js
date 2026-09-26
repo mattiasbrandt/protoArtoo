@@ -346,12 +346,21 @@
   //   refused - what a refusal with nothing to accept says, where "was not
   //            saved" says too little: a part the droid does not list, an
   //            address that is not one
+  //   malformed - what a refusal of a request the droid could not read says
+  //
+  // An act's field names an Output by the address the page sent, never by a
+  // word of the droid's (R16):
+  //   subject - the refused value IS an Output, and the Output is what the
+  //            sentence is about: "ARM3 already drives as many parts as it can"
+  //   on     - the field whose sent value is the Output this one is about:
+  //            "GPIO 49's captured width must be 500 to 2500 µs"
   const MS = " ms";
   const US = " µs";
   const PCT = "%";
   const PRESET_CLASH = "must differ from the other presets";
   const PULSE_CLASH = "must sit between the minimum and maximum pulses";
   const NOT_LISTED = "is not one this droid takes";
+  const OFF_THE_DROID = "is not on this droid";
   const CATEGORY_CLASH = "must be at most the last track, or both 0";
   const SETTING_WORDS = Object.freeze({
     speedLimitMax: { word: "maximum speed limit", path: "drive.speedLimitMax" },
@@ -404,6 +413,44 @@
     // An act's width, not a stored Setting: POST /api/servo words its
     // refusal the same way.
     positionUs: { word: "width", unit: US },
+
+    // The Records (include/config_records.h), by the form name each field is
+    // posted under. Guided Setup and the Droid Build picker state them.
+    domeDesign: { word: "dome design", path: "droidBuild.domeDesign", refused: NOT_LISTED },
+    domeVariant: { word: "dome variant", path: "droidBuild.domeVariant", refused: NOT_LISTED },
+    bodyDesign: { word: "body design", path: "droidBuild.bodyDesign", refused: NOT_LISTED },
+    bodyVariant: { word: "body variant", path: "droidBuild.bodyVariant", refused: NOT_LISTED },
+    fittedParts: {
+      word: "the list of fitted parts", path: "droidBuild.fitted", refused: "names a part this droid does not model",
+    },
+    guidedSetupRun: {
+      word: "setup's progress",
+      path: "guidedSetup.run",
+      values: { "not-run": "not started", skipped: "skipped", completed: "finished" },
+    },
+    guidedSetupVisited: {
+      word: "the list of questions shown", path: "guidedSetup.visited", refused: "names a question the droid cannot keep",
+    },
+    guidedSetupSummaryDone: {
+      word: "setup summary", path: "guidedSetup.summaryDone", values: { true: "done", false: "not done" },
+    },
+
+    // The acts' fields (src/web/api_config_apply.cpp kActFields): move a Part,
+    // capture an end, reverse an Output.
+    movePart: { word: "this part", refused: "is not one this droid models" },
+    movePartFrom: {
+      word: "the output it was on", subject: true, clash: "no longer drives it", refused: OFF_THE_DROID,
+    },
+    movePartTo: {
+      word: "the output it goes to", subject: true,
+      clash: "already drives as many parts as it can", refused: OFF_THE_DROID,
+    },
+    captureOutput: { word: "this output", subject: true, refused: OFF_THE_DROID },
+    captureEnd: { word: "end to set", on: "captureOutput" },
+    captureUs: { word: "captured width", unit: US, on: "captureOutput" },
+    reverseOutput: { word: "this output", subject: true, refused: OFF_THE_DROID },
+    // A body the droid could not read at all: no one field is to blame.
+    plain: { word: "the request", malformed: "could not be read" },
 
     // The audio Settings (#431 addendum), by the name their door takes them
     // under. The Sound page's own labels.
@@ -537,29 +584,43 @@
 
   const capitalise = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
+  // What the refused request sent under `name`, from the form or the plain
+  // object the page posted; null when the page did not say.
+  const sentValue = (sent, name) => {
+    if (!sent || !name) return null;
+    const value = sent instanceof URLSearchParams ? sent.get(name) : sent[name];
+    return typeof value === "string" ? value : null;
+  };
+
   /**
    * A settings refusal in the builder's words: what they changed, and what it
    * takes - `Maximum speed limit must be 0 to 600`, `GPIO 49's time to full throw must be
    * 20 to 10000 ms`. Read from the refusal's field, reason and accepts, never
    * from its sentence.
    *
+   * @param {Error} error - what PAApi threw
+   * @param {object|URLSearchParams} [sent] - what the refused request posted,
+   *   so a refusal of an act names the Output the page sent it for
    * @returns {string|null} null when the error is not a refusal of a Setting
    *   this table has words for.
    */
-  const sayRefusal = (error) => {
+  const sayRefusal = (error, sent = null) => {
     if (!(error instanceof Error)) return null;
     // "The fitted module has no catalog" is not about any value, and its
     // sentence carries no wire name: it is left as the droid said it.
     if (error.reason === "not-in-this-build") return null;
     const setting = settingFor(error.field);
     if (!setting) return null;
-    const { words, address } = setting;
+    const { words, address, key } = setting;
     // A part named only for its value: "bank and page must be provided
     // together" is not a refusal of the bank the builder chose.
     if (words.valueOnly && error.reason !== "out-of-range") return null;
-    const owner = address ? outputName(address) || "This output" : null;
-    const name = owner ? `${owner}'s ${words.word}` : capitalise(words.word);
+    const about = address || (words.on ? sentValue(sent, words.on) : null);
+    const owner = about ? outputName(about) || "This output" : null;
+    const subject = words.subject ? outputName(sentValue(sent, key)) : null;
+    const name = subject || (owner ? `${owner}'s ${words.word}` : capitalise(words.word));
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
+    if (error.reason === "malformed-argument" && words.malformed) return `${name} ${words.malformed}`;
     if (error.reason === "conflict") return `${name} ${words.clash || "clashes with another setting"}`;
     if (error.reason === "out-of-range") {
       if (accepts && words.must && owner) return `${owner} ${words.must} ${sayAccepts(accepts, words)}`;
@@ -569,7 +630,8 @@
     return `${name} was not saved`;
   };
 
-  const messageFor = (error) => {
+  // `sent`: what the refused request posted (sayRefusal()).
+  const messageFor = (error, sent = null) => {
     if (!(error instanceof ApiError)) return "Request failed";
     if (error.kind === "timeout") return "Request timed out";
     if (error.kind === "cancelled") return "Request cancelled";
@@ -580,7 +642,7 @@
       const refusal = refusalFor(error);
       if (refusal) return refusal.route ? `${refusal.text} ${refusal.route.label}.` : refusal.text;
       // A Setting the droid would not take, in the builder's words.
-      const said = sayRefusal(error);
+      const said = sayRefusal(error, sent);
       if (said) return said;
       if (error.message && !error.message.startsWith("HTTP ")) return error.message;
       return HTTP_STATUS_MESSAGES[error.status]

@@ -53,6 +53,15 @@ const IDENTITY = {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The shipped words (data/web_api.js), which is what turns a refusal into what
+// the builder reads: this harness's own PAApi answers with it, so a refused
+// move is shown the way a browser shows it.
+const shippedWords = () => {
+  const window = {};
+  vm.runInNewContext(readData("web_api.js"), { window, URLSearchParams });
+  return window.PAApi;
+};
+
 const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("droid_parts.js") } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
@@ -63,7 +72,11 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
   document.body.setAttribute("data-page", "home");
   document.currentScript = { dataset: { scripts: chain } };
 
+  // `refusal`: the droid's answer to the next move - its sentence and the
+  // field and reason beside it - or null to let it land.
   const env = { document, outputs, posts: [], refusal: null };
+  const words = shippedWords();
+  words.nameOutputsWith((address) => env.outputs.find((output) => output.address === address)?.name ?? null);
 
   const windowListeners = new Map();
   const windowMock = {
@@ -121,10 +134,9 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
       postForm: async (path, form) => {
         env.posts.push({ path, form: { ...form } });
         if (env.refusal) {
-          const error = new Error(env.refusal);
-          error.kind = "http";
-          error.status = 409;
-          throw error;
+          throw new words.ApiError(env.refusal.error, {
+            kind: "http", status: 409, field: env.refusal.field, reason: env.refusal.reason,
+          });
         }
         env.outputs.forEach((output) => {
           output.parts = output.parts.filter((id) => id !== form.movePart);
@@ -132,7 +144,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
         env.outputs.find((output) => output.address === form.movePartTo)?.parts.push(form.movePart);
         return { ok: true, status: 200, data: {} };
       },
-      messageFor: (error) => error.message,
+      messageFor: words.messageFor,
       // The shipped shape (data/web_api.js): disabled plus aria-disabled, which
       // is what the shell's ignored-input notice looks for on a press. Every
       // control on Parts that asks the droid to move something is gated through
@@ -334,17 +346,22 @@ test("a Part renamed in the catalog keeps its id on the row and on the wire", as
   assert.equal(env.posts[0].form.movePart, "doorFL");
 });
 
-test("a move the droid refuses says the droid's reason and shows the table as it is", async () => {
-  const env = await bootParts();
-  env.refusal = "that Part is not on the Output movePartFrom names - read the outputs again, then move it";
+// The shipped defect (ADR 0059, #432): a refused move showed the droid's own
+// sentence, wire name and all. The droid still sends that sentence, so it is
+// the decoy here: the builder reads the refusal worded from its field and
+// reason, naming the Part and the Output the move was about, and none of it.
+test("a move the droid refuses is said in the builder's words and shows the table as it is", async () => {
+  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorRL"] }) });
+  const sentence = "that Part is not on the Output movePartFrom names - read the outputs again, then move it";
+  env.refusal = { error: sentence, field: "movePartFrom", reason: "conflict" };
 
   env.pick("doorRL", "ledc:3");
+  env.click("parts-move-confirm");
   await sleep(20);
-  assert.equal(
-    env.text("parts-feedback"),
-    "Rear-left body door did not move: that Part is not on the Output movePartFrom names - read the outputs again, then move it",
-  );
-  assert.equal(env.select("doorRL").value, "none");
+  const said = env.text("parts-feedback");
+  assert.ok(!said.includes(sentence) && !said.includes("movePartFrom"), `the droid's sentence reached the page: ${said}`);
+  assert.match(said, /^Rear-left body door did not move: ARM1 /, "it names the Part and the Output it was on");
+  assert.equal(env.select("doorRL").value, "ledc:0", "the table shows where the droid still has it");
 });
 
 test("a Part the droid drives and the page does not know is named, never dropped", async () => {

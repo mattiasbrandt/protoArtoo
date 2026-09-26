@@ -968,14 +968,11 @@
     if (!output) return;
     const centreBefore = output.centreUs;
     const label = end === "centre" ? "CENTER" : end === "open" ? "MAX" : "MIN";
+    const form = { captureOutput: output.address, captureEnd: end, captureUs: String(dial.us) };
     try {
-      await window.PAApi.postForm(
-        "/api/config",
-        { captureOutput: output.address, captureEnd: end, captureUs: String(dial.us) },
-        { timeoutMs: 4000 }
-      );
+      await window.PAApi.postForm("/api/config", form, { timeoutMs: 4000 });
     } catch (error) {
-      setNote(`${label} was not recorded: ${window.PAApi.messageFor(error)}`, "error");
+      setNote(`${label} was not recorded: ${window.PAApi.messageFor(error, form)}`, "error");
       return;
     }
     await refresh();
@@ -993,10 +990,11 @@
   const reverseEnds = async () => {
     const output = dialOutput();
     if (!output) return;
+    const form = { reverseOutput: output.address };
     try {
-      await window.PAApi.postForm("/api/config", { reverseOutput: output.address }, { timeoutMs: 4000 });
+      await window.PAApi.postForm("/api/config", form, { timeoutMs: 4000 });
     } catch (error) {
-      setNote(`The ends were not swapped: ${window.PAApi.messageFor(error)}`, "error");
+      setNote(`The ends were not swapped: ${window.PAApi.messageFor(error, form)}`, "error");
       return;
     }
     await refresh();

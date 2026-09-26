@@ -4,7 +4,10 @@
 Each Setting is declared once in the firmware (ADR 0068, amended 2026-09-26):
 a droid Setting in `kConfigSettings[]`, an audio Setting in `kAudioSettings[]`,
 a CHIRP catalog binding part in `kCatalogBindingSettings[]` and an Output row
-Setting in `kOutputRowSettings[]`. The checks that must agree
+Setting in `kOutputRowSettings[]`. A Record's fields are declared in its own
+module's `kFields[]` (the Records are listed in include/config_records.inc), and
+an act's fields in `kActFields[]` in src/web/api_config_apply.cpp (ADR 0068,
+second amendment). The checks that must agree
 with that one home -
 tools/check_setting_words.py (the browser has words for every Setting) and
 tools/check_component_registry_drift.py (a family's member key is a Setting's
@@ -56,8 +59,12 @@ class RowSetting:
 
 
 def _table(text: str, name: str) -> str:
-    """The body of the array called `name`, from its `{` to the `};` closing it."""
-    start = text.find(f"{name}[] = {{")
+    """The body of the array called `name`, from its `{` to the `};` closing it.
+
+    The array may be sized (`kFields[FieldCount] = {`) or not (`kFields[] = {`).
+    """
+    match = re.search(rf"\b{name}\[\w*\] = \{{", text)
+    start = match.start() if match else -1
     if start < 0:
         raise ValueError(f"{name}[] is not declared in {CONFIG_SETTINGS.name}")
     end = text.find("\n};", start)
@@ -118,3 +125,48 @@ def catalog_binding_settings(source: Path | None = None) -> list[str]:
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kCatalogBindingSettings")
     return [m.group("name") for m in _BINDING.finditer(body)]
+
+
+CONFIG_RECORDS = ROOT / "include" / "config_records.inc"
+CONFIG_APPLY = ROOT / "src" / "web" / "api_config_apply.cpp"
+
+# A Record field is `{"form", "path", "example"}` in its module's kFields[].
+_RECORD_FIELD = re.compile(r'\{\s*"(?P<form>\w+)",\s*"(?P<path>[\w.]+)",\s*"[^"]*"\s*\}')
+# A Record is `PA_CONFIG_RECORD(Name, Value, "key")` in the list.
+_RECORD = re.compile(r'^PA_CONFIG_RECORD\((?P<name>\w+),', re.MULTILINE)
+# An act field is `{"form", "accepts"}` in kActFields[].
+_ACT_FIELD = re.compile(r'\{\s*"(?P<form>\w+)",\s*"[^"]*"\s*\}')
+
+
+@dataclass(frozen=True)
+class RecordField:
+    record: str
+    form: str
+    path: str
+
+
+def record_modules(records: Path | None = None) -> list[Path]:
+    """Each Record's module, named from the list the way include/config_records.inc
+    says: `DroidBuild` is src/config_record_droid_build.cpp."""
+    text = (records or CONFIG_RECORDS).read_text(encoding="utf-8")
+    modules = []
+    for match in _RECORD.finditer(text):
+        snake = re.sub(r"(?<!^)(?=[A-Z])", "_", match.group("name")).lower()
+        modules.append((records or CONFIG_RECORDS).parent.parent / "src" / f"config_record_{snake}.cpp")
+    return modules
+
+
+def record_fields(modules: list[Path] | None = None) -> list[RecordField]:
+    """Every field of every Record, from each module's kFields[]."""
+    found = []
+    for module in record_modules() if modules is None else modules:
+        body = _table(module.read_text(encoding="utf-8"), "kFields")
+        found += [RecordField(record=module.stem, form=m.group("form"), path=m.group("path"))
+                  for m in _RECORD_FIELD.finditer(body)]
+    return found
+
+
+def act_fields(source: Path | None = None) -> list[str]:
+    """The form name of every field an act takes, from kActFields[]."""
+    body = _table((source or CONFIG_APPLY).read_text(encoding="utf-8"), "kActFields")
+    return [m.group("form") for m in _ACT_FIELD.finditer(body)]
