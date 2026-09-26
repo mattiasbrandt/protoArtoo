@@ -67,15 +67,18 @@ Example with hint and field:
 ### Refusals from a settings write
 
 The settings writes - `POST /api/config`, `POST /api/wifi`,
-`POST /api/audio/tracks`, `POST /api/audio/category-range` and
-`POST /api/audio/mood-map` - answer a refused value (`400`, or `404` where a
+`POST /api/audio/tracks`, `POST /api/audio/category-range`,
+`POST /api/audio/mood-map` and `POST /api/audio` `action=volume` - answer a refused value (`400`, or `404` where a
 route says so) with three more keys beside `error`:
 
 - `"field"`: the request field the refusal is about, by the name it was sent
   under - a form name, the form name of a field sent in the GET shape
   (`sbusTimeoutMs` for `rc.sbusTimeoutMs`), or `<address>.<key>` for a field of
-  an Output row (`ledc:3.ledCount`). Absent when no one field is to blame (a
-  request that sent nothing usable).
+  an Output row (`ledc:3.ledCount`). An audio value that travels under a
+  generic parameter is named by the Setting it was for instead: the key a
+  `track` or a category bound was sent for (`scream`, `snd_int_quiet`,
+  `snd_cat_gen_lo`), and `volume` for `level`. Absent when no one field is to
+  blame (a request that sent nothing usable).
 - `"reason"`: why, always present. One of `out-of-range` (not a value this field
   takes), `missing-argument` (a field this write needs was not sent - `field`
   names the missing one), `conflict` (the value is fine on its own and clashes
@@ -919,7 +922,8 @@ Action endpoint.
 - `action=stop`
 - no extra field
 - `action=volume`
-- requires `level` in `0..30`
+- requires `level` in `0..30`; a refused level carries `"field":"volume"`,
+  `reason` and `accepts` (see "Refusals from a settings write")
 - persists to NVS
 - `action=dollar`
 - requires `cmd` starting with `$`, max length 9 chars
@@ -1034,10 +1038,11 @@ Updates one persisted key.
 - `key`: track/tuning key
 - `track`: non-negative integer
 - optional CHIRP fields: `bank` (`1..6`) and `page` (`A..Z`) together
-- Validation highlights:
-- interval keys: `0..3600`
-- normal non-banked track keys: `0..999` (some keys allow `0`, others require `1..999`)
-- CHIRP banked index: `1..65535`
+- Validation: each key is an audio Setting declared once
+  (`src/config_settings.cpp`) with its own range - a sound action's track
+  `1..999`, or `0..999` where `0` means "no sound"; the random range `1..999`; a
+  chatter interval `0..3600` s; a category bound `0..999` - and a refused track
+  names the key as its `field`. A CHIRP banked index is `1..65535`.
 - Success: `200` `{"ok":true}`
 - Errors include:
 - missing key/track, unknown key

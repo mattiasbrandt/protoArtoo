@@ -245,7 +245,7 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ### Changed
 - **A value the droid will not take is said in your words.** Save a setting
-  it refuses - on Foot Drive, Dome, Servos or a restored backup - and the page
+  it refuses - on Foot Drive, Dome, Servos, Sound or a restored backup - and the page
   says which setting, and what it takes: "Neutral pulse must be 1000 to 2000
   µs". The pages no longer quietly move a number you typed into a range of
   their own, so what you typed is what the droid judged. The log level takes
