@@ -99,7 +99,7 @@ width (`positionUs`) is refused the same way.
 droid's own name for a Setting and never shown: `data/web_api.js` words every
 refusal from `field`, `reason` and `accepts` through its one table of Settings -
 `SETTING_WORDS` by form name or GET path, `ROW_SETTING_WORDS` by row key - so a
-page says "Top speed must be 0 to 600" and never `speedLimitMax`. Each Setting
+page says "Maximum speed limit must be 0 to 600" and never `speedLimitMax`. Each Setting
 is declared once in the firmware (`src/config_settings.cpp`, ADR 0068 amended
 2026-09-26), and `make check-setting-words` (run by `make check-action-drift`)
 fails when a declared Setting has no words there. No page keeps its own copy of

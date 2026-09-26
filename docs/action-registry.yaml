@@ -1695,7 +1695,7 @@ entries:
   domain: sound
   type: config
   marcduino_cmd: null
-  api_path: /api/config
+  api_path: /api/audio
   sse_event: null
   cpp_enum: null
   cpp_file: null

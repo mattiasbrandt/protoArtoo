@@ -93,7 +93,10 @@ enum class SettingDoor : uint8_t {
 };
 
 struct ConfigSetting {
-    const char* form;     // the POST /api/config form name, and a refusal's field
+    // The name its door takes it under and a refusal's field: a droid Setting's
+    // POST /api/config form name, an audio Setting's key (`scream`, `volume`),
+    // a catalog binding part's parameter (`bank`).
+    const char* form;
     // Where GET /api/config has it, dotted (`rc.sbusTimeoutMs`). nullptr for an
     // Output's wired tick, which GET reads on the Output's row (`wired`) and
     // POST takes back there too.
@@ -111,10 +114,11 @@ struct ConfigSetting {
     uint8_t family;       // Member: the ComponentCategoryId
     const char* says;     // Member and Ipv4: what the refusal's sentence says after the form name
     SettingDoor door = SettingDoor::Config;
-    // Whether a load repairs a stored value this Setting would refuse. False
-    // only where the field holds more than the door's check says: an audio
-    // track can hold a CHIRP catalog index up to 65535 (a banked binding), so
-    // clamping it to 999 would throw the binding away.
+    // Whether a load repairs a stored value this Setting would refuse. False for
+    // every audio track, random-chatter interval and category bound: a track's
+    // field can hold a CHIRP catalog index up to 65535 (a banked binding), so
+    // clamping it to 999 would throw the binding away, and the intervals and
+    // bounds were always read as stored. The volume and the mood masks repair.
     bool repairOnLoad = true;
 };
 
@@ -176,12 +180,14 @@ bool configSettingApply(const ConfigSetting& setting, const char* raw, ConfigSna
 void configSettingsDefaults(ConfigSnapshot* snap);
 
 // The NVS half: every Setting of one section, written under its key, or
-// read from it with anything the Setting would refuse repaired - a number
-// clamped into its range, an unknown word back to the default, an address too
-// long for its field emptied. A Member is read as it is stored, because whether
-// this image can still drive it is componentResolveMember()'s question.
-// `sectionData` is the section's struct (a DriveConfig, DomeConfig or
-// SystemConfig), and a read starts from what it already holds.
+// read from it. A read repairs what the Setting would refuse where its
+// declaration says to (repairOnLoad): a number clamped into its range, an
+// unknown word back to the default, a mask's upper bits stripped. An address
+// too long for its field is emptied. A Member is read as it is stored, because
+// whether this image can still drive it is componentResolveMember()'s question,
+// and so are the audio tracks, intervals and category bounds. `sectionData` is
+// the section's struct (a DriveConfig, DomeConfig, SystemConfig or
+// AudioConfig), and a read starts from what it already holds.
 bool configSettingsWrite(SettingSection section, const void* sectionData, ConfigWriter& writer);
 void configSettingsRead(SettingSection section, const ConfigReader& reader, void* sectionData);
 

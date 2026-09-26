@@ -276,9 +276,11 @@ void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig
 
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def) {
     *out = def;
-    // Every audio Setting under its key, held to what its door takes: the
-    // volume to the DFPlayer Mini's 0..30, a track to its range, a mood mask to
-    // its twelve bits (its upper nibble once carried category flags).
+    // Every audio Setting under its key. The volume is held to the DFPlayer
+    // Mini's 0..30 and a mood mask to its twelve bits (its upper nibble once
+    // carried category flags); a track, an interval and a category bound are
+    // read as stored, since a track can hold a CHIRP catalog index past 999
+    // (repairOnLoad, include/config_settings.h).
     configSettingsRead(SettingSection::Audio, r, out);
     // Not a Setting: nothing writes it after its default (config_settings.h).
     out->snd_happy = r.readU16("snd_happy", def.snd_happy);

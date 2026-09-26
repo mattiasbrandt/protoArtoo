@@ -384,8 +384,9 @@ bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16
 // Returns false if key is not found; true on success.
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value);
 
-// configAudioCategoryCompanionKey: Given an audio key (e.g., "snd_rand_min"),
-// return the companion category boundary key ("snd_rand_max"), or nullptr if none.
+// configAudioCategoryCompanionKey: Given a category bound's key (e.g.,
+// "snd_cat_gen_lo"), return the other bound of its pair ("snd_cat_gen_hi"), or
+// nullptr if none.
 const char* configAudioCategoryCompanionKey(const char* key);
 
 // configUpdateAudioMoodMasks: Atomically update mood category bounds in NVS.
