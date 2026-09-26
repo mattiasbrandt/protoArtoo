@@ -339,14 +339,18 @@
   //   values - the words its accepted tokens are said in, where they are wire
   //            vocabulary themselves
   //   clash  - what a conflict with the Settings beside it says
+  //   refused - what a refusal with nothing to accept says, where "was not
+  //            saved" says too little: a part the droid does not list, an
+  //            address that is not one
   const MS = " ms";
   const US = " µs";
   const PCT = "%";
   const PRESET_CLASH = "must differ from the other presets";
   const PULSE_CLASH = "must sit between the minimum and maximum pulses";
+  const NOT_LISTED = "is not one this droid takes";
   const CATEGORY_CLASH = "must be at most the last track, or both 0";
   const SETTING_WORDS = Object.freeze({
-    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },
+    speedLimitMax: { word: "maximum speed limit", path: "drive.speedLimitMax" },
     speedPresetSlow: { word: "slow preset", path: "drive.speedPresetSlow", clash: PRESET_CLASH },
     speedPresetNormal: { word: "normal preset", path: "drive.speedPresetNormal", clash: PRESET_CLASH },
     speedPresetTurbo: { word: "turbo preset", path: "drive.speedPresetTurbo", clash: PRESET_CLASH },
@@ -358,7 +362,7 @@
       values: { standard_pwm: "PWM", single_sbus: "one SBUS", dual_sbus: "two SBUS", elrs: "ELRS" },
     },
     sbusTimeoutMs: { word: "signal-lost timeout", unit: MS, path: "rc.sbusTimeoutMs" },
-    rcMember: { word: "radio", path: "rc.member" },
+    rcMember: { word: "radio", path: "rc.member", refused: NOT_LISTED },
     sbusRecvCh2: { word: "second SBUS input", path: "rc.sbus.recvCh2" },
     enableDomeEsc: { word: "Dome ESC", path: "components.domeEsc.enabled" },
     enableRcCh1: { word: "RC channel 1", path: "components.rcCh1.enabled" },
@@ -369,18 +373,29 @@
     enableRcCh6: { word: "RC channel 6", path: "components.rcCh6.enabled" },
     enableDrive: { word: "Foot Drive", path: "components.drive.enabled" },
     enableAudio: { word: "Sound", path: "components.audio.enabled" },
-    soundMember: { word: "sound module", path: "components.audio.member" },
+    soundMember: { word: "sound module", path: "components.audio.member", refused: NOT_LISTED },
     enableProtoR2link: { word: "dome link", path: "components.protoR2link.enabled" },
     domeEscNeutralUs: { word: "neutral pulse", unit: US, path: "domeEsc.neutralUs", clash: PULSE_CLASH },
-    domeEscMinPulseUs: { word: "minimum pulse", unit: US, path: "domeEsc.minPulseUs", clash: PULSE_CLASH },
-    domeEscMaxPulseUs: { word: "maximum pulse", unit: US, path: "domeEsc.maxPulseUs", clash: PULSE_CLASH },
+    domeEscMinPulseUs: {
+      word: "minimum pulse", unit: US, path: "domeEsc.minPulseUs", clash: "must be at most the neutral pulse",
+    },
+    domeEscMaxPulseUs: {
+      word: "maximum pulse", unit: US, path: "domeEsc.maxPulseUs", clash: "must be at least the neutral pulse",
+    },
     domeEscSpeedLimitPct: { word: "dome speed limit", unit: PCT, path: "domeEsc.speedLimitPct" },
     domeEscRndEnable: { word: "dome turning on its own", path: "domeEsc.rndEnable" },
     domeEscRndSpeedPct: { word: "turn speed", unit: PCT, path: "domeEsc.rndSpeedPct" },
-    domeEscRndPauseMin: { word: "shortest pause", unit: " s", path: "domeEsc.rndPauseMin" },
-    domeEscRndPauseMax: { word: "longest pause", unit: " s", path: "domeEsc.rndPauseMax" },
+    domeEscRndPauseMin: {
+      word: "shortest pause", unit: " s", path: "domeEsc.rndPauseMin", clash: "must be at most the longest pause",
+    },
+    domeEscRndPauseMax: {
+      word: "longest pause", unit: " s", path: "domeEsc.rndPauseMax", clash: "must be at least the shortest pause",
+    },
     domeEscRndMoveMs: { word: "move duration", unit: MS, path: "domeEsc.rndMoveMs" },
-    protoR2linkWifiPeerIp: { word: "dome's IP address", path: "protoR2link.wifiPeerIp" },
+    protoR2linkWifiPeerIp: {
+      word: "dome's IP address", path: "protoR2link.wifiPeerIp",
+      refused: "must be empty or an address like 192.168.4.2",
+    },
     logLevel: { word: "log level", path: "system.logLevel" },
     // An act's width, not a stored Setting: POST /api/servo words its
     // refusal the same way.
@@ -458,9 +473,10 @@
   // An Output's Settings, by the row key the droid refuses them under
   // (`ledc:1.throwMs`). The Output is named by the page (nameOutputsWith()).
   const ROW_SETTING_WORDS = Object.freeze({
-    wired: { word: "wired tick" },
+    // An expander's Output has no tick to switch off: it takes only `true`.
+    wired: { word: "wired tick", values: { true: "on" } },
     component: {
-      word: "fitted part",
+      word: "what is on the wire",
       values: { none: "nothing", mg996r: "MG996R", mg90s: "MG90S", rgb: "LED strip" },
     },
     ledCount: { word: "LED count" },
@@ -527,12 +543,13 @@
     const setting = settingFor(error.field);
     if (!setting) return null;
     const { words, address } = setting;
-    const owner = address ? outputName(address) || "this output" : null;
+    const owner = address ? outputName(address) || "This output" : null;
     const name = owner ? `${owner}'s ${words.word}` : capitalise(words.word);
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
     if (error.reason === "conflict") return `${name} ${words.clash || "clashes with another setting"}`;
     if (error.reason === "out-of-range") {
-      return accepts ? `${name} must be ${sayAccepts(accepts, words)}` : `${name} is not one this droid takes`;
+      if (accepts) return `${name} must be ${sayAccepts(accepts, words)}`;
+      if (words.refused) return `${name} ${words.refused}`;
     }
     return `${name} was not saved`;
   };
