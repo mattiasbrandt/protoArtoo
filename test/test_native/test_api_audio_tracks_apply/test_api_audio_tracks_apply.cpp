@@ -192,7 +192,8 @@ void test_audioTracksApply_bank_out_of_range_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("bank must be 1-6", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("bank must be 1..6", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("1..6", result.error.refusal.accepts);
 }
 
 void test_audioTracksApply_banked_index_zero_rejected(void) {
@@ -202,7 +203,10 @@ void test_audioTracksApply_banked_index_zero_rejected(void) {
     AudioTracksApplyResult result;
     audioTracksApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("banked index must be 1-65535", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("scream must be 1..65535", result.error.message);
+    // The binding's index, refused under the action it binds.
+    TEST_ASSERT_EQUAL_STRING("scream", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("1..65535", result.error.refusal.accepts);
 }
 
 void test_audioTracksApply_banked_success(void) {

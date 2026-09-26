@@ -7,7 +7,6 @@
 
 #include "api_audio_tracks_apply.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,18 +16,6 @@
 
 namespace {
 
-bool parseChirpPage(const char* raw, char* pageOut) {
-    if (raw == nullptr || pageOut == nullptr || strlen(raw) != 1) {
-        return false;
-    }
-    char page = (char)toupper((unsigned char)raw[0]);
-    if (page < 'A' || page > 'Z') {
-        return false;
-    }
-    *pageOut = page;
-    return true;
-}
-
 // The sentence, and what it says as data (#425): the reason is a parameter,
 // so no error write can leave it unset.
 void setError(AudioTracksApplyResult* result, const char* message, ApplyRefusalReason reason,
@@ -36,13 +23,6 @@ void setError(AudioTracksApplyResult* result, const char* message, ApplyRefusalR
     result->error.hasError = true;
     snprintf(result->error.message, sizeof(result->error.message), "%s", message);
     applyRefusalSet(&result->error.refusal, reason, field, accepts);
-}
-
-void setRangeError(AudioTracksApplyResult* result, const char* message, const char* field, long lo,
-                   long hi) {
-    result->error.hasError = true;
-    snprintf(result->error.message, sizeof(result->error.message), "%s", message);
-    applyRefusalSetRange(&result->error.refusal, field, lo, hi);
 }
 
 // The fitted module has no catalog to bind into; the shell answers 404.
@@ -102,17 +82,21 @@ void audioTracksApply(const ConfigParamSource& params, bool catalogSupported, Co
             return;
         }
 
-        uint32_t bankValue = 0;
-        if (!parseUint32Value(bankRaw, &bankValue) || bankValue < 1 || bankValue > 6) {
-            setRangeError(result, "bank must be 1-6", "bank", 1, 6);
-            return;
-        }
-        if (!parseChirpPage(pageRaw, &page)) {
-            setError(result, "page must be a single letter A-Z", ApplyRefusalReason::OutOfRange,
-                     "page", "A..Z");
+        // The binding's bank and page, each by its declaration
+        // (include/config_settings.h).
+        int32_t bankValue = 0;
+        int32_t pageValue = 0;
+        if (!configSettingCheck(*catalogBindingSetting("bank"), bankRaw, "bank", &bankValue,
+                                &result->error.refusal, result->error.message,
+                                sizeof(result->error.message)) ||
+            !configSettingCheck(*catalogBindingSetting("page"), pageRaw, "page", &pageValue,
+                                &result->error.refusal, result->error.message,
+                                sizeof(result->error.message))) {
+            result->error.hasError = true;
             return;
         }
         bank = (uint8_t)bankValue;
+        page = (char)pageValue;
         useBanked = true;
     }
 
@@ -121,12 +105,13 @@ void audioTracksApply(const ConfigParamSource& params, bool catalogSupported, Co
 
     if (useBanked) {
         // The catalog form of the binding: an index into the fitted module's
-        // catalog, which reaches past the 999 a plain track takes. It is the
-        // binding's own rule, spanning bank, page and index, so it is checked
-        // here rather than by the track's declaration.
-        uint32_t index = 0;
-        if (!parseUint32Value(trackRaw, &index) || index < 1U || index > 65535U) {
-            setRangeError(result, "banked index must be 1-65535", key, 1, 65535);
+        // catalog, which reaches past the 999 a plain track takes, checked by
+        // the binding's index declaration and refused under the action's key.
+        int32_t index = 0;
+        if (!configSettingCheck(*catalogBindingSetting("index"), trackRaw, key, &index,
+                                &result->error.refusal, result->error.message,
+                                sizeof(result->error.message))) {
+            result->error.hasError = true;
             return;
         }
         configAudioSetTrackByKey(&working->audio, key, (uint16_t)index);

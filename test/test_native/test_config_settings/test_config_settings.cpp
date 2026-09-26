@@ -309,11 +309,38 @@ void test_a_banked_track_index_loads_back_as_stored() {
     TEST_ASSERT_EQUAL_UINT16(40000, loaded.audio.snd_scream);
 }
 
+// The CHIRP catalog binding's parts are declared like any Setting's value
+// (#431): each refuses what it does not take with its range, and a page
+// letter is taken in either case.
+void test_the_catalog_binding_parts_refuse_with_what_they_take() {
+    const struct {
+        const char* part;
+        const char* bad;
+        const char* accepts;
+    } cases[] = {{"bank", "7", "1..6"}, {"page", "AB", "A..Z"}, {"index", "0", "1..65535"}};
+    for (const auto& c : cases) {
+        const ConfigSetting* setting = catalogBindingSetting(c.part);
+        TEST_ASSERT_NOT_NULL_MESSAGE(setting, c.part);
+        int32_t value = 0;
+        ApplyRefusal refusal;
+        TEST_ASSERT_FALSE_MESSAGE(configSettingCheck(*setting, c.bad, c.part, &value, &refusal,
+                                                     nullptr, 0),
+                                  c.part);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.accepts, refusal.accepts, c.part);
+    }
+    int32_t page = 0;
+    ApplyRefusal refusal;
+    TEST_ASSERT_TRUE(configSettingCheck(*catalogBindingSetting("page"), "c", "page", &page, &refusal,
+                                        nullptr, 0));
+    TEST_ASSERT_EQUAL_INT32('C', page);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_every_setting_saved_through_the_store_loads_back_under_its_key);
     RUN_TEST(test_every_setting_refuses_a_value_it_does_not_take_with_field_reason_and_accepts);
     RUN_TEST(test_the_ranges_that_drifted_hold_at_both_edges);
     RUN_TEST(test_a_banked_track_index_loads_back_as_stored);
+    RUN_TEST(test_the_catalog_binding_parts_refuse_with_what_they_take);
     return UNITY_END();
 }

@@ -25,6 +25,11 @@ const ConfigSetting kAudioSettings[] = {
     PA_TRACK("scream", "snd_scream", snd_scream, AUDIO_TRACK_SCREAM),
 };
 
+const ConfigSetting kCatalogBindingSettings[] = {
+    {"bank", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Range, 1,
+     6, 1, nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
+};
+
 const OutputRowSetting kOutputRowSettings[] = {
     {"throwMs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
      SERVO_FIELD_THROW_MS, SettingRule::Range, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, nullptr},
@@ -53,29 +58,39 @@ class Check(unittest.TestCase):
     def test_words_for_every_setting_pass(self):
         errors = self.run_check(web_api(
             '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },',
+            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
             '    throwMs: { word: "time to full throw", unit: MS },',
         ))
         self.assertEqual([], errors)
 
     def test_a_droid_setting_with_no_words_is_reported(self):
-        errors = self.run_check(web_api('    scream: { word: "Scream track" },',
+        errors = self.run_check(web_api('    scream: { word: "Scream track" },\n    bank: { word: "b" },',
                                         '    throwMs: { word: "t" },'))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("speedLimitMax", errors[0])
 
     def test_an_audio_setting_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    bank: { word: "b" },',
             '    throwMs: { word: "t" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("scream", errors[0])
 
+    def test_a_binding_part_with_no_words_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    scream: { word: "Scream track" },',
+            '    throwMs: { word: "t" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("bank", errors[0])
+
     def test_words_naming_another_get_path_are_reported(self):
         errors = self.run_check(web_api(
             '    speedLimitMax: { word: "top speed", path: "drive.topSpeed" },\n'
-            '    scream: { word: "Scream track" },',
+            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
             '    throwMs: { word: "t" },',
         ))
         self.assertEqual(1, len(errors), errors)
@@ -84,7 +99,7 @@ class Check(unittest.TestCase):
     def test_a_row_setting_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
             '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },', ""))
+            '    scream: { word: "Scream track" },\n    bank: { word: "b" },', ""))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("throwMs", errors[0])
 
@@ -95,7 +110,7 @@ class Check(unittest.TestCase):
             settings.write_text(SETTINGS.replace('"snd_scream"', '"snd_scream_longer"'))
             api = Path(tmp) / "web_api.js"
             api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
-                                   '    scream: { word: "s" },', '    throwMs: { word: "t" },'))
+                                   '    scream: { word: "s" },\n    bank: { word: "b" },', '    throwMs: { word: "t" },'))
             errors: list[str] = []
             words.check(errors, settings=settings, web_api=api)
         self.assertEqual(1, len(errors), errors)
@@ -107,7 +122,7 @@ class Check(unittest.TestCase):
             settings.write_text(SETTINGS.replace('"snd_scream"', '"spd_max"'))
             api = Path(tmp) / "web_api.js"
             api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
-                                   '    scream: { word: "s" },', '    throwMs: { word: "t" },'))
+                                   '    scream: { word: "s" },\n    bank: { word: "b" },', '    throwMs: { word: "t" },'))
             errors: list[str] = []
             words.check(errors, settings=settings, web_api=api)
         self.assertEqual(1, len(errors), errors)

@@ -468,6 +468,7 @@
     // A catalog binding's bank and page, beside a track.
     bank: { word: "catalog bank" },
     page: { word: "catalog page" },
+    index: { word: "catalog index" },
   });
 
   // An Output's Settings, by the row key the droid refuses them under

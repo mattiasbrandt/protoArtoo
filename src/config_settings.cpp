@@ -275,6 +275,18 @@ const ConfigSetting kAudioSettings[] = {
 
 constexpr size_t kAudioSettingCount = sizeof(kAudioSettings) / sizeof(kAudioSettings[0]);
 
+// The CHIRP catalog binding's parts: checks only, stored by the binding's own
+// writer on the action's keys (include/config_settings.h), so no section field
+// or NVS key is named here and no loop over the stored Settings reaches them.
+const ConfigSetting kCatalogBindingSettings[] = {
+    {"bank", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Range, 1,
+     6, 1, nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
+    {"page", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Letter,
+     'A', 'Z', 'A', nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
+    {"index", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U16, 2, SettingRule::Range,
+     1, 65535, 1, nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
+};
+
 // Every Setting, the droid's and the audio ones, for the loops that treat them
 // alike: the defaults and the NVS save and load.
 template <typename Fn>
@@ -496,6 +508,24 @@ bool parseNumberRule(SettingRule rule, SettingStorage storage, int32_t lo, int32
 
     if (raw != nullptr && words != nullptr && wordValue(*words, raw, value)) {
         return true;
+    }
+
+    if (rule == SettingRule::Letter) {
+        const int letter = raw != nullptr && raw[0] != '\0' && raw[1] == '\0'
+                               ? toupper((unsigned char)raw[0])
+                               : -1;
+        if (letter >= lo && letter <= hi) {
+            *value = letter;
+            return true;
+        }
+        if (sentence != nullptr) {
+            snprintf(sentence, sentenceSize, "%s must be a single letter %c-%c", field, (char)lo,
+                     (char)hi);
+        }
+        char accepts[8];
+        snprintf(accepts, sizeof(accepts), "%c..%c", (char)lo, (char)hi);
+        applyRefusalSet(refusal, ApplyRefusalReason::OutOfRange, field, accepts);
+        return false;
     }
 
     if ((rule == SettingRule::Range || rule == SettingRule::Mask) && raw != nullptr) {
@@ -812,6 +842,24 @@ void configSettingsRead(SettingSection section, const ConfigReader& reader, void
 // =============================================================================
 // The audio Settings
 // =============================================================================
+size_t catalogBindingSettingCount() {
+    return sizeof(kCatalogBindingSettings) / sizeof(kCatalogBindingSettings[0]);
+}
+
+const ConfigSetting& catalogBindingSettingAt(size_t index) { return kCatalogBindingSettings[index]; }
+
+const ConfigSetting* catalogBindingSetting(const char* part) {
+    if (part == nullptr) {
+        return nullptr;
+    }
+    for (const ConfigSetting& setting : kCatalogBindingSettings) {
+        if (strcmp(setting.form, part) == 0) {
+            return &setting;
+        }
+    }
+    return nullptr;
+}
+
 size_t audioSettingCount() { return kAudioSettingCount; }
 
 const ConfigSetting& audioSettingAt(size_t index) { return kAudioSettings[index]; }

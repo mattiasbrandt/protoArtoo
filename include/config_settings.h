@@ -63,7 +63,9 @@ enum class SettingStorage : uint8_t { Bool, U8, U16, I16, U32, Text };
 //   Mask   - a bit mask 0..hi. Stored and loaded with the bits above `hi`
 //            stripped rather than clamped: a mood mask's upper nibble once
 //            carried category flags, and the track IDs below it are the value.
-enum class SettingRule : uint8_t { Range, Words, Bool, Member, Ipv4, Mask };
+//   Letter - one letter lo..hi (a CHIRP catalog page, A..Z), either case,
+//            held as its upper-case character.
+enum class SettingRule : uint8_t { Range, Words, Bool, Member, Ipv4, Mask, Letter };
 
 // A word list: the words for values first .. first + count - 1, each named by
 // `nameOf`. The name function is the vocabulary's one home (the RC receiver
@@ -197,7 +199,21 @@ const ConfigSetting& audioSettingAt(size_t index);
 // The audio Setting a door takes under `name`, or nullptr.
 const ConfigSetting* audioSettingByName(const char* name, SettingDoor door);
 
-// Parse `raw` against a Range, Words, Bool or Mask Setting without storing it:
+// -----------------------------------------------------------------------------
+// The CHIRP catalog binding (#431): the catalog form of a sound action's track
+// or a category's range, a bank, a page and an index into the fitted module's
+// catalog. Its parts are checked here like any Setting's value. It is stored by
+// the tracks and category-range write paths on the binding's own keys (the
+// `chr_*` keys, include/chirp_binding_keys.h - one per action, the binding
+// writer's own key table, #424); the index lives in the action's track field.
+// So these declarations carry the check and no key: `bank` (1..6), `page`
+// (A..Z) and `index` (1..65535).
+// -----------------------------------------------------------------------------
+size_t catalogBindingSettingCount();
+const ConfigSetting& catalogBindingSettingAt(size_t index);
+const ConfigSetting* catalogBindingSetting(const char* part);
+
+// Parse `raw` against a Range, Words, Bool, Mask or Letter Setting without storing it:
 // the check alone, for a door that holds the value somewhere other than a
 // ConfigSnapshot. `field` names the refusal. False, with the refusal written,
 // when it is not taken. `sentence` may be nullptr with a size of 0 for a door

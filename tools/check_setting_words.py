@@ -13,7 +13,8 @@ ADR 0059 forbids - so this fails instead:
    by either);
 2. every Output row Setting has an entry under its row key;
 3. every audio Setting has an entry under the name its door takes it under
-   (`scream`, `snd_int_quiet`, `volume`), in `SETTING_WORDS` beside the droid's.
+   (`scream`, `snd_int_quiet`, `volume`), in `SETTING_WORDS` beside the droid's,
+   and so does each CHIRP catalog binding part (`bank`, `page`, `index`).
 
 And, because the words check is the one place every declaration is read and
 the Preferences double in the native tests enforces neither: no NVS key is
@@ -118,6 +119,12 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
             errors.append(
                 f"{name} is a declared audio Setting with no words in SETTING_WORDS "
                 f"({WEB_API.name}) - a refusal of it would reach the Sound page as its wire name"
+            )
+    for name in setting_declarations.catalog_binding_settings(settings):
+        if name not in droid:
+            errors.append(
+                f"{name} is a declared CHIRP binding part with no words in SETTING_WORDS "
+                f"({WEB_API.name})"
             )
     for setting in setting_declarations.row_settings(settings):
         if setting.key not in row:

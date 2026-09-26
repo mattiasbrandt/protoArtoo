@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""The Settings src/config_settings.cpp declares, read out of its three tables.
+"""The Settings src/config_settings.cpp declares, read out of its tables.
 
 Each Setting is declared once in the firmware (ADR 0068, amended 2026-09-26):
-a droid Setting in `kConfigSettings[]`, an audio Setting in `kAudioSettings[]`
-and an Output row Setting in `kOutputRowSettings[]`. The checks that must agree
+a droid Setting in `kConfigSettings[]`, an audio Setting in `kAudioSettings[]`,
+a CHIRP catalog binding part in `kCatalogBindingSettings[]` and an Output row
+Setting in `kOutputRowSettings[]`. The checks that must agree
 with that one home -
 tools/check_setting_words.py (the browser has words for every Setting) and
 tools/check_component_registry_drift.py (a family's member key is a Setting's
@@ -106,3 +107,14 @@ def audio_settings(source: Path | None = None) -> list[AudioSetting]:
     body = _table(text, "kAudioSettings")
     return [AudioSetting(name=m.group("name"), nvs_key=m.group("key") or m.group("name"))
             for m in _AUDIO.finditer(body)]
+
+
+# A CHIRP catalog binding part opens as a brace entry `{"bank", nullptr, nullptr,`.
+_BINDING = re.compile(r'\{\s*"(?P<name>\w+)",\s*nullptr,\s*nullptr,')
+
+
+def catalog_binding_settings(source: Path | None = None) -> list[str]:
+    """The name of each CHIRP catalog binding part (`bank`, `page`, `index`)."""
+    text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
+    body = _table(text, "kCatalogBindingSettings")
+    return [m.group("name") for m in _BINDING.finditer(body)]
