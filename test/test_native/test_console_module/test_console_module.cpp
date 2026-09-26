@@ -2736,10 +2736,9 @@ void test_log_level_rejects_an_unknown_argument() {
     TEST_ASSERT_EQUAL(CONSOLE_REASON_UNKNOWN_ARGUMENT, g_cap.reason);
 }
 
-// An extra key alongside a valid value= must still be rejected as unknown -
-// the word-form translator only fires for an exactly-one-argument write
-// (consoleExecuteSystemLogLevel()'s own comment, src/console/console_module.cpp),
-// so this also proves the translator does not silently swallow the second key.
+// An extra key alongside a valid value= must still be rejected as unknown: a
+// word the Setting takes (src/config_settings.cpp) does not let a second key
+// through the single-field write's argument check.
 void test_log_level_rejects_an_extra_argument_even_with_a_valid_word() {
     runQuery("system.config.log-level value=debug bogus=1");
 
