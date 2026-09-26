@@ -423,13 +423,9 @@
             {
               "caller": "consoleExecuteCommand",
               "table": "g_audioConfigExecutors"
-            },
-            {
-              "caller": "consoleExecuteCommand",
-              "table": "g_scalarConfigExecutors"
             }
           ],
-          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). A direct action, an audio config write and a scalar config write are reached the same way, through a pointer found in one of the six g_*DirectActionExecutors tables, g_audioConfigExecutors or g_scalarConfigExecutors, so those rows are stitched too (#428). Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
+          "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). A direct action and an audio config write are reached the same way, through a pointer found in one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors, so those rows are stitched too (#428). A single-field Setting op and aux.config.led-count are direct calls since #431, which the walker follows without a stitch. Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
           "chain_bytes": 8896,
           "product_bytes": 8896,
           "profiler_bytes": 8896,
@@ -482,13 +478,9 @@
             {
               "caller": "consoleExecuteCommand",
               "table": "g_audioConfigExecutors"
-            },
-            {
-              "caller": "consoleExecuteCommand",
-              "table": "g_scalarConfigExecutors"
             }
           ],
-          "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status, api, direct-action, audio-config or scalar-config op through a pointer read from g_statusExecutors, one of the six g_*DirectActionExecutors tables, g_audioConfigExecutors or g_scalarConfigExecutors.",
+          "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status, api, direct-action or audio-config op through a pointer read from g_statusExecutors, one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors; the Setting ops are direct calls (#431).",
           "chain_bytes": 11504,
           "product_bytes": 11504,
           "profiler_bytes": 11504,

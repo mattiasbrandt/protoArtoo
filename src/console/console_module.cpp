@@ -2027,9 +2027,13 @@ static const ConfigSetting* consoleFindSettingOp(const char* canonicalName) {
     return nullptr;
 }
 
-static void consoleExecuteSettingOp(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                    const ConfigSetting& setting, char* rawArgs,
-                                    ConsoleCommandSource source, const ConsoleRecordSink* sink) {
+// noinline, deliberately, as consoleExecuteAuxLedCount() below: each is called
+// from one site in consoleExecuteCommand(), and inlined there its locals would
+// join the frame every Console op carries, not only its own (the Console chain,
+// tools/task_stack_recipes.json).
+static void __attribute__((noinline)) consoleExecuteSettingOp(
+    uint32_t requestId, const ConsoleCatalogEntry* entry, const ConfigSetting& setting,
+    char* rawArgs, ConsoleCommandSource source, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
     if (!isWrite) {
         ConfigSnapshot snap = {};
@@ -2062,9 +2066,9 @@ static void consoleExecuteSettingOp(uint32_t requestId, const ConsoleCatalogEntr
 //
 // aux.config.led-pin went with the single stored pin. Which Output carries a
 // light is that Output's own stored type now, and a droid may have several.
-static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                      char* rawArgs, ConsoleCommandSource source,
-                                      const ConsoleRecordSink* sink) {
+static void __attribute__((noinline)) consoleExecuteAuxLedCount(
+    uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs, ConsoleCommandSource source,
+    const ConsoleRecordSink* sink) {
     ConsoleArgs parsedArgs = {};
     ConsoleArgParseStatus parseStatus = consoleParseArgs(rawArgs, &parsedArgs);
     if (parseStatus != CONSOLE_ARGS_PARSE_OK) {
@@ -2142,21 +2146,6 @@ struct ConsoleScalarConfigExecutorEntry {
     const char* operationName;
     ConsoleScalarConfigExecutorFn executor;
 };
-
-static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
-    {"aux.config.led-count", consoleExecuteAuxLedCount},
-};
-static const size_t kScalarConfigExecutorCount =
-    sizeof(g_scalarConfigExecutors) / sizeof(g_scalarConfigExecutors[0]);
-
-static ConsoleScalarConfigExecutorFn consoleFindScalarConfigExecutor(const char* canonicalName) {
-    for (size_t i = 0; i < kScalarConfigExecutorCount; ++i) {
-        if (strcmp(g_scalarConfigExecutors[i].operationName, canonicalName) == 0) {
-            return g_scalarConfigExecutors[i].executor;
-        }
-    }
-    return nullptr;
-}
 
 // system.config.mood (#226): the config-typed view of the same active-mood
 // mechanism system.action.set-mood exposes as an action - both are backed by
@@ -3100,9 +3089,8 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
 
 // The rows above that carry their own argument set, rather than having their
 // key fixed by the operation name (g_audioTrackKeyConfigRows[] holds those).
-// Same executor signature as g_scalarConfigExecutors[] so the cascade below
-// dispatches both the same way; a separate table because these are grouped
-// writes through an audio core, not single-field writes through configApply().
+// A table because these are grouped writes through an audio core, each
+// reached through the executor pointer found here.
 static const ConsoleScalarConfigExecutorEntry g_audioConfigExecutors[] = {
     {"sound.config.track-assignments", consoleExecuteSoundTrackAssignments},
     {"sound.config.system-track-assignments", consoleExecuteSoundSystemTrackAssignments},
@@ -3701,10 +3689,10 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 break;
             }
 
-            ConsoleScalarConfigExecutorFn scalarExecutor =
-                (entry != nullptr) ? consoleFindScalarConfigExecutor(entry->name) : nullptr;
-            if (scalarExecutor != nullptr) {
-                scalarExecutor(request->requestId, entry, rawArgs, request->source, sink);
+            // One Setting of one Output: named by its board Output rather than
+            // by a form name, so it is not a row of g_settingOps.
+            if (entry != nullptr && strcmp(entry->name, "aux.config.led-count") == 0) {
+                consoleExecuteAuxLedCount(request->requestId, entry, rawArgs, request->source, sink);
                 break;
             }
 
