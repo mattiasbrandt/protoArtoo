@@ -811,8 +811,14 @@ constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 7680;  // rule: 5776 -> 722
 // frames (368 + 96) are unchanged. Judged by allocation (ADR 0040, 2026-09-25
 // amendment) the rule, 9696 -> 12120 -> 12288, no longer fits 10752, so the
 // stack is raised to it.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11504;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // rule: 11504 -> 14380 -> 14848
+// Re-derived 2026-09-26 (#431): Console 11504 -> 11520. Each Setting is
+// declared once and the Console's Setting ops check through it; the
+// coordinator's firebeetle2 walk of the merged tree at 78268e66 gives
+// onCliCommand 11056 against the recorded 11040, and the stitched frames
+// (368 + 96) are unchanged. The rule still lands on 14848, so the allocation
+// does not move.
+constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11520;
+constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // rule: 11520 -> 14400 -> 14848
 // Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
 // lit wire on its own (fa8eed74, e277d325), and the chain carries that through
 // the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.

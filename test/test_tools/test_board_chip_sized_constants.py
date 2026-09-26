@@ -118,7 +118,7 @@ EXPECTED_BY_BOARD = {
         # through, 8464 -> 9696, and the rule raises it 10752 -> 12288.
         # #430: the walk follows the IDF log hook on this full-newlib chip.
         # RCInput 5568 -> 7168 (down the rule); Audio 7104 -> 9216;
-        # WebEvents 7264 -> 9216; Console 11504 -> 14848.
+        # WebEvents 7264 -> 9216; Console 11520 -> 14848.
         "rc_input_stack": 7168,
         "audio_stack": 9216,
         "web_events_stack": 9216,
