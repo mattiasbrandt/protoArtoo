@@ -13,20 +13,6 @@
 
 namespace {
 
-const char* rcInputModeLabel(RcInputMode mode) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return "standard_pwm";
-        case RC_INPUT_SINGLE_SBUS:
-            return "single_sbus";
-        case RC_INPUT_ELRS:
-            return "elrs";
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return "dual_sbus";
-    }
-}
-
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
                             bool anyPwmEnabled, bool useCh2) {
     switch (source) {
@@ -185,7 +171,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     const uint32_t sbus2Age = sourceAgeMs(nowMs, lastSbus2Ms);
     const uint32_t pwmAge = sourceAgeMs(nowMs, lastPwmMs);
 
-    snap.rc.mode = rcInputModeLabel(rcMode);
+    snap.rc.mode = rcInputModeToString(rcMode);
     snap.rc.timeoutMs = timeoutMs;
     snap.rc.sourceCount = VALIDATION_RC_SOURCE_CAPACITY;
 

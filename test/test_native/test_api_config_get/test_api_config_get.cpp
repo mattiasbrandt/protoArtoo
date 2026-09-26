@@ -494,19 +494,19 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:3\",\"name\":\"ARM3\",\"id\":\"aux1\",\"switchable\":true,"
-        "\"wired\":false,\"lightCapable\":true,\"ledCount\":1,\"throwMs\":1000,"
-        "\"accelMs\":250,\"ease\":\"none\",\"boot\":\"limp\",\"parts\":[],\"bandLoUs\":1000,"
-        "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
-        "\"closeUs\":1000,\"calibrated\":false,\"narrowedFrom\":null,\"commandedUs\":null,"
+        "\"lightCapable\":true,\"wired\":false,\"component\":\"none\",\"ledCount\":1,"
+        "\"throwMs\":1000,\"accelMs\":250,\"ease\":\"none\",\"boot\":\"limp\",\"openUs\":2000,"
+        "\"centreUs\":1500,\"closeUs\":1000,\"calibrated\":false,\"parts\":[],"
+        "\"bandLoUs\":1000,\"bandHiUs\":2000,\"narrowedFrom\":null,\"commandedUs\":null,"
         "\"targetUs\":null,"
         "\"held\":false,\"limp\":\"off\",\"nudgesDone\":1}"));
     TEST_ASSERT_NOT_NULL(strstr(
         backend.sentBody,
         "{\"address\":\"ledc:5\",\"name\":\"ARM5\",\"id\":\"aux3\",\"switchable\":true,"
-        "\"wired\":false,\"lightCapable\":true,\"ledCount\":1,\"throwMs\":1000,"
-        "\"accelMs\":250,\"ease\":\"none\",\"boot\":\"limp\",\"parts\":[],\"bandLoUs\":1000,"
-        "\"bandHiUs\":2000,\"component\":\"none\",\"openUs\":2000,\"centreUs\":1500,"
-        "\"closeUs\":1000,\"calibrated\":false,\"narrowedFrom\":null,\"commandedUs\":null,"
+        "\"lightCapable\":true,\"wired\":false,\"component\":\"none\",\"ledCount\":1,"
+        "\"throwMs\":1000,\"accelMs\":250,\"ease\":\"none\",\"boot\":\"limp\",\"openUs\":2000,"
+        "\"centreUs\":1500,\"closeUs\":1000,\"calibrated\":false,\"parts\":[],"
+        "\"bandLoUs\":1000,\"bandHiUs\":2000,\"narrowedFrom\":null,\"commandedUs\":null,"
         "\"targetUs\":null,"
         "\"held\":false,\"limp\":\"off\",\"nudgesDone\":0}"));
 }

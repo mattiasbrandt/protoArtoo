@@ -43,6 +43,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_settings.h"  // every Setting's GET path, and its value
 #include "config_write_lock.h"  // this file implements the config and RC Map Write Windows
 #include "console_config_fields.h"  // kComponentToggleFields - the boot mask's bit order
 #include "logging.h"
@@ -54,20 +55,6 @@
 static const char* TAG = "WebServer";
 
 namespace {
-
-const char* rcModeToString(RcInputMode mode) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return "standard_pwm";
-        case RC_INPUT_SINGLE_SBUS:
-            return "single_sbus";
-        case RC_INPUT_ELRS:
-            return "elrs";
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return "dual_sbus";
-    }
-}
 
 bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     return true;
@@ -231,7 +218,7 @@ void rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel, Ro
 }  // namespace
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
-    doc["mode"] = rcModeToString(snap.system.rc_input_mode);
+    doc["mode"] = rcInputModeToString(snap.system.rc_input_mode);
 
     JsonArray map = doc["map"].to<JsonArray>();
 
@@ -422,104 +409,99 @@ const char* getComponentLabel(const char* componentName) {
     return boardComponentLabel(runningBoardName(), componentName);
 }
 
+// The slot a dotted GET path names, made on the way: every key but the last
+// is an object. Keys are copied - the pool keeps one copy of each - because a
+// key cut out of a longer literal cannot be linked by length.
+JsonVariant getShapeSlot(JsonObject root, const char* dotted) {
+    JsonObject parent = root;
+    const char* cursor = dotted;
+    for (;;) {
+        const char* dot = strchr(cursor, '.');
+        const size_t span = dot != nullptr ? (size_t)(dot - cursor) : strlen(cursor);
+        char key[24] = {};
+        memcpy(key, cursor, span < sizeof(key) ? span : sizeof(key) - 1);
+        if (dot == nullptr) {
+            return parent[key].to<JsonVariant>();  // made now, while `key` lives
+        }
+        JsonObject next = parent[key].as<JsonObject>();
+        parent = next.isNull() ? parent[key].to<JsonObject>() : next;
+        cursor = dot + 1;
+    }
+}
+
+// Each Component Toggle's Board Component Label, beside its `enabled`. A label
+// is a reading, not a Setting, so it is named here rather than declared.
+struct ComponentLabel {
+    const char* key;        // under "components"
+    const char* component;  // its key in include/component_labels.inc
+};
+
+constexpr ComponentLabel kComponentLabels[] = {
+    {"domeEsc", "enable_dome_esc"}, {"rcCh1", "enable_rc_ch1"}, {"rcCh2", "enable_rc_ch2"},
+    {"rcCh3", "enable_rc_ch3"},     {"rcCh4", "enable_rc_ch4"}, {"rcCh5", "enable_rc_ch5"},
+    {"rcCh6", "enable_rc_ch6"},     {"drive", "enable_drive"},  {"audio", "enable_audio"},
+    {"protoR2link", "enable_protor2link"},
+};
+
 //-----------------------------------------------------------------------------
 // populateConfigJson()
 //
 // Pure function - no global state, no FreeRTOS. Accepts a snapshot produced by
-// captureConfigSnapshot() and builds the ArduinoJson document field by field.
-// Builds the JSON snapshot consumed by the web config UI and API clients.
-// Returns false only if the JsonDocument overflows.
+// captureConfigSnapshot() and builds the ArduinoJson document. Every droid
+// Setting is written at its GET path by its declaration
+// (include/config_settings.h), which is also where POST reads it back, so the
+// two cannot drift (ADR 0068). An Output's wired tick has no path here: it is
+// read whole from its row on GET /api/servo/outputs and written back the same
+// way. Returns false only if the JsonDocument overflows.
 // -----------------------------------------------------------------------------
 bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
+    JsonObject root = doc.to<JsonObject>();
 
-    JsonObject drive = doc["drive"].to<JsonObject>();
-    drive["speedLimitMax"] = snap.drive.speedLimitMax;
-    drive["speedPresetSlow"] = snap.drive.speedPresetSlow;
-    drive["speedPresetNormal"] = snap.drive.speedPresetNormal;
-    drive["speedPresetTurbo"] = snap.drive.speedPresetTurbo;
-    drive["speedPreset"] = speedPresetIdToString(snap.drive.speedPresetActive);
-    drive["webDriveTimeoutMs"] = snap.drive.webDriveTimeoutMs;
-    drive["stationary"] = snap.system.stationary;
-
-    JsonObject rc = doc["rc"].to<JsonObject>();
-    rc["inputMode"] = rcModeToString(snap.system.rc_input_mode);
-    rc["sbusTimeoutMs"] = snap.drive.sbusTimeoutMs;
-    // The Radio Controller Component Member (ADR 0042): which radio, beside
-    // how its receiver is wired (inputMode above). Registry id, as the Sound
-    // member is; absent when the stored value names nothing this image knows.
-    if (const ComponentPartEntry* radio = componentPartByValue(snap.system.rc_member)) {
-        rc["member"] = radio->id;
+    for (size_t i = 0; i < configSettingCount(); ++i) {
+        const ConfigSetting& setting = configSettingAt(i);
+        if (setting.path == nullptr) {
+            continue;
+        }
+        char text[24] = {};
+        switch (setting.rule) {
+            case SettingRule::Bool:
+                getShapeSlot(root, setting.path).set(configSettingNumber(setting, snap) != 0);
+                break;
+            case SettingRule::Range:
+                getShapeSlot(root, setting.path).set(configSettingNumber(setting, snap));
+                break;
+            case SettingRule::Member:
+                // The Component Member, as its Component Registry id, so a
+                // picker never carries its own copy of the numbering (ADR
+                // 0042). Absent when the stored value names nothing this image
+                // knows, which is the one case where an id would have to be
+                // invented. This is the SAVED choice: what the droid is
+                // actually playing through until it reboots is
+                // `activeMember`, added in sendConfigSnapshot().
+                configSettingFormat(setting, snap, text, sizeof(text));
+                if (text[0] != '\0') {
+                    getShapeSlot(root, setting.path).set(text);  // char[]: copied
+                }
+                break;
+            case SettingRule::Words:
+            case SettingRule::Ipv4:
+            default:
+                configSettingFormat(setting, snap, text, sizeof(text));
+                getShapeSlot(root, setting.path).set(text);  // char[]: copied
+                break;
+        }
     }
 
-    JsonObject rcSbus = rc["sbus"].to<JsonObject>();
-    rcSbus["recvCh2"] = snap.system.single_sbus_use_ch2;
-
-    // The Component Toggles that are not an Output, each with its Board
-    // Component Label. An Output is not here: it is read whole from its row on
-    // GET /api/servo/outputs, wired tick included, and written back the same
-    // way (ADR 0068).
-    JsonObject components = doc["components"].to<JsonObject>();
-    components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
-    if (const char* label = getComponentLabel("enable_dome_esc")) components["domeEsc"]["label"] = label;
-
-    components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
-    if (const char* label = getComponentLabel("enable_rc_ch1")) components["rcCh1"]["label"] = label;
-
-    components["rcCh2"]["enabled"] = snap.system.enable_rc_ch2;
-    if (const char* label = getComponentLabel("enable_rc_ch2")) components["rcCh2"]["label"] = label;
-
-    components["rcCh3"]["enabled"] = snap.system.enable_rc_ch3;
-    if (const char* label = getComponentLabel("enable_rc_ch3")) components["rcCh3"]["label"] = label;
-
-    components["rcCh4"]["enabled"] = snap.system.enable_rc_ch4;
-    if (const char* label = getComponentLabel("enable_rc_ch4")) components["rcCh4"]["label"] = label;
-
-    components["rcCh5"]["enabled"] = snap.system.enable_rc_ch5;
-    if (const char* label = getComponentLabel("enable_rc_ch5")) components["rcCh5"]["label"] = label;
-
-    components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
-    if (const char* label = getComponentLabel("enable_rc_ch6")) components["rcCh6"]["label"] = label;
-
-    components["drive"]["enabled"] = snap.system.enable_drive;
-    if (const char* label = getComponentLabel("enable_drive")) components["drive"]["label"] = label;
-
-    components["audio"]["enabled"] = snap.system.enable_audio;
-    if (const char* label = getComponentLabel("enable_audio")) components["audio"]["label"] = label;
-    // The Component Member sits beside the Component Toggle and answers a
-    // different question: the toggle says a sound module is fitted, the member
-    // says which product it is (ADR 0042). Reported as the registry id rather
-    // than the stored number, so a picker never carries its own copy of the
-    // numbering. Absent when the stored value names nothing this image knows,
-    // which is the one case where an id would have to be invented.
-    //
-    // This is the SAVED choice. What the droid is actually playing through until
-    // it reboots is "activeMember", which addAudioMemberFields() adds in
-    // sendConfigSnapshot() -- this builder is pure and cannot read the
-    // boot-latched value.
-    if (const ComponentPartEntry* member = componentPartByValue(snap.system.sound_member)) {
-        components["audio"]["member"] = member->id;
+    // Readings beside the Settings: which preset is active, and each Component
+    // Toggle's label on the running board.
+    root["drive"]["speedPreset"] = speedPresetIdToString(snap.drive.speedPresetActive);
+    JsonObject components = root["components"];
+    for (const ComponentLabel& entry : kComponentLabels) {
+        if (const char* label = getComponentLabel(entry.component)) {
+            components[entry.key]["label"] = label;
+        }
     }
-
-    components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
-    if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
-
-    JsonObject domeEsc = doc["domeEsc"].to<JsonObject>();
-    domeEsc["neutralUs"] = snap.dome.dome_neutral_us;
-    domeEsc["minPulseUs"] = snap.dome.dome_min_pulse_us;
-    domeEsc["maxPulseUs"] = snap.dome.dome_max_pulse_us;
-    domeEsc["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
-    domeEsc["rndEnable"] = snap.dome.dome_rnd_enable;
-    domeEsc["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
-    domeEsc["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
-    domeEsc["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
-    domeEsc["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
-
-    JsonObject protoR2link = doc["protoR2link"].to<JsonObject>();
-    protoR2link["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
-
-    JsonObject system = doc["system"].to<JsonObject>();
-    system["logLevel"] = snap.system.logLevel;
 
     // Device WiFi Settings (ADR 0015): password-safe read shape only. The
     // "pendingApply" flag (active-vs-pending for a Staged Network Switch) and
@@ -610,7 +592,7 @@ void addActiveFields(JsonDocument& doc) {
 
     RcInputActiveConfig activeRc = {};
     configCacheReadActiveRcInput(&activeRc);
-    doc["rc"]["activeInputMode"] = rcModeToString(static_cast<RcInputMode>(activeRc.mode));
+    doc["rc"]["activeInputMode"] = rcInputModeToString(static_cast<RcInputMode>(activeRc.mode));
 }
 
 // -----------------------------------------------------------------------------
@@ -1173,11 +1155,9 @@ void handleServoOutputsGet(WebRequest& req) {
         output["address"] = address;
         output["name"] = servoOutputAddressName(row.driver, row.channel);
 
-        // Everything a builder sets on an Output, in the shape POST /api/config
-        // takes it back as a row (ADR 0068): this answer is the row door's own
-        // read. `id` is the Output's stored config id where the board has one,
-        // never shown; the flags say what the row can save as data, so no
-        // surface works it out from a form name.
+        // `id` is the Output's stored config id where the board has one, never
+        // shown; the flags say what the row can save as data, so no surface
+        // works it out from a form name.
         const BoardOutput* board =
             row.driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(row.channel) : nullptr;
         if (board != nullptr) {
@@ -1186,26 +1166,48 @@ void handleServoOutputsGet(WebRequest& req) {
         // An Output with a wired tick can be switched off; one with none - an
         // expander's - is always wired, and says so.
         output["switchable"] = board != nullptr;
-        output["wired"] =
-            board == nullptr || configCacheOutputIsWired((size_t)(board - BOARD_OUTPUTS));
-        // Whether a Light Type may go on this wire (ADR 0067), and its light's
-        // LED count only where one can: the count is settable exactly there.
+        // Whether a Light Type may go on this wire (ADR 0067): its LED count is
+        // a Setting exactly there.
         output["lightCapable"] = board != nullptr && board->lightCapable;
-        if (board != nullptr && board->lightCapable) {
-            output["ledCount"] = row.led_count;
-        }
-        // How it moves and what it does at power-up (ADR 0052), as the builder
-        // set them: the ease is the stored one, and `calibrated` below says
-        // whether it runs yet.
-        output["throwMs"] = row.throw_ms;
-        output["accelMs"] = row.accel_ms;
-        output["ease"] = servoEasingToString(row.easing);
-        output["boot"] = servoBootBehaviourToString(row.boot);
 
-        JsonArray parts = output["parts"].to<JsonArray>();
-        const uint8_t partCount = servoOutputPartCount(row);
-        for (uint8_t slot = 0; slot < partCount; ++slot) {
-            parts.add(servoOutputPartAt(row, slot));
+        // Every Setting of an Output, each by its declaration
+        // (include/config_settings.h), in the shape POST /api/config takes it
+        // back as a row (ADR 0068): this answer is the row door's own read.
+        // The ends are directional as they are stored: `openUs` is whichever
+        // end the builder recorded as open, larger or smaller than `closeUs`,
+        // because a reversed linkage is open < close and there is no invert
+        // flag anywhere (ADR 0041). `calibrated` says whether anybody has
+        // measured this Output against its linkage - what test sweep needs and
+        // what degrades overshoot (ADR 0052).
+        for (size_t s = 0; s < outputRowSettingCount(); ++s) {
+            const OutputRowSetting& setting = outputRowSettingAt(s);
+            if (!outputRowSettingIsOn(setting, board)) {
+                continue;
+            }
+            switch (setting.store) {
+                case RowSettingStore::Wired:
+                    output[setting.key] = board == nullptr ||
+                                          configCacheOutputIsWired((size_t)(board - BOARD_OUTPUTS));
+                    break;
+                case RowSettingStore::Parts: {
+                    JsonArray parts = output[setting.key].to<JsonArray>();
+                    const uint8_t partCount = servoOutputPartCount(row);
+                    for (uint8_t slot = 0; slot < partCount; ++slot) {
+                        parts.add(servoOutputPartAt(row, slot));
+                    }
+                    break;
+                }
+                case RowSettingStore::Row:
+                default:
+                    if (setting.rule == SettingRule::Words) {
+                        output[setting.key] = outputRowSettingWord(setting, row);
+                    } else if (setting.rule == SettingRule::Bool) {
+                        output[setting.key] = outputRowSettingNumber(setting, row) != 0;
+                    } else {
+                        output[setting.key] = outputRowSettingNumber(setting, row);
+                    }
+                    break;
+            }
         }
 
         // The span both position marks are drawn across, and the span the
@@ -1213,28 +1215,11 @@ void handleServoOutputsGet(WebRequest& req) {
         // by the component fitted to it. Every commanded width is clamped into
         // it on the way to the pin (servoOutputClampPulse()), so neither mark
         // can fall off either end and the dial cannot offer a width the
-        // firmware would refuse (ADR 0041, #364).
+        // firmware would refuse (ADR 0041, #364). `component` above is what
+        // decides it, so the dial can say WHICH band it opened at and why.
         const ServoPulseBand band = servoComponentBand(row.component);
         output["bandLoUs"] = band.lo;
         output["bandHiUs"] = band.hi;
-        // What the builder said is fitted, beside the band it decides, so the
-        // dial can say WHICH band it opened at and why rather than only how
-        // wide it is -- "what an MG996R takes" and "nothing recorded as fitted"
-        // are the same two numbers and different sentences.
-        output["component"] = servoCompTypeToString(row.component);
-
-        // The Endpoint Pair and the centre the dial captures into, directional
-        // as they are stored: `openUs` is whichever end the builder recorded as
-        // open, larger or smaller than `closeUs`, because a reversed linkage is
-        // open < close and there is no invert flag anywhere (ADR 0041). A
-        // surface wanting an ordering takes the min and max of the two.
-        output["openUs"] = row.open_us;
-        output["centreUs"] = row.centre_us;
-        output["closeUs"] = row.close_us;
-        // Whether anybody has measured this Output against its linkage. It is
-        // what test sweep needs -- there is nowhere sane to sweep between until
-        // ends exist -- and what degrades overshoot (ADR 0052).
-        output["calibrated"] = row.calibrated;
         // The pair `main` stored here, when the component band narrowed it on
         // the way onto this row and the builder has not saved this Output
         // since (#417). The operator's call: the band stays, and it narrows

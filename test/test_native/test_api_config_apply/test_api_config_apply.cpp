@@ -102,7 +102,7 @@ void test_configApply_rcInputMode_enum_reject(void) {
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus, or elrs",
+    TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus or elrs",
                              result.error.message);
 }
 

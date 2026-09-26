@@ -58,6 +58,7 @@
                                // (ADR 0011, amended 2026-09-24), shared verbatim with
                                // handleConfigPost: configApply() and its Commit Step under the
                                // one config write lock
+#include "config_settings.h"   // every Setting's declaration - the single-field ops read and write by it
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
 #include "api_wifi_apply.h"    // wifiWriteWindow() - the POST /api/wifi Apply Core and its
                                // ADR 0036 Commit Step under the config write lock, shared
@@ -1773,8 +1774,8 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // is needed here. It is released before this module's answer is emitted.
 static ConfigApplyResult s_consoleConfigApplyResult;
 
-// Bridges a Console write onto the exact param name api_config_apply.cpp's
-// `boolFields[]` table already reads for this field. The wire grammar allows
+// Bridges a Console write onto the Setting's form name, which is what
+// configApply() reads it under (include/config_settings.h). The wire grammar allows
 // both the generic `value=` shorthand (docs/console-protocol.md s.1: "system.
 // config.log-level value=debug") and the underlying named key (criterion 3:
 // "value= (or the named keys)"), so this ctx answers a lookup for `fieldKey`
@@ -1817,15 +1818,22 @@ static bool consoleScalarConfigArgsValid(const ConsoleArgs& args, const char* fi
     return true;
 }
 
-// A config write that is one JSON body: the row door's (ADR 0068). The body is
-// the request's `plain`, and nothing else is on it.
-struct RowDoorBody {
-    const char* body;
+// One Setting of one Output, written on the form as the row door's one row
+// (ADR 0068): `outputRow` names the Output Address and the Setting rides beside
+// it under its row key, so the Console reaches the row door's own check without
+// building a body.
+struct OutputRowField {
+    const char* address;
+    const char* key;
+    const char* value;
 };
 
-static const char* consoleRowDoorParamGet(void* ctx, const char* name) {
-    const RowDoorBody* door = static_cast<const RowDoorBody*>(ctx);
-    return strcmp(name, "plain") == 0 ? door->body : nullptr;
+static const char* consoleOutputRowParamGet(void* ctx, const char* name) {
+    const OutputRowField* row = static_cast<const OutputRowField*>(ctx);
+    if (strcmp(name, "outputRow") == 0) {
+        return row->address;
+    }
+    return strcmp(name, row->key) == 0 ? row->value : nullptr;
 }
 
 // The config write every Console config op shares: the config Write Window,
@@ -1951,7 +1959,8 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
     if (!isWrite) {
         ConfigSnapshot snap = {};
         configCacheRead(&snap);
-        const bool saved = snap.system.*(field->field);
+        const ConfigSetting* setting = configSettingByForm(field->paramKey);
+        const bool saved = setting != nullptr && configSettingNumber(*setting, snap) != 0;
         const size_t bitIndex = (size_t)(field - kComponentToggleFields);
         const bool active = configCacheReadActiveComponentToggle(bitIndex);
 
@@ -1992,16 +2001,41 @@ static void consoleExecuteComponentToggle(uint32_t requestId, const ConsoleCatal
 // there is no real Apply Core behind either to reuse.
 // =============================================================================
 
-// drive.config.speed-limit: value=<0..600> (speedLimitMax).
-static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                          char* rawArgs, ConsoleCommandSource source,
-                                          const ConsoleRecordSink* sink) {
+// A single-field op onto one droid Setting, named by its form name: the read
+// renders the Setting as its declaration writes it (include/config_settings.h),
+// the write goes through configApply(), which checks it by the same
+// declaration - its range, and its words where it takes words, so
+// `system.config.log-level value=debug` and `logLevel=debug` over HTTP are one
+// check (ADR 0068, amended 2026-09-26).
+struct ConsoleSettingOp {
+    const char* operationName;
+    const char* form;
+};
+
+static const ConsoleSettingOp g_settingOps[] = {
+    {"drive.config.speed-limit", "speedLimitMax"},
+    {"rc.config.mode", "rcInputMode"},
+    {"system.config.log-level", "logLevel"},
+};
+
+static const ConfigSetting* consoleFindSettingOp(const char* canonicalName) {
+    for (const ConsoleSettingOp& op : g_settingOps) {
+        if (strcmp(op.operationName, canonicalName) == 0) {
+            return configSettingByForm(op.form);
+        }
+    }
+    return nullptr;
+}
+
+static void consoleExecuteSettingOp(uint32_t requestId, const ConsoleCatalogEntry* entry,
+                                    const ConfigSetting& setting, char* rawArgs,
+                                    ConsoleCommandSource source, const ConsoleRecordSink* sink) {
     const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
     if (!isWrite) {
         ConfigSnapshot snap = {};
         configCacheRead(&snap);
-        char buf[12] = {};
-        snprintf(buf, sizeof(buf), "%d", (int)snap.drive.speedLimitMax);
+        char buf[24] = {};
+        configSettingFormat(setting, snap, buf, sizeof(buf));
         if (sink->onRecordBegin) {
             sink->onRecordBegin(requestId, entry->name);
         }
@@ -2014,7 +2048,7 @@ static void consoleExecuteDriveSpeedLimit(uint32_t requestId, const ConsoleCatal
         }
         return;
     }
-    consoleWriteScalarConfigField(requestId, entry->name, "speedLimitMax", rawArgs, source,
+    consoleWriteScalarConfigField(requestId, entry->name, setting.form, rawArgs, source,
                                   CONSOLE_OUTCOME_APPLIED, sink);
 }
 
@@ -2087,174 +2121,17 @@ static void consoleExecuteAuxLedCount(uint32_t requestId, const ConsoleCatalogEn
 
     // The row: its address, and the count as the text it was typed, so the
     // row check refuses anything but a number in range - the same answer a
-    // page's save gets. The value is a JSON string, escaped where it has to be.
+    // page's save gets.
     char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
     servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, output->channel);
-    char body[112] = {};
-    int used = snprintf(body, sizeof(body), "{\"outputs\":[{\"address\":\"%s\",\"ledCount\":\"",
-                        address);
-    for (const char* c = value; *c != '\0' && used > 0 && (size_t)used < sizeof(body); ++c) {
-        const unsigned char ch = (unsigned char)*c;
-        if (ch == '"' || ch == '\\') {
-            used += snprintf(body + used, sizeof(body) - (size_t)used, "\\%c", ch);
-        } else if (ch < 0x20) {
-            used += snprintf(body + used, sizeof(body) - (size_t)used, "\\u%04x", ch);
-        } else {
-            used += snprintf(body + used, sizeof(body) - (size_t)used, "%c", ch);
-        }
-    }
-    if (used > 0 && (size_t)used < sizeof(body)) {
-        used += snprintf(body + used, sizeof(body) - (size_t)used, "\"}]}");
-    }
-    if (used <= 0 || (size_t)used >= sizeof(body)) {
-        // Longer than the row can carry here. A count is at most three digits,
-        // so a value this long is out of range whatever it says, and cutting it
-        // short to send would be sending something the builder did not type.
-        consoleEmitArgFailure(requestId, entry->name, "value", CONSOLE_REASON_OUT_OF_RANGE, sink);
-        return;
-    }
-
-    RowDoorBody door{body};
+    OutputRowField row{address, "ledCount", value};
     ConfigParamSource params;
-    params.ctx = &door;
-    params.get = consoleRowDoorParamGet;
+    params.ctx = &row;
+    params.get = consoleOutputRowParamGet;
     char refusalField[APPLY_REFUSAL_FIELD_MAX] = {};
     snprintf(refusalField, sizeof(refusalField), "%s.ledCount", address);
     consoleWriteConfig(requestId, entry->name, params, refusalField, "value", source,
                        CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// rc.config.mode: value=standard_pwm|single_sbus|dual_sbus|elrs (rcInputMode).
-// The registry used to name this row's executor as rcMapApply, which handles
-// the RC BINDING table rather than the input-mode enum; it now names
-// configApply(), whose own "rcInputMode" param (src/web/api_config_apply.cpp)
-// is the real writer. #221 corrected it once data/console_help.txt was in the
-// same slice's hands - the reason it was only reported before.
-static void consoleExecuteRcMode(uint32_t requestId, const ConsoleCatalogEntry* entry, char* rawArgs,
-                                 ConsoleCommandSource source, const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        ConfigSnapshot snap = {};
-        configCacheRead(&snap);
-        const char* mode = "dual_sbus";
-        switch (snap.system.rc_input_mode) {
-            case RC_INPUT_STANDARD_PWM:
-                mode = "standard_pwm";
-                break;
-            case RC_INPUT_SINGLE_SBUS:
-                mode = "single_sbus";
-                break;
-            case RC_INPUT_ELRS:
-                mode = "elrs";
-                break;
-            case RC_INPUT_DUAL_SBUS:
-            default:
-                mode = "dual_sbus";
-                break;
-        }
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", mode);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-    consoleWriteScalarConfigField(requestId, entry->name, "rcInputMode", rawArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
-}
-
-// Case-insensitive whole-string equality for the log-level word form below.
-// Written out rather than calling strcasecmp() (POSIX <strings.h>, not part
-// of the freestanding C++ surface this module otherwise sticks to - the same
-// rule consoleStartsWithIgnoringCase() states further down this file for its
-// own WiFi-password-key check; not reused directly here, since that helper
-// is defined after this point in the file and reusing it would need a
-// forward declaration for no real benefit - the two checks serve unrelated
-// domains).
-static bool consoleWordEqualsIgnoringCase(const char* s, const char* lowerWord) {
-    size_t i = 0;
-    for (; lowerWord[i] != '\0'; ++i) {
-        if (tolower((unsigned char)s[i]) != lowerWord[i]) {
-            return false;
-        }
-    }
-    return s[i] == '\0';
-}
-
-// system.config.log-level: value=<1..4> or the human word
-// (error/warning/info/debug) - docs/console-protocol.md s.1's own grammar
-// example is the word form ("system.config.log-level value=debug"). Read
-// renders the live numeric level (configCurrentLogLevel(), the same
-// lock-free byte the log macros read, include/logging.h); write accepts
-// both spellings, translating a recognized word into its digit into a fresh
-// local buffer before handing off to the shared scalar-config write path,
-// so api_config_apply.cpp's paramInt16(1, 4) range check stays the one place
-// that owns what a valid level is - this executor only knows the
-// word<->digit mapping the Apply Core does not.
-static void consoleExecuteSystemLogLevel(uint32_t requestId, const ConsoleCatalogEntry* entry,
-                                         char* rawArgs, ConsoleCommandSource source,
-                                         const ConsoleRecordSink* sink) {
-    const bool isWrite = (rawArgs != nullptr && rawArgs[0] != '\0');
-    if (!isWrite) {
-        char buf[4] = {};
-        snprintf(buf, sizeof(buf), "%u", (unsigned)configCurrentLogLevel());
-        if (sink->onRecordBegin) {
-            sink->onRecordBegin(requestId, entry->name);
-        }
-        if (sink->onRecordField) {
-            sink->onRecordField(requestId, "value", buf);
-        }
-        if (sink->onRecordEnd) {
-            sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_COMPLETED,
-                             CONSOLE_REASON_NONE);
-        }
-        return;
-    }
-
-    // Detected on a disposable local copy, never on `rawArgs` itself:
-    // consoleParseArgs() tokenizes in place (NUL-splits key/value substrings
-    // into the same storage), so parsing the real rawArgs here would leave
-    // nothing for consoleWriteScalarConfigField()'s own parse below to split
-    // on. Only a single, exactly-named `value=`/`logLevel=` argument is
-    // translated; anything else (extra or unknown keys, an already-numeric
-    // value) is passed through untouched so the shared write path's own
-    // unknown-key and range checks are still the ones that decide it.
-    char detectBuf[256];
-    snprintf(detectBuf, sizeof(detectBuf), "%s", rawArgs);
-    ConsoleArgs detected = {};
-    char translated[32];
-    char* effectiveArgs = rawArgs;
-    if (consoleParseArgs(detectBuf, &detected) == CONSOLE_ARGS_PARSE_OK && detected.count == 1 &&
-        (strcmp(detected.items[0].key, "value") == 0 ||
-         strcmp(detected.items[0].key, "logLevel") == 0)) {
-        struct LogLevelWord {
-            const char* word;
-            const char* digit;
-        };
-        static const LogLevelWord kLogLevelWords[] = {
-            {"error", "1"},
-            {"warning", "2"},
-            {"info", "3"},
-            {"debug", "4"},
-        };
-        static const size_t kLogLevelWordCount =
-            sizeof(kLogLevelWords) / sizeof(kLogLevelWords[0]);
-        for (size_t i = 0; i < kLogLevelWordCount; ++i) {
-            if (consoleWordEqualsIgnoringCase(detected.items[0].value, kLogLevelWords[i].word)) {
-                snprintf(translated, sizeof(translated), "logLevel=%s", kLogLevelWords[i].digit);
-                effectiveArgs = translated;
-                break;
-            }
-        }
-    }
-
-    consoleWriteScalarConfigField(requestId, entry->name, "logLevel", effectiveArgs, source,
-                                  CONSOLE_OUTCOME_APPLIED, sink);
 }
 
 typedef void (*ConsoleScalarConfigExecutorFn)(uint32_t requestId, const ConsoleCatalogEntry* entry,
@@ -2267,10 +2144,7 @@ struct ConsoleScalarConfigExecutorEntry {
 };
 
 static const ConsoleScalarConfigExecutorEntry g_scalarConfigExecutors[] = {
-    {"drive.config.speed-limit", consoleExecuteDriveSpeedLimit},
     {"aux.config.led-count", consoleExecuteAuxLedCount},
-    {"rc.config.mode", consoleExecuteRcMode},
-    {"system.config.log-level", consoleExecuteSystemLogLevel},
 };
 static const size_t kScalarConfigExecutorCount =
     sizeof(g_scalarConfigExecutors) / sizeof(g_scalarConfigExecutors[0]);
@@ -3816,6 +3690,14 @@ void consoleExecuteCommand(const ConsoleRequest* request, const ConsoleRecordSin
                 (entry != nullptr) ? consoleFindAudioConfigExecutor(entry->name) : nullptr;
             if (audioExecutor != nullptr) {
                 audioExecutor(request->requestId, entry, rawArgs, request->source, sink);
+                break;
+            }
+
+            const ConfigSetting* setting =
+                (entry != nullptr) ? consoleFindSettingOp(entry->name) : nullptr;
+            if (setting != nullptr) {
+                consoleExecuteSettingOp(request->requestId, entry, *setting, rawArgs,
+                                        request->source, sink);
                 break;
             }
 

@@ -29,10 +29,11 @@ convention `tools/check_action_registry_drift.py` set.
    and consults another - or none - tells a builder to go and check the wrong
    board fact.
 
-3. **A family's `member_key` is a key the config serializer really reads and
-   writes.** The manifest names the NVS key so an operator surface can, and
-   nothing in the compiler connects that string to
-   `src/config_serializer.cpp`. Rename either half alone and the member
+3. **A family's `member_key` is the NVS key of a Member Setting.** The
+   manifest names the NVS key so an operator surface can, and nothing in the
+   compiler connects that string to the Setting's declaration in
+   `src/config_settings.cpp`, which is what the NVS save and load both loop
+   over (ADR 0068, amended 2026-09-26). Rename either half alone and the member
    silently stops surviving a reboot.
 
 Run it as `make check-component-drift`. Its own unit tests, which drive each
@@ -46,11 +47,13 @@ from pathlib import Path
 import re
 import sys
 
+import setting_declarations  # tools/, beside this script
+
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "include" / "component_registry.inc"
 AUDIO_DRIVER_HEADER = ROOT / "include" / "audio_driver.h"
 BOARD_CAPABILITIES = ROOT / "include" / "board_capabilities.inc"
-CONFIG_SERIALIZER = ROOT / "src" / "config_serializer.cpp"
+CONFIG_SETTINGS = setting_declarations.CONFIG_SETTINGS
 
 # Where a capability consumer may live. Firmware branches on a bit; the browser
 # branches on it too, and ADR 0042 counts both - two sound bits gate firmware
@@ -300,23 +303,28 @@ def check_board_capability_gates(parts: list[list[str]], errors: list[str],
 
 
 def check_member_keys(categories: list[list[str]], errors: list[str],
-                      serializer: Path | None = None) -> None:
-    """A declared `member_key` must be a key the serializer both reads and writes.
+                      settings: Path | None = None) -> None:
+    """A declared `member_key` must be the NVS key of a declared Member Setting.
 
-    A Component Member that is not both read and written stops surviving a
-    reboot, silently and with nothing else failing.
+    The NVS save and the load both loop over the Setting declarations, so a key
+    one of them declares is both written and read. A Component Member whose key
+    no Member Setting declares stops surviving a reboot, silently and with
+    nothing else failing.
     """
-    text = (serializer or CONFIG_SERIALIZER).read_text(encoding="utf-8")
+    source = settings or CONFIG_SETTINGS
+    member_keys = {
+        setting.nvs_key for setting in setting_declarations.droid_settings(source)
+        if setting.rule == "Member"
+    }
     for row in categories:
         token = unquote(row[1])
         member_key = unquote(row[3])
         if member_key is None:
             continue
-        mentions = text.count(f'"{member_key}"')
-        if mentions < 2:
+        if member_key not in member_keys:
             errors.append(
-                f"{token} declares member key {member_key}, which {CONFIG_SERIALIZER.name} "
-                f"mentions {mentions} time(s) - a persisted member needs both a read and a write"
+                f"{token} declares member key {member_key}, which no Member Setting in "
+                f"{source.name} declares - a member stored under it is never written or read"
             )
 
 
