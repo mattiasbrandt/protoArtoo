@@ -7,13 +7,22 @@
 // input silently unset, with no error surfaced anywhere. Also covers the
 // CHIRP catalog binding badge, a second, independent site
 // (SLOT_BINDING_TARGETS derived from the same SYSTEM_SOUNDS entry) driven by
-// a different data path (data.chirp_bindings).
+// a different data path (data.chirp_bindings). And a track row is named by its
+// Setting's one entry (data/web_api.js labelOf, #432), not by a label table of
+// the page's own, which is how the Sound page and the sequence editor came to
+// call one track two things.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
 
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
 import { loadPageModule } from "./helpers/page_module_env.js";
+import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 test("sound.js hydrates the Network Link Lost track input from the server field", async () => {
   const env = loadPageModule("sound.js", {
@@ -44,3 +53,24 @@ test("sound.js leaves the Network Link Lost input untouched when the server omit
   );
 });
 
+
+test("every track row is named by its Setting's label, the one the sequence editor uses too", async () => {
+  // The shipped sound.html, so the rows the page builds are real elements a
+  // test can read back.
+  const document = new MiniDocument();
+  const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../data/sound.html"), "utf-8");
+  new MiniDOMParser().parseFromString(html).body.children
+    .forEach((child) => document.body.appendChild(document.importNode(child, true)));
+  const env = loadPageModule("sound.js", { overrides: { document } });
+  await env.settle();
+
+  const { labelOf } = shippedWords();
+  const rows = document.querySelectorAll("tr").filter((row) => row.dataset.soundLabel);
+  const tracks = rows.map((row) => row.querySelector(".sound-track-input-sm")).filter(Boolean);
+  assert.ok(tracks.length >= 20, `the named track rows were drawn: ${tracks.length}`);
+  tracks.forEach((input) => {
+    const key = input.id.replace("track-input-", "");
+    const row = rows.find((each) => each.querySelector(".sound-track-input-sm") === input);
+    assert.equal(row.dataset.soundLabel, labelOf(key), `${key}'s row`);
+  });
+});

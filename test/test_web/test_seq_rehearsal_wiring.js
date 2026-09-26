@@ -184,6 +184,8 @@ function newPage({ sequence = helloBefore(), failRead = false } = {}) {
     seam,
     calls,
     byId,
+    // Every markup the page wrote, joined, for a test about what it says.
+    markup: () => [...elements.values()].map((element) => element.innerHTML).join("\n"),
     card: { feedback: cardFeedback, rehearsal: cardRehearsal, testButton, tuneButton },
     settle,
     click,
@@ -231,4 +233,17 @@ test("a card whose sequence cannot be read back says so instead of looking all c
   assert.equal(page.card.feedback.textContent, "Dispatched.");
   assert.equal(page.card.rehearsal.innerHTML, "");
   assert.match(page.card.rehearsal.textContent, /Could not read DM:HELLO back to rehearse it: controller not reachable/);
+});
+
+// A step that falls back to a sound action's track names that track as the
+// Sound page does, by its Setting's one entry (data/web_api.js labelOf, #432).
+// The editor kept its own spellings until then, and they disagreed: "Faint"
+// here was "Short Circuit" there, "Startup" was "Boot Sound".
+test("a fallback track is named by its Setting's label, as the Sound page names it", () => {
+  const page = newPage();
+  const sequence = helloBefore();
+  sequence.steps.splice(1, 0, { t: 0, type: "audioCat", category: "alert", fallback: "faint" });
+  page.open(sequence);
+  const label = shippedWords().labelOf("faint");
+  assert.ok(page.markup().includes(`(fallback ${label})`), `the step does not name ${label}`);
 });

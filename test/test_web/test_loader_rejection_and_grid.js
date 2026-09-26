@@ -138,6 +138,21 @@ test("A status field containing markup cannot inject into the grid", async (t) =
   assert.match(html, /&lt;img/);
 });
 
+// The grid names a component by its Setting's one entry (data/web_api.js
+// labelOf, #432), the name Configuration shows beside its switch. It kept a
+// spelling table of its own until then, and it disagreed: "Audio" and
+// "protoR2link" here were "Sound" and "Dome link" there.
+test("the grid names each component by its Setting's label, as Configuration does", async () => {
+  const env = await loadDashboard({ respond: healthyResponder });
+
+  const html = pushStatus(env, { audio: { state: "ok" }, protoR2link: { state: "ok" }, domeEsc: { state: "ok" } });
+
+  for (const form of ["enableAudio", "enableProtoR2link", "enableDomeEsc"]) {
+    const label = env.window.PAApi.labelOf(form);
+    assert.ok(html.includes(`<dt>${label}</dt>`), `${form} is not named ${label}: ${html}`);
+  }
+});
+
 // -----------------------------------------------------------------------------
 // Markup invariant over the shipped pages
 // -----------------------------------------------------------------------------
