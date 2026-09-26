@@ -923,6 +923,11 @@ void test_servo_rejects_an_out_of_range_position() {
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "positionUs must be between"));
+    // The range as data beside the sentence: the page words the refusal from
+    // these and keeps no copy of the range (ADR 0068, amended 2026-09-26).
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"field\":\"positionUs\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"reason\":\"out-of-range\""));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"accepts\":\"500..2500\""));
 }
 
 void test_servo_position_without_a_value_is_rejected() {
