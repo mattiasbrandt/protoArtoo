@@ -233,7 +233,7 @@ void test_the_droid_build_reaches_the_config_payload() {
     TEST_ASSERT_TRUE(droidDesignChoiceSet(&build.dome, "mk4", "complex"));
     TEST_ASSERT_TRUE(droidDesignChoiceSet(&build.body, "own", ""));
     TEST_ASSERT_TRUE(droidFittedPartsFit(&build.fitted, "gripArm"));
-    configCacheApplyDroidBuild(build);
+    configRecordDroidBuildMerge(build, ~0u);
 
     WebRequestTestBackend backend;
     WebRequest req(&backend);
@@ -340,7 +340,7 @@ void test_the_worst_case_config_still_fits_the_response_buffer() {
     for (size_t i = 0; i < DROID_PART_COUNT; ++i) {
         TEST_ASSERT_TRUE(droidFittedPartsFit(&build.fitted, droidPartIdAt(i)));
     }
-    configCacheApplyDroidBuild(build);
+    configRecordDroidBuildMerge(build, ~0u);
 
     GuidedSetupConfig guided = {};
     guidedSetupDefaults(&guided);
@@ -355,7 +355,7 @@ void test_the_worst_case_config_still_fits_the_response_buffer() {
     guided.recorded = true;
     guided.run = GUIDED_SETUP_COMPLETED;
     guided.summaryDone = false;
-    configCacheApplyGuidedSetup(guided);
+    configRecordGuidedSetupMerge(guided, ~0u);
 
     WebRequestTestBackend backend;
     WebRequest req(&backend);

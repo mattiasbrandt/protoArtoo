@@ -14,6 +14,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 
 #include <Preferences.h>
@@ -23,10 +24,12 @@
 #include "config_nvsio.h"
 #include "config_serializer.h"
 #include "config_cache.h"
+#include "config_records.h"
 #include "droid_build.h"
 #include "web_request_test_backend.h"
 #include "config_write_window_check.h"  // the holder check this suite arms (#418)
 #include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
+#include "../../../test/stubs/config/map_config_io.h"
 #include "../../../test/stubs/config/servo_output_table_writer.h"
 #include "../../../test/stubs/config/setting_samples.h"
 #include "config_settings.h"
@@ -367,32 +370,146 @@ ServoOutputTable rowsUnlikeSetUp() {
     return table;
 }
 
-// Every declared Setting, each moved off the value setUp() leaves, plus the
-// Droid Build and Guided Setup's record that travel with a backup. A Setting
-// GET reports and POST cannot take back stays at its setUp() value, and the
-// comparison after the round trip finds it.
+// Every Record's GET answer, as JSON text.
+std::string recordAnswers() {
+    JsonDocument doc;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        const ConfigRecordId id = (ConfigRecordId)r;
+        configRecordAnswer(id, doc[configRecordKey(id)].to<JsonObject>());
+    }
+    std::string text;
+    serializeJson(doc, text);
+    return text;
+}
+
+// Every Record's live copy in the form NVS holds it, and back again: how a test
+// keeps and puts back the Records whatever fields they carry.
+MapWriter saveRecords() {
+    const ConfigWriteWindowForTest window;
+    MapWriter stored;
+    TEST_ASSERT_TRUE(configRecordsSave((uint32_t)((1ull << CONFIG_RECORD_COUNT) - 1u), stored));
+    return stored;
+}
+
+void loadRecords(const MapWriter& stored) {
+    MapReader reader;
+    for (const auto& entry : stored.data()) {
+        reader.set(entry.first.c_str(), entry.second);
+    }
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        char repaired[112] = {};
+        TEST_ASSERT_FALSE_MESSAGE(
+            configRecordLoad((ConfigRecordId)r, reader, repaired, sizeof(repaired)), repaired);
+    }
+}
+
+const char* formGet(void* ctx, const char* name) {
+    auto* form = static_cast<std::map<std::string, std::string>*>(ctx);
+    auto it = form->find(name);
+    return it == form->end() ? nullptr : it->second.c_str();
+}
+
+// Every field of every Record at its declared example, through the Record's
+// own check and merge - never a hand list, so a field added to a Record is
+// carried by the round trips below the day it is declared.
+void stateEveryRecordExample() {
+    std::map<std::string, std::string> form;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        size_t count = 0;
+        const ConfigRecordField* fields = configRecordFields((ConfigRecordId)r, &count);
+        for (size_t f = 0; f < count; ++f) {
+            form[fields[f].form] = fields[f].example;
+        }
+    }
+    const ConfigParamSource params{&form, formGet};
+    static ConfigRecordEdits edits;
+    edits = ConfigRecordEdits{};
+    static ConfigAppliedFields applied;
+    applied = ConfigAppliedFields{};
+    ApplyRefusal refusal;
+    char sentence[192] = {};
+    const ConfigRecordCheck check{params, &refusal, sentence, sizeof(sentence), &applied};
+    const ConfigWriteWindowForTest window;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        TEST_ASSERT_TRUE_MESSAGE(configRecordCheck((ConfigRecordId)r, check, &edits), sentence);
+        configRecordMerge((ConfigRecordId)r, edits);
+    }
+}
+
+// A GET leaf as the text a form carries it in: a list comma-joined, a flag as
+// true or false.
+std::string leafText(JsonVariantConst leaf) {
+    if (leaf.is<JsonArrayConst>()) {
+        std::string joined;
+        for (JsonVariantConst item : leaf.as<JsonArrayConst>()) {
+            joined += (joined.empty() ? "" : ",") + std::string(item.as<const char*>());
+        }
+        return joined;
+    }
+    if (leaf.is<bool>()) {
+        return leaf.as<bool>() ? "true" : "false";
+    }
+    return leaf.is<const char*>() ? leaf.as<const char*>() : "(not text)";
+}
+
+JsonVariantConst leafAt(JsonVariantConst at, const char* dotted) {
+    std::string path = dotted;
+    size_t start = 0;
+    while (true) {
+        const size_t dot = path.find('.', start);
+        at = at[path.substr(start, dot - start)];
+        if (dot == std::string::npos) {
+            return at;
+        }
+        start = dot + 1;
+    }
+}
+
+// GET answers every Record field at its path with the example it was stated
+// at, and each example is a value `base` did not hold - so a field GET does not
+// write, or one whose example proves nothing, fails here by name.
+void assertEveryRecordExampleAnswered(const std::string& baseAnswers) {
+    JsonDocument now;
+    TEST_ASSERT_FALSE(deserializeJson(now, recordAnswers()));
+    JsonDocument base;
+    TEST_ASSERT_FALSE(deserializeJson(base, baseAnswers));
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        size_t count = 0;
+        const ConfigRecordField* fields = configRecordFields((ConfigRecordId)r, &count);
+        for (size_t f = 0; f < count; ++f) {
+            const std::string answered = leafText(leafAt(now.as<JsonVariantConst>(), fields[f].path));
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(fields[f].example, answered.c_str(), fields[f].form);
+            const std::string before = leafText(leafAt(base.as<JsonVariantConst>(), fields[f].path));
+            TEST_ASSERT_FALSE_MESSAGE(before == answered, fields[f].form);
+        }
+    }
+}
+
+// Every declared Setting, each moved off the value setUp() leaves, and every
+// Record field at its example: they travel with a backup too. A Setting or a
+// Record field GET reports and POST cannot take back stays at its setUp()
+// value, and the comparison after the round trip finds it.
 struct Configuration {
     ConfigSnapshot snap;
-    DroidBuildConfig build;
-    GuidedSetupConfig guided;
     ServoOutputTable rows;
+    MapWriter records;
 };
 
 Configuration readConfiguration() {
     Configuration now = {};
     configCacheRead(&now.snap);
-    configCacheReadDroidBuild(&now.build);
-    configCacheReadGuidedSetup(&now.guided);
     now.rows = readServoOutputTable();
+    now.records = saveRecords();
     return now;
 }
 
 void applyConfiguration(const Configuration& config) {
     loadServoOutputTable(config.rows);
-    const ConfigWriteWindowForTest window;
-    configCacheReplace(config.snap);
-    configCacheApplyDroidBuild(config.build);
-    configCacheApplyGuidedSetup(config.guided);
+    {
+        const ConfigWriteWindowForTest window;
+        configCacheReplace(config.snap);
+    }
+    loadRecords(config.records);
 }
 
 Configuration configurationUnlikeSetUp(const Configuration& base) {
@@ -464,33 +581,21 @@ Configuration configurationUnlikeSetUp(const Configuration& base) {
         TEST_ASSERT_TRUE_MESSAGE(moved, setting.key);
     }
 
-    // The Droid Build and Guided Setup's record travel with a backup too; they
-    // are records outside the Configuration, not Settings.
-    TEST_ASSERT_TRUE(droidDesignChoiceSet(&want.build.dome, "mk4", "basic"));
-    TEST_ASSERT_TRUE(droidDesignChoiceSet(&want.build.body, "own", ""));
-    droidFittedPartsClear(&want.build.fitted);
-    TEST_ASSERT_TRUE(droidFittedPartsFit(&want.build.fitted, "utilUp"));
-    TEST_ASSERT_TRUE(droidFittedPartsFit(&want.build.fitted, "gripArm"));
-
-    want.guided.run = GUIDED_SETUP_COMPLETED;
-    want.guided.recorded = true;
-    want.guided.summaryDone = true;
-    guidedSetupVisitedSet(&want.guided, "drive,sound");
+    // Every Record field at its example, stated through the Records' own
+    // checks, then kept in its stored form; the live Records go back to base.
+    const std::string baseAnswers = recordAnswers();
+    stateEveryRecordExample();
+    assertEveryRecordExampleAnswered(baseAnswers);
+    want.records = saveRecords();
+    loadRecords(base.records);
     return want;
 }
 
 void assertSameConfiguration(const Configuration& want, const Configuration& got) {
     TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&want.snap, &got.snap, sizeof(ConfigSnapshot),
                                      "a scalar GET reported did not come back through POST");
-    TEST_ASSERT_EQUAL_STRING(want.build.dome.design, got.build.dome.design);
-    TEST_ASSERT_EQUAL_STRING(want.build.dome.variant, got.build.dome.variant);
-    TEST_ASSERT_EQUAL_STRING(want.build.body.design, got.build.body.design);
-    TEST_ASSERT_EQUAL_STRING(want.build.body.variant, got.build.body.variant);
-    TEST_ASSERT_EQUAL_MEMORY(&want.build.fitted, &got.build.fitted, sizeof(DroidFittedParts));
-    TEST_ASSERT_EQUAL_UINT8(want.guided.run, got.guided.run);
-    TEST_ASSERT_EQUAL(want.guided.recorded, got.guided.recorded);
-    TEST_ASSERT_EQUAL(want.guided.summaryDone, got.guided.summaryDone);
-    TEST_ASSERT_EQUAL_STRING(want.guided.visited, got.guided.visited);
+    TEST_ASSERT_TRUE_MESSAGE(want.records.data() == got.records.data(),
+                             "a Record field GET reported did not come back through POST");
     assertSameRows(want.rows, got.rows);
 }
 
@@ -503,6 +608,7 @@ void assertSameConfiguration(const Configuration& want, const Configuration& got
 // field stays at the setUp() value and this goes red.
 void test_a_configuration_read_by_get_comes_back_whole_through_post() {
     loadServoOutputTable(rowsLikeSetUp());
+    loadRecords(MapWriter{});  // the Records a fresh controller boots with
     const Configuration base = readConfiguration();
     const Configuration want = configurationUnlikeSetUp(base);
     applyConfiguration(want);
@@ -516,6 +622,20 @@ void test_a_configuration_read_by_get_comes_back_whole_through_post() {
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
     assertSameConfiguration(want, readConfiguration());
+}
+
+// Every Record field survives the NVS save and load, stated at its example
+// like the round trip above, so a field a Record's save or load leaves out
+// fails here with no test edit (include/config_records.h).
+void test_every_record_field_survives_a_save_and_load() {
+    stateEveryRecordExample();
+    const std::string stated = recordAnswers();
+    const MapWriter stored = saveRecords();
+
+    loadRecords(MapWriter{});  // a controller with nothing stored
+    TEST_ASSERT_FALSE_MESSAGE(recordAnswers() == stated, "the examples are a fresh controller's");
+    loadRecords(stored);
+    TEST_ASSERT_EQUAL_STRING(stated.c_str(), recordAnswers().c_str());
 }
 
 // A restore of the Configuration lands whole or not at all (ADR 0068): the
@@ -921,7 +1041,7 @@ void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
     droidBuildDefaults(&before);
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApplyDroidBuild(before);
+        configRecordDroidBuildMerge(before, ~0u);
     }
 
     const WebRequestTestParam params[] = {
@@ -937,7 +1057,7 @@ void test_a_stated_droid_build_reaches_the_live_answer_and_the_echo() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     DroidBuildConfig after = {};
-    configCacheReadDroidBuild(&after);
+    configRecordDroidBuildRead(&after);
     TEST_ASSERT_EQUAL_STRING("basic", after.dome.variant);
     TEST_ASSERT_EQUAL_UINT32(2u, (uint32_t)droidFittedPartsCount(after.fitted));
     // The half the request said nothing about is untouched: changing a Dome
@@ -959,7 +1079,7 @@ void test_a_restored_legacy_variant_lands_as_the_variant_it_became() {
     droidBuildDefaults(&before);
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApplyDroidBuild(before);
+        configRecordDroidBuildMerge(before, ~0u);
     }
 
     const WebRequestTestParam params[] = {
@@ -974,7 +1094,7 @@ void test_a_restored_legacy_variant_lands_as_the_variant_it_became() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     DroidBuildConfig after = {};
-    configCacheReadDroidBuild(&after);
+    configRecordDroidBuildRead(&after);
     TEST_ASSERT_EQUAL_STRING("mk4", after.body.design);
     TEST_ASSERT_EQUAL_STRING("basic", after.body.variant);
 }
@@ -1006,7 +1126,7 @@ void test_the_part_vocabulary_is_unchanged_by_a_droid_build_write() {
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
 
     DroidBuildConfig after = {};
-    configCacheReadDroidBuild(&after);
+    configRecordDroidBuildRead(&after);
     TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)droidFittedPartsCount(after.fitted));
 
     size_t afterCount = 0;
@@ -1024,7 +1144,7 @@ void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
     droidBuildDefaults(&before);
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApplyDroidBuild(before);
+        configRecordDroidBuildMerge(before, ~0u);
     }
 
     const WebRequestTestParam params[] = {{"domeDesign", "mk9"}, {"domeVariant", "complex"}};
@@ -1037,7 +1157,7 @@ void test_a_droid_build_the_catalog_cannot_name_is_refused_without_applying() {
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
     DroidBuildConfig after = {};
-    configCacheReadDroidBuild(&after);
+    configRecordDroidBuildRead(&after);
     TEST_ASSERT_EQUAL_STRING(before.dome.design, after.dome.design);
 }
 
@@ -1049,7 +1169,7 @@ void test_a_roadmap_design_is_refused_as_a_stated_half() {
     droidBuildDefaults(&before);
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApplyDroidBuild(before);
+        configRecordDroidBuildMerge(before, ~0u);
     }
 
     const WebRequestTestParam params[] = {{"bodyDesign", "mk3"}, {"bodyVariant", ""}};
@@ -1062,7 +1182,7 @@ void test_a_roadmap_design_is_refused_as_a_stated_half() {
 
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
     DroidBuildConfig after = {};
-    configCacheReadDroidBuild(&after);
+    configRecordDroidBuildRead(&after);
     TEST_ASSERT_EQUAL_STRING(before.body.design, after.body.design);
     TEST_ASSERT_EQUAL_STRING(before.body.variant, after.body.variant);
 }
@@ -1074,7 +1194,7 @@ void test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated() {
     droidBuildDefaults(&before);
     {
         const ConfigWriteWindowForTest seed;
-        configCacheApplyDroidBuild(before);
+        configRecordDroidBuildMerge(before, ~0u);
     }
 
     const WebRequestTestParam params[] = {
@@ -1090,7 +1210,7 @@ void test_an_mk41_dome_on_an_mk4_basic_body_saves_as_stated() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     DroidBuildConfig after = {};
-    configCacheReadDroidBuild(&after);
+    configRecordDroidBuildRead(&after);
     TEST_ASSERT_EQUAL_STRING("mk41", after.dome.design);
     TEST_ASSERT_EQUAL_STRING("", after.dome.variant);
     TEST_ASSERT_EQUAL_STRING("mk4", after.body.design);
@@ -1214,6 +1334,7 @@ int main() {
     RUN_TEST(test_config_post_refuses_clashing_speed_presets_as_a_conflict);
     RUN_TEST(test_config_post_accepts_a_raw_json_body_under_the_plain_name);
     RUN_TEST(test_a_configuration_read_by_get_comes_back_whole_through_post);
+    RUN_TEST(test_every_record_field_survives_a_save_and_load);
     RUN_TEST(test_a_refused_row_set_leaves_the_scalars_beside_it_unwritten);
     RUN_TEST(test_a_row_field_out_of_range_is_refused_with_field_reason_and_accepts);
     RUN_TEST(test_config_post_syncs_stationary_and_broadcasts_status);

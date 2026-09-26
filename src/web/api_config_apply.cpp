@@ -23,17 +23,34 @@
 
 namespace {
 
-void appendApplied(ConfigAppliedFields* applied, const char* fmt, ...) {
+void appendAppliedV(ConfigAppliedFields* applied, const char* fmt, va_list args) {
     if (applied->count >= ConfigAppliedFields::kMaxLines) {
         applied->dropped++;
         return;
     }
-    va_list args;
-    va_start(args, fmt);
     vsnprintf(applied->lines[applied->count], sizeof(applied->lines[0]), fmt, args);
-    va_end(args);
     applied->count++;
 }
+
+void appendApplied(ConfigAppliedFields* applied, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    appendAppliedV(applied, fmt, args);
+    va_end(args);
+}
+
+}  // namespace
+
+// A Record's applied-fields line, into the record the Commit Step replays
+// (include/config_records.h).
+void configRecordLog(const ConfigRecordCheck& check, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    appendAppliedV(check.applied, fmt, args);
+    va_end(args);
+}
+
+namespace {
 
 // Every refusal says why and about which field, beside its sentence (#425):
 // the reason is a parameter, so no error write can leave it unset.
@@ -104,51 +121,6 @@ bool paramUint16(const ConfigParamSource& params, const char* name, uint16_t min
 }
 
 // -----------------------------------------------------------------------------
-// applyDroidBuildHalf()
-// One half of a Droid Build - a design and the variant of that design - read,
-// checked against the catalog vocabulary, and recorded for the Commit Step.
-//
-// Returns false and sets the error when the request named this half and got it
-// wrong. A request that named neither field of the half leaves `*changed` false
-// and is not an error: a POST that is not about the Droid Build is most of
-// them.
-//
-// The pair moves together because a variant means nothing on its own. Sending
-// one without the other would ask this function to validate half an answer
-// against the other half's stored design, which is a pairing the builder never
-// stated - and on a design change it is exactly the pairing that is wrong.
-//
-// The refusal does not echo what was asked for, for the reason a Member
-// Setting's does (src/config_settings.cpp): the message lands in a JSON body.
-bool applyDroidBuildHalf(const ConfigParamSource& params, const char* designName,
-                         const char* variantName, const char* refusal,
-                         DroidDesignChoice* out, bool* changed,
-                         ConfigApplyResult* result) {
-    const bool hasDesign = configParamHas(params, designName);
-    const bool hasVariant = configParamHas(params, variantName);
-    if (!hasDesign && !hasVariant) {
-        return true;
-    }
-    if (!hasDesign || !hasVariant) {
-        setError(result, refusal, ApplyRefusalReason::MissingArgument,
-                 hasDesign ? variantName : designName);
-        return false;
-    }
-    DroidDesignChoice choice = {};
-    if (!droidDesignChoiceSet(&choice, configParamGet(params, designName),
-                              configParamGet(params, variantName)) ||
-        !droidDesignChoiceIsKnown(choice)) {
-        // The catalog answers for the pair, not for either half alone, so the
-        // design names the refusal.
-        setError(result, refusal, ApplyRefusalReason::OutOfRange, designName);
-        return false;
-    }
-    *out = choice;
-    *changed = true;
-    return true;
-}
-
-// -----------------------------------------------------------------------------
 // parsePartMoveEnd()
 // One end of a Part move: `none`, or an Output Address a driver actually has.
 // Anything else - an absent field included - is not an end.
@@ -176,31 +148,15 @@ bool parsePartMoveEnd(const char* raw, bool* onOutput, ServoOutputDriver* driver
 // found at a path is answered under its form name, so a refusal reads the same
 // whichever door the value came in by.
 //
-// The Droid Build and Guided Setup's record travel with a backup too (operator,
-// 2026-09-17 on #371). They are records kept outside the Configuration, each
-// read and checked by hand further down, and these are where GET puts them. The
-// two lists are JSON arrays on GET and are read as the comma-joined list the
-// form takes.
+// The Records - the Droid Build and guided Setup's record - travel with a
+// backup too (operator, 2026-09-17 on #371). Each of their fields says where
+// GET puts it (include/config_records.h), and its lists are JSON arrays on GET,
+// read as the comma-joined list the form takes.
 //
 // A key GET carries that neither names is a reading, not a setting - `wifi`,
 // `activeToggles`, `drive.speedPreset`, a label - and is ignored rather than
 // refused, so a whole GET answer can be posted back as it stands.
 // -----------------------------------------------------------------------------
-struct RecordField {
-    const char* param;  // the form name, which is what the checks below read
-    const char* path;   // where GET /api/config has it, dotted
-};
-
-const RecordField kRecordFields[] = {
-    {"domeDesign", "droidBuild.domeDesign"},
-    {"domeVariant", "droidBuild.domeVariant"},
-    {"bodyDesign", "droidBuild.bodyDesign"},
-    {"bodyVariant", "droidBuild.bodyVariant"},
-    {"fittedParts", "droidBuild.fitted"},
-    {"guidedSetupRun", "guidedSetup.run"},
-    {"guidedSetupVisited", "guidedSetup.visited"},
-    {"guidedSetupSummaryDone", "guidedSetup.summaryDone"},
-};
 
 // The GET path a form name is read at, or nullptr for one GET does not carry.
 const char* getPathOf(const char* param) {
@@ -208,12 +164,8 @@ const char* getPathOf(const char* param) {
     if (setting != nullptr) {
         return setting->path;
     }
-    for (const RecordField& field : kRecordFields) {
-        if (strcmp(field.param, param) == 0) {
-            return field.path;
-        }
-    }
-    return nullptr;
+    const ConfigRecordField* field = configRecordFieldByForm(param);
+    return field != nullptr ? field->path : nullptr;
 }
 
 // What a JSON value that no form field could ever hold reads as: an object
@@ -414,8 +366,12 @@ bool readGetShapeBody(const char* raw, JsonDocument* body, ConfigApplyResult* re
             whole = normaliseGetShapeField(*body, setting.path) && whole;
         }
     }
-    for (const RecordField& field : kRecordFields) {
-        whole = normaliseGetShapeField(*body, field.path) && whole;
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        size_t count = 0;
+        const ConfigRecordField* fields = configRecordFields((ConfigRecordId)r, &count);
+        for (size_t f = 0; f < count; ++f) {
+            whole = normaliseGetShapeField(*body, fields[f].path) && whole;
+        }
     }
     // A row's keys the same way, in place. Its Part list becomes the
     // comma-joined list a form row carries, so both doors read one form of it.
@@ -816,122 +772,19 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         return;
     }
 
-    // The Droid Build (ADR 0047): which droid a builder says they built, and
-    // which Parts are on it.
-    //
-    // Nothing downstream is gated on any of it. The Fitted Parts are checked
-    // against the catalog vocabulary only so a Part id this build cannot name
-    // never reaches storage - the same form check droidPartIdIsKnown() is, and
-    // NOT a narrowing of it: a Part outside the fitted set stays authorable,
-    // saveable and wirable, which is the decision this whole field exists to
-    // keep (ADR 0047, #333).
-    //
-    // The two halves are never compared. An MK4.1 dome on an MK4 Basic body is
-    // an ordinary droid, and refusing that pairing is the other way this could
-    // quietly undo itself.
-    if (!applyDroidBuildHalf(params, "domeDesign", "domeVariant",
-                             "domeDesign and domeVariant must be sent together, and name a "
-                             "design and one of its own variants",
-                             &result->droidBuild.dome, &result->droidBuild.domeChanged, result)) {
-        return;
-    }
-    if (result->droidBuild.domeChanged) {
-        appendApplied(&result->applied, "[CFG] domeDesign updated to %s/%s",
-                      result->droidBuild.dome.design, result->droidBuild.dome.variant);
-        result->changed = true;
-    }
-    if (!applyDroidBuildHalf(params, "bodyDesign", "bodyVariant",
-                             "bodyDesign and bodyVariant must be sent together, and name a "
-                             "design and one of its own variants",
-                             &result->droidBuild.body, &result->droidBuild.bodyChanged, result)) {
-        return;
-    }
-    if (result->droidBuild.bodyChanged) {
-        appendApplied(&result->applied, "[CFG] bodyDesign updated to %s/%s",
-                      result->droidBuild.body.design, result->droidBuild.body.variant);
-        result->changed = true;
-    }
-
-    // The Fitted Parts arrive whole, as a comma-separated Part id list. An
-    // EMPTY value is a real answer - a droid with nothing fitted yet - and is
-    // applied; the field being absent is what means "this request is not about
-    // the Fitted Parts".
-    if (configParamHas(params, "fittedParts")) {
-        const char* raw = configParamGet(params, "fittedParts");
-        if (droidFittedPartsParse(raw, &result->droidBuild.fitted) != 0) {
-            setError(result, "fittedParts names a Part this build does not model",
-                     ApplyRefusalReason::OutOfRange, "fittedParts");
+    // The Records (include/config_records.h): the Droid Build and guided
+    // Setup's record, each checked by its own module, which stages what the
+    // request stated for the Commit Step to merge.
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        const ConfigRecordCheck check{params, &result->error.refusal, result->error.message,
+                                      sizeof(result->error.message), &result->applied};
+        if (!configRecordCheck((ConfigRecordId)r, check, &result->records)) {
+            result->error.hasError = true;
             return;
         }
-        result->droidBuild.fittedChanged = true;
-        appendApplied(&result->applied, "[CFG] fittedParts updated to %u part(s)",
-                      (unsigned)droidFittedPartsCount(result->droidBuild.fitted));
-        result->changed = true;
-    }
-
-    // Guided Setup's record (#351): where the run stands, and which of its steps
-    // the builder has actually been shown.
-    //
-    // Nothing downstream is gated on either. Firmware stores this record and
-    // checks its FORM - a run state this image can name, step keys made of
-    // characters a key may contain - because an arbitrary request string would
-    // otherwise reach NVS and come back out in a JSON payload. Which steps EXIST
-    // is the browser's question, not this one's: the run is drawn there and the
-    // list grows (include/guided_setup.h).
-    //
-    // The refusals do not echo what was asked for, for the reason a Member
-    // Setting's does (src/config_settings.cpp): the message lands in a JSON
-    // error body.
-    if (configParamHas(params, "guidedSetupRun")) {
-        GuidedSetupRun run = GUIDED_SETUP_NOT_RUN;
-        if (!guidedSetupRunFromId(configParamGet(params, "guidedSetupRun"), &run)) {
-            setError(result, "guidedSetupRun must be not-run, skipped or completed",
-                     ApplyRefusalReason::OutOfRange, "guidedSetupRun", "not-run,skipped,completed");
-            return;
+        if (result->records.stated[r] != 0) {
+            result->changed = true;
         }
-        result->guidedSetup.run = run;
-        result->guidedSetup.runChanged = true;
-        appendApplied(&result->applied, "[CFG] guidedSetupRun updated to %s",
-                      guidedSetupRunId(run));
-        result->changed = true;
-    }
-
-    // The visited list arrives whole. An EMPTY value is a real answer - the run
-    // has been drawn and nothing has been shown yet - and is applied; the field
-    // being absent is what means "this request is not about the visited record".
-    // A key this image cannot read is refused rather than dropped: a shortened
-    // record would report a step the builder WAS shown as one they never were,
-    // which is the untruth the record exists to prevent.
-    if (configParamHas(params, "guidedSetupVisited")) {
-        guidedSetupDefaults(&result->guidedSetup.visited);
-        const size_t dropped = guidedSetupVisitedSet(&result->guidedSetup.visited,
-                                                     configParamGet(params, "guidedSetupVisited"));
-        if (dropped > 0) {
-            setError(result,
-                     "guidedSetupVisited must be a comma-separated list of step keys, each at "
-                     "most 12 characters of a-z, 0-9 and _",
-                     ApplyRefusalReason::OutOfRange, "guidedSetupVisited");
-            return;
-        }
-        result->guidedSetup.visited.recorded = true;
-        result->guidedSetup.visitedChanged = true;
-        appendApplied(&result->applied, "[CFG] guidedSetupVisited updated");
-        result->changed = true;
-    }
-
-    // Whether the ended run's summary has been dismissed (#371): a third fact,
-    // merged on its own for the reason the two above are.
-    if (configParamHas(params, "guidedSetupSummaryDone")) {
-        const char* value = configParamGet(params, "guidedSetupSummaryDone");
-        if (strcmp(value, "true") != 0 && strcmp(value, "false") != 0) {
-            setError(result, "guidedSetupSummaryDone must be true or false",
-                     ApplyRefusalReason::OutOfRange, "guidedSetupSummaryDone", "true,false");
-            return;
-        }
-        result->guidedSetup.summaryDone = strcmp(value, "true") == 0;
-        result->guidedSetup.summaryDoneChanged = true;
-        appendApplied(&result->applied, "[CFG] guidedSetupSummaryDone updated to %s", value);
-        result->changed = true;
     }
 
     // A Part's place on the Outputs (ADR 0050, #347). All three fields or none:

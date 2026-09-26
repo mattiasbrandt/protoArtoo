@@ -23,7 +23,7 @@
 
 #include <string>
 
-#include "config_serializer.h"
+#include "config_record_guided_setup.h"
 #include "guided_setup.h"
 #include "../../../test/stubs/config/map_config_io.h"
 

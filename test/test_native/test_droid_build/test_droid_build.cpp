@@ -21,7 +21,7 @@
 
 #include <cstring>
 
-#include "config_serializer.h"
+#include "config_record_droid_build.h"
 #include "droid_build.h"
 #include "droid_parts.h"
 #include "../../stubs/config/map_config_io.h"
