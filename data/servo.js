@@ -150,7 +150,7 @@
       // does not hold it there.
       `<td class="outputs-drive"><span class="outputs-drive-note"></span>` +
       `<span class="outputs-drive-acts">` +
-      `<input class="input-narrow outputs-width" type="number" min="500" max="2500" step="10" value="1500" ` +
+      `<input class="input-narrow outputs-width" type="number" step="10" value="1500" ` +
       `aria-label="${esc(`Width to drive ${label} to, in microseconds`)}">` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="position" disabled aria-disabled="true">drive</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="open" disabled aria-disabled="true">open</button>` +
@@ -496,12 +496,9 @@
     const label = output.name;
     const form = { arm: servoWord(output), action };
     if (action === "position") {
-      const us = Math.round(Number(row.width.value));
-      if (!Number.isFinite(us) || us < 500 || us > 2500) {
-        showFeedback(`Type a width from 500 to 2500 µs for ${label}.`, "warning");
-        return;
-      }
-      form.positionUs = String(us);
+      // Sent as typed: the droid holds the range, and a width it will not
+      // take comes back as a refusal messageFor() words.
+      form.positionUs = String(row.width.value).trim();
     }
     const said = action === "position" ? `${label} to ${form.positionUs} µs` : `${label} ${action}`;
     try {

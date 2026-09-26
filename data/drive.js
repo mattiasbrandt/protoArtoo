@@ -452,11 +452,6 @@
     }
 
     saveInFlight = true;
-    if (!updatePresetDistinctHint()) {
-      window.PAUtils.showFeedback(configFeedback, "Speed presets must be distinct values.", "warning");
-      saveInFlight = false;
-      return;
-    }
     window.PAUtils.showFeedback(configFeedback, "Saving...");
     try {
       const result = await window.PAApi.postForm("/api/config", {

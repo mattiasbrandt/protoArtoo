@@ -237,6 +237,9 @@
 
   const publish = () => {
     join();
+    // A refusal about one of an Output's Settings names the Output as this
+    // module does (data/web_api.js words the rest).
+    window.PAApi?.nameOutputsWith?.((address) => at(address)?.name ?? null);
     listeners.forEach((listener) => listener(outputs));
   };
 
@@ -318,36 +321,6 @@
   // refuses it by its own check rather than this module guessing.
   const asSent = (value) => (typeof value === "number" && Number.isFinite(value) ? value : String(value));
 
-  // What each row key is called on screen. The droid refuses a value by the
-  // row key it saves it under (`"field":"ledc:1.throwMs"`), and that name is
-  // wire vocabulary that must never reach a builder (#414).
-  const SETTING_WORDS = {
-    wired: "wired tick",
-    component: "what is on the wire",
-    ledCount: "LED count",
-    throwMs: "time to full throw",
-    accelMs: "time to get up to speed",
-    ease: "ease",
-    boot: "power-up setting",
-    openUs: "open end",
-    centreUs: "centre",
-    closeUs: "close end",
-    calibrated: "calibration",
-    parts: "parts",
-  };
-
-  // The unit a setting's number is in, where it has one.
-  const SETTING_UNITS = { throwMs: " ms", accelMs: " ms", openUs: " µs", centreUs: " µs", closeUs: " µs" };
-
-  // What a setting takes, from the refusal's `accepts`: `20..10000` is a range,
-  // anything else the words it takes, comma-separated.
-  const sayAccepts = (accepts, key) => {
-    const range = /^(\d+)\.\.(\d+)$/.exec(accepts);
-    if (range) return `${range[1]} to ${range[2]}${SETTING_UNITS[key] || ""}`;
-    const words = accepts.split(",");
-    return words.length > 1 ? `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}` : words[0];
-  };
-
   const at = (address) => outputs.find((output) => output.address === address) || null;
 
   // The Part a refused row shares with another row that was sent, by the name
@@ -366,12 +339,12 @@
   };
 
   /**
-   * A refusal about one of an Output row's fields, put in the page's words: the
-   * Output's name and the setting's, and what it takes. Read from the keys the
-   * droid answers beside its sentence (docs/api.md "Refusals from a settings
-   * write") - `field` is `<address>.<key>` - never from the sentence, which the
-   * firmware may reword. Anything else is left exactly as it came, for
-   * web_api.js's messageFor().
+   * A refusal about one of an Output row's Settings, put in the page's words:
+   * the Output's name and the Setting's, and what it takes, worded from the
+   * keys the droid answers beside its sentence by the one Settings words table
+   * (data/web_api.js sayRefusal()). One sentence is this module's own: a Part
+   * a row set puts on two Outputs, named from the rows this page sent. Any
+   * other refusal is left exactly as it came, for web_api.js's messageFor().
    *
    * @param {Error} error - what PAApi threw
    * @param {object[]} [sentRows] - the `outputs` rows the refused request sent,
@@ -382,23 +355,20 @@
     const field = typeof error?.field === "string" ? error.field : "";
     const dot = field.lastIndexOf(".");
     const address = dot > 0 ? field.slice(0, dot) : "";
-    const key = field.slice(dot + 1);
-    if (!address || !Object.hasOwn(SETTING_WORDS, key)) return error;
-    const output = at(address);
-    const name = output ? output.name : address;
+    const output = address ? at(address) : null;
+    if (!output) return error;
     // A Part is on at most one Output (CONTEXT.md "Part"): a row set that puts
     // one on two is refused as a conflict, and says so in a sentence of its own,
     // naming the Part when the rows sent show which one it is.
-    if (error.reason === "conflict" && key === "parts") {
+    if (error.reason === "conflict" && field.slice(dot + 1) === "parts") {
       const part = sharedPartName(address, sentRows);
       error.message = part
-        ? `${part} is on ${name} and another output`
-        : `${name} and another output list the same part`;
+        ? `${part} is on ${output.name} and another output`
+        : `${output.name} and another output list the same part`;
       return error;
     }
-    const setting = `${name}'s ${SETTING_WORDS[key]}`;
-    const accepts = typeof error.accepts === "string" ? error.accepts : "";
-    error.message = accepts ? `${setting} must be ${sayAccepts(accepts, key)}` : `${setting} was not saved`;
+    const said = window.PAApi?.sayRefusal?.(error);
+    if (said) error.message = said;
     return error;
   };
 

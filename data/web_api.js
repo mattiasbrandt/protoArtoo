@@ -316,6 +316,158 @@
     return DEVICE_REFUSALS[error.message] || null;
   };
 
+  // ---------------------------------------------------------------------------
+  // The builder's words for every Setting (ADR 0068, amended 2026-09-26)
+  //
+  // The droid refuses a value it will not take with its field, its reason and
+  // what it accepts as keys beside its sentence (docs/api.md "Refusals from a
+  // settings write"). The field is the droid's own name for the Setting -
+  // `speedLimitMax`, or `ledc:0.throwMs` for an Output's - and that name is
+  // wire vocabulary that must never reach a screen (ADR 0059). So a refusal is
+  // worded here, from the keys and never from the sentence, and this is the
+  // one table a field is turned into words by.
+  //
+  // Only words live here. What a Setting accepts is the droid's to say, on
+  // every refusal, so no range is copied into the browser. Each droid Setting
+  // the firmware declares (src/config_settings.cpp) must have an entry, and
+  // tools/check_setting_words.py fails the build when one has none.
+  //
+  //   word   - what the Setting is called, as the page's label says it
+  //   unit   - the unit its number is in, where it has one (R15)
+  //   path   - where GET /api/config has it: a restore's refusal can be named
+  //            by either
+  //   values - the words its accepted tokens are said in, where they are wire
+  //            vocabulary themselves
+  //   clash  - what a conflict with the Settings beside it says
+  const MS = " ms";
+  const US = " µs";
+  const PCT = "%";
+  const PRESET_CLASH = "must differ from the other presets";
+  const PULSE_CLASH = "must sit between the minimum and maximum pulses";
+  const SETTING_WORDS = Object.freeze({
+    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },
+    speedPresetSlow: { word: "slow preset", path: "drive.speedPresetSlow", clash: PRESET_CLASH },
+    speedPresetNormal: { word: "normal preset", path: "drive.speedPresetNormal", clash: PRESET_CLASH },
+    speedPresetTurbo: { word: "turbo preset", path: "drive.speedPresetTurbo", clash: PRESET_CLASH },
+    webDriveTimeoutMs: { word: "web control timeout", unit: MS, path: "drive.webDriveTimeoutMs" },
+    stationary: { word: "stationary mode", path: "drive.stationary" },
+    rcInputMode: {
+      word: "receiver type",
+      path: "rc.inputMode",
+      values: { standard_pwm: "PWM", single_sbus: "one SBUS", dual_sbus: "two SBUS", elrs: "ELRS" },
+    },
+    sbusTimeoutMs: { word: "signal-lost timeout", unit: MS, path: "rc.sbusTimeoutMs" },
+    rcMember: { word: "radio", path: "rc.member" },
+    sbusRecvCh2: { word: "second SBUS input", path: "rc.sbus.recvCh2" },
+    enableDomeEsc: { word: "Dome ESC", path: "components.domeEsc.enabled" },
+    enableRcCh1: { word: "RC channel 1", path: "components.rcCh1.enabled" },
+    enableRcCh2: { word: "RC channel 2", path: "components.rcCh2.enabled" },
+    enableRcCh3: { word: "RC channel 3", path: "components.rcCh3.enabled" },
+    enableRcCh4: { word: "RC channel 4", path: "components.rcCh4.enabled" },
+    enableRcCh5: { word: "RC channel 5", path: "components.rcCh5.enabled" },
+    enableRcCh6: { word: "RC channel 6", path: "components.rcCh6.enabled" },
+    enableDrive: { word: "Foot Drive", path: "components.drive.enabled" },
+    enableAudio: { word: "Sound", path: "components.audio.enabled" },
+    soundMember: { word: "sound module", path: "components.audio.member" },
+    enableProtoR2link: { word: "dome link", path: "components.protoR2link.enabled" },
+    domeEscNeutralUs: { word: "neutral pulse", unit: US, path: "domeEsc.neutralUs", clash: PULSE_CLASH },
+    domeEscMinPulseUs: { word: "minimum pulse", unit: US, path: "domeEsc.minPulseUs", clash: PULSE_CLASH },
+    domeEscMaxPulseUs: { word: "maximum pulse", unit: US, path: "domeEsc.maxPulseUs", clash: PULSE_CLASH },
+    domeEscSpeedLimitPct: { word: "dome speed limit", unit: PCT, path: "domeEsc.speedLimitPct" },
+    domeEscRndEnable: { word: "turning on its own", path: "domeEsc.rndEnable" },
+    domeEscRndSpeedPct: { word: "turn speed", unit: PCT, path: "domeEsc.rndSpeedPct" },
+    domeEscRndPauseMin: { word: "shortest pause", unit: " s", path: "domeEsc.rndPauseMin" },
+    domeEscRndPauseMax: { word: "longest pause", unit: " s", path: "domeEsc.rndPauseMax" },
+    domeEscRndMoveMs: { word: "move duration", unit: MS, path: "domeEsc.rndMoveMs" },
+    protoR2linkWifiPeerIp: { word: "dome's IP address", path: "protoR2link.wifiPeerIp" },
+    logLevel: { word: "log level", path: "system.logLevel" },
+    // An act's width, not a stored Setting: POST /api/servo words its
+    // refusal the same way.
+    positionUs: { word: "width", unit: US },
+  });
+
+  // An Output's Settings, by the row key the droid refuses them under
+  // (`ledc:1.throwMs`). The Output is named by the page (nameOutputsWith()).
+  const ROW_SETTING_WORDS = Object.freeze({
+    wired: { word: "wired tick" },
+    component: {
+      word: "fitted part",
+      values: { none: "nothing", mg996r: "MG996R", mg90s: "MG90S", rgb: "LED strip" },
+    },
+    ledCount: { word: "LED count" },
+    throwMs: { word: "time to full throw", unit: MS },
+    accelMs: { word: "time to get up to speed", unit: MS },
+    ease: { word: "ease" },
+    boot: {
+      word: "power-up setting",
+      values: { limp: "limp", "home-hold": "home and hold", "home-release": "home then release" },
+    },
+    openUs: { word: "open end", unit: US },
+    centreUs: { word: "centre", unit: US },
+    closeUs: { word: "close end", unit: US },
+    calibrated: { word: "calibration" },
+    parts: { word: "parts" },
+    address: { word: "address", clash: "is on two rows" },
+  });
+
+  // The Setting a refusal's field names, and the Output it is on where it is
+  // one of an Output's. null for a field this table has no words for.
+  const settingFor = (field) => {
+    if (typeof field !== "string" || !field) return null;
+    if (Object.hasOwn(SETTING_WORDS, field)) return { words: SETTING_WORDS[field], address: null, key: field };
+    const byPath = Object.keys(SETTING_WORDS).find((name) => SETTING_WORDS[name].path === field);
+    if (byPath) return { words: SETTING_WORDS[byPath], address: null, key: byPath };
+    const dot = field.lastIndexOf(".");
+    const key = field.slice(dot + 1);
+    if (dot > 0 && field.slice(0, dot).includes(":") && Object.hasOwn(ROW_SETTING_WORDS, key)) {
+      return { words: ROW_SETTING_WORDS[key], address: field.slice(0, dot), key };
+    }
+    return null;
+  };
+
+  // What a Setting takes, from the refusal's `accepts`: `20..10000` is a
+  // range, `true,false,1,0` is on or off, anything else the words it takes.
+  const sayAccepts = (accepts, words) => {
+    const range = /^(\d+)\.\.(\d+)$/.exec(accepts);
+    if (range) return `${range[1]} to ${range[2]}${words.unit || ""}`;
+    if (accepts === "true,false,1,0") return "on or off";
+    const said = accepts.split(",").map((token) => (words.values && words.values[token]) || token);
+    return said.length > 1 ? `${said.slice(0, -1).join(", ")} or ${said[said.length - 1]}` : said[0];
+  };
+
+  // How the page names an Output by its address. data/outputs.js tells this
+  // module once it has read the table; until then an Output is "this output".
+  let outputName = () => null;
+  const nameOutputsWith = (nameOf) => {
+    if (typeof nameOf === "function") outputName = nameOf;
+  };
+
+  const capitalise = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+  /**
+   * A settings refusal in the builder's words: what they changed, and what it
+   * takes - `Top speed must be 0 to 600`, `GPIO 49's time to full throw must be
+   * 20 to 10000 ms`. Read from the refusal's field, reason and accepts, never
+   * from its sentence.
+   *
+   * @returns {string|null} null when the error is not a refusal of a Setting
+   *   this table has words for.
+   */
+  const sayRefusal = (error) => {
+    if (!(error instanceof Error)) return null;
+    const setting = settingFor(error.field);
+    if (!setting) return null;
+    const { words, address } = setting;
+    const owner = address ? outputName(address) || "this output" : null;
+    const name = owner ? `${owner}'s ${words.word}` : capitalise(words.word);
+    const accepts = typeof error.accepts === "string" ? error.accepts : "";
+    if (error.reason === "conflict") return `${name} ${words.clash || "clashes with another setting"}`;
+    if (error.reason === "out-of-range") {
+      return accepts ? `${name} must be ${sayAccepts(accepts, words)}` : `${name} is not one this droid takes`;
+    }
+    return `${name} was not saved`;
+  };
+
   const messageFor = (error) => {
     if (!(error instanceof ApiError)) return "Request failed";
     if (error.kind === "timeout") return "Request timed out";
@@ -326,6 +478,9 @@
       // vocabulary is translated here or it is shown verbatim.
       const refusal = refusalFor(error);
       if (refusal) return refusal.route ? `${refusal.text} ${refusal.route.label}.` : refusal.text;
+      // A Setting the droid would not take, in the builder's words.
+      const said = sayRefusal(error);
+      if (said) return said;
       if (error.message && !error.message.startsWith("HTTP ")) return error.message;
       return HTTP_STATUS_MESSAGES[error.status]
         || (error.status >= 500 ? "Device error" : "Device rejected the request");
@@ -388,6 +543,8 @@
     estopPostForm,
     messageFor,
     refusalFor,
+    sayRefusal,
+    nameOutputsWith,
     gateControls,
   };
 
