@@ -338,6 +338,8 @@
   //            by either
   //   values - the words its accepted tokens are said in, where they are wire
   //            vocabulary themselves
+  //   must   - an Output's Setting said as a verb on the Output instead of
+  //            "<Output>'s <word> must be": "GPIO 49 must carry ..."
   //   clash  - what a conflict with the Settings beside it says
   //   valueOnly - worded only when its value is refused; any other refusal
   //            naming it keeps the droid's own sentence
@@ -478,9 +480,12 @@
   const ROW_SETTING_WORDS = Object.freeze({
     // An expander's Output has no tick to switch off: it takes only `true`.
     wired: { word: "wired tick", values: { true: "on" } },
+    // Said with the verb Output Settings uses ("GPIO 49 carries Servo"), not
+    // as a possessive: "GPIO 49 must carry nothing, an MG996R or an LED strip".
     component: {
-      word: "what is on the wire",
-      values: { none: "nothing", mg996r: "MG996R", mg90s: "MG90S", rgb: "LED strip" },
+      word: "wire",
+      must: "must carry",
+      values: { none: "nothing", mg996r: "an MG996R", mg90s: "an MG90S", rgb: "an LED strip" },
     },
     ledCount: { word: "LED count" },
     throwMs: { word: "time to full throw", unit: MS },
@@ -494,7 +499,7 @@
     centreUs: { word: "centre", unit: US },
     closeUs: { word: "close end", unit: US },
     calibrated: { word: "calibration" },
-    parts: { word: "parts" },
+    parts: { word: "list of parts" },
     address: { word: "address", clash: "is on two rows" },
   });
 
@@ -557,6 +562,7 @@
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
     if (error.reason === "conflict") return `${name} ${words.clash || "clashes with another setting"}`;
     if (error.reason === "out-of-range") {
+      if (accepts && words.must && owner) return `${owner} ${words.must} ${sayAccepts(accepts, words)}`;
       if (accepts) return `${name} must be ${sayAccepts(accepts, words)}`;
       if (words.refused) return `${name} ${words.refused}`;
     }
