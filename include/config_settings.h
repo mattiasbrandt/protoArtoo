@@ -197,9 +197,12 @@ const ConfigSetting& audioSettingAt(size_t index);
 // The audio Setting a door takes under `name`, or nullptr.
 const ConfigSetting* audioSettingByName(const char* name, SettingDoor door);
 
-// Parse `raw` against any Setting without storing it: the check alone, for a
-// door that holds the value somewhere other than a ConfigSnapshot. `field`
-// names the refusal. False, with the refusal written, when it is not taken.
+// Parse `raw` against a Range, Words, Bool or Mask Setting without storing it:
+// the check alone, for a door that holds the value somewhere other than a
+// ConfigSnapshot. `field` names the refusal. False, with the refusal written,
+// when it is not taken. `sentence` may be nullptr with a size of 0 for a door
+// that answers from the refusal's data alone (the Console), so no buffer need
+// sit on its frame.
 bool configSettingCheck(const ConfigSetting& setting, const char* raw, const char* field,
                         int32_t* value, ApplyRefusal* refusal, char* sentence,
                         size_t sentenceSize);

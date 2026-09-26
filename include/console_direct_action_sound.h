@@ -142,22 +142,21 @@ static void consoleExecuteSoundSetVolume(uint32_t requestId, const char* operati
                                          const ConsoleRecordSink* sink) {
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+    const ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
         entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    if (consoleRefuseSettingArgKeys(requestId, operationName,
+                                    entry != nullptr ? entry->params : nullptr, schemaStatus,
+                                    badKey, sink)) {
         return;
     }
 
-    char* end = nullptr;
-    long level = strtol(consoleArgsFind(args, "volume"), &end, 10);
-    if (*end != '\0' || level < 0 || level > 30) {
-        consoleEmitArgFailure(requestId, operationName, "volume", CONSOLE_REASON_OUT_OF_RANGE, sink);
+    // The volume Setting's own check (src/config_settings.cpp), as POST
+    // /api/audio's: a level it does not take is refused with its range.
+    const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+    int32_t level = 0;
+    if (volume == nullptr ||
+        !consoleCheckSettingArg(requestId, operationName, "volume", *volume,
+                                consoleArgsFind(args, "volume"), &level, sink)) {
         return;
     }
 
@@ -543,11 +542,10 @@ static void consoleExecuteSoundQueryStatus(uint32_t requestId, const char* opera
 // consoleArgsAsParamSource() (include/console_args.h) is the SAME
 // ConfigParamSource adapter #226 already established for Console-sourced
 // Apply Core calls, reused verbatim rather than a second bridge. All four
-// fields are required with range 0-4095 in the registry schema - exactly
-// MOOD_CATEGORY_MASK_MAX (include/mood_sound_mapping.h) - so the apply
-// core's own hasError branch below is unreachable in practice for a
-// Console-originated call once schema validation has already passed; still
-// handled explicitly rather than assumed away.
+// fields are required by the registry schema, which carries no range for
+// them: each mask is checked by its Setting's declaration inside the core
+// (src/config_settings.cpp), and a mask it does not take comes back with its
+// range, as over HTTP (ADR 0068, amended 2026-09-26).
 static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operationName,
                                           const ConsoleArgs& args, ConsoleCommandSource source,
                                           const ConsoleRecordSink* sink) {
@@ -555,24 +553,19 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
                    // handler it mirrors does not attribute this NVS write to a source either.
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+    const ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
         entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    if (consoleRefuseSettingArgKeys(requestId, operationName,
+                                    entry != nullptr ? entry->params : nullptr, schemaStatus,
+                                    badKey, sink)) {
         return;
     }
 
     AudioMoodMapApplyResult result;
     audioMoodMapApply(consoleArgsAsParamSource(args), &result);
     if (result.error.hasError) {
-        // Unreachable after schema validation above (see header comment) -
-        // still a real status=err answer, not swallowed, answered from the
-        // core's refusal like every other apply-core error path in this module.
+        // A mask its Setting does not take: the core checks each against its
+        // declaration and names it with its range, as POST /api/audio/mood-map.
         consoleEmitApplyRefusal(requestId, operationName, result.error.refusal.field,
                                 result.error.refusal, sink);
         return;
@@ -605,8 +598,9 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
 // sequence handleAudioCategoryRangePost() runs (src/web/api_audio.cpp),
 // reusing the ADR 0011 Apply Core and its Commit Step (include/api_audio.h)
 // exactly as extracted for this purpose. The registry declares no range on
-// lo/hi (docs/action-registry.yaml), so the apply core's own 0-999/lo<=hi
-// and category-key-pair validation is the real gate here, not the schema -
+// lo/hi (docs/action-registry.yaml), so each bound's Setting (its declared
+// range, src/config_settings.cpp), the lo<=hi pair rule and the category-key
+// pair check in the apply core are the real gate here, not the schema -
 // and its refusal names which argument and why (a bad key pair, a bound out
 // of range, a lo above hi is a `conflict`), which consoleEmitApplyRefusal()
 // answers as it does every Apply Core refusal (src/console/console_module.cpp).
@@ -624,15 +618,11 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
                    // the REST handler it mirrors does not attribute this NVS write either.
     const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+    const ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
         entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
-    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
-                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
-                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
-                                   ? CONSOLE_REASON_MISSING_ARGUMENT
-                                   : CONSOLE_REASON_OUT_OF_RANGE;
-        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    if (consoleRefuseSettingArgKeys(requestId, operationName,
+                                    entry != nullptr ? entry->params : nullptr, schemaStatus,
+                                    badKey, sink)) {
         return;
     }
 

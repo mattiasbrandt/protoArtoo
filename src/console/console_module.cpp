@@ -1528,6 +1528,54 @@ static void consoleEmitApplyRefusal(uint32_t requestId, const char* operationNam
                           consoleReasonFromApplyRefusal(refusal.reason), sink, refusal.accepts);
 }
 
+// The registry schema's answer for an op that writes a Setting. It rules on
+// the op's arguments - one it does not take, one it needs and was not sent, a
+// word outside a selector's enum (`key=` scoping which Settings a row writes) -
+// but not on a Setting's VALUE: a number the schema's type cannot hold is left
+// to the Setting's declaration (src/config_settings.cpp), which refuses it
+// with what it takes, as HTTP does (ADR 0068, amended 2026-09-26). The
+// registry carries no range for a Setting's param, so the type is the only
+// value check the schema could make. True when it answered.
+static bool consoleRefuseSettingArgKeys(uint32_t requestId, const char* operationName,
+                                        const ConsoleParamDescriptor* params,
+                                        ConsoleArgSchemaStatus status, const char* badKey,
+                                        const ConsoleRecordSink* sink) {
+    if (status == CONSOLE_ARG_SCHEMA_OK) {
+        return false;
+    }
+    if (status == CONSOLE_ARG_SCHEMA_OUT_OF_RANGE && params != nullptr) {
+        for (const ConsoleParamDescriptor* p = params; p->name != nullptr; ++p) {
+            if (strcmp(p->name, badKey) == 0 && p->enum_values == nullptr && !p->board_output) {
+                return false;  // a Setting's value: its declaration answers
+            }
+        }
+    }
+    const ConsoleReason reason = status == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY
+                                     ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                                 : status == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED
+                                     ? CONSOLE_REASON_MISSING_ARGUMENT
+                                     : CONSOLE_REASON_OUT_OF_RANGE;
+    consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+    return true;
+}
+
+// A value checked by its Setting's declaration, the check HTTP makes: false,
+// with the refusal answered on `argument` with the Setting's reason and accepts.
+// noinline, deliberately: the refusal is live only here, so it never joins the
+// frame of an executor on the Console chain's deepest route (the volume write,
+// tools/task_stack_recipes.json). No sentence is formatted - the Console answers
+// from the refusal's data.
+static bool __attribute__((noinline)) consoleCheckSettingArg(
+    uint32_t requestId, const char* operationName, const char* argument,
+    const ConfigSetting& setting, const char* raw, int32_t* value, const ConsoleRecordSink* sink) {
+    ApplyRefusal refusal;
+    if (configSettingCheck(setting, raw, setting.form, value, &refusal, nullptr, 0)) {
+        return true;
+    }
+    consoleEmitApplyRefusal(requestId, operationName, argument, refusal, sink);
+    return false;
+}
+
 // Argument-parse failures (malformed quoting/escaping/UTF-8, or too many
 // key=value pairs) have no single offending key - consoleParseArgs() never
 // got far enough to resolve one - so this answers without a field record,
@@ -2654,20 +2702,12 @@ static bool consoleParseAudioConfigWrite(uint32_t requestId, const ConsoleCatalo
         return false;
     }
 
+    // Every audio config row writes an audio Setting, whose own check rules on
+    // the value (the apply core, or consoleCheckSettingArg() for the volume).
     char badKey[40] = {};
-    ConsoleArgSchemaStatus schema =
+    const ConsoleArgSchemaStatus schema =
         consoleValidateArgsAgainstSchema(entry->params, *outArgs, badKey, sizeof(badKey));
-    if (schema != CONSOLE_ARG_SCHEMA_OK) {
-        ConsoleReason reason = CONSOLE_REASON_OUT_OF_RANGE;
-        if (schema == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY) {
-            reason = CONSOLE_REASON_UNKNOWN_ARGUMENT;
-        } else if (schema == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED) {
-            reason = CONSOLE_REASON_MISSING_ARGUMENT;
-        }
-        consoleEmitArgFailure(requestId, entry->name, badKey, reason, sink);
-        return false;
-    }
-    return true;
+    return !consoleRefuseSettingArgKeys(requestId, entry->name, entry->params, schema, badKey, sink);
 }
 
 // Answer a Commit Step that could not reach NVS. "A failed NVS write is an
@@ -2949,10 +2989,10 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 // sound.config.mood-category-map: quiet=/mid=/full=/awakeplus= through
 // audioMoodMapApply() and audioMoodMapCommitApplied(). Same relationship to
 // sound.action.set-mood-map as the row above has to
-// sound.action.set-category-range, and the same registry schema - this row's
-// params: predate this ticket and are reused unchanged, ranges included
-// (0-4095 is MOOD_CATEGORY_MASK_MAX, so the schema and the core agree by
-// construction rather than by a second rule).
+// sound.action.set-category-range, and the same registry schema, which names
+// the four masks and carries no range for them: each mask is checked by its
+// Setting's declaration inside the core (src/config_settings.cpp), so a mask it
+// does not take comes back with its range, as over HTTP.
 //
 // This core touches neither the config cache nor a ConfigSnapshot: its Commit
 // Step calls configUpdateAudioMoodMasks(), which bundles validate+apply+persist
@@ -3034,11 +3074,10 @@ static void consoleExecuteSoundMoodCategoryMap(uint32_t requestId, const Console
 // inline in the handler" predated the Commit Step's extraction and is gone
 // with it.
 //
-// Unlike consoleExecuteMoodConfig() above, which hand-checks its enum because
-// its registry row declares no params, this row's `volume` param carries
-// type and range in the registry (uint8, 0-30) - so the shared schema
-// validator is the whole check and there is no second copy of the bound
-// here. `volume` is also POST /api/audio's own parameter spelling for this
+// The level is checked by the volume Setting's declaration
+// (consoleCheckSettingArg(), src/config_settings.cpp), the check POST /api/audio
+// makes, and refused with its range; the registry names the param and carries
+// no range of its own. `volume` is also POST /api/audio's own parameter spelling for this
 // value and GET /api/audio/tracks' JSON key for it, so the read field name
 // is that key verbatim (docs/console-protocol.md s.3.5) and a read is
 // pasteable straight back into a write.
@@ -3073,9 +3112,15 @@ static void consoleExecuteSoundVolumeConfig(uint32_t requestId, const ConsoleCat
         return;
     }
 
-    // Range-checked by the schema above, so this cannot be out of the uint8
-    // the Commit Step takes.
-    const long level = strtol(consoleArgsFind(parsedArgs, "volume"), nullptr, 10);
+    // Checked by the volume Setting's declaration, the check POST /api/audio
+    // makes, and refused with its range (src/config_settings.cpp).
+    const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+    int32_t level = 0;
+    if (volume == nullptr ||
+        !consoleCheckSettingArg(requestId, entry->name, "volume", *volume,
+                                consoleArgsFind(parsedArgs, "volume"), &level, sink)) {
+        return;
+    }
 
     // The Write Window POST /api/audio's volume branch calls (include/api_audio.h).
     AudioSetVolumeCommitOutcome commit;

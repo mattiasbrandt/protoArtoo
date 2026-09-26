@@ -1244,27 +1244,15 @@ entries:
   params:
   - name: quiet
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   - name: mid
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   - name: full
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   - name: awakeplus
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   executor: audioMoodMapApply
 - name: sound.action.set-category-range
@@ -1358,9 +1346,6 @@ entries:
   params:
   - name: volume
     type: uint8
-    range:
-    - 0
-    - 30
     required: true
   executor: audioQueueSetVolume
 - name: sound.action.volume-up
@@ -1721,9 +1706,6 @@ entries:
   params:
   - name: volume
     type: uint8
-    range:
-    - 0
-    - 30
     required: true
   executor: audioSetVolumeCommitApplied
 - name: sound.config.random-min
@@ -2003,27 +1985,15 @@ entries:
   params:
   - name: quiet
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   - name: mid
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   - name: full
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   - name: awakeplus
     type: uint16
-    range:
-    - 0
-    - 4095
     required: true
   executor: audioMoodMapApply
 - name: servo.action.open
@@ -2458,9 +2428,6 @@ entries:
     required: true
   - name: value
     type: uint8
-    range:
-    - 1
-    - 255
     required: false
   # No NVS key of its own since #413: a light's settings live on the addressed
   # Servo Output row that carries the Light Type, beside the type itself

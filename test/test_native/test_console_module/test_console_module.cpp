@@ -3843,6 +3843,33 @@ void test_sound_set_volume_rejects_an_out_of_range_level() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("0..30", capturedValue("accepts"));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+}
+
+// The volume and the mood masks are refused at the Console exactly as over
+// HTTP (ADR 0068, amended 2026-09-26): by their Settings' declarations, with
+// what each takes - never by a range copied into the registry schema, which
+// refused with no accepts. A value the schema's type cannot hold (`abc`) is
+// the declaration's to answer too.
+void test_audio_setting_ops_refuse_with_what_the_setting_takes() {
+    const struct {
+        const char* line;
+        const char* argument;
+        const char* accepts;
+    } cases[] = {
+        {"sound.config.volume volume=31", "volume", "0..30"},
+        {"sound.action.set-volume volume=abc", "volume", "0..30"},
+        {"sound.config.mood-category-map quiet=5000 mid=2 full=3 awakeplus=4", "quiet", "0..4095"},
+        {"sound.action.set-mood-map quiet=1 mid=70000 full=3 awakeplus=4", "mid", "0..4095"},
+    };
+    for (const auto& c : cases) {
+        runQuery(c.line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, c.line);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason, c.line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.argument, capturedValue("argument"), c.line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(c.accepts, capturedValue("accepts"), c.line);
+    }
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
 }
 
@@ -4112,6 +4139,7 @@ void test_sound_set_mood_map_rejects_an_out_of_range_mask() {
 
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("0..4095", capturedValue("accepts"));
 }
 
 void test_sound_set_category_range_applies_and_persists() {
@@ -5769,6 +5797,7 @@ int main(int, char**) {
     RUN_TEST(test_sound_play_track_reports_a_full_queue);
     RUN_TEST(test_sound_set_volume_applies_and_persists);
     RUN_TEST(test_sound_set_volume_rejects_an_out_of_range_level);
+    RUN_TEST(test_audio_setting_ops_refuse_with_what_the_setting_takes);
     RUN_TEST(test_sound_set_volume_reports_a_full_queue);
 
     RUN_TEST(test_sound_named_track_shortcuts_send_the_right_dollar_command);

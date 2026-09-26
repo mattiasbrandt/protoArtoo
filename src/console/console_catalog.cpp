@@ -151,10 +151,10 @@ static const ConsoleParamDescriptor g_params_sound_api_play_banked[] = {
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_mood_map[] = {
-    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
-    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
-    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
-    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"quiet", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"mid", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"full", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"awakeplus", "uint16", true, false, 0.0, 0.0, NULL, false, false},
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
@@ -167,12 +167,12 @@ static const ConsoleParamDescriptor g_params_sound_action_set_category_range[] =
 };
 
 static const ConsoleParamDescriptor g_params_sound_action_set_volume[] = {
-    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false, false},
+    {"volume", "uint8", true, false, 0.0, 0.0, NULL, false, false},
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_volume[] = {
-    {"volume", "uint8", true, true, 0.0, 30.0, NULL, false, false},
+    {"volume", "uint8", true, false, 0.0, 0.0, NULL, false, false},
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
@@ -222,10 +222,10 @@ static const ConsoleParamDescriptor g_params_sound_config_category_ranges[] = {
 };
 
 static const ConsoleParamDescriptor g_params_sound_config_mood_category_map[] = {
-    {"quiet", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
-    {"mid", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
-    {"full", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
-    {"awakeplus", "uint16", true, true, 0.0, 4095.0, NULL, false, false},
+    {"quiet", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"mid", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"full", "uint16", true, false, 0.0, 0.0, NULL, false, false},
+    {"awakeplus", "uint16", true, false, 0.0, 0.0, NULL, false, false},
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
@@ -285,7 +285,7 @@ static const ConsoleParamDescriptor g_params_aux_action_led_effect[] = {
 
 static const ConsoleParamDescriptor g_params_aux_config_led_count[] = {
     {"target", "string", true, false, 0.0, 0.0, NULL, false, true},
-    {"value", "uint8", false, true, 1.0, 255.0, NULL, false, false},
+    {"value", "uint8", false, false, 0.0, 0.0, NULL, false, false},
     {NULL, NULL, false, false, 0.0, 0.0, NULL, false, false}  // terminator
 };
 
