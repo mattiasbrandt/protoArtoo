@@ -31,6 +31,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDocument } from "./helpers/mini_dom.js";
 import { servoRow, describe, applyRowSave } from "./helpers/fake_droid.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -65,6 +66,8 @@ const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
   const window = {
     document,
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
         if (path === "/api/config") return { ok: true, data: structuredClone(config) };

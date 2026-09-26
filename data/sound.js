@@ -7,41 +7,40 @@
 // =============================================================================
 (() => {
   const TRACK_MAX = 999;
+  // A named sound that is a track Setting is named by its entry in the one
+  // words table (data/web_api.js), which holds its label; what track numbers it
+  // takes is the droid's to say, on the refusal of a save. The three that are
+  // commands rather than Settings carry their own words.
+  const labelOf = (key) => window.PAApi.labelOf(key);
+  const named = (key, cmd, playMode) => ({ label: labelOf(key), cmd, key, editable: true, playMode });
   const NAMED_SOUNDS = [
-    { label: "Scream", cmd: "$S", key: "scream", editable: true },
-    { label: "Short Circuit", cmd: "$F", key: "faint", editable: true },
-    { label: "Doo-doo", cmd: null, key: "doodoo", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Failure", cmd: null, key: "failure", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Leia Message", cmd: "$L", key: "leia", editable: true },
-    { label: "Short Cantina", cmd: "$c", key: "cantina_s", editable: true },
-    { label: "Star Wars Theme", cmd: "$W", key: "sw_theme", editable: true },
-    { label: "Disco", cmd: null, key: "disco", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Mahna Mahna", cmd: null, key: "mahna", editable: true, playMode: "track", trackMin: 0 },
-    { label: "In Love", cmd: null, key: "inlove", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Macho Man", cmd: null, key: "macho", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Gangnam Style", cmd: null, key: "gangnam", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Uptown Funk", cmd: null, key: "uptown", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Celebration", cmd: null, key: "celebr", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Stayin' Alive", cmd: null, key: "stayin", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Harlem Shake", cmd: null, key: "harlem", editable: true, playMode: "track", trackMin: 0 },
-    { label: "PBJ Time", cmd: null, key: "pbjtime", editable: true, playMode: "track", trackMin: 0 },
-    { label: "Imperial March", cmd: "$M", key: "imp_march", editable: true },
-    { label: "Long Cantina", cmd: "$C", key: "cantina_l", editable: true },
-    { label: "Boot Sound ($B)", cmd: "$B", key: "startup", editable: true },
+    named("scream", "$S"),
+    named("faint", "$F"),
+    named("doodoo", null, "track"),
+    named("failure", null, "track"),
+    named("leia", "$L"),
+    named("cantina_s", "$c"),
+    named("sw_theme", "$W"),
+    named("disco", null, "track"),
+    named("mahna", null, "track"),
+    named("inlove", null, "track"),
+    named("macho", null, "track"),
+    named("gangnam", null, "track"),
+    named("uptown", null, "track"),
+    named("celebr", null, "track"),
+    named("stayin", null, "track"),
+    named("harlem", null, "track"),
+    named("pbjtime", null, "track"),
+    named("imp_march", "$M"),
+    named("cantina_l", "$C"),
+    named("startup", "$B"),
     { label: "Random On", cmd: "$R", key: null, editable: false },
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
 
-  const SYSTEM_SOUNDS = [
-    { label: "Boot Complete (auto)", key: "sys_boot" },
-    { label: "Mode → Normal", key: "sys_mode_n" },
-    { label: "Mode → Slow", key: "sys_mode_s" },
-    { label: "Mode → Turbo", key: "sys_mode_t" },
-    { label: "Drives engaged", key: "sys_drv_on" },
-    { label: "Dome enabled", key: "sys_dome_on" },
-    { label: "Network Link Lost (auto)", key: "sys_net_down" },
-  ];
+  const SYSTEM_SOUNDS = ["sys_boot", "sys_mode_n", "sys_mode_s", "sys_mode_t", "sys_drv_on", "sys_dome_on",
+    "sys_net_down"].map((key) => ({ label: labelOf(key), key }));
 
   const NAMED_SLOT_TARGETS = NAMED_SOUNDS
     .filter((sound) => sound.editable && Boolean(sound.key))
@@ -57,24 +56,21 @@
     ...NAMED_SLOT_TARGETS.map((target) => ({ key: target.key, label: `Named · ${target.label}` })),
     ...SYSTEM_SLOT_TARGETS.map((target) => ({ key: target.key, label: `System · ${target.label}` })),
   ];
+  // A category's two bounds share its label, read off the first bound's entry.
+  const category = (loKey, hiKey, extra = {}) => ({ label: labelOf(loKey), loKey, hiKey, ...extra });
   const CATEGORY_SOUNDS = [
-    {
-      label: "General",
-      loKey: "snd_cat_gen_lo",
-      hiKey: "snd_cat_gen_hi",
-      hint: "Bank 1 (1A_general) uses tracks 1-24.",
-    },
-    { label: "Chatty", loKey: "snd_cat_chat_lo", hiKey: "snd_cat_chat_hi" },
-    { label: "Happy", loKey: "snd_cat_hap_lo", hiKey: "snd_cat_hap_hi" },
-    { label: "Processing", loKey: "snd_cat_proc_lo", hiKey: "snd_cat_proc_hi" },
-    { label: "Sad", loKey: "snd_cat_sad_lo", hiKey: "snd_cat_sad_hi" },
-    { label: "Sentimental", loKey: "snd_cat_sent_lo", hiKey: "snd_cat_sent_hi" },
-    { label: "Humming", loKey: "snd_cat_hum_lo", hiKey: "snd_cat_hum_hi" },
-    { label: "Scream", loKey: "snd_cat_scrm_lo", hiKey: "snd_cat_scrm_hi" },
-    { label: "Surprised", loKey: "snd_cat_ooh_lo", hiKey: "snd_cat_ooh_hi" },
-    { label: "Alert", loKey: "snd_cat_alrm_lo", hiKey: "snd_cat_alrm_hi" },
-    { label: "Snarky", loKey: "snd_cat_snrk_lo", hiKey: "snd_cat_snrk_hi" },
-    { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
+    category("snd_cat_gen_lo", "snd_cat_gen_hi", { hint: "Bank 1 (1A_general) uses tracks 1-24." }),
+    category("snd_cat_chat_lo", "snd_cat_chat_hi"),
+    category("snd_cat_hap_lo", "snd_cat_hap_hi"),
+    category("snd_cat_proc_lo", "snd_cat_proc_hi"),
+    category("snd_cat_sad_lo", "snd_cat_sad_hi"),
+    category("snd_cat_sent_lo", "snd_cat_sent_hi"),
+    category("snd_cat_hum_lo", "snd_cat_hum_hi"),
+    category("snd_cat_scrm_lo", "snd_cat_scrm_hi"),
+    category("snd_cat_ooh_lo", "snd_cat_ooh_hi"),
+    category("snd_cat_alrm_lo", "snd_cat_alrm_hi"),
+    category("snd_cat_snrk_lo", "snd_cat_snrk_hi"),
+    category("snd_cat_whis_lo", "snd_cat_whis_hi"),
   ];
   const SLOT_TARGET_PREFIX = "slot:";
   const CATEGORY_TARGET_PREFIX = "category:";
@@ -115,12 +111,7 @@
     snd_cat_snrk_lo: ["snarky", "pfft", "razzberry"],
     snd_cat_whis_lo: ["whistle"],
   };
-  const MOOD_MAP_MOODS = [
-    { key: "quiet", label: "Quiet" },
-    { key: "mid", label: "Mid-Awake" },
-    { key: "full", label: "Full-Awake" },
-    { key: "awakeplus", label: "Awake+" },
-  ];
+  const MOOD_MAP_MOODS = ["quiet", "mid", "full", "awakeplus"].map((key) => ({ key, label: labelOf(key) }));
   const MOOD_MAP_DEFAULTS = {
     quiet: 0x0048,
     mid: 0x004F,
@@ -233,7 +224,6 @@
     saveFailed: "Save failed",
     saved: "Saved",
     unsaved: "Unsaved",
-    trackRange: (min, max) => `${min}–${max}`,
     trackRangeZeroToMax: `0–${TRACK_MAX}`,
   };
 
@@ -1920,10 +1910,11 @@
         className: "btn sound-btn-play",
         onClick: () => {
           if (sound.editable && sound.key) {
-            const minTrack = sound.trackMin ?? 1;
+            // 0 is "no sound for this", and there is nothing to play; which
+            // sounds may be 0 is the droid's to say when the track is saved.
             const value = Number.parseInt(rowInput?.value, 10);
-            if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
-              showFeedback(rowFeedback || globalFb, MSG.trackRange(minTrack, TRACK_MAX), false);
+            if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
+              showFeedback(rowFeedback || globalFb, MSG.trackRangeZeroToMax, false);
               return;
             }
             if (value === 0) return;

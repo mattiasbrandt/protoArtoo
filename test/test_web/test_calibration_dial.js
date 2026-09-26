@@ -15,8 +15,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
+import vm from "node:vm";
 
-import { bootServos, freshOutputs, withParts, output, sleep } from "./helpers/parts_surface.js";
+import { bootServos, freshOutputs, withParts, output, sleep, readData } from "./helpers/parts_surface.js";
 
 const NOT_WIRED = "– not wired –";
 
@@ -289,4 +290,43 @@ test("the dial closes itself if its Output leaves the droid's answer", async () 
 
   assert.equal(env.dialOpen(), false);
   assert.equal(env.releases().length, 0, "and nothing is asked of an Output that is gone");
+});
+
+// A capture or a swap the droid refuses is said in the builder's words, from
+// the refusal's field, reason and accepts, naming the Output the dial is on
+// (ADR 0068, second amendment, #432) - never in the droid's sentence, which
+// stands in each refusal here as a decoy because the droid still sends it.
+test("a capture or a swap the droid refuses names the Output in the builder's words, never the droid's sentence", async () => {
+  const env = await bootServos();
+  const window = {};
+  vm.runInNewContext(readData("web_api.js"), { window, URLSearchParams });
+  const words = window.PAApi;
+  words.nameOutputsWith((address) => env.outputs.find((each) => each.address === address)?.name ?? null);
+  env.window.PAApi.messageFor = words.messageFor;
+  env.pressCalibrate("ledc:0");
+  await sleep(20);
+
+  const refusals = [
+    {
+      button: () => env.dial().querySelectorAll(".cal-set").find((node) => node.dataset.end === "open"),
+      error: "captureOutput, captureEnd and captureUs must be sent together: an Output Address, one of "
+        + "open/centre/close, and a width 500..2500",
+      field: "captureUs", accepts: "500..2500", says: "MAX was not recorded: ARM1's captured width must be 500 to 2500",
+    },
+    {
+      button: () => env.dialButton("cal-reverse"),
+      error: "reverseOutput must be an Output Address", field: "reverseOutput", accepts: null,
+      says: "The ends were not swapped: ARM1 ",
+    },
+  ];
+  for (const refusal of refusals) {
+    env.configFails = new words.ApiError(refusal.error, {
+      kind: "http", status: 400, field: refusal.field, reason: "out-of-range", accepts: refusal.accepts,
+    });
+    env.dial().fire("click", { target: refusal.button() });
+    await sleep(20);
+    const said = env.dialNote();
+    assert.ok(!said.includes(refusal.error) && !said.includes(refusal.field), `the droid's sentence reached the page: ${said}`);
+    assert.ok(said.startsWith(refusal.says), `"${refusal.says}" does not open: ${said}`);
+  }
 });

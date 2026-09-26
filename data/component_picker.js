@@ -51,23 +51,23 @@
   // key; the form field and the config payload's shape are this page's API
   // (docs/api.md "POST /api/config").
   //
-  // `applies`: when a pick of the member takes effect, in the one timing
-  // vocabulary (data/apply_timing.js, #370). The sound module is bound once at
-  // start (ADR 0042), so a chosen card that is not yet the one running says so;
-  // the RC Radio is a statement of which product the builder holds and changes
-  // nothing on the controller, so it is never waiting on anything.
+  // When a pick of the member takes effect is its Setting's own timing, read
+  // off the member's entry (data/web_api.js, #432): the sound module is bound
+  // once at start (ADR 0042), so a chosen card that is not yet the one running
+  // says so; the RC Radio changes nothing on the controller, so it is never
+  // waiting on anything.
   const MEMBER_FIELDS = {
     sound: {
       param: "soundMember",
       saved: (config) => config?.components?.audio?.member,
-      applies: window.PAApplyTiming.AT_REBOOT,
     },
     radio_controller: {
       param: "rcMember",
       saved: (config) => config?.rc?.member,
-      applies: window.PAApplyTiming.IMMEDIATE,
     },
   };
+  const memberTiming = (family) =>
+    MEMBER_FIELDS[family] ? window.PAApi.timingOf(MEMBER_FIELDS[family].param) : null;
 
   // The RC Receiver a chosen RC Radio talks to (CONTEXT.md "RC Radio", "RC
   // Receiver"). The receivers are rows of the Radio Controller family, told
@@ -192,7 +192,7 @@
     if (part.included !== true) return isChoosable(entry) ? "not-included" : "available";
     if (chosen === part.id) {
       const active = categoryOf(entry.family)?.active_member;
-      const applies = MEMBER_FIELDS[entry.family]?.applies;
+      const applies = memberTiming(entry.family);
       return applies && applies !== window.PAApplyTiming.IMMEDIATE && active && active !== part.id
         ? "chosen-waiting"
         : "chosen";
@@ -218,7 +218,7 @@
   };
   const badgeFor = (entry, state) =>
     state === "chosen-waiting"
-      ? window.PAApplyTiming.badge(MEMBER_FIELDS[entry.family].applies)
+      ? window.PAApplyTiming.badge(memberTiming(entry.family))
       : BADGES[state] || "";
 
   // The family's answer in the fewest words, for guided Setup's rail.

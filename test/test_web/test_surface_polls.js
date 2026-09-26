@@ -23,6 +23,7 @@ import { createRequire } from "node:module";
 
 import { loadPageModule, ApiError, partsGlobals } from "./helpers/page_module_env.js";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const require = createRequire(import.meta.url);
 const { createFeatureAvailability } = require("../../data/feature_availability.js");
@@ -695,6 +696,8 @@ const boot = async ({ hash = "", withEventSource = true } = {}) => {
       removeItem: (key) => env.store.delete(key),
     },
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       // Every write the session makes, so "nothing the droid is doing changes"
       // is counted rather than argued about.
       postForm: async (path, body) => {

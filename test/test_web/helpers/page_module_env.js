@@ -17,6 +17,7 @@ import vm from "node:vm";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { shippedWords } from "./shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../../data");
@@ -170,6 +171,8 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
 
   const windowMock = {
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       ApiError,
       get: (path, opts) => call("GET", path, opts),
       postForm: (path, body, opts) => call("POST", path, { ...opts, body }),

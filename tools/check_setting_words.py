@@ -14,7 +14,27 @@ ADR 0059 forbids - so this fails instead:
 2. every Output row Setting has an entry under its row key;
 3. every audio Setting has an entry under the name its door takes it under
    (`scream`, `snd_int_quiet`, `volume`), in `SETTING_WORDS` beside the droid's,
-   and so does each CHIRP catalog binding part (`bank`, `page`, `index`).
+   and so does each CHIRP catalog binding part (`bank`, `page`, `index`);
+4. every field of every Record (the Droid Build, guided Setup's record) has an
+   entry under its form name whose `path` is the field's GET path, and every
+   field an act takes (move a Part, capture an end, reverse an Output) has an
+   entry under its form name (ADR 0068, second amendment). A Record is not a
+   Setting and an act stores nothing, but each can be refused, and a refusal
+   of either is worded from the same table;
+5. every entry for a Setting or a Record field states when it takes effect,
+   `applies: "immediate" | "at-reboot" | "restart-required"`, and it is the
+   token the firmware declaration states (include/apply_timing.h). The page
+   reads the timing from the entry and the Commit Step is what decides it, so
+   the two are held equal here. An act stores nothing and states none;
+6. no page script in data/ names a Component Toggle's label or a sound track's
+   label beside the field it is the label of - its form name, its component
+   key or its track key, quoted on the same line. That is the shape a second
+   label table takes (`["domeEsc", "Dome ESC"]`, `{ label: "Scream", key:
+   "scream" }`), and the entry's `label` is the one home. The same word naming
+   something else - the Sound page, a sequence called Scream - is not about the
+   Setting and is not flagged; nor is a component key that is a plain word
+   (`drive`, `audio`), which names pages and lanes too, so for those toggles the
+   form name is what marks a line as about the Setting.
 
 And, because the words check is the one place every declaration is read and
 the Preferences double in the native tests enforces neither: no NVS key is
@@ -85,8 +105,50 @@ def browser_words(web_api: Path | None = None) -> tuple[dict[str, str], dict[str
             _entries(_object_body(text, "ROW_SETTING_WORDS")))
 
 
-def check(errors: list[str], settings: Path | None = None, web_api: Path | None = None) -> None:
+def _timing(errors: list[str], name: str, entry: str, declared: str) -> None:
+    """The entry states the firmware's timing token, or an error says which."""
+    applies = re.search(r'applies:\s*"([\w-]+)"', entry)
+    if applies is None:
+        errors.append(f"{name}'s words do not say when it takes effect; the firmware declares {declared}")
+    elif applies.group(1) != declared:
+        errors.append(f"{name}'s words say it takes effect {applies.group(1)}, but the firmware "
+                      f"declares {declared}")
+
+
+def _labels_named_twice(errors: list[str], droid: dict[str, str], settings: Path | None,
+                        pages: list[Path]) -> None:
+    """Rule 6: a toggle's or a track's label beside that field's own quoted name."""
+    named: dict[str, list[str]] = {}
+    for setting in setting_declarations.droid_settings(settings):
+        if setting.form.startswith("enable") and setting.path and setting.path.startswith("components."):
+            # The component key identifies the toggle only where it is not a
+            # plain word: "drive" and "audio" also name a page, a lane and a
+            # step type, so for those the form name has to be on the line.
+            key = setting.path.split(".")[1]
+            named[setting.form] = [setting.form] + ([key] if key != key.lower() else [])
+    for setting in setting_declarations.audio_settings(settings):
+        if setting.is_track:
+            named[setting.name] = [setting.name]
+    for name, identifiers in named.items():
+        label = re.search(r'label:\s*"([^"]+)"', droid.get(name, ""))
+        if label is None:
+            continue
+        quoted = [rf'["\'`]{re.escape(ident)}["\'`]' for ident in identifiers]
+        literal = re.compile(rf'["\'`]{re.escape(label.group(1))}["\'`]')
+        for page in pages:
+            for number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+                if literal.search(line) and any(re.search(q, line) for q in quoted):
+                    errors.append(f"{page.name}:{number} names {name}'s label {label.group(1)!r} itself; "
+                                  f"it is read from the entry ({WEB_API.name})")
+
+
+def check(errors: list[str], settings: Path | None = None, web_api: Path | None = None,
+          records: list[Path] | None = None, acts: Path | None = None,
+          pages: list[Path] | None = None) -> None:
     droid, row = browser_words(web_api)
+    if pages is None:
+        pages = [page for page in sorted(WEB_API.parent.glob("*.js")) if page.name != WEB_API.name]
+    _labels_named_twice(errors, droid, settings, pages)
     for setting in setting_declarations.droid_settings(settings):
         if setting.path is None:
             continue
@@ -103,6 +165,7 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
                 f"{setting.form}'s words name its GET path as "
                 f"{path.group(1) if path else 'nothing'}, but the firmware reads it at {setting.path}"
             )
+        _timing(errors, setting.form, entry, setting.timing)
     audio = setting_declarations.audio_settings(settings)
     keys = [(d.form, d.nvs_key) for d in setting_declarations.droid_settings(settings)]
     keys += [(a.name, a.nvs_key) for a in audio]
@@ -114,12 +177,14 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
         if key in seen:
             errors.append(f"{name} and {seen[key]} both declare the NVS key {key!r}")
         seen.setdefault(key, name)
-    for name in (a.name for a in audio):
-        if name not in droid:
+    for setting in audio:
+        if setting.name not in droid:
             errors.append(
-                f"{name} is a declared audio Setting with no words in SETTING_WORDS "
+                f"{setting.name} is a declared audio Setting with no words in SETTING_WORDS "
                 f"({WEB_API.name}) - a refusal of it would reach the Sound page as its wire name"
             )
+            continue
+        _timing(errors, setting.name, droid[setting.name], setting.timing)
     for name in setting_declarations.catalog_binding_settings(settings):
         if name not in droid:
             errors.append(
@@ -131,6 +196,30 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
             errors.append(
                 f"{setting.key} is a declared Output row Setting with no words in "
                 f"ROW_SETTING_WORDS ({WEB_API.name})"
+            )
+            continue
+        _timing(errors, setting.key, row[setting.key], setting.timing)
+    for field in setting_declarations.record_fields(records):
+        entry = droid.get(field.form)
+        if entry is None:
+            errors.append(
+                f"{field.form} is a declared Record field ({field.record}) with no words in "
+                f"SETTING_WORDS ({WEB_API.name}) - a refusal of it would reach the page as its "
+                "wire name"
+            )
+            continue
+        path = re.search(r'path:\s*"([\w.]+)"', entry)
+        if path is None or path.group(1) != field.path:
+            errors.append(
+                f"{field.form}'s words name its GET path as "
+                f"{path.group(1) if path else 'nothing'}, but the firmware reads it at {field.path}"
+            )
+        _timing(errors, field.form, entry, field.timing)
+    for form in setting_declarations.act_fields(acts):
+        if form not in droid:
+            errors.append(
+                f"{form} is a declared act field with no words in SETTING_WORDS "
+                f"({WEB_API.name}) - a refusal of it would reach the page as its wire name"
             )
 
 
@@ -144,7 +233,9 @@ def main() -> int:
         return 1
     print(f"Setting words check passed ({len(setting_declarations.droid_settings())} droid "
           f"Settings, {len(setting_declarations.audio_settings())} audio Settings, "
-          f"{len(setting_declarations.row_settings())} Output row Settings).")
+          f"{len(setting_declarations.row_settings())} Output row Settings, "
+          f"{len(setting_declarations.record_fields())} Record fields, "
+          f"{len(setting_declarations.act_fields())} act fields).")
     return 0
 
 

@@ -43,8 +43,7 @@
 #include "api_param_source.h"
 #include "config.h"  // PA_CHIP_TARGET_ESP32 - a presence macro, so it must be in scope
 #include "config_cache.h"
-#include "droid_build.h"
-#include "guided_setup.h"
+#include "config_records.h"
 
 struct ConfigApplyError {
     bool hasError = false;
@@ -102,29 +101,6 @@ struct ConfigServoOutputEdits {
     size_t count = 0;
 };
 
-// What the request asked of the Droid Build (ADR 0047).
-//
-// A Droid Build lives outside ConfigSnapshot on its own NVS keys, so it cannot
-// be applied onto `working` the way a snapshot field is; the core validates it
-// here and the Commit Step hands it to configCacheApplyDroidBuild().
-//
-// Each half is answered as a PAIR - a design and the variant of that design -
-// because a variant only means anything against the design it belongs to, and a
-// request carrying one without the other would have the core validate a pairing
-// nobody stated. The Fitted Parts arrive whole for the same reason a set does:
-// there is no merge to do and nothing here has to know what was fitted before.
-//
-// `changed` is false on a request that named none of it, which is every request
-// the Droid Build is not about.
-struct ConfigDroidBuildEdit {
-    bool domeChanged = false;
-    bool bodyChanged = false;
-    bool fittedChanged = false;
-    DroidDesignChoice dome = {};
-    DroidDesignChoice body = {};
-    DroidFittedParts fitted = {};
-};
-
 // What the request asked of a Part's place on the Outputs (ADR 0050, #347).
 //
 // A move arrives as three fields that mean something only together: the Part,
@@ -142,30 +118,6 @@ struct ConfigPartMove {
     ServoOutputPartMove move = {};
 };
 
-// What the request asked of guided Setup's record (#351).
-//
-// Two independent facts, so two flags. A step being marked visited is the
-// browser saying "this question has now actually been on screen", and it happens
-// many times during one run; the run ending happens once. A request that carries
-// one must not be read as saying anything about the other.
-//
-// The record lives outside ConfigSnapshot on its own NVS keys, like the Droid
-// Build above, so the core validates it here and the Commit Step merges it onto
-// the live record through configCacheApplyGuidedSetup().
-//
-// The visited list arrives WHOLE rather than as an addition, for the reason the
-// Fitted Parts do: the browser holds the run, an add-one wire would need a
-// remove-one to match it, and replacing the list keeps the two ends from drifting
-// into disagreement about what has been shown.
-struct ConfigGuidedSetupEdit {
-    bool runChanged = false;
-    bool visitedChanged = false;
-    bool summaryDoneChanged = false;
-    bool summaryDone = false;
-    GuidedSetupRun run = GUIDED_SETUP_NOT_RUN;
-    GuidedSetupConfig visited = {};
-};
-
 struct ConfigApplyResult {
     bool changed = false;  // false -> shell sends the "no fields supplied" 400
     // Whether the request stated the fields RC input also writes at runtime:
@@ -179,8 +131,9 @@ struct ConfigApplyResult {
     ConfigApplyActions actions;
     ConfigAppliedFields applied;
     ConfigServoOutputEdits servoOutputs;
-    ConfigDroidBuildEdit droidBuild;
-    ConfigGuidedSetupEdit guidedSetup;
+    // What the request stated of each Record (include/config_records.h): the
+    // Records' own checks stage it here and the Commit Step merges it.
+    ConfigRecordEdits records;
     ConfigPartMove partMove;
 };
 

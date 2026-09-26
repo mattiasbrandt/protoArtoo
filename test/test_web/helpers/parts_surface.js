@@ -21,6 +21,7 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./mini_dom.js";
 import { servoRow, freshOutputs, withParts, describe, applyRowSave, statusFrame } from "./fake_droid.js";
+import { shippedWords } from "./shipped_words.cjs";
 
 // The droid's Outputs are described once, in helpers/fake_droid.js (#415).
 export { freshOutputs, withParts, statusFrame };
@@ -160,6 +161,8 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
     },
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       get: async (path) => {
         env.gets.set(path, (env.gets.get(path) || 0) + 1);
         if (path === "/api/identity") return { data: IDENTITY };

@@ -103,18 +103,14 @@
   // 0033 Amendment 2026-09-19). They wire the card, as the firmware lists
   // them, once that answer has arrived.
   let outputLabels = [];
-  const SUBSYSTEM_LABELS = [
-    ["domeEsc", "Dome ESC"],
-    ["rcCh1", "RC Channel 1"],
-    ["rcCh2", "RC Channel 2"],
-    ["rcCh3", "RC Channel 3"],
-    ["rcCh4", "RC Channel 4"],
-    ["rcCh5", "RC Channel 5"],
-    ["rcCh6", "RC Channel 6"],
-    ["drive", "Drive"],
-    ["audio", "Audio"],
-    ["protoR2link", "protoR2link"],
-  ];
+  // The Component Toggles that are not an Output, by the key the status
+  // reports each under, each named by its Setting's label in the one words
+  // table (data/web_api.js) - the key with "enable" in front is its form name.
+  // Named when drawn, not when this file loads: the words table is PAApi's.
+  const SUBSYSTEM_KEYS = ["domeEsc", "rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6", "drive", "audio",
+    "protoR2link"];
+  const subsystemLabels = () =>
+    SUBSYSTEM_KEYS.map((key) => [key, window.PAApi.labelOf(`enable${key.charAt(0).toUpperCase()}${key.slice(1)}`)]);
 
   const MOOD_LABELS = {
     0: "Idle",
@@ -271,7 +267,7 @@
   const renderComponentStatus = (payload) => {
     if (!componentStatusCard || !componentStatusGrid) return;
 
-    const active = [...outputLabels, ...SUBSYSTEM_LABELS].filter(([key]) => key in payload);
+    const active = [...outputLabels, ...subsystemLabels()].filter(([key]) => key in payload);
     if (active.length === 0) {
       componentStatusCard.classList.add("hidden");
       componentStatusGrid.innerHTML = "";

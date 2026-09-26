@@ -12,8 +12,6 @@
 
 #include "config_store.h"
 #include "config_io.h"
-#include "droid_build.h"
-#include "guided_setup.h"
 #include "servo_legacy_field_sets.h"  // ServoLegacyNarrowing
 #include "servo_output_row.h"
 
@@ -87,56 +85,3 @@ bool configSerializeServoOutputRow(uint8_t index, const ServoOutputRow& row, Con
 void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
                                    ServoOutputRepairReport* report,
                                    ServoLegacyNarrowing* narrowing = nullptr);
-
-// -----------------------------------------------------------------------------
-// The Droid Build (ADR 0047)
-//
-// Which droid a builder says they built, and which Parts are on it. On its own
-// keys and outside ConfigSnapshot for the same reason the Servo Output rows
-// above are: the snapshot crosses three nested frames on the serial
-// config-write path, and nothing on a real-time path reads a Droid Build.
-//
-// Five keys: a design and a variant for each half, and one holding the Fitted
-// Parts as a comma-separated Part id list. The Parts are stored as IDS rather
-// than as the bitmap they are held in, because the bitmap's indices are
-// emission order and the catalog grows - a Part added in the middle would
-// re-point every bit after it at a different Part, silently.
-//
-// An ABSENT Fitted Parts record is a controller that has never been answered,
-// and it takes the default complement. An EMPTY one is a real answer - a droid
-// with nothing fitted yet - and is kept. Those two must not read alike: a
-// builder who cleared their droid would otherwise have the pre-selected design
-// re-fitted under them on the next boot.
-// -----------------------------------------------------------------------------
-bool configSerializeDroidBuild(const DroidBuildConfig& cfg, ConfigWriter& w);
-
-// Fills *out with droidBuildDefaults() then overwrites with stored values. A
-// stored half this image's catalog no longer declares is repaired to the
-// default and counted in *report, the way a damaged Servo Output row is; a
-// stored Part id it no longer declares is dropped and counted.
-void configDeserializeDroidBuild(const ConfigReader& r, DroidBuildConfig* out,
-                                 DroidBuildRepairReport* report);
-
-// -----------------------------------------------------------------------------
-// Guided Setup (#351)
-//
-// Where the guided run stands and which of its steps have been on screen. Two
-// keys, outside ConfigSnapshot for the reason the Droid Build above is outside
-// it, and stored as a run token plus a comma-separated step key list rather than
-// as a bitmask over step positions: the step list is the browser's and it grows,
-// so a bit index would silently re-point at a different question the day a step
-// is inserted (include/guided_setup.h).
-//
-// An ABSENT visited record is a controller guided Setup has never drawn on. An
-// EMPTY one cannot occur, because the writer stores the sentinel instead - which
-// is what keeps the absent case readable at all, and the whole reason a droid
-// configured before this feature existed is not reported as never asked.
-// -----------------------------------------------------------------------------
-bool configSerializeGuidedSetup(const GuidedSetupConfig& cfg, ConfigWriter& w);
-
-// Fills *out with guidedSetupDefaults() then overwrites with stored values. A
-// stored step key whose form this image cannot accept is dropped and counted in
-// *report, the way a damaged Servo Output row is; a stored run number it cannot
-// name reads as a run that has not ended, and is counted too.
-void configDeserializeGuidedSetup(const ConfigReader& r, GuidedSetupConfig* out,
-                                  GuidedSetupRepairReport* report);

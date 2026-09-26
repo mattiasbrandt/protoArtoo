@@ -24,6 +24,7 @@ import { dirname, join } from "path";
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { loadPageModule } from "./helpers/page_module_env.js";
 import { statusFrame } from "./helpers/fake_droid.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -118,6 +119,8 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
       removeItem: () => {},
     },
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       get: async (path) => {
         env.requests.push(path);
         if (path === "/api/identity") return { data: IDENTITY };

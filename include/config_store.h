@@ -22,8 +22,6 @@
 #include <Preferences.h>
 
 #include "config.h"
-#include "droid_build.h"       // DroidBuildConfig / DroidBuildRepairReport, for the load below
-#include "guided_setup.h"      // GuidedSetupConfig / GuidedSetupRepairReport, for the load below
 #include "robot_state.h"
 #include "servo_output_row.h"  // ServoOutputRepairReport, for the load below
 
@@ -368,26 +366,12 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
 void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report);
 bool configSaveServoOutputs(Preferences& prefs);
 
-// configLoadDroidBuild / configSaveDroidBuild: the Droid Build (ADR 0047).
-// Outside ConfigSnapshot for the same reason the rows above are, and on their
-// own NVS keys -- see include/config_serializer.h. Caller opens Preferences
-// with begin() before calling.
-//
-// configLoadDroidBuild fills the live answer read by configCacheReadDroidBuild();
-// *report says what a stored answer this image cannot name cost.
-void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report);
-bool configSaveDroidBuild(Preferences& prefs);
-
-// configLoadGuidedSetup / configSaveGuidedSetup: where the guided Setup run
-// stands, and which of its steps have been on screen (#351). Outside
-// ConfigSnapshot for the same reason the Droid Build above is, and on their own
-// NVS keys -- see include/config_serializer.h. Caller opens Preferences with
-// begin() before calling.
-//
-// configLoadGuidedSetup fills the live record read by configCacheReadGuidedSetup();
-// *report says what a stored record this image cannot read cost.
-void configLoadGuidedSetup(Preferences& prefs, GuidedSetupRepairReport* report);
-bool configSaveGuidedSetup(Preferences& prefs);
+// configLoadRecords: every Record (include/config_records.h) off its own NVS
+// keys, straight into its live copy, on the boot path. Outside ConfigSnapshot
+// for the same reason the rows above are. Caller opens Preferences with
+// begin() before calling. Logs a warning for each Record a stored value this
+// image cannot name cost, rather than letting it change silently.
+void configLoadRecords(Preferences& prefs);
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config);
@@ -419,20 +403,20 @@ bool configSaveWifi(Preferences& prefs, const WifiConfig& config);
 // writers they call check the lock is held.
 // -----------------------------------------------------------------------------
 
-// The records a full save writes after the Configuration only when the
-// request said something about them. Absence is an answer for both - no
+// The Records a full save writes after the Configuration only when the
+// request said something about them. Absence is an answer for each - no
 // Fitted Parts record tells the next boot nobody has answered yet, and no
 // visited record tells it guided Setup was never drawn - so a save that was
 // about the log level must not write one.
 struct ConfigSaveExtras {
-    bool droidBuild = false;   // configSaveDroidBuild(), from the live copy
-    bool guidedSetup = false;  // configSaveGuidedSetup(), from the live copy
+    // Bit i: save ConfigRecordId i from its live copy
+    // (configRecordsStated(), include/config_records.h).
+    uint32_t records = 0;
 };
 
-// The Servo Output rows and `snapshot`, in that order, then the extras named.
-// The rows, the Droid Build and the guided Setup record are written from the
-// config cache's live copies; `snapshot` is expected to be the cache as it
-// stands too, which is what every caller passes.
+// The Servo Output rows and `snapshot`, in that order, then the Records named.
+// The rows and the Records are written from their live copies; `snapshot` is
+// expected to be the cache as it stands too, which is what every caller passes.
 bool configPersist(const ConfigSnapshot& snapshot, const ConfigSaveExtras& extras);
 
 // configPersist() of the config cache as it stands, and no extras: the save a

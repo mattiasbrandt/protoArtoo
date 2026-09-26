@@ -48,6 +48,23 @@ ConfigSnapshot makeDefaultSnap() {
     return snap;
 }
 
+// Whether the request stated a Record's field, found by its form name in the
+// Record's own field list (include/config_records.h).
+bool stated(const ConfigApplyResult& result, ConfigRecordId id, const char* form) {
+    size_t count = 0;
+    const ConfigRecordField* fields = configRecordFields(id, &count);
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(fields[i].form, form) == 0) {
+            return (result.records.stated[(size_t)id] & ((uint32_t)1u << i)) != 0;
+        }
+    }
+    TEST_FAIL_MESSAGE(form);
+    return false;
+}
+
+constexpr ConfigRecordId kBuild = ConfigRecordId::DroidBuild;
+constexpr ConfigRecordId kGuided = ConfigRecordId::GuidedSetup;
+
 }  // namespace
 
 void setUp(void) {
@@ -469,11 +486,11 @@ void test_configApply_an_empty_get_shape_list_is_an_answer(void) {
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
-    TEST_ASSERT_TRUE(result.guidedSetup.visitedChanged);
-    TEST_ASSERT_TRUE(result.guidedSetup.visited.recorded);
-    TEST_ASSERT_EQUAL_STRING("", result.guidedSetup.visited.visited);
-    TEST_ASSERT_TRUE(result.droidBuild.fittedChanged);
-    TEST_ASSERT_EQUAL_size_t(0, droidFittedPartsCount(result.droidBuild.fitted));
+    TEST_ASSERT_TRUE(stated(result, kGuided, "guidedSetupVisited"));
+    TEST_ASSERT_TRUE(result.records.GuidedSetup.recorded);
+    TEST_ASSERT_EQUAL_STRING("", result.records.GuidedSetup.visited);
+    TEST_ASSERT_TRUE(stated(result, kBuild, "fittedParts"));
+    TEST_ASSERT_EQUAL_size_t(0, droidFittedPartsCount(result.records.DroidBuild.fitted));
 }
 
 // A light's LED count is one per Output (#413), a field of its row. A value
@@ -565,16 +582,16 @@ void test_configApply_droid_build_records_both_halves_and_the_parts(void) {
 
     TEST_ASSERT_FALSE(result.error.hasError);
     TEST_ASSERT_TRUE(result.changed);
-    TEST_ASSERT_TRUE(result.droidBuild.domeChanged);
-    TEST_ASSERT_TRUE(result.droidBuild.bodyChanged);
-    TEST_ASSERT_TRUE(result.droidBuild.fittedChanged);
-    TEST_ASSERT_EQUAL_STRING("mk4", result.droidBuild.dome.design);
-    TEST_ASSERT_EQUAL_STRING("complex", result.droidBuild.dome.variant);
-    TEST_ASSERT_EQUAL_STRING("own", result.droidBuild.body.design);
-    TEST_ASSERT_EQUAL_STRING("", result.droidBuild.body.variant);
-    TEST_ASSERT_EQUAL_UINT32(3u, (uint32_t)droidFittedPartsCount(result.droidBuild.fitted));
+    TEST_ASSERT_TRUE(stated(result, kBuild, "domeDesign"));
+    TEST_ASSERT_TRUE(stated(result, kBuild, "bodyDesign"));
+    TEST_ASSERT_TRUE(stated(result, kBuild, "fittedParts"));
+    TEST_ASSERT_EQUAL_STRING("mk4", result.records.DroidBuild.dome.design);
+    TEST_ASSERT_EQUAL_STRING("complex", result.records.DroidBuild.dome.variant);
+    TEST_ASSERT_EQUAL_STRING("own", result.records.DroidBuild.body.design);
+    TEST_ASSERT_EQUAL_STRING("", result.records.DroidBuild.body.variant);
+    TEST_ASSERT_EQUAL_UINT32(3u, (uint32_t)droidFittedPartsCount(result.records.DroidBuild.fitted));
     TEST_ASSERT_TRUE(
-        droidFittedPartsHasIndex(result.droidBuild.fitted, droidPartIndexOf("gripArm")));
+        droidFittedPartsHasIndex(result.records.DroidBuild.fitted, droidPartIndexOf("gripArm")));
 }
 
 void test_configApply_a_mixed_droid_saves_without_complaint(void) {
@@ -590,8 +607,8 @@ void test_configApply_a_mixed_droid_saves_without_complaint(void) {
     configApply(makeSource(&m), &snap, false, &result);
 
     TEST_ASSERT_FALSE(result.error.hasError);
-    TEST_ASSERT_TRUE(result.droidBuild.domeChanged);
-    TEST_ASSERT_TRUE(result.droidBuild.bodyChanged);
+    TEST_ASSERT_TRUE(stated(result, kBuild, "domeDesign"));
+    TEST_ASSERT_TRUE(stated(result, kBuild, "bodyDesign"));
 }
 
 void test_configApply_a_design_without_its_variant_is_refused(void) {
@@ -602,7 +619,7 @@ void test_configApply_a_design_without_its_variant_is_refused(void) {
     configApply(makeSource(&m), &snap, false, &result);
 
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_FALSE(result.droidBuild.domeChanged);
+    TEST_ASSERT_FALSE(stated(result, kBuild, "domeDesign"));
 }
 
 void test_configApply_a_variant_that_is_not_that_design_s_is_refused(void) {
@@ -614,7 +631,10 @@ void test_configApply_a_variant_that_is_not_that_design_s_is_refused(void) {
     configApply(makeSource(&m), &snap, false, &result);
 
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_FALSE(result.droidBuild.domeChanged);
+    // The catalog answers for the pair, so the design names the refusal.
+    TEST_ASSERT_EQUAL_STRING("domeDesign", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(result.error.refusal.reason));
+    TEST_ASSERT_FALSE(stated(result, kBuild, "domeDesign"));
 }
 
 void test_configApply_a_design_this_build_does_not_declare_is_refused(void) {
@@ -638,8 +658,8 @@ void test_configApply_an_empty_fitted_list_is_an_answer(void) {
     configApply(makeSource(&m), &snap, false, &result);
 
     TEST_ASSERT_FALSE(result.error.hasError);
-    TEST_ASSERT_TRUE(result.droidBuild.fittedChanged);
-    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)droidFittedPartsCount(result.droidBuild.fitted));
+    TEST_ASSERT_TRUE(stated(result, kBuild, "fittedParts"));
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)droidFittedPartsCount(result.records.DroidBuild.fitted));
 }
 
 void test_configApply_a_part_this_build_cannot_name_is_refused(void) {
@@ -650,7 +670,7 @@ void test_configApply_a_part_this_build_cannot_name_is_refused(void) {
     configApply(makeSource(&m), &snap, false, &result);
 
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_FALSE(result.droidBuild.fittedChanged);
+    TEST_ASSERT_FALSE(stated(result, kBuild, "fittedParts"));
 }
 
 void test_configApply_without_droid_build_params_records_no_edit(void) {
@@ -661,9 +681,47 @@ void test_configApply_without_droid_build_params_records_no_edit(void) {
     configApply(makeSource(&m), &snap, false, &result);
 
     TEST_ASSERT_FALSE(result.error.hasError);
-    TEST_ASSERT_FALSE(result.droidBuild.domeChanged);
-    TEST_ASSERT_FALSE(result.droidBuild.bodyChanged);
-    TEST_ASSERT_FALSE(result.droidBuild.fittedChanged);
+    TEST_ASSERT_FALSE(stated(result, kBuild, "domeDesign"));
+    TEST_ASSERT_FALSE(stated(result, kBuild, "bodyDesign"));
+    TEST_ASSERT_FALSE(stated(result, kBuild, "fittedParts"));
+}
+
+// --- guided Setup's Record: its form checks, refused with field, reason and accepts ---
+
+void test_configApply_a_run_state_this_image_cannot_name_is_refused(void) {
+    std::map<std::string, std::string> m = {{"guidedSetupRun", "finished"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("guidedSetupRun", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(result.error.refusal.reason));
+    TEST_ASSERT_EQUAL_STRING("not-run,skipped,completed", result.error.refusal.accepts);
+    TEST_ASSERT_FALSE(stated(result, kGuided, "guidedSetupRun"));
+}
+
+void test_configApply_a_visited_key_over_twelve_characters_is_refused(void) {
+    std::map<std::string, std::string> m = {{"guidedSetupVisited", "wifi,thirteenchars"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("guidedSetupVisited", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("out-of-range", applyRefusalReasonToken(result.error.refusal.reason));
+    TEST_ASSERT_FALSE(stated(result, kGuided, "guidedSetupVisited"));
+}
+
+void test_configApply_a_summary_that_is_not_true_or_false_is_refused(void) {
+    std::map<std::string, std::string> m = {{"guidedSetupSummaryDone", "yes"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+
+    TEST_ASSERT_TRUE(result.error.hasError);
+    TEST_ASSERT_EQUAL_STRING("guidedSetupSummaryDone", result.error.refusal.field);
+    TEST_ASSERT_EQUAL_STRING("true,false", result.error.refusal.accepts);
 }
 
 // --- Part moves (ADR 0050, #347) ---
@@ -865,6 +923,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_an_empty_fitted_list_is_an_answer);
     RUN_TEST(test_configApply_a_part_this_build_cannot_name_is_refused);
     RUN_TEST(test_configApply_without_droid_build_params_records_no_edit);
+    RUN_TEST(test_configApply_a_run_state_this_image_cannot_name_is_refused);
+    RUN_TEST(test_configApply_a_visited_key_over_twelve_characters_is_refused);
+    RUN_TEST(test_configApply_a_summary_that_is_not_true_or_false_is_refused);
     RUN_TEST(test_configApply_an_out_of_order_dome_pulse_set_is_refused);
     RUN_TEST(test_configApply_a_shortest_pause_above_the_longest_is_refused);
     RUN_TEST(test_configApply_a_preset_clash_names_a_preset_that_clashes);

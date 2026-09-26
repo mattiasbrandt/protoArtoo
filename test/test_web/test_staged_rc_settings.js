@@ -13,6 +13,7 @@ import vm from "node:vm";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
 import { bootedDroid } from "./helpers/booted_droid.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const makeInteractiveElement = () => {
   const listeners = new Map();
@@ -74,6 +75,8 @@ const loadInteractiveModule = (files, respond) => {
 
   const windowMock = {
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       ApiError,
       get: (path) => call("GET", path),
       postForm: (path, body) => call("POST", path, body),

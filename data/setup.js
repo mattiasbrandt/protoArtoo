@@ -67,16 +67,22 @@
   //
   // `applies` is the fifth: WHEN the answer takes effect, as a value from the
   // one timing vocabulary (data/apply_timing.js), never as a sentence - the
-  // sentence is composed where it is shown, beside the question. It is read off
-  // what the firmware's Commit Step does with the keys the step writes (#370):
-  // a step writing several keys applies as late as the latest of them. A step
-  // that does not state it is not drawn at all (see renderable below), because
-  // a default here would be the blanket promise this field replaced.
+  // sentence is composed where it is shown, beside the question. A step that
+  // writes declared Settings or Record fields takes the latest of their
+  // timings, which the firmware declares and each field's entry mirrors
+  // (data/web_api.js, #432); the step host's surface says which fields that is
+  // (PAConfiguration.stepTiming()). A step shown rather than asked writes
+  // nothing. A step that does not state it is not drawn at all (see renderable
+  // below), because a default here would be the blanket promise this field
+  // replaced.
   //
   // `answer` reads the controls the step itself shows, so the rail says what the
   // builder is looking at rather than what a second copy of the state believes.
   // ---------------------------------------------------------------------------
   const TIMING = window.PAApplyTiming;
+  // A step host's timing, read off the Settings it writes; undefined without
+  // the Configuration surface, and then the step is not drawn.
+  const stepTiming = (key) => window.PAConfiguration?.stepTiming(key);
   const DECLARED = [
     {
       key: "wifi",
@@ -85,7 +91,7 @@
       why: "Every screen you drive from, and every new firmware, comes over this link.",
       // A Staged Network Switch: saved on WiFi, joined at the next start
       // (ADR 0015); the config read says when one is waiting (wifi.pendingApply).
-      applies: TIMING.AT_REBOOT,
+      applies: stepTiming("wifi"),
       answer: () => wifiAnswer,
     },
     {
@@ -104,9 +110,7 @@
       title: "Droid Build",
       q: "Which droid did you build?",
       why: "Your droid starts with the parts its design carries. Dome and body can come from different designs.",
-      // The Droid Build is written straight onto the live answer every surface
-      // reads (configCommitApplied(), ADR 0047).
-      applies: TIMING.IMMEDIATE,
+      applies: stepTiming("build"),
       // The picker's own summary, so the rail and the cards read one answer
       // (data/droid_build_picker.js).
       answer: () => window.DroidBuildPicker?.summary() || "",
@@ -116,8 +120,7 @@
       title: "Foot Drive",
       q: "What moves the feet?",
       why: "Off: the droid is a statue. Sticks move, wheels don't.",
-      // Every Component Toggle is read once at start (ADR 0027).
-      applies: TIMING.AT_REBOOT,
+      applies: stepTiming("drive"),
       answer: () => pickedIn("foot_drive"),
     },
     {
@@ -125,7 +128,7 @@
       title: "Dome Rotation",
       q: "What turns the dome?",
       why: "Off, the dome sits still through every sequence.",
-      applies: TIMING.AT_REBOOT,
+      applies: stepTiming("domerot"),
       answer: () => pickedIn("dome_rotation"),
     },
     {
@@ -133,7 +136,7 @@
       title: "Dome Controller",
       q: "What runs the board up in the dome?",
       why: "Carries light, panel and sound cues to the dome's board. Off, the body drives and the dome stops listening.",
-      applies: TIMING.AT_REBOOT,
+      applies: stepTiming("domectl"),
       answer: () => pickedIn("dome_controller"),
     },
     {
@@ -152,11 +155,7 @@
       title: "Radio Controller",
       q: "What do you drive it with?",
       why: "The droid listens only to the channels you tick. Leave an unwired channel off.",
-      // The RC Radio itself changes nothing on the controller, but the receiver
-      // and its channel ticks are projected once at start into the settings the
-      // droid is driven on (rcInputActiveConfigFromSystem()), so the builder
-      // restarts it to drive on a change.
-      applies: TIMING.RESTART_REQUIRED,
+      applies: stepTiming("rc"),
       answer: () => pickedIn("radio_controller"),
     },
     {
@@ -164,9 +163,7 @@
       title: "Sound",
       q: "What gives the droid its voice?",
       why: "Off, sequences still run start to finish, in silence.",
-      // The toggle, and the Sound Component Member bound once at start
-      // (ADR 0042).
-      applies: TIMING.AT_REBOOT,
+      applies: stepTiming("sound"),
       answer: () => pickedIn("sound"),
     },
     {
@@ -174,7 +171,9 @@
       title: "Name",
       q: "What is this droid called?",
       why: "The name lives on the droid, so any computer meets the same droid.",
-      // The name is read live. The hostname beside it is not, and says so on
+      // The name is read live. It is saved through the identity's own door
+      // (POST /api/identity), not as a declared Setting, so its timing is
+      // stated here. The hostname beside it is not read live, and says so on
       // its own row (data/configuration.js).
       applies: TIMING.IMMEDIATE,
       answer: () => document.getElementById("droid-name-input")?.value || "",

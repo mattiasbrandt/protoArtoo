@@ -312,17 +312,12 @@ void loadConfigToState() {
     // configLoadServoOutputs().
     ServoOutputRepairReport servoOutputRepair = {};
     configLoadServoOutputs(prefs, &servoOutputRepair);
-    // The Droid Build loads the same way and for the same reason (ADR 0047).
-    // Nothing below reads it: it is loaded here so the surfaces that draw a
-    // builder's droid meet the answer this controller holds, from any browser.
-    DroidBuildRepairReport droidBuildRepair = {};
-    configLoadDroidBuild(prefs, &droidBuildRepair);
-    // Guided Setup's record loads the same way and for the same reason (#351):
-    // nothing below reads it, and it is here so the surfaces that report on a
-    // droid can tell a category the builder declared not fitted from one they
-    // were never asked about.
-    GuidedSetupRepairReport guidedSetupRepair = {};
-    configLoadGuidedSetup(prefs, &guidedSetupRepair);
+    // The Records - the Droid Build and guided Setup's record - load the same
+    // way and for the same reason (include/config_records.h). Nothing below
+    // reads them: they are loaded here so the surfaces that draw a builder's
+    // droid meet the answer this controller holds, from any browser, and each
+    // says out loud what a stored value this image cannot name cost.
+    configLoadRecords(prefs);
     uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
 
@@ -346,30 +341,6 @@ void loadConfigToState() {
                     (unsigned)servoOutputRepair.rowsRepaired,
                     (unsigned)servoOutputRepair.fieldsRepaired,
                     (unsigned)servoOutputRepair.firstRow, note);
-    }
-
-    // A stored Droid Build this image's catalog can no longer name has taken
-    // the pre-selected design instead. Said out loud for the same reason: a
-    // builder whose stated design vanished under a firmware update should hear
-    // it here rather than discover it on the parts list.
-    if (!droidBuildRepairReportIsClean(droidBuildRepair)) {
-        PA_LOG_WARN("config",
-                    "droid build repaired: dome=%s body=%s, %u fitted part(s) this build "
-                    "does not declare",
-                    droidBuildRepair.domeRepaired ? "default" : "kept",
-                    droidBuildRepair.bodyRepaired ? "default" : "kept",
-                    (unsigned)droidBuildRepair.partsDropped);
-    }
-
-    // A guided Setup record that came back shorter than it went in. Said out
-    // loud rather than swallowed: a dropped step key is a step the builder WAS
-    // shown that this controller can no longer say they were, which is the same
-    // untruth the record exists to prevent, arriving from the other side.
-    if (!guidedSetupRepairReportIsClean(guidedSetupRepair)) {
-        PA_LOG_WARN("config",
-                    "guided setup record repaired: run=%s, %u step key(s) this build cannot read",
-                    guidedSetupRepair.runRepaired ? "reset" : "kept",
-                    (unsigned)guidedSetupRepair.stepsDropped);
     }
 
     // The wire `main` lit from its retired slot is ticked wired, or its strip

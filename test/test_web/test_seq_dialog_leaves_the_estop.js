@@ -26,6 +26,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -79,6 +80,8 @@ const mountSequences = async () => {
 
   const windowMock = {
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       get: async () => ({ data: [] }),
       postJson: async () => ({ data: {} }),
       postForm: async () => ({ data: {} }),

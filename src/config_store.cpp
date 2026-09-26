@@ -13,6 +13,7 @@
 #include "config_serializer.h"
 #include "config_settings.h"  // every Setting's default
 #include "config_nvsio.h"
+#include "config_records.h"  // every Record's load and save
 #include "config_write_window_check.h"  // every config writer below checks it runs in a Write Window
 #include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
@@ -195,21 +196,6 @@ static ServoOutputTable servoOutputCache = {};
 // whose bit is still set. Guarded by configCacheMux like the rows.
 static ServoLegacyNarrowing servoLegacyNarrowingCache = {};
 
-// The Droid Build, live (ADR 0047).
-//
-// Filled by configLoadDroidBuild() from main's boot path, like the rows above.
-// Nothing on a real-time path reads it: it exists so the surfaces that draw a
-// builder's droid meet the same answer from any browser, and no firmware
-// behaviour branches on it.
-static DroidBuildConfig droidBuildCache = {};
-
-// Guided Setup's record, live (#351).
-//
-// Filled by configLoadGuidedSetup() from main's boot path, like the Droid Build
-// above. Nothing on a real-time path reads it: it exists so a surface can tell a
-// category the builder DECLARED not fitted from one they were never asked about.
-static GuidedSetupConfig guidedSetupCache = {};
-
 void configCacheRead(ConfigSnapshot* out) {
     if (out == nullptr) {
         return;
@@ -234,56 +220,6 @@ bool configCacheDomeEnabled() {
     enabled = configCache.system.enable_dome_esc;
     taskEXIT_CRITICAL(&configCacheMux);
     return enabled;
-}
-
-// The Droid Build, whole: sixty bytes, read by a surface builder rather than by
-// anything on a control path, so there is no case for handing out one half at a
-// time the way the rows above do.
-void configCacheReadDroidBuild(DroidBuildConfig* out) {
-    if (out == nullptr) {
-        return;
-    }
-    taskENTER_CRITICAL(&configCacheMux);
-    *out = droidBuildCache;
-    taskEXIT_CRITICAL(&configCacheMux);
-}
-
-// The one runtime write onto the Droid Build, from the Commit Step.
-//
-// A Droid Build is answered whole - both halves and the Fitted Parts arrive
-// together - so unlike the addressed row edits above there is nothing to merge
-// here, and the Apply Core has already refused anything the catalog does not
-// declare. Nothing on the boot path may call it: configLoadDroidBuild() has
-// read the stored answer there, and pushing over the top would undo it.
-void configCacheApplyDroidBuild(const DroidBuildConfig& build) {
-    configWriteWindowExpectHeld("configCacheApplyDroidBuild");
-    taskENTER_CRITICAL(&configCacheMux);
-    droidBuildCache = build;
-    taskEXIT_CRITICAL(&configCacheMux);
-}
-
-// Guided Setup's record, whole, for the same reason the Droid Build above is
-// handed out whole: its readers draw a screen rather than drive a motor.
-void configCacheReadGuidedSetup(GuidedSetupConfig* out) {
-    if (out == nullptr) {
-        return;
-    }
-    taskENTER_CRITICAL(&configCacheMux);
-    *out = guidedSetupCache;
-    taskEXIT_CRITICAL(&configCacheMux);
-}
-
-// The one runtime write onto the guided Setup record, from the Commit Step. The
-// Apply Core has already refused a run state this image cannot name and dropped
-// any step key whose form it cannot accept, so there is nothing to check here
-// and, as with the Droid Build, nothing to merge: the record arrives whole.
-// Nothing on the boot path may call it - configLoadGuidedSetup() has read the
-// stored record there, and pushing over the top would undo it.
-void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided) {
-    configWriteWindowExpectHeld("configCacheApplyGuidedSetup");
-    taskENTER_CRITICAL(&configCacheMux);
-    guidedSetupCache = guided;
-    taskEXIT_CRITICAL(&configCacheMux);
 }
 
 uint8_t configCacheServoOutputCount() {
@@ -1074,34 +1010,15 @@ void configLoadServoOutputs(Preferences& prefs, ServoOutputRepairReport* report)
     configDeserializeServoOutputs(reader, &servoOutputCache, report, &servoLegacyNarrowingCache);
 }
 
-void configLoadDroidBuild(Preferences& prefs, DroidBuildRepairReport* report) {
+void configLoadRecords(Preferences& prefs) {
     PrefsReader reader(prefs);
-    // Straight into the live copy, like the rows above: it runs once from
-    // setup(), before anything that reads it exists.
-    configDeserializeDroidBuild(reader, &droidBuildCache, report);
-}
-
-bool configSaveDroidBuild(Preferences& prefs) {
-    configWriteWindowExpectHeld("configSaveDroidBuild");
-    PrefsWriter writer(prefs);
-    DroidBuildConfig build = {};
-    configCacheReadDroidBuild(&build);
-    return configSerializeDroidBuild(build, writer);
-}
-
-void configLoadGuidedSetup(Preferences& prefs, GuidedSetupRepairReport* report) {
-    PrefsReader reader(prefs);
-    // Straight into the live copy, like the Droid Build above: it runs once from
-    // setup(), before anything that reads it exists.
-    configDeserializeGuidedSetup(reader, &guidedSetupCache, report);
-}
-
-bool configSaveGuidedSetup(Preferences& prefs) {
-    configWriteWindowExpectHeld("configSaveGuidedSetup");
-    PrefsWriter writer(prefs);
-    GuidedSetupConfig guided = {};
-    configCacheReadGuidedSetup(&guided);
-    return configSerializeGuidedSetup(guided, writer);
+    for (size_t i = 0; i < CONFIG_RECORD_COUNT; ++i) {
+        // A repair note is one log line; each Record's fits well inside it.
+        char repaired[112] = {};
+        if (configRecordLoad((ConfigRecordId)i, reader, repaired, sizeof(repaired))) {
+            PA_LOG_WARN("config", "%s", repaired);
+        }
+    }
 }
 
 // Remove each key that is there. False when a removal that was asked for did
@@ -1223,8 +1140,10 @@ bool configPersist(const ConfigSnapshot& snapshot, const ConfigSaveExtras& extra
     // saves". Each step runs only when every step before it landed.
     bool ok = configSaveServoOutputs(prefs);
     ok = ok && configSave(prefs, snapshot);
-    ok = ok && (!extras.droidBuild || configSaveDroidBuild(prefs));
-    ok = ok && (!extras.guidedSetup || configSaveGuidedSetup(prefs));
+    if (ok && extras.records != 0) {
+        PrefsWriter writer(prefs);
+        ok = configRecordsSave(extras.records, writer);
+    }
     prefs.end();
     return ok;
 }

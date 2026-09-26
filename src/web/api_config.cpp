@@ -43,6 +43,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "config_cache.h"
+#include "config_records.h"  // every Record's GET answer and its merge
 #include "config_settings.h"  // every Setting's GET path, and its value
 #include "config_write_lock.h"  // this file implements the config and RC Map Write Windows
 #include "console_config_fields.h"  // kComponentToggleFields - the boot mask's bit order
@@ -576,7 +577,7 @@ void addActiveFields(JsonDocument& doc) {
         const size_t len = strlen(param);
         // A mutable array, so ArduinoJson copies it rather than keeping a
         // pointer into a buffer that is gone by the time the document
-        // serializes (the rule addGuidedSetupFields() below relies on too).
+        // serializes (the rule each Record's GET answer relies on too).
         char id[24] = {};
         if (strncmp(param, kPrefix, kPrefixLen) != 0 || len <= kPrefixLen ||
             len - kPrefixLen >= sizeof(id)) {
@@ -596,112 +597,59 @@ void addActiveFields(JsonDocument& doc) {
 }
 
 // -----------------------------------------------------------------------------
-// partMoveRefusal()
-// What a refused Part move says, or nullptr for a move that landed or had
-// nothing to do. Each sentence names the next move: the caller that meets one is
-// a surface whose table has changed since it read it, or one sending an address
-// it did not read.
+// refusePartMove()
+// A refused Part move as a refusal like any other (ADR 0068, second amendment):
+// the act field it is about and why, so a page words it from those and never
+// from the sentence. False for a move that landed or had nothing to do.
+//
+// A Part that is not where the move says, and a destination already full, are
+// each a value fine on its own that clashes with the table as it stands:
+// `conflict`. The caller that meets one is a surface whose table has changed
+// since it read it. An address nothing answers at, and a Part this build does
+// not model, are values the field does not take.
 // -----------------------------------------------------------------------------
-const char* partMoveRefusal(ServoPartMoveOutcome outcome) {
+bool refusePartMove(ServoPartMoveOutcome outcome, ConfigCommitOutcome* commit) {
     switch (outcome) {
         case SERVO_PART_MOVED:
         case SERVO_PART_ALREADY_THERE:
-            return nullptr;
+            return false;
         case SERVO_PART_NOT_WHERE_STATED:
-            return "that Part is not on the Output movePartFrom names - read the outputs again, "
-                   "then move it";
+            commit->refusal = "that Part is not on the Output movePartFrom names - read the outputs "
+                              "again, then move it";
+            commit->refusalField = "movePartFrom";
+            commit->refusalReason = ApplyRefusalReason::Conflict;
+            return true;
         case SERVO_PART_OUTPUT_FULL:
-            return "that Output already drives as many Parts as it can - move one off it first";
+            commit->refusal = "that Output already drives as many Parts as it can - move one off it "
+                              "first";
+            commit->refusalField = "movePartTo";
+            commit->refusalReason = ApplyRefusalReason::Conflict;
+            return true;
         case SERVO_PART_NO_SUCH_OUTPUT:
-            return "no Output is addressed at movePartTo";
+            commit->refusal = "no Output is addressed at movePartTo";
+            commit->refusalField = "movePartTo";
+            commit->refusalReason = ApplyRefusalReason::OutOfRange;
+            return true;
         case SERVO_PART_NOT_A_PART:
         default:
-            return "movePart names a Part this build does not model";
+            commit->refusal = "movePart names a Part this build does not model";
+            commit->refusalField = "movePart";
+            commit->refusalReason = ApplyRefusalReason::OutOfRange;
+            return true;
     }
 }
 
 // -----------------------------------------------------------------------------
-// addDroidBuildFields()
-// The Droid Build: which droid a builder says they built, and which Parts are
-// on it (ADR 0047).
-//
-// Out here with the others because it lives outside ConfigSnapshot, on its own
-// NVS keys - see include/config_serializer.h - so a pure snapshot serializer
+// addRecordFields()
+// Every Record, each under its own key and in its own module's words
+// (include/config_records.h). Out here with the others because a Record lives
+// outside ConfigSnapshot, on its own NVS keys, so a pure snapshot serializer
 // cannot see it.
-//
-// The Fitted Parts go out as ids rather than as the bitmap they are held in:
-// the bits are emission order, and firmware and the browser module are shipped
-// by two separate steps ('make ota' and 'make uploadfs'), so a bit index is the
-// one form that could mean a different Part at each end of the wire.
-//
-// An empty `fitted` array is a real answer - a droid with nothing fitted yet -
-// and every Part the catalog declares stays nameable regardless: this block
-// reports what is ON the droid, never what may be authored for it.
-void addDroidBuildFields(JsonDocument& doc) {
-    DroidBuildConfig build = {};
-    configCacheReadDroidBuild(&build);
-
-    JsonObject droidBuild = doc["droidBuild"].to<JsonObject>();
-    droidBuild["domeDesign"] = build.dome.design;
-    droidBuild["domeVariant"] = build.dome.variant;
-    droidBuild["bodyDesign"] = build.body.design;
-    droidBuild["bodyVariant"] = build.body.variant;
-
-    JsonArray fitted = droidBuild["fitted"].to<JsonArray>();
-    for (size_t i = droidFittedPartsNextIndex(build.fitted, 0); i < DROID_PART_COUNT;
-         i = droidFittedPartsNextIndex(build.fitted, i + 1)) {
-        fitted.add(droidPartIdAt(i));
-    }
-}
-
 // -----------------------------------------------------------------------------
-// addGuidedSetupFields()
-// Guided Setup's record: where the run stands, and which of its steps the
-// builder has been shown (#351).
-//
-// Out here with the others because it lives outside ConfigSnapshot, on its own
-// NVS keys - see include/config_serializer.h - so a pure snapshot serializer
-// cannot see it.
-//
-// `recorded` is the field that looks redundant and is not. A controller
-// configured before guided Setup existed carries no record at all, and an empty
-// `visited` array on its own cannot say whether that means "the run has shown
-// nothing yet" or "the run has never been drawn here". Only the second of those
-// may be read as "these answers were given before the record existed, and are
-// real"; the browser, which is the only end that knows what the steps are, makes
-// that call and needs this bit to make it.
-//
-// The run goes out as a token rather than its stored number for the reason the
-// Fitted Parts go out as ids: firmware and the browser module ship in two
-// separate steps ('make ota' and 'make uploadfs'), so a number is the one form
-// that could mean a different thing at each end of the wire.
-void addGuidedSetupFields(JsonDocument& doc) {
-    GuidedSetupConfig guided = {};
-    configCacheReadGuidedSetup(&guided);
-
-    JsonObject guidedSetup = doc["guidedSetup"].to<JsonObject>();
-    guidedSetup["run"] = guidedSetupRunId(guided.run);
-    guidedSetup["recorded"] = guided.recorded;
-    guidedSetup["summaryDone"] = guided.summaryDone;
-
-    JsonArray visited = guidedSetup["visited"].to<JsonArray>();
-    const char* cursor = guided.visited;
-    while (*cursor != '\0') {
-        const char* comma = strchr(cursor, ',');
-        const size_t span = (comma != nullptr) ? (size_t)(comma - cursor) : strlen(cursor);
-        // A mutable char array, deliberately: ArduinoJson stores a `const char*`
-        // by pointer and DUPLICATES a `char*`, and this buffer is gone by the
-        // time the document serializes. That is the same rule the Droid Build
-        // fields above rely on when they assign a local struct's char array.
-        char key[GUIDED_SETUP_STEP_KEY_MAX + 1] = {};
-        if (span > 0 && span <= GUIDED_SETUP_STEP_KEY_MAX) {
-            memcpy(key, cursor, span);
-            visited.add(key);
-        }
-        if (comma == nullptr) {
-            break;
-        }
-        cursor = comma + 1;
+void addRecordFields(JsonDocument& doc) {
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        const ConfigRecordId id = (ConfigRecordId)r;
+        configRecordAnswer(id, doc[configRecordKey(id)].to<JsonObject>());
     }
 }
 
@@ -767,8 +715,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
     }
     addAudioMemberFields(doc);
     addActiveFields(doc);
-    addDroidBuildFields(doc);
-    addGuidedSetupFields(doc);
+    addRecordFields(doc);
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
     doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
@@ -833,8 +780,7 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // lock across this call, so no other writer can move the Part between this
     // answer and the write.
     if (result.partMove.requested) {
-        outcome.refusal = partMoveRefusal(configCacheMoveServoOutputPart(result.partMove.move));
-        if (outcome.refusal != nullptr) {
+        if (refusePartMove(configCacheMoveServoOutputPart(result.partMove.move), &outcome)) {
             PA_LOG_WARN(TAG, "movePart %s refused: %s", result.partMove.move.part,
                         outcome.refusal);
             return outcome;
@@ -880,46 +826,13 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     outcome.closeClampedRows = servoOutputRepair.closeMovedRows;
     outcome.centreClampedRows = servoOutputRepair.centreMovedRows;
 
-    // The Droid Build the request stated, onto the live answer (ADR 0047). A
-    // half the request did not name is left exactly as it stood: a builder
-    // changing their Dome Design is not saying anything about their body, and
-    // a merge here is what keeps that true.
-    if (result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
-        result.droidBuild.fittedChanged) {
-        DroidBuildConfig droidBuild = {};
-        configCacheReadDroidBuild(&droidBuild);
-        if (result.droidBuild.domeChanged) {
-            droidBuild.dome = result.droidBuild.dome;
-        }
-        if (result.droidBuild.bodyChanged) {
-            droidBuild.body = result.droidBuild.body;
-        }
-        if (result.droidBuild.fittedChanged) {
-            droidBuild.fitted = result.droidBuild.fitted;
-        }
-        configCacheApplyDroidBuild(droidBuild);
-    }
-
-    // Guided Setup's record, onto the live one (#351). Each half of it is merged
-    // rather than replaced, for the reason the Droid Build's halves are: marking
-    // a step visited says nothing about whether the run has ended, and ending the
-    // run says nothing about which steps were shown - so a request carrying one
-    // must leave the other exactly as it stood.
-    if (result.guidedSetup.runChanged || result.guidedSetup.visitedChanged ||
-        result.guidedSetup.summaryDoneChanged) {
-        GuidedSetupConfig guided = {};
-        configCacheReadGuidedSetup(&guided);
-        if (result.guidedSetup.runChanged) {
-            guided.run = result.guidedSetup.run;
-        }
-        if (result.guidedSetup.summaryDoneChanged) {
-            guided.summaryDone = result.guidedSetup.summaryDone;
-        }
-        if (result.guidedSetup.visitedChanged) {
-            guided.recorded = true;
-            memcpy(guided.visited, result.guidedSetup.visited.visited, sizeof(guided.visited));
-        }
-        configCacheApplyGuidedSetup(guided);
+    // What the request stated of each Record, onto its live copy. Each Record's
+    // merge leaves a field the request did not state exactly as it stood: a
+    // builder changing their Dome Design is not saying anything about their
+    // body, and marking a step visited says nothing about whether the run has
+    // ended (include/config_records.h).
+    for (size_t r = 0; r < CONFIG_RECORD_COUNT; ++r) {
+        configRecordMerge((ConfigRecordId)r, result.records);
     }
 
     // Sync stationary mode with edge detection and drive-on cue - only when the
@@ -946,17 +859,13 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // What this request changed is the Commit Step's to say; the order it
     // lands in is the store's (include/config_store.h, "Store-opened saves").
     //
-    // The Droid Build and guided Setup's record only where the request said
-    // something about them: an absent Fitted Parts record is what tells the
-    // next boot that nobody has answered yet, and an absent visited record
-    // that guided Setup has never been drawn on this controller. Writing
-    // either on every config POST would spend that distinction on a request
-    // that was about the log level.
+    // A Record only where the request said something about it: an absent
+    // Fitted Parts record is what tells the next boot that nobody has answered
+    // yet, and an absent visited record that guided Setup has never been drawn
+    // on this controller. Writing either on every config POST would spend that
+    // distinction on a request that was about the log level.
     ConfigSaveExtras extras;
-    extras.droidBuild = result.droidBuild.domeChanged || result.droidBuild.bodyChanged ||
-                        result.droidBuild.fittedChanged;
-    extras.guidedSetup = result.guidedSetup.runChanged || result.guidedSetup.visitedChanged ||
-                         result.guidedSetup.summaryDoneChanged;
+    extras.records = configRecordsStated(result.records);
     if (!configPersist(*working, extras)) {
         outcome.persisted = false;
         return outcome;
@@ -1106,7 +1015,9 @@ void handleConfigPost(WebRequest& req) {
         return;
     }
     if (commit.refusal != nullptr) {
-        webSendJsonError(req, 409, commit.refusal);
+        ApplyRefusal refusal;
+        applyRefusalSet(&refusal, commit.refusalReason, commit.refusalField);
+        webSendApplyRefusal(req, 409, commit.refusal, refusal);
         return;
     }
     if (!commit.persisted) {

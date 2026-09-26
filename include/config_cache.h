@@ -148,30 +148,9 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
 // Step and from nowhere else, for the same reason as the edits door above.
 ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move);
 
-// The Droid Build (ADR 0047): which droid a builder says they built, and which
-// Parts are on it. Outside ConfigSnapshot on its own NVS keys, filled by
-// configLoadDroidBuild() on the boot path and changed at runtime only by the
-// Commit Step.
-//
-// Handed out whole rather than a half at a time: it is sixty bytes, and its
-// readers are the surfaces that draw a builder's droid rather than anything on
-// a control path. No firmware behaviour branches on it - a Droid Build seeds
-// the Parts and never fences them, so droidPartIdIsKnown() is the whole catalog
-// whatever this answer says.
-void configCacheReadDroidBuild(DroidBuildConfig* out);
-void configCacheApplyDroidBuild(const DroidBuildConfig& build);
-
-// Guided Setup (#351): where the run stands, and which steps have been on
-// screen. Outside ConfigSnapshot beside the Droid Build, filled by
-// configLoadGuidedSetup() on the boot path and changed at runtime only by the
-// Commit Step.
-//
-// No firmware behaviour branches on it either. It exists so that the surfaces
-// which report on a droid can tell a category the builder DECLARED not fitted
-// from one they were never asked about - a difference that is invisible in the
-// toggles themselves, because both read false.
-void configCacheReadGuidedSetup(GuidedSetupConfig* out);
-void configCacheApplyGuidedSetup(const GuidedSetupConfig& guided);
+// The Records - the Droid Build and guided Setup's record - are not here:
+// each Record's module keeps its own live copy, filled on the boot path and
+// changed at runtime only by the Commit Step (include/config_records.h).
 
 // configCacheApply: write a full snapshot into the live config cache, except
 // the fields RC input also writes at runtime - the speed group

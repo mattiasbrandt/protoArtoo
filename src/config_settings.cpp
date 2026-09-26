@@ -66,102 +66,111 @@ constexpr SettingWords kBootWords = {SERVO_BOOT_LIMP, SERVO_BOOT_COUNT, bootName
     SettingSection::Section, (uint16_t)offsetof(Type, member),                     \
         settingStorageOf<decltype(Type::member)>(), (uint8_t)sizeof(Type::member)
 
-#define PA_RANGE(form, path, key, Section, Type, member, lo, hi, def) \
-    {form, path, key, PA_SETTING_FIELD(Section, Type, member), SettingRule::Range, lo, hi, def, nullptr, 0, nullptr}
-#define PA_BOOL(form, path, key, Section, Type, member, def) \
-    {form, path, key, PA_SETTING_FIELD(Section, Type, member), SettingRule::Bool, 0, 1, def, nullptr, 0, nullptr}
-#define PA_WORDS(form, path, key, Section, Type, member, words, def) \
-    {form, path, key, PA_SETTING_FIELD(Section, Type, member), SettingRule::Words, 0, 0, def, &words, 0, nullptr}
-#define PA_MEMBER(form, path, key, Section, Type, member, family, says) \
-    {form, path, key, PA_SETTING_FIELD(Section, Type, member), SettingRule::Member, 0, 0, 0, nullptr, family, says}
+#define PA_RANGE(form, path, key, timing, Section, Type, member, lo, hi, def) \
+    {form, path, key, ApplyTiming::timing, PA_SETTING_FIELD(Section, Type, member), SettingRule::Range, lo, hi, def, nullptr, 0, nullptr}
+#define PA_BOOL(form, path, key, timing, Section, Type, member, def) \
+    {form, path, key, ApplyTiming::timing, PA_SETTING_FIELD(Section, Type, member), SettingRule::Bool, 0, 1, def, nullptr, 0, nullptr}
+#define PA_WORDS(form, path, key, timing, Section, Type, member, words, def) \
+    {form, path, key, ApplyTiming::timing, PA_SETTING_FIELD(Section, Type, member), SettingRule::Words, 0, 0, def, &words, 0, nullptr}
+#define PA_MEMBER(form, path, key, timing, Section, Type, member, family, says) \
+    {form, path, key, ApplyTiming::timing, PA_SETTING_FIELD(Section, Type, member), SettingRule::Member, 0, 0, 0, nullptr, family, says}
 
 const ConfigSetting kConfigSettings[] = {
     // Foot Drive. The three presets must differ and speedLimitMax picks the
-    // active one: both are rules across Settings, in configApply().
-    PA_RANGE("speedLimitMax", "drive.speedLimitMax", "spd_max", Drive, DriveConfig, speedLimitMax,
+    // active one: both are rules across Settings, in configApply(). DriveTask
+    // reads the limit and the timeout from the cache every frame
+    // (src/tasks/drive.cpp), so each is Immediate.
+    PA_RANGE("speedLimitMax", "drive.speedLimitMax", "spd_max", Immediate, Drive, DriveConfig, speedLimitMax,
              0, SPEED_LIMIT_MAX, SPEED_LIMIT_MAX),
-    PA_RANGE("speedPresetSlow", "drive.speedPresetSlow", "spd_pre_s", Drive, DriveConfig,
+    PA_RANGE("speedPresetSlow", "drive.speedPresetSlow", "spd_pre_s", Immediate, Drive, DriveConfig,
              speedPresetSlow, 0, SPEED_LIMIT_MAX, SPEED_PRESET_SLOW),
-    PA_RANGE("speedPresetNormal", "drive.speedPresetNormal", "spd_pre_n", Drive, DriveConfig,
+    PA_RANGE("speedPresetNormal", "drive.speedPresetNormal", "spd_pre_n", Immediate, Drive, DriveConfig,
              speedPresetNormal, 0, SPEED_LIMIT_MAX, SPEED_PRESET_NORMAL),
-    PA_RANGE("speedPresetTurbo", "drive.speedPresetTurbo", "spd_pre_t", Drive, DriveConfig,
+    PA_RANGE("speedPresetTurbo", "drive.speedPresetTurbo", "spd_pre_t", Immediate, Drive, DriveConfig,
              speedPresetTurbo, 0, SPEED_LIMIT_MAX, SPEED_PRESET_TURBO),
-    PA_RANGE("webDriveTimeoutMs", "drive.webDriveTimeoutMs", "web_tmo", Drive, DriveConfig,
+    PA_RANGE("webDriveTimeoutMs", "drive.webDriveTimeoutMs", "web_tmo", Immediate, Drive, DriveConfig,
              webDriveTimeoutMs, 100, 5000, WEB_DRIVE_TIMEOUT_MS),
-    PA_BOOL("stationary", "drive.stationary", "op_mode", System, SystemConfig, stationary, false),
+    PA_BOOL("stationary", "drive.stationary", "op_mode", Immediate, System, SystemConfig, stationary, false),
 
-    // The radio
-    PA_WORDS("rcInputMode", "rc.inputMode", "rc_mode", System, SystemConfig, rc_input_mode,
+    // The radio. The receiver and the channels it reads are projected once at
+    // start into the settings the droid is driven on
+    // (rcInputActiveConfigFromSystem()), so a change waits for a restart the
+    // builder makes. The radio itself drives nothing on the controller.
+    PA_WORDS("rcInputMode", "rc.inputMode", "rc_mode", RestartRequired, System, SystemConfig, rc_input_mode,
              kRcInputModeWords, RC_INPUT_DUAL_SBUS),
-    PA_RANGE("sbusTimeoutMs", "rc.sbusTimeoutMs", "sbus_tmo", Drive, DriveConfig, sbusTimeoutMs,
+    PA_RANGE("sbusTimeoutMs", "rc.sbusTimeoutMs", "sbus_tmo", Immediate, Drive, DriveConfig, sbusTimeoutMs,
              50, 5000, SBUS_TIMEOUT_MS),
-    PA_MEMBER("rcMember", "rc.member", "rc_member", System, SystemConfig, rc_member,
+    PA_MEMBER("rcMember", "rc.member", "rc_member", Immediate, System, SystemConfig, rc_member,
               COMPONENT_CATEGORY_RADIO_CONTROLLER, "is not a radio this firmware lists"),
-    PA_BOOL("sbusRecvCh2", "rc.sbus.recvCh2", "sbus_recv_ch2", System, SystemConfig,
+    PA_BOOL("sbusRecvCh2", "rc.sbus.recvCh2", "sbus_recv_ch2", RestartRequired, System, SystemConfig,
             single_sbus_use_ch2, false),
 
-    // The Component Toggles that are not an Output, and the Sound member
-    PA_BOOL("enableDomeEsc", "components.domeEsc.enabled", "en_dome_esc", System, SystemConfig,
+    // The Component Toggles that are not an Output, and the Sound member: each
+    // read once at start (ADR 0027, ADR 0042). The RC channel ticks are part of
+    // the radio's start-up projection above, so they are a restart.
+    PA_BOOL("enableDomeEsc", "components.domeEsc.enabled", "en_dome_esc", AtReboot, System, SystemConfig,
             enable_dome_esc, false),
-    PA_BOOL("enableRcCh1", "components.rcCh1.enabled", "en_rc_ch1", System, SystemConfig,
+    PA_BOOL("enableRcCh1", "components.rcCh1.enabled", "en_rc_ch1", RestartRequired, System, SystemConfig,
             enable_rc_ch1, false),
-    PA_BOOL("enableRcCh2", "components.rcCh2.enabled", "en_rc_ch2", System, SystemConfig,
+    PA_BOOL("enableRcCh2", "components.rcCh2.enabled", "en_rc_ch2", RestartRequired, System, SystemConfig,
             enable_rc_ch2, false),
-    PA_BOOL("enableRcCh3", "components.rcCh3.enabled", "en_rc_ch3", System, SystemConfig,
+    PA_BOOL("enableRcCh3", "components.rcCh3.enabled", "en_rc_ch3", RestartRequired, System, SystemConfig,
             enable_rc_ch3, false),
-    PA_BOOL("enableRcCh4", "components.rcCh4.enabled", "en_rc_ch4", System, SystemConfig,
+    PA_BOOL("enableRcCh4", "components.rcCh4.enabled", "en_rc_ch4", RestartRequired, System, SystemConfig,
             enable_rc_ch4, false),
-    PA_BOOL("enableRcCh5", "components.rcCh5.enabled", "en_rc_ch5", System, SystemConfig,
+    PA_BOOL("enableRcCh5", "components.rcCh5.enabled", "en_rc_ch5", RestartRequired, System, SystemConfig,
             enable_rc_ch5, false),
-    PA_BOOL("enableRcCh6", "components.rcCh6.enabled", "en_rc_ch6", System, SystemConfig,
+    PA_BOOL("enableRcCh6", "components.rcCh6.enabled", "en_rc_ch6", RestartRequired, System, SystemConfig,
             enable_rc_ch6, false),
-    PA_BOOL("enableDrive", "components.drive.enabled", "en_drive", System, SystemConfig,
+    PA_BOOL("enableDrive", "components.drive.enabled", "en_drive", AtReboot, System, SystemConfig,
             enable_drive, false),
-    PA_BOOL("enableAudio", "components.audio.enabled", "en_audio", System, SystemConfig,
+    PA_BOOL("enableAudio", "components.audio.enabled", "en_audio", AtReboot, System, SystemConfig,
             enable_audio, false),
-    PA_MEMBER("soundMember", "components.audio.member", "snd_member", System, SystemConfig,
+    PA_MEMBER("soundMember", "components.audio.member", "snd_member", AtReboot, System, SystemConfig,
               sound_member, COMPONENT_CATEGORY_SOUND,
               "is not a sound module this firmware can drive"),
-    PA_BOOL("enableProtoR2link", "components.protoR2link.enabled", "en_r2link", System,
+    PA_BOOL("enableProtoR2link", "components.protoR2link.enabled", "en_r2link", AtReboot, System,
             SystemConfig, enable_protor2link, false),
 
     // Each board Output's wired tick. GET reads it on the Output's row and POST
     // takes it back there (`wired`), so it has no path here; the form name is
-    // what the Console writes it by (BOARD_OUTPUTS' `enabledField`).
-    PA_BOOL("enableArm1", nullptr, "en_arm1", System, SystemConfig, enable_arm1, false),
-    PA_BOOL("enableArm2", nullptr, "en_arm2", System, SystemConfig, enable_arm2, false),
-    PA_BOOL("enableAux1", nullptr, "en_aux1", System, SystemConfig, enable_aux1, false),
-    PA_BOOL("enableAux2", nullptr, "en_aux2", System, SystemConfig, enable_aux2, false),
-    PA_BOOL("enableAux3", nullptr, "en_aux3", System, SystemConfig, enable_aux3, false),
+    // what the Console writes it by (BOARD_OUTPUTS' `enabledField`). Latched
+    // once at start (servoTaskInit(), ADR 0027).
+    PA_BOOL("enableArm1", nullptr, "en_arm1", AtReboot, System, SystemConfig, enable_arm1, false),
+    PA_BOOL("enableArm2", nullptr, "en_arm2", AtReboot, System, SystemConfig, enable_arm2, false),
+    PA_BOOL("enableAux1", nullptr, "en_aux1", AtReboot, System, SystemConfig, enable_aux1, false),
+    PA_BOOL("enableAux2", nullptr, "en_aux2", AtReboot, System, SystemConfig, enable_aux2, false),
+    PA_BOOL("enableAux3", nullptr, "en_aux3", AtReboot, System, SystemConfig, enable_aux3, false),
 
     // The Dome ESC. The three pulses must stay in order: a rule across them,
-    // in configApply() and on load.
-    PA_RANGE("domeEscNeutralUs", "domeEsc.neutralUs", "dome_neu", Dome, DomeConfig,
+    // in configApply() and on load. DomeTask reads them from the cache on every
+    // command and every loop.
+    PA_RANGE("domeEscNeutralUs", "domeEsc.neutralUs", "dome_neu", Immediate, Dome, DomeConfig,
              dome_neutral_us, 1000, 2000, 1500),
-    PA_RANGE("domeEscMinPulseUs", "domeEsc.minPulseUs", "dome_minp", Dome, DomeConfig,
+    PA_RANGE("domeEscMinPulseUs", "domeEsc.minPulseUs", "dome_minp", Immediate, Dome, DomeConfig,
              dome_min_pulse_us, 1000, 2000, 1000),
-    PA_RANGE("domeEscMaxPulseUs", "domeEsc.maxPulseUs", "dome_maxp", Dome, DomeConfig,
+    PA_RANGE("domeEscMaxPulseUs", "domeEsc.maxPulseUs", "dome_maxp", Immediate, Dome, DomeConfig,
              dome_max_pulse_us, 1000, 2000, 2000),
-    PA_RANGE("domeEscSpeedLimitPct", "domeEsc.speedLimitPct", "dome_pct", Dome, DomeConfig,
+    PA_RANGE("domeEscSpeedLimitPct", "domeEsc.speedLimitPct", "dome_pct", Immediate, Dome, DomeConfig,
              dome_speed_limit_pct, 0, 100, 100),
-    PA_BOOL("domeEscRndEnable", "domeEsc.rndEnable", "dome_rnd_en", Dome, DomeConfig,
+    PA_BOOL("domeEscRndEnable", "domeEsc.rndEnable", "dome_rnd_en", Immediate, Dome, DomeConfig,
             dome_rnd_enable, false),
-    PA_RANGE("domeEscRndSpeedPct", "domeEsc.rndSpeedPct", "dome_rnd_spd", Dome, DomeConfig,
+    PA_RANGE("domeEscRndSpeedPct", "domeEsc.rndSpeedPct", "dome_rnd_spd", Immediate, Dome, DomeConfig,
              dome_rnd_speed_pct, 5, 100, 30),
-    PA_RANGE("domeEscRndPauseMin", "domeEsc.rndPauseMin", "dome_rnd_pmin", Dome, DomeConfig,
+    PA_RANGE("domeEscRndPauseMin", "domeEsc.rndPauseMin", "dome_rnd_pmin", Immediate, Dome, DomeConfig,
              dome_rnd_pause_min, 1, 120, 6),
-    PA_RANGE("domeEscRndPauseMax", "domeEsc.rndPauseMax", "dome_rnd_pmax", Dome, DomeConfig,
+    PA_RANGE("domeEscRndPauseMax", "domeEsc.rndPauseMax", "dome_rnd_pmax", Immediate, Dome, DomeConfig,
              dome_rnd_pause_max, 1, 120, 12),
-    PA_RANGE("domeEscRndMoveMs", "domeEsc.rndMoveMs", "dome_rnd_ms", Dome, DomeConfig,
+    PA_RANGE("domeEscRndMoveMs", "domeEsc.rndMoveMs", "dome_rnd_ms", Immediate, Dome, DomeConfig,
              dome_rnd_move_ms, 500, 10000, 2500),
-    {"protoR2linkWifiPeerIp", "protoR2link.wifiPeerIp", "dome_wip",
+    {"protoR2linkWifiPeerIp", "protoR2link.wifiPeerIp", "dome_wip", ApplyTiming::Immediate,
      PA_SETTING_FIELD(Dome, DomeConfig, dome_wifi_peer_ip), SettingRule::Ipv4, 0, 0, 0, nullptr, 0,
      "must be empty or a valid IPv4 address"},
 
     // The log level takes its words as well as its number, at every door, and
     // GET reads the number (#423's round trip).
-    {"logLevel", "system.logLevel", "log_level", PA_SETTING_FIELD(System, SystemConfig, logLevel),
-     SettingRule::Range, PA_LOG_LEVEL_ERROR, PA_LOG_LEVEL_DEBUG, PA_LOG_LEVEL, &kLogLevelWords, 0,
+    {"logLevel", "system.logLevel", "log_level", ApplyTiming::Immediate,
+     PA_SETTING_FIELD(System, SystemConfig, logLevel), SettingRule::Range, PA_LOG_LEVEL_ERROR, PA_LOG_LEVEL_DEBUG, PA_LOG_LEVEL, &kLogLevelWords, 0,
      nullptr},
 };
 
@@ -180,89 +189,96 @@ const ConfigSetting kConfigSettings[] = {
 // catalog binding (bank, page and index) is the track binding's catalog form,
 // stored by the tracks write path on its own keys and checked there.
 // -----------------------------------------------------------------------------
-#define PA_AUDIO_AT(name, key, member, lo, hi, def, door, repair) \
-    {name, nullptr, key, PA_SETTING_FIELD(Audio, AudioConfig, member), SettingRule::Range, lo, hi, def, \
+#define PA_AUDIO_AT(name, key, timing, member, lo, hi, def, door, repair) \
+    {name, nullptr, key, ApplyTiming::timing, PA_SETTING_FIELD(Audio, AudioConfig, member), SettingRule::Range, lo, hi, def, \
      nullptr, 0, nullptr, SettingDoor::door, repair}
 // A track field is read back as stored: it may hold a banked CHIRP index.
-#define PA_AUDIO(name, key, member, lo, hi, def, door) \
-    PA_AUDIO_AT(name, key, member, lo, hi, def, door, false)
-#define PA_TRACK(name, key, member, def) PA_AUDIO(name, key, member, 1, 999, def, AudioTracks)
-#define PA_OPTIONAL_TRACK(name, key, member) PA_AUDIO(name, key, member, 0, 999, 0, AudioTracks)
-#define PA_INTERVAL(name, member, def) PA_AUDIO(name, name, member, 0, 3600, def, AudioTracks)
-#define PA_CATEGORY_BOUND(name, key, member) PA_AUDIO(name, key, member, 0, 999, 0, AudioTracks)
-#define PA_MOOD_MASK(name, key, member, def) \
-    {name, nullptr, key, PA_SETTING_FIELD(Audio, AudioConfig, member), SettingRule::Mask, 0, \
+#define PA_AUDIO(name, key, timing, member, lo, hi, def, door) \
+    PA_AUDIO_AT(name, key, timing, member, lo, hi, def, door, false)
+#define PA_TRACK(name, key, timing, member, def) \
+    PA_AUDIO(name, key, timing, member, 1, 999, def, AudioTracks)
+#define PA_OPTIONAL_TRACK(name, key, timing, member) \
+    PA_AUDIO(name, key, timing, member, 0, 999, 0, AudioTracks)
+#define PA_INTERVAL(name, timing, member, def) \
+    PA_AUDIO(name, name, timing, member, 0, 3600, def, AudioTracks)
+#define PA_CATEGORY_BOUND(name, key, timing, member) \
+    PA_AUDIO(name, key, timing, member, 0, 999, 0, AudioTracks)
+#define PA_MOOD_MASK(name, key, timing, member, def) \
+    {name, nullptr, key, ApplyTiming::timing, PA_SETTING_FIELD(Audio, AudioConfig, member), SettingRule::Mask, 0, \
      MOOD_CATEGORY_MASK_MAX, def, nullptr, 0, nullptr, SettingDoor::AudioMoodMap}
 
+// Every audio Setting is Immediate: AudioTask reads the tracks, intervals,
+// ranges and masks from the cache every pass (audio_config_map.cpp), and the
+// volume is pushed to the running module by its Commit Step.
 const ConfigSetting kAudioSettings[] = {
     // The DFPlayer Mini's 0..30, and repaired on load as it always was.
-    PA_AUDIO_AT("volume", "aud_vol", audioVolume, 0, 30, 20, AudioVolume, true),
+    PA_AUDIO_AT("volume", "aud_vol", Immediate, audioVolume, 0, 30, 20, AudioVolume, true),
 
-    PA_TRACK("scream", "snd_scream", snd_scream, AUDIO_TRACK_SCREAM),
-    PA_TRACK("faint", "snd_faint", snd_faint, AUDIO_TRACK_FAINT),
-    PA_TRACK("leia", "snd_leia", snd_leia, AUDIO_TRACK_LEIA),
-    PA_TRACK("cantina_s", "snd_cantina_s", snd_cantina_s, AUDIO_TRACK_CANTINA_S),
-    PA_TRACK("sw_theme", "snd_sw", snd_sw_theme, AUDIO_TRACK_SW_THEME),
-    PA_TRACK("imp_march", "snd_march", snd_imp_march, AUDIO_TRACK_IMP_MARCH),
-    PA_TRACK("cantina_l", "snd_cantina_l", snd_cantina_l, AUDIO_TRACK_CANTINA_L),
-    PA_TRACK("startup", "snd_startup", snd_startup, AUDIO_TRACK_STARTUP),
-    PA_OPTIONAL_TRACK("doodoo", "snd_doodoo", snd_doodoo),
-    PA_OPTIONAL_TRACK("failure", "snd_failure", snd_failure),
-    PA_OPTIONAL_TRACK("disco", "snd_disco", snd_disco),
-    PA_OPTIONAL_TRACK("mahna", "snd_mahna", snd_mahna),
-    PA_OPTIONAL_TRACK("inlove", "snd_inlove", snd_inlove),
-    PA_OPTIONAL_TRACK("macho", "snd_macho", snd_macho),
-    PA_OPTIONAL_TRACK("gangnam", "snd_gangnam", snd_gangnam),
-    PA_OPTIONAL_TRACK("uptown", "snd_uptown", snd_uptown),
-    PA_OPTIONAL_TRACK("celebr", "snd_celebr", snd_celebr),
-    PA_OPTIONAL_TRACK("stayin", "snd_stayin", snd_stayin),
-    PA_OPTIONAL_TRACK("harlem", "snd_harlem", snd_harlem),
-    PA_OPTIONAL_TRACK("pbjtime", "snd_pbjtime", snd_pbjtime),
-    PA_OPTIONAL_TRACK("sys_boot", "snd_sys_boot", snd_sys_boot),
-    PA_OPTIONAL_TRACK("sys_mode_n", "snd_sys_mode_n", snd_sys_mode_n),
-    PA_OPTIONAL_TRACK("sys_mode_s", "snd_sys_mode_s", snd_sys_mode_s),
-    PA_OPTIONAL_TRACK("sys_mode_t", "snd_sys_mode_t", snd_sys_mode_t),
-    PA_OPTIONAL_TRACK("sys_drv_on", "snd_sys_drv_on", snd_sys_drv_on),
-    PA_OPTIONAL_TRACK("sys_dome_on", "snd_sys_dome_on", snd_sys_dome_on),
+    PA_TRACK("scream", "snd_scream", Immediate, snd_scream, AUDIO_TRACK_SCREAM),
+    PA_TRACK("faint", "snd_faint", Immediate, snd_faint, AUDIO_TRACK_FAINT),
+    PA_TRACK("leia", "snd_leia", Immediate, snd_leia, AUDIO_TRACK_LEIA),
+    PA_TRACK("cantina_s", "snd_cantina_s", Immediate, snd_cantina_s, AUDIO_TRACK_CANTINA_S),
+    PA_TRACK("sw_theme", "snd_sw", Immediate, snd_sw_theme, AUDIO_TRACK_SW_THEME),
+    PA_TRACK("imp_march", "snd_march", Immediate, snd_imp_march, AUDIO_TRACK_IMP_MARCH),
+    PA_TRACK("cantina_l", "snd_cantina_l", Immediate, snd_cantina_l, AUDIO_TRACK_CANTINA_L),
+    PA_TRACK("startup", "snd_startup", Immediate, snd_startup, AUDIO_TRACK_STARTUP),
+    PA_OPTIONAL_TRACK("doodoo", "snd_doodoo", Immediate, snd_doodoo),
+    PA_OPTIONAL_TRACK("failure", "snd_failure", Immediate, snd_failure),
+    PA_OPTIONAL_TRACK("disco", "snd_disco", Immediate, snd_disco),
+    PA_OPTIONAL_TRACK("mahna", "snd_mahna", Immediate, snd_mahna),
+    PA_OPTIONAL_TRACK("inlove", "snd_inlove", Immediate, snd_inlove),
+    PA_OPTIONAL_TRACK("macho", "snd_macho", Immediate, snd_macho),
+    PA_OPTIONAL_TRACK("gangnam", "snd_gangnam", Immediate, snd_gangnam),
+    PA_OPTIONAL_TRACK("uptown", "snd_uptown", Immediate, snd_uptown),
+    PA_OPTIONAL_TRACK("celebr", "snd_celebr", Immediate, snd_celebr),
+    PA_OPTIONAL_TRACK("stayin", "snd_stayin", Immediate, snd_stayin),
+    PA_OPTIONAL_TRACK("harlem", "snd_harlem", Immediate, snd_harlem),
+    PA_OPTIONAL_TRACK("pbjtime", "snd_pbjtime", Immediate, snd_pbjtime),
+    PA_OPTIONAL_TRACK("sys_boot", "snd_sys_boot", Immediate, snd_sys_boot),
+    PA_OPTIONAL_TRACK("sys_mode_n", "snd_sys_mode_n", Immediate, snd_sys_mode_n),
+    PA_OPTIONAL_TRACK("sys_mode_s", "snd_sys_mode_s", Immediate, snd_sys_mode_s),
+    PA_OPTIONAL_TRACK("sys_mode_t", "snd_sys_mode_t", Immediate, snd_sys_mode_t),
+    PA_OPTIONAL_TRACK("sys_drv_on", "snd_sys_drv_on", Immediate, snd_sys_drv_on),
+    PA_OPTIONAL_TRACK("sys_dome_on", "snd_sys_dome_on", Immediate, snd_sys_dome_on),
     // "snd_sys_netdown": 15 characters, the ESP-IDF Preferences key ceiling (#189).
-    PA_OPTIONAL_TRACK("sys_net_down", "snd_sys_netdown", snd_sys_net_down),
-    PA_TRACK("rand_min", "snd_rand_min", snd_rand_min, AUDIO_RAND_TRACK_MIN),
-    PA_TRACK("rand_max", "snd_rand_max", snd_rand_max, AUDIO_RAND_TRACK_MAX),
+    PA_OPTIONAL_TRACK("sys_net_down", "snd_sys_netdown", Immediate, snd_sys_net_down),
+    PA_TRACK("rand_min", "snd_rand_min", Immediate, snd_rand_min, AUDIO_RAND_TRACK_MIN),
+    PA_TRACK("rand_max", "snd_rand_max", Immediate, snd_rand_max, AUDIO_RAND_TRACK_MAX),
 
-    PA_INTERVAL("snd_int_quiet", snd_int_quiet, AUDIO_RAND_INT_QUIET),
-    PA_INTERVAL("snd_int_mid", snd_int_mid, AUDIO_RAND_INT_MID),
-    PA_INTERVAL("snd_int_full", snd_int_full, AUDIO_RAND_INT_FULL),
-    PA_INTERVAL("snd_int_awake", snd_int_awake, AUDIO_RAND_INT_AWAKE),
+    PA_INTERVAL("snd_int_quiet", Immediate, snd_int_quiet, AUDIO_RAND_INT_QUIET),
+    PA_INTERVAL("snd_int_mid", Immediate, snd_int_mid, AUDIO_RAND_INT_MID),
+    PA_INTERVAL("snd_int_full", Immediate, snd_int_full, AUDIO_RAND_INT_FULL),
+    PA_INTERVAL("snd_int_awake", Immediate, snd_int_awake, AUDIO_RAND_INT_AWAKE),
 
-    PA_CATEGORY_BOUND("snd_cat_gen_lo", "snd_cat_gen_lo", snd_cat_gen_lo),
-    PA_CATEGORY_BOUND("snd_cat_gen_hi", "snd_cat_gen_hi", snd_cat_gen_hi),
-    PA_CATEGORY_BOUND("snd_cat_chat_lo", "snd_cat_chat_lo", snd_cat_chat_lo),
-    PA_CATEGORY_BOUND("snd_cat_chat_hi", "snd_cat_chat_hi", snd_cat_chat_hi),
-    PA_CATEGORY_BOUND("snd_cat_hap_lo", "snd_cat_hap_lo", snd_cat_hap_lo),
-    PA_CATEGORY_BOUND("snd_cat_hap_hi", "snd_cat_hap_hi", snd_cat_hap_hi),
-    PA_CATEGORY_BOUND("snd_cat_proc_lo", "snd_cat_proc_lo", snd_cat_proc_lo),
-    PA_CATEGORY_BOUND("snd_cat_proc_hi", "snd_cat_proc_hi", snd_cat_proc_hi),
-    PA_CATEGORY_BOUND("snd_cat_sad_lo", "snd_cat_sad_lo", snd_cat_sad_lo),
-    PA_CATEGORY_BOUND("snd_cat_sad_hi", "snd_cat_sad_hi", snd_cat_sad_hi),
-    PA_CATEGORY_BOUND("snd_cat_sent_lo", "snd_cat_sent_lo", snd_cat_sent_lo),
-    PA_CATEGORY_BOUND("snd_cat_sent_hi", "snd_cat_sent_hi", snd_cat_sent_hi),
-    PA_CATEGORY_BOUND("snd_cat_hum_lo", "snd_cat_hum_lo", snd_cat_hum_lo),
-    PA_CATEGORY_BOUND("snd_cat_hum_hi", "snd_cat_hum_hi", snd_cat_hum_hi),
-    PA_CATEGORY_BOUND("snd_cat_scrm_lo", "snd_cat_scrm_lo", snd_cat_scrm_lo),
-    PA_CATEGORY_BOUND("snd_cat_scrm_hi", "snd_cat_scrm_hi", snd_cat_scrm_hi),
-    PA_CATEGORY_BOUND("snd_cat_ooh_lo", "snd_cat_ooh_lo", snd_cat_ooh_lo),
-    PA_CATEGORY_BOUND("snd_cat_ooh_hi", "snd_cat_ooh_hi", snd_cat_ooh_hi),
-    PA_CATEGORY_BOUND("snd_cat_alrm_lo", "snd_cat_alrm_lo", snd_cat_alrm_lo),
-    PA_CATEGORY_BOUND("snd_cat_alrm_hi", "snd_cat_alrm_hi", snd_cat_alrm_hi),
-    PA_CATEGORY_BOUND("snd_cat_snrk_lo", "snd_cat_snrk_lo", snd_cat_snarky_lo),
-    PA_CATEGORY_BOUND("snd_cat_snrk_hi", "snd_cat_snrk_hi", snd_cat_snarky_hi),
-    PA_CATEGORY_BOUND("snd_cat_whis_lo", "snd_cat_whis_lo", snd_cat_whis_lo),
-    PA_CATEGORY_BOUND("snd_cat_whis_hi", "snd_cat_whis_hi", snd_cat_whis_hi),
+    PA_CATEGORY_BOUND("snd_cat_gen_lo", "snd_cat_gen_lo", Immediate, snd_cat_gen_lo),
+    PA_CATEGORY_BOUND("snd_cat_gen_hi", "snd_cat_gen_hi", Immediate, snd_cat_gen_hi),
+    PA_CATEGORY_BOUND("snd_cat_chat_lo", "snd_cat_chat_lo", Immediate, snd_cat_chat_lo),
+    PA_CATEGORY_BOUND("snd_cat_chat_hi", "snd_cat_chat_hi", Immediate, snd_cat_chat_hi),
+    PA_CATEGORY_BOUND("snd_cat_hap_lo", "snd_cat_hap_lo", Immediate, snd_cat_hap_lo),
+    PA_CATEGORY_BOUND("snd_cat_hap_hi", "snd_cat_hap_hi", Immediate, snd_cat_hap_hi),
+    PA_CATEGORY_BOUND("snd_cat_proc_lo", "snd_cat_proc_lo", Immediate, snd_cat_proc_lo),
+    PA_CATEGORY_BOUND("snd_cat_proc_hi", "snd_cat_proc_hi", Immediate, snd_cat_proc_hi),
+    PA_CATEGORY_BOUND("snd_cat_sad_lo", "snd_cat_sad_lo", Immediate, snd_cat_sad_lo),
+    PA_CATEGORY_BOUND("snd_cat_sad_hi", "snd_cat_sad_hi", Immediate, snd_cat_sad_hi),
+    PA_CATEGORY_BOUND("snd_cat_sent_lo", "snd_cat_sent_lo", Immediate, snd_cat_sent_lo),
+    PA_CATEGORY_BOUND("snd_cat_sent_hi", "snd_cat_sent_hi", Immediate, snd_cat_sent_hi),
+    PA_CATEGORY_BOUND("snd_cat_hum_lo", "snd_cat_hum_lo", Immediate, snd_cat_hum_lo),
+    PA_CATEGORY_BOUND("snd_cat_hum_hi", "snd_cat_hum_hi", Immediate, snd_cat_hum_hi),
+    PA_CATEGORY_BOUND("snd_cat_scrm_lo", "snd_cat_scrm_lo", Immediate, snd_cat_scrm_lo),
+    PA_CATEGORY_BOUND("snd_cat_scrm_hi", "snd_cat_scrm_hi", Immediate, snd_cat_scrm_hi),
+    PA_CATEGORY_BOUND("snd_cat_ooh_lo", "snd_cat_ooh_lo", Immediate, snd_cat_ooh_lo),
+    PA_CATEGORY_BOUND("snd_cat_ooh_hi", "snd_cat_ooh_hi", Immediate, snd_cat_ooh_hi),
+    PA_CATEGORY_BOUND("snd_cat_alrm_lo", "snd_cat_alrm_lo", Immediate, snd_cat_alrm_lo),
+    PA_CATEGORY_BOUND("snd_cat_alrm_hi", "snd_cat_alrm_hi", Immediate, snd_cat_alrm_hi),
+    PA_CATEGORY_BOUND("snd_cat_snrk_lo", "snd_cat_snrk_lo", Immediate, snd_cat_snarky_lo),
+    PA_CATEGORY_BOUND("snd_cat_snrk_hi", "snd_cat_snrk_hi", Immediate, snd_cat_snarky_hi),
+    PA_CATEGORY_BOUND("snd_cat_whis_lo", "snd_cat_whis_lo", Immediate, snd_cat_whis_lo),
+    PA_CATEGORY_BOUND("snd_cat_whis_hi", "snd_cat_whis_hi", Immediate, snd_cat_whis_hi),
 
-    PA_MOOD_MASK("quiet", "snd_moodcat_q", snd_moodcat_quiet, 0x0048),
-    PA_MOOD_MASK("mid", "snd_moodcat_m", snd_moodcat_mid, 0x004F),
-    PA_MOOD_MASK("full", "snd_moodcat_f", snd_moodcat_full, 0x090F),
-    PA_MOOD_MASK("awakeplus", "snd_moodcat_a", snd_moodcat_awakeplus, 0x0F8F),
+    PA_MOOD_MASK("quiet", "snd_moodcat_q", Immediate, snd_moodcat_quiet, 0x0048),
+    PA_MOOD_MASK("mid", "snd_moodcat_m", Immediate, snd_moodcat_mid, 0x004F),
+    PA_MOOD_MASK("full", "snd_moodcat_f", Immediate, snd_moodcat_full, 0x090F),
+    PA_MOOD_MASK("awakeplus", "snd_moodcat_a", Immediate, snd_moodcat_awakeplus, 0x0F8F),
 };
 
 #undef PA_AUDIO_AT
@@ -279,11 +295,11 @@ constexpr size_t kAudioSettingCount = sizeof(kAudioSettings) / sizeof(kAudioSett
 // writer on the action's keys (include/config_settings.h), so no section field
 // or NVS key is named here and no loop over the stored Settings reaches them.
 const ConfigSetting kCatalogBindingSettings[] = {
-    {"bank", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Range, 1,
+    {"bank", nullptr, nullptr, ApplyTiming::Immediate, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Range, 1,
      6, 1, nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
-    {"page", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Letter,
+    {"page", nullptr, nullptr, ApplyTiming::Immediate, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Letter,
      'A', 'Z', 'A', nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
-    {"index", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U16, 2, SettingRule::Range,
+    {"index", nullptr, nullptr, ApplyTiming::Immediate, SettingSection::Audio, 0, SettingStorage::U16, 2, SettingRule::Range,
      1, 65535, 1, nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
 };
 
@@ -326,30 +342,37 @@ constexpr SettingStorage rowStorageOf() {
     rowStorageOf<decltype(ServoOutputRow::member), decltype(ServoOutputEdit::member)>(), \
         (uint16_t)offsetof(ServoOutputRow, member), (uint16_t)offsetof(ServoOutputEdit, member)
 
+// When each takes effect: the Motion Profile, the ends, the calibrated bit and
+// the Parts are read off the live row on every move, and so is the servo model
+// `component` names, which bounds the very next move. Whether an Output is
+// wired, its LED count and its power-up setting are read once at start
+// (servoTaskInit(), auxLedTask(), the boot pass). A `component` change between
+// a servo and a light is read at start too (servoTaskInit()'s lit mask); the
+// Lights page, the one door that makes it, says so itself (data/lights.js).
 const OutputRowSetting kOutputRowSettings[] = {
-    {"wired", RowSettingStore::Wired, RowSettingOn::Every, SettingStorage::Bool, 0, 0, 0,
+    {"wired", ApplyTiming::AtReboot, RowSettingStore::Wired, RowSettingOn::Every, SettingStorage::Bool, 0, 0, 0,
      SettingRule::Bool, 0, 1, nullptr},
-    {"component", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(component),
+    {"component", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(component),
      SERVO_FIELD_COMPONENT, SettingRule::Words, 0, 0, &kComponentWords},
-    {"ledCount", RowSettingStore::Row, RowSettingOn::LightCapable, PA_ROW_FIELD(led_count),
+    {"ledCount", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::LightCapable, PA_ROW_FIELD(led_count),
      SERVO_FIELD_LED_COUNT, SettingRule::Range, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX, nullptr},
-    {"throwMs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
+    {"throwMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
      SERVO_FIELD_THROW_MS, SettingRule::Range, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, nullptr},
-    {"accelMs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(accel_ms),
+    {"accelMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(accel_ms),
      SERVO_FIELD_ACCEL_MS, SettingRule::Range, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, nullptr},
-    {"ease", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(easing), SERVO_FIELD_EASING,
+    {"ease", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(easing), SERVO_FIELD_EASING,
      SettingRule::Words, 0, 0, &kEasingWords},
-    {"boot", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(boot), SERVO_FIELD_BOOT,
+    {"boot", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(boot), SERVO_FIELD_BOOT,
      SettingRule::Words, 0, 0, &kBootWords},
-    {"openUs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(open_us), SERVO_FIELD_OPEN,
+    {"openUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(open_us), SERVO_FIELD_OPEN,
      SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
-    {"centreUs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(centre_us),
+    {"centreUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(centre_us),
      SERVO_FIELD_CENTRE, SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
-    {"closeUs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(close_us),
+    {"closeUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(close_us),
      SERVO_FIELD_CLOSE, SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
-    {"calibrated", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(calibrated),
+    {"calibrated", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(calibrated),
      SERVO_FIELD_CALIBRATED, SettingRule::Bool, 0, 1, nullptr},
-    {"parts", RowSettingStore::Parts, RowSettingOn::Every, SettingStorage::Text, 0, 0,
+    {"parts", ApplyTiming::Immediate, RowSettingStore::Parts, RowSettingOn::Every, SettingStorage::Text, 0, 0,
      SERVO_FIELD_PARTS, SettingRule::Range, 0, SERVO_OUTPUT_PART_SLOTS, nullptr},
 };
 

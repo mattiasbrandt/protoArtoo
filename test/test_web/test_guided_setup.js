@@ -31,6 +31,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { MiniDOMParser } from "./helpers/mini_dom.js";
+import { shippedWords } from "./helpers/shipped_words.cjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -178,6 +179,8 @@ const boot = ({ config = freshConfig(), rows = freshRows(), surface = "configura
     PAAssetsReady: true,
     PAIdentity: IDENTITY,
     PAApi: {
+      // The shipped words table's lookups (helpers/shipped_words.cjs).
+      ...shippedWords(),
       messageFor: (error) => String(error?.message || error),
       get: async (path) => {
         gets.push(path);

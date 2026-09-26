@@ -317,7 +317,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // The builder's words for every Setting (ADR 0068, amended 2026-09-26)
+  // The builder's words for every Setting (ADR 0068, amended 2026-09-26, twice)
   //
   // The droid refuses a value it will not take with its field, its reason and
   // what it accepts as keys beside its sentence (docs/api.md "Refusals from a
@@ -327,12 +327,20 @@
   // worded here, from the keys and never from the sentence, and this is the
   // one table a field is turned into words by.
   //
-  // Only words live here. What a Setting accepts is the droid's to say, on
-  // every refusal, so no range is copied into the browser. Each droid Setting
-  // the firmware declares (src/config_settings.cpp) must have an entry, and
-  // tools/check_setting_words.py fails the build when one has none.
+  // One entry per field holds everything the screen says about it: pages take
+  // a Setting's label and when it takes effect from here and keep none of
+  // their own. What a Setting accepts is the droid's to say, on every refusal,
+  // so no range is copied into the browser. Every field the firmware declares -
+  // a Setting (src/config_settings.cpp), a Record's field (include/config_records.h)
+  // or an act's (src/web/api_config_apply.cpp) - must have an entry, and
+  // tools/check_setting_words.py fails the build when one has none, or when an
+  // entry's timing is not the one its declaration states.
   //
-  //   word   - what the Setting is called, as the page's label says it
+  //   label  - what a page shows beside the control, where a page reads it from
+  //            here (the Component Toggles, the Sound page's tracks)
+  //   applies - when a saved value takes effect, in data/apply_timing.js's
+  //            vocabulary: the token the firmware declares, never decided here
+  //   word   - what the Setting is called in a sentence, as a refusal says it
   //   unit   - the unit its number is in, where it has one (R15)
   //   path   - where GET /api/config has it: a restore's refusal can be named
   //            by either
@@ -346,129 +354,186 @@
   //   refused - what a refusal with nothing to accept says, where "was not
   //            saved" says too little: a part the droid does not list, an
   //            address that is not one
+  //   malformed - what a refusal of a request the droid could not read says
+  //
+  // An act's field names an Output by the address the page sent, never by a
+  // word of the droid's (R16):
+  //   subject - the refused value IS an Output, and the Output is what the
+  //            sentence is about: "ARM3 already drives as many parts as it can"
+  //   on     - the field whose sent value is the Output this one is about:
+  //            "GPIO 49's captured width must be 500 to 2500 µs"
   const MS = " ms";
   const US = " µs";
   const PCT = "%";
   const PRESET_CLASH = "must differ from the other presets";
   const PULSE_CLASH = "must sit between the minimum and maximum pulses";
   const NOT_LISTED = "is not one this droid takes";
+  const OFF_THE_DROID = "is not on this droid";
   const CATEGORY_CLASH = "must be at most the last track, or both 0";
   const SETTING_WORDS = Object.freeze({
-    speedLimitMax: { word: "maximum speed limit", path: "drive.speedLimitMax" },
-    speedPresetSlow: { word: "slow preset", path: "drive.speedPresetSlow", clash: PRESET_CLASH },
-    speedPresetNormal: { word: "normal preset", path: "drive.speedPresetNormal", clash: PRESET_CLASH },
-    speedPresetTurbo: { word: "turbo preset", path: "drive.speedPresetTurbo", clash: PRESET_CLASH },
-    webDriveTimeoutMs: { word: "web control timeout", unit: MS, path: "drive.webDriveTimeoutMs" },
-    stationary: { word: "stationary mode", path: "drive.stationary" },
+    speedLimitMax: { applies: "immediate", word: "maximum speed limit", path: "drive.speedLimitMax" },
+    speedPresetSlow: { applies: "immediate", word: "slow preset", path: "drive.speedPresetSlow", clash: PRESET_CLASH },
+    speedPresetNormal: { applies: "immediate", word: "normal preset", path: "drive.speedPresetNormal", clash: PRESET_CLASH },
+    speedPresetTurbo: { applies: "immediate", word: "turbo preset", path: "drive.speedPresetTurbo", clash: PRESET_CLASH },
+    webDriveTimeoutMs: { applies: "immediate", word: "web control timeout", unit: MS, path: "drive.webDriveTimeoutMs" },
+    stationary: { applies: "immediate", word: "stationary mode", path: "drive.stationary" },
     rcInputMode: {
+      applies: "restart-required",
       word: "receiver type",
       path: "rc.inputMode",
       values: { standard_pwm: "PWM", single_sbus: "one SBUS", dual_sbus: "two SBUS", elrs: "ELRS" },
     },
-    sbusTimeoutMs: { word: "signal-lost timeout", unit: MS, path: "rc.sbusTimeoutMs" },
-    rcMember: { word: "radio", path: "rc.member", refused: NOT_LISTED },
-    sbusRecvCh2: { word: "second SBUS input", path: "rc.sbus.recvCh2" },
-    enableDomeEsc: { word: "Dome ESC", path: "components.domeEsc.enabled" },
-    enableRcCh1: { word: "RC channel 1", path: "components.rcCh1.enabled" },
-    enableRcCh2: { word: "RC channel 2", path: "components.rcCh2.enabled" },
-    enableRcCh3: { word: "RC channel 3", path: "components.rcCh3.enabled" },
-    enableRcCh4: { word: "RC channel 4", path: "components.rcCh4.enabled" },
-    enableRcCh5: { word: "RC channel 5", path: "components.rcCh5.enabled" },
-    enableRcCh6: { word: "RC channel 6", path: "components.rcCh6.enabled" },
-    enableDrive: { word: "Foot Drive", path: "components.drive.enabled" },
-    enableAudio: { word: "Sound", path: "components.audio.enabled" },
-    soundMember: { word: "sound module", path: "components.audio.member", refused: NOT_LISTED },
-    enableProtoR2link: { word: "dome link", path: "components.protoR2link.enabled" },
-    domeEscNeutralUs: { word: "neutral pulse", unit: US, path: "domeEsc.neutralUs", clash: PULSE_CLASH },
+    sbusTimeoutMs: { applies: "immediate", word: "signal-lost timeout", unit: MS, path: "rc.sbusTimeoutMs" },
+    rcMember: { applies: "immediate", word: "radio", path: "rc.member", refused: NOT_LISTED },
+    sbusRecvCh2: { applies: "restart-required", word: "second SBUS input", path: "rc.sbus.recvCh2" },
+    enableDomeEsc: { label: "Dome ESC", applies: "at-reboot", word: "Dome ESC", path: "components.domeEsc.enabled" },
+    enableRcCh1: { label: "RC channel 1", applies: "restart-required", word: "RC channel 1", path: "components.rcCh1.enabled" },
+    enableRcCh2: { label: "RC channel 2", applies: "restart-required", word: "RC channel 2", path: "components.rcCh2.enabled" },
+    enableRcCh3: { label: "RC channel 3", applies: "restart-required", word: "RC channel 3", path: "components.rcCh3.enabled" },
+    enableRcCh4: { label: "RC channel 4", applies: "restart-required", word: "RC channel 4", path: "components.rcCh4.enabled" },
+    enableRcCh5: { label: "RC channel 5", applies: "restart-required", word: "RC channel 5", path: "components.rcCh5.enabled" },
+    enableRcCh6: { label: "RC channel 6", applies: "restart-required", word: "RC channel 6", path: "components.rcCh6.enabled" },
+    enableDrive: { label: "Foot Drive", applies: "at-reboot", word: "Foot Drive", path: "components.drive.enabled" },
+    enableAudio: { label: "Sound", applies: "at-reboot", word: "Sound", path: "components.audio.enabled" },
+    soundMember: { applies: "at-reboot", word: "sound module", path: "components.audio.member", refused: NOT_LISTED },
+    enableProtoR2link: { label: "Dome link", applies: "at-reboot", word: "dome link", path: "components.protoR2link.enabled" },
+    domeEscNeutralUs: { applies: "immediate", word: "neutral pulse", unit: US, path: "domeEsc.neutralUs", clash: PULSE_CLASH },
     domeEscMinPulseUs: {
+      applies: "immediate",
       word: "minimum pulse", unit: US, path: "domeEsc.minPulseUs", clash: "must be at most the neutral pulse",
     },
     domeEscMaxPulseUs: {
+      applies: "immediate",
       word: "maximum pulse", unit: US, path: "domeEsc.maxPulseUs", clash: "must be at least the neutral pulse",
     },
-    domeEscSpeedLimitPct: { word: "dome speed limit", unit: PCT, path: "domeEsc.speedLimitPct" },
-    domeEscRndEnable: { word: "dome turning on its own", path: "domeEsc.rndEnable" },
-    domeEscRndSpeedPct: { word: "turn speed", unit: PCT, path: "domeEsc.rndSpeedPct" },
+    domeEscSpeedLimitPct: { applies: "immediate", word: "dome speed limit", unit: PCT, path: "domeEsc.speedLimitPct" },
+    domeEscRndEnable: { applies: "immediate", word: "dome turning on its own", path: "domeEsc.rndEnable" },
+    domeEscRndSpeedPct: { applies: "immediate", word: "turn speed", unit: PCT, path: "domeEsc.rndSpeedPct" },
     domeEscRndPauseMin: {
+      applies: "immediate",
       word: "shortest pause", unit: " s", path: "domeEsc.rndPauseMin", clash: "must be at most the longest pause",
     },
     domeEscRndPauseMax: {
+      applies: "immediate",
       word: "longest pause", unit: " s", path: "domeEsc.rndPauseMax", clash: "must be at least the shortest pause",
     },
-    domeEscRndMoveMs: { word: "move duration", unit: MS, path: "domeEsc.rndMoveMs" },
+    domeEscRndMoveMs: { applies: "immediate", word: "move duration", unit: MS, path: "domeEsc.rndMoveMs" },
     protoR2linkWifiPeerIp: {
+      applies: "immediate",
       word: "dome's IP address", path: "protoR2link.wifiPeerIp",
       refused: "must be empty or an address like 192.168.4.2",
     },
-    logLevel: { word: "log level", path: "system.logLevel" },
+    logLevel: { applies: "immediate", word: "log level", path: "system.logLevel" },
     // An act's width, not a stored Setting: POST /api/servo words its
     // refusal the same way.
     positionUs: { word: "width", unit: US },
 
+    // The Records (include/config_records.h), by the form name each field is
+    // posted under. Guided Setup and the Droid Build picker state them.
+    domeDesign: { applies: "immediate", word: "dome design", path: "droidBuild.domeDesign", refused: NOT_LISTED },
+    domeVariant: { applies: "immediate", word: "dome variant", path: "droidBuild.domeVariant", refused: NOT_LISTED },
+    bodyDesign: { applies: "immediate", word: "body design", path: "droidBuild.bodyDesign", refused: NOT_LISTED },
+    bodyVariant: { applies: "immediate", word: "body variant", path: "droidBuild.bodyVariant", refused: NOT_LISTED },
+    fittedParts: {
+      applies: "immediate",
+      word: "the list of fitted parts", path: "droidBuild.fitted", refused: "names a part this droid does not model",
+    },
+    guidedSetupRun: {
+      applies: "immediate",
+      word: "setup's progress",
+      path: "guidedSetup.run",
+      values: { "not-run": "not started", skipped: "skipped", completed: "finished" },
+    },
+    guidedSetupVisited: {
+      applies: "immediate",
+      word: "the list of questions shown", path: "guidedSetup.visited", refused: "names a question the droid cannot keep",
+    },
+    guidedSetupSummaryDone: {
+      applies: "immediate",
+      word: "setup summary", path: "guidedSetup.summaryDone", values: { true: "done", false: "not done" },
+    },
+
+    // The acts' fields (src/web/api_config_apply.cpp kActFields): move a Part,
+    // capture an end, reverse an Output.
+    movePart: { word: "this part", refused: "is not one this droid models" },
+    movePartFrom: {
+      word: "the output it was on", subject: true, clash: "no longer drives it", refused: OFF_THE_DROID,
+    },
+    movePartTo: {
+      word: "the output it goes to", subject: true,
+      clash: "already drives as many parts as it can", refused: OFF_THE_DROID,
+    },
+    captureOutput: { word: "this output", subject: true, refused: OFF_THE_DROID },
+    captureEnd: { word: "end to set", on: "captureOutput" },
+    captureUs: { word: "captured width", unit: US, on: "captureOutput" },
+    reverseOutput: { word: "this output", subject: true, refused: OFF_THE_DROID },
+    // A body the droid could not read at all: no one field is to blame.
+    plain: { word: "the request", malformed: "could not be read" },
+
     // The audio Settings (#431 addendum), by the name their door takes them
     // under. The Sound page's own labels.
-    volume: { word: "volume" },
-    scream: { word: "Scream track" },
-    faint: { word: "Short Circuit track" },
-    leia: { word: "Leia Message track" },
-    cantina_s: { word: "Short Cantina track" },
-    sw_theme: { word: "Star Wars Theme track" },
-    imp_march: { word: "Imperial March track" },
-    cantina_l: { word: "Long Cantina track" },
-    startup: { word: "boot sound track" },
-    doodoo: { word: "Doo-doo track" },
-    failure: { word: "Failure track" },
-    disco: { word: "Disco track" },
-    mahna: { word: "Mahna Mahna track" },
-    inlove: { word: "In Love track" },
-    macho: { word: "Macho Man track" },
-    gangnam: { word: "Gangnam Style track" },
-    uptown: { word: "Uptown Funk track" },
-    celebr: { word: "Celebration track" },
-    stayin: { word: "Stayin' Alive track" },
-    harlem: { word: "Harlem Shake track" },
-    pbjtime: { word: "PBJ Time track" },
-    sys_boot: { word: "boot complete track" },
-    sys_mode_n: { word: "Normal mode track" },
-    sys_mode_s: { word: "Slow mode track" },
-    sys_mode_t: { word: "Turbo mode track" },
-    sys_drv_on: { word: "drives engaged track" },
-    sys_dome_on: { word: "dome enabled track" },
-    sys_net_down: { word: "link lost track" },
-    rand_min: { word: "random range's first track" },
-    rand_max: { word: "random range's last track" },
-    snd_int_quiet: { word: "Quiet chatter interval", unit: " s" },
-    snd_int_mid: { word: "Mid-Awake chatter interval", unit: " s" },
-    snd_int_full: { word: "Full-Awake chatter interval", unit: " s" },
-    snd_int_awake: { word: "Awake+ chatter interval", unit: " s" },
-    snd_cat_gen_lo: { word: "General first track", clash: CATEGORY_CLASH },
-    snd_cat_gen_hi: { word: "General last track" },
-    snd_cat_chat_lo: { word: "Chatty first track", clash: CATEGORY_CLASH },
-    snd_cat_chat_hi: { word: "Chatty last track" },
-    snd_cat_hap_lo: { word: "Happy first track", clash: CATEGORY_CLASH },
-    snd_cat_hap_hi: { word: "Happy last track" },
-    snd_cat_proc_lo: { word: "Processing first track", clash: CATEGORY_CLASH },
-    snd_cat_proc_hi: { word: "Processing last track" },
-    snd_cat_sad_lo: { word: "Sad first track", clash: CATEGORY_CLASH },
-    snd_cat_sad_hi: { word: "Sad last track" },
-    snd_cat_sent_lo: { word: "Sentimental first track", clash: CATEGORY_CLASH },
-    snd_cat_sent_hi: { word: "Sentimental last track" },
-    snd_cat_hum_lo: { word: "Humming first track", clash: CATEGORY_CLASH },
-    snd_cat_hum_hi: { word: "Humming last track" },
-    snd_cat_scrm_lo: { word: "Scream first track", clash: CATEGORY_CLASH },
-    snd_cat_scrm_hi: { word: "Scream last track" },
-    snd_cat_ooh_lo: { word: "Surprised first track", clash: CATEGORY_CLASH },
-    snd_cat_ooh_hi: { word: "Surprised last track" },
-    snd_cat_alrm_lo: { word: "Alert first track", clash: CATEGORY_CLASH },
-    snd_cat_alrm_hi: { word: "Alert last track" },
-    snd_cat_snrk_lo: { word: "Snarky first track", clash: CATEGORY_CLASH },
-    snd_cat_snrk_hi: { word: "Snarky last track" },
-    snd_cat_whis_lo: { word: "Whistle first track", clash: CATEGORY_CLASH },
-    snd_cat_whis_hi: { word: "Whistle last track" },
-    quiet: { word: "Quiet mood's sound set" },
-    mid: { word: "Mid-Awake mood's sound set" },
-    full: { word: "Full-Awake mood's sound set" },
-    awakeplus: { word: "Awake+ mood's sound set" },
+    volume: { applies: "immediate", word: "volume" },
+    scream: { label: "Scream", applies: "immediate", word: "Scream track" },
+    faint: { label: "Short Circuit", applies: "immediate", word: "Short Circuit track" },
+    leia: { label: "Leia Message", applies: "immediate", word: "Leia Message track" },
+    cantina_s: { label: "Short Cantina", applies: "immediate", word: "Short Cantina track" },
+    sw_theme: { label: "Star Wars Theme", applies: "immediate", word: "Star Wars Theme track" },
+    imp_march: { label: "Imperial March", applies: "immediate", word: "Imperial March track" },
+    cantina_l: { label: "Long Cantina", applies: "immediate", word: "Long Cantina track" },
+    startup: { label: "Boot Sound", applies: "immediate", word: "boot sound track" },
+    doodoo: { label: "Doo-doo", applies: "immediate", word: "Doo-doo track" },
+    failure: { label: "Failure", applies: "immediate", word: "Failure track" },
+    disco: { label: "Disco", applies: "immediate", word: "Disco track" },
+    mahna: { label: "Mahna Mahna", applies: "immediate", word: "Mahna Mahna track" },
+    inlove: { label: "In Love", applies: "immediate", word: "In Love track" },
+    macho: { label: "Macho Man", applies: "immediate", word: "Macho Man track" },
+    gangnam: { label: "Gangnam Style", applies: "immediate", word: "Gangnam Style track" },
+    uptown: { label: "Uptown Funk", applies: "immediate", word: "Uptown Funk track" },
+    celebr: { label: "Celebration", applies: "immediate", word: "Celebration track" },
+    stayin: { label: "Stayin' Alive", applies: "immediate", word: "Stayin' Alive track" },
+    harlem: { label: "Harlem Shake", applies: "immediate", word: "Harlem Shake track" },
+    pbjtime: { label: "PBJ Time", applies: "immediate", word: "PBJ Time track" },
+    sys_boot: { label: "Boot Complete (auto)", applies: "immediate", word: "boot complete track" },
+    sys_mode_n: { label: "Mode → Normal", applies: "immediate", word: "Normal mode track" },
+    sys_mode_s: { label: "Mode → Slow", applies: "immediate", word: "Slow mode track" },
+    sys_mode_t: { label: "Mode → Turbo", applies: "immediate", word: "Turbo mode track" },
+    sys_drv_on: { label: "Drives engaged", applies: "immediate", word: "drives engaged track" },
+    sys_dome_on: { label: "Dome enabled", applies: "immediate", word: "dome enabled track" },
+    sys_net_down: { label: "Network Link Lost (auto)", applies: "immediate", word: "link lost track" },
+    rand_min: { applies: "immediate", word: "random range's first track" },
+    rand_max: { applies: "immediate", word: "random range's last track" },
+    snd_int_quiet: { applies: "immediate", word: "Quiet chatter interval", unit: " s" },
+    snd_int_mid: { applies: "immediate", word: "Mid-Awake chatter interval", unit: " s" },
+    snd_int_full: { applies: "immediate", word: "Full-Awake chatter interval", unit: " s" },
+    snd_int_awake: { applies: "immediate", word: "Awake+ chatter interval", unit: " s" },
+    snd_cat_gen_lo: { label: "General", applies: "immediate", word: "General first track", clash: CATEGORY_CLASH },
+    snd_cat_gen_hi: { label: "General", applies: "immediate", word: "General last track" },
+    snd_cat_chat_lo: { label: "Chatty", applies: "immediate", word: "Chatty first track", clash: CATEGORY_CLASH },
+    snd_cat_chat_hi: { label: "Chatty", applies: "immediate", word: "Chatty last track" },
+    snd_cat_hap_lo: { label: "Happy", applies: "immediate", word: "Happy first track", clash: CATEGORY_CLASH },
+    snd_cat_hap_hi: { label: "Happy", applies: "immediate", word: "Happy last track" },
+    snd_cat_proc_lo: { label: "Processing", applies: "immediate", word: "Processing first track", clash: CATEGORY_CLASH },
+    snd_cat_proc_hi: { label: "Processing", applies: "immediate", word: "Processing last track" },
+    snd_cat_sad_lo: { label: "Sad", applies: "immediate", word: "Sad first track", clash: CATEGORY_CLASH },
+    snd_cat_sad_hi: { label: "Sad", applies: "immediate", word: "Sad last track" },
+    snd_cat_sent_lo: { label: "Sentimental", applies: "immediate", word: "Sentimental first track", clash: CATEGORY_CLASH },
+    snd_cat_sent_hi: { label: "Sentimental", applies: "immediate", word: "Sentimental last track" },
+    snd_cat_hum_lo: { label: "Humming", applies: "immediate", word: "Humming first track", clash: CATEGORY_CLASH },
+    snd_cat_hum_hi: { label: "Humming", applies: "immediate", word: "Humming last track" },
+    snd_cat_scrm_lo: { label: "Scream", applies: "immediate", word: "Scream first track", clash: CATEGORY_CLASH },
+    snd_cat_scrm_hi: { label: "Scream", applies: "immediate", word: "Scream last track" },
+    snd_cat_ooh_lo: { label: "Surprised", applies: "immediate", word: "Surprised first track", clash: CATEGORY_CLASH },
+    snd_cat_ooh_hi: { label: "Surprised", applies: "immediate", word: "Surprised last track" },
+    snd_cat_alrm_lo: { label: "Alert", applies: "immediate", word: "Alert first track", clash: CATEGORY_CLASH },
+    snd_cat_alrm_hi: { label: "Alert", applies: "immediate", word: "Alert last track" },
+    snd_cat_snrk_lo: { label: "Snarky", applies: "immediate", word: "Snarky first track", clash: CATEGORY_CLASH },
+    snd_cat_snrk_hi: { label: "Snarky", applies: "immediate", word: "Snarky last track" },
+    snd_cat_whis_lo: { label: "Whistle", applies: "immediate", word: "Whistle first track", clash: CATEGORY_CLASH },
+    snd_cat_whis_hi: { label: "Whistle", applies: "immediate", word: "Whistle last track" },
+    quiet: { label: "Quiet", applies: "immediate", word: "Quiet mood's sound set" },
+    mid: { label: "Mid-Awake", applies: "immediate", word: "Mid-Awake mood's sound set" },
+    full: { label: "Full-Awake", applies: "immediate", word: "Full-Awake mood's sound set" },
+    awakeplus: { label: "Awake+", applies: "immediate", word: "Awake+ mood's sound set" },
     // A catalog binding's bank and page, beside a track.
     bank: { word: "catalog bank", valueOnly: true },
     page: { word: "catalog page", valueOnly: true },
@@ -479,29 +544,46 @@
   // (`ledc:1.throwMs`). The Output is named by the page (nameOutputsWith()).
   const ROW_SETTING_WORDS = Object.freeze({
     // An expander's Output has no tick to switch off: it takes only `true`.
-    wired: { word: "wired tick", values: { true: "on" } },
+    wired: { applies: "at-reboot", word: "wired tick", values: { true: "on" } },
     // Said with the verb Output Settings uses ("GPIO 49 carries Servo"), not
     // as a possessive: "GPIO 49 must carry nothing, an MG996R or an LED strip".
     component: {
+      applies: "immediate",
       word: "wire",
       must: "must carry",
       values: { none: "nothing", mg996r: "an MG996R", mg90s: "an MG90S", rgb: "an LED strip" },
     },
-    ledCount: { word: "LED count" },
-    throwMs: { word: "time to full throw", unit: MS },
-    accelMs: { word: "time to get up to speed", unit: MS },
-    ease: { word: "ease" },
+    ledCount: { applies: "at-reboot", word: "LED count" },
+    throwMs: { applies: "immediate", word: "time to full throw", unit: MS },
+    accelMs: { applies: "immediate", word: "time to get up to speed", unit: MS },
+    ease: { applies: "immediate", word: "ease" },
     boot: {
+      applies: "at-reboot",
       word: "power-up setting",
       values: { limp: "limp", "home-hold": "home and hold", "home-release": "home then release" },
     },
-    openUs: { word: "open end", unit: US },
-    centreUs: { word: "centre", unit: US },
-    closeUs: { word: "close end", unit: US },
-    calibrated: { word: "calibration" },
-    parts: { word: "list of parts" },
+    openUs: { applies: "immediate", word: "open end", unit: US },
+    centreUs: { applies: "immediate", word: "centre", unit: US },
+    closeUs: { applies: "immediate", word: "close end", unit: US },
+    calibrated: { applies: "immediate", word: "calibration" },
+    parts: { applies: "immediate", word: "list of parts" },
     address: { word: "address", clash: "is on two rows" },
   });
+
+  // An entry, by the name a page knows the field by: a form name, or an
+  // Output row Setting's key. A name with no entry is a page asking about a
+  // field nobody declared, which is a defect to say rather than a default to
+  // guess, so this throws.
+  const entryFor = (table, name, what) => {
+    const entry = Object.hasOwn(table, name) ? table[name] : null;
+    if (!entry || entry[what] === undefined) {
+      throw new TypeError(`${name} has no ${what} in the words table (data/web_api.js)`);
+    }
+    return entry[what];
+  };
+  const labelOf = (name) => entryFor(SETTING_WORDS, name, "label");
+  const timingOf = (name) => entryFor(SETTING_WORDS, name, "applies");
+  const rowTimingOf = (key) => entryFor(ROW_SETTING_WORDS, key, "applies");
 
   // The Setting a refusal's field names, and the Output it is on where it is
   // one of an Output's. null for a field this table has no words for.
@@ -537,29 +619,43 @@
 
   const capitalise = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
+  // What the refused request sent under `name`, from the form or the plain
+  // object the page posted; null when the page did not say.
+  const sentValue = (sent, name) => {
+    if (!sent || !name) return null;
+    const value = sent instanceof URLSearchParams ? sent.get(name) : sent[name];
+    return typeof value === "string" ? value : null;
+  };
+
   /**
    * A settings refusal in the builder's words: what they changed, and what it
    * takes - `Maximum speed limit must be 0 to 600`, `GPIO 49's time to full throw must be
    * 20 to 10000 ms`. Read from the refusal's field, reason and accepts, never
    * from its sentence.
    *
+   * @param {Error} error - what PAApi threw
+   * @param {object|URLSearchParams} [sent] - what the refused request posted,
+   *   so a refusal of an act names the Output the page sent it for
    * @returns {string|null} null when the error is not a refusal of a Setting
    *   this table has words for.
    */
-  const sayRefusal = (error) => {
+  const sayRefusal = (error, sent = null) => {
     if (!(error instanceof Error)) return null;
     // "The fitted module has no catalog" is not about any value, and its
     // sentence carries no wire name: it is left as the droid said it.
     if (error.reason === "not-in-this-build") return null;
     const setting = settingFor(error.field);
     if (!setting) return null;
-    const { words, address } = setting;
+    const { words, address, key } = setting;
     // A part named only for its value: "bank and page must be provided
     // together" is not a refusal of the bank the builder chose.
     if (words.valueOnly && error.reason !== "out-of-range") return null;
-    const owner = address ? outputName(address) || "This output" : null;
-    const name = owner ? `${owner}'s ${words.word}` : capitalise(words.word);
+    const about = address || (words.on ? sentValue(sent, words.on) : null);
+    const owner = about ? outputName(about) || "This output" : null;
+    const subject = words.subject ? outputName(sentValue(sent, key)) : null;
+    const name = subject || (owner ? `${owner}'s ${words.word}` : capitalise(words.word));
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
+    if (error.reason === "malformed-argument" && words.malformed) return `${name} ${words.malformed}`;
     if (error.reason === "conflict") return `${name} ${words.clash || "clashes with another setting"}`;
     if (error.reason === "out-of-range") {
       if (accepts && words.must && owner) return `${owner} ${words.must} ${sayAccepts(accepts, words)}`;
@@ -569,7 +665,8 @@
     return `${name} was not saved`;
   };
 
-  const messageFor = (error) => {
+  // `sent`: what the refused request posted (sayRefusal()).
+  const messageFor = (error, sent = null) => {
     if (!(error instanceof ApiError)) return "Request failed";
     if (error.kind === "timeout") return "Request timed out";
     if (error.kind === "cancelled") return "Request cancelled";
@@ -580,7 +677,7 @@
       const refusal = refusalFor(error);
       if (refusal) return refusal.route ? `${refusal.text} ${refusal.route.label}.` : refusal.text;
       // A Setting the droid would not take, in the builder's words.
-      const said = sayRefusal(error);
+      const said = sayRefusal(error, sent);
       if (said) return said;
       if (error.message && !error.message.startsWith("HTTP ")) return error.message;
       return HTTP_STATUS_MESSAGES[error.status]
@@ -646,6 +743,9 @@
     refusalFor,
     sayRefusal,
     nameOutputsWith,
+    labelOf,
+    timingOf,
+    rowTimingOf,
     gateControls,
   };
 

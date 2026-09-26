@@ -48,7 +48,7 @@ test("a guided step that does not say when it takes effect is not drawn", async 
     const text = read(path, ...rest);
     if (!String(path).endsWith("setup.js")) return text;
     const stripped = text.replace(
-      /(key: "drive",[\s\S]*?)applies: TIMING\.AT_REBOOT,\n/,
+      /(key: "drive",[\s\S]*?)applies: stepTiming\("drive"\),\n/,
       "$1",
     );
     assert.notEqual(stripped, text, "the fault must actually land in setup.js");

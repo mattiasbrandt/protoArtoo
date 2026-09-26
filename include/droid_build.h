@@ -25,8 +25,8 @@
 // crosses three nested stack frames on the serial config-write path and its
 // size is pinned to a measured task-stack chain (include/config_store.h), and
 // nothing on a real-time path reads a Droid Build - so it sits on its own NVS
-// keys beside the addressed Servo Output rows, for the same reason they do
-// (include/config_serializer.h).
+// keys beside the addressed Servo Output rows, for the same reason they do,
+// as a Record (include/config_record_droid_build.h).
 //
 // Pure: no NVS, no FreeRTOS, no Arduino String. Header-only, so anything handed
 // a catalog spelling can resolve it without pulling in a driver.
@@ -208,7 +208,7 @@ inline size_t droidFittedPartsNextIndex(const DroidFittedParts& parts, size_t fr
 // An empty string is a real and deliberate answer - a droid with nothing fitted
 // yet - and is never the same as a key that was never written. The caller is
 // what tells those two apart, because only it can see whether the record
-// exists (src/config_serializer.cpp).
+// exists (src/config_record_droid_build.cpp).
 //
 // Whitespace around an id is tolerated so a hand-edited NVS value reads back;
 // a token longer than any declared id is counted as dropped rather than

@@ -16,7 +16,6 @@
 #include "board_outputs.h"            // which Output a retired aux_led_pin slot named
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
-#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -39,55 +38,6 @@ uint32_t floatToBits(float value) {
 // "soNN", two digits so an NVS dump reads in row order and four characters
 // clear of the 15-character Preferences key ceiling.
 constexpr char SERVO_OUTPUT_COUNT_KEY[] = "so_cnt";
-
-// Droid Build keys (ADR 0047). Five records, each twelve characters and so
-// three clear of the 15-character Preferences ceiling, named so an NVS dump
-// reads as the answer it is: which design each half was built from, at which
-// variant, and which Parts are on the droid.
-constexpr char DROID_BUILD_DOME_DESIGN_KEY[] = "dbuild_domed";
-constexpr char DROID_BUILD_DOME_VARIANT_KEY[] = "dbuild_domev";
-constexpr char DROID_BUILD_BODY_DESIGN_KEY[] = "dbuild_bodyd";
-constexpr char DROID_BUILD_BODY_VARIANT_KEY[] = "dbuild_bodyv";
-constexpr char DROID_BUILD_FITTED_KEY[] = "dbuild_parts";
-
-// Guided Setup keys (#351). Two records: where the run stands, and which of its
-// steps have been on screen. "gsetup_visited" is fourteen characters and so one
-// clear of the 15-character Preferences ceiling; both read in an NVS dump as the
-// answers they are.
-constexpr char GUIDED_SETUP_RUN_KEY[] = "gsetup_run";
-constexpr char GUIDED_SETUP_VISITED_KEY[] = "gsetup_visited";
-// Whether the builder pressed Done on the ended run's summary (#371). Absent
-// reads as not done, so a controller that ended its run before this key existed
-// shows the summary once.
-constexpr char GUIDED_SETUP_SUMMARY_DONE_KEY[] = "gsetup_done";
-static_assert(sizeof(GUIDED_SETUP_SUMMARY_DONE_KEY) - 1 <= 15,
-              "an NVS key longer than 15 characters is refused by Preferences");
-static_assert(sizeof(GUIDED_SETUP_RUN_KEY) - 1 <= 15,
-              "an NVS key longer than 15 characters is refused by Preferences");
-static_assert(sizeof(GUIDED_SETUP_VISITED_KEY) - 1 <= 15,
-              "an NVS key longer than 15 characters is refused by Preferences");
-
-// -----------------------------------------------------------------------------
-// readDroidDesignChoice()
-// One half of a stored Droid Build, or the default when what is stored is not
-// an answer this image's catalog can name. Returns true when it had to repair.
-//
-// Both fields move together: a design and the variant of that design are one
-// answer, and keeping a stored variant beside a defaulted design would produce
-// a pairing neither the builder nor the catalog ever stated.
-// -----------------------------------------------------------------------------
-bool readDroidDesignChoice(const ConfigReader& r, const char* designKey,
-                           const char* variantKey, DroidDesignChoice* out) {
-    const String design = r.readStr(designKey, out->design);
-    const String variant = r.readStr(variantKey, out->variant);
-    DroidDesignChoice stored = {};
-    if (!droidDesignChoiceSet(&stored, design.c_str(), variant.c_str()) ||
-        !droidDesignChoiceIsKnown(stored)) {
-        return true;  // *out is left holding the default it arrived with
-    }
-    *out = stored;
-    return false;
-}
 
 void servoOutputRowKey(uint8_t index, char* buf, size_t bufSize) {
     snprintf(buf, bufSize, "so%02u", (unsigned)index);
@@ -732,134 +682,6 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
                 local.fieldsRepaired++;
             }
         }
-    }
-
-    if (report != nullptr) {
-        *report = local;
-    }
-}
-
-// -----------------------------------------------------------------------------
-// configSerializeDroidBuild()
-// The Droid Build, written as the answer a builder gave.
-//
-// The Fitted Parts are joined on the heap rather than in a local char buffer on
-// purpose: the joined list is DROID_FITTED_PARTS_STR_MAX bytes, and a frame
-// that size would sit on the serial config-write path, whose task stack chain
-// is a measured constant that one ConfigSnapshot-sized frame per nesting level
-// already nearly overran once (include/config.h, include/config_store.h, #226).
-// One bounded allocation on a Core 0 write path costs that chain nothing, and a
-// failed one is reported rather than swallowed - the caller answers "not
-// persisted" and the writer has touched nothing.
-// -----------------------------------------------------------------------------
-bool configSerializeDroidBuild(const DroidBuildConfig& cfg, ConfigWriter& w) {
-    // The one step that can fail for a reason other than storage goes first, so
-    // a controller that could not allocate has not had half an answer written
-    // over the one it already held.
-    char* fitted = (char*)malloc(DROID_FITTED_PARTS_STR_MAX + 1);
-    if (fitted == nullptr) {
-        return false;  // the caller reports a failed persist; nothing was written
-    }
-    size_t used = 0;
-    for (size_t i = droidFittedPartsNextIndex(cfg.fitted, 0); i < DROID_PART_COUNT;
-         i = droidFittedPartsNextIndex(cfg.fitted, i + 1)) {
-        const int n = snprintf(fitted + used, DROID_FITTED_PARTS_STR_MAX + 1 - used, "%s%s",
-                               used == 0 ? "" : ",", droidPartIdAt(i));
-        if (n <= 0 || (size_t)n >= DROID_FITTED_PARTS_STR_MAX + 1 - used) {
-            free(fitted);
-            return false;  // the bound above is arithmetic, so this is unreachable
-        }
-        used += (size_t)n;
-    }
-    // A droid with nothing fitted is an answer, and writing it as an empty
-    // string would read back as a controller nobody has answered yet.
-    if (used == 0) {
-        snprintf(fitted, DROID_FITTED_PARTS_STR_MAX + 1, "%s", DROID_FITTED_PARTS_NONE);
-    }
-    bool ok = w.writeStr(DROID_BUILD_DOME_DESIGN_KEY, cfg.dome.design);
-    ok = w.writeStr(DROID_BUILD_DOME_VARIANT_KEY, cfg.dome.variant) && ok;
-    ok = w.writeStr(DROID_BUILD_BODY_DESIGN_KEY, cfg.body.design) && ok;
-    ok = w.writeStr(DROID_BUILD_BODY_VARIANT_KEY, cfg.body.variant) && ok;
-    ok = w.writeStr(DROID_BUILD_FITTED_KEY, fitted) && ok;
-    free(fitted);
-    return ok;
-}
-
-void configDeserializeDroidBuild(const ConfigReader& r, DroidBuildConfig* out,
-                                 DroidBuildRepairReport* report) {
-    if (out == nullptr) {
-        return;
-    }
-    droidBuildDefaults(out);
-
-    DroidBuildRepairReport local = {};
-    local.domeRepaired = readDroidDesignChoice(r, DROID_BUILD_DOME_DESIGN_KEY,
-                                               DROID_BUILD_DOME_VARIANT_KEY, &out->dome);
-    local.bodyRepaired = readDroidDesignChoice(r, DROID_BUILD_BODY_DESIGN_KEY,
-                                               DROID_BUILD_BODY_VARIANT_KEY, &out->body);
-
-    // Three states, and the middle one is the whole reason this record is not
-    // read as a plain string: absent means nobody has answered, so the
-    // pre-selected design's complement stands; "-" means a builder said their
-    // droid carries nothing yet, which is theirs to say and is kept.
-    const String fitted = r.readStr(DROID_BUILD_FITTED_KEY, "");
-    if (fitted.length() > 0) {
-        if (strcmp(fitted.c_str(), DROID_FITTED_PARTS_NONE) == 0) {
-            droidFittedPartsClear(&out->fitted);
-        } else {
-            local.partsDropped = droidFittedPartsParse(fitted.c_str(), &out->fitted);
-        }
-    }
-
-    if (report != nullptr) {
-        *report = local;
-    }
-}
-
-// -----------------------------------------------------------------------------
-// configSerializeGuidedSetup()
-// Where the guided run stands, and which of its steps the builder has been
-// shown.
-//
-// The visited list is written even when it is empty, as the sentinel: NVS keeps
-// every key a save does not touch, and "nothing visited" written as an empty
-// string would read back on the next cold boot as a controller guided Setup has
-// never drawn on - which is the one thing this record has to be able to tell
-// apart (include/guided_setup.h).
-//
-// No heap here, unlike the Droid Build above: this list is bounded at
-// GUIDED_SETUP_VISITED_STR_MAX and is already held as the joined string, so
-// there is nothing to build and nothing to free.
-// -----------------------------------------------------------------------------
-bool configSerializeGuidedSetup(const GuidedSetupConfig& cfg, ConfigWriter& w) {
-    bool ok = w.writeU8(GUIDED_SETUP_RUN_KEY, (uint8_t)cfg.run);
-    ok = w.writeStr(GUIDED_SETUP_VISITED_KEY, guidedSetupVisitedStored(cfg)) && ok;
-    ok = w.writeBool(GUIDED_SETUP_SUMMARY_DONE_KEY, cfg.summaryDone) && ok;
-    return ok;
-}
-
-void configDeserializeGuidedSetup(const ConfigReader& r, GuidedSetupConfig* out,
-                                  GuidedSetupRepairReport* report) {
-    if (out == nullptr) {
-        return;
-    }
-    guidedSetupDefaults(out);
-
-    GuidedSetupRepairReport local = {};
-
-    const uint8_t storedRun = r.readU8(GUIDED_SETUP_RUN_KEY, (uint8_t)GUIDED_SETUP_NOT_RUN);
-    out->run = guidedSetupRunFromStored(storedRun);
-    local.runRepaired = ((uint8_t)out->run != storedRun);
-    out->summaryDone = r.readBool(GUIDED_SETUP_SUMMARY_DONE_KEY, false);
-
-    // Absent, sentinel, or a list - and the first of those is the one that
-    // carries a fact nothing else can: guided Setup has never been drawn on this
-    // controller. The writer never stores an empty string, so an empty read is
-    // unambiguously "no record".
-    const String visited = r.readStr(GUIDED_SETUP_VISITED_KEY, "");
-    if (visited.length() > 0) {
-        out->recorded = true;
-        local.stepsDropped = guidedSetupVisitedSet(out, visited.c_str());
     }
 
     if (report != nullptr) {

@@ -43,6 +43,7 @@
 #include <stdint.h>
 
 #include "api_apply_refusal.h"
+#include "apply_timing.h"
 #include "config_io.h"
 #include "config_store.h"
 #include "servo_output_row.h"
@@ -102,6 +103,9 @@ struct ConfigSetting {
     // POST takes back there too.
     const char* path;
     const char* nvsKey;   // unchanged from before the declarations, so a stored Configuration loads as it is
+    // When a saved value takes effect (include/apply_timing.h). The browser's
+    // entry for the Setting states the same token.
+    ApplyTiming timing;
     SettingSection section;
     uint16_t offset;      // of the field inside its section's struct
     SettingStorage storage;
@@ -135,6 +139,7 @@ enum class RowSettingOn : uint8_t { Every, LightCapable };
 
 struct OutputRowSetting {
     const char* key;      // the row key, on GET /api/servo/outputs and in a POST row
+    ApplyTiming timing;   // when a saved value takes effect (include/apply_timing.h)
     RowSettingStore store;
     RowSettingOn on;
     SettingStorage storage;

@@ -317,8 +317,7 @@ void test_a_failed_row_write_stops_the_save_before_the_fixed_field_sets() {
     configSnapshotDefaults(&snap);
     configCacheReplace(snap);
     ConfigSaveExtras extras;
-    extras.droidBuild = true;
-    extras.guidedSetup = true;
+    extras.records = ~0u;  // every Record
     TEST_ASSERT_FALSE(configPersist(snap, extras));
 
     prefs.begin(NVS_NAMESPACE, true);

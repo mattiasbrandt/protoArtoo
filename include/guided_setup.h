@@ -41,7 +41,8 @@
 // DroidBuildConfig is not: the snapshot crosses three nested stack frames on the
 // serial config-write path and its size is pinned to a measured task-stack chain
 // (include/config_store.h), and nothing on a real-time path reads a guided run.
-// It sits on its own NVS keys beside the Droid Build (include/config_serializer.h).
+// It sits on its own NVS keys beside the Droid Build, a Record like it
+// (include/config_record_guided_setup.h).
 //
 // Pure: no NVS, no FreeRTOS, no Arduino String. Header-only.
 // =============================================================================

@@ -42,19 +42,16 @@
   // Audio fallback slots — the named clips usable as an audioCat "fallback"
   // (played when the chosen category has no available track). VALUES must match
   // the server slot table in src/seq_json.cpp (slotToString/slotFromString) and
-  // the client validator set in seq_protocol_check.js. Labels are operator-facing.
+  // the client validator set in seq_protocol_check.js. A slot that is a sound
+  // action's track is named by that track's label in the one words table
+  // (data/web_api.js), so this editor and the Sound page call it one thing;
+  // "none" and the Happy category are no track.
+  const trackSlot = (value) => ({ value, label: window.PAApi.labelOf(value) });
   const AUDIO_FALLBACK_SLOTS = [
-    { value: "none",      label: "None" },
-    { value: "scream",    label: "Scream" },
-    { value: "faint",     label: "Faint" },
-    { value: "leia",      label: "Leia message" },
-    { value: "cantina_s", label: "Cantina (short)" },
-    { value: "sw_theme",  label: "Star Wars theme" },
-    { value: "imp_march", label: "Imperial March" },
-    { value: "cantina_l", label: "Cantina (long)" },
-    { value: "startup",   label: "Startup" },
-    { value: "disco",     label: "Disco" },
-    { value: "happy",     label: "Happy" },
+    { value: "none", label: "None" },
+    ...["scream", "faint", "leia", "cantina_s", "sw_theme", "imp_march", "cantina_l", "startup", "disco"]
+      .map(trackSlot),
+    { value: "happy", label: "Happy" },
   ];
   const audioFallbackLabel = (value) =>
     (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";
