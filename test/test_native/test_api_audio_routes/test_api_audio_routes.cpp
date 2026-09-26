@@ -291,6 +291,19 @@ void test_audio_post_volume_rejects_out_of_range_levels() {
     TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
 }
 
+// A level that is not a number at all is the volume Setting's to refuse too,
+// with its field and range - the same answer the Console gives for
+// `volume=abc` (ADR 0068, amended 2026-09-26), so neither door has a check the
+// other lacks.
+void test_audio_post_volume_refuses_a_non_number_with_its_range() {
+    const WebRequestTestParam word[] = {{"action", "volume"}, {"level", "loud"}};
+    callPost(handleAudioPost, word, 2);
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_TRUE(bodyContains("\"field\":\"volume\""));
+    TEST_ASSERT_TRUE(bodyContains("\"accepts\":\"0..30\""));
+    TEST_ASSERT_EQUAL_UINT(0u, g_test_audio_volume_calls);
+}
+
 void test_audio_post_dollar_requires_a_dollar_prefixed_command() {
     const WebRequestTestParam bare[] = {{"action", "dollar"}, {"cmd", "R"}};
     callPost(handleAudioPost, bare, 2);
@@ -881,6 +894,7 @@ int main() {
     RUN_TEST(test_audio_post_stop_reports_a_full_queue);
     RUN_TEST(test_audio_post_volume_applies_and_persists);
     RUN_TEST(test_audio_post_volume_rejects_out_of_range_levels);
+    RUN_TEST(test_audio_post_volume_refuses_a_non_number_with_its_range);
     RUN_TEST(test_audio_post_dollar_requires_a_dollar_prefixed_command);
 
     RUN_TEST(test_tracks_get_serializes_every_field_from_the_config_snapshot);
