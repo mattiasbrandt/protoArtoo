@@ -421,7 +421,13 @@ Configuration configurationUnlikeSetUp(const Configuration& base) {
     }
 
     // The rules across Settings, as configApply() judges them beside its loop:
-    // the dome pulses in order, and the active preset the limit names.
+    // the dome pulses in order, the idle pauses shortest first, and the active
+    // preset the limit names.
+    if (want.snap.dome.dome_rnd_pause_min > want.snap.dome.dome_rnd_pause_max) {
+        const uint8_t shortest = want.snap.dome.dome_rnd_pause_max;
+        want.snap.dome.dome_rnd_pause_max = want.snap.dome.dome_rnd_pause_min;
+        want.snap.dome.dome_rnd_pause_min = shortest;
+    }
     DomeConfig& dome = want.snap.dome;
     uint16_t pulses[3] = {dome.dome_min_pulse_us, dome.dome_neutral_us, dome.dome_max_pulse_us};
     for (int a = 0; a < 3; ++a) {

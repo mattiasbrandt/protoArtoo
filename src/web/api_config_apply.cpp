@@ -14,17 +14,14 @@
 
 #include "api_helpers.h"
 #include "board_outputs.h"
-#include "component_registry.h"
 #include "config.h"
 #include "config_settings.h"  // every Setting's declaration - the scalar half loops over them
 #include "dome_math.h"  // domePulsesInOrder() - the one order rule for the ESC pulse set
 #include "drive_speed_preset.h"
+#include "ledc_pwm.h"  // SERVO_PULSE_MIN_US/MAX_US - what any servo takes
 #include "servo_component_helpers.h"
 
 namespace {
-
-constexpr uint16_t kServoPulseMinUs = 500;
-constexpr uint16_t kServoPulseMaxUs = 2500;
 
 void appendApplied(ConfigAppliedFields* applied, const char* fmt, ...) {
     if (applied->count >= ConfigAppliedFields::kMaxLines) {
@@ -732,14 +729,28 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     // re-derive it from the one that was active.
     static const char* const kPresets[] = {"speedPresetSlow", "speedPresetNormal",
                                            "speedPresetTurbo"};
-    const char* presetSent = firstSent(params, kPresets, sizeof(kPresets) / sizeof(kPresets[0]));
-    const bool speedPresetValuesProvided = presetSent != nullptr;
+    const bool speedPresetValuesProvided =
+        firstSent(params, kPresets, sizeof(kPresets) / sizeof(kPresets[0])) != nullptr;
     const bool speedLimitMaxProvided = configParamHas(params, "speedLimitMax");
     if (speedPresetValuesProvided &&
         !speedPresetValuesAreUnique(working->drive.speedPresetSlow, working->drive.speedPresetNormal,
                                      working->drive.speedPresetTurbo)) {
+        // Named on a preset the request sent that shares its number with
+        // another, so a page names the one that clashes - not the slow preset
+        // because it happens to be read first.
+        const int16_t values[] = {working->drive.speedPresetSlow, working->drive.speedPresetNormal,
+                                  working->drive.speedPresetTurbo};
+        const char* clashing = nullptr;
+        for (size_t i = 0; i < 3 && clashing == nullptr; ++i) {
+            for (size_t j = 0; j < 3; ++j) {
+                if (i != j && values[i] == values[j] && configParamHas(params, kPresets[i])) {
+                    clashing = kPresets[i];
+                    break;
+                }
+            }
+        }
         setError(result, "speed presets must be distinct values", ApplyRefusalReason::Conflict,
-                 presetSent);
+                 clashing);
         return;
     }
     if (speedPresetValuesProvided && !speedLimitMaxProvided) {
@@ -784,6 +795,20 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
             setError(result, err, ApplyRefusalReason::Conflict, domePulseSent);
             return;
         }
+    }
+
+    // The idle turn's pauses as a pair: the shortest may not exceed the
+    // longest. Judged with the value stored beside the one sent, and only when
+    // the request named one, as the pulses are. The Dome page held this rule
+    // until the page-side checks went (#431); the droid holds it now.
+    static const char* const kDomePauses[] = {"domeEscRndPauseMin", "domeEscRndPauseMax"};
+    const char* domePauseSent =
+        firstSent(params, kDomePauses, sizeof(kDomePauses) / sizeof(kDomePauses[0]));
+    if (domePauseSent != nullptr &&
+        working->dome.dome_rnd_pause_min > working->dome.dome_rnd_pause_max) {
+        setError(result, "domeEscRndPauseMin must be at most domeEscRndPauseMax",
+                 ApplyRefusalReason::Conflict, domePauseSent);
+        return;
     }
 
     // The Droid Build (ADR 0047): which droid a builder says they built, and
@@ -972,6 +997,11 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         ServoOutputEnd end = SERVO_END_CENTRE;
         uint16_t capturedUs = 0;
         static const char* const kCaptureFields[] = {"captureOutput", "captureEnd", "captureUs"};
+        // The widest a servo takes, as for a typed end: the fitted component's
+        // band is applied on the row. A literal, not a buffer - this frame is on
+        // the Console chain - and pinned to the constants it states.
+        static_assert(SERVO_PULSE_MIN_US == 500 && SERVO_PULSE_MAX_US == 2500,
+                      "the capture refusal's sentence states SERVO_PULSE_MIN_US..MAX_US");
         static const char* const kCaptureRefusal =
             "captureOutput, captureEnd and captureUs must be sent together: an Output "
             "Address, one of open/centre/close, and a width 500..2500";
@@ -991,8 +1021,9 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
                      "open,centre,close");
             return;
         }
-        if (!paramUint16(params, "captureUs", kServoPulseMinUs, kServoPulseMaxUs, &capturedUs)) {
-            setRangeError(result, kCaptureRefusal, "captureUs", kServoPulseMinUs, kServoPulseMaxUs);
+        if (!paramUint16(params, "captureUs", SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, &capturedUs)) {
+            setRangeError(result, kCaptureRefusal, "captureUs", SERVO_PULSE_MIN_US,
+                          SERVO_PULSE_MAX_US);
             return;
         }
         capture.kind = SERVO_EDIT_CAPTURE;
