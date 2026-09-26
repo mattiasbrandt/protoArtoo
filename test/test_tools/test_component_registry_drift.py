@@ -221,7 +221,7 @@ class MemberKeys(unittest.TestCase):
         errors = self.run_check(
             [self.category('"snd_member"')],
             self.settings('    PA_MEMBER("soundMember", "components.audio.member", "snd_member", '
-                          'System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
+                          'AtReboot, System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
         )
         self.assertEqual([], errors)
 
@@ -231,7 +231,7 @@ class MemberKeys(unittest.TestCase):
         errors = self.run_check(
             [self.category('"snd_member"')],
             self.settings('    PA_MEMBER("soundMember", "components.audio.member", "snd_membr", '
-                          'System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
+                          'AtReboot, System, SystemConfig, sound_member, COMPONENT_CATEGORY_SOUND, "x"),'),
         )
         self.assertEqual(1, len(errors), errors)
         self.assertIn("snd_member", errors[0])
@@ -239,7 +239,7 @@ class MemberKeys(unittest.TestCase):
     def test_the_key_of_a_setting_that_is_not_a_member_is_reported(self):
         errors = self.run_check(
             [self.category('"snd_member"')],
-            self.settings('    PA_BOOL("x", "a.b", "snd_member", System, SystemConfig, x, false),'),
+            self.settings('    PA_BOOL("x", "a.b", "snd_member", AtReboot, System, SystemConfig, x, false),'),
         )
         self.assertEqual(1, len(errors), errors)
 

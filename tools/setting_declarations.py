@@ -54,6 +54,15 @@ TIMING_TOKENS = {
 }
 
 
+def _timing(token: str, name: str) -> str:
+    """A declaration's timing in the browser's spelling, or a ValueError naming
+    the declaration that states none this reader knows."""
+    if token not in TIMING_TOKENS:
+        raise ValueError(f"{name} declares no timing this reader knows (got {token!r}); "
+                         f"one of {', '.join(TIMING_TOKENS)} (include/apply_timing.h)")
+    return TIMING_TOKENS[token]
+
+
 @dataclass(frozen=True)
 class DroidSetting:
     form: str
@@ -104,7 +113,7 @@ def droid_settings(source: Path | None = None) -> list[DroidSetting]:
             path=None if path == "nullptr" else path.strip('"'),
             nvs_key=match.group("key"),
             rule=rule,
-            timing=TIMING_TOKENS[match.group("timing")],
+            timing=_timing(match.group("timing"), match.group("form")),
         ))
     return found
 
@@ -112,7 +121,7 @@ def droid_settings(source: Path | None = None) -> list[DroidSetting]:
 def row_settings(source: Path | None = None) -> list[RowSetting]:
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kOutputRowSettings")
-    return [RowSetting(key=m.group("key"), store=m.group("store"), timing=TIMING_TOKENS[m.group("timing")])
+    return [RowSetting(key=m.group("key"), store=m.group("store"), timing=_timing(m.group("timing"), m.group("key")))
             for m in _ROW.finditer(body)]
 
 
@@ -133,7 +142,7 @@ def audio_settings(source: Path | None = None) -> list[AudioSetting]:
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kAudioSettings")
     return [AudioSetting(name=m.group("name"), nvs_key=m.group("key") or m.group("name"),
-                         timing=TIMING_TOKENS[m.group("timing")], kind=m.group("kind"))
+                         timing=_timing(m.group("timing"), m.group("name")), kind=m.group("kind"))
             for m in _AUDIO.finditer(body)]
 
 
@@ -185,7 +194,7 @@ def record_fields(modules: list[Path] | None = None) -> list[RecordField]:
     for module in record_modules() if modules is None else modules:
         body = _table(module.read_text(encoding="utf-8"), "kFields")
         found += [RecordField(record=module.stem, form=m.group("form"), path=m.group("path"),
-                              timing=TIMING_TOKENS[m.group("timing")])
+                              timing=_timing(m.group("timing"), m.group("form")))
                   for m in _RECORD_FIELD.finditer(body)]
     return found
 
