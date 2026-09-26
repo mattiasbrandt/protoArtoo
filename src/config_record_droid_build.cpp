@@ -47,11 +47,11 @@ constexpr char DROID_BUILD_FITTED_KEY[] = "dbuild_parts";
 enum Field : uint8_t { DomeDesign, DomeVariant, BodyDesign, BodyVariant, FittedParts, FieldCount };
 
 const ConfigRecordField kFields[FieldCount] = {
-    {"domeDesign", "droidBuild.domeDesign", "mk41"},
-    {"domeVariant", "droidBuild.domeVariant", ""},
-    {"bodyDesign", "droidBuild.bodyDesign", "own"},
-    {"bodyVariant", "droidBuild.bodyVariant", ""},
-    {"fittedParts", "droidBuild.fitted", "gripArm,utilUp"},
+    {"domeDesign", "droidBuild.domeDesign", ApplyTiming::Immediate, "mk41"},
+    {"domeVariant", "droidBuild.domeVariant", ApplyTiming::Immediate, ""},
+    {"bodyDesign", "droidBuild.bodyDesign", ApplyTiming::Immediate, "own"},
+    {"bodyVariant", "droidBuild.bodyVariant", ApplyTiming::Immediate, ""},
+    {"fittedParts", "droidBuild.fitted", ApplyTiming::Immediate, "gripArm,utilUp"},
 };
 
 constexpr uint32_t fieldBit(Field field) { return (uint32_t)1u << field; }

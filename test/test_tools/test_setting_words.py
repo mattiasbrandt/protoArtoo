@@ -16,22 +16,24 @@ import check_setting_words as words  # noqa: E402
 
 SETTINGS = """
 const ConfigSetting kConfigSettings[] = {
-    PA_RANGE("speedLimitMax", "drive.speedLimitMax", "spd_max", Drive, DriveConfig, speedLimitMax,
+    PA_RANGE("speedLimitMax", "drive.speedLimitMax", "spd_max", Immediate, Drive, DriveConfig, speedLimitMax,
              0, SPEED_LIMIT_MAX, SPEED_LIMIT_MAX),
-    PA_BOOL("enableArm1", nullptr, "en_arm1", System, SystemConfig, enable_arm1, false),
+    PA_BOOL("enableArm1", nullptr, "en_arm1", AtReboot, System, SystemConfig, enable_arm1, false),
+    PA_BOOL("enableDomeEsc", "components.domeEsc.enabled", "en_dome_esc", AtReboot, System,
+            SystemConfig, enable_dome_esc, false),
 };
 
 const ConfigSetting kAudioSettings[] = {
-    PA_TRACK("scream", "snd_scream", snd_scream, AUDIO_TRACK_SCREAM),
+    PA_TRACK("scream", "snd_scream", Immediate, snd_scream, AUDIO_TRACK_SCREAM),
 };
 
 const ConfigSetting kCatalogBindingSettings[] = {
-    {"bank", nullptr, nullptr, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Range, 1,
+    {"bank", nullptr, nullptr, ApplyTiming::Immediate, SettingSection::Audio, 0, SettingStorage::U8, 1, SettingRule::Range, 1,
      6, 1, nullptr, 0, nullptr, SettingDoor::AudioTracks, false},
 };
 
 const OutputRowSetting kOutputRowSettings[] = {
-    {"throwMs", RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
+    {"throwMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
      SERVO_FIELD_THROW_MS, SettingRule::Range, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, nullptr},
 };
 """
@@ -41,7 +43,7 @@ const OutputRowSetting kOutputRowSettings[] = {
 # them unless it is about them.
 RECORD = """
 const ConfigRecordField kFields[FieldCount] = {
-    {"domeDesign", "droidBuild.domeDesign", "mk41"},
+    {"domeDesign", "droidBuild.domeDesign", ApplyTiming::Immediate, "mk41"},
 };
 """
 
@@ -52,8 +54,10 @@ constexpr ConfigActField kActFields[ActFieldCount] = {
 """
 
 RECORD_AND_ACT_WORDS = (
-    '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign" },\n'
-    '    captureUs: { word: "captured width", on: "captureOutput" },'
+    '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign", applies: "immediate" },\n'
+    '    captureUs: { word: "captured width", on: "captureOutput" },\n'
+    '    enableDomeEsc: { label: "Dome ESC", word: "Dome ESC", path: "components.domeEsc.enabled",'
+    ' applies: "at-reboot" },'
 )
 
 
@@ -69,7 +73,7 @@ def fixtures(tmp: str) -> dict:
     record.write_text(RECORD)
     acts = Path(tmp) / "api_config_apply.cpp"
     acts.write_text(ACTS)
-    return {"records": [record], "acts": acts}
+    return {"records": [record], "acts": acts, "pages": []}
 
 
 class Check(unittest.TestCase):
@@ -85,49 +89,49 @@ class Check(unittest.TestCase):
 
     def test_words_for_every_setting_pass(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
-            '    throwMs: { word: "time to full throw", unit: MS },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "time to full throw", unit: MS, applies: "immediate" },',
         ))
         self.assertEqual([], errors)
 
     def test_a_droid_setting_with_no_words_is_reported(self):
-        errors = self.run_check(web_api('    scream: { word: "Scream track" },\n    bank: { word: "b" },',
-                                        '    throwMs: { word: "t" },'))
+        errors = self.run_check(web_api('    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+                                        '    throwMs: { word: "t", applies: "immediate" },'))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("speedLimitMax", errors[0])
 
     def test_an_audio_setting_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
             '    bank: { word: "b" },',
-            '    throwMs: { word: "t" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("scream", errors[0])
 
     def test_a_binding_part_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },',
-            '    throwMs: { word: "t" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("bank", errors[0])
 
     def test_words_naming_another_get_path_are_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.topSpeed" },\n'
-            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
-            '    throwMs: { word: "t" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.topSpeed", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("drive.speedLimitMax", errors[0])
 
     def test_a_row_setting_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },\n    bank: { word: "b" },', ""))
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },', ""))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("throwMs", errors[0])
 
@@ -137,8 +141,8 @@ class Check(unittest.TestCase):
             settings = Path(tmp) / "config_settings.cpp"
             settings.write_text(SETTINGS.replace('"snd_scream"', '"snd_scream_longer"'))
             api = Path(tmp) / "web_api.js"
-            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
-                                   '    scream: { word: "s" },\n    bank: { word: "b" },', '    throwMs: { word: "t" },'))
+            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax", applies: "immediate" },\n'
+                                   '    scream: { word: "s", applies: "immediate" },\n    bank: { word: "b" },', '    throwMs: { word: "t", applies: "immediate" },'))
             errors: list[str] = []
             words.check(errors, settings=settings, web_api=api, **fixtures(tmp))
         self.assertEqual(1, len(errors), errors)
@@ -149,8 +153,8 @@ class Check(unittest.TestCase):
             settings = Path(tmp) / "config_settings.cpp"
             settings.write_text(SETTINGS.replace('"snd_scream"', '"spd_max"'))
             api = Path(tmp) / "web_api.js"
-            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax" },\n'
-                                   '    scream: { word: "s" },\n    bank: { word: "b" },', '    throwMs: { word: "t" },'))
+            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax", applies: "immediate" },\n'
+                                   '    scream: { word: "s", applies: "immediate" },\n    bank: { word: "b" },', '    throwMs: { word: "t", applies: "immediate" },'))
             errors: list[str] = []
             words.check(errors, settings=settings, web_api=api, **fixtures(tmp))
         self.assertEqual(1, len(errors), errors)
@@ -158,34 +162,73 @@ class Check(unittest.TestCase):
 
     def test_a_record_field_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
-            '    throwMs: { word: "t" },',
-            '    captureUs: { word: "captured width" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
+            '    captureUs: { word: "captured width" },\n'
+            '    enableDomeEsc: { label: "Dome ESC", path: "components.domeEsc.enabled", applies: "at-reboot" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("domeDesign is a declared Record field", errors[0])
 
     def test_a_record_field_named_at_another_get_path_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
-            '    throwMs: { word: "t" },',
-            '    domeDesign: { word: "dome design", path: "droidBuild.dome" },\n'
-            '    captureUs: { word: "captured width" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
+            '    domeDesign: { word: "dome design", path: "droidBuild.dome", applies: "immediate" },\n'
+            '    captureUs: { word: "captured width" },\n'
+            '    enableDomeEsc: { label: "Dome ESC", path: "components.domeEsc.enabled", applies: "at-reboot" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("droidBuild.domeDesign", errors[0])
 
     def test_an_act_field_with_no_words_is_reported(self):
         errors = self.run_check(web_api(
-            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax" },\n'
-            '    scream: { word: "Scream track" },\n    bank: { word: "b" },',
-            '    throwMs: { word: "t" },',
-            '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign" },',
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
+            '    domeDesign: { word: "dome design", path: "droidBuild.domeDesign", applies: "immediate" },\n'
+            '    enableDomeEsc: { label: "Dome ESC", path: "components.domeEsc.enabled", applies: "at-reboot" },',
         ))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("captureUs is a declared act field", errors[0])
+
+    def test_a_timing_that_is_not_the_firmware_s_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "at-reboot" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t", applies: "immediate" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("speedLimitMax's words say it takes effect at-reboot", errors[0])
+
+    def test_an_entry_that_does_not_say_when_is_reported(self):
+        errors = self.run_check(web_api(
+            '    speedLimitMax: { word: "top speed", path: "drive.speedLimitMax", applies: "immediate" },\n'
+            '    scream: { word: "Scream track", applies: "immediate" },\n    bank: { word: "b" },',
+            '    throwMs: { word: "t" },',
+        ))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("throwMs's words do not say when it takes effect", errors[0])
+
+    def test_a_page_naming_a_toggle_s_label_beside_it_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Path(tmp) / "config_settings.cpp"
+            settings.write_text(SETTINGS)
+            api = Path(tmp) / "web_api.js"
+            api.write_text(web_api(
+                '    speedLimitMax: { word: "t", path: "drive.speedLimitMax", applies: "immediate" },\n'
+                '    scream: { label: "Scream", word: "s", applies: "immediate" },\n    bank: { word: "b" },',
+                '    throwMs: { word: "t", applies: "immediate" },'))
+            page = Path(tmp) / "app.js"
+            # The toggle beside its label is flagged; a sequence called Scream is not.
+            page.write_text('const LABELS = [["domeEsc", "Dome ESC"]];\n'
+                            '{ token: "droid_seq_scream", label: "Scream" }\n')
+            errors: list[str] = []
+            words.check(errors, settings=settings, web_api=api, **{**fixtures(tmp), "pages": [page]})
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("app.js:1 names enableDomeEsc's label 'Dome ESC'", errors[0])
 
 
 class RealTree(unittest.TestCase):

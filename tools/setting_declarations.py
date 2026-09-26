@@ -32,16 +32,26 @@ CONFIG_SETTINGS = ROOT / "src" / "config_settings.cpp"
 # tick, carried on its row.
 _DROID = re.compile(
     r'(?:PA_(?P<macro>RANGE|BOOL|WORDS|MEMBER)\(|\{)\s*"(?P<form>\w+)",\s*'
-    r'(?P<path>nullptr|"[\w.]+"),\s*"(?P<key>\w+)",'
+    r'(?P<path>nullptr|"[\w.]+"),\s*"(?P<key>\w+)",\s*(?:ApplyTiming::)?(?P<timing>\w+),'
 )
 _BRACE_RULE = re.compile(r"SettingRule::(\w+)")
 # An audio Setting opens as one of the audio helpers, `PA_TRACK("scream",
 # "snd_scream", ...`: the name its door takes it under, then its NVS key.
 # PA_INTERVAL's interval is stored under its own name, so it has no second
 # string.
-_AUDIO = re.compile(r'PA_[A-Z_]+\(\s*"(?P<name>\w+)"(?:\s*,\s*"(?P<key>\w+)")?')
+_AUDIO = re.compile(
+    r'PA_(?P<kind>[A-Z_]+)\(\s*"(?P<name>\w+)"(?:\s*,\s*"(?P<key>\w+)")?\s*,\s*(?P<timing>\w+),')
 # An Output row Setting opens as `{"key", RowSettingStore::...`.
-_ROW = re.compile(r'\{\s*"(?P<key>\w+)",\s*RowSettingStore::(?P<store>\w+)')
+_ROW = re.compile(
+    r'\{\s*"(?P<key>\w+)",\s*ApplyTiming::(?P<timing>\w+),\s*RowSettingStore::(?P<store>\w+)')
+
+# A declaration's timing token (include/apply_timing.h), in the browser's
+# spelling (data/apply_timing.js).
+TIMING_TOKENS = {
+    "Immediate": "immediate",
+    "AtReboot": "at-reboot",
+    "RestartRequired": "restart-required",
+}
 
 
 @dataclass(frozen=True)
@@ -50,12 +60,14 @@ class DroidSetting:
     path: str | None
     nvs_key: str
     rule: str
+    timing: str
 
 
 @dataclass(frozen=True)
 class RowSetting:
     key: str
     store: str
+    timing: str
 
 
 def _table(text: str, name: str) -> str:
@@ -92,6 +104,7 @@ def droid_settings(source: Path | None = None) -> list[DroidSetting]:
             path=None if path == "nullptr" else path.strip('"'),
             nvs_key=match.group("key"),
             rule=rule,
+            timing=TIMING_TOKENS[match.group("timing")],
         ))
     return found
 
@@ -99,24 +112,32 @@ def droid_settings(source: Path | None = None) -> list[DroidSetting]:
 def row_settings(source: Path | None = None) -> list[RowSetting]:
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kOutputRowSettings")
-    return [RowSetting(key=m.group("key"), store=m.group("store")) for m in _ROW.finditer(body)]
+    return [RowSetting(key=m.group("key"), store=m.group("store"), timing=TIMING_TOKENS[m.group("timing")])
+            for m in _ROW.finditer(body)]
 
 
 @dataclass(frozen=True)
 class AudioSetting:
     name: str
     nvs_key: str
+    timing: str
+    kind: str  # the declaring helper: TRACK, OPTIONAL_TRACK, INTERVAL, CATEGORY_BOUND, MOOD_MASK, AUDIO_AT
+
+    @property
+    def is_track(self) -> bool:
+        return self.kind in ("TRACK", "OPTIONAL_TRACK")
 
 
 def audio_settings(source: Path | None = None) -> list[AudioSetting]:
     """Each audio Setting's name and NVS key, in table order."""
     text = (source or CONFIG_SETTINGS).read_text(encoding="utf-8")
     body = _table(text, "kAudioSettings")
-    return [AudioSetting(name=m.group("name"), nvs_key=m.group("key") or m.group("name"))
+    return [AudioSetting(name=m.group("name"), nvs_key=m.group("key") or m.group("name"),
+                         timing=TIMING_TOKENS[m.group("timing")], kind=m.group("kind"))
             for m in _AUDIO.finditer(body)]
 
 
-# A CHIRP catalog binding part opens as a brace entry `{"bank", nullptr, nullptr,`.
+# A CHIRP catalog binding part opens as a brace entry `{"bank", nullptr, nullptr, ApplyTiming::T,`.
 _BINDING = re.compile(r'\{\s*"(?P<name>\w+)",\s*nullptr,\s*nullptr,')
 
 
@@ -130,8 +151,9 @@ def catalog_binding_settings(source: Path | None = None) -> list[str]:
 CONFIG_RECORDS = ROOT / "include" / "config_records.inc"
 CONFIG_APPLY = ROOT / "src" / "web" / "api_config_apply.cpp"
 
-# A Record field is `{"form", "path", "example"}` in its module's kFields[].
-_RECORD_FIELD = re.compile(r'\{\s*"(?P<form>\w+)",\s*"(?P<path>[\w.]+)",\s*"[^"]*"\s*\}')
+# A Record field is `{"form", "path", ApplyTiming::T, "example"}` in its module's kFields[].
+_RECORD_FIELD = re.compile(
+    r'\{\s*"(?P<form>\w+)",\s*"(?P<path>[\w.]+)",\s*ApplyTiming::(?P<timing>\w+),\s*"[^"]*"\s*\}')
 # A Record is `PA_CONFIG_RECORD(Name, Value, "key")` in the list.
 _RECORD = re.compile(r'^PA_CONFIG_RECORD\((?P<name>\w+),', re.MULTILINE)
 # An act field is `{"form", "accepts"}` in kActFields[].
@@ -143,6 +165,7 @@ class RecordField:
     record: str
     form: str
     path: str
+    timing: str
 
 
 def record_modules(records: Path | None = None) -> list[Path]:
@@ -161,7 +184,8 @@ def record_fields(modules: list[Path] | None = None) -> list[RecordField]:
     found = []
     for module in record_modules() if modules is None else modules:
         body = _table(module.read_text(encoding="utf-8"), "kFields")
-        found += [RecordField(record=module.stem, form=m.group("form"), path=m.group("path"))
+        found += [RecordField(record=module.stem, form=m.group("form"), path=m.group("path"),
+                              timing=TIMING_TOKENS[m.group("timing")])
                   for m in _RECORD_FIELD.finditer(body)]
     return found
 

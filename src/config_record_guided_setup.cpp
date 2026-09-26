@@ -49,9 +49,9 @@ static_assert(sizeof(GUIDED_SETUP_VISITED_KEY) - 1 <= 15,
 enum Field : uint8_t { Run, Visited, SummaryDone, FieldCount };
 
 const ConfigRecordField kFields[FieldCount] = {
-    {"guidedSetupRun", "guidedSetup.run", "completed"},
-    {"guidedSetupVisited", "guidedSetup.visited", "drive,sound"},
-    {"guidedSetupSummaryDone", "guidedSetup.summaryDone", "true"},
+    {"guidedSetupRun", "guidedSetup.run", ApplyTiming::Immediate, "completed"},
+    {"guidedSetupVisited", "guidedSetup.visited", ApplyTiming::Immediate, "drive,sound"},
+    {"guidedSetupSummaryDone", "guidedSetup.summaryDone", ApplyTiming::Immediate, "true"},
 };
 
 constexpr uint32_t fieldBit(Field field) { return (uint32_t)1u << field; }

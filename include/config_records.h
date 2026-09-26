@@ -11,7 +11,8 @@
 // whole - so it cannot be one declaration line a field; it is one module that
 // owns its fields end to end:
 //
-//   Fields - each field's form name, its GET path and an example value
+//   Fields - each field's form name, its GET path, when it takes effect and an
+//            example value
 //   Check  - the Apply Core half: read every field the request states, check
 //            it (answering field, reason and accepts on a refusal) and stage it
 //   Merge  - the Commit Step half: the stated fields onto the live copy, inside
@@ -47,6 +48,7 @@
 
 #include "api_apply_refusal.h"
 #include "api_param_source.h"
+#include "apply_timing.h"
 #include "config_io.h"
 #include "droid_build.h"
 #include "guided_setup.h"
@@ -60,6 +62,11 @@ struct ConfigRecordField {
     // Where GET /api/config has it, dotted. A list is a JSON array there and the
     // comma-joined text on a form.
     const char* path;
+    // When a saved value takes effect (include/apply_timing.h); the browser's
+    // entry for the field states the same token. No firmware behaviour reads a
+    // Record, and the Commit Step merges it onto the live copy every page
+    // reads, so today every Record field is Immediate.
+    ApplyTiming timing;
     // A value the field's check takes that a fresh controller does not hold, as
     // a form carries it - a list in the order GET answers it. The generated
     // round trips state every field's example (test_api_config_write), so a
