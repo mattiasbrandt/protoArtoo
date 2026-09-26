@@ -56,6 +56,7 @@
 #include "api_status.h"
 #include "audio_task.h"
 #include "config_cache.h"
+#include "config_settings.h"  // configSettingByForm() - each op's Setting
 #include "component_registry.h"
 #include "console_config_fields.h"  // kComponentToggleFields[] - defect 2 rework:
                                     // proves the table matches configApply() by
@@ -2419,10 +2420,9 @@ void test_component_toggle_write_rejects_a_malformed_boolean() {
 // =============================================================================
 // Component Toggle table drift check (#226 rework, defect 2)
 //
-// include/console_config_fields.h's kComponentToggleFields[] says, in prose,
-// that its paramKey values are "copied verbatim from api_config_apply.cpp's
-// boolFields[] array" and that a rename in one needs a matching edit in the
-// other. Nothing enforced that. This drives configApply() - the real Apply
+// include/console_config_fields.h's kComponentToggleFields[] names each toggle
+// by its Setting's form name (src/config_settings.cpp), and a rename in one
+// needs a matching edit in the other. Nothing else enforces that. This drives configApply() - the real Apply
 // Core, bypassing the Console dispatch layer entirely - directly with each
 // of the 15 entries' paramKey and asserts the named SystemConfig field
 // actually flips. A rename in either table without the other breaks this
@@ -2446,6 +2446,54 @@ const char* singleParamGet(void* ctx, const char* name) {
     return strcmp(name, c->key) == 0 ? c->value : nullptr;
 }
 }  // namespace
+
+// A Setting refuses a value identically at both doors (ADR 0068, amended
+// 2026-09-26): each of the Console's single-field Setting ops answers a value
+// its Setting does not take with the reason and the accepts configApply() - the
+// Apply Core POST /api/config answers from - gives for the same value under the
+// form name. Only the argument the Console names differs: the builder typed
+// `value=`, never the form name.
+void test_every_single_field_setting_op_refuses_as_the_http_door_does() {
+    struct Op {
+        const char* operationName;
+        const char* form;
+    };
+    Op ops[3 + kComponentToggleFieldCount] = {
+        {"drive.config.speed-limit", "speedLimitMax"},
+        {"rc.config.mode", "rcInputMode"},
+        {"system.config.log-level", "logLevel"},
+    };
+    for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
+        ops[3 + i] = {kComponentToggleFields[i].operationName, kComponentToggleFields[i].paramKey};
+    }
+
+    static ConfigApplyResult result;
+    for (const Op& op : ops) {
+        const ConfigSetting* setting = configSettingByForm(op.form);
+        TEST_ASSERT_NOT_NULL_MESSAGE(setting, op.form);
+        const char* bad = setting->rule == SettingRule::Bool ? "maybe" : "99999";
+
+        char line[96] = {};
+        snprintf(line, sizeof(line), "%s value=%s", op.operationName, bad);
+        runQuery(line);
+
+        ConfigSnapshot working = {};
+        configCacheRead(&working);
+        SingleParamCtx ctx{op.form, bad};
+        ConfigParamSource params;
+        params.ctx = &ctx;
+        params.get = singleParamGet;
+        configApply(params, &working, working.system.enable_dome_esc, &result);
+
+        TEST_ASSERT_TRUE_MESSAGE(result.error.hasError, op.operationName);
+        TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, op.operationName);
+        TEST_ASSERT_EQUAL_MESSAGE(consoleReasonFromApplyRefusal(result.error.refusal.reason),
+                                  g_cap.reason, op.operationName);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(result.error.refusal.accepts, capturedValue("accepts"),
+                                         op.operationName);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("value", capturedValue("argument"), op.operationName);
+    }
+}
 
 void test_component_toggle_table_paramkeys_match_config_apply() {
     for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
@@ -2600,8 +2648,8 @@ void test_rc_mode_rejects_an_unknown_mode_string() {
 }
 
 // system.config.log-level (#225): read renders the live numeric level;
-// write accepts the raw 1..4 integer api_config_apply.cpp's paramInt16
-// validates.
+// write accepts the raw 1..4 integer its Setting's declaration checks
+// (src/config_settings.cpp).
 void test_log_level_read_and_write_the_integer() {
     runQuery("system.config.log-level value=3");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
@@ -2656,7 +2704,7 @@ void test_log_level_word_form_is_case_insensitive() {
 }
 
 // The named key (logLevel=) works exactly like value= - the same
-// ScalarConfigArg bridge every other row in g_scalarConfigExecutors[] shares
+// ScalarConfigArg bridge every Setting op in g_settingOps[] shares
 // (src/console/console_module.cpp).
 void test_log_level_accepts_the_named_key() {
     runQuery("system.config.log-level logLevel=info");
@@ -5575,6 +5623,7 @@ int main(int, char**) {
     RUN_TEST(test_component_toggle_write_rejects_an_unknown_argument);
     RUN_TEST(test_component_toggle_write_rejects_a_malformed_boolean);
     RUN_TEST(test_component_toggle_table_paramkeys_match_config_apply);
+    RUN_TEST(test_every_single_field_setting_op_refuses_as_the_http_door_does);
     RUN_TEST(test_drive_speed_limit_read_and_write);
     RUN_TEST(test_drive_speed_limit_rejects_out_of_range);
     RUN_TEST(test_aux_led_count_read_and_write_names_its_output);
