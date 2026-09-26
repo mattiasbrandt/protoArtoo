@@ -13,9 +13,11 @@
 #include <string.h>
 
 #include "api_helpers.h"          // parseDriveValue(), parseUint32Value(), parseBoolValue()
+#include "audio_dollar_parser.h"  // AUDIO_TRACK_*, AUDIO_RAND_* - the audio defaults
 #include "board_outputs.h"
 #include "component_registry.h"
 #include "config.h"               // SPEED_*, SBUS_TIMEOUT_MS, WEB_DRIVE_TIMEOUT_MS, PA_LOG_LEVEL*
+#include "mood_sound_mapping.h"   // MOOD_CATEGORY_MASK_MAX - a mood mask's bits
 #include "servo_component_helpers.h"
 
 namespace {
@@ -166,6 +168,124 @@ const ConfigSetting kConfigSettings[] = {
 #undef PA_WORDS
 #undef PA_MEMBER
 
+// -----------------------------------------------------------------------------
+// The audio Settings (#431 addendum)
+//
+// A track a sound action plays is 1..999; one marked optional here takes 0 for
+// "no sound for this". A random-chatter interval is seconds, 0 for never. A
+// category's track range bound is 0..999, and the pair rule (0/0 or lo <= hi,
+// both set) spans two Settings, so it stays in the category-range core. A CHIRP
+// catalog binding (bank, page and index) is the track binding's catalog form,
+// stored by the tracks write path on its own keys and checked there.
+// -----------------------------------------------------------------------------
+#define PA_AUDIO_AT(name, key, member, lo, hi, def, door, repair) \
+    {name, nullptr, key, PA_SETTING_FIELD(Audio, AudioConfig, member), SettingRule::Range, lo, hi, def, \
+     nullptr, 0, nullptr, SettingDoor::door, repair}
+// A track field is read back as stored: it may hold a banked CHIRP index.
+#define PA_AUDIO(name, key, member, lo, hi, def, door) \
+    PA_AUDIO_AT(name, key, member, lo, hi, def, door, false)
+#define PA_TRACK(name, key, member, def) PA_AUDIO(name, key, member, 1, 999, def, AudioTracks)
+#define PA_OPTIONAL_TRACK(name, key, member) PA_AUDIO(name, key, member, 0, 999, 0, AudioTracks)
+#define PA_INTERVAL(name, member, def) PA_AUDIO(name, name, member, 0, 3600, def, AudioTracks)
+#define PA_CATEGORY_BOUND(name, key, member) PA_AUDIO(name, key, member, 0, 999, 0, AudioTracks)
+#define PA_MOOD_MASK(name, key, member, def) \
+    {name, nullptr, key, PA_SETTING_FIELD(Audio, AudioConfig, member), SettingRule::Mask, 0, \
+     MOOD_CATEGORY_MASK_MAX, def, nullptr, 0, nullptr, SettingDoor::AudioMoodMap}
+
+const ConfigSetting kAudioSettings[] = {
+    // The DFPlayer Mini's 0..30, and repaired on load as it always was.
+    PA_AUDIO_AT("volume", "aud_vol", audioVolume, 0, 30, 20, AudioVolume, true),
+
+    PA_TRACK("scream", "snd_scream", snd_scream, AUDIO_TRACK_SCREAM),
+    PA_TRACK("faint", "snd_faint", snd_faint, AUDIO_TRACK_FAINT),
+    PA_TRACK("leia", "snd_leia", snd_leia, AUDIO_TRACK_LEIA),
+    PA_TRACK("cantina_s", "snd_cantina_s", snd_cantina_s, AUDIO_TRACK_CANTINA_S),
+    PA_TRACK("sw_theme", "snd_sw", snd_sw_theme, AUDIO_TRACK_SW_THEME),
+    PA_TRACK("imp_march", "snd_march", snd_imp_march, AUDIO_TRACK_IMP_MARCH),
+    PA_TRACK("cantina_l", "snd_cantina_l", snd_cantina_l, AUDIO_TRACK_CANTINA_L),
+    PA_TRACK("startup", "snd_startup", snd_startup, AUDIO_TRACK_STARTUP),
+    PA_OPTIONAL_TRACK("doodoo", "snd_doodoo", snd_doodoo),
+    PA_OPTIONAL_TRACK("failure", "snd_failure", snd_failure),
+    PA_OPTIONAL_TRACK("disco", "snd_disco", snd_disco),
+    PA_OPTIONAL_TRACK("mahna", "snd_mahna", snd_mahna),
+    PA_OPTIONAL_TRACK("inlove", "snd_inlove", snd_inlove),
+    PA_OPTIONAL_TRACK("macho", "snd_macho", snd_macho),
+    PA_OPTIONAL_TRACK("gangnam", "snd_gangnam", snd_gangnam),
+    PA_OPTIONAL_TRACK("uptown", "snd_uptown", snd_uptown),
+    PA_OPTIONAL_TRACK("celebr", "snd_celebr", snd_celebr),
+    PA_OPTIONAL_TRACK("stayin", "snd_stayin", snd_stayin),
+    PA_OPTIONAL_TRACK("harlem", "snd_harlem", snd_harlem),
+    PA_OPTIONAL_TRACK("pbjtime", "snd_pbjtime", snd_pbjtime),
+    PA_OPTIONAL_TRACK("sys_boot", "snd_sys_boot", snd_sys_boot),
+    PA_OPTIONAL_TRACK("sys_mode_n", "snd_sys_mode_n", snd_sys_mode_n),
+    PA_OPTIONAL_TRACK("sys_mode_s", "snd_sys_mode_s", snd_sys_mode_s),
+    PA_OPTIONAL_TRACK("sys_mode_t", "snd_sys_mode_t", snd_sys_mode_t),
+    PA_OPTIONAL_TRACK("sys_drv_on", "snd_sys_drv_on", snd_sys_drv_on),
+    PA_OPTIONAL_TRACK("sys_dome_on", "snd_sys_dome_on", snd_sys_dome_on),
+    // "snd_sys_netdown": 15 characters, the ESP-IDF Preferences key ceiling (#189).
+    PA_OPTIONAL_TRACK("sys_net_down", "snd_sys_netdown", snd_sys_net_down),
+    PA_TRACK("rand_min", "snd_rand_min", snd_rand_min, AUDIO_RAND_TRACK_MIN),
+    PA_TRACK("rand_max", "snd_rand_max", snd_rand_max, AUDIO_RAND_TRACK_MAX),
+
+    PA_INTERVAL("snd_int_quiet", snd_int_quiet, AUDIO_RAND_INT_QUIET),
+    PA_INTERVAL("snd_int_mid", snd_int_mid, AUDIO_RAND_INT_MID),
+    PA_INTERVAL("snd_int_full", snd_int_full, AUDIO_RAND_INT_FULL),
+    PA_INTERVAL("snd_int_awake", snd_int_awake, AUDIO_RAND_INT_AWAKE),
+
+    PA_CATEGORY_BOUND("snd_cat_gen_lo", "snd_cat_gen_lo", snd_cat_gen_lo),
+    PA_CATEGORY_BOUND("snd_cat_gen_hi", "snd_cat_gen_hi", snd_cat_gen_hi),
+    PA_CATEGORY_BOUND("snd_cat_chat_lo", "snd_cat_chat_lo", snd_cat_chat_lo),
+    PA_CATEGORY_BOUND("snd_cat_chat_hi", "snd_cat_chat_hi", snd_cat_chat_hi),
+    PA_CATEGORY_BOUND("snd_cat_hap_lo", "snd_cat_hap_lo", snd_cat_hap_lo),
+    PA_CATEGORY_BOUND("snd_cat_hap_hi", "snd_cat_hap_hi", snd_cat_hap_hi),
+    PA_CATEGORY_BOUND("snd_cat_proc_lo", "snd_cat_proc_lo", snd_cat_proc_lo),
+    PA_CATEGORY_BOUND("snd_cat_proc_hi", "snd_cat_proc_hi", snd_cat_proc_hi),
+    PA_CATEGORY_BOUND("snd_cat_sad_lo", "snd_cat_sad_lo", snd_cat_sad_lo),
+    PA_CATEGORY_BOUND("snd_cat_sad_hi", "snd_cat_sad_hi", snd_cat_sad_hi),
+    PA_CATEGORY_BOUND("snd_cat_sent_lo", "snd_cat_sent_lo", snd_cat_sent_lo),
+    PA_CATEGORY_BOUND("snd_cat_sent_hi", "snd_cat_sent_hi", snd_cat_sent_hi),
+    PA_CATEGORY_BOUND("snd_cat_hum_lo", "snd_cat_hum_lo", snd_cat_hum_lo),
+    PA_CATEGORY_BOUND("snd_cat_hum_hi", "snd_cat_hum_hi", snd_cat_hum_hi),
+    PA_CATEGORY_BOUND("snd_cat_scrm_lo", "snd_cat_scrm_lo", snd_cat_scrm_lo),
+    PA_CATEGORY_BOUND("snd_cat_scrm_hi", "snd_cat_scrm_hi", snd_cat_scrm_hi),
+    PA_CATEGORY_BOUND("snd_cat_ooh_lo", "snd_cat_ooh_lo", snd_cat_ooh_lo),
+    PA_CATEGORY_BOUND("snd_cat_ooh_hi", "snd_cat_ooh_hi", snd_cat_ooh_hi),
+    PA_CATEGORY_BOUND("snd_cat_alrm_lo", "snd_cat_alrm_lo", snd_cat_alrm_lo),
+    PA_CATEGORY_BOUND("snd_cat_alrm_hi", "snd_cat_alrm_hi", snd_cat_alrm_hi),
+    PA_CATEGORY_BOUND("snd_cat_snrk_lo", "snd_cat_snrk_lo", snd_cat_snarky_lo),
+    PA_CATEGORY_BOUND("snd_cat_snrk_hi", "snd_cat_snrk_hi", snd_cat_snarky_hi),
+    PA_CATEGORY_BOUND("snd_cat_whis_lo", "snd_cat_whis_lo", snd_cat_whis_lo),
+    PA_CATEGORY_BOUND("snd_cat_whis_hi", "snd_cat_whis_hi", snd_cat_whis_hi),
+
+    PA_MOOD_MASK("quiet", "snd_moodcat_q", snd_moodcat_quiet, 0x0048),
+    PA_MOOD_MASK("mid", "snd_moodcat_m", snd_moodcat_mid, 0x004F),
+    PA_MOOD_MASK("full", "snd_moodcat_f", snd_moodcat_full, 0x090F),
+    PA_MOOD_MASK("awakeplus", "snd_moodcat_a", snd_moodcat_awakeplus, 0x0F8F),
+};
+
+#undef PA_AUDIO_AT
+#undef PA_AUDIO
+#undef PA_TRACK
+#undef PA_OPTIONAL_TRACK
+#undef PA_INTERVAL
+#undef PA_CATEGORY_BOUND
+#undef PA_MOOD_MASK
+
+constexpr size_t kAudioSettingCount = sizeof(kAudioSettings) / sizeof(kAudioSettings[0]);
+
+// Every Setting, the droid's and the audio ones, for the loops that treat them
+// alike: the defaults and the NVS save and load.
+template <typename Fn>
+void forEachSetting(Fn fn) {
+    for (const ConfigSetting& setting : kConfigSettings) {
+        fn(setting);
+    }
+    for (const ConfigSetting& setting : kAudioSettings) {
+        fn(setting);
+    }
+}
+
+
 constexpr size_t kConfigSettingCount = sizeof(kConfigSettings) / sizeof(kConfigSettings[0]);
 
 // -----------------------------------------------------------------------------
@@ -285,6 +405,8 @@ uint8_t* sectionOf(ConfigSnapshot* snap, SettingSection section) {
             return reinterpret_cast<uint8_t*>(&snap->drive);
         case SettingSection::Dome:
             return reinterpret_cast<uint8_t*>(&snap->dome);
+        case SettingSection::Audio:
+            return reinterpret_cast<uint8_t*>(&snap->audio);
         case SettingSection::System:
         default:
             return reinterpret_cast<uint8_t*>(&snap->system);
@@ -365,7 +487,7 @@ bool parseNumberRule(SettingRule rule, SettingStorage storage, int32_t lo, int32
         return true;
     }
 
-    if (rule == SettingRule::Range && raw != nullptr) {
+    if ((rule == SettingRule::Range || rule == SettingRule::Mask) && raw != nullptr) {
         bool parsed = false;
         if (storage == SettingStorage::I16) {
             int16_t v = 0;
@@ -542,7 +664,7 @@ bool configSettingApply(const ConfigSetting& setting, const char* raw, ConfigSna
 }
 
 void configSettingsDefaults(ConfigSnapshot* snap) {
-    for (const ConfigSetting& setting : kConfigSettings) {
+    forEachSetting([snap](const ConfigSetting& setting) {
         uint8_t* at = sectionOf(snap, setting.section) + setting.offset;
         switch (setting.rule) {
             case SettingRule::Member:
@@ -558,18 +680,21 @@ void configSettingsDefaults(ConfigSnapshot* snap) {
                 storeNumber(setting.storage, at, setting.def);
                 break;
         }
-    }
+    });
 }
 
 bool configSettingsWrite(SettingSection section, const void* sectionData, ConfigWriter& writer) {
     const uint8_t* base = static_cast<const uint8_t*>(sectionData);
     bool ok = true;
-    for (const ConfigSetting& setting : kConfigSettings) {
+    forEachSetting([&](const ConfigSetting& setting) {
         if (setting.section != section) {
-            continue;
+            return;
         }
         const uint8_t* at = base + setting.offset;
-        const int32_t value = loadNumber(setting.storage, at);
+        int32_t value = loadNumber(setting.storage, at);
+        if (setting.rule == SettingRule::Mask) {
+            value &= setting.hi;  // the bits above the mask were flags, and are not stored
+        }
         switch (setting.storage) {
             case SettingStorage::Bool:
                 ok = writer.writeBool(setting.nvsKey, value != 0) && ok;
@@ -603,15 +728,15 @@ bool configSettingsWrite(SettingSection section, const void* sectionData, Config
                 ok = writer.writeStr(setting.nvsKey, reinterpret_cast<const char*>(at)) && ok;
                 break;
         }
-    }
+    });
     return ok;
 }
 
 void configSettingsRead(SettingSection section, const ConfigReader& reader, void* sectionData) {
     uint8_t* base = static_cast<uint8_t*>(sectionData);
-    for (const ConfigSetting& setting : kConfigSettings) {
+    forEachSetting([&](const ConfigSetting& setting) {
         if (setting.section != section) {
-            continue;
+            return;
         }
         uint8_t* at = base + setting.offset;
         const int32_t held = loadNumber(setting.storage, at);
@@ -644,28 +769,59 @@ void configSettingsRead(SettingSection section, const ConfigReader& reader, void
                 } else {
                     snprintf(reinterpret_cast<char*>(at), setting.size, "%s", stored.c_str());
                 }
-                continue;
+                return;
             }
         }
         // What the door would refuse is repaired on the way in, so a value no
         // page could have saved never reaches the task that reads it.
-        switch (setting.rule) {
-            case SettingRule::Range:
-                value = value < setting.lo ? setting.lo : value > setting.hi ? setting.hi : value;
-                break;
-            case SettingRule::Words:
-                if (!wordIsKnown(*setting.words, value)) {
-                    value = setting.def;
-                }
-                break;
-            case SettingRule::Bool:
-            case SettingRule::Member:
-            case SettingRule::Ipv4:
-            default:
-                break;
+        if (setting.repairOnLoad) {
+            switch (setting.rule) {
+                case SettingRule::Range:
+                    value = value < setting.lo ? setting.lo : value > setting.hi ? setting.hi : value;
+                    break;
+                case SettingRule::Words:
+                    if (!wordIsKnown(*setting.words, value)) {
+                        value = setting.def;
+                    }
+                    break;
+                case SettingRule::Mask:
+                    value &= setting.hi;
+                    break;
+                case SettingRule::Bool:
+                case SettingRule::Member:
+                case SettingRule::Ipv4:
+                default:
+                    break;
+            }
         }
         storeNumber(setting.storage, at, value);
+    });
+}
+
+// =============================================================================
+// The audio Settings
+// =============================================================================
+size_t audioSettingCount() { return kAudioSettingCount; }
+
+const ConfigSetting& audioSettingAt(size_t index) { return kAudioSettings[index]; }
+
+const ConfigSetting* audioSettingByName(const char* name, SettingDoor door) {
+    if (name == nullptr) {
+        return nullptr;
     }
+    for (const ConfigSetting& setting : kAudioSettings) {
+        if (setting.door == door && strcmp(setting.form, name) == 0) {
+            return &setting;
+        }
+    }
+    return nullptr;
+}
+
+bool configSettingCheck(const ConfigSetting& setting, const char* raw, const char* field,
+                        int32_t* value, ApplyRefusal* refusal, char* sentence,
+                        size_t sentenceSize) {
+    return parseNumberRule(setting.rule, setting.storage, setting.lo, setting.hi, setting.words,
+                           raw, field, value, refusal, sentence, sentenceSize);
 }
 
 // =============================================================================

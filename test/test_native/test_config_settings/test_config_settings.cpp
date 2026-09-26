@@ -64,7 +64,43 @@ const KeyPin kStoredKeys[] = {
     {"domeEscRndPauseMin", "dome_rnd_pmin"}, {"domeEscRndPauseMax", "dome_rnd_pmax"},
     {"domeEscRndMoveMs", "dome_rnd_ms"}, {"protoR2linkWifiPeerIp", "dome_wip"},
     {"logLevel", "log_level"},
+    // The audio Settings (#431 addendum), by the key their door takes.
+    {"volume", "aud_vol"}, {"scream", "snd_scream"}, {"faint", "snd_faint"},
+    {"leia", "snd_leia"}, {"cantina_s", "snd_cantina_s"}, {"sw_theme", "snd_sw"},
+    {"imp_march", "snd_march"}, {"cantina_l", "snd_cantina_l"}, {"startup", "snd_startup"},
+    {"doodoo", "snd_doodoo"}, {"failure", "snd_failure"}, {"disco", "snd_disco"},
+    {"mahna", "snd_mahna"}, {"inlove", "snd_inlove"}, {"macho", "snd_macho"},
+    {"gangnam", "snd_gangnam"}, {"uptown", "snd_uptown"}, {"celebr", "snd_celebr"},
+    {"stayin", "snd_stayin"}, {"harlem", "snd_harlem"}, {"pbjtime", "snd_pbjtime"},
+    {"sys_boot", "snd_sys_boot"}, {"sys_mode_n", "snd_sys_mode_n"},
+    {"sys_mode_s", "snd_sys_mode_s"}, {"sys_mode_t", "snd_sys_mode_t"},
+    {"sys_drv_on", "snd_sys_drv_on"}, {"sys_dome_on", "snd_sys_dome_on"},
+    {"sys_net_down", "snd_sys_netdown"}, {"rand_min", "snd_rand_min"},
+    {"rand_max", "snd_rand_max"}, {"snd_int_quiet", "snd_int_quiet"},
+    {"snd_int_mid", "snd_int_mid"}, {"snd_int_full", "snd_int_full"},
+    {"snd_int_awake", "snd_int_awake"}, {"quiet", "snd_moodcat_q"}, {"mid", "snd_moodcat_m"},
+    {"full", "snd_moodcat_f"}, {"awakeplus", "snd_moodcat_a"},
+    {"snd_cat_gen_lo", "snd_cat_gen_lo"}, {"snd_cat_gen_hi", "snd_cat_gen_hi"},
+    {"snd_cat_chat_lo", "snd_cat_chat_lo"}, {"snd_cat_chat_hi", "snd_cat_chat_hi"},
+    {"snd_cat_hap_lo", "snd_cat_hap_lo"}, {"snd_cat_hap_hi", "snd_cat_hap_hi"},
+    {"snd_cat_proc_lo", "snd_cat_proc_lo"}, {"snd_cat_proc_hi", "snd_cat_proc_hi"},
+    {"snd_cat_sad_lo", "snd_cat_sad_lo"}, {"snd_cat_sad_hi", "snd_cat_sad_hi"},
+    {"snd_cat_sent_lo", "snd_cat_sent_lo"}, {"snd_cat_sent_hi", "snd_cat_sent_hi"},
+    {"snd_cat_hum_lo", "snd_cat_hum_lo"}, {"snd_cat_hum_hi", "snd_cat_hum_hi"},
+    {"snd_cat_scrm_lo", "snd_cat_scrm_lo"}, {"snd_cat_scrm_hi", "snd_cat_scrm_hi"},
+    {"snd_cat_ooh_lo", "snd_cat_ooh_lo"}, {"snd_cat_ooh_hi", "snd_cat_ooh_hi"},
+    {"snd_cat_alrm_lo", "snd_cat_alrm_lo"}, {"snd_cat_alrm_hi", "snd_cat_alrm_hi"},
+    {"snd_cat_snrk_lo", "snd_cat_snrk_lo"}, {"snd_cat_snrk_hi", "snd_cat_snrk_hi"},
+    {"snd_cat_whis_lo", "snd_cat_whis_lo"}, {"snd_cat_whis_hi", "snd_cat_whis_hi"},
 };
+
+// Every declared Setting, the droid's and the audio ones, in one list.
+size_t everySettingCount() { return configSettingCount() + audioSettingCount(); }
+
+const ConfigSetting& everySettingAt(size_t index) {
+    return index < configSettingCount() ? configSettingAt(index)
+                                        : audioSettingAt(index - configSettingCount());
+}
 
 const char* storedKeyOf(const char* form) {
     for (const KeyPin& pin : kStoredKeys) {
@@ -75,15 +111,16 @@ const char* storedKeyOf(const char* form) {
     return nullptr;
 }
 
-// Every Setting moved off the defaults, through its own check. The one rule
+// Every Setting, the droid's and the audio ones, moved off the defaults,
+// through its own check. The one rule
 // across Settings a store holds to - the dome pulses in order - is put right
 // by hand afterwards, the way configApply() judges it beside its loop.
 ConfigSnapshot everySettingMovedOffTheDefaults() {
     ConfigSnapshot defaults = {};
     configSnapshotDefaults(&defaults);
     ConfigSnapshot moved = defaults;
-    for (size_t i = 0; i < configSettingCount(); ++i) {
-        const ConfigSetting& setting = configSettingAt(i);
+    for (size_t i = 0; i < everySettingCount(); ++i) {
+        const ConfigSetting& setting = everySettingAt(i);
         char text[24] = {};
         TEST_ASSERT_TRUE_MESSAGE(settingOtherText(setting, defaults, i, text, sizeof(text)),
                                  setting.form);
@@ -135,8 +172,8 @@ void test_every_setting_saved_through_the_store_loads_back_under_its_key() {
     prefs.begin("proto", false);
     TEST_ASSERT_TRUE(configSave(prefs, saved));
 
-    for (size_t i = 0; i < configSettingCount(); ++i) {
-        const ConfigSetting& setting = configSettingAt(i);
+    for (size_t i = 0; i < everySettingCount(); ++i) {
+        const ConfigSetting& setting = everySettingAt(i);
         const char* pinned = storedKeyOf(setting.form);
         TEST_ASSERT_NOT_NULL_MESSAGE(pinned, setting.form);
         TEST_ASSERT_EQUAL_STRING_MESSAGE(pinned, setting.nvsKey, setting.form);
@@ -147,8 +184,8 @@ void test_every_setting_saved_through_the_store_loads_back_under_its_key() {
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     prefs.end();
 
-    for (size_t i = 0; i < configSettingCount(); ++i) {
-        assertSameSetting(configSettingAt(i), saved, loaded);
+    for (size_t i = 0; i < everySettingCount(); ++i) {
+        assertSameSetting(everySettingAt(i), saved, loaded);
     }
 }
 
@@ -160,8 +197,8 @@ void test_every_setting_refuses_a_value_it_does_not_take_with_field_reason_and_a
     ConfigSnapshot defaults = {};
     configSnapshotDefaults(&defaults);
 
-    for (size_t i = 0; i < configSettingCount(); ++i) {
-        const ConfigSetting& setting = configSettingAt(i);
+    for (size_t i = 0; i < everySettingCount(); ++i) {
+        const ConfigSetting& setting = everySettingAt(i);
         char bad[24] = {};
         char accepts[APPLY_REFUSAL_ACCEPTS_MAX] = {};
         switch (setting.rule) {
@@ -184,6 +221,10 @@ void test_every_setting_refuses_a_value_it_does_not_take_with_field_reason_and_a
                 break;
             case SettingRule::Ipv4:
                 snprintf(bad, sizeof(bad), "%s", "999.1.1.1");
+                break;
+            case SettingRule::Mask:
+                snprintf(bad, sizeof(bad), "%ld", (long)setting.hi + 1);
+                snprintf(accepts, sizeof(accepts), "%ld..%ld", (long)setting.lo, (long)setting.hi);
                 break;
         }
         // A Setting that takes words is refused in its words, all of them.
@@ -249,10 +290,25 @@ void test_the_ranges_that_drifted_hold_at_both_edges() {
     }
 }
 
+// A sound action's track field can hold a CHIRP catalog index past the 999 its
+// door takes as a plain track - that is a banked binding, stored by the tracks
+// write path. A load must hand it back as stored: clamping it to its
+// declaration's range would quietly unbind the sound.
+void test_a_banked_track_index_loads_back_as_stored() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.putUShort("snd_scream", 40000);
+    ConfigSnapshot loaded = {};
+    configLoad(prefs, &loaded);
+    prefs.end();
+    TEST_ASSERT_EQUAL_UINT16(40000, loaded.audio.snd_scream);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_every_setting_saved_through_the_store_loads_back_under_its_key);
     RUN_TEST(test_every_setting_refuses_a_value_it_does_not_take_with_field_reason_and_accepts);
     RUN_TEST(test_the_ranges_that_drifted_hold_at_both_edges);
+    RUN_TEST(test_a_banked_track_index_loads_back_as_stored);
     return UNITY_END();
 }

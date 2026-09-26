@@ -4147,6 +4147,17 @@ void test_sound_set_category_range_rejects_lo_greater_than_hi() {
     TEST_ASSERT_EQUAL_STRING("lo", capturedValue("argument"));
 }
 
+// A bound out of range is named by its Setting in the core (the key it was
+// for); on the Console it is the `hi=` the builder typed.
+void test_sound_set_category_range_names_an_out_of_range_bound_by_its_argument() {
+    runQuery("sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=1 hi=1000");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("hi", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("0..999", capturedValue("accepts"));
+}
+
 void test_sound_set_category_range_rejects_bank_as_an_unknown_argument() {
     // bank/page (REST's optional CHIRP-binding extension) are not in this
     // row's registry schema - Console exposes only the plain lo/hi form.
@@ -5040,7 +5051,7 @@ static void seedAudioTrack(const char* key, uint16_t value) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     TEST_ASSERT_TRUE_MESSAGE(configAudioSetTrackByKey(&snap.audio, key, value),
-                             "test seed used a key AUDIO_TRACK_KEYS does not declare");
+                             "test seed used a key no audio Setting declares");
     {
         const ConfigWriteWindowForTest seed;
         configCacheReplace(snap);
@@ -5052,7 +5063,7 @@ static uint16_t audioTrackValue(const char* key) {
     configCacheRead(&snap);
     uint16_t value = 0;
     TEST_ASSERT_TRUE_MESSAGE(configAudioGetTrackByKey(snap.audio, key, &value),
-                             "read-back used a key AUDIO_TRACK_KEYS does not declare");
+                             "read-back used a key no audio Setting declares");
     return value;
 }
 
@@ -5081,9 +5092,9 @@ void test_sound_config_random_min_write_reaches_the_tracks_core() {
 
 // The core is the only gate on the value, not a copy of its rules in this
 // module: these two rows take the identical argument and get opposite
-// verdicts, because audioTracksApply()'s zero-allowed key list contains
-// sys_boot and not startup (src/web/api_audio_tracks_apply.cpp). No
-// adapter-side check could tell them apart without duplicating that list.
+// verdicts, because the startup Setting takes 1..999 and sys_boot 0..999
+// (src/config_settings.cpp). No adapter-side check could tell them apart
+// without duplicating those declarations.
 void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
     seedAudioTrack("startup", 5);
 
@@ -5092,6 +5103,10 @@ void test_sound_config_startup_track_rejects_zero_the_way_rest_does() {
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_INVALID, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_OUT_OF_RANGE, g_cap.reason);
+    // The core names the refused value by its Setting (`startup`); the builder
+    // typed it as `track=`, and that is the argument named, with the range.
+    TEST_ASSERT_EQUAL_STRING("track", capturedValue("argument"));
+    TEST_ASSERT_EQUAL_STRING("1..999", capturedValue("accepts"));
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(5, audioTrackValue("startup"),
                                      "a refused write must not have reached the config cache");
 }
@@ -5781,6 +5796,7 @@ int main(int, char**) {
     RUN_TEST(test_sound_set_category_range_applies_and_persists);
     RUN_TEST(test_sound_set_category_range_rejects_a_mismatched_key_pair);
     RUN_TEST(test_sound_set_category_range_rejects_lo_greater_than_hi);
+    RUN_TEST(test_sound_set_category_range_names_an_out_of_range_bound_by_its_argument);
     RUN_TEST(test_sound_set_category_range_rejects_bank_as_an_unknown_argument);
 
     RUN_TEST(test_aux_led_color_queues_a_valid_rgb_triple);

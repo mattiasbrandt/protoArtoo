@@ -49,6 +49,7 @@
 
 #include "api_audio_category_range_apply.h"
 #include "api_audio_mood_map_apply.h"
+#include "config_settings.h"  // the volume Setting's check
 #include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
 #include "api_json_response.h"
@@ -1188,12 +1189,21 @@ void handleAudioPost(WebRequest& req) {
     if (strcmp(action, "volume") == 0) {
         char levelRaw[16] = {};
         if (!req.param("level", levelRaw, sizeof(levelRaw))) {
-            webSendJsonError(req, 400, "volume requires level parameter");
+            ApplyRefusal refusal;
+            applyRefusalSet(&refusal, ApplyRefusalReason::MissingArgument, "volume");
+            webSendApplyRefusal(req, 400, "volume requires level parameter", refusal);
             return;
         }
-        uint32_t level = 0;
-        if (!parseUint32Value(levelRaw, &level) || level > 30) {
-            webSendJsonError(req, 400, "level must be 0-30");
+        // The volume Setting's own check (include/config_settings.h), refused
+        // with its field, reason and range so the Sound page can word it.
+        const ConfigSetting* volume = audioSettingByName("volume", SettingDoor::AudioVolume);
+        int32_t level = 0;
+        ApplyRefusal refusal;
+        char sentence[CONFIG_SETTING_SENTENCE_MAX] = {};
+        if (volume == nullptr ||
+            !configSettingCheck(*volume, levelRaw, "volume", &level, &refusal, sentence,
+                                sizeof(sentence))) {
+            webSendApplyRefusal(req, 400, sentence, refusal);
             return;
         }
 

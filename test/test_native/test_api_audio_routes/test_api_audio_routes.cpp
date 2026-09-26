@@ -279,7 +279,11 @@ void test_audio_post_volume_rejects_out_of_range_levels() {
     const WebRequestTestParam tooLoud[] = {{"action", "volume"}, {"level", "31"}};
     callPost(handleAudioPost, tooLoud, 2);
     TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
-    TEST_ASSERT_TRUE(bodyContains("level must be"));
+    // The volume Setting's refusal, with its field, reason and range as data
+    // (#431): a page words it, and the sentence carries no wire name it reads.
+    TEST_ASSERT_TRUE(bodyContains("\"field\":\"volume\""));
+    TEST_ASSERT_TRUE(bodyContains("\"reason\":\"out-of-range\""));
+    TEST_ASSERT_TRUE(bodyContains("\"accepts\":\"0..30\""));
 
     const WebRequestTestParam negative[] = {{"action", "volume"}, {"level", "-1"}};
     callPost(handleAudioPost, negative, 2);

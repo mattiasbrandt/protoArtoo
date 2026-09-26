@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 #include "api_helpers.h"
-#include "mood_sound_mapping.h"
+#include "config_settings.h"  // each mood mask's check
 
 namespace {
 
@@ -24,27 +24,19 @@ void setError(AudioMoodMapApplyResult* result, const char* message, ApplyRefusal
     applyRefusalSet(&result->error.refusal, reason, field);
 }
 
-// A refusal about one mask, `fmt` naming it by `key`. A mask that is there
-// and wrong is refused against the range every mask takes.
-void setFieldError(AudioMoodMapApplyResult* result, const char* fmt, const char* key,
-                   ApplyRefusalReason reason) {
-    result->error.hasError = true;
-    snprintf(result->error.message, sizeof(result->error.message), fmt, key);
-    if (reason == ApplyRefusalReason::OutOfRange) {
-        applyRefusalSetRange(&result->error.refusal, key, 0, MOOD_CATEGORY_MASK_MAX);
-    } else {
-        applyRefusalSet(&result->error.refusal, reason, key);
-    }
-}
-
+// One mask, by its own Setting (include/config_settings.h): its range and its
+// refusal, named by the mask's key. `raw` is the text of the value, whichever
+// shape the request sent it in.
 bool parseMaskText(const char* raw, const char* key, uint16_t* out, AudioMoodMapApplyResult* result) {
-    uint32_t value = 0;
-    if (!parseUint32Value(raw, &value)) {
-        setFieldError(result, "%s must be a non-negative integer", key, ApplyRefusalReason::OutOfRange);
-        return false;
-    }
-    if (!isValidMoodCategoryMaskValue(value)) {
-        setFieldError(result, "%s must be 0..4095", key, ApplyRefusalReason::OutOfRange);
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioMoodMap);
+    int32_t value = 0;
+    if (setting == nullptr ||
+        !configSettingCheck(*setting, raw, key, &value, &result->error.refusal,
+                            result->error.message, sizeof(result->error.message))) {
+        if (setting == nullptr) {
+            setError(result, "unknown mood mask", ApplyRefusalReason::OutOfRange, key);
+        }
+        result->error.hasError = true;
         return false;
     }
     *out = (uint16_t)value;
@@ -97,35 +89,29 @@ void audioMoodMapApply(const ConfigParamSource& params, AudioMoodMapApplyResult*
     auto parseMaskJson = [&](const char* key, uint16_t* out) -> bool {
         JsonVariantConst value = bodyDoc[key];
         if (value.isNull()) {
-            setFieldError(result, "missing %s", key, ApplyRefusalReason::MissingArgument);
+            char message[48];
+            snprintf(message, sizeof(message), "missing %s", key);
+            setError(result, message, ApplyRefusalReason::MissingArgument, key);
             return false;
         }
 
-        if (value.is<uint32_t>()) {
-            uint32_t parsed = value.as<uint32_t>();
-            if (!isValidMoodCategoryMaskValue(parsed)) {
-                setFieldError(result, "%s must be 0..4095", key, ApplyRefusalReason::OutOfRange);
+        // A number is checked as the text JSON writes it, so 1.5 stays 1.5 and
+        // is refused by the mask's own parse rather than truncated to 1.
+        if (value.is<long>() || value.is<double>()) {
+            char text[24] = {};
+            const size_t length = serializeJson(value, text, sizeof(text));
+            if (length == 0 || length >= sizeof(text)) {
+                setError(result, "mask must be a number", ApplyRefusalReason::OutOfRange, key);
                 return false;
             }
-            *out = (uint16_t)parsed;
-            return true;
-        }
-
-        if (value.is<int32_t>()) {
-            int32_t parsed = value.as<int32_t>();
-            if (parsed < 0 || !isValidMoodCategoryMaskValue((uint32_t)parsed)) {
-                setFieldError(result, "%s must be 0..4095", key, ApplyRefusalReason::OutOfRange);
-                return false;
-            }
-            *out = (uint16_t)parsed;
-            return true;
+            return parseMaskText(text, key, out, result);
         }
 
         if (value.is<const char*>()) {
             return parseMaskText(value.as<const char*>(), key, out, result);
         }
 
-        setFieldError(result, "%s must be integer", key, ApplyRefusalReason::OutOfRange);
+        setError(result, "mask must be a number", ApplyRefusalReason::OutOfRange, key);
         return false;
     };
 

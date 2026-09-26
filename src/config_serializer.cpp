@@ -276,76 +276,13 @@ void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig
 
 void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig& def) {
     *out = def;
-    out->audioVolume = r.readU8("aud_vol", def.audioVolume);
-    out->snd_scream = r.readU16("snd_scream", def.snd_scream);
-    out->snd_faint = r.readU16("snd_faint", def.snd_faint);
-    out->snd_leia = r.readU16("snd_leia", def.snd_leia);
-    out->snd_cantina_s = r.readU16("snd_cantina_s", def.snd_cantina_s);
-    out->snd_sw_theme = r.readU16("snd_sw", def.snd_sw_theme);
-    out->snd_imp_march = r.readU16("snd_march", def.snd_imp_march);
-    out->snd_cantina_l = r.readU16("snd_cantina_l", def.snd_cantina_l);
-    out->snd_startup = r.readU16("snd_startup", def.snd_startup);
-    out->snd_doodoo = r.readU16("snd_doodoo", def.snd_doodoo);
-    out->snd_failure = r.readU16("snd_failure", def.snd_failure);
-    out->snd_disco = r.readU16("snd_disco", def.snd_disco);
+    // Every audio Setting under its key, held to what its door takes: the
+    // volume to the DFPlayer Mini's 0..30, a track to its range, a mood mask to
+    // its twelve bits (its upper nibble once carried category flags).
+    configSettingsRead(SettingSection::Audio, r, out);
+    // Not a Setting: nothing writes it after its default (config_settings.h).
     out->snd_happy = r.readU16("snd_happy", def.snd_happy);
-    out->snd_mahna = r.readU16("snd_mahna", def.snd_mahna);
-    out->snd_inlove = r.readU16("snd_inlove", def.snd_inlove);
-    out->snd_macho = r.readU16("snd_macho", def.snd_macho);
-    out->snd_gangnam = r.readU16("snd_gangnam", def.snd_gangnam);
-    out->snd_uptown = r.readU16("snd_uptown", def.snd_uptown);
-    out->snd_celebr = r.readU16("snd_celebr", def.snd_celebr);
-    out->snd_stayin = r.readU16("snd_stayin", def.snd_stayin);
-    out->snd_harlem = r.readU16("snd_harlem", def.snd_harlem);
-    out->snd_pbjtime = r.readU16("snd_pbjtime", def.snd_pbjtime);
-    out->snd_sys_boot = r.readU16("snd_sys_boot", def.snd_sys_boot);
-    out->snd_sys_mode_n = r.readU16("snd_sys_mode_n", def.snd_sys_mode_n);
-    out->snd_sys_mode_s = r.readU16("snd_sys_mode_s", def.snd_sys_mode_s);
-    out->snd_sys_mode_t = r.readU16("snd_sys_mode_t", def.snd_sys_mode_t);
-    out->snd_sys_drv_on = r.readU16("snd_sys_drv_on", def.snd_sys_drv_on);
-    out->snd_sys_dome_on = r.readU16("snd_sys_dome_on", def.snd_sys_dome_on);
-    // "snd_sys_netdown" (no underscore before "down"): 15 chars, the ESP-IDF
-    // Preferences key length ceiling (#189).
-    out->snd_sys_net_down = r.readU16("snd_sys_netdown", def.snd_sys_net_down);
-    out->snd_rand_min = r.readU16("snd_rand_min", def.snd_rand_min);
-    out->snd_rand_max = r.readU16("snd_rand_max", def.snd_rand_max);
-    out->snd_int_quiet = r.readU16("snd_int_quiet", def.snd_int_quiet);
-    out->snd_int_mid = r.readU16("snd_int_mid", def.snd_int_mid);
-    out->snd_int_full = r.readU16("snd_int_full", def.snd_int_full);
-    out->snd_int_awake = r.readU16("snd_int_awake", def.snd_int_awake);
-    // Upper nibble carries category flags (stripped on write); mask defensively on read too
-    out->snd_moodcat_quiet     = r.readU16("snd_moodcat_q", def.snd_moodcat_quiet)     & 0x0FFF;
-    out->snd_moodcat_mid       = r.readU16("snd_moodcat_m", def.snd_moodcat_mid)       & 0x0FFF;
-    out->snd_moodcat_full      = r.readU16("snd_moodcat_f", def.snd_moodcat_full)      & 0x0FFF;
-    out->snd_moodcat_awakeplus = r.readU16("snd_moodcat_a", def.snd_moodcat_awakeplus) & 0x0FFF;
-    out->snd_cat_gen_lo = r.readU16("snd_cat_gen_lo", def.snd_cat_gen_lo);
-    out->snd_cat_gen_hi = r.readU16("snd_cat_gen_hi", def.snd_cat_gen_hi);
-    out->snd_cat_chat_lo = r.readU16("snd_cat_chat_lo", def.snd_cat_chat_lo);
-    out->snd_cat_chat_hi = r.readU16("snd_cat_chat_hi", def.snd_cat_chat_hi);
-    out->snd_cat_hap_lo = r.readU16("snd_cat_hap_lo", def.snd_cat_hap_lo);
-    out->snd_cat_hap_hi = r.readU16("snd_cat_hap_hi", def.snd_cat_hap_hi);
-    out->snd_cat_proc_lo = r.readU16("snd_cat_proc_lo", def.snd_cat_proc_lo);
-    out->snd_cat_proc_hi = r.readU16("snd_cat_proc_hi", def.snd_cat_proc_hi);
-    out->snd_cat_sad_lo = r.readU16("snd_cat_sad_lo", def.snd_cat_sad_lo);
-    out->snd_cat_sad_hi = r.readU16("snd_cat_sad_hi", def.snd_cat_sad_hi);
-    out->snd_cat_sent_lo = r.readU16("snd_cat_sent_lo", def.snd_cat_sent_lo);
-    out->snd_cat_sent_hi = r.readU16("snd_cat_sent_hi", def.snd_cat_sent_hi);
-    out->snd_cat_hum_lo = r.readU16("snd_cat_hum_lo", def.snd_cat_hum_lo);
-    out->snd_cat_hum_hi = r.readU16("snd_cat_hum_hi", def.snd_cat_hum_hi);
-    out->snd_cat_scrm_lo = r.readU16("snd_cat_scrm_lo", def.snd_cat_scrm_lo);
-    out->snd_cat_scrm_hi = r.readU16("snd_cat_scrm_hi", def.snd_cat_scrm_hi);
-    out->snd_cat_ooh_lo = r.readU16("snd_cat_ooh_lo", def.snd_cat_ooh_lo);
-    out->snd_cat_ooh_hi = r.readU16("snd_cat_ooh_hi", def.snd_cat_ooh_hi);
-    out->snd_cat_alrm_lo = r.readU16("snd_cat_alrm_lo", def.snd_cat_alrm_lo);
-    out->snd_cat_alrm_hi = r.readU16("snd_cat_alrm_hi", def.snd_cat_alrm_hi);
-    out->snd_cat_snarky_lo = r.readU16("snd_cat_snrk_lo", def.snd_cat_snarky_lo);
-    out->snd_cat_snarky_hi = r.readU16("snd_cat_snrk_hi", def.snd_cat_snarky_hi);
-    out->snd_cat_whis_lo = r.readU16("snd_cat_whis_lo", def.snd_cat_whis_lo);
-    out->snd_cat_whis_hi = r.readU16("snd_cat_whis_hi", def.snd_cat_whis_hi);
-
-    out->audioVolume = constrain(out->audioVolume, (uint8_t)0, (uint8_t)30);  // DFPlayer Mini range
 }
-
 
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def) {
     *out = def;
@@ -534,72 +471,10 @@ bool configSerializeDrive(const DriveConfig& cfg, ConfigWriter& w) {
 }
 
 bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w) {
-    bool ok = true;
-    ok = w.writeU8("aud_vol", cfg.audioVolume) && ok;
-    ok = w.writeU16("snd_scream", cfg.snd_scream) && ok;
-    ok = w.writeU16("snd_faint", cfg.snd_faint) && ok;
-    ok = w.writeU16("snd_leia", cfg.snd_leia) && ok;
-    ok = w.writeU16("snd_cantina_s", cfg.snd_cantina_s) && ok;
-    ok = w.writeU16("snd_sw", cfg.snd_sw_theme) && ok;
-    ok = w.writeU16("snd_march", cfg.snd_imp_march) && ok;
-    ok = w.writeU16("snd_cantina_l", cfg.snd_cantina_l) && ok;
-    ok = w.writeU16("snd_startup", cfg.snd_startup) && ok;
-    ok = w.writeU16("snd_doodoo", cfg.snd_doodoo) && ok;
-    ok = w.writeU16("snd_failure", cfg.snd_failure) && ok;
-    ok = w.writeU16("snd_disco", cfg.snd_disco) && ok;
-    ok = w.writeU16("snd_mahna", cfg.snd_mahna) && ok;
-    ok = w.writeU16("snd_inlove", cfg.snd_inlove) && ok;
-    ok = w.writeU16("snd_macho", cfg.snd_macho) && ok;
-    ok = w.writeU16("snd_gangnam", cfg.snd_gangnam) && ok;
-    ok = w.writeU16("snd_uptown", cfg.snd_uptown) && ok;
-    ok = w.writeU16("snd_celebr", cfg.snd_celebr) && ok;
-    ok = w.writeU16("snd_stayin", cfg.snd_stayin) && ok;
-    ok = w.writeU16("snd_harlem", cfg.snd_harlem) && ok;
-    ok = w.writeU16("snd_pbjtime", cfg.snd_pbjtime) && ok;
-    ok = w.writeU16("snd_sys_boot", cfg.snd_sys_boot) && ok;
-    ok = w.writeU16("snd_sys_mode_n", cfg.snd_sys_mode_n) && ok;
-    ok = w.writeU16("snd_sys_mode_s", cfg.snd_sys_mode_s) && ok;
-    ok = w.writeU16("snd_sys_mode_t", cfg.snd_sys_mode_t) && ok;
-    ok = w.writeU16("snd_sys_drv_on", cfg.snd_sys_drv_on) && ok;
-    ok = w.writeU16("snd_sys_dome_on", cfg.snd_sys_dome_on) && ok;
-    ok = w.writeU16("snd_sys_netdown", cfg.snd_sys_net_down) && ok;
-    ok = w.writeU16("snd_rand_min", cfg.snd_rand_min) && ok;
-    ok = w.writeU16("snd_rand_max", cfg.snd_rand_max) && ok;
-    ok = w.writeU16("snd_int_quiet", cfg.snd_int_quiet) && ok;
-    ok = w.writeU16("snd_int_mid", cfg.snd_int_mid) && ok;
-    ok = w.writeU16("snd_int_full", cfg.snd_int_full) && ok;
-    ok = w.writeU16("snd_int_awake", cfg.snd_int_awake) && ok;
-    ok = w.writeU16("snd_moodcat_q", cfg.snd_moodcat_quiet & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_m", cfg.snd_moodcat_mid & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_f", cfg.snd_moodcat_full & 0x0FFF) && ok;
-    ok = w.writeU16("snd_moodcat_a", cfg.snd_moodcat_awakeplus & 0x0FFF) && ok;
-    ok = w.writeU16("snd_cat_gen_lo", cfg.snd_cat_gen_lo) && ok;
-    ok = w.writeU16("snd_cat_gen_hi", cfg.snd_cat_gen_hi) && ok;
-    ok = w.writeU16("snd_cat_chat_lo", cfg.snd_cat_chat_lo) && ok;
-    ok = w.writeU16("snd_cat_chat_hi", cfg.snd_cat_chat_hi) && ok;
-    ok = w.writeU16("snd_cat_hap_lo", cfg.snd_cat_hap_lo) && ok;
-    ok = w.writeU16("snd_cat_hap_hi", cfg.snd_cat_hap_hi) && ok;
-    ok = w.writeU16("snd_cat_proc_lo", cfg.snd_cat_proc_lo) && ok;
-    ok = w.writeU16("snd_cat_proc_hi", cfg.snd_cat_proc_hi) && ok;
-    ok = w.writeU16("snd_cat_sad_lo", cfg.snd_cat_sad_lo) && ok;
-    ok = w.writeU16("snd_cat_sad_hi", cfg.snd_cat_sad_hi) && ok;
-    ok = w.writeU16("snd_cat_sent_lo", cfg.snd_cat_sent_lo) && ok;
-    ok = w.writeU16("snd_cat_sent_hi", cfg.snd_cat_sent_hi) && ok;
-    ok = w.writeU16("snd_cat_hum_lo", cfg.snd_cat_hum_lo) && ok;
-    ok = w.writeU16("snd_cat_hum_hi", cfg.snd_cat_hum_hi) && ok;
-    ok = w.writeU16("snd_cat_scrm_lo", cfg.snd_cat_scrm_lo) && ok;
-    ok = w.writeU16("snd_cat_scrm_hi", cfg.snd_cat_scrm_hi) && ok;
-    ok = w.writeU16("snd_cat_ooh_lo", cfg.snd_cat_ooh_lo) && ok;
-    ok = w.writeU16("snd_cat_ooh_hi", cfg.snd_cat_ooh_hi) && ok;
-    ok = w.writeU16("snd_cat_alrm_lo", cfg.snd_cat_alrm_lo) && ok;
-    ok = w.writeU16("snd_cat_alrm_hi", cfg.snd_cat_alrm_hi) && ok;
-    ok = w.writeU16("snd_cat_snrk_lo", cfg.snd_cat_snarky_lo) && ok;
-    ok = w.writeU16("snd_cat_snrk_hi", cfg.snd_cat_snarky_hi) && ok;
-    ok = w.writeU16("snd_cat_whis_lo", cfg.snd_cat_whis_lo) && ok;
-    ok = w.writeU16("snd_cat_whis_hi", cfg.snd_cat_whis_hi) && ok;
-    return ok;
+    // snd_happy is read and never written, as it has always been: it is not a
+    // Setting, and a write would add a key no controller stores today.
+    return configSettingsWrite(SettingSection::Audio, &cfg, w);
 }
-
 
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w) {
     bool ok = true;

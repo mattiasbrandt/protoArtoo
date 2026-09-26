@@ -17,7 +17,6 @@
 #include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
-#include "mood_sound_mapping.h"  // isValidMoodCategoryMaskValue() - the mood masks' check
 #include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
 #include "rc_mapping.h"
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -30,83 +29,6 @@
 #endif
 
 namespace {
-
-struct AudioTrackKeyMapEntry {
-    const char* key;
-    uint16_t AudioConfig::*field;
-};
-
-constexpr AudioTrackKeyMapEntry AUDIO_TRACK_KEYS[] = {
-    {"scream", &AudioConfig::snd_scream},
-    {"faint", &AudioConfig::snd_faint},
-    {"leia", &AudioConfig::snd_leia},
-    {"cantina_s", &AudioConfig::snd_cantina_s},
-    {"sw_theme", &AudioConfig::snd_sw_theme},
-    {"imp_march", &AudioConfig::snd_imp_march},
-    {"cantina_l", &AudioConfig::snd_cantina_l},
-    {"startup", &AudioConfig::snd_startup},
-    {"doodoo", &AudioConfig::snd_doodoo},
-    {"failure", &AudioConfig::snd_failure},
-    {"disco", &AudioConfig::snd_disco},
-    {"mahna", &AudioConfig::snd_mahna},
-    {"inlove", &AudioConfig::snd_inlove},
-    {"macho", &AudioConfig::snd_macho},
-    {"gangnam", &AudioConfig::snd_gangnam},
-    {"uptown", &AudioConfig::snd_uptown},
-    {"celebr", &AudioConfig::snd_celebr},
-    {"stayin", &AudioConfig::snd_stayin},
-    {"harlem", &AudioConfig::snd_harlem},
-    {"pbjtime", &AudioConfig::snd_pbjtime},
-    {"sys_boot", &AudioConfig::snd_sys_boot},
-    {"sys_mode_n", &AudioConfig::snd_sys_mode_n},
-    {"sys_mode_s", &AudioConfig::snd_sys_mode_s},
-    {"sys_mode_t", &AudioConfig::snd_sys_mode_t},
-    {"sys_drv_on", &AudioConfig::snd_sys_drv_on},
-    {"sys_dome_on", &AudioConfig::snd_sys_dome_on},
-    {"sys_net_down", &AudioConfig::snd_sys_net_down},
-    {"rand_min", &AudioConfig::snd_rand_min},
-    {"rand_max", &AudioConfig::snd_rand_max},
-    {"snd_int_quiet", &AudioConfig::snd_int_quiet},
-    {"snd_int_mid", &AudioConfig::snd_int_mid},
-    {"snd_int_full", &AudioConfig::snd_int_full},
-    {"snd_int_awake", &AudioConfig::snd_int_awake},
-    {"snd_cat_gen_lo", &AudioConfig::snd_cat_gen_lo},
-    {"snd_cat_gen_hi", &AudioConfig::snd_cat_gen_hi},
-    {"snd_cat_chat_lo", &AudioConfig::snd_cat_chat_lo},
-    {"snd_cat_chat_hi", &AudioConfig::snd_cat_chat_hi},
-    {"snd_cat_hap_lo", &AudioConfig::snd_cat_hap_lo},
-    {"snd_cat_hap_hi", &AudioConfig::snd_cat_hap_hi},
-    {"snd_cat_proc_lo", &AudioConfig::snd_cat_proc_lo},
-    {"snd_cat_proc_hi", &AudioConfig::snd_cat_proc_hi},
-    {"snd_cat_sad_lo", &AudioConfig::snd_cat_sad_lo},
-    {"snd_cat_sad_hi", &AudioConfig::snd_cat_sad_hi},
-    {"snd_cat_sent_lo", &AudioConfig::snd_cat_sent_lo},
-    {"snd_cat_sent_hi", &AudioConfig::snd_cat_sent_hi},
-    {"snd_cat_hum_lo", &AudioConfig::snd_cat_hum_lo},
-    {"snd_cat_hum_hi", &AudioConfig::snd_cat_hum_hi},
-    {"snd_cat_scrm_lo", &AudioConfig::snd_cat_scrm_lo},
-    {"snd_cat_scrm_hi", &AudioConfig::snd_cat_scrm_hi},
-    {"snd_cat_ooh_lo", &AudioConfig::snd_cat_ooh_lo},
-    {"snd_cat_ooh_hi", &AudioConfig::snd_cat_ooh_hi},
-    {"snd_cat_alrm_lo", &AudioConfig::snd_cat_alrm_lo},
-    {"snd_cat_alrm_hi", &AudioConfig::snd_cat_alrm_hi},
-    {"snd_cat_snrk_lo", &AudioConfig::snd_cat_snarky_lo},
-    {"snd_cat_snrk_hi", &AudioConfig::snd_cat_snarky_hi},
-    {"snd_cat_whis_lo", &AudioConfig::snd_cat_whis_lo},
-    {"snd_cat_whis_hi", &AudioConfig::snd_cat_whis_hi},
-};
-
-const AudioTrackKeyMapEntry* audioTrackKeyEntry(const char* key) {
-    if (key == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0; i < sizeof(AUDIO_TRACK_KEYS) / sizeof(AUDIO_TRACK_KEYS[0]); ++i) {
-        if (strcmp(AUDIO_TRACK_KEYS[i].key, key) == 0) {
-            return &AUDIO_TRACK_KEYS[i];
-        }
-    }
-    return nullptr;
-}
 
 // Schema 2 -> 3 migration: component toggle identity rename (ADR 0033)
 // Migrates old NVS keys to new keys, then deletes the old keys.
@@ -166,69 +88,9 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snprintf(snap->system.droid_name, sizeof(snap->system.droid_name), "%s", DROID_NAME_DEFAULT);
     snap->system.mdns_use_name = false;
     snap->drive.speedPresetActive = SpeedPresetId::Normal;
-    snap->audio.audioVolume = 20;
-    snap->audio.snd_scream = AUDIO_TRACK_SCREAM;
-    snap->audio.snd_faint = AUDIO_TRACK_FAINT;
-    snap->audio.snd_leia = AUDIO_TRACK_LEIA;
-    snap->audio.snd_cantina_s = AUDIO_TRACK_CANTINA_S;
-    snap->audio.snd_sw_theme = AUDIO_TRACK_SW_THEME;
-    snap->audio.snd_imp_march = AUDIO_TRACK_IMP_MARCH;
-    snap->audio.snd_cantina_l = AUDIO_TRACK_CANTINA_L;
-    snap->audio.snd_startup = AUDIO_TRACK_STARTUP;
-    snap->audio.snd_doodoo = 0;
-    snap->audio.snd_failure = 0;
-    snap->audio.snd_disco = 0;
+    // The one audio track that is not a Setting: nothing writes it after its
+    // default, so it has no declaration (include/config_settings.h).
     snap->audio.snd_happy = AUDIO_TRACK_HAPPY;
-    snap->audio.snd_mahna = 0;
-    snap->audio.snd_inlove = 0;
-    snap->audio.snd_macho = 0;
-    snap->audio.snd_gangnam = 0;
-    snap->audio.snd_uptown = 0;
-    snap->audio.snd_celebr = 0;
-    snap->audio.snd_stayin = 0;
-    snap->audio.snd_harlem = 0;
-    snap->audio.snd_pbjtime = 0;
-    snap->audio.snd_sys_boot = 0;
-    snap->audio.snd_sys_mode_n = 0;
-    snap->audio.snd_sys_mode_s = 0;
-    snap->audio.snd_sys_mode_t = 0;
-    snap->audio.snd_sys_drv_on = 0;
-    snap->audio.snd_sys_dome_on = 0;
-    snap->audio.snd_sys_net_down = 0;
-    snap->audio.snd_rand_min = AUDIO_RAND_TRACK_MIN;
-    snap->audio.snd_rand_max = AUDIO_RAND_TRACK_MAX;
-    snap->audio.snd_int_quiet = AUDIO_RAND_INT_QUIET;
-    snap->audio.snd_int_mid = AUDIO_RAND_INT_MID;
-    snap->audio.snd_int_full = AUDIO_RAND_INT_FULL;
-    snap->audio.snd_int_awake = AUDIO_RAND_INT_AWAKE;
-    snap->audio.snd_moodcat_quiet = 0x0048;
-    snap->audio.snd_moodcat_mid = 0x004F;
-    snap->audio.snd_moodcat_full = 0x090F;
-    snap->audio.snd_moodcat_awakeplus = 0x0F8F;
-    snap->audio.snd_cat_gen_lo = 0;
-    snap->audio.snd_cat_gen_hi = 0;
-    snap->audio.snd_cat_chat_lo = 0;
-    snap->audio.snd_cat_chat_hi = 0;
-    snap->audio.snd_cat_hap_lo = 0;
-    snap->audio.snd_cat_hap_hi = 0;
-    snap->audio.snd_cat_proc_lo = 0;
-    snap->audio.snd_cat_proc_hi = 0;
-    snap->audio.snd_cat_sad_lo = 0;
-    snap->audio.snd_cat_sad_hi = 0;
-    snap->audio.snd_cat_sent_lo = 0;
-    snap->audio.snd_cat_sent_hi = 0;
-    snap->audio.snd_cat_hum_lo = 0;
-    snap->audio.snd_cat_hum_hi = 0;
-    snap->audio.snd_cat_scrm_lo = 0;
-    snap->audio.snd_cat_scrm_hi = 0;
-    snap->audio.snd_cat_ooh_lo = 0;
-    snap->audio.snd_cat_ooh_hi = 0;
-    snap->audio.snd_cat_alrm_lo = 0;
-    snap->audio.snd_cat_alrm_hi = 0;
-    snap->audio.snd_cat_snarky_lo = 0;
-    snap->audio.snd_cat_snarky_hi = 0;
-    snap->audio.snd_cat_whis_lo = 0;
-    snap->audio.snd_cat_whis_hi = 0;
 
     // No servo endpoints or component types here: a defaulted Servo Output row
     // carries both, and servoOutputTableDefaults() is where they are stated
@@ -1024,27 +886,26 @@ void configCacheResolvedMdnsHostname(char* out, size_t outSize) {
     configResolvedMdnsHostname(snap.system, out, outSize);
 }
 
+// A track, an interval or a category bound, by the key POST /api/audio/tracks
+// takes it under: the tracks door's own audio Settings (include/config_settings.h),
+// never the volume or a mood mask.
 bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out) {
-    if (out == nullptr) {
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioTracks);
+    if (setting == nullptr || out == nullptr) {
         return false;
     }
-    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
-    if (entry == nullptr) {
-        return false;
-    }
-    *out = config.*(entry->field);
+    uint16_t value = 0;
+    memcpy(&value, reinterpret_cast<const uint8_t*>(&config) + setting->offset, sizeof(value));
+    *out = value;
     return true;
 }
 
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value) {
-    if (config == nullptr) {
+    const ConfigSetting* setting = audioSettingByName(key, SettingDoor::AudioTracks);
+    if (setting == nullptr || config == nullptr) {
         return false;
     }
-    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
-    if (entry == nullptr) {
-        return false;
-    }
-    config->*(entry->field) = value;
+    memcpy(reinterpret_cast<uint8_t*>(config) + setting->offset, &value, sizeof(value));
     return true;
 }
 
@@ -1081,11 +942,17 @@ const char* configAudioCategoryCompanionKey(const char* key) {
 bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
                                 uint16_t awakeplus) {
     configWriteWindowExpectHeld("configUpdateAudioMoodMasks");
-    // The masks' own check, the one POST /api/audio/mood-map and the Console
-    // apply before they reach here (include/mood_sound_mapping.h).
-    if (!isValidMoodCategoryMaskValue(quiet) || !isValidMoodCategoryMaskValue(mid) ||
-        !isValidMoodCategoryMaskValue(full) || !isValidMoodCategoryMaskValue(awakeplus)) {
-        return false;
+    // Each mask held to its own Setting's check (include/config_settings.h),
+    // the one POST /api/audio/mood-map and the Console apply before here.
+    const struct {
+        const char* name;
+        uint16_t value;
+    } masks[] = {{"quiet", quiet}, {"mid", mid}, {"full", full}, {"awakeplus", awakeplus}};
+    for (const auto& mask : masks) {
+        const ConfigSetting* setting = audioSettingByName(mask.name, SettingDoor::AudioMoodMap);
+        if (setting == nullptr || mask.value < setting->lo || mask.value > setting->hi) {
+            return false;
+        }
     }
 
     ConfigSnapshot snap = {};

@@ -599,6 +599,7 @@ static void consoleExecuteSoundSetMoodMap(uint32_t requestId, const char* operat
     }
 }
 
+
 // sound.action.set-category-range: lo_key=/hi_key=<string> lo=/hi=<uint16> -
 // the same audioCategoryRangeApply() + audioCategoryRangeCommitApplied()
 // sequence handleAudioCategoryRangePost() runs (src/web/api_audio.cpp),
@@ -648,10 +649,10 @@ static void consoleExecuteSoundSetCategoryRange(uint32_t requestId, const char* 
         return;
     }
     if (result.error.hasError) {
-        // The core names the argument and why - these are its own parameter
-        // names - so a bad key pair, a bound out of range and a lo above hi
-        // each read as what they are.
-        consoleEmitApplyRefusal(requestId, operationName, result.error.refusal.field,
+        // The core names the argument and why, so a bad key pair, a bound out
+        // of range and a lo above hi each read as what they are.
+        consoleEmitApplyRefusal(requestId, operationName,
+                                consoleAudioBoundArgument(result.error.refusal.field, args),
                                 result.error.refusal, sink);
         return;
     }

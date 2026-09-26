@@ -2564,8 +2564,8 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // subset of what REST accepts, never a superset ("no widening").
 //
 // Read field names are GET /api/audio/tracks' and GET /api/audio/mood-map's
-// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the key
-// vocabulary src/config_store.cpp's AUDIO_TRACK_KEYS map uses - so a value a
+// JSON keys verbatim (docs/console-protocol.md s.3.5), which is also the name
+// each audio Setting is declared under (src/config_settings.cpp) - so a value a
 // read prints is addressable by a write under the same spelling, and the two
 // halves cannot drift into separate name sets.
 //
@@ -2579,8 +2579,8 @@ static void consoleExecuteWifiSettings(uint32_t requestId, const ConsoleCatalogE
 // GET /api/audio/tracks' field order for the 20 named tracks, the 7 system
 // tracks and the 12 category lo/hi pairs (src/web/api_audio.cpp's
 // fillTracksResponse()), split into the three sets the registry splits these
-// rows into. Spellings are that response's keys, which are also
-// AUDIO_TRACK_KEYS' - note snd_cat_snrk_* , whose wire name is the short form
+// rows into. Spellings are that response's keys, which are also the audio
+// Settings' names - note snd_cat_snrk_* , whose wire name is the short form
 // even though the config member is snd_cat_snarky_* .
 static const char* const kSoundNamedTrackKeys[] = {
     "scream",  "faint",  "leia",   "cantina_s", "sw_theme", "imp_march", "cantina_l",
@@ -2614,11 +2614,11 @@ static void consoleEmitAudioTrackField(uint32_t requestId, const AudioConfig& au
                                        const char* key, const ConsoleRecordSink* sink) {
     uint16_t value = 0;
     if (!configAudioGetTrackByKey(audio, key, &value)) {
-        // Unreachable while the tables above hold only keys AUDIO_TRACK_KEYS
-        // declares, which a native test pins. Logged rather than dropped: a
+        // Unreachable while the tables above hold only keys the audio Setting
+        // declarations name, which a native test pins. Logged rather than dropped: a
         // key that stopped resolving would otherwise leave a hole in a read
         // that still reported ok.
-        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not in the track key map", key);
+        PA_LOG_ERROR(TAG, "[CONSOLE] audio key %s is not a declared audio Setting", key);
         return;
     }
     char buf[8] = {};
@@ -2743,10 +2743,15 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     const bool applyHadError = result.error.hasError;
 
     if (applyHadError) {
-        // The core names the field it refused, and these rows' argument keys
-        // are the core's own parameter names, so the field IS the argument.
-        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
-                                result.error.refusal, sink);
+        // The core names the field it refused by its own parameter names, which
+        // are these rows' argument keys - except a refused value, which it names
+        // by the audio Setting it was for (the key, include/config_settings.h).
+        // The builder typed that value as `track=`, so that is what is named.
+        const char* key = consoleAudioTracksParamGet(&adapter, "key");
+        const char* named = (key != nullptr && strcmp(result.error.refusal.field, key) == 0)
+                                ? "track"
+                                : result.error.refusal.field;
+        consoleEmitApplyRefusal(requestId, entry->name, named, result.error.refusal, sink);
         return;
     }
     if (!commit.ok) {
@@ -2870,6 +2875,22 @@ static void consoleExecuteSoundSystemTrackAssignments(uint32_t requestId,
                                       kSoundSystemTrackKeyCount, rawArgs, sink);
 }
 
+// The argument a category-range refusal is pinned on. The core names a refused
+// bound by its audio Setting - the key it was for (include/config_settings.h) -
+// and the builder typed that bound as `lo=` or `hi=`; every other refusal is
+// already in the core's own parameter names, which are the argument keys.
+static const char* consoleAudioBoundArgument(const char* field, const ConsoleArgs& args) {
+    const char* loKey = consoleArgsFind(args, "lo_key");
+    const char* hiKey = consoleArgsFind(args, "hi_key");
+    if (loKey != nullptr && strcmp(field, loKey) == 0) {
+        return "lo";
+    }
+    if (hiKey != nullptr && strcmp(field, hiKey) == 0) {
+        return "hi";
+    }
+    return field;
+}
+
 // sound.config.category-ranges: lo_key=/hi_key=/lo=/hi= through
 // audioCategoryRangeApply() and audioCategoryRangeCommitApplied() - the same
 // pair handleAudioCategoryRangePost() runs, and the same pair
@@ -2913,9 +2934,11 @@ static void consoleExecuteSoundCategoryRanges(uint32_t requestId, const ConsoleC
 
     if (applyHadError) {
         // An unusable key pair, a bound out of range, or a pair that clashes
-        // (lo above hi): the core says which argument and why, in its own
-        // parameter names, which are this row's argument keys.
-        consoleEmitApplyRefusal(requestId, entry->name, result.error.refusal.field,
+        // (lo above hi): the core says which and why. A bound is named by its
+        // audio Setting (the key it was for); the builder typed it as `lo=` or
+        // `hi=`, so that is the argument named.
+        consoleEmitApplyRefusal(requestId, entry->name,
+                                consoleAudioBoundArgument(result.error.refusal.field, parsedArgs),
                                 result.error.refusal, sink);
         return;
     }

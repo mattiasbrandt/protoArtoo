@@ -59,7 +59,10 @@ enum class SettingStorage : uint8_t { Bool, U8, U16, I16, U32, Text };
 //   Member - a Component Registry id of one family that this image can drive;
 //            stored as the part's number, read as its id.
 //   Ipv4   - empty, or a dotted-quad IPv4 address.
-enum class SettingRule : uint8_t { Range, Words, Bool, Member, Ipv4 };
+//   Mask   - a bit mask 0..hi. Stored and loaded with the bits above `hi`
+//            stripped rather than clamped: a mood mask's upper nibble once
+//            carried category flags, and the track IDs below it are the value.
+enum class SettingRule : uint8_t { Range, Words, Bool, Member, Ipv4, Mask };
 
 // A word list: the words for values first .. first + count - 1, each named by
 // `nameOf`. The name function is the vocabulary's one home (the RC receiver
@@ -71,8 +74,20 @@ struct SettingWords {
     const char* (*nameOf)(uint8_t value);
 };
 
-// The struct inside ConfigSnapshot a droid Setting lives in.
-enum class SettingSection : uint8_t { Drive, Dome, System };
+// The struct inside ConfigSnapshot a Setting lives in.
+enum class SettingSection : uint8_t { Drive, Dome, System, Audio };
+
+// The door a Setting is written through. The droid's Settings go through POST
+// /api/config (configApply()); the audio Settings each through their own audio
+// write path, which keeps its own Write Window and NVS writer (#424) and checks
+// the value here. A door takes only its own Settings: a track key cannot set
+// the volume.
+enum class SettingDoor : uint8_t {
+    Config,        // POST /api/config
+    AudioTracks,   // POST /api/audio/tracks (a track, an interval, a category bound)
+    AudioVolume,   // POST /api/audio action=volume
+    AudioMoodMap,  // POST /api/audio/mood-map
+};
 
 struct ConfigSetting {
     const char* form;     // the POST /api/config form name, and a refusal's field
@@ -92,6 +107,12 @@ struct ConfigSetting {
     const SettingWords* words;  // Words, and Range where a word stands for a number
     uint8_t family;       // Member: the ComponentCategoryId
     const char* says;     // Member and Ipv4: what the refusal's sentence says after the form name
+    SettingDoor door = SettingDoor::Config;
+    // Whether a load repairs a stored value this Setting would refuse. False
+    // only where the field holds more than the door's check says: an audio
+    // track can hold a CHIRP catalog index up to 65535 (a banked binding), so
+    // clamping it to 999 would throw the binding away.
+    bool repairOnLoad = true;
 };
 
 // What an Output row Setting is stored in.
@@ -148,10 +169,10 @@ constexpr size_t CONFIG_SETTING_SENTENCE_MAX = 192;
 bool configSettingApply(const ConfigSetting& setting, const char* raw, ConfigSnapshot* snap,
                         ApplyRefusal* refusal, char* sentence, size_t sentenceSize);
 
-// Every droid Setting at its default.
+// Every Setting - the droid's and the audio ones - at its default.
 void configSettingsDefaults(ConfigSnapshot* snap);
 
-// The NVS half: every droid Setting of one section, written under its key, or
+// The NVS half: every Setting of one section, written under its key, or
 // read from it with anything the Setting would refuse repaired - a number
 // clamped into its range, an unknown word back to the default, an address too
 // long for its field emptied. A Member is read as it is stored, because whether
@@ -160,6 +181,27 @@ void configSettingsDefaults(ConfigSnapshot* snap);
 // SystemConfig), and a read starts from what it already holds.
 bool configSettingsWrite(SettingSection section, const void* sectionData, ConfigWriter& writer);
 void configSettingsRead(SettingSection section, const ConfigReader& reader, void* sectionData);
+
+// -----------------------------------------------------------------------------
+// The audio Settings (#431 addendum): every stored audio value a builder can
+// change - each action's track, the random track range, the random-chatter
+// intervals, the category track ranges, the volume and the mood masks. Named by
+// the key their door takes them under (`scream`, `snd_int_quiet`,
+// `snd_cat_gen_lo`, `volume`, `quiet`), which is also what a refusal names.
+// They have no GET /api/config path; each audio write path saves them through
+// its own writer, which reads the key and the default from here.
+// -----------------------------------------------------------------------------
+size_t audioSettingCount();
+const ConfigSetting& audioSettingAt(size_t index);
+// The audio Setting a door takes under `name`, or nullptr.
+const ConfigSetting* audioSettingByName(const char* name, SettingDoor door);
+
+// Parse `raw` against any Setting without storing it: the check alone, for a
+// door that holds the value somewhere other than a ConfigSnapshot. `field`
+// names the refusal. False, with the refusal written, when it is not taken.
+bool configSettingCheck(const ConfigSetting& setting, const char* raw, const char* field,
+                        int32_t* value, ApplyRefusal* refusal, char* sentence,
+                        size_t sentenceSize);
 
 // -----------------------------------------------------------------------------
 // Settings of an Output

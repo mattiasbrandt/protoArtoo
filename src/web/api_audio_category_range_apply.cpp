@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "config_settings.h"  // each category bound's check
 #include "chirp_binding_keys.h"
 
 namespace {
@@ -133,24 +134,29 @@ void audioCategoryRangeApply(const ConfigParamSource& params, bool catalogSuppor
         return;
     }
 
-    uint32_t loTrack = 0;
-    uint32_t hiTrack = 0;
-    const bool loParsed = parseUint32Value(loRaw, &loTrack);
-    if (!loParsed || !parseUint32Value(hiRaw, &hiTrack)) {
-        setRangeError(result, "range values must be non-negative integers", loParsed ? "hi" : "lo",
-                      0, 999);
+    // Each bound by its own Setting (include/config_settings.h), refused under
+    // its key so a page can say which category and which end it was.
+    const ConfigSetting* loSetting = audioSettingByName(loKey, SettingDoor::AudioTracks);
+    const ConfigSetting* hiSetting = audioSettingByName(hiKey, SettingDoor::AudioTracks);
+    if (loSetting == nullptr || hiSetting == nullptr) {
+        setError(result, "unknown category key", ApplyRefusalReason::OutOfRange, "lo_key");
         return;
     }
-    if (loTrack > 999U || hiTrack > 999U) {
-        setRangeError(result, "range values must be 0-999", loTrack > 999U ? "lo" : "hi", 0, 999);
+    int32_t loTrack = 0;
+    int32_t hiTrack = 0;
+    if (!configSettingCheck(*loSetting, loRaw, loKey, &loTrack, &result->error.refusal,
+                            result->error.message, sizeof(result->error.message)) ||
+        !configSettingCheck(*hiSetting, hiRaw, hiKey, &hiTrack, &result->error.refusal,
+                            result->error.message, sizeof(result->error.message))) {
+        result->error.hasError = true;
         return;
     }
     // Each bound is fine on its own here; the pair clashes (lo above hi, or one
-    // end off while the other is on), so it is a conflict named on `lo`.
-    if (!((loTrack == 0U && hiTrack == 0U) ||
-          (loTrack >= 1U && hiTrack >= 1U && loTrack <= hiTrack))) {
+    // end off while the other is on), a rule across the two Settings, so it is
+    // a conflict named on the low one.
+    if (!((loTrack == 0 && hiTrack == 0) || (loTrack >= 1 && hiTrack >= 1 && loTrack <= hiTrack))) {
         setError(result, "range must be 0/0 or 1-999 with lo <= hi", ApplyRefusalReason::Conflict,
-                 "lo");
+                 loKey);
         return;
     }
 
