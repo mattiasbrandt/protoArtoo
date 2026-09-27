@@ -1,33 +1,48 @@
-// The Parts surface, read in a real browser (#347 C1a). Bench day, #355
-// section E. C1a built Parts and shipped no script; this is it.
+// The Parts surface's standing rules, read in a real browser. History: #347
+// built Parts and shipped no script; this is it.
 //
-// WHAT IT PROVES - the #347 acceptance criteria that need a browser and write
-// nothing:
-//   - "One row per Part, grouped by class, with counts in the headings": every
-//     group heading reads "<label> - <n> <unit>" and <n> is the number of rows
-//     under it; every Part in the served catalog (window.DroidParts) has
-//     exactly one row.
-//   - "A Part with no Output reads - not wired -": every Part no row of GET
-//     /api/servo/outputs carries shows "- not wired -" (en dashes) as its
-//     chosen Output and is not marked wired; every Part an Output carries
-//     shows that Output. The summary's two counts match the same answer.
-//   - "No row is hidden, in any state": every row is rendered visible
-//     (Element.checkVisibility with opacity and visibility, and a box with
-//     height) while the Outputs are still being found out, once they have
-//     answered, while the Outputs read is failing, and with a Part picked on
-//     the droid picture.
+// THE RULES IT HOLDS - the ones that need a browser, checked without writing
+// anything. The rule is the quoted line; the ticket is history, in brackets.
+//   - "One row per Part, grouped by class, with counts in the headings"
+//     (history: #347): every group heading reads "<label> - <n> <unit>" and
+//     <n> is the number of rows under it; every Part in the served catalog
+//     (window.DroidParts) has exactly one row.
+//   - "A Part with no Output reads - not wired -" (history: #347): every Part
+//     no row of GET /api/servo/outputs carries shows "- not wired -" (en
+//     dashes) as its chosen Output and is not marked wired; every Part an
+//     Output carries shows that Output. The summary's two counts match the
+//     same answer.
+//   - "No row is hidden, in any state" (history: #347): every row is rendered
+//     visible (Element.checkVisibility with opacity and visibility, and a box
+//     with height) while the Outputs are still being found out, once they
+//     have answered, while the Outputs read is failing, and with a Part picked
+//     on the droid picture.
 //   - "Per-frame updates touch only values; no full re-render occurs while a
-//     control is under the pointer": the pointer rests on a table picker, on a
-//     droid-picture marker and on an act button in the picture's panel in
-//     turn, while at least three once-a-second Outputs reads land; each hovered
-//     element must still be the same node, still connected, still under the
-//     pointer, and no row, picker, marker or act button may be removed from the
-//     document meanwhile. The Outputs read is Parts' per-frame feed (data/
-//     outputs.js follow, once a second). Status frames are counted and
-//     printed too, but an idle Bench-Mode droid pushes one only when
-//     something changes (data/shell.js, requestStatusBroadcastNow), so none
-//     arriving is not a failure.
-//   - Parts sends no write of its own on a visit.
+//     control is under the pointer" (history: #347): the pointer rests on a
+//     table picker, on a droid-picture marker and on an act button in the
+//     picture's panel in turn, while at least three once-a-second Outputs
+//     reads land; each hovered element must still be the same node, still
+//     connected, still under the pointer, and no row, picker, marker or act
+//     button may be removed from the document meanwhile. The Outputs read is
+//     Parts' per-frame feed (data/outputs.js follow, once a second). Status
+//     frames are counted and printed too, but an idle Bench-Mode droid pushes
+//     one only when something changes (data/shell.js,
+//     requestStatusBroadcastNow), so none arriving is not a failure.
+//   - "Parts sends no write of its own on a visit" (history: #347).
+//   - "A light Part shows what a light can promise and nothing else"
+//     (history: #357; data/droid_part_kind.js, data/parts.js:84): every
+//     catalog Part whose `kind` is "light" has a row carrying partkind-light
+//     and the "light" tag, and no other row carries the class; the treatment
+//     is DRAWN (the row heading's left border computes to dashed,
+//     data/style.css); and a light row draws no position or release column -
+//     it has exactly the table's header columns, the header names no position
+//     or release column, and the row holds no position bar, commanded width,
+//     release, throw or motion cell and no microsecond value in its heading.
+//   - "A Part picked on the droid picture stays picked while the
+//     once-a-second Outputs reads land" (history: #352): the marker keeps
+//     .is-selected and aria-pressed="true", its row in the picture's Parts
+//     list (where it has one) keeps .is-selected, and the panel keeps its
+//     title, across at least FRAMES reads.
 //
 // WHY A REAL BROWSER. mini_dom (test/test_web/helpers/mini_dom.js) has no CSS
 // engine, no layout and no pointer: "visible", "under the pointer" and a real
@@ -55,7 +70,7 @@
 // A browser-side guard aborts every write before it leaves the browser, so a
 // slip in this script cannot reach the droid either.
 //
-// RUN (bench day, operator watching):
+// RUN (operator watching):
 //   NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
 //     node test/playwright/parts/parts-surface.js
 //   BASE_URL=http://<board>   the controller (default http://10.0.0.22)
@@ -64,7 +79,11 @@
 // python3 tools/serve_editor_fixture.py (routes in ../shell/_fixture_routes.js).
 // Self-tests, each must FAIL its check: SELFTEST_REBUILD=1 swaps the hovered
 // picker for a copy mid-frame; SELFTEST_HIDE=1 hides one row once answered;
-// SELFTEST_NOTWIRED=1 rewords one unwired row's "- not wired -".
+// SELFTEST_NOTWIRED=1 rewords one unwired row's "- not wired -";
+// SELFTEST_UNLIGHT=1 takes partkind-light off one light row;
+// SELFTEST_POSITION=1 gives one light row a position cell;
+// SELFTEST_DESELECT=1 picks the picked marker again (which lets it go) after
+// the first Outputs read lands.
 const { chromium } = require('playwright');
 const { mkdirSync } = require('node:fs');
 
@@ -74,6 +93,9 @@ const FIXTURE = process.env.FIXTURE === '1';
 const SELFTEST_REBUILD = process.env.SELFTEST_REBUILD === '1';
 const SELFTEST_HIDE = process.env.SELFTEST_HIDE === '1';
 const SELFTEST_NOTWIRED = process.env.SELFTEST_NOTWIRED === '1';
+const SELFTEST_UNLIGHT = process.env.SELFTEST_UNLIGHT === '1';
+const SELFTEST_POSITION = process.env.SELFTEST_POSITION === '1';
+const SELFTEST_DESELECT = process.env.SELFTEST_DESELECT === '1';
 const HOLD_MS = Number(process.env.HOLD_MS || 2500);
 const FRAMES = Number(process.env.FRAMES || 3);
 const ARTIFACT_DIR = 'output/playwright/issue-347';
@@ -270,6 +292,58 @@ const hiddenRows = (page) =>
 
     const state2 = await hiddenRows(page);
     check('no row hidden once answered', state2.hidden.length === 0, `${state2.total} rows, hidden: ${state2.hidden.join(', ') || 'none'}`);
+
+    // -----------------------------------------------------------------------
+    // Light-kind rows (#357)
+    // -----------------------------------------------------------------------
+    if (SELFTEST_UNLIGHT || SELFTEST_POSITION) {
+      await page.evaluate(([unlight, position]) => {
+        const light = document.querySelector('#parts-table tr.partkind-light');
+        if (!light) return;
+        if (position) light.insertAdjacentHTML('beforeend', '<td><span class="outputs-bar"></span>1500 \u00b5s</td>');
+        if (unlight) light.classList.remove('partkind-light');
+      }, [SELFTEST_UNLIGHT, SELFTEST_POSITION]);
+    }
+    const kinds = await page.evaluate(() => {
+      const table = document.querySelector('#parts-table table');
+      const headers = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+      const lightIds = window.DroidParts.parts.filter((part) => part.kind === 'light').map((part) => part.id);
+      const drawnAway = '.outputs-bar, .outputs-now, .outputs-tick, .outputs-us, .outputs-width, .outputs-release, .outputs-throw, .outputs-motion';
+      const rows = [...table.querySelectorAll('tr[data-part]')].map((row) => ({
+        id: row.dataset.part,
+        light: lightIds.includes(row.dataset.part),
+        classed: row.classList.contains('partkind-light'),
+        tag: row.querySelector('.parts-kind')?.textContent.trim() || '',
+        cells: row.children.length,
+        drawn: row.querySelector(drawnAway) !== null,
+        micro: /\u00b5s/.test(row.querySelector('th').textContent),
+        border: getComputedStyle(row.querySelector('th')).borderLeftStyle,
+      }));
+      return { headers, lightIds, rows };
+    });
+    const lightRows = kinds.rows.filter((row) => row.light);
+    const positionHeaders = kinds.headers.filter((text) => /position|release|travel|throw/i.test(text));
+    const lightWrong = lightRows
+      .map((row) => {
+        const why = [];
+        if (!row.classed) why.push('no partkind-light');
+        if (row.tag !== 'light') why.push(`tag "${row.tag}"`);
+        if (row.border !== 'dashed') why.push(`heading border ${row.border}`);
+        if (row.cells !== kinds.headers.length) why.push(`${row.cells} cells under ${kinds.headers.length} columns`);
+        if (row.drawn) why.push('a position/release cell');
+        if (row.micro) why.push('a microsecond value');
+        return why.length ? `${row.id}: ${why.join(', ')}` : null;
+      })
+      .filter(Boolean);
+    const strayClass = kinds.rows.filter((row) => !row.light && row.classed).map((row) => row.id);
+    check(
+      'light Parts carry partkind-light and draw no position or release column',
+      lightRows.length > 0 && lightRows.length === kinds.lightIds.length && lightWrong.length === 0 && strayClass.length === 0 && positionHeaders.length === 0,
+      `${lightRows.length} light rows of ${kinds.lightIds.length} light Parts (${kinds.lightIds.join(', ')}); columns: ${kinds.headers.join(' | ')}` +
+        (positionHeaders.length ? `; a position/release column: ${positionHeaders.join(', ')}` : '') +
+        (lightWrong.length ? `; wrong: ${lightWrong.join('; ')}` : '') +
+        (strayClass.length ? `; partkind-light on a Part that is not a light: ${strayClass.join(', ')}` : ''),
+    );
     await page.screenshot({ path: `${ARTIFACT_DIR}/parts-answered.png`, fullPage: true });
 
     // -----------------------------------------------------------------------
@@ -388,6 +462,42 @@ const hiddenRows = (page) =>
       await page.waitForTimeout(300);
       const state3 = await hiddenRows(page);
       check('no row hidden with a Part picked', state3.hidden.length === 0, `${state3.total} rows, hidden: ${state3.hidden.join(', ') || 'none'}`);
+
+      // The pick survives the once-a-second Outputs reads (#352).
+      const readPick = () =>
+        page.evaluate((id) => {
+          const cell = document.querySelector(`#bodyview-drawing [data-marker="${id}"]`);
+          const listRow = document.querySelector(`[data-list-marker="${id}"]`);
+          return {
+            marker: Boolean(cell && cell.classList.contains('is-selected') && cell.getAttribute('aria-pressed') === 'true'),
+            listRow: listRow ? listRow.classList.contains('is-selected') : null,
+            title: document.querySelector('#bodyview-panel .bodyview-panel-title')?.textContent || '',
+          };
+        }, markerId);
+      const picked = await readPick();
+      const pickStart = outputsFrames;
+      let deselected = false;
+      const pickDeadline = Date.now() + 20000;
+      while (outputsFrames < pickStart + FRAMES && Date.now() < pickDeadline) {
+        await page.waitForTimeout(200);
+        if (SELFTEST_DESELECT && !deselected && outputsFrames > pickStart) {
+          deselected = true;
+          await marker.click();
+        }
+      }
+      const pickFrames = outputsFrames - pickStart;
+      const stillPicked = await readPick();
+      check(
+        'a picked Part stays picked across Outputs frames',
+        picked.marker &&
+          picked.title !== '' &&
+          pickFrames >= FRAMES &&
+          stillPicked.marker &&
+          stillPicked.listRow !== false &&
+          stillPicked.title === picked.title,
+        `${markerId} "${picked.title}", ${pickFrames} Outputs frames; after them: marker selected=${stillPicked.marker}, ` +
+          `list row selected=${stillPicked.listRow === null ? 'no list row' : stillPicked.listRow}, panel "${stillPicked.title}"`,
+      );
       await underPointer('a droid-picture marker', `#bodyview-drawing [data-marker="${markerId}"]`, null);
       // An act the Part can take, if it has one. A refused act button takes no
       // pointer by design (data/style.css, .btn:disabled pointer-events: none),

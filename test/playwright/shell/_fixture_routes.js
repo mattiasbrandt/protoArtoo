@@ -1,13 +1,14 @@
 // Browser-side stand-ins for the controller routes tools/serve_editor_fixture.py
-// does not answer, for the bench-day scripts in test/playwright/shell/ and
-// test/playwright/parts/ (#355 section E).
+// does not answer, for the browser regression scripts in test/playwright/shell/,
+// test/playwright/parts/ and test/playwright/console-sweep.js, so each can be
+// proved offline before it is pointed at a droid.
 //
-// Loaded ONLY when FIXTURE=1. Against the live controller nothing here runs,
-// so the bench path is the script and the droid and nothing in between.
+// Loaded ONLY when FIXTURE=1. Against a live controller nothing here runs, so
+// a run on a droid is the script and the droid and nothing in between.
 //
 // Why a module and not a fixture-server edit: the fixture server is shared by
 // every other script and deliberately 404s any /api/* route it does not have
-// (its header, #261). These answers are shaped for three scripts' needs, so
+// (its header, #261). These answers are shaped for four scripts' needs, so
 // they live beside them and ride on Playwright's routing instead.
 //
 // The status stream is the one route page.route cannot fake faithfully:
@@ -17,8 +18,18 @@
 // small real SSE server started here, which holds the connection open and
 // pushes a status event on connect and on every change, the way
 // src/web/api_events.cpp does on admission and on requestStatusBroadcastNow().
-// Being a real connection, it is also cut by the browser going offline, which
-// is how the live stream is broken in status-plate-truth.js.
+// status-plate-truth.js cuts it through a relay of its own, because going
+// offline in Chromium was measured NOT to end an open EventSource.
+//
+// The same small server also takes POST /api/estop, so a script can latch the
+// estop from OUTSIDE the browser the way a second client or the Console would
+// on the bench: page.route never sees a request made with Playwright's own
+// request API, so that write has to reach something that is not a route.
+//
+// One droid, many browsers: install() routes the first context and hands back
+// addContext(), which routes another context against the SAME state and the
+// same stream, so a fresh browser context meets the droid the first one left
+// (the estop it latched, the sleep it asked for).
 //
 // Shapes follow docs/api.md and data/live_reading.js's six core fields; they
 // are a plausible Bench-Mode droid, not a copy of any one board's answer.
@@ -65,7 +76,7 @@ const outputsFor = (tick) => ({
 });
 
 const install = async (context) => {
-  const state = { estop: false, outputsReads: 0, writes: [] };
+  const state = { estop: false, sleep: false, outputsReads: 0, writes: [], accepted: [] };
 
   const status = () => ({
     // The six fields data/live_reading.js requires of a frame.
@@ -74,7 +85,7 @@ const install = async (context) => {
     sbusSignalLost: false,
     webDriveExpired: false,
     webControlEnabled: false,
-    sleepMode: false,
+    sleepMode: state.sleep,
     // Enough beyond them for every Status Plate chip to read a value.
     drive: { backend: 'none' },
     speedLimitMax: 40,
@@ -90,6 +101,18 @@ const install = async (context) => {
     clients.forEach((res) => res.write(frame));
   };
   const server = http.createServer((req, res) => {
+    // The latch from outside the browser (header). Answered the way
+    // src/web/api_estop.cpp answers it, and pushed the way failsafeTrigger()
+    // pushes a first trigger (src/failsafe_gate.cpp).
+    if (req.method === 'POST' && req.url.startsWith('/api/estop')) {
+      req.resume();
+      const was = state.estop;
+      state.estop = true;
+      if (!was) push();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+      return;
+    }
     if (!req.url.startsWith('/events')) {
       res.writeHead(404);
       res.end();
@@ -115,7 +138,36 @@ const install = async (context) => {
   const json = (route, body, code = 200) =>
     route.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(body) });
 
-  await context.route('**/api/**', async (route) => {
+  // POST /api/sleep and /api/wake answer in the shape docs/api.md gives
+  // ({ok, sleepMode, changed}); src/web/api_system.cpp pushes a status only
+  // when the posture changed, and so does this.
+  const setSleep = (route, sleeping) => {
+    const changed = state.sleep !== sleeping;
+    state.sleep = sleeping;
+    if (changed) push();
+    return json(route, { ok: true, sleepMode: sleeping, changed });
+  };
+
+  // RC's two reads, shaped as docs/api.md gives GET /api/rc and GET
+  // /api/rc/map for a droid with no receiver switched on. Without them the
+  // RC surface's sections fail and the bootstrap retries them on its own
+  // clock, which is a request nothing on the surface asked for - and exactly
+  // what a "leaving a surface stops its polling" count must not be confused by.
+  const rcDiagnostics = () => ({
+    mode: 'standard_pwm',
+    updatedMs: Date.now() % 100000000,
+    sources: {
+      sbus1: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
+      sbus2: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
+      pwm: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
+    },
+    channels: [],
+    digital: {},
+    mappingProfile: { channels: [] },
+    raw: {},
+  });
+
+  const handler = async (route) => {
     const request = route.request();
     const url = request.url();
     const path = url.slice(url.indexOf('/api/')).split('?')[0];
@@ -134,9 +186,27 @@ const install = async (context) => {
     // No droidBuild key: the older-firmware answer, so the Parts picture falls
     // back to drawing every marker rather than only the fitted ones.
     if (method === 'GET' && path === '/api/config') return json(route, { system: { logLevel: 3 } });
+    if (method === 'GET' && path === '/api/rc') return json(route, rcDiagnostics());
+    if (method === 'GET' && path === '/api/rc/map') {
+      return json(route, { mode: 'standard_pwm', map: [], capacity: { total: 14, used: 0 } });
+    }
     if (method === 'POST' && path === '/api/estop') {
+      const was = state.estop;
       state.estop = true;
-      push();
+      if (!was) push();
+      return json(route, { ok: true });
+    }
+    if (method === 'POST' && path === '/api/sleep') return setSleep(route, true);
+    if (method === 'POST' && path === '/api/wake') return setSleep(route, false);
+    // Sequences' two list reads (docs/api.md: a JSON array each), empty: a
+    // droid with no Learned Sequences, and the factory list left empty rather
+    // than invented.
+    if (method === 'GET' && (path === '/api/seq/list' || path === '/api/seq/builtins')) return json(route, []);
+    // Guided Setup's visit record (data/setup.js saveVisited), the one write
+    // console-sweep.js lets through: taken, and kept in `accepted` so it is
+    // never mistaken for nothing having been written.
+    if (method === 'POST' && path === '/api/config' && /^guidedSetupVisited=[^&]*$/.test(request.postData() || '')) {
+      state.accepted.push(`${method} ${path} ${request.postData()}`);
       return json(route, { ok: true });
     }
     if (method !== 'GET') {
@@ -148,11 +218,14 @@ const install = async (context) => {
     // Every other read goes to the fixture server, which 404s it the way the
     // controller answers a route it does not have.
     await route.fallback();
-  });
+  };
+  await context.route('**/api/**', handler);
 
   return {
     state,
     ssePort,
+    // Routes another browser context against this same droid (header).
+    addContext: (other) => other.route('**/api/**', handler),
     // Sends every open stream the current status, as a state change on the
     // droid would; a self-test that changes `state` calls it.
     push,
