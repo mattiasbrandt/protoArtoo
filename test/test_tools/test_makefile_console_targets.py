@@ -101,6 +101,19 @@ class BenchRowReplayTarget(unittest.TestCase):
         self.assertIn("$(if $(ROWS),--rows $(ROWS))", self.recipe)
         self.assertIn("$(if $(SKIP_MANUAL),--skip-manual)", self.recipe)
 
+    def test_it_forwards_the_http_side_channel(self):
+        """A sheet's `http` rows are refused without a base (or --no-http),
+        and their kept answers without a run directory; a target that could
+        not pass them would make those rows unreachable through make."""
+        self.assertIn("$(if $(HTTP_BASE),--http-base $(HTTP_BASE))", self.recipe)
+        self.assertIn("$(if $(RUN_DIR),--run-dir $(RUN_DIR))", self.recipe)
+        self.assertIn("$(if $(NO_HTTP),--no-http)", self.recipe)
+
+    def test_it_never_hardcodes_a_droid_address(self):
+        """The droid's address is configurable by design (docs/console-client.md
+        "Finding <controller>"); like the port, it is given, never assumed."""
+        self.assertNotRegex(self.recipe, r"--http-base\s+http")
+
 
 class BothTargetsAreDeclaredPhony(unittest.TestCase):
     def setUp(self):

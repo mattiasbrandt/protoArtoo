@@ -323,11 +323,18 @@ monitor: ## Open serial monitor  (UPLOAD_PORT=/dev/... to pick a board)
 BENCH_ROWS  ?=
 ROWS        ?=
 SKIP_MANUAL ?=
+# A sheet's `http` steps go to the droid's own routes: HTTP_BASE is where
+# (http://<droid>), RUN_DIR is where answers kept with `> FILE` are written,
+# NO_HTTP=1 asserts the board has no network and skips them. The client
+# refuses a run whose selected rows need one of these and were not given it.
+HTTP_BASE   ?=
+RUN_DIR     ?=
+NO_HTTP     ?=
 
 console: ## Interactive Console session  (UPLOAD_PORT=/dev/... to pick a board)
 	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port --interactive
 
-bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1])
+bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board>.txt [ROWS=a,b] [SKIP_MANUAL=1] [HTTP_BASE=http://<droid>] [RUN_DIR=dir] [NO_HTTP=1])
 	@if [ -z "$(BENCH_ROWS)" ]; then \
 	  echo "BENCH_ROWS is required: a bench sheet is board-specific and is never guessed."; \
 	  echo "  make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt"; \
@@ -336,7 +343,9 @@ bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board
 	  exit 1; \
 	fi
 	@port=$$($(RESOLVE_PORT)) && python3 tools/console_client.py --port $$port \
-	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual)
+	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual) \
+	  $(if $(HTTP_BASE),--http-base $(HTTP_BASE)) $(if $(RUN_DIR),--run-dir $(RUN_DIR)) \
+	  $(if $(NO_HTTP),--no-http)
 
 check-deps: ## Check required OS commands and Python packages are installed
 	@command -v python3 >/dev/null 2>&1 || { \
