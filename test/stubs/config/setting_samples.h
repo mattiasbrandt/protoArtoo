@@ -5,7 +5,9 @@
 // holds - worked out from the Setting's declaration (include/config_settings.h),
 // never listed by hand. The round trip (test_api_config_write) and the save and
 // load (test_config_settings) build their non-default Configuration from it, so
-// a Setting declared tomorrow is carried by both on the day it is declared.
+// a Setting declared tomorrow is carried by both on the day it is declared. The
+// same for an Output's row Settings: the round trip's rows are built from
+// rowSettingOtherValue().
 //
 // Header-only: the native build_src_filter lists translation units by hand, and
 // a test helper has no business there.
@@ -76,4 +78,42 @@ inline bool settingOtherText(const ConfigSetting& setting, const ConfigSnapshot&
             return true;
         }
     }
+}
+
+// A value an Output row Setting (a Row one: stored on the row itself) accepts
+// on `from`, other than the one `from` holds, that the row keeps as stated -
+// tried through the row's own merge (servoOutputApplyEdit()) and read back, so
+// a number the fitted component's band would move, or a word the row repairs,
+// is never the one given. `index` spreads numbers across rows and Settings.
+// False only when the Setting has no such value on this row.
+inline bool rowSettingOtherValue(const OutputRowSetting& setting, const ServoOutputRow& from,
+                                 size_t index, int32_t* out) {
+    int32_t lo = setting.lo;
+    int32_t hi = setting.hi;
+    if (setting.rule == SettingRule::Bool) {
+        lo = 0;
+        hi = 1;
+    } else if (setting.rule == SettingRule::Words) {
+        lo = setting.words->first;
+        hi = setting.words->first + setting.words->count - 1;
+    }
+    const int32_t held = outputRowSettingNumber(setting, from);
+    const int32_t span = hi - lo + 1;
+    for (int32_t step = 0; step < span; ++step) {
+        const int32_t value = hi - (int32_t)((index + (size_t)step) % (size_t)span);
+        if (value == held ||
+            (setting.rule == SettingRule::Words && setting.words->nameOf((uint8_t)value) == nullptr)) {
+            continue;
+        }
+        ServoOutputEdit edit = {};
+        edit.driver = from.driver;
+        edit.channel = from.channel;
+        outputRowSettingSetOnEdit(setting, value, &edit);
+        ServoOutputRow trial = from;
+        if (servoOutputApplyEdit(&trial, edit) == 0 && outputRowSettingNumber(setting, trial) == value) {
+            *out = value;
+            return true;
+        }
+    }
+    return false;
 }
