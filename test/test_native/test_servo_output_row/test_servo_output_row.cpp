@@ -555,10 +555,10 @@ void test_a_contested_part_is_reported_by_the_loader() {
 void test_the_receipt_names_the_field_and_the_door() {
     char note[64] = {};
     servoOutputRepairNote(SERVO_FIELD_OPEN | SERVO_FIELD_EASING, true, note, sizeof(note));
-    TEST_ASSERT_EQUAL_STRING("open, ease took the safe default", note);
+    TEST_ASSERT_EQUAL_STRING("openUs, ease took the safe default", note);
 
     servoOutputRepairNote(SERVO_FIELD_THROW_MS, false, note, sizeof(note));
-    TEST_ASSERT_EQUAL_STRING("throw kept what was there", note);
+    TEST_ASSERT_EQUAL_STRING("throwMs kept what was there", note);
 }
 
 void test_an_unaddressable_channel_is_repaired() {
@@ -719,6 +719,61 @@ void test_the_stored_text_is_byte_for_byte_what_it_was() {
         TEST_ASSERT_TRUE(servoOutputRowFormat(again, sizeof(again), parsed));
         TEST_ASSERT_EQUAL_STRING(golden.stored, again);
     }
+}
+
+// A stored row of any length this firmware ever wrote is read, from the
+// thirteen fields stored before #413 up to today's, and each field it is too
+// short to carry keeps the fallback without being reported: calibration
+// surviving an upgrade is not a repair. The sweep runs from the oldest shape to
+// today's count, so the day a field is appended, the record that becomes
+// "today minus two" is in it.
+void test_every_older_stored_length_is_read_with_its_tail_defaulted() {
+    GoldenRow rows[4];
+    goldenRows(rows);
+    const GoldenRow& golden = rows[1];
+    const ServoOutputRow fallback = goldenRow(LEDC_CH_AUX3, SERVO_COMP_MG996R);
+
+    for (uint8_t length = SERVO_OUTPUT_FIELD_COUNT_OLDEST; length <= SERVO_OUTPUT_FIELD_COUNT;
+         ++length) {
+        char stored[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+        snprintf(stored, sizeof(stored), "%s", golden.stored);
+        uint8_t fields = 1;
+        for (char* at = stored; *at != '\0'; ++at) {
+            if (*at == ':' && ++fields > length) {
+                *at = '\0';
+                break;
+            }
+        }
+
+        ServoOutputRow parsed = {};
+        uint16_t absent = 0;
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, servoOutputRowParse(stored, fallback, &parsed, &absent),
+                                         stored);
+        const uint16_t tail = (uint16_t)(((1u << SERVO_OUTPUT_FIELD_COUNT) - 1u) &
+                                         ~((1u << length) - 1u));
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(tail, absent, stored);
+        // What the record carried is the golden row's; what it lacked is the
+        // fallback's.
+        for (uint8_t f = 0; f < SERVO_OUTPUT_FIELD_COUNT; ++f) {
+            const ServoOutputRowField& field = kServoOutputRowFields[f];
+            const ServoOutputRow& want = f < length ? golden.row : fallback;
+            char wantText[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            char gotText[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, want, wantText, sizeof(wantText)));
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, parsed, gotText, sizeof(gotText)));
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(wantText, gotText, field.name);
+        }
+    }
+
+    // One field shorter than the oldest shape is not a shape anybody wrote.
+    char damaged[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+    snprintf(damaged, sizeof(damaged), "%s", golden.stored);
+    for (uint8_t cut = SERVO_OUTPUT_FIELD_COUNT - SERVO_OUTPUT_FIELD_COUNT_OLDEST + 1; cut > 0; --cut) {
+        *strrchr(damaged, ':') = '\0';
+    }
+    ServoOutputRow parsed = {};
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)((1u << SERVO_OUTPUT_FIELD_COUNT) - 1u),
+                             servoOutputRowParse(damaged, fallback, &parsed));
 }
 
 void test_a_row_added_without_an_address_is_reported() {
@@ -1213,6 +1268,7 @@ int main(int, char**) {
 
     RUN_TEST(test_every_field_round_trips_through_storage);
     RUN_TEST(test_the_stored_text_is_byte_for_byte_what_it_was);
+    RUN_TEST(test_every_older_stored_length_is_read_with_its_tail_defaulted);
     RUN_TEST(test_a_row_added_without_an_address_is_reported);
     RUN_TEST(test_a_device_that_never_wrote_a_row_reports_nothing);
     RUN_TEST(test_a_damaged_stored_row_is_counted_and_named);

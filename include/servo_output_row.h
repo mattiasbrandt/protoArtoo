@@ -51,6 +51,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <type_traits>
+
 #include "board_outputs.h"  // boardOutputOnChannel(), boardOutputLabel() - an Output's name
 #include "droid_parts.h"  // droidPartIdIsKnown() - the compiled Part vocabulary
 #include "ledc_pwm.h"     // LedcChannel, SERVO_PULSE_* / ESC_PULSE_* constants
@@ -301,7 +303,12 @@ enum ServoOutputField : uint16_t {
     SERVO_FIELD_LED_COUNT = 1u << 13,
 };
 
+// How many fields a stored row carries today, and the fewest any firmware ever
+// wrote: the thirteen stored before #413 put the LED count on the row. A record
+// of any length between the two is an older shape, not damage
+// (servoOutputRowParse()).
 constexpr uint8_t SERVO_OUTPUT_FIELD_COUNT = 14;
+constexpr uint8_t SERVO_OUTPUT_FIELD_COUNT_OLDEST = 13;
 
 // What a repaired row load found, for the one sentence the loader logs. Kept
 // small on purpose: it crosses the config load seam by value.
@@ -331,16 +338,6 @@ struct ServoOutputRepairReport {
     // centre following a captured end is not here - nobody sent that centre.
     uint32_t centreMovedRows;
 };
-
-// One table, so no surface types a field name (#286: machine vocabulary
-// refused mechanically). Index matches ServoOutputField's bit position.
-inline const char* servoOutputFieldName(uint8_t bitIndex) {
-    static const char* const kNames[SERVO_OUTPUT_FIELD_COUNT] = {
-        "driver", "channel", "parts", "open",   "centre",    "close",      "throw",
-        "accel",  "release", "ease",  "boot",   "component", "calibrated", "leds",
-    };
-    return (bitIndex < SERVO_OUTPUT_FIELD_COUNT) ? kNames[bitIndex] : "";
-}
 
 // -----------------------------------------------------------------------------
 // servoComponentBand()
@@ -1057,6 +1054,377 @@ struct ServoOutputEdit {
 };
 
 // -----------------------------------------------------------------------------
+// The row's fields, declared once (ADR 0068, amended 2026-09-27)
+//
+// One entry per stored field, in STORED ORDER, and entry i is ServoOutputField
+// bit i. The merge (servoOutputApplyEdit()), the stored text
+// (servoOutputRowFormat(), servoOutputRowParse()) and the repair note all loop
+// this table, and the Output row Settings read their offsets from it
+// (kOutputRowSettings, src/config_settings.cpp), so a new row field is one
+// entry here plus its member - appended, never inserted (servoOutputRowFormat()).
+//
+// `name` is the field's one name. Where the field is a row Setting it is the
+// row key GET /api/servo/outputs and a POST row use, and the declaration there
+// is held to it. `driver`, `channel` and `release` are stored but are not
+// Settings - the address names the row, and Output Release has no door yet
+// (ADR 0064) - so theirs are plain words. The repair note says these names.
+//
+// `kind` says how the field is held and spelled, and a switch on it calls the
+// existing helpers directly. There are no function pointers here on purpose:
+// the task stack walk (tools/check_task_stack_chains.py) cannot follow an
+// indirect call, which is why the Records dispatch the same way
+// (include/config_records.h).
+// -----------------------------------------------------------------------------
+enum ServoOutputRowFieldKind : uint8_t {
+    SERVO_ROW_FIELD_DRIVER,     // ServoOutputDriver, stored as its word
+    SERVO_ROW_FIELD_U8,         // a byte, stored as digits
+    SERVO_ROW_FIELD_PARTS,      // the Part list: "-", or its ids joined by commas
+    SERVO_ROW_FIELD_U16,        // a 16-bit number, stored as digits
+    SERVO_ROW_FIELD_EASING,     // ServoEasing, stored as its word
+    SERVO_ROW_FIELD_BOOT,       // ServoBootBehaviour, stored as its word
+    SERVO_ROW_FIELD_COMPONENT,  // ServoComponentType, stored as its word
+    SERVO_ROW_FIELD_BOOL,       // stored as 1 or 0
+};
+
+// The member type each kind is held in. Every entry is held to it when the
+// table is compiled, so a switch on the kind reads and writes exactly the
+// member's width.
+template <ServoOutputRowFieldKind K>
+struct ServoOutputRowFieldType;
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_DRIVER> { using type = ServoOutputDriver; };
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_U8> { using type = uint8_t; };
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_PARTS> {
+    using type = char[SERVO_OUTPUT_PART_SLOTS][SERVO_OUTPUT_PART_ID_MAX + 1];
+};
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_U16> { using type = uint16_t; };
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_EASING> { using type = ServoEasing; };
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_BOOT> { using type = ServoBootBehaviour; };
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_COMPONENT> { using type = ServoComponentType; };
+template <>
+struct ServoOutputRowFieldType<SERVO_ROW_FIELD_BOOL> { using type = bool; };
+
+// A field no ServoOutputEdit member carries as it is stored: the address, which
+// names the edit's row rather than changing it; the Part list, which an edit
+// carries as catalog indices; and Output Release, which nothing edits yet.
+constexpr uint16_t SERVO_ROW_FIELD_NO_EDIT = 0xFFFF;
+
+struct ServoOutputRowField {
+    const char* name;
+    ServoOutputRowFieldKind kind;
+    uint16_t rowOffset;   // in ServoOutputRow
+    uint16_t editOffset;  // in ServoOutputEdit, or SERVO_ROW_FIELD_NO_EDIT
+    uint16_t bit;         // its ServoOutputField bit
+};
+
+namespace servo_output_row_detail {
+
+template <ServoOutputRowFieldKind K, typename Member>
+constexpr ServoOutputRowFieldKind kindOf() {
+    static_assert(std::is_same<Member, typename ServoOutputRowFieldType<K>::type>::value,
+                  "a row field's kind must be its ServoOutputRow member's type");
+    return K;
+}
+
+// An edit that carries a field in a different width than the row stores it
+// would write bytes the row does not read.
+template <typename RowMember, typename EditMember>
+constexpr uint16_t editOffsetOf(size_t offset) {
+    static_assert(std::is_same<RowMember, EditMember>::value,
+                  "a row field and the ServoOutputEdit member that carries it must share a type");
+    return (uint16_t)offset;
+}
+
+}  // namespace servo_output_row_detail
+
+#define SERVO_ROW_FIELD(name, kind, member, bit)                                                  \
+    {name, servo_output_row_detail::kindOf<kind, decltype(ServoOutputRow::member)>(),              \
+     (uint16_t)offsetof(ServoOutputRow, member), SERVO_ROW_FIELD_NO_EDIT, (uint16_t)(bit)}
+#define SERVO_ROW_FIELD_EDITED(name, kind, member, bit)                                           \
+    {name, servo_output_row_detail::kindOf<kind, decltype(ServoOutputRow::member)>(),              \
+     (uint16_t)offsetof(ServoOutputRow, member),                                                   \
+     servo_output_row_detail::editOffsetOf<decltype(ServoOutputRow::member),                       \
+                                           decltype(ServoOutputEdit::member)>(                     \
+         offsetof(ServoOutputEdit, member)),                                                       \
+     (uint16_t)(bit)}
+
+inline constexpr ServoOutputRowField kServoOutputRowFields[SERVO_OUTPUT_FIELD_COUNT] = {
+    SERVO_ROW_FIELD("driver", SERVO_ROW_FIELD_DRIVER, driver, SERVO_FIELD_DRIVER),
+    SERVO_ROW_FIELD("channel", SERVO_ROW_FIELD_U8, channel, SERVO_FIELD_CHANNEL),
+    SERVO_ROW_FIELD("parts", SERVO_ROW_FIELD_PARTS, parts, SERVO_FIELD_PARTS),
+    SERVO_ROW_FIELD_EDITED("openUs", SERVO_ROW_FIELD_U16, open_us, SERVO_FIELD_OPEN),
+    SERVO_ROW_FIELD_EDITED("centreUs", SERVO_ROW_FIELD_U16, centre_us, SERVO_FIELD_CENTRE),
+    SERVO_ROW_FIELD_EDITED("closeUs", SERVO_ROW_FIELD_U16, close_us, SERVO_FIELD_CLOSE),
+    SERVO_ROW_FIELD_EDITED("throwMs", SERVO_ROW_FIELD_U16, throw_ms, SERVO_FIELD_THROW_MS),
+    SERVO_ROW_FIELD_EDITED("accelMs", SERVO_ROW_FIELD_U16, accel_ms, SERVO_FIELD_ACCEL_MS),
+    SERVO_ROW_FIELD("release", SERVO_ROW_FIELD_U16, release_ms, SERVO_FIELD_RELEASE_MS),
+    SERVO_ROW_FIELD_EDITED("ease", SERVO_ROW_FIELD_EASING, easing, SERVO_FIELD_EASING),
+    SERVO_ROW_FIELD_EDITED("boot", SERVO_ROW_FIELD_BOOT, boot, SERVO_FIELD_BOOT),
+    SERVO_ROW_FIELD_EDITED("component", SERVO_ROW_FIELD_COMPONENT, component,
+                           SERVO_FIELD_COMPONENT),
+    SERVO_ROW_FIELD_EDITED("calibrated", SERVO_ROW_FIELD_BOOL, calibrated, SERVO_FIELD_CALIBRATED),
+    SERVO_ROW_FIELD_EDITED("ledCount", SERVO_ROW_FIELD_U8, led_count, SERVO_FIELD_LED_COUNT),
+};
+
+#undef SERVO_ROW_FIELD
+#undef SERVO_ROW_FIELD_EDITED
+
+namespace servo_output_row_detail {
+
+// Entry i is bit i, with no entry left out: the loops index the table by bit.
+constexpr bool fieldsAreInBitOrder() {
+    for (uint8_t i = 0; i < SERVO_OUTPUT_FIELD_COUNT; ++i) {
+        if (kServoOutputRowFields[i].bit != (uint16_t)(1u << i) ||
+            kServoOutputRowFields[i].name == nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace servo_output_row_detail
+
+static_assert(servo_output_row_detail::fieldsAreInBitOrder(),
+              "kServoOutputRowFields lists every stored field in stored order, entry i as bit i");
+
+// The place of one ServoOutputField bit's entry in the table, which is also its
+// place in the stored text. SERVO_OUTPUT_FIELD_COUNT for a value that is not
+// one field's bit.
+constexpr uint8_t servoOutputRowFieldIndex(uint16_t bit) {
+    uint8_t index = 0;
+    while (index < SERVO_OUTPUT_FIELD_COUNT && (uint16_t)(1u << index) != bit) {
+        ++index;
+    }
+    return index;
+}
+
+// The entry for one ServoOutputField bit. A value that is not one field's bit
+// indexes past the table, which stops a constant-expression caller from
+// compiling rather than handing it some other field.
+constexpr const ServoOutputRowField& servoOutputRowFieldOf(uint16_t bit) {
+    return kServoOutputRowFields[servoOutputRowFieldIndex(bit)];
+}
+
+// The bytes a field of each kind takes, for a copy from an edit onto a row.
+inline size_t servoOutputRowFieldSize(ServoOutputRowFieldKind kind) {
+    switch (kind) {
+        case SERVO_ROW_FIELD_DRIVER:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_DRIVER>::type);
+        case SERVO_ROW_FIELD_U8:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_U8>::type);
+        case SERVO_ROW_FIELD_PARTS:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_PARTS>::type);
+        case SERVO_ROW_FIELD_U16:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_U16>::type);
+        case SERVO_ROW_FIELD_EASING:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_EASING>::type);
+        case SERVO_ROW_FIELD_BOOT:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_BOOT>::type);
+        case SERVO_ROW_FIELD_COMPONENT:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_COMPONENT>::type);
+        case SERVO_ROW_FIELD_BOOL:
+            return sizeof(ServoOutputRowFieldType<SERVO_ROW_FIELD_BOOL>::type);
+        default:
+            return 0;
+    }
+}
+
+// The fields servoOutputApplyEdit() settles by hand, after the table's loop,
+// because each carries a rule the mask does not: `calibrated`, settled before
+// the centre because the centre rule asks it; the centre, which an end edit on
+// an unmeasured row pulls to the midpoint; and the Part list, which an edit
+// carries as catalog indices and which has to stay one Output's per Part.
+constexpr uint16_t SERVO_FIELDS_MERGED_BY_HAND =
+    (uint16_t)(SERVO_FIELD_CALIBRATED | SERVO_FIELD_CENTRE | SERVO_FIELD_PARTS);
+
+// The LED count is read into a byte and repaired only at its floor
+// (servoOutputRowNormalise()); a ceiling below the byte's would be a check the
+// table's U8 kind does not make.
+static_assert(SERVO_LIGHT_LEDS_MAX == 0xFF, "the LED count's ceiling is its byte's");
+
+// -----------------------------------------------------------------------------
+// servoOutputRowFieldFormat()
+// One field of `row` as it is stored, into `buf`. False when it does not fit.
+// -----------------------------------------------------------------------------
+inline bool servoOutputRowFieldFormat(const ServoOutputRowField& field, const ServoOutputRow& row,
+                                      char* buf, size_t bufSize) {
+    if (buf == nullptr || bufSize == 0) {
+        return false;
+    }
+    const uint8_t* at = reinterpret_cast<const uint8_t*>(&row) + field.rowOffset;
+    int written = 0;
+    switch (field.kind) {
+        case SERVO_ROW_FIELD_DRIVER: {
+            ServoOutputDriver driver;
+            memcpy(&driver, at, sizeof(driver));
+            written = snprintf(buf, bufSize, "%s", servoOutputDriverToString(driver));
+            break;
+        }
+        case SERVO_ROW_FIELD_U8:
+            written = snprintf(buf, bufSize, "%u", (unsigned)*at);
+            break;
+        case SERVO_ROW_FIELD_PARTS: {
+            // The Part list is one field, its ids joined by commas. A comma
+            // cannot occur in an id (servoOutputPartIdIsValid), so the inner
+            // separator can never be mistaken for the outer one. An unassigned
+            // list writes "-" rather than an empty field, so a short record is
+            // a damaged record rather than an ambiguous one.
+            const uint8_t partCount = servoOutputPartCount(row);
+            if (partCount == 0) {
+                written = snprintf(buf, bufSize, "-");
+                break;
+            }
+            size_t used = 0;
+            for (uint8_t i = 0; i < partCount; ++i) {
+                const int n = snprintf(buf + used, bufSize - used, "%s%s", i == 0 ? "" : ",",
+                                       row.parts[i]);
+                if (n <= 0 || (size_t)n >= bufSize - used) {
+                    return false;
+                }
+                used += (size_t)n;
+            }
+            written = (int)used;
+            break;
+        }
+        case SERVO_ROW_FIELD_U16: {
+            uint16_t value;
+            memcpy(&value, at, sizeof(value));
+            written = snprintf(buf, bufSize, "%u", (unsigned)value);
+            break;
+        }
+        case SERVO_ROW_FIELD_EASING: {
+            ServoEasing easing;
+            memcpy(&easing, at, sizeof(easing));
+            written = snprintf(buf, bufSize, "%s", servoEasingToString(easing));
+            break;
+        }
+        case SERVO_ROW_FIELD_BOOT: {
+            ServoBootBehaviour boot;
+            memcpy(&boot, at, sizeof(boot));
+            written = snprintf(buf, bufSize, "%s", servoBootBehaviourToString(boot));
+            break;
+        }
+        case SERVO_ROW_FIELD_COMPONENT: {
+            ServoComponentType component;
+            memcpy(&component, at, sizeof(component));
+            written = snprintf(buf, bufSize, "%s", servoCompTypeToString(component));
+            break;
+        }
+        case SERVO_ROW_FIELD_BOOL:
+            written = snprintf(buf, bufSize, "%u", *at != 0 ? 1u : 0u);
+            break;
+        default:
+            return false;
+    }
+    return written > 0 && (size_t)written < bufSize;
+}
+
+// -----------------------------------------------------------------------------
+// servoOutputRowFieldParse()
+// One stored field onto `out`. False when `text` is not a value of the field,
+// and `out` then keeps what it held - except the Part list, where an entry that
+// cannot be read, one the row already drives, and a fifth each cost themselves
+// and nothing else, so a row with three good Parts keeps them. `text` is the
+// caller's own copy: the Part list is split in place.
+// -----------------------------------------------------------------------------
+inline bool servoOutputRowFieldParse(const ServoOutputRowField& field, char* text,
+                                     ServoOutputRow* out) {
+    if (text == nullptr || out == nullptr) {
+        return false;
+    }
+    uint8_t* at = reinterpret_cast<uint8_t*>(out) + field.rowOffset;
+    switch (field.kind) {
+        case SERVO_ROW_FIELD_DRIVER: {
+            ServoOutputDriver driver = SERVO_DRIVER_LEDC;
+            if (!servoOutputParseDriver(text, &driver)) {
+                return false;
+            }
+            memcpy(at, &driver, sizeof(driver));
+            return true;
+        }
+        case SERVO_ROW_FIELD_U8: {
+            uint16_t value = 0;
+            if (!servoOutputParseU16(text, &value) || value > 0xFF) {
+                return false;
+            }
+            *at = (uint8_t)value;
+            return true;
+        }
+        case SERVO_ROW_FIELD_PARTS: {
+            servoOutputClearParts(out);
+            if (strcmp(text, "-") == 0) {
+                return true;
+            }
+            bool every = true;
+            char* entry = text;
+            while (entry != nullptr) {
+                char* comma = strchr(entry, ',');
+                if (comma != nullptr) {
+                    *comma = '\0';
+                }
+                if (!servoOutputAddPart(out, entry)) {
+                    every = false;
+                }
+                entry = (comma != nullptr) ? comma + 1 : nullptr;
+            }
+            return every;
+        }
+        case SERVO_ROW_FIELD_U16: {
+            uint16_t value = 0;
+            if (!servoOutputParseU16(text, &value)) {
+                return false;
+            }
+            memcpy(at, &value, sizeof(value));
+            return true;
+        }
+        case SERVO_ROW_FIELD_EASING: {
+            ServoEasing easing = SERVO_EASE_NONE;
+            if (!servoParseEasing(text, &easing)) {
+                return false;
+            }
+            memcpy(at, &easing, sizeof(easing));
+            return true;
+        }
+        case SERVO_ROW_FIELD_BOOT: {
+            ServoBootBehaviour boot = SERVO_BOOT_LIMP;
+            if (!servoParseBootBehaviour(text, &boot)) {
+                return false;
+            }
+            memcpy(at, &boot, sizeof(boot));
+            return true;
+        }
+        case SERVO_ROW_FIELD_COMPONENT: {
+            // parseServoCompType() answers "none" for a word it does not know,
+            // so the word is held to the one it maps to: an unknown word is
+            // not the "none" it would silently become.
+            const ServoComponentType component = parseServoCompType(text);
+            if (strcmp(text, servoCompTypeToString(component)) != 0) {
+                return false;
+            }
+            memcpy(at, &component, sizeof(component));
+            return true;
+        }
+        case SERVO_ROW_FIELD_BOOL: {
+            const bool isFalse = strcmp(text, "0") == 0;
+            if (!isFalse && strcmp(text, "1") != 0) {
+                return false;
+            }
+            const bool value = !isFalse;
+            memcpy(at, &value, sizeof(value));
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
+// -----------------------------------------------------------------------------
 // servoOutputApplyEdit()
 // One edit, applied over the row as it stands, through the one validator.
 //
@@ -1122,37 +1490,29 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
         return repaired;
     }
 
-    if ((edit.fields & SERVO_FIELD_COMPONENT) != 0) {
-        row->component = edit.component;
-    }
-    if ((edit.fields & SERVO_FIELD_LED_COUNT) != 0) {
-        row->led_count = edit.led_count;
-    }
+    // Every plain field the edit names, as stated: the component, the LED
+    // count, the Motion Profile, the boot behaviour and the two ends. The order
+    // they land in is free - each is one assignment, and the component's band
+    // is applied by the one normalise at the end, over the row as it finally
+    // stands - so the table's order serves.
+    //
     // The Motion Profile is the builder's to set on any row, measured or not:
     // an unmeasured Output keeps what it was given and moves by none of it
     // until it is calibrated (servoMotionPlan() snaps, and
     // servoOutputEffectiveEasing() degrades an overshoot), so nothing typed
     // here waits on the calibration to be kept.
-    if ((edit.fields & SERVO_FIELD_THROW_MS) != 0) {
-        row->throw_ms = edit.throw_ms;
-    }
-    if ((edit.fields & SERVO_FIELD_ACCEL_MS) != 0) {
-        row->accel_ms = edit.accel_ms;
-    }
-    if ((edit.fields & SERVO_FIELD_EASING) != 0) {
-        row->easing = edit.easing;
-    }
+    //
     // Boot behaviour is only ever the builder's own act, named on its own: no
-    // capture reaches this line (a capture returned above), which is what keeps
+    // capture reaches this loop (a capture returned above), which is what keeps
     // "calibrating an output never ticks its boot behaviour" true.
-    if ((edit.fields & SERVO_FIELD_BOOT) != 0) {
-        row->boot = edit.boot;
-    }
-    if ((edit.fields & SERVO_FIELD_OPEN) != 0) {
-        row->open_us = edit.open_us;
-    }
-    if ((edit.fields & SERVO_FIELD_CLOSE) != 0) {
-        row->close_us = edit.close_us;
+    for (const ServoOutputRowField& field : kServoOutputRowFields) {
+        if (field.editOffset == SERVO_ROW_FIELD_NO_EDIT ||
+            (field.bit & SERVO_FIELDS_MERGED_BY_HAND) != 0 || (edit.fields & field.bit) == 0) {
+            continue;
+        }
+        memcpy(reinterpret_cast<uint8_t*>(row) + field.rowOffset,
+               reinterpret_cast<const uint8_t*>(&edit) + field.editOffset,
+               servoOutputRowFieldSize(field.kind));
     }
     // A restored row says whether anybody measured it, and that is taken as
     // said: a restore replaces what the droid holds (ADR 0056), and it is the
@@ -1238,15 +1598,17 @@ inline uint16_t servoOutputAdoptFixedPair(ServoOutputRow* row, uint16_t openUs, 
 
 // -----------------------------------------------------------------------------
 // servoOutputRowFormat()
-// The stored form: fourteen colon-separated fields, words where the model has
-// words. An unassigned Part writes "-" rather than an empty field, so a short
-// record is a damaged record rather than an ambiguous one.
+// The stored form: each field of kServoOutputRowFields, in its order, spelled
+// by servoOutputRowFieldFormat() and joined by colons - words where the model
+// has words. A colon cannot occur in any field's text, so no field can be
+// mistaken for two.
 //
-// THE LED COUNT IS LAST, AND THAT IS LOAD-BEARING. A controller that stored
-// its rows before #413 holds thirteen-field records, and servoOutputRowParse()
-// reads one as this shape without its final field rather than as damage. Any
-// field added later goes after this one for the same reason; inserting one
-// would renumber a builder's stored calibration into the wrong members.
+// FIELDS ARE ONLY EVER APPENDED, AND THAT IS LOAD-BEARING. A stored record is
+// read by position, so a field inserted anywhere but the end would renumber a
+// builder's stored calibration into the wrong members. Appending costs nothing:
+// servoOutputRowParse() reads every length from the thirteen fields stored
+// before #413 up to today's, and a field a record is too short to carry keeps
+// its fallback. The reader does not depend on a record being one field behind.
 // -----------------------------------------------------------------------------
 // The longest record a full row can produce: 4 driver + 3 channel + 51 parts
 // (four ids and three commas) + 15 endpoints + 15 times + 9 "overshoot" + 12
@@ -1259,35 +1621,22 @@ inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow
     if (buf == nullptr || bufSize == 0) {
         return false;
     }
-
-    // The Part list is one field, its ids joined by commas. A comma cannot
-    // occur in an id (servoOutputPartIdIsValid), so the inner separator can
-    // never be mistaken for the outer one.
-    char partList[SERVO_OUTPUT_PART_SLOTS * (SERVO_OUTPUT_PART_ID_MAX + 1)] = {};
-    const uint8_t partCount = servoOutputPartCount(row);
-    if (partCount == 0) {
-        snprintf(partList, sizeof(partList), "-");
-    } else {
-        size_t used = 0;
-        for (uint8_t i = 0; i < partCount; ++i) {
-            const int n = snprintf(partList + used, sizeof(partList) - used, "%s%s",
-                                   i == 0 ? "" : ",", row.parts[i]);
-            if (n <= 0 || (size_t)n >= sizeof(partList) - used) {
+    buf[0] = '\0';
+    size_t used = 0;
+    for (uint8_t f = 0; f < SERVO_OUTPUT_FIELD_COUNT; ++f) {
+        if (f > 0) {
+            if (used + 1 >= bufSize) {
                 return false;
             }
-            used += (size_t)n;
+            buf[used++] = ':';
+            buf[used] = '\0';
         }
+        if (!servoOutputRowFieldFormat(kServoOutputRowFields[f], row, buf + used, bufSize - used)) {
+            return false;
+        }
+        used += strlen(buf + used);
     }
-
-    const int written =
-        snprintf(buf, bufSize, "%s:%u:%s:%u:%u:%u:%u:%u:%u:%s:%s:%s:%u:%u",
-                 servoOutputDriverToString(row.driver), (unsigned)row.channel,
-                 partList, (unsigned)row.open_us,
-                 (unsigned)row.centre_us, (unsigned)row.close_us, (unsigned)row.throw_ms,
-                 (unsigned)row.accel_ms, (unsigned)row.release_ms, servoEasingToString(row.easing),
-                 servoBootBehaviourToString(row.boot), servoCompTypeToString(row.component),
-                 row.calibrated ? 1u : 0u, (unsigned)row.led_count);
-    return written > 0 && (size_t)written < bufSize;
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -1295,26 +1644,29 @@ inline bool servoOutputRowFormat(char* buf, size_t bufSize, const ServoOutputRow
 // The storage door. Reads a stored record into `out`, starting from `fallback`,
 // and returns the mask of fields it had to repair.
 //
-// The stored blob is not trusted: a record that is missing, over-long or short
-// of fields leaves every field at its fallback and reports all fourteen, rather
-// than producing a row that is half somebody's calibration and half zeroes.
+// The stored blob is not trusted: a record that is missing, over-long, or of a
+// length no firmware wrote leaves every field at its fallback and reports all
+// of them, rather than producing a row that is half somebody's calibration and
+// half zeroes. Within a readable record, an unreadable field costs itself and
+// nothing else.
 //
-// ONE OLD SHAPE IS NOT DAMAGE. A record of SERVO_OUTPUT_FIELD_COUNT - 1 fields
-// is what a controller stored before the LED count joined the row (#413). Its
-// thirteen fields mean exactly what they mean now, so they are read and the
-// missing one is left at the fallback, and nothing is reported: a builder's
-// calibration surviving an upgrade is not a repair. Any shorter record is
-// still damage, because no shape this firmware ever wrote was shorter.
+// AN OLDER SHAPE IS NOT DAMAGE. A record of SERVO_OUTPUT_FIELD_COUNT_OLDEST
+// fields up to SERVO_OUTPUT_FIELD_COUNT is a row some firmware stored before
+// the fields after it were appended. The fields it has mean exactly what they
+// mean now, so they are read, each field it lacks is left at the fallback, and
+// nothing is reported: a builder's calibration surviving an upgrade is not a
+// repair. A shorter record is still damage, because no firmware ever wrote one.
 //
-// `oldShape`, when given, says which of the two it was. The loader needs it:
-// a thirteen-field record was written before the retired light keys were read
-// onto rows, so it cannot carry their answer, and a fourteen-field one can
-// (#417). It is false for an unreadable record as well as a current one.
+// `absentOut`, when given, is the mask of the fields the record was too short
+// to carry. The loader needs it: a record without the LED count was written
+// before the retired light keys were read onto rows, so it cannot carry their
+// answer, and one with it can (#417). It is 0 for an unreadable record as well
+// as a current one.
 // -----------------------------------------------------------------------------
 inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallback,
-                                    ServoOutputRow* out, bool* oldShapeOut = nullptr) {
-    if (oldShapeOut != nullptr) {
-        *oldShapeOut = false;
+                                    ServoOutputRow* out, uint16_t* absentOut = nullptr) {
+    if (absentOut != nullptr) {
+        *absentOut = 0;
     }
     if (out == nullptr) {
         return 0;
@@ -1338,7 +1690,7 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
     bool tooManyFields = false;
     for (;;) {
         if (fieldCount == SERVO_OUTPUT_FIELD_COUNT) {
-            tooManyFields = true;  // a fourteenth separator: not this record's shape
+            tooManyFields = true;  // a separator past today's last field: no shape anybody wrote
             break;
         }
         fields[fieldCount++] = cursor;
@@ -1349,113 +1701,41 @@ inline uint16_t servoOutputRowParse(const char* raw, const ServoOutputRow& fallb
         *sep = '\0';
         cursor = sep + 1;
     }
-    // SERVO_OUTPUT_FIELD_COUNT - 1 is the pre-#413 shape; see the header note.
-    const bool oldShape = fieldCount == (uint8_t)(SERVO_OUTPUT_FIELD_COUNT - 1);
-    if (tooManyFields || (fieldCount != SERVO_OUTPUT_FIELD_COUNT && !oldShape)) {
+    if (tooManyFields || fieldCount < SERVO_OUTPUT_FIELD_COUNT_OLDEST) {
         return kAllFields;
     }
-    if (oldShapeOut != nullptr) {
-        *oldShapeOut = oldShape;
+    if (absentOut != nullptr) {
+        *absentOut = (uint16_t)(kAllFields & ~((1u << fieldCount) - 1u));
     }
 
     uint16_t repaired = 0;
 
-    // Component type first: it decides the band the three pulse widths below
-    // are clamped into, so reading it late would clamp them against the wrong
-    // one.
-    const ServoComponentType parsedComponent = parseServoCompType(fields[11]);
-    if (strcmp(fields[11], servoCompTypeToString(parsedComponent)) != 0) {
+    // Component type first. Nothing below clamps as it reads - the one
+    // normalise at the end does, over the row as it finally stands - but the
+    // component is what decides the band the three pulse widths are clamped
+    // into, so it is settled before any of them is read rather than leaning on
+    // that.
+    constexpr uint8_t kComponent = servoOutputRowFieldIndex(SERVO_FIELD_COMPONENT);
+    static_assert(kComponent < SERVO_OUTPUT_FIELD_COUNT_OLDEST,
+                  "the component is in every stored shape");
+    if (!servoOutputRowFieldParse(kServoOutputRowFields[kComponent], fields[kComponent], out)) {
         repaired |= SERVO_FIELD_COMPONENT;  // unknown word, not the "none" it maps to
-    } else {
-        out->component = parsedComponent;
     }
 
-    ServoOutputDriver driver = SERVO_DRIVER_LEDC;
-    if (servoOutputParseDriver(fields[0], &driver)) {
-        out->driver = driver;
-    } else {
-        repaired |= SERVO_FIELD_DRIVER;
-    }
-
-    uint16_t channel = 0;
-    if (servoOutputParseU16(fields[1], &channel) && channel <= 0xFF) {
-        out->channel = (uint8_t)channel;
-    } else {
-        repaired |= SERVO_FIELD_CHANNEL;
-    }
-
-    // The Part list: "-" for none, otherwise up to four comma-separated ids.
-    // An entry that cannot be read, one the row already drives, and a fifth all
-    // cost themselves and nothing else - a row with three good Parts keeps
-    // them.
-    servoOutputClearParts(out);
-    if (strcmp(fields[2], "-") != 0) {
-        char* entry = fields[2];
-        while (entry != nullptr) {
-            char* comma = strchr(entry, ',');
-            if (comma != nullptr) {
-                *comma = '\0';
-            }
-            if (!servoOutputAddPart(out, entry)) {
-                repaired |= SERVO_FIELD_PARTS;
-            }
-            entry = (comma != nullptr) ? comma + 1 : nullptr;
+    for (uint8_t f = 0; f < fieldCount; ++f) {
+        if (f == kComponent) {
+            continue;
         }
-    }
-
-    struct NumericField {
-        uint8_t index;
-        uint16_t ServoOutputRow::*member;
-        uint16_t bit;
-    };
-    const NumericField kNumeric[] = {
-        {3, &ServoOutputRow::open_us, SERVO_FIELD_OPEN},
-        {4, &ServoOutputRow::centre_us, SERVO_FIELD_CENTRE},
-        {5, &ServoOutputRow::close_us, SERVO_FIELD_CLOSE},
-        {6, &ServoOutputRow::throw_ms, SERVO_FIELD_THROW_MS},
-        {7, &ServoOutputRow::accel_ms, SERVO_FIELD_ACCEL_MS},
-        {8, &ServoOutputRow::release_ms, SERVO_FIELD_RELEASE_MS},
-    };
-    for (size_t i = 0; i < sizeof(kNumeric) / sizeof(kNumeric[0]); ++i) {
-        uint16_t value = 0;
-        if (servoOutputParseU16(fields[kNumeric[i].index], &value)) {
-            out->*(kNumeric[i].member) = value;
-        } else {
-            repaired |= kNumeric[i].bit;
+        const ServoOutputRowField& field = kServoOutputRowFields[f];
+        if (servoOutputRowFieldParse(field, fields[f], out)) {
+            continue;
         }
-    }
-
-    ServoEasing easing = SERVO_EASE_NONE;
-    if (servoParseEasing(fields[9], &easing)) {
-        out->easing = easing;
-    } else {
-        repaired |= SERVO_FIELD_EASING;
-    }
-
-    ServoBootBehaviour boot = SERVO_BOOT_LIMP;
-    if (servoParseBootBehaviour(fields[10], &boot)) {
-        out->boot = boot;
-    } else {
-        repaired |= SERVO_FIELD_BOOT;
-    }
-
-    if (strcmp(fields[12], "0") == 0) {
-        out->calibrated = false;
-    } else if (strcmp(fields[12], "1") == 0) {
-        out->calibrated = true;
-    } else {
-        // Anything unreadable leaves the row uncalibrated: a row nobody can
-        // read must never claim a human measured it.
-        out->calibrated = false;
-        repaired |= SERVO_FIELD_CALIBRATED;
-    }
-
-    if (!oldShape) {
-        uint16_t leds = 0;
-        if (servoOutputParseU16(fields[13], &leds) && leds <= SERVO_LIGHT_LEDS_MAX) {
-            out->led_count = (uint8_t)leds;
-        } else {
-            repaired |= SERVO_FIELD_LED_COUNT;
+        repaired |= field.bit;
+        if (field.bit == SERVO_FIELD_CALIBRATED) {
+            // Anything unreadable leaves the row uncalibrated, whatever the
+            // fallback says: a row nobody can read must never claim a human
+            // measured it.
+            out->calibrated = false;
         }
     }
 
@@ -1691,7 +1971,7 @@ inline size_t servoOutputRepairNote(uint16_t repaired, bool whole, char* buf, si
             continue;
         }
         const int written = snprintf(buf + used, bufSize - used, "%s%s", used == 0 ? "" : ", ",
-                                     servoOutputFieldName(bit));
+                                     kServoOutputRowFields[bit].name);
         if (written <= 0 || (size_t)written >= bufSize - used) {
             return strnlen(buf, bufSize);
         }
