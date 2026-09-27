@@ -446,6 +446,23 @@ test("only the estop acts, and it is the same stop the topbar button sends", asy
   );
 });
 
+// The light is the reading (CONTEXT.md "Health Signal"): a repaint that wrote
+// the word over the whole value line took the light with it on the first frame,
+// and every chip after that was a word with no light at all (#355).
+test("every chip keeps its light once the droid's reading is painted", async () => {
+  const env = await boot({ status: { ...HEALTHY } });
+  env.pushStatus({ estop: true });
+  await sleep(5);
+
+  assert.equal(env.chipValue("estop"), "LATCHED", "the reading was painted");
+  for (const id of EXPECTED_CHIPS) {
+    assert.ok(
+      env.chip(id)?.querySelector(".status-chip-value")?.querySelector(".status-chip-dot"),
+      `${id} still carries its light after the paint`,
+    );
+  }
+});
+
 // ---------------------------------------------------------------------------
 // One freshness state for the whole plate
 // ---------------------------------------------------------------------------

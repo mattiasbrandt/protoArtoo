@@ -355,6 +355,9 @@
   //            saved" says too little: a part the droid does not list, an
   //            address that is not one
   //   malformed - what a refusal of a request the droid could not read says
+  //   missing - what a refusal of a value the Setting cannot be without says:
+  //            the field was not sent, or was sent empty and the droid would
+  //            not take empty
   //
   // An act's field names an Output by the address the page sent, never by a
   // word of the droid's (R16):
@@ -424,6 +427,24 @@
       refused: "must be empty or an address like 192.168.4.2",
     },
     logLevel: { applies: "immediate", word: "log level", path: "system.logLevel" },
+
+    // Device WiFi Settings (POST /api/wifi, src/web/api_wifi_apply.cpp), named
+    // as the WiFi page names its two sections: the network it joins, and the
+    // droid's own network. The droid sends no accepts for a name's or a
+    // password's length, and the length is its to say, so a length refusal
+    // says too long, or too short, without a number.
+    wifiMode: { word: "WiFi mode", values: { client: "WiFi Client Mode", standalone_ap: "Standalone AP Mode" } },
+    staSsid: {
+      word: "name of the network it joins",
+      missing: "is required for WiFi Client Mode", refused: "is too long",
+    },
+    staPassword: { word: "password of the network it joins", refused: "is too long" },
+    apSsid: {
+      word: "name of the droid's own network",
+      missing: "is required for Standalone AP Mode", refused: "is too long",
+    },
+    apPassword: { word: "password of the droid's own network", refused: "is too short or too long" },
+
     // An act's width, not a stored Setting: POST /api/servo words its
     // refusal the same way.
     positionUs: { word: "width", unit: US },
@@ -656,6 +677,12 @@
     const name = subject || (owner ? `${owner}'s ${words.word}` : capitalise(words.word));
     const accepts = typeof error.accepts === "string" ? error.accepts : "";
     if (error.reason === "malformed-argument" && words.malformed) return `${name} ${words.malformed}`;
+    // Not sent, or sent empty and refused: the droid's own split between a
+    // value that is missing and one that is the wrong value (wifiApply()).
+    if (words.missing && (error.reason === "missing-argument"
+        || (error.reason === "out-of-range" && sentValue(sent, key) === ""))) {
+      return `${name} ${words.missing}`;
+    }
     if (error.reason === "conflict") return `${name} ${words.clash || "clashes with another setting"}`;
     if (error.reason === "out-of-range") {
       if (accepts && words.must && owner) return `${owner} ${words.must} ${sayAccepts(accepts, words)}`;

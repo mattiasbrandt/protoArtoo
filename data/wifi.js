@@ -152,13 +152,6 @@
     Object.keys(fields).forEach((name) => setFieldError(name, ""));
   };
 
-  const fieldForMessage = (message) => {
-    const errorFields = ["staSsid", "staPassword", "apSsid", "apPassword", "wifiMode"];
-    const match = errorFields.find((name) => new RegExp(name, "i").test(message));
-    if (match) return match;
-    return "";
-  };
-
   const selectedMode = () =>
     modeStandaloneAp?.checked ? WIFI_MODE_STANDALONE_AP : WIFI_MODE_CLIENT;
 
@@ -550,19 +543,23 @@
     clearFieldErrors();
     if (saveButton) saveButton.disabled = true;
     setFeedback("Saving WiFi settings...");
+    const body = buildSaveBody();
     try {
-      const result = await window.PAApi.postForm("/api/wifi", buildSaveBody(), { timeoutMs: 5000 });
+      const result = await window.PAApi.postForm("/api/wifi", body, { timeoutMs: 5000 });
       renderSettings(result.data?.wifi || null);
       renderPosture();
       setApplyFeedback("");
       setFeedback("WiFi settings saved. Reboot the Body Controller to apply the staged network switch.", "success");
     } catch (error) {
-      const message = error?.message || window.PAApi.messageFor(error);
-      const fieldName = fieldForMessage(message);
-      if (fieldName) {
-        setFieldError(fieldName, message);
+      // The refusal in the builder's words, from its field, reason and
+      // accepts (data/web_api.js), on the box its field names. The droid's
+      // sentence carries the wire name of the field and is never shown, nor
+      // searched for which box it is about (ADR 0059, #355).
+      const said = window.PAApi.messageFor(error, body);
+      if (typeof error?.field === "string" && Object.hasOwn(fields, error.field)) {
+        setFieldError(error.field, said);
       }
-      setFeedback(window.PAApi.messageFor(error), "error");
+      setFeedback(said, "error");
     } finally {
       if (saveButton) saveButton.disabled = false;
     }

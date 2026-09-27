@@ -1626,16 +1626,33 @@
     });
   }
 
-  const setRcDebugMode = async (enabled) => {
-    try {
-      const result = await window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 });
-      console.log(`[RC] Debug mode ${enabled ? 'enabled' : 'disabled'}:`, result.data);
-    } catch (error) {
-      console.warn("[RC] Failed to toggle debug mode:", window.PAApi.messageFor(error));
-    }
-  };
+  // The droid's verbose RC logs (POST /api/rc/debug, runtime only) are on
+  // while RC is on screen, and only then. Inside the shell a surface is left
+  // without the document unloading, so beforeunload alone left them on for
+  // the rest of the session (#355).
+  //
+  // On: a surface poll that asks once on arrival -- the first mount and every
+  // return, since the shell starts this surface's polls again on the way back
+  // (#360). The toggle is not a reading, so this is the one poll that catches
+  // its own failure: left to the registry, a refused toggle would hold RC's
+  // "last reading from before you left" note up over diagnostics that had
+  // answered.
+  // Off: the unmount question the shell asks the surface being left, which
+  // is how a surface hears it is leaving. Never a hold -- leaving is always
+  // allowed. beforeunload stays for a real unload of the document.
+  const askVerboseLogs = (enabled) =>
+    window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 });
 
-  setRcDebugMode(true).catch(err => console.error("[RC] Debug mode init failed:", err));
+  window.PASurface.poll(() => askVerboseLogs(true).catch((error) => {
+    console.warn("[RC] Verbose logs not turned on:", window.PAApi.messageFor(error));
+  }), { runOnStart: true }).start();
+
+  window.PASurface.holdUnmount(() => {
+    askVerboseLogs(false).catch((error) => {
+      console.warn("[RC] Verbose logs not turned off:", window.PAApi.messageFor(error));
+    });
+    return false;
+  });
 
   window.addEventListener("beforeunload", () => {
     const body = new Blob([JSON.stringify({ enabled: false })], { type: "application/json" });
