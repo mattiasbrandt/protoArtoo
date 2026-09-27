@@ -365,11 +365,12 @@ send rc.status.snapshot
 send system.status.health
 send system.status.logs
 
-# The browser pass (#355 section E), headed at 1440 px with the operator
-# watching. Each pause runs one script; the sends around it are the Console's
-# view of the same minutes. Close every browser at the end.
+# The browser pass (#355 section E), at 1440 px. Agents run it in phase 1 and
+# the operator's hands-on review is phase 2, so it needs nobody watching; add
+# HEADED=1 STEP=1 only when someone is. Each pause runs one script; the sends
+# around it are the Console's view of the same minutes. Close every browser.
 @row 355 every-surface-loads-clean
-pause Run: HEADED=1 STEP=1 BASE=http://10.0.0.22 node test/playwright/console-sweep.js -- zero console errors on every page. Press Enter.
+pause Run: BASE=http://10.0.0.22 node test/playwright/console-sweep.js -- zero console errors on every page. Press Enter.
 send system.status.health
 
 # B2b (#359) - STOP takes the press on every surface, dialogs open included.
