@@ -60,84 +60,6 @@ void test_chip_target_mapped_for_artoo_esp32() {
 #endif
 }
 
-// The artoo-esp32 SafetyMonitorTask stack. It sat at 3072 from before #245 --
-// deliberately, so that ticket's P4 raise stayed off the artoo image -- until
-// #271 walked the artoo images and found 3072 below the chain rather than above
-// it: the artoo profiler image needs 3088 B here, and the constant is compiled
-// into that image as well as the product one. A floor that fails is not the
-// margin question #248 declined, so the arm was raised by the rule.
-//
-// Pinned rather than derived, in the file that pins the artoo arm against
-// convergence with the P4: #430 took the artoo arm to 4608 on its own 3280 B
-// profiler-image chain, and the assertion that each arm follows the rule for its
-// OWN chain lives in test/test_tools/test_task_stack_recipes.py.
-void test_safety_monitor_stack_covers_its_measured_chain_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(3280U, SAFETY_MONITOR_MEASURED_CHAIN_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(4608U, SAFETY_MONITOR_STACK_BYTES);
-}
-
-// Same guard for the two stacks #248 raised on the P4. Both ESP32 branches stay
-// at their own artoo values; that is what keeps those changes off it. DomeTask's
-// artoo arm moved on its own chain at #430, 3072 -> 4096 by the rule, when the
-// walk first decoded the bodies objdump printed as data; the P4 arm is 5120.
-void test_dome_and_aux_led_stacks_unchanged_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(4096U, DOME_TASK_STACK_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(4096U, AUX_LED_TASK_STACK_BYTES);
-}
-
-// Same guard for the three stacks #256 re-derived per chip. The ESP32-P4
-// WebEvents arm is 7680 on a measured 5808 B chain; these asserts keep that
-// raise off the artoo image. RCInputTask and AudioTask happen to land on the
-// same numbers the shipping artoo image has always had -- still pin them so a
-// later edit cannot move the ESP32 arm "to match" a P4 change. #428 moved the
-// RCInputTask arm down the rule on its own chain, 7168 -> 6656.
-void test_rc_audio_webevents_stacks_unchanged_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(6656U, RC_INPUT_TASK_STACK_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(6144U, AUDIO_TASK_STACK_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(6144U, WEB_EVENTS_TASK_STACK_BYTES);
-}
-
-// The Console task stack (#226/#269), the one stack in include/config.h that
-// was already proven too small on hardware: a scalar config write over the
-// serial Console Adapter panicked both boards at 5120 B. The chain it is
-// derived from shrank once the config-write path stopped carrying three
-// ConfigSnapshot copies (#269), and the constant was re-derived with it. #354
-// re-derived it again, 7360 -> 7376, when the body routines put sequenceStart()
-// on the Console's RC-action-test branch; the rule then takes 9216 -> 9728.
-// #425 moved the chain 7376 -> 7456 (every Apply Core refusal carries its data,
-// on the audio-tracks write route); the rule lands on the same 9728. #428 made
-// the walk follow every executor table the Console dispatches through, 7456 ->
-// 8688, and the rule takes 9728 -> 11264. #430 re-derived it on the nano,
-// log-hook walk, 8688 -> 8896; the rule lands on the same 11264.
-//
-// Each assertion guards a different way the raise could be undone. The ESP32
-// arm is pinned so it cannot be "simplified" onto a later P4 change. The chain
-// is pinned so config.h's floor cannot be lowered to meet a shrunk constant
-// instead of the other way round. The constant is re-derived from the chain by
-// the #248 rule rather than restated, so a hand-edited value that no longer
-// follows the rule is red.
-//
-// Put the constant back to 5120 and none of these run at all: config.h's own
-// static_assert fails the compile first, which is the intended order. What
-// these catch is the value that still compiles -- 8192, say, which clears the
-// chain but not the rule.
-//
-// The ESP32-P4 arm is unreachable from a native binary (platformio.ini
-// env:native always builds PA_BOARD_ARTOO_ESP32); it is proven by the
-// cross-board compiler probe in test/test_tools/test_board_chip_sized_constants.py.
-void test_console_stack_covers_its_measured_chain_on_esp32() {
-    TEST_ASSERT_EQUAL_UINT32(8896U, CONSOLE_TASK_MEASURED_CHAIN_BYTES);
-    TEST_ASSERT_EQUAL_UINT32(11264U, CONSOLE_TASK_STACK_BYTES);
-
-    // #248 rule: worst-case chain + 25%, rounded up to the next 512 bytes.
-    const uint32_t byTheRule =
-        (((CONSOLE_TASK_MEASURED_CHAIN_BYTES * 5U / 4U) + 511U) / 512U) * 512U;
-    TEST_ASSERT_EQUAL_UINT32(byTheRule, CONSOLE_TASK_STACK_BYTES);
-
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(CONSOLE_TASK_MEASURED_CHAIN_BYTES,
-                                        CONSOLE_TASK_STACK_BYTES);
-}
-
 // Verify that pin definitions exist and are non-zero
 void test_pins_are_defined() {
     // Sample pins from each category to verify board-specific pin map is loaded
@@ -216,9 +138,5 @@ int main() {
     RUN_TEST(test_required_consumer_pins_are_assigned_on_artoo_esp32);
     RUN_TEST(test_pa_log_level_is_defined_and_in_range);
     RUN_TEST(test_pa_heap_profile_is_defined_as_zero_or_one);
-    RUN_TEST(test_safety_monitor_stack_covers_its_measured_chain_on_esp32);
-    RUN_TEST(test_dome_and_aux_led_stacks_unchanged_on_esp32);
-    RUN_TEST(test_rc_audio_webevents_stacks_unchanged_on_esp32);
-    RUN_TEST(test_console_stack_covers_its_measured_chain_on_esp32);
     return UNITY_END();
 }
