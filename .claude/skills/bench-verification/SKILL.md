@@ -1,6 +1,6 @@
 ---
 name: bench-verification
-description: Plan and run a Bench-Mode verification session for an epic's Closing Ticket - gather the verification points from the epic's sub-issues, draft the replayable Console sheet and the headed Playwright pass, run it with the operator watching, and record the evidence. Use when an epic nears closure, when asked to plan, draft or run a bench day or bench rows, or when editing tools/bench_rows/ sheets.
+description: Plan and run a Bench-Mode verification session for an epic's Closing Ticket - gather the verification points from the epic's sub-issues, draft the replayable Console sheet and the headed Playwright pass, run the automated half with the operator watching along, hand him the hands-on review, and record the evidence and his sign-off. Use when an epic nears closure, when asked to plan, draft or run a bench day or bench rows, or when editing tools/bench_rows/ sheets.
 ---
 
 # Bench verification
@@ -25,7 +25,7 @@ the cheapest axis and skipped the four the bench exists for.
 | Axis | What it means here | How it is checked |
 |---|---|---|
 | **1. The image is what we think** | `firmwareVersion` matches the intended commit; the filesystem image matches `fs-version.json`; no `-dirty` | Console + HTTP, first rows |
-| **2. UI and UX** | Does it look right, work right and read right - at **both widths**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Headed Playwright, operator watching** (section 5) |
+| **2. UI and UX** | Does it look right, work right and read right - at **desktop width**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Headed Playwright, operator watching** (section 5) |
 | **3. Performance** | Page load and first paint, whether a surface feels sluggish, SSE under concurrent clients, heap free / min / largest block, per-task stack headroom, fragmentation, admission-floor refusals | `/api/status` and `/api/profiler` rows, Playwright timings, resource-error counts |
 | **4. Regression** | What worked last time still works. Defects this repo has shipped stay fixed | **Replay the existing rows** - see below |
 | **5. API and console behaviour** | Routes answer truthfully, the Console catalog matches its pinned counts, guards and typing hold | Console `send`s |
@@ -52,6 +52,26 @@ under a handful of concurrent SSE clients. Anything needing an instrument this
 bench does not have is not a criterion - it is a note in the file that owns that
 truth.
 
+## The session runs in three phases
+
+Operator, 2026-09-27 (#355). In this order, and the Closing Ticket does not
+close without the third:
+
+1. **Automated - the agents.** Every Console row, HTTP read, Playwright script,
+   build and flash (asking before each device session), and the evidence
+   comment. Playwright runs **headed** so the operator can watch along, but
+   nothing in this phase waits on him - see section 5.
+2. **Hands-on - the operator.** He uses the new UI and functions himself on the
+   running board, at desktop width, and takes every deferred live look. The
+   agents stand by to capture what he finds and route it (section 7).
+3. **Sign-off - the operator.** One explicit sign-off, a comment on the Closing
+   Ticket, after phases 1 and 2. Anything he rejected goes back through its
+   slice first, or is cut in writing with his agreement.
+
+So the Closing Ticket names the phase 2 functions to try alongside its looks,
+and carries the sign-off as an acceptance criterion. Automated evidence alone,
+however green, never closes it.
+
 ## 1. Bench-Mode is the boundary, and it is not negotiable
 
 `CONTEXT.md` "Bench-Mode": *"powered by the computer's USB cable with **nothing
@@ -76,7 +96,7 @@ it.**"* A `full-hardware-required` exposure never blocks closure.
 > side of every one of them was already proven natively.
 
 **What Bench-Mode still covers is a full day**: both images on both controllers,
-every surface served from the staged filesystem image at both widths, the shell
+every surface served from the staged filesystem image at desktop width, the shell
 and the status plate surviving navigation, estop reaching every surface, config
 crossing real NVS, the Console catalog, and the runtime memory readings.
 
@@ -251,9 +271,16 @@ script over a `pause` whenever one can do the job (section 5).
 > run answers *"did anything throw"*; a watched run also answers *"is this
 > good"*, and only one of those has a script.
 
-So: **give the run a pace a person can follow and a way to stop on a page.** A
-sweep that blinks through thirteen surfaces in twenty seconds is not a session he
-can take part in.
+So: **give the run a pace a person can follow.** A sweep that blinks through
+every surface in twenty seconds is not a session he can take part in; the
+settle time per page is the pace.
+
+**Headed is a window, not a wait.** An agent runs the automated pass headed and
+unattended in phase 1. What must stay out of that run is anything that blocks
+on a key: `STEP=1` (Enter between pages) and any `pause` only the operator can
+answer. `STEP=1` is for when he asks to hold on a page, and his own hands-on
+time is phase 2. Never switch a run to headless on the reasoning that he is not
+required to watch - he watches when he wants to.
 
 **Two required checks, every session:**
 
@@ -268,8 +295,8 @@ can take part in.
 
    **Before trusting it, check its `PAGES` list against `data/*.html`.** It goes
    stale every time the epic adds a surface, and a zero-error sweep that never
-   loaded the new page says nothing about it. Check the viewport too: the sweep
-   owes **both widths**, and a hardcoded one is half a sweep.
+   loaded the new page says nothing about it. Check the viewport too: desktop
+   width, never a phone or tablet width.
 
 2. **UI and UX of what this epic implemented.** Per-surface scripts live in
    `test/playwright/<surface>/`. Any surface the epic built without one is a gap
@@ -325,7 +352,8 @@ protocol.
 - **The verification tail of an epic is ONE ticket.** Bench rows, soak, audit and
   the closure PR together. Never a ticket per runbook, matrix, audit or
   integration-readiness step. A ticket with every box ticked closes in the same
-  pass; it is never left open for one unobtainable number.
+  pass; it is never left open for one unobtainable number. The operator's
+  sign-off (phase 3) is one of those boxes, and nothing closes before it.
 - **Route what the session finds while it is still open.** A defect goes on the
   ticket that owns those files, in the same pass, naming `file:line` and what
   that ticket has to do about it. That includes anything the operator says while
