@@ -279,17 +279,33 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
     await sleep(5);
   }
 
-  // A browser's <dialog>; mini_dom has none.
+  // A browser's <dialog>; mini_dom has none. Only show() is given: a
+  // showModal() would make the shell's STOP inert (#359), so a call to it
+  // throws here rather than quietly passing.
   const dialog = document.getElementById("parts-move-dialog");
   dialog.open = false;
-  dialog.showModal = () => {
+  dialog.show = () => {
     dialog.open = true;
+  };
+  dialog.showModal = () => {
+    throw new Error("the move question must not be modal: it would make STOP inert (#359, ADR 0048)");
   };
   dialog.close = () => {
     dialog.open = false;
   };
   env.dialog = dialog;
+  env.estop = document.getElementById("shell-estop-button");
+  env.chrome = ["shell-top", "shell-nav", "shell-status"].map((id) => document.getElementById(id));
+  env.surface = dialog.closest(".surface");
   return env;
+};
+
+// Every node from `node` up to the document that is marked inert. Inert is
+// inherited, so any one of them takes the node out of reach.
+const inertOnPath = (node) => {
+  const hits = [];
+  for (let at = node; at; at = at.parentElement) if (at.inert) hits.push(at.id || at.className || at.tagName);
+  return hits;
 };
 
 // ---------------------------------------------------------------------------
@@ -317,6 +333,37 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.select("doorFL").value, "ledc:3", "the table repaints from what the droid now says");
   assert.equal(env.select("doorFR").value, "ledc:0", "the Part left behind is still driven");
   assert.equal(env.text("parts-feedback"), "Left body door is on ARM3.");
+});
+
+test("the move question leaves STOP live and holds only the surface behind it", async () => {
+  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  assert.ok(env.estop, "the shell drew its STOP");
+  assert.ok(env.surface, "Parts is mounted in a .surface");
+
+  env.pick("doorFL", "ledc:4");
+  assert.equal(env.dialog.open, true, "the question is up");
+
+  assert.deepEqual(inertOnPath(env.estop), [], "STOP must take a press while the question is up (#359, ADR 0048)");
+  env.chrome.forEach((region) => assert.deepEqual(inertOnPath(region), [], `${region.id} stays live`));
+  assert.deepEqual(inertOnPath(env.dialog), [], "the question itself can be answered");
+  assert.ok(inertOnPath(env.table()).length > 0, "the table behind the question takes no press");
+
+  env.click("parts-move-cancel");
+  await sleep(20);
+  assert.deepEqual(inertOnPath(env.table()), [], "answering gives the surface back");
+});
+
+test("Escape cancels the move question", async () => {
+  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+
+  env.pick("doorFL", "ledc:4");
+  assert.equal(env.dialog.open, true);
+  env.dialog.fire("keydown", { key: "Escape" });
+  await sleep(20);
+  assert.equal(env.dialog.open, false);
+  assert.equal(env.posts.length, 0, "a cancel sends nothing");
+  assert.equal(env.select("doorFL").value, "ledc:0");
+  assert.deepEqual(inertOnPath(env.table()), [], "and gives the surface back");
 });
 
 test("cancelling the question sends nothing and puts the control back", async () => {
