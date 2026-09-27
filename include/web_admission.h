@@ -118,10 +118,11 @@ WebAcceptDecision webAcceptDecide(WebAcceptRateLimiter* limiter, uint32_t nowMs,
 // Cached heap sample
 // -----------------------------------------------------------------------------
 
-// heap_caps_get_largest_free_block() walks the heap, and both admission layers
-// run on the single server task that also services every other connection. The
-// sample is therefore cached and refreshed at most once per interval, which
-// bounds the walk cost to a rate rather than a per-connection charge.
+// The Buffer Reading (heapReadBufferLargest(), include/heap_reading.h) walks
+// the heap, and both admission layers run on the single server task that also
+// services every other connection. The sample is therefore cached and
+// refreshed at most once per interval, which bounds the walk cost to a rate
+// rather than a per-connection charge.
 struct WebHeapSampleCache {
     size_t value;
     uint32_t lastSampleMs;

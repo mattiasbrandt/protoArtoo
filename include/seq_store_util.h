@@ -38,7 +38,7 @@
 //   every step a dome command at PC_CMD_MAX = 63); 24 KB rounds that up and
 //   leaves 5733 B for the `meta` block, whose origin/license/notes/purpose
 //   fields are free text no validator bounds. The 49 KB transient peak is 43%
-//   of the ~114 KB internal free heap measured on the P4 (heap_health.h and
+//   of the ~114 KB internal free heap measured on the P4 (heap_reading.h and
 //   tasks/safety.cpp record that figure from #245), and an over-large document
 //   still fails gracefully: deserializeJson returns NoMemory and seqStoreSave
 //   answers a field-level error with nothing written.

@@ -2097,14 +2097,17 @@ Returns controller status snapshot.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
 - `uptimeMs`, `firmwareVersion`, `fsVersion`, `resetReason`
-- `heapFree`, `heapMin`, `heapLargestBlock`, `heapLargest8bit`
-  - `heapLargest8bit` is the largest allocatable DRAM block (`MALLOC_CAP_8BIT`) —
-    the pool `malloc` and the admission guards actually use. `heapLargestBlock`
-    is legacy: it reads `MALLOC_CAP_INTERNAL`, which is dominated by a constant
-    ~36 KB leftover-IRAM region that can never be allocated, so it stays near
-    36 KB regardless of real heap pressure. Use `heapLargest8bit` for any
-    heap-health judgement. (Note: `/api/health` has always reported the 8-bit
-    value under the `heapLargestBlock` name.)
+- `heapFree`, `heapMin`, `heapLargestBlock` — the **Internal Data Heap**
+  (`MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT`): free bytes, the low-water mark
+  since boot, and the largest free block. It leaves out artoo's IRAM-only heap
+  and the ESP32-P4's PSRAM, so it is the figure to judge the droid's RAM health
+  by. These three keys mean the same on every door: `/api/status`, the
+  `status` event, `/api/health` and the Console's `system.status.health`.
+- `heapLargest8bit` — the **Buffer Reading**: the largest free
+  `MALLOC_CAP_8BIT` block, the largest buffer a request handler could be given
+  right now. Admission is judged by it. On the ESP32-P4 it counts PSRAM (a
+  `malloc` over 4,096 B can come from there), so it can be megabytes larger
+  than `heapLargestBlock`; do not judge heap health by it.
 - `failedAllocs` — allocations the heap refused since boot, counted by the IDF
   failed-allocation hook. Reported on every build, production included;
   `/api/profiler` reports the same counter plus the failing request's size,
@@ -2114,6 +2117,9 @@ Returns controller status snapshot.
 - `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
   accept-guard rejection counters (heap floor / rate pacing) and milliseconds
   since the last rejection (`-1` if none since boot)
+- `acceptRejectLargestBlock`, `acceptMinLargestBlockSeen` — Buffer Readings,
+  like `heapLargest8bit`: the sample behind the accept guard's last heap-floor
+  rejection, and the smallest sample it has taken since boot (`-1` if none)
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `lights` object: one entry per lit wire, keyed by the Output id
@@ -2147,9 +2153,9 @@ it is on the admission layer's short list of read-only diagnostic paths
 - Success: `200` JSON
 - Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
   `wifiConnected`, `wifiClientConnected`, `littleFsReady`, `heapFree`,
-  `heapMin`, `heapLargestBlock` (the 8-bit-capable value, despite the
-  `/api/status` name it shares — see that endpoint's own note above),
-  `wifiRssi`, `uptimeMs`, `resetReason`
+  `heapMin`, `heapLargestBlock` (the Internal Data Heap, the same reading
+  `/api/status` publishes under these names), `wifiRssi`, `uptimeMs`,
+  `resetReason`
 
 #### Example request
 
@@ -2553,8 +2559,11 @@ These routes exist only when `PA_HEAP_PROFILE` is enabled.
 
 Returns heap/profile snapshot JSON including:
 
-- `heapFree`, `heapMin`, `heapLargest`, `fragRatio`
-- allocator block counters
+- `heapFree`, `heapMin`, `heapLargest`, `fragRatio` — the Internal Data Heap,
+  the reading `/api/status` publishes as `heapFree`, `heapMin` and
+  `heapLargestBlock`
+- allocator block counters, and the `snapshots[]` window figures, of the same
+  Internal Data Heap
 - `failedAllocs`
 - `taskStacks[]` high-water marks
 - optional `taskHeap[]` when `CONFIG_HEAP_TASK_TRACKING`

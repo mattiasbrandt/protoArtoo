@@ -90,9 +90,10 @@ curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest
   connection churn (a bounded one-time warm-up, not a leak). The admission
   floors sit at 7.5-9 KB; sustained readings near them mean requests are
   being shed.
-- Do NOT judge heap by `heapLargestBlock` in `/api/status`: it reads a pool
-  dominated by unusable leftover IRAM and sits near 36 KB no matter what
-  (kept only for backward compatibility).
+- `heapFree`, `heapMin` and `heapLargestBlock` are the Internal Data Heap
+  (IRAM and the ESP32-P4's PSRAM left out), the same reading on every door.
+  Figures recorded before #381 read a pool that counts artoo's ~41 KB of IRAM,
+  so they are not comparable with today's.
 - `tcpAcceptRejectHeap`/`tcpAcceptRejectRate` climbing during normal use =
   the accept guards are shedding; check what is generating connection churn.
 

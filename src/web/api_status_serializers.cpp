@@ -21,7 +21,6 @@
 
 #ifdef ARDUINO
 #include <Arduino.h>
-#include <esp_heap_caps.h>
 #else
 // Native test build: esp_reset_reason()'s return type. <esp_system.h> does
 // not exist on the native toolchain (device builds get it transitively
@@ -51,6 +50,7 @@ esp_reset_reason_t esp_reset_reason();
 #include "config.h"
 #include "config_cache.h"
 #include "dome_link.h"
+#include "heap_reading.h"
 #include "reset_reason.h"
 #include "robot_state.h"
 #include "servo_helpers.h"  // servo_ledc_channel_to_arm_id(), the address -> armId bridge
@@ -155,24 +155,19 @@ void captureHealthSnapshot(HealthSnapshot* out) {
 
     // #225: uptime and reset reason, the same on both build types - millis()
     // and esp_reset_reason() are each a real device call or a settable
-    // native stub (src/native_test_stubs.cpp), not an ARDUINO-only API like
-    // the heap block below. resetReasonName() returns a static string
-    // literal, so this is a pointer copy, not an allocation.
+    // native stub (src/native_test_stubs.cpp), as the heap reading below is
+    // too. resetReasonName() returns a static string literal, so this is a
+    // pointer copy, not an allocation.
     out->uptimeMs = millis();
     out->resetReason = resetReasonName(esp_reset_reason());
 
-#ifdef ARDUINO
-    out->heapFree = ESP.getFreeHeap();
-    out->heapMin = ESP.getMinFreeHeap();
-    out->heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-#else
-    // Native tests: no standard-C equivalent of the ESP heap APIs. Matches
-    // the stub values consoleExecuteSystemStatusHealth used before this
-    // snapshot existed, so the native tests built against it stay stable.
-    out->heapFree = 262144;
-    out->heapMin = 262144;
-    out->heapLargestBlock = 262144;
-#endif
+    // The Internal Data Heap, the same reading /api/status publishes under
+    // these three keys (include/heap_reading.h). The native build's stand-in
+    // is settable through include/heap_reading_test_hooks.h.
+    const HeapInternalDataReading dataHeap = heapReadInternalData();
+    out->heapFree = dataHeap.free;
+    out->heapMin = dataHeap.minEver;
+    out->heapLargestBlock = dataHeap.largest;
 }
 
 void captureWifiStatusSnapshot(WifiStatusSnapshot* out) {
