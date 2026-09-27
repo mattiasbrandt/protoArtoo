@@ -559,11 +559,16 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // now, so the acts have been gated once.
   await sleep(30);
 
-  // A browser's <dialog>; mini_dom has none.
+  // A browser's <dialog>; mini_dom has none. Only show() is given: a
+  // showModal() would make the shell's STOP inert (#359), so a call to it
+  // throws here rather than quietly passing.
   const dialog = document.getElementById(surface === "servo" ? "outputs-move-dialog" : "parts-move-dialog");
   dialog.open = false;
-  dialog.showModal = () => {
+  dialog.show = () => {
     dialog.open = true;
+  };
+  dialog.showModal = () => {
+    throw new Error("the move question must not be modal: it would make STOP inert (#359, ADR 0048)");
   };
   dialog.close = () => {
     dialog.open = false;
