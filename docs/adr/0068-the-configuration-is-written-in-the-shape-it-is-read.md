@@ -1,6 +1,6 @@
 # The Configuration is written in the shape it is read
 
-Status: accepted (2026-09-25, issue #423; amended 2026-09-26, issues #431 and #432, see below). Settled by grilling the operator
+Status: accepted (2026-09-25, issue #423; amended 2026-09-26, issues #431 and #432, and 2026-09-27, see below). Settled by grilling the operator
 after the architecture review of the operator-experience epic's hot spots.
 
 ## Context
@@ -251,3 +251,37 @@ the browser. Three things stayed outside it, measured on
   page's hostname row still state their own timing, each with a comment saying
   why. Bringing those doors under a declaration was offered and left out; it
   changes nothing the builder sees.
+
+## Amended 2026-09-27: the Output row is declared once, stored text included
+
+The second amendment removed the Records' hand merge; the Output row kept its
+own. `kOutputRowSettings` already carries every row field's offset and edit
+bit, yet `servoOutputApplyEdit()` copies each field by hand, the stored text is
+a positional `printf` and a positional parse, a third list of field names
+(`leds`, `throw`, `ease`) sits beside the row keys, and the row round trip
+compares a hand-listed set of fields, so a new field it does not list passes
+silently. Adding one row field touched about ten places in
+`include/servo_output_row.h` alone.
+
+The parse also carried a trap: it read a stored row only at today's field count
+or exactly one fewer. The next field would have turned every row stored before
+#413 into damage, and reset that Output's calibration.
+
+**We decided:**
+
+- **One ordered field table drives the row's merge, its stored text and its
+  parse.** Only the rules stay by hand: the centre a type change pulls in,
+  Parts, and capture. The stored text is byte-for-byte what it is today, and a
+  golden test holds it there; the first decision's "the flash layout is
+  unchanged" still stands.
+- **A stored row of any older length is read,** from the thirteen fields of
+  the pre-#413 shape up to today's, and each field it lacks takes its default.
+  A row stored by any earlier firmware keeps its calibration through every
+  future field.
+- **The row round trip is generated from the declaration,** as the Settings'
+  and Records' already are.
+
+The browser keeps its own list of the row fields a page may save; a drift check
+holds it to the declaration. Serving the table was rejected by the first
+decision and is not reopened. `release_ms` stays stored and undeclared: Output
+Release is owed by ADR 0064 and has no door yet.
