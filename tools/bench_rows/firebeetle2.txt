@@ -333,3 +333,54 @@ pause Fetch GET /api/config and keep the ten endpoint values for #355 - they mus
 send system.action.set-mode mode=stationary
 send system.status.health
 pause Fetch GET /api/config again. The first save has now run, so this is the post-migration read. Press Enter.
+
+# =============================================================================
+# Epic #175 closure session (#355) -- the P4's half, only if the operator puts
+# firebeetle2 on the bench
+#
+# Added 2026-09-27. #355's body says what each row must answer. Only checks
+# #355 names for both boards are here; everything board-independent was proven
+# on artoo and is cut on #355, not repeated. system.status.health carries the
+# heap keys, resetReason and estop, so those reads need no HTTP. Rows marked
+# HTTP need a working C6 (board 2, by operator decision only); skip them on
+# board 1.
+# =============================================================================
+
+# Axis 1 - the image is what we think it is. On board 1 (no HTTP) read the
+# version from the boot log instead of the pause's fetch.
+@row 355 the-image-is-what-we-think-on-the-p4
+send system.status.health
+send system.status.logs
+pause HTTP: fetch GET /api/status (firmwareVersion) and /fs-version.json - both name the intended commit, no -dirty. Board 1: check the boot log above instead. Press Enter.
+
+# #428 on the P4 - a requested restart runs on SafetyMonitor's stack here too
+# (5,120 B on this chip).
+@row 428 a-requested-restart-restarts-clean-on-the-p4
+send system.status.health
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.status.health
+send system.status.logs
+
+# #370 on the P4 - sound off says so, and a play is refused. The Wave 0
+# finding reproduced on this board with a different member, so it is replayed
+# here rather than cut as a duplicate. Agent-runnable.
+@row 370 sound-off-says-so-on-the-p4
+send system.action.enable-web-control
+send sound.status.current
+send sound.action.play-track track=1
+send system.action.disable-web-control
+
+# #381 decision 3 on the P4 (HTTP) - does admission need an internal floor?
+# heapLargest8bit (the Buffer Reading admission uses) counts PSRAM here;
+# heapLargestBlock (the Internal Data Heap) does not. The two under page load
+# are what the operator decides from.
+@row 381 p4-admission-under-page-load
+send system.status.health
+pause HTTP: open Dashboard, Parts and Sequences in three tabs and leave them live for 30 s. Press Enter.
+send system.status.health
+
+# #404 on the P4 (HTTP) - Configuration and Maintenance load on this board too.
+@row 404 configuration-and-maintenance-on-the-p4
+pause HTTP: open /setup.html and /#setup (both land on Configuration), then Maintenance. Press Enter.
+send system.status.health

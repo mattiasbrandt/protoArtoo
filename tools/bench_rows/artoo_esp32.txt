@@ -232,3 +232,183 @@ pause Upload this image over USB, let it boot, re-attach, then press Enter
 send system.status.health
 send servo.api.get-outputs
 pause Fetch GET /api/servo/outputs from this board and keep the answer for #355, then press Enter
+
+# =============================================================================
+# Epic #175 closure session (#355) -- what Waves 0-3 left for the board
+#
+# Added 2026-09-27. #355's body is the checklist and says what each row must
+# answer; this block is only the commands, in the order that needs one
+# reflash: every artoo_esp32 row first, then the profiler-image row last.
+# Browser checks run as Playwright scripts (test/playwright/), and the row
+# around each one captures the Console's view of the same moment.
+#
+# Every row is Bench-Mode: the controller on USB and nothing else. A check
+# needing a servo, radio, strip or sound module is on #355's droid-only record
+# and never here. system.status.health carries heapFree, heapMin,
+# heapLargestBlock, heapLargest8bit, resetReason and estop, so memory and
+# restart evidence is read at the Console, not typed from a browser.
+# =============================================================================
+
+# Axis 1 - the image is what we think it is. firmwareVersion and the
+# filesystem stamp are HTTP-only; a -dirty or stale image voids the session.
+@row 355 the-image-is-what-we-think
+send system.status.health
+pause Fetch GET /api/status (firmwareVersion) and /fs-version.json. Both must name the intended commit, with no -dirty. Press Enter.
+
+# #381 row 39 - the idle Internal Data Heap after #427-#430, at the default log
+# level. Since ccf72dd3 the heap keys carry no IRAM, so the 2026-09-11 figures
+# are not a baseline for these. Which components are enabled changes the
+# answer, so it is recorded beside it.
+@row 381 idle-heap-baseline
+send system.status.health
+pause Fetch GET /api/config and keep the components block (which are enabled) for #355. Press Enter.
+send system.status.health
+
+# #371 - GET /api/config now measures, allocates and frees per request (up to
+# 6,144 B) instead of holding 3,072 B for good. The pages that read it are
+# the load; heapLargest8bit before and after is the reading.
+@row 371 config-allocates-per-request
+send system.status.health
+pause Load Dashboard, Configuration and Maintenance -> Backup, once each. Note any "payload too large" or "response buffer alloc failed". Press Enter.
+send system.status.health
+
+# #381 row 42 - the two largest request bodies, back to back. A shipped defect
+# class (OOM PANIC): the estimated peak is 25-32 KB against 20-40 KB free.
+@row 381 the-largest-bodies
+send system.status.health
+pause Restore a ~12 KB whole-configuration backup from Maintenance -> Backup. Keep the HTTP result. Press Enter.
+send system.status.health
+pause Save a Learned Sequence of close to 12 KB from Sequences (POST /api/seq). Keep the HTTP result; on a panic, fetch /api/coredump/status. Press Enter.
+send system.status.health
+
+# #381 - the same heap keys with the surfaces open: the other input to the
+# page heap thresholds #355 re-derives.
+@row 381 heap-under-page-load
+send system.status.health
+pause Open Dashboard, Parts and Sequences in three tabs and leave them live for 30 s. Press Enter.
+send system.status.health
+
+# #428 - an operator restart now runs esp_restart() on SafetyMonitor's stack,
+# not loopTask's. The shutdown handlers include closed-source esp_wifi_stop,
+# which no stack walk can bound, so this is the only evidence.
+@row 428 a-requested-restart-restarts-clean
+send system.status.health
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.status.health
+send system.status.logs
+
+# #430 - newlib nano printf, adopted on the condition that nothing is lost.
+# dome.status.current is a %.3f; the SafetyMonitor heap line carries frag= as
+# a decimal; GET /api/actions logs "(<n> entries)" at debug level.
+@row 430 nano-printf-keeps-its-numbers
+send dome.status.current
+send system.status.logs
+send system.config.log-level value=debug
+pause Fetch GET /api/status (it must parse, with domeTargetSpeed a decimal) and GET /api/actions. Press Enter.
+send system.status.logs
+send system.config.log-level value=info
+
+# #370 - with Audio off at boot (the bench board's usual state) the sound
+# surface names the picked module and says sound is off, and a play is
+# refused rather than answering ok outcome=queued with no task to drain it.
+# The Wave 0 finding, replayed. Agent-runnable.
+@row 370 sound-off-says-so
+send system.action.enable-web-control
+send sound.status.current
+send sound.action.play-track track=1
+send system.action.disable-web-control
+
+# #369 - the stored RC Radio crosses a reboot and is the active member.
+@row 369 the-stored-radio-survives-a-reboot
+send system.api.get-components
+pause POST /api/config with rcMember=rc_radio, then press Enter
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send system.api.get-components
+pause Fetch GET /api/config (rc.member) and GET /api/identity/components. Press Enter.
+
+# #370 - the amber "restart required" line is cleared by a real restart, and
+# the new receiver is then the one running.
+@row 370 a-restart-clears-the-amber-line
+pause On Configuration, change the RC Receiver and confirm the amber "Saved at ... restart required" line. Press Enter.
+send system.action.reboot
+pause Wait for the board to come back, reload Configuration and confirm the line is gone. Press Enter.
+send system.api.get-components
+
+# #404 - Configuration and Maintenance load, the old addresses open
+# Configuration, and "Run guided Setup again" writes only guidedSetupRun.
+@row 404 configuration-and-maintenance
+pause Open /setup.html and /#setup (both must land on Configuration), then Maintenance. Press "Run guided Setup again" and keep the POST /api/config body from the browser's network panel. Press Enter.
+send system.status.health
+
+# #371 - guided Setup, one pass. The visited bits crossing a real reboot on
+# real NVS is the half no native test reaches.
+@row 371 guided-setup-one-pass
+pause Run guided Setup to the end once, then start it again and take the skip path. Fetch GET /api/config and keep the guidedSetup fields. Press Enter.
+send system.action.reboot
+pause Wait for the board to come back, fetch GET /api/config again and compare the guidedSetup fields. Press Enter.
+
+# #369 and #431 (fix 68ad608a) - ELRS reads nothing, and survives a reboot.
+# A stored ELRS mode used to load as dual SBUS. With every RC channel on, the
+# board must look exactly like one with no receiver: no RC task, no SBUS
+# decoder, drive keeping its zero frames, the estop latch untouched. Run late:
+# it leaves the board in ELRS mode, and the board is left as the test leaves it.
+@row 369 elrs-reads-nothing
+send rc.config.mode
+send system.status.health
+pause POST /api/config with rcInputMode=elrs and every RC channel on, then press Enter
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+send rc.config.mode
+send rc.status.snapshot
+send system.status.health
+send system.status.logs
+
+# The browser pass (#355 section E), headed at 1440 px with the operator
+# watching. Each pause runs one script; the sends around it are the Console's
+# view of the same minutes. Close every browser at the end.
+@row 355 every-surface-loads-clean
+pause Run: HEADED=1 STEP=1 BASE=http://10.0.0.22 node test/playwright/console-sweep.js -- zero console errors on every page. Press Enter.
+send system.status.health
+
+# B2b (#359) - STOP takes the press on every surface, dialogs open included.
+# A safety invariant and a shipped defect. The script leaves the estop latched;
+# the health read proves the press reached the firmware.
+@row 359 stop-takes-the-press
+send system.status.health
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/stop-every-surface.js, then press Enter
+send system.status.health
+
+# B3 (#346) + B2c (#360) - the Status Plate survives navigation and reads
+# stale, not fresh, when the browser stops hearing the droid. Shipped defects.
+@row 346 the-plate-tells-the-truth
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/status-plate-truth.js, then press Enter
+send system.status.health
+
+# C1a (#347) and the surfaces the C-line built. Parts is scripted; the rest
+# are looks: the wiring sheet renders from Board Lanes and prints (#366), the
+# droid picture tells unfitted from undrivable (#374), words, pins and colors
+# agree after D2 (#353), and drawings serve for rc_radio and mrbaddeley (#369).
+@row 347 the-surfaces-the-c-line-built
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/parts/parts-surface.js. Then open Wiring (print it), Parts -> Droid Build and the Component Picker. Press Enter.
+send system.status.health
+
+# The Console catalog against its pinned counts. The epic added routes, and a
+# new route moves these numbers where no targeted test run names them.
+@row 355 the-console-catalog
+send help
+send system.api.get-components
+
+# #381 row 12 and #430 - the profiler image, flashed ONCE, last. It is the only
+# image that serves /api/profiler: taskStacks[] high-water marks (DomeTask,
+# WebEvents, DomeLinkTask, ArduinoOTA, SafetyMonitor - SafetyMonitor's decides
+# 4,608 or 4,096 B), and fragRatio as a nano-printed decimal. A task reports a
+# mark only once it reaches its first loop; a silent task is recorded, not
+# read as a pass.
+@row 381 the-profiler-image
+pause Flash artoo_esp32_profiler (confirm firmwareVersion), open Dashboard in three tabs so SSE clients are connected, then press Enter
+send system.status.health
+send system.api.get-profiler
+pause Fetch GET /api/profiler and keep taskStacks[] and fragRatio for #355. Press Enter.
+send system.api.get-profiler
