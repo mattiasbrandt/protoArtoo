@@ -221,6 +221,7 @@
   const MSG = {
     categoryRangeInvalid: "Use 0/0 or 1–999 with Min ≤ Max",
     minMustBeLeMax: "Min must be ≤ Max",
+    nothingToPlay: "Nothing to play: no track is set",
     saveFailed: "Save failed",
     saved: "Saved",
     unsaved: "Unsaved",
@@ -1910,14 +1911,19 @@
         className: "btn sound-btn-play",
         onClick: () => {
           if (sound.editable && sound.key) {
-            // 0 is "no sound for this", and there is nothing to play; which
-            // sounds may be 0 is the droid's to say when the track is saved.
+            // 0 is "no sound for this". Which sounds may be 0 is the droid's to
+            // say when the track is saved, but Play is an act the page carries
+            // out itself: no request reaches the droid for a 0, so the page
+            // answers the press, required track or optional.
             const value = Number.parseInt(rowInput?.value, 10);
             if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
               showFeedback(rowFeedback || globalFb, MSG.trackRangeZeroToMax, false);
               return;
             }
-            if (value === 0) return;
+            if (value === 0) {
+              showFeedback(rowFeedback || globalFb, MSG.nothingToPlay, false);
+              return;
+            }
 
             const binding = getSlotBinding(sound.key);
             if (catalogSupported && binding) {
@@ -2146,7 +2152,10 @@
             showFeedback(rowFeedback, MSG.trackRangeZeroToMax, false);
             return;
           }
-          if (value === 0) return;
+          if (value === 0) {
+            showFeedback(rowFeedback, MSG.nothingToPlay, false);
+            return;
+          }
           playMappedSlot(sound.key, value, rowFeedback || globalFb, sound.label);
         },
       });

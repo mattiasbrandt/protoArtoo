@@ -74,3 +74,26 @@ test("every track row is named by its Setting's label, the one the sequence edit
     assert.equal(row.dataset.soundLabel, labelOf(key), `${key}'s row`);
   });
 });
+
+test("Play on a track set to 0 says there is nothing to play, and sends nothing", async () => {
+  // Play is an act the page carries out itself: no request reaches the droid
+  // for a 0, so nothing else would ever answer the press (#432). A required
+  // track (scream), an optional one (doodoo) and a system sound each answer.
+  const document = new MiniDocument();
+  const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../data/sound.html"), "utf-8");
+  new MiniDOMParser().parseFromString(html).body.children
+    .forEach((child) => document.body.appendChild(document.importNode(child, true)));
+  const env = loadPageModule("sound.js", { overrides: { document } });
+  await env.settle();
+
+  ["track-input-scream", "track-input-doodoo", "sys-track-input-sys_boot"].forEach((id) => {
+    const input = document.getElementById(id);
+    assert.ok(input, `${id} was drawn`);
+    input.value = "0";
+    const row = input.closest("tr");
+    const sentBefore = env.requests.length;
+    row.querySelector(".sound-btn-play").fire("click");
+    assert.equal(row.querySelector(".sound-feedback-inline").textContent, "Nothing to play: no track is set", `${id}'s row`);
+    assert.equal(env.requests.length, sentBefore, `${id}'s Play sent nothing`);
+  });
+});
