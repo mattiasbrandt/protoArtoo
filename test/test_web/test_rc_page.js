@@ -22,7 +22,7 @@ import assert from "node:assert";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 
-import { loadPageModule } from "./helpers/page_module_env.js";
+import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 
 // The shipped Component Picker, whose lineup read has not answered: its GET
 // never settles, the way a slow controller leaves it for one load cycle.
@@ -113,4 +113,36 @@ test("the droid's verbose RC logs are on while RC is on screen, and only then", 
   env.window.PASurface.showing(null);
   await env.settle();
   assert.deepEqual(asked(), [true, false, true], "and coming back to RC turns them on again");
+});
+
+// The verbose-log toggle is not a reading. A droid that refused it must not
+// keep RC saying it is showing what it read before the operator left once the
+// diagnostics have answered again: the note is about the values on screen
+// (#360), and the toggle put none there.
+test("a refused verbose-log toggle does not keep RC saying its reading is old", async () => {
+  const env = loadPageModule("rc.js", {
+    respond: (path) => {
+      if (path === "/api/rc/debug") throw new ApiError("the droid did not take it", { kind: "http", status: 500 });
+      return respond(path);
+    },
+  });
+  await env.settle();
+
+  env.window.PASurface.unmountHeld(null);
+  env.window.PASurface.showing("home");
+  await env.settle();
+  assert.equal(env.window.PASurface.isStale(null), true, "RC was left, so what it shows is from before");
+
+  env.window.PASurface.showing(null);
+  await env.settle();
+  const diagnostics = env.intervals.filter((timer) => timer.ms === 1000 && !env.cleared.intervals.includes(timer.id));
+  assert.ok(diagnostics.length > 0, "RC polls its diagnostics again on the way back");
+  diagnostics.forEach((timer) => env.fireInterval(timer.id));
+  await env.settle();
+
+  assert.equal(
+    env.window.PASurface.isStale(null),
+    false,
+    "the diagnostics answered, and a refused verbose-log toggle is no reason to call them old",
+  );
 });

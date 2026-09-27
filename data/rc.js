@@ -1633,15 +1633,19 @@
   //
   // On: a surface poll that asks once on arrival -- the first mount and every
   // return, since the shell starts this surface's polls again on the way back
-  // (#360). It hands back the request itself, so a droid that did not answer
-  // stays unanswered rather than reading as current.
+  // (#360). The toggle is not a reading, so this is the one poll that catches
+  // its own failure: left to the registry, a refused toggle would hold RC's
+  // "last reading from before you left" note up over diagnostics that had
+  // answered.
   // Off: the unmount question the shell asks the surface being left, which
   // is how a surface hears it is leaving. Never a hold -- leaving is always
   // allowed. beforeunload stays for a real unload of the document.
   const askVerboseLogs = (enabled) =>
     window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 });
 
-  window.PASurface.poll(() => askVerboseLogs(true), { runOnStart: true }).start();
+  window.PASurface.poll(() => askVerboseLogs(true).catch((error) => {
+    console.warn("[RC] Verbose logs not turned on:", window.PAApi.messageFor(error));
+  }), { runOnStart: true }).start();
 
   window.PASurface.holdUnmount(() => {
     askVerboseLogs(false).catch((error) => {
