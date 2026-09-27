@@ -1638,14 +1638,8 @@
   // Off: the unmount question the shell asks the surface being left, which
   // is how a surface hears it is leaving. Never a hold -- leaving is always
   // allowed. beforeunload stays for a real unload of the document.
-  let verboseLogsAsked = false;
-  const askVerboseLogs = (enabled) => {
-    if (enabled) verboseLogsAsked = true;
-    return window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 }).then((result) => {
-      if (!enabled) verboseLogsAsked = false;
-      return result;
-    });
-  };
+  const askVerboseLogs = (enabled) =>
+    window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 });
 
   window.PASurface.poll(() => askVerboseLogs(true), { runOnStart: true }).start();
 
@@ -1657,7 +1651,6 @@
   });
 
   window.addEventListener("beforeunload", () => {
-    if (!verboseLogsAsked) return;
     const body = new Blob([JSON.stringify({ enabled: false })], { type: "application/json" });
     navigator.sendBeacon("/api/rc/debug", body);
   });
