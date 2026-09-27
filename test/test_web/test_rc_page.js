@@ -90,3 +90,27 @@ test("before the droid has answered, the radio and receiver cards never say noth
     assert.match(said, /Reading it from the droid/);
   }
 });
+
+// The droid's verbose RC logs follow RC on and off the screen. The page asks
+// for them on arrival; inside the Operator Shell a surface is left without the
+// document unloading, so an off sent only from beforeunload never went, and
+// the logs stayed on for the rest of the session (#355). Leaving is driven the
+// way the shell drives it: the unmount question first, then the surface named.
+test("the droid's verbose RC logs are on while RC is on screen, and only then", async () => {
+  const env = loadPageModule("rc.js", { respond });
+  await env.settle();
+  const asked = () => env.requests
+    .filter((request) => request.path === "/api/rc/debug")
+    .map((request) => request.opts.body?.enabled);
+
+  assert.deepEqual(asked(), [true], "RC asks for verbose logs when it opens");
+
+  assert.equal(env.window.PASurface.unmountHeld(null), false, "leaving RC is never held");
+  env.window.PASurface.showing("home");
+  await env.settle();
+  assert.deepEqual(asked(), [true, false], "leaving RC turns the verbose logs off");
+
+  env.window.PASurface.showing(null);
+  await env.settle();
+  assert.deepEqual(asked(), [true, false, true], "and coming back to RC turns them on again");
+});
