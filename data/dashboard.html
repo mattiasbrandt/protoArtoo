@@ -38,15 +38,15 @@
         <dl class="build">
           <div>
             <dt>Droid Build</dt>
-            <dd><span id="build-design">Still asking</span><span class="hint" id="build-design-detail"></span></dd>
+            <dd><span class="waiting" id="build-design"></span><span class="hint" id="build-design-detail"></span></dd>
           </div>
           <div>
             <dt>Firmware</dt>
-            <dd><span id="build-firmware">Still asking</span><span class="hint" id="build-firmware-detail"></span></dd>
+            <dd><span class="waiting" id="build-firmware"></span><span class="hint" id="build-firmware-detail"></span></dd>
           </div>
           <div>
             <dt>Uptime</dt>
-            <dd><span id="build-uptime">Still asking</span><span class="hint" id="build-uptime-detail"></span></dd>
+            <dd><span class="waiting" id="build-uptime"></span><span class="hint" id="build-uptime-detail"></span></dd>
           </div>
         </dl>
       </section>
@@ -54,11 +54,11 @@
       <section>
         <div class="sect">
           <h2>Controls</h2>
-          <span class="sub"><span id="snapshot-mode">...</span> &middot; <span id="snapshot-mood">...</span> &middot; <span id="snapshot-sleep">...</span></span>
+          <span class="sub"><span class="waiting" id="snapshot-mode"></span> &middot; <span class="waiting" id="snapshot-mood"></span> &middot; <span class="waiting" id="snapshot-sleep"></span></span>
         </div>
 
         <div class="ctl">
-          <h3>Operation mode <span class="now" id="opmode-now">...</span></h3>
+          <h3>Operation mode <span class="now waiting" id="opmode-now"></span></h3>
           <div class="seg opmode-grid" role="group" aria-label="Operation mode">
             <button class="opmode-btn drive active" id="opmode-drive" type="button" title="Feet on. The sticks drive the droid." aria-label="Set operation mode to Driving" aria-pressed="true">Driving</button>
             <button class="opmode-btn stationary" id="opmode-stationary" type="button" title="Feet locked. Dome and sound still work." aria-label="Set operation mode to Stationary" aria-pressed="false">Stationary</button>
@@ -68,7 +68,7 @@
         </div>
 
         <div class="ctl">
-          <h3>Mood <span class="now" id="mood-now">...</span></h3>
+          <h3>Mood <span class="now waiting" id="mood-now"></span></h3>
           <div class="mood-grid" role="group" aria-label="Mood">
             <button class="btn mood-btn quiet" id="mood-quiet" type="button" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">Quiet</button>
             <button class="btn mood-btn mid" id="mood-mid" type="button" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">Mid-Awake</button>
@@ -80,7 +80,7 @@
         </div>
 
         <div class="ctl">
-          <h3>Sleep <span class="now" id="sleep-now">...</span></h3>
+          <h3>Sleep <span class="now waiting" id="sleep-now"></span></h3>
           <!-- A readout, not a control: the Sleep act is in the topbar with the
                other two that act on the droid, so its explanation belongs at
                that entrance and not here (ADR 0059). What survives the cut is
@@ -95,12 +95,12 @@
         <dl class="readouts">
           <div class="readout">
             <dt>Memory free</dt>
-            <dd id="readout-heap">--</dd>
+            <dd class="waiting" id="readout-heap"></dd>
             <span class="hint" id="readout-heap-detail"></span>
           </div>
           <div class="readout">
             <dt>WiFi signal</dt>
-            <dd id="readout-wifi">--</dd>
+            <dd class="waiting" id="readout-wifi"></dd>
             <span class="hint" id="readout-wifi-detail"></span>
           </div>
         </dl>

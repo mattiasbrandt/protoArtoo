@@ -216,7 +216,7 @@
     // they have answered there is no Output to draw, and the line says so in
     // the one word every surface uses for it (data/outputs.js live()).
     if (!OUTPUTS.known().table) {
-      view.body.replaceChildren(element("p", "hint", OUTPUTS.live(null).word));
+      view.body.replaceChildren(element("p", "hint waiting", window.PALiveReading.slotText(OUTPUTS.live(null).word)));
       return;
     }
     const outputs = OUTPUTS.list();

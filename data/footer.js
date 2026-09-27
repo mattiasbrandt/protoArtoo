@@ -16,19 +16,20 @@
   let reading = window.PALiveReading.current();
 
   // A version the frame carries, or the Live Reading's word for one it does
-  // not: Finding out before the droid has sent a frame, Unknown after.
+  // not: Waiting before the droid has sent a frame, Unknown after. Each
+  // version is a slot, so Waiting shows there as the moving dots.
   const versionOf = (field) => {
     const value = reading.status?.[field];
     if (value) return String(value);
-    return reading.word(field) || window.PALiveReading.UNKNOWN;
+    return window.PALiveReading.slotText(reading.word(field) || window.PALiveReading.UNKNOWN);
   };
 
   const renderFooter = () => {
     const fw = versionOf("firmwareVersion");
     const web = reading.status?.fsVersion ? String(reading.status.fsVersion) : bundleVersion || versionOf("fsVersion");
     footer.innerHTML =
-      `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
-      `FS: <span class="mono">${window.PAUtils.escapeHtml(web)}</span>`;
+      `FW: <span class="mono waiting">${window.PAUtils.escapeHtml(fw)}</span><br>` +
+      `FS: <span class="mono waiting">${window.PAUtils.escapeHtml(web)}</span>`;
   };
 
   const loadBundleVersion = async () => {

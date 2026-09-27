@@ -36,17 +36,17 @@
         <div class="health-item">
           <div class="indicator" id="serial-s1-light"></div>
           <span>Foot Drive</span>
-          <span class="indicator-text" id="serial-s1-state">...</span>
+          <span class="indicator-text waiting" id="serial-s1-state"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="serial-s2-light"></div>
           <span>Sound</span>
-          <span class="indicator-text" id="serial-s2-state">...</span>
+          <span class="indicator-text waiting" id="serial-s2-state"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="serial-s3-light"></div>
           <span>protoR2link</span>
-          <span class="indicator-text" id="serial-s3-state">...</span>
+          <span class="indicator-text waiting" id="serial-s3-state"></span>
         </div>
       </div>
       <div id="serial-status-line" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -58,22 +58,22 @@
       <dl class="status-grid">
           <div class="status-item">
             <dt>Uptime</dt>
-            <dd><span id="diag-uptime">...</span></dd>
+            <dd><span class="waiting" id="diag-uptime"></span></dd>
             <span class="hint">since boot</span>
           </div>
           <div class="status-item">
             <dt>Memory free</dt>
-            <dd><span class="indicator" id="diag-heap-free-light"></span><span id="diag-heap-free">...</span></dd>
+            <dd><span class="indicator" id="diag-heap-free-light"></span><span class="waiting" id="diag-heap-free"></span></dd>
             <span class="hint">free now</span>
           </div>
           <div class="status-item">
             <dt>Memory min since boot</dt>
-            <dd><span class="indicator" id="diag-heap-min-light"></span><span id="diag-heap-min">...</span></dd>
+            <dd><span class="indicator" id="diag-heap-min-light"></span><span class="waiting" id="diag-heap-min"></span></dd>
             <span class="hint">lowest since boot</span>
           </div>
           <div class="status-item">
             <dt>Largest block</dt>
-            <dd><span class="indicator" id="diag-heap-largest-light"></span><span id="diag-heap-largest">...</span></dd>
+            <dd><span class="indicator" id="diag-heap-largest-light"></span><span class="waiting" id="diag-heap-largest"></span></dd>
             <span class="hint">small means fragmented</span>
           </div>
       </dl>

@@ -124,7 +124,7 @@
   // rounding itself to the nearest one, because the buttons above would then
   // disagree with the head.
   const presetSummaryText = (activePreset) => {
-    if (currentSpeedLimitMax === null) return "finding out";
+    if (currentSpeedLimitMax === null) return "";
     if (!activePreset) return `limit ${currentSpeedLimitMax} · no preset matches`;
     return `${PRESET_LABELS[activePreset]} · limit ${currentSpeedLimitMax}`;
   };

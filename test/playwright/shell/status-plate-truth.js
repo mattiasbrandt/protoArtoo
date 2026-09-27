@@ -45,9 +45,9 @@
 //       by moving") are read enabled, and a Part on the Parts picture is
 //       picked whose "Open it" / "Close it" is offered. The link is then
 //       broken (b), and while it is down: that act on Parts is refused and
-//       says "Finding out if the droid is stopped. Open it waits for the
+//       says "Waiting to hear if the droid is stopped. Open waits for the
 //       answer." (data/parts.js), every Servos move act is refused
-//       (data/servo.js gateActs), and the ESTOP chip reads FINDING OUT - all
+//       (data/servo.js gateActs), and the ESTOP chip shows the waiting dots - all
 //       three read off reading.moveActsLive, which is true only on a heard,
 //       clear estop (data/live_reading.js:126).
 //   (b) A plate that cannot hear the droid says so (history: #346). The link
@@ -58,7 +58,7 @@
 //       claiming fresh: data-freshness leaves "live", the freshness line says
 //       "Reconnecting - these are the values it last sent." (or "The droid
 //       could not report its status"), never "just now", and the estop state
-//       line goes back to "Estop: finding out" (data/shell.js
+//       line goes back to "Estop: " and the waiting dots (data/shell.js
 //       renderPlateFreshness, ESTOP_STATE_TEXT; data/live_reading.js
 //       loseContact).
 //   (c) The plate recovers by itself: the routes are lifted and it must come
@@ -160,7 +160,7 @@ const GAP_MAX_MS = 6500;
 // data/shell.js, the Surface resumed note, word for word.
 const RESUMED = 'Last reading from before you left. Asking the droid again now.';
 // data/parts.js describePick, the refused Open it while the estop is not known.
-const PARTS_WAITS = 'Finding out if the droid is stopped. Open it waits for the answer.';
+const PARTS_WAITS = 'Waiting to hear if the droid is stopped. Open waits for the answer.';
 // Servos' move acts (data/servo.js gateActs; the dial's buttons only exist
 // while a dial is open, and none is opened here).
 const SERVO_MOVE_ACTS =
@@ -213,15 +213,29 @@ const startRelay = async (upstreamUrl) => {
   };
 };
 
+// What a slot shows: its text, or "..." when it is empty and its `waiting`
+// class draws the dots (data/style.css), or '' when it shows nothing at all.
+// Installed in the page before any load, since the ::after is only readable
+// there.
+const installShown = (page) =>
+  page.addInitScript(() => {
+    window.__shown = (slot) => {
+      if (!slot) return '';
+      const text = slot.textContent.trim();
+      if (text) return text;
+      return getComputedStyle(slot, '::after').content.includes('...') ? '...' : '';
+    };
+  });
+
 const readPlate = (page) =>
   page.evaluate((chips) => {
     const region = document.getElementById('status-plate-region');
     return {
       freshness: region ? region.dataset.freshness : null,
       text: document.getElementById('status-plate-freshness')?.textContent || '',
-      estopLine: document.getElementById('shell-estop-state')?.textContent || '',
+      estopLine: `Estop: ${window.__shown(document.getElementById('shell-estop-value'))}`,
       values: Object.fromEntries(
-        chips.map((id) => [id, (document.querySelector(`#chip-${id} .status-chip-value`)?.textContent || '').trim()]),
+        chips.map((id) => [id, window.__shown(document.querySelector(`#chip-${id} .status-chip-text`))]),
       ),
     };
   }, CHIPS);
@@ -407,6 +421,7 @@ const readPartsToggle = (page) =>
     if (fixture) await fixture.addContext(context);
     relay = await startRelay(FIXTURE ? `http://127.0.0.1:${fixture.ssePort}/events` : `${BASE_URL}/api/events`);
     const page = await context.newPage();
+    await installShown(page);
     guarded.push(await lib.installGuard(page, allowWrite));
     // The stream goes through the relay from the very first load.
     await page.route('**/api/events*', (route) => route.continue({ url: `http://127.0.0.1:${relay.port}/events` }));
@@ -438,8 +453,7 @@ const readPartsToggle = (page) =>
       const plate = document.getElementById('status-plate');
       new MutationObserver(() => {
         chips.forEach((id) => {
-          const value = document.querySelector(`#chip-${id} .status-chip-value`);
-          if (!value || value.textContent.trim() === '') {
+          if (window.__shown(document.querySelector(`#chip-${id} .status-chip-text`)) === '') {
             window.__blankChips.push(`${id} on ${document.body.dataset.page}`);
           }
         });
@@ -602,7 +616,7 @@ const readPartsToggle = (page) =>
       `before: ${servoBefore.enabled}/${servoBefore.total} enabled; while lost: ${servoBroken.enabled}/${servoBroken.total} enabled` +
         (servoBefore.visibleEnabled > 0 ? '' : ' (none were enabled before, so the refusal proves nothing)'),
     );
-    check('d', 'the ESTOP chip reads FINDING OUT while contact is lost', estopChip === 'FINDING OUT', `"${estopChip}"`);
+    check('d', 'the ESTOP chip shows the waiting dots while contact is lost', estopChip === '...', `"${estopChip}"`);
 
     // Past the 1.5 s "just now" window, and long enough for a reconnect try
     // or two to be refused.
@@ -610,7 +624,7 @@ const readPartsToggle = (page) =>
     const broken = await readPlate(page);
     await page.screenshot({ path: `${ARTIFACT_DIR}/plate-link-broken.png` });
     console.log(`While broken: freshness=${broken.freshness}, "${broken.text}", ${broken.estopLine}`);
-    check('b', 'data-freshness reads "finding-out" while broken', broken.freshness === 'finding-out', `data-freshness="${broken.freshness}"`);
+    check('b', 'data-freshness reads "waiting" while broken', broken.freshness === 'waiting', `data-freshness="${broken.freshness}"`);
     check(
       'b',
       'freshness line says reconnecting or could not report',
@@ -618,7 +632,7 @@ const readPartsToggle = (page) =>
       `"${broken.text}"`,
     );
     check('b', 'freshness line does not say "just now"', !broken.text.includes('just now'), `"${broken.text}"`);
-    check('b', 'estop line goes back to finding out', broken.estopLine === 'Estop: finding out', `"${broken.estopLine}"`);
+    check('b', 'estop line goes back to the waiting dots', broken.estopLine === 'Estop: ...', `"${broken.estopLine}"`);
     const blankWhileBroken = Object.entries(broken.values).filter(([, value]) => value === '').map(([id]) => id);
     check('b', 'no chip is blank while broken', blankWhileBroken.length === 0, JSON.stringify(broken.values));
     console.log(`Requests refused during the break: ${aborted.length}`);
@@ -637,7 +651,7 @@ const readPartsToggle = (page) =>
     console.log(`After the routes were lifted: freshness=${after.freshness}, "${after.text}", ${after.estopLine}`);
     check('c', 'plate returns to "live" on its own', back, back ? `after ${Date.now() - liftedAt} ms` : 'not live 45 s after the routes were lifted');
     check('c', 'freshness line stops saying reconnecting', !after.text.includes(RECONNECTING), `"${after.text}"`);
-    check('c', 'estop line leaves finding out', after.estopLine !== 'Estop: finding out', `"${after.estopLine}"`);
+    check('c', 'estop line leaves the waiting dots', after.estopLine !== 'Estop: ...', `"${after.estopLine}"`);
 
     // -----------------------------------------------------------------------
     // (h) The Surface resumed note stays up while the refresh fails

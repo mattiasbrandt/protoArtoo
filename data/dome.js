@@ -128,7 +128,7 @@
     if (!domeHardwareEnabled) {
       showFeedback(domeFeedback, "Dome ESC is switched off. Switch it on in Configuration.", "warning");
     } else if (!statusHeard) {
-      showFeedback(domeFeedback, window.PALiveReading.FINDING_OUT);
+      showFeedback(domeFeedback, "Waiting for the droid.");
     } else {
       showFeedback(domeFeedback, "Dome ready.");
     }

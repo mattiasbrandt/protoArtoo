@@ -452,7 +452,7 @@
    * words for no reading at all are the Live Reading's (data/live_reading.js),
    * so a Part and a status field say the same thing when nothing is heard.
    *
-   *   finding-out  the table has not answered yet: `output` is null
+   *   waiting      the table has not answered yet: `output` is null
    *   unknown      the row carries no position: a firmware older than the
    *                Output table, which is not the same as no pulse
    *   pulsing      there is a pulse on it; `word` is null, and the page draws
@@ -467,7 +467,7 @@
   const live = (output) => {
     const words = window.PALiveReading;
     if (output === null || output === undefined) {
-      return Object.freeze({ state: "finding-out", word: words.FINDING_OUT });
+      return Object.freeze({ state: "waiting", word: words.WAITING });
     }
     const facts = heard.get(output);
     // A copy, or an Output from another read, has no answer here, and

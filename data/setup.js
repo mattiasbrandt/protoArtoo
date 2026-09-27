@@ -869,8 +869,8 @@
   const RUN_SECTION = "setup-guided-run";
 
   // No bootstrap to hand the failure to, so this path says so where the
-  // builder is looking rather than leaving the card reading "finding out" for
-  // ever.
+  // builder is looking rather than leaving the card showing the waiting dots
+  // for ever.
   const loadRunLoose = () =>
     loadRun().catch((error) => {
       console.error("[setup] guided run unavailable:", error);
@@ -884,7 +884,7 @@
   // Registered as a bootstrap section rather than fetched loose: a read this
   // surface cannot render without belongs to the Page Recovery View, which
   // already says what is missing and retries it, so a failure here is not a
-  // page that sits silently on "reading this droid".
+  // page that sits silently on the waiting dots.
   if (window.PABootstrap) {
     window.PABootstrap.registerSection(RUN_SECTION, loadRun, {
       label: "whether this droid has been set up",

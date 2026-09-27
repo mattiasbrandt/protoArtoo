@@ -479,7 +479,7 @@
 
   // Before the droid has sent a frame, every readout that waits on one says
   // so in the Live Reading's words, rather than in a placeholder of its own.
-  const FINDING_OUT_READOUTS = [
+  const WAITING_READOUTS = [
     buildFirmware, buildUptime, snapshotMode, snapshotMood, snapshotSleep,
     opmodeNow, moodNow, sleepNow, readoutHeap, readoutWifi,
   ];
@@ -492,7 +492,7 @@
     // the estop cannot offer to release one (#346, #359, #419).
     setEstopUi(reading.estopLatched);
     if (payload === null) {
-      FINDING_OUT_READOUTS.forEach((node) => setText(node, window.PALiveReading.FINDING_OUT));
+      WAITING_READOUTS.forEach((node) => setText(node, window.PALiveReading.slotText(window.PALiveReading.WAITING)));
       return;
     }
     renderHealth(payload);

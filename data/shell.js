@@ -463,16 +463,18 @@
   // ---------------------------------------------------------------------------
   // The Latching Estop: what its label says, in every state
   //
-  // Every state produces text, including the one before any status has arrived.
-  // An estop that renders nothing while it is not engaged cannot be told from
-  // one that has stopped updating, which is the whole reason the reference's
-  // paint function has no blank branch (r2d2-astromech-simulator v1.79.0,
-  // src/js/app/hud.js:188).
+  // Every state shows something, including the one before any status has
+  // arrived, which shows the moving dots. An estop that renders nothing while
+  // it is not engaged cannot be told from one that has stopped updating, which
+  // is the whole reason the reference's paint function has no blank branch
+  // (r2d2-astromech-simulator v1.79.0, src/js/app/hud.js:188).
   // ---------------------------------------------------------------------------
+  // The line reads "Estop: " and then the answer, which is a slot of its own
+  // so Waiting shows there as the moving dots (data/live_reading.js).
   const ESTOP_STATE_TEXT = {
-    "finding-out": `Estop: ${LIVE.FINDING_OUT.toLowerCase()}`,
-    clear: "Estop: clear",
-    latched: "Estop: latched",
+    waiting: LIVE.slotText(LIVE.WAITING),
+    clear: "clear",
+    latched: "latched",
   };
 
   // ---------------------------------------------------------------------------
@@ -504,14 +506,14 @@
   // one field and this table cannot drift from what the nav says (#288).
   // ---------------------------------------------------------------------------
 
-  // The Live Reading's two words, in the plate's caps. Finding out is the
+  // The Live Reading's two words, in the plate's caps. Waiting is the
   // state before the droid has said anything, and no chip returns to it once a
   // frame has arrived -- except ESTOP, which goes back to it when contact with
   // the droid is lost. The other values are kept and it is the PLATE that says
   // how old they are. That is the difference between this and a per-chip
   // freshness marker, which #324 rejected. Unknown is a field the frames that
   // do arrive never carry.
-  const CHIP_FINDING_OUT = LIVE.FINDING_OUT.toUpperCase();
+  const CHIP_WAITING = LIVE.WAITING.toUpperCase();
   const CHIP_UNKNOWN = LIVE.UNKNOWN.toUpperCase();
 
   const hasKey = (payload, key) =>
@@ -564,7 +566,7 @@
   // them, in the plate's caps and short form, under the light the model gave.
   // The plate reads no line owner and no rx_status of its own.
   const LINKS = window.PAHealthSignals;
-  const LINK_WORDS = { unknown: LIVE.UNKNOWN, findingOut: LIVE.FINDING_OUT };
+  const LINK_WORDS = { unknown: LIVE.UNKNOWN, waiting: LIVE.WAITING };
   const LINK_CHIP_CLASSES = { ok: "live", fail: "stopped" };
   const linkChip = ({ state, short }) => chipState(LINK_CHIP_CLASSES[state] || "", short.toUpperCase());
 
@@ -580,7 +582,7 @@
       read: (_status, reading) => {
         if (reading.estopLatched) return chipState("stopped", "LATCHED");
         if (reading.moveActsLive) return chipState("live", "CLEAR");
-        return chipState("", CHIP_FINDING_OUT);
+        return chipState("", CHIP_WAITING);
       },
     },
     {
@@ -703,10 +705,13 @@
   const chipHtml = (chip) => {
     // Label over value, with the signal light inside the value line: the shape
     // an instrument uses, where the label is the engraving on the panel and the
-    // value is what the needle says (ADR 0066).
+    // value is what the needle says (ADR 0066). The value's words are a slot
+    // of their own beside the light, so a repaint rewrites the words and never
+    // the light, and Waiting shows there as the moving dots.
     const inner =
       `<span class="status-chip-label">${chip.label}</span>` +
-      `<span class="status-chip-value"><span class="status-chip-dot"></span>${CHIP_FINDING_OUT}</span>`;
+      `<span class="status-chip-value"><span class="status-chip-dot"></span>` +
+      `<span class="status-chip-text waiting"></span></span>`;
     const shared = `class="status-chip" id="chip-${chip.id}" data-chip="${chip.id}" title="${chipAffordance(chip)}"`;
     return chip.page === null
       ? `<button type="button" ${shared}>${inner}</button>`
@@ -805,7 +810,7 @@
               ${icon("stop-circle-outline")}<span class="shell-estop-action">STOP</span>
             </button>
             <div class="shell-estop-lines">
-              <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">${ESTOP_STATE_TEXT["finding-out"]}</div>
+              <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">Estop: <span class="waiting" id="shell-estop-value">${ESTOP_STATE_TEXT.waiting}</span></div>
               <div class="shell-estop-consequence">Cuts all movement</div>
               <div class="shell-estop-feedback feedback compact-feedback" id="shell-estop-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             </div>
@@ -825,7 +830,7 @@
     shellNav.innerHTML = `
       ${navHtml}
       <div class="rail-foot status-bar" id="conn-status">
-        <div class="status-subline" id="fw-meta">${LIVE.FINDING_OUT}</div>
+        <div class="status-subline" id="fw-meta"><span class="waiting"></span></div>
       </div>
     `;
   }
@@ -841,7 +846,7 @@
     // fixed and read by muscle memory, and a notice that pushed one aside would
     // move the cell an operator was reaching for.
     shellStatus.innerHTML = `
-      <div class="status-plate-region" id="status-plate-region" data-freshness="finding-out">
+      <div class="status-plate-region" id="status-plate-region" data-freshness="waiting">
         <div class="ignored-input-notice hidden" id="ignored-input-notice" role="status" aria-live="polite">
           <span id="ignored-input-text"></span>
           <a class="ignored-input-route" id="ignored-input-route" href="#${DEFAULT_PAGE}"></a>
@@ -854,7 +859,7 @@
              belongs among them. It sits beside them instead, divided by the
              same seam, so the plate reads as one instrument. -->
         <div class="status-plate-fresh">
-          <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Still finding out what the droid is doing.</p>
+          <p class="status-plate-freshness" id="status-plate-freshness" role="status" aria-live="polite">Waiting for the droid.</p>
           <p class="status-plate-affordance">Press a chip to go where it is changed. ESTOP cuts drive right here.</p>
         </div>
       </div>
@@ -899,15 +904,15 @@
   const renderPlateFreshness = (reading) => {
     if (!plateRegion || !plateFreshness) return;
     if (reading.status === null) {
-      plateRegion.dataset.freshness = "finding-out";
-      plateFreshness.textContent = "Still finding out what the droid is doing.";
+      plateRegion.dataset.freshness = "waiting";
+      plateFreshness.textContent = "Waiting for the droid.";
       return;
     }
     const heard = `Last heard from the droid ${plateAgeText(Date.now() - reading.receivedAt)}.`;
     // Never amber, and the values are never blanked: the operator cannot act
     // on a reconnect that is already running, and a blank plate would be the
     // presentation they meet most often (#324, #327).
-    plateRegion.dataset.freshness = reading.notHearing === null ? "live" : "finding-out";
+    plateRegion.dataset.freshness = reading.notHearing === null ? "live" : "waiting";
     if (reading.notHearing === "frame") {
       plateFreshness.textContent = `${heard} The droid could not report its status - these are the values it last sent.`;
       return;
@@ -947,16 +952,17 @@
 
   const estopButton = document.getElementById("shell-estop-button");
   const estopStateLine = document.getElementById("shell-estop-state");
+  const estopStateValue = document.getElementById("shell-estop-value");
   const estopFeedback = document.getElementById("shell-estop-feedback");
 
   // Three answers, three texts: see ESTOP_STATE_TEXT above for why there is no
   // blank one. The answer is the Live Reading's, so a frame that never
   // mentioned the estop cannot print "Estop: clear" beside a release control
-  // that same frame has disabled (#346), and a lost link says it is finding
-  // out rather than repeating what the droid said before it went quiet.
+  // that same frame has disabled (#346), and a lost link says it is waiting
+  // rather than repeating what the droid said before it went quiet.
   const renderEstopState = (reading) => {
-    if (!estopStateLine) return;
-    estopStateLine.textContent = ESTOP_STATE_TEXT[reading.estop];
+    if (!estopStateLine || !estopStateValue) return;
+    estopStateValue.textContent = ESTOP_STATE_TEXT[reading.estop];
     // Red is "something is stopped or refused" and nothing else colors for
     // state (#327), so the state line takes it only while the latch is set.
     // The button's own face is red at all times: that is the control's
@@ -1051,7 +1057,7 @@
   PLATE_CHIPS.forEach((chip) => {
     const node = document.getElementById(`chip-${chip.id}`);
     if (!node) return;
-    plateCells.set(chip.id, { node, value: node.querySelector(".status-chip-value") });
+    plateCells.set(chip.id, { node, value: node.querySelector(".status-chip-text") });
   });
 
   // One writer for every cell, so no chip can grow a rendering path of its own
@@ -1062,9 +1068,9 @@
     PLATE_CHIPS.forEach((chip) => {
       const cell = plateCells.get(chip.id);
       if (!cell) return;
-      const painted = reading.status ? chip.read(reading.status, reading) : chipState("", CHIP_FINDING_OUT);
+      const painted = reading.status ? chip.read(reading.status, reading) : chipState("", CHIP_WAITING);
       cell.node.className = painted.state ? `status-chip status-chip-${painted.state}` : "status-chip";
-      if (cell.value) cell.value.textContent = painted.value;
+      if (cell.value) cell.value.textContent = painted.value === CHIP_WAITING ? "" : painted.value;
     });
   };
 

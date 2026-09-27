@@ -147,7 +147,7 @@ const hiddenRows = (page) =>
       }
     });
 
-    // Held from the first load until the "finding out" state has been read.
+    // Held from the first load until the waiting state has been read.
     // Browser-side only: the request reaches the droid late, nothing more.
     let release;
     const released = new Promise((resolve) => {
@@ -166,20 +166,21 @@ const hiddenRows = (page) =>
     await page.waitForTimeout(HOLD_MS);
 
     // -----------------------------------------------------------------------
-    // State 1: the Outputs are still being found out
+    // State 1: the Outputs are still being waited for
     // -----------------------------------------------------------------------
-    const findingOut = await page.evaluate((selector) => ({
+    const waiting = await page.evaluate((selector) => ({
       summary: document.getElementById('parts-summary').textContent,
+      dots: getComputedStyle(document.getElementById('parts-summary'), '::after').content,
       disabled: [...document.querySelectorAll(`${selector} select`)].every((select) => select.disabled),
       answered: window.PAOutputs.known().table,
     }), ROWS);
-    if (findingOut.answered) {
-      check('no row hidden while finding out', false, 'the Outputs answered before the hold; state not reached');
+    if (waiting.answered) {
+      check('no row hidden while waiting', false, 'the Outputs answered before the hold; state not reached');
     } else {
       const state1 = await hiddenRows(page);
-      check('no row hidden while finding out', state1.hidden.length === 0 && state1.total > 0, `${state1.total} rows, hidden: ${state1.hidden.join(', ') || 'none'}`);
-      check('summary says Finding out, pickers wait', findingOut.summary === 'Finding out' && findingOut.disabled, `"${findingOut.summary}", all disabled: ${findingOut.disabled}`);
-      await page.screenshot({ path: `${ARTIFACT_DIR}/parts-finding-out.png` });
+      check('no row hidden while waiting', state1.hidden.length === 0 && state1.total > 0, `${state1.total} rows, hidden: ${state1.hidden.join(', ') || 'none'}`);
+      check('summary shows the waiting dots, pickers wait', waiting.summary === '' && waiting.dots.includes('...') && waiting.disabled, `"${waiting.summary}", dots ${waiting.dots}, all disabled: ${waiting.disabled}`);
+      await page.screenshot({ path: `${ARTIFACT_DIR}/parts-waiting.png` });
     }
     await page.unroute('**/api/servo/outputs*', hold);
     release();

@@ -223,6 +223,11 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
   };
   env.estopButton = () => document.getElementById("shell-estop-button");
   env.estopStateText = () => document.getElementById("shell-estop-state")?.textContent;
+  // Waiting is an empty answer slot that carries the class drawing the dots.
+  env.estopWaits = () => {
+    const value = document.getElementById("shell-estop-value");
+    return value?.textContent === "" && value.classList.contains("waiting");
+  };
   env.estopFeedbackText = () => document.getElementById("shell-estop-feedback")?.textContent;
   env.press = () => env.estopButton().fire("click", { type: "click" });
 
@@ -263,9 +268,9 @@ test("the estop is on every surface, and it is one control rather than one per s
 
 test("the estop shows a value in both states, and says so before the droid has answered", async () => {
   const waiting = await boot({ statusHangs: true });
-  assert.equal(
-    waiting.estopStateText(),
-    "Estop: finding out",
+  assert.equal(waiting.estopStateText(), "Estop: ");
+  assert.ok(
+    waiting.estopWaits(),
     "nothing has arrived yet, and a blank control cannot be told from one that stopped updating",
   );
 
@@ -368,7 +373,7 @@ test("the session reads status once at boot, and hands it to the stream so nobod
 
 test("a status read that fails leaves the control saying it does not know, rather than saying clear", async () => {
   const env = await boot({ statusFails: true });
-  assert.equal(env.estopStateText(), "Estop: finding out");
+  assert.ok(env.estopWaits(), "the estop shows the waiting dots");
   assert.equal(env.window.PAStatusStream.getLastStatus(), null);
 });
 
@@ -500,7 +505,7 @@ test("the Dashboard keeps the release, and its button is dead while there is no 
 // something other than a boolean must not read as a latch, and a frame that
 // never mentioned the estop is not a reading at all (#346).
 const LATCH_FRAMES = [
-  { frame: (() => { const frame = statusFrame(); delete frame.estop; return frame; })(), says: "Estop: finding out" },
+  { frame: (() => { const frame = statusFrame(); delete frame.estop; return frame; })(), says: "Estop: " },
   { frame: statusFrame({ estop: true }), says: "Estop: latched" },
   { frame: statusFrame({ estop: false }), says: "Estop: clear" },
   { frame: statusFrame({ estop: 1 }), says: "Estop: clear" },

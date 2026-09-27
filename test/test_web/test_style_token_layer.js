@@ -122,8 +122,8 @@ const FAMILIES = {
     ],
     dimmed: true,
   },
-  "still finding out": {
-    family: ".availability-finding-out",
+  waiting: {
+    family: ".availability-waiting",
     states: [
       ".feature-availability-row.feature-state-checking",
       ".feature-availability-row.feature-state-identity-unavailable",

@@ -108,7 +108,7 @@
     // read will not read differently on a retry. Neither carries a date, a
     // version or another product to go and buy - pointing a builder at hardware
     // is a Builder Recommendation, and a card reporting this droid's state does
-    // not make one. `checking` has no row either: it is still finding out, and
+    // not make one. `checking` has no row either: it is still waiting, and
     // asks nothing of anybody.
     const ROUTES = Object.freeze({
       off: Object.freeze({ href: "#configuration", label: "Switch it on in Configuration" }),
@@ -179,12 +179,12 @@
     // above). The copy already told them apart (reasonFor); this is the same
     // split for the paint (#341, #369). Every other state's family is carried
     // by its own class, so this names none.
-    const FAMILY_CLASSES = Object.freeze(["availability-finding-out", "availability-settled-no"]);
+    const FAMILY_CLASSES = Object.freeze(["availability-waiting", "availability-settled-no"]);
     const familyClassFor = (state) => {
-      if (state === "checking") return "availability-finding-out";
+      if (state === "checking") return "availability-waiting";
       if (state === "identity-unavailable") {
         const terminal = phase === "ready" || identityErrorReason === "incompatible";
-        return terminal ? "availability-settled-no" : "availability-finding-out";
+        return terminal ? "availability-settled-no" : "availability-waiting";
       }
       return "";
     };

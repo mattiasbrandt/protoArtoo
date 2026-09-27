@@ -30,8 +30,8 @@
          something to do, red where the droid tried and failed (CONTEXT.md
          "Status Color"). -->
     <div class="card" id="wifi-posture-card">
-      <div class="sect"><h2>Network posture</h2><span class="sub" id="wifi-pending-summary">finding out</span></div>
-      <p class="note" id="wifi-posture-desc">Finding out how the droid is on the network.</p>
+      <div class="sect"><h2>Network posture</h2><span class="sub waiting" id="wifi-pending-summary"></span></div>
+      <p class="note waiting" id="wifi-posture-desc"></p>
       <!-- The readouts ARE the grid. A .status-grid wrapping an unclassed <dl>
            makes the list the one grid item and every reading sits at full
            width; Maintenance and Foot Drive both carry <dl class="status-grid">, and
@@ -69,7 +69,7 @@
          confusion (docs/ui-copy-voice.md rule 9): what is running now, and what
          the next boot would start. -->
     <div class="card">
-      <div class="sect"><h2>Active against saved</h2><span class="sub" id="wifi-compare-state">finding out</span></div>
+      <div class="sect"><h2>Active against saved</h2><span class="sub waiting" id="wifi-compare-state"></span></div>
       <div class="wifi-compare-grid">
         <dl class="wifi-summary-list" aria-label="Active network settings">
           <dt>Active now</dt>
@@ -153,8 +153,8 @@
          page, so it sits apart on its own plate with the consequence beside it
          (docs/ui-copy-voice.md rule 12). -->
     <div class="card" id="wifi-apply-card">
-      <div class="sect"><h2>Staged network switch</h2><span class="sub" id="wifi-apply-state">finding out</span></div>
-      <p class="prose" id="wifi-apply-guidance">Finding out how you get back to the droid after a reboot.</p>
+      <div class="sect"><h2>Staged network switch</h2><span class="sub waiting" id="wifi-apply-state"></span></div>
+      <p class="prose waiting" id="wifi-apply-guidance"></p>
       <div class="button-row button-row-compact">
         <button id="wifi-apply-reboot-button" class="btn danger" type="button" disabled>Reboot to Apply</button>
       </div>

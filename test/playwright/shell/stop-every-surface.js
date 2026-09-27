@@ -51,7 +51,7 @@
 //      (history: #346 admission edge, #359 seeded-frame race). A NEW browser
 //      context (no cache, no session) opens /#home. Its state line must
 //      settle on "Estop: latched" - never "Estop: clear" at any moment, and
-//      not stuck on "Estop: finding out" - and the Dashboard's "Clear estop"
+//      not stuck on the waiting dots - and the Dashboard's "Clear estop"
 //      must be enabled, read twice 3 s apart (data/app.js:1499-1510 is the
 //      order that race lived in). It is NOT pressed.
 //
@@ -863,7 +863,7 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         const settled = await second
           .waitForFunction(() => {
             const line = document.getElementById('shell-estop-state');
-            return Boolean(line && line.textContent !== 'Estop: finding out');
+            return Boolean(line && line.textContent !== 'Estop: ');
           }, null, { timeout: 20000 })
           .then(() => true, () => false);
         const line = await second.textContent('#shell-estop-state').catch(() => null);

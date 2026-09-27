@@ -234,7 +234,7 @@
      a dimmed family back up - a thing the builder cannot act on still has to
      be readable. See "Availability Families" further down for the treatments. */
   --avail-dim-elsewhere: 0.55;
-  --avail-dim-finding: 0.78;
+  --avail-dim-waiting: 0.78;
   --avail-dim-settled: 0.45;
 }
 
@@ -1606,7 +1606,7 @@ input.input-narrow {
 
      change it here        solid silver rail, full brightness
      change it elsewhere   dashed rail, dimmed, lifts on hover and focus
-     still finding out     dotted rail, half dimmed, breathing lamp
+     waiting               dotted rail, half dimmed, breathing lamp
      settled no            no rail at all, dimmest, lamp removed
 
    Each family also has a bare .availability-* class, so a surface that arrives
@@ -1614,8 +1614,8 @@ input.input-narrow {
 
    One state covers two families. identity-unavailable is a transport failure
    that is retryable, or a manifest the controller could not describe, which
-   is terminal - and CONTEXT.md puts the first in "still finding out" and the
-   second in "settled no". It is dressed as "still finding out" here, and the
+   is terminal - and CONTEXT.md puts the first in "waiting" and the
+   second in "settled no". It is dressed as "waiting" here, and the
    element also carries its family class (data/feature_availability.js
    familyClassFor(), #369), which the "B1's fourth answer" block near the end
    of this file uses to draw the terminal case as settled. */
@@ -1677,16 +1677,16 @@ input.input-narrow {
   opacity: 1;
 }
 
-/* still finding out — the controller has not answered yet, or could not be
+/* waiting — the controller has not answered yet, or could not be
    reached. A dotted rail reads as an incomplete line, and the brightness sits
    between "you can act on this" and "you cannot": the answer is coming. */
-.availability-finding-out,
+.availability-waiting,
 .feature-availability-row.feature-state-checking,
 .feature-availability-row.feature-state-identity-unavailable {
   border-left-style: dotted;
   border-left-color: var(--text-dim);
   background-image: none;
-  opacity: var(--avail-dim-finding);
+  opacity: var(--avail-dim-waiting);
 }
 
 /* settled no — a roadmap card, or a controller that will never describe
@@ -1727,7 +1727,7 @@ input.input-narrow {
   color: var(--text-dim);
 }
 
-/* still finding out is the one answer that is not final, and italic is how the
+/* waiting is the one answer that is not final, and italic is how the
    reference marks a value it cannot yet stand behind. */
 .feature-state-checking,
 .feature-state-identity-unavailable {
@@ -1784,7 +1784,7 @@ input.input-narrow {
 .feature-availability-panel.feature-state-identity-unavailable {
   border-left-style: dotted;
   border-left-color: var(--text-dim);
-  opacity: var(--avail-dim-finding);
+  opacity: var(--avail-dim-waiting);
 }
 
 /* The section head and the availability rail on one line: what this panel is,
@@ -1870,10 +1870,10 @@ input.input-narrow {
   box-shadow: inset 0 0 0 1px var(--text-dim);
 }
 
-/* still finding out: the one family with motion. The lamp breathes because
+/* waiting: the one family with motion. The lamp breathes because
    something is genuinely in progress; the reduced-motion block near the end of
    this file stops it, and the dotted rail still carries the family. */
-.availability-finding-out .feature-availability-lamp,
+.availability-waiting .feature-availability-lamp,
 .feature-availability-lamp-indicator.feature-state-checking .feature-availability-lamp,
 .feature-availability-lamp-indicator.feature-state-identity-unavailable .feature-availability-lamp {
   animation: availabilityBreath 1.8s ease-in-out infinite;
@@ -1882,6 +1882,31 @@ input.input-narrow {
 @keyframes availabilityBreath {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+/* Waiting (CONTEXT.md): a slot that holds nothing but an answer shows the
+   wait as three dots that fill in, one, two, three, and start again. The slot
+   is written empty while it waits and carries this class for good, so the
+   first real answer written into it ends the dots with no class to clear.
+   The dots are clipped rather than rewritten, so the slot keeps one width and
+   nothing beside it moves. A screen reader hears the word instead. */
+.waiting:empty::after {
+  content: "...";
+  content: "..." / "Waiting";
+  display: inline-block;
+  animation: waitingDots 1.2s step-end infinite;
+}
+
+@keyframes waitingDots {
+  0% { clip-path: inset(0 67% 0 0); }
+  33% { clip-path: inset(0 33% 0 0); }
+  67%, 100% { clip-path: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting:empty::after {
+    animation: none;
+  }
 }
 
 /* settled no: the lamp goes entirely. A lamp is a claim that this state can
@@ -3213,7 +3238,7 @@ p.output-parts {
   border-left: 1px solid var(--border);
 }
 
-.status-plate-region[data-freshness="finding-out"] .status-plate-freshness {
+.status-plate-region[data-freshness="waiting"] .status-plate-freshness {
   font-weight: 700;
 }
 
@@ -8458,11 +8483,11 @@ button.output-setting-head:focus-visible {
 
 /* ---------------------------------------------------------------------------
    B1's fourth answer, applied (#341, #369): an identity that will never be
-   read is SETTLED NO, and one still being fetched is STILL FINDING OUT. The
+   read is SETTLED NO, and one still being fetched is WAITING. The
    element now carries the family (data/feature_availability.js
    familyClassFor), so the terminal case leaves the dotted, breathing
-   "finding out" dress the state class alone gave it. And "still finding
-   out" is dimmed, so like every dimmed family it lifts on hover and focus:
+   "waiting" dress the state class alone gave it. And "waiting" is
+   dimmed, so like every dimmed family it lifts on hover and focus:
    a builder can still read what they cannot yet act on.
    --------------------------------------------------------------------------- */
 .feature-availability-row.feature-state-identity-unavailable.availability-settled-no,
@@ -8479,12 +8504,12 @@ button.output-setting-head:focus-visible {
   opacity: 0.85;
 }
 
-.availability-finding-out:hover,
-.availability-finding-out:focus-within,
-.feature-availability-row.availability-finding-out:hover,
-.feature-availability-row.availability-finding-out:focus-within,
-.feature-availability-panel.availability-finding-out:hover,
-.feature-availability-panel.availability-finding-out:focus-within {
+.availability-waiting:hover,
+.availability-waiting:focus-within,
+.feature-availability-row.availability-waiting:hover,
+.feature-availability-row.availability-waiting:focus-within,
+.feature-availability-panel.availability-waiting:hover,
+.feature-availability-panel.availability-waiting:focus-within {
   opacity: 1;
 }
 

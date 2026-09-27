@@ -122,7 +122,7 @@
   // form.
   //
   // `words` carries the Live Reading's two words (window.PALiveReading):
-  // `unknown` for a link the frames never carry, and `findingOut` for a
+  // `unknown` for a link the frames never carry, and `waiting` for a
   // status of null, before the droid has sent a good frame.
   // ---------------------------------------------------------------------------
   const linkAnswer = (state, word, short = word) => ({ state, word, short });
@@ -153,14 +153,14 @@
   });
 
   const requireLinkWords = (words, status) => {
-    const { unknown, findingOut } = words || {};
+    const { unknown, waiting } = words || {};
     if (typeof unknown !== "string" || unknown === "") {
       throw new TypeError("a link reading needs the Live Reading's word for an unknown field");
     }
-    if (status === null && (typeof findingOut !== "string" || findingOut === "")) {
-      throw new TypeError("a link reading of no frame needs the Live Reading's Finding out word");
+    if (status === null && (typeof waiting !== "string" || waiting === "")) {
+      throw new TypeError("a link reading of no frame needs the Live Reading's Waiting word");
     }
-    return { unknown, findingOut };
+    return { unknown, waiting };
   };
 
   const isObject = (value) => value !== null && typeof value === "object";
@@ -169,8 +169,8 @@
   // emits that block on every frame (src/web/web_server.cpp), so a frame
   // without it is one that never carries it.
   const readProtoR2link = (status, words) => {
-    const { unknown, findingOut } = requireLinkWords(words, status);
-    if (status === null) return linkAnswer("off", findingOut);
+    const { unknown, waiting } = requireLinkWords(words, status);
+    if (status === null) return linkAnswer("off", waiting);
     const link = isObject(status) ? status.dome_link : undefined;
     if (!isObject(link)) return linkAnswer("off", unknown);
     if (link.state === "connected") {
@@ -202,7 +202,7 @@
 
   const readSoundLink = (status, words) => {
     const checked = requireLinkWords(words, status);
-    if (status === null) return linkAnswer("off", checked.findingOut);
+    if (status === null) return linkAnswer("off", checked.waiting);
     return readSoundBlock(isObject(status) ? status.audio : undefined, checked);
   };
 

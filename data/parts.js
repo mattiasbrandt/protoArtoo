@@ -74,8 +74,9 @@
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
 
   // Until the table answers, the summary says so in the one word for it
-  // (data/outputs.js live()); the page's markup carries none.
-  summary.textContent = OUTPUTS.live(null).word;
+  // (data/outputs.js live()), which a slot shows as the waiting dots.
+  summary.classList.add("waiting");
+  summary.textContent = window.PALiveReading.slotText(OUTPUTS.live(null).word);
 
   // ---------------------------------------------------------------------------
   // Built once
@@ -118,9 +119,9 @@
   // Repainted in place
   // ---------------------------------------------------------------------------
   // The Live Reading's three-valued estop (data/live_reading.js): "latched",
-  // "clear", or "finding-out" until the droid has said and whenever contact
+  // "clear", or "waiting" until the droid has said and whenever contact
   // with it is lost.
-  let estop = "finding-out";
+  let estop = "waiting";
 
   const mover = P.mover({
     dialog,
@@ -452,9 +453,9 @@
     } else if (!isFitted) {
       why = "Not on your droid. Add it to your build first.";
     } else if (!answered() && !marker.target) {
-      why = `${OUTPUTS.live(null).word} what drives it.`;
-    } else if (estop === "finding-out") {
-      why = "Finding out if the droid is stopped. Open it waits for the answer.";
+      why = "Waiting for the droid to say what drives it.";
+    } else if (estop === "waiting") {
+      why = "Waiting to hear if the droid is stopped. Open waits for the answer.";
     } else if (estop === "latched") {
       why = "Estop latched. Nothing moves until it is cleared.";
     } else if (!output && !marker.target) {

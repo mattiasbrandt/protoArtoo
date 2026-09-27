@@ -300,7 +300,7 @@ test("the same component toggle saves once its build requirement is present", as
 // B1's fourth answer (#341, applied on #369). An identity that failed is two
 // different answers: a controller that did not respond may yet, and one that
 // answered with a manifest this page cannot read never will. The copy always
-// told them apart; the paint said "still finding out" for both, so a settled
+// told them apart; the paint said "waiting" for both, so a settled
 // no breathed as if an answer were coming. Both paint sites - a Configuration
 // row and the Maintenance profiler card - must carry the family.
 const tracked = (element) => {
@@ -328,16 +328,16 @@ const paintFor = async (reason) => {
   return { rowClasses, cardClasses };
 };
 
-test("an identity that will never be read is painted settled, and one still connecting is still finding out", async () => {
+test("an identity that will never be read is painted settled, and one still connecting is waiting", async () => {
   const terminal = await paintFor("incompatible");
   const retrying = await paintFor("no-response");
 
   for (const [where, classes] of [["row", terminal.rowClasses], ["card", terminal.cardClasses]]) {
     assert.ok(classes.has("availability-settled-no"), `a terminal failure's ${where} is settled no`);
-    assert.ok(!classes.has("availability-finding-out"), `and its ${where} is not still finding out`);
+    assert.ok(!classes.has("availability-waiting"), `and its ${where} is not waiting`);
   }
   for (const [where, classes] of [["row", retrying.rowClasses], ["card", retrying.cardClasses]]) {
-    assert.ok(classes.has("availability-finding-out"), `a retryable failure's ${where} is still finding out`);
+    assert.ok(classes.has("availability-waiting"), `a retryable failure's ${where} is waiting`);
     assert.ok(!classes.has("availability-settled-no"), `and its ${where} is not settled`);
   }
 });

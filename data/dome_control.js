@@ -230,7 +230,7 @@
       const { estop } = window.PALiveReading.current();
       if (estop === 'clear') return null;
       if (estop === 'latched') return 'Estop latched. Nothing moves until it is cleared.';
-      return 'Finding out if the droid is stopped. The dome waits for the answer.';
+      return 'Waiting to hear if the droid is stopped. The dome waits for the answer.';
     }
 
     async function togglePanel(elementId, svgElement) {

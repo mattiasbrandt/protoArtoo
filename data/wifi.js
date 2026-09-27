@@ -275,7 +275,7 @@
     const diag = state.diagnostics || {};
 
     if (!wifi) {
-      setPendingSummary("finding out");
+      setPendingSummary("");
       return;
     }
 
@@ -355,7 +355,7 @@
     const wifi = state.wifiConfig;
     const diag = state.diagnostics || {};
     if (!wifi) {
-      applyGuidance.textContent = "Finding out how you get back to the droid after a reboot.";
+      applyGuidance.textContent = "";
       return;
     }
 

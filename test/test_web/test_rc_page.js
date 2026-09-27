@@ -87,6 +87,6 @@ test("before the droid has answered, the radio and receiver cards never say noth
   for (const id of ["rc-radio-card", "rc-receiver-card"]) {
     const said = env.element(id).innerHTML;
     assert.doesNotMatch(said, /picked yet/, `${id} must not claim nothing is picked before the droid has said`);
-    assert.match(said, /Reading it from the droid/);
+    assert.match(said, /<p class="hint waiting"><\/p>/, `${id} shows the waiting dots`);
   }
 });

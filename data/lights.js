@@ -88,9 +88,9 @@
   // nobody reported (CONTEXT.md, Health Signal).
   let showing = null;
   // What a wire with no reading says instead, in the Live Reading's words:
-  // Finding out before the droid has sent a frame, Unknown once frames
+  // Waiting before the droid has sent a frame, Unknown once frames
   // arrive that do not carry this wire (data/live_reading.js).
-  let unheard = window.PALiveReading.FINDING_OUT;
+  let unheard = window.PALiveReading.WAITING;
 
   // Where a light sits, in the words a builder reads on the droid: a dome
   // light is IN the panel that carries it, by the Printed Droid shorthand
@@ -505,7 +505,7 @@
     const feedback = feedbackNode();
     const reported = heard(wire);
     if (!reported) {
-      node.appendChild(element("p", "light-state", unheard));
+      node.appendChild(element("p", "light-state waiting", window.PALiveReading.slotText(unheard)));
     } else if (reading?.available === false) {
       node.appendChild(element("p", "light-state", "Could not start"));
     }

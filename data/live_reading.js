@@ -6,12 +6,15 @@
 //
 // - The last status frame that carried all six core fields. A frame missing
 //   one is ignored and the last reading stands -- the estop included.
-// - For each field, one of three answers: heard, Finding out (no good frame
-//   yet) or Unknown (frames arrive but do not carry it). Both words live here,
-//   and a surface writes neither of its own.
-// - The estop, three-valued: latched, clear, or Finding out. A move act is live
+// - For each field, one of three answers: heard, Waiting (no good frame yet)
+//   or Unknown (frames arrive but do not carry it). Both words live here, and
+//   a surface writes neither of its own.
+// - Waiting is a word in a sentence, an option or a fact, and three moving
+//   dots in a slot that holds nothing else: such a slot carries the `waiting`
+//   class and is written empty (slotText), and data/style.css draws the dots.
+// - The estop, three-valued: latched, clear, or Waiting. A move act is live
 //   only on a heard, clear estop, and losing contact with the droid turns the
-//   estop back to Finding out while every other field keeps its last value.
+//   estop back to Waiting while every other field keeps its last value.
 // - The stream-or-poll choice: the status stream when the browser has one,
 //   otherwise ONE /api/status poll every 5 s for the whole shell, running while
 //   anybody listens and paused on a hidden tab.
@@ -22,7 +25,7 @@
 // own record.
 // =============================================================================
 (() => {
-  const FINDING_OUT = "Finding out";
+  const WAITING = "Waiting";
   const UNKNOWN = "Unknown";
 
   // One cadence for the whole shell when there is no stream. It replaced one
@@ -102,15 +105,15 @@
   let contactLost = false;
 
   const answerFor = (snapshot, field) => {
-    if (snapshot === null) return "finding-out";
+    if (snapshot === null) return "waiting";
     return hasKey(snapshot, field) ? "heard" : "unknown";
   };
 
-  const WORDS = { "finding-out": FINDING_OUT, unknown: UNKNOWN };
+  const WORDS = { waiting: WAITING, unknown: UNKNOWN };
 
   const buildReading = () => {
     const snapshot = frame;
-    let estop = "finding-out";
+    let estop = "waiting";
     if (snapshot !== null && !contactLost) estop = latchedIn(snapshot) ? "latched" : "clear";
     return Object.freeze({
       // The last verified frame, or null before one has arrived. A surface
@@ -247,8 +250,11 @@
   };
 
   window.PALiveReading = {
-    FINDING_OUT,
+    WAITING,
     UNKNOWN,
+    // What a slot that holds nothing but this answer is written: empty for
+    // Waiting, so its `waiting` class draws the dots, and the word otherwise.
+    slotText: (word) => (word === WAITING ? "" : word),
     // The Operator Shell's call, and nobody else's. Listening on the stream is
     // what opens it, so a page that never starts this opens nothing.
     start() {

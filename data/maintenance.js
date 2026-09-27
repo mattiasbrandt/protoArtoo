@@ -176,11 +176,11 @@
   // fallback poll for the whole shell (data/live_reading.js). Before the droid
   // has sent a frame each readout says so in its words; once contact is lost
   // the values stay, and the status line says they are not being refreshed.
-  const FINDING_OUT_READOUTS = [serialS1, serialS2, serialS3, diagUptime, diagHeapFree, diagHeapMin, diagHeapLargest];
+  const WAITING_READOUTS = [serialS1, serialS2, serialS3, diagUptime, diagHeapFree, diagHeapMin, diagHeapLargest];
   const renderReading = (reading) => {
     if (reading.status === null) {
-      FINDING_OUT_READOUTS.forEach((node) => {
-        if (node) node.textContent = window.PALiveReading.FINDING_OUT;
+      WAITING_READOUTS.forEach((node) => {
+        if (node) node.textContent = window.PALiveReading.slotText(window.PALiveReading.WAITING);
       });
       return;
     }

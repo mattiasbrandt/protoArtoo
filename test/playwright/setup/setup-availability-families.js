@@ -164,7 +164,7 @@ const READ = `(row) => {
     // The four family classes on identical probe rows, plus the hover lift.
     const families = await page.evaluate(
       async ([read]) => {
-        const classes = ['availability-change-here', 'availability-change-elsewhere', 'availability-finding-out', 'availability-settled-no'];
+        const classes = ['availability-change-here', 'availability-change-elsewhere', 'availability-waiting', 'availability-settled-no'];
         const host = document.createElement('div');
         document.body.appendChild(host);
         const out = {};

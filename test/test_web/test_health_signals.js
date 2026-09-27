@@ -157,12 +157,12 @@ test("memory reads the droid's own RAM, not a figure PSRAM can hold up", () => {
 // the contract: the droid's state goes in, one word and one light come out.
 // -----------------------------------------------------------------------------
 
-const FINDING_OUT = (() => {
+const WAITING = (() => {
   const context = { window: {}, console };
   vm.runInNewContext(readFileSync(path.join(__dirname, "../../data/live_reading.js"), "utf8"), context);
-  return context.window.PALiveReading.FINDING_OUT;
+  return context.window.PALiveReading.WAITING;
 })();
-const WORDS = { unknown: UNKNOWN, findingOut: FINDING_OUT };
+const WORDS = { unknown: UNKNOWN, waiting: WAITING };
 const { readProtoR2link, readSoundLink } = require("../../data/health_signals.js");
 
 test("protoR2link: each state the droid reports has one word and one light", () => {
@@ -172,7 +172,7 @@ test("protoR2link: each state the droid reports has one word and one light", () 
     [{ dome_link: { state: "disabled" } }, "off", "Off", "Off"],
     [{ dome_link: { state: "not_seen" } }, "off", "Not seen", "Not seen"],
     [{ dome_link: { state: "lost" } }, "fail", "Lost", "Lost"],
-    [null, "off", FINDING_OUT, FINDING_OUT],
+    [null, "off", WAITING, WAITING],
     [{}, "off", UNKNOWN, UNKNOWN],
   ];
   rows.forEach(([status, state, word, short]) => {
@@ -189,7 +189,7 @@ test("the sound link: each state the droid reports has one word and one light", 
     [{ audio: { driver: "DY-SV5W", output: "off", link_ok: false } }, "off", "Off"],
     [{ audio: { driver: "DY-SV5W", output: "on", link_ok: false, rx_status: "no_response" } }, "fail", "No answer"],
     [{ audio: { output: "on", link_ok: false, rx_status: "blocked_by_dome_uart" } }, "off", "Held by protoR2link"],
-    [null, "off", FINDING_OUT],
+    [null, "off", WAITING],
     [{ audio: { state: "idle" } }, "off", UNKNOWN],
   ];
   rows.forEach(([status, state, word]) => {

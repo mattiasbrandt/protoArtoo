@@ -108,20 +108,20 @@ test("a frame missing a core field is ignored, and the last reading stands, esto
   // And never read as clear when it is the first thing that arrives.
   const fresh = boot({ stream: true });
   fresh.push(withoutField("estop"));
-  assert.equal(fresh.live.current().estop, "finding-out");
+  assert.equal(fresh.live.current().estop, "waiting");
   assert.equal(fresh.live.current().moveActsLive, false);
 });
 
-test("before the first good frame every field is Finding out, and nothing may move", () => {
+test("before the first good frame every field is Waiting, and nothing may move", () => {
   const env = boot({ stream: true });
   const reading = env.live.current();
 
   assert.equal(reading.status, null);
-  assert.equal(reading.estop, "finding-out");
+  assert.equal(reading.estop, "waiting");
   assert.equal(reading.moveActsLive, false);
   assert.equal(reading.estopLatched, false, "and no latch is offered for release either");
-  assert.equal(reading.word("estop"), env.live.FINDING_OUT);
-  assert.equal(reading.word("firmwareVersion"), env.live.FINDING_OUT);
+  assert.equal(reading.word("estop"), env.live.WAITING);
+  assert.equal(reading.word("firmwareVersion"), env.live.WAITING);
 });
 
 test("a field the frames that arrive do not carry is Unknown, and a carried one has no word", () => {
@@ -135,7 +135,7 @@ test("a field the frames that arrive do not carry is Unknown, and a carried one 
   assert.equal(reading.answer("firmwareVersion"), "heard");
 });
 
-test("losing contact turns the estop back to Finding out and keeps every other field", () => {
+test("losing contact turns the estop back to Waiting and keeps every other field", () => {
   const env = boot({ stream: true });
   env.listen();
   env.push(statusFrame({ estop: false, speedLimitMax: 600 }));
@@ -143,7 +143,7 @@ test("losing contact turns the estop back to Finding out and keeps every other f
 
   env.dropStream();
   let reading = env.live.current();
-  assert.equal(reading.estop, "finding-out", "nobody knows the estop is still clear");
+  assert.equal(reading.estop, "waiting", "nobody knows the estop is still clear");
   assert.equal(reading.moveActsLive, false);
   assert.equal(reading.status.speedLimitMax, 600, "the other fields keep their last value");
   assert.equal(reading.notHearing, "link");
@@ -152,7 +152,7 @@ test("losing contact turns the estop back to Finding out and keeps every other f
   // A bad frame is the droid answering, but not with a reading: the estop is
   // still not known.
   env.push(withoutField("sleepMode"));
-  assert.equal(env.live.current().estop, "finding-out");
+  assert.equal(env.live.current().estop, "waiting");
 
   // Only a frame the droid has just sent brings it back.
   env.push(statusFrame({ estop: false }));
@@ -208,7 +208,7 @@ test("a refused poll is a lost link, and the droid's next answer is contact agai
   answering = false;
   poll.fn();
   await env.settle();
-  assert.equal(env.live.current().estop, "finding-out");
+  assert.equal(env.live.current().estop, "waiting");
   assert.equal(env.live.current().notHearing, "link");
 
   answering = true;

@@ -275,6 +275,11 @@ const boot = async ({ status = null, stream = true } = {}) => {
   env.chips = () => env.document.querySelectorAll("[data-chip]");
   env.chip = (id) => env.document.getElementById(`chip-${id}`);
   env.chipValue = (id) => env.chip(id)?.querySelector(".status-chip-value")?.textContent;
+  // Waiting is an empty value slot that carries the class drawing the dots.
+  env.chipWaits = (id) => {
+    const text = env.chip(id)?.querySelector(".status-chip-text");
+    return text?.textContent === "" && text.classList.contains("waiting");
+  };
   env.chipClass = (id) => env.chip(id)?.className;
   env.freshness = () => env.document.getElementById("status-plate-freshness")?.textContent;
   env.freshnessState = () => env.document.getElementById("status-plate-region")?.dataset.freshness;
@@ -445,14 +450,14 @@ test("only the estop acts, and it is the same stop the topbar button sends", asy
 // One freshness state for the whole plate
 // ---------------------------------------------------------------------------
 
-test("before the droid has said anything the plate says it is still finding out", async () => {
+test("before the droid has said anything the plate says it is waiting", async () => {
   // The boot read never answers, so no frame has arrived at all.
   const env = await boot({ status: null });
 
-  assert.equal(env.freshnessState(), "finding-out");
-  assert.match(env.freshness(), /Still finding out/);
+  assert.equal(env.freshnessState(), "waiting");
+  assert.match(env.freshness(), /Waiting for the droid/);
   for (const id of EXPECTED_CHIPS) {
-    assert.equal(env.chipValue(id), "FINDING OUT", `${id} says so rather than going blank`);
+    assert.ok(env.chipWaits(id), `${id} shows the waiting dots rather than going blank`);
   }
 });
 
@@ -463,14 +468,14 @@ test("a dropped stream keeps the values and says it is reconnecting", async () =
   assert.equal(env.chipValue("estop"), "LATCHED");
 
   env.breakStream();
-  assert.equal(env.freshnessState(), "finding-out");
+  assert.equal(env.freshnessState(), "waiting");
   assert.match(env.freshness(), /Reconnecting/);
   assert.match(env.freshness(), /the values it last sent/);
   assert.equal(env.chipValue("drive"), "STOPPED", "the values are kept: a blank plate is the worse lie");
   assert.equal(env.chipValue("control"), "ON");
   // Except the estop's: once contact is lost nobody knows it is still latched
   // or still clear, and a move act is live only on a heard, clear one (#419).
-  assert.equal(env.chipValue("estop"), "FINDING OUT", "the estop goes back to finding out");
+  assert.ok(env.chipWaits("estop"), "the estop goes back to waiting");
 
   env.pushStatus({ estop: true });
   await sleep(5);
@@ -522,7 +527,7 @@ test("the plate reads the status the session already holds and opens no second s
     1,
     "one read for the session -- the plate rides the estop's, it does not add its own",
   );
-  assert.equal(env.document.getElementById("fw-meta")?.textContent, "Finding out",
+  assert.ok(env.document.getElementById("fw-meta")?.querySelector(".waiting"),
     "and the firmware line the footer owns is still in the container the plate moved into");
 });
 
@@ -645,7 +650,7 @@ test("a missing safety field reads as unknown, and never as clear", async () => 
   delete withoutEstop.estop;
   const env = await boot({ status: withoutEstop });
 
-  assert.equal(env.chipValue("estop"), "FINDING OUT");
+  assert.ok(env.chipWaits("estop"));
   assert.notEqual(env.chipValue("estop"), "CLEAR");
   assert.equal(env.chipClass("estop"), "status-chip", "and it takes no color at all");
   assert.notEqual(env.freshnessState(), "live");
@@ -722,7 +727,7 @@ test("a replayed cache is not confirmed connectivity", async () => {
     "the cached frame came back, not the droid: nothing has been confirmed yet",
   );
   assert.equal(env.chipValue("drive"), "STOPPED", "and the values are still kept");
-  assert.equal(env.chipValue("estop"), "FINDING OUT", "but a replay is not the droid saying its estop");
+  assert.ok(env.chipWaits("estop"), "but a replay is not the droid saying its estop");
 });
 
 test("a reconnect asks the droid rather than trusting the cache", async () => {
@@ -752,7 +757,7 @@ test("a failed fallback poll reaches the plate, not only the console", async () 
 
   assert.notEqual(env.freshnessState(), "live", "a poll that is refused is the link not answering");
   assert.equal(env.chipValue("drive"), "STOPPED", "the values are kept here too");
-  assert.equal(env.chipValue("estop"), "FINDING OUT", "and the estop is not known");
+  assert.ok(env.chipWaits("estop"), "and the estop is not known");
 });
 
 test("the plate stops reading live from every path that can fail, not one", async () => {

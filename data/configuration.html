@@ -64,8 +64,8 @@
          did.
          --------------------------------------------------------------------- -->
     <div class="card" id="wizard-checking">
-      <div class="sect"><h2>Setup</h2><span class="sub">reading this droid</span></div>
-      <p class="hint">Finding out whether this droid is set up.</p>
+      <div class="sect"><h2>Setup</h2><span class="sub waiting"></span></div>
+      <p class="hint"></p>
     </div>
 
     <!-- What the run left behind (#371): what was set, what still waits for a
@@ -100,12 +100,12 @@
          surface, and a second permanent home for it here would be the drift
          #288 closed. -->
     <div class="card hidden" id="wizard-wifi-card" data-setup-run-only>
-      <div class="sect"><h2>WiFi</h2><span class="sub" id="wizard-wifi-state">finding out</span></div>
+      <div class="sect"><h2>WiFi</h2><span class="sub waiting" id="wizard-wifi-state"></span></div>
       <!-- data-setup-home: where this step is answered once the run is over,
            since this card is the run's alone (data/setup.js). -->
       <div data-setup-step="wifi" data-setup-home="#wifi">
         <p class="note hidden apply-timing" data-apply-timing></p>
-        <p class="note" id="wizard-wifi-prose">Finding out which network this droid is on.</p>
+        <p class="note waiting" id="wizard-wifi-prose"></p>
         <div class="button-row button-row-compact">
           <a class="btn" href="#wifi">Change the network in WiFi</a>
         </div>
@@ -130,7 +130,7 @@
          data/droid_build_picker.js from the catalog's designs, so nothing here
          names a design. The guided run shows this same host as its step. -->
     <div class="card">
-      <div class="sect"><h2>Droid Build</h2><span class="sub" id="droid-build-summary">finding out</span></div>
+      <div class="sect"><h2>Droid Build</h2><span class="sub waiting" id="droid-build-summary"></span></div>
       <div data-setup-step="build">
         <p class="note hidden apply-timing" data-apply-timing></p>
         <div id="droid-build-body"></div>
@@ -148,7 +148,7 @@
          form as the value the save sends, and its row is hidden: the cards are
          the control, and "Not fitted" is one of them rather than a checkbox. -->
     <div class="card">
-      <div class="sect"><h2>Hardware components</h2><span class="sub" id="setup-enabled-summary">finding out</span></div>
+      <div class="sect"><h2>Hardware components</h2><span class="sub waiting" id="setup-enabled-summary"></span></div>
       <p class="hint">Not fitted, the Body Controller never talks to it.</p>
       <form id="feature-form">
 

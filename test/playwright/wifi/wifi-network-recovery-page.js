@@ -254,7 +254,7 @@ const expectTexts = async (page, want) => {
 };
 
 const waitWifiRead = (page) =>
-  page.waitForFunction(() => document.getElementById('wifi-pending-summary')?.textContent.trim() !== 'finding out', null, { timeout: 15000 });
+  page.waitForFunction(() => document.getElementById('wifi-pending-summary')?.textContent.trim() !== '', null, { timeout: 15000 });
 
 const RECOVERY_DESC = 'Network Recovery Mode: a power-cycle opened WiFi Provisioning for now. Your saved Device WiFi Settings are untouched; fix them below, save, then reboot.';
 

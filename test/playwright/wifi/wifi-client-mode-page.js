@@ -253,7 +253,7 @@ const expectTexts = async (page, want) => {
 };
 
 const waitWifiRead = (page) =>
-  page.waitForFunction(() => document.getElementById('wifi-pending-summary')?.textContent.trim() !== 'finding out', null, { timeout: 15000 });
+  page.waitForFunction(() => document.getElementById('wifi-pending-summary')?.textContent.trim() !== '', null, { timeout: 15000 });
 
 // ---------------------------------------------------------------------------
 // The check

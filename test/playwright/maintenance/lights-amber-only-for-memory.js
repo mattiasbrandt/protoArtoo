@@ -33,7 +33,7 @@ lib.runCheck({
   selftests: ['amber'],
   run: async ({ page, report, selftest }) => {
     await lib.loadSurface(page, 'maintenance');
-    await page.waitForFunction(() => !/^\.\.\.$|Finding out/.test(document.getElementById('diag-uptime')?.textContent || '...'), null, { timeout: 15000 });
+    await page.waitForFunction(() => (document.getElementById('diag-uptime')?.textContent || '') !== '', null, { timeout: 15000 });
     if (selftest === 'amber') {
       await page.evaluate(() => {
         document.getElementById('serial-s2-light').className = 'indicator warn';

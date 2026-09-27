@@ -1,5 +1,5 @@
-// RC's radio and receiver cards say "Reading it from the droid…" until the
-// droid has answered - never "not picked" for a choice nobody has read yet.
+// RC's radio and receiver cards show the waiting dots until the droid has
+// answered - never "not picked" for a choice nobody has read yet.
 // Introduced by #412 (data/rc.js paintProductCards).
 //
 // PRECONDITION: none beyond a droid that answers. Writes nothing: the guard
@@ -7,8 +7,8 @@
 //
 // WHAT IT PROVES. With GET /api/config held back in the browser for 2.5 s -
 // the droid answers late, nothing more - #rc-radio-card and #rc-receiver-card
-// each read exactly "Reading it from the droid…" (with its Unicode ellipsis)
-// and say nothing about a pick. The hold is then let go and the page left to
+// each hold nothing but an empty .hint.waiting line whose ::after draws the
+// dots (data/style.css), and say nothing about a pick. The hold is then let go and the page left to
 // finish.
 //
 // WHY A REAL BROWSER. The late answer is a real request held in flight.
@@ -24,11 +24,10 @@
 const lib = require('../_lib/checks.js');
 
 const ARTIFACTS = 'output/playwright/rc';
-const READING = 'Reading it from the droid…';
 const HOLD_MS = Number(process.env.HOLD_MS || 2500);
 
 lib.runCheck({
-  rule: 'RC cards say they are reading until the droid answers',
+  rule: 'RC cards show the waiting dots until the droid answers',
   artifactDir: ARTIFACTS,
   selftests: ['picked'],
   run: async ({ page, report, selftest }) => {
@@ -43,15 +42,23 @@ lib.runCheck({
     await page.waitForSelector('#rc-radio-card', { timeout: 20000 });
     await page.waitForTimeout(HOLD_MS);
     if (selftest === 'picked') await page.evaluate(() => { document.getElementById('rc-radio-card').textContent = 'No radio picked yet.'; });
-    const cards = await page.evaluate(() => ({
-      radio: document.getElementById('rc-radio-card').textContent.trim(),
-      receiver: document.getElementById('rc-receiver-card').textContent.trim(),
-    }));
+    const cards = await page.evaluate(() => {
+      const waits = (id) => {
+        const card = document.getElementById(id);
+        const line = card.querySelector('p.hint.waiting');
+        return card.textContent.trim() === '' && line !== null && getComputedStyle(line, '::after').content.includes('...');
+      };
+      return {
+        radio: waits('rc-radio-card'),
+        receiver: waits('rc-receiver-card'),
+        said: document.getElementById('rc-radio-card').textContent.trim(),
+      };
+    });
     await page.screenshot({ path: `${ARTIFACTS}/cards-config-held.png` });
     await page.unroute('**/api/config*', hold);
     release();
-    report.add('a', `Both cards read "${READING}" while the config is held`, lib.verdict(cards.radio === READING && cards.receiver === READING),
-      `radio "${cards.radio}", receiver "${cards.receiver}"`);
+    report.add('a', 'Both cards show the waiting dots while the config is held', lib.verdict(cards.radio && cards.receiver),
+      `radio waits: ${cards.radio}, receiver waits: ${cards.receiver}, radio says "${cards.said}"`);
     await page.waitForTimeout(1500);
   },
 });

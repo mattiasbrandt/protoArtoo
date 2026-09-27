@@ -288,7 +288,7 @@ const expectTexts = async (page, want) => {
 const openWifi = async (page) => {
   await page.goto('about:blank');
   await lib.loadSurface(page, 'wifi');
-  await page.waitForFunction(() => document.getElementById('wifi-pending-summary')?.textContent.trim() !== 'finding out', null, { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('wifi-pending-summary')?.textContent.trim() !== '', null, { timeout: 15000 });
 };
 
 const posture = (page) => page.getAttribute('#wifi-posture-card', 'data-posture');

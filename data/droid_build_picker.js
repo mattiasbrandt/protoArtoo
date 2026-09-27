@@ -198,9 +198,9 @@
 
     const head = element("div", "sect");
     head.appendChild(element("h3", "", half.title));
-    let state = "finding out";
+    let state = "";
     if (choice) state = `${answerLabel(choice)}${isDefaultAnswer(choice) ? " · default" : ""}`;
-    head.appendChild(element("span", "sub", state));
+    head.appendChild(element("span", "sub waiting", state));
     section.appendChild(head);
 
     // Before the droid's answer has been read, the design a fresh controller
@@ -254,7 +254,7 @@
     mount.body.replaceChildren(body);
 
     if (mount.summary) {
-      mount.summary.textContent = build ? `${build.fitted.length} parts fitted` : "finding out";
+      mount.summary.textContent = build ? `${build.fitted.length} parts fitted` : "";
     }
     mount.options.onRender?.();
   };
