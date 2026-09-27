@@ -3077,9 +3077,16 @@ p.output-parts {
   /* The eight cells, then the compartment holding the plate's one freshness
      statement. The statement is a sibling of the cells rather than a ninth one:
      the eight positions are the contract, and nothing that is not a chip
-     belongs among them. */
+     belongs among them.
+
+     8fr for the cells, not 1fr: written as 1fr when the compartment moved out
+     of the cells' own grid, the eight shared what one cell had had, and at
+     1440 px every chip was 75 px wide and cut its own word -- LATCHED read
+     LATCHEI (#355). At 8fr to 2fr a cell is 144 px at 1440, which holds every
+     word of up to eleven letters (FINDING OUT) on one line, and the
+     compartment is 288 px, which holds its two usual lines inside --plate-h. */
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 1.4fr);
+  grid-template-columns: minmax(0, 8fr) minmax(150px, 2fr);
 }
 
 .status-plate {
@@ -3095,7 +3102,11 @@ p.output-parts {
   align-content: center;
   gap: 2px;
   min-width: 0;
-  padding: var(--space-sm) var(--space-md);
+  /* 4 px top and bottom, so a value that takes two lines (below) still sits
+     inside --plate-h and the plate never grows when a word changes; the cell
+     centres its content, so a one-line chip sits where it always did. 8 px at
+     the sides is what lets an eleven-letter word stay on one line at 1440. */
+  padding: var(--space-2xs) var(--space-sm);
   border: none;
   background: transparent;
   border-radius: 0;
@@ -3132,18 +3143,28 @@ p.output-parts {
   white-space: nowrap;
 }
 
+/* A value is never cut. A word too long for one line -- the sound module's
+   own name (CHIRP AUDIO TRIGGER) or HELD BY PROTOR2LINK -- takes a second line
+   at its space; a cut word is a different word, and on this plate that was
+   the estop's own (LATCHED read LATCHEI, #355). Breaking inside a word is the
+   last resort, for a cell narrower than any desktop gives it. The light sits
+   beside the first line. */
 .status-chip-value {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-sm);
+  min-width: 0;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.status-chip-value .status-chip-dot {
+  /* Centred on the first line: half of what the line is taller than the dot. */
+  margin-top: calc((1.2em - 7px) / 2);
 }
 
 /* The separator, on the LEFT edge of every cell after the first, so a cell
@@ -3206,7 +3227,9 @@ p.output-parts {
   display: grid;
   align-content: center;
   gap: 2px;
-  padding: var(--space-sm) var(--space-md);
+  /* 4 px top and bottom, as the cells: three lines of hint sit inside
+     --plate-h. */
+  padding: var(--space-2xs) var(--space-md);
   min-width: 0;
   /* The same seam the cells are divided by, so the compartment reads as part of
      the plate rather than as something parked next to it. */
