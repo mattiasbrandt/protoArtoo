@@ -306,28 +306,22 @@ ServoOutputTable readServoOutputTable() {
     return table;
 }
 
-// Field by field: a row's tail padding is not part of what it holds.
+// Field by field, every stored field the row declares
+// (kServoOutputRowFields), compared as it is stored: a row's tail padding is not
+// part of what it holds, and a field added to the row is compared the day it
+// is declared.
 void assertSameRows(const ServoOutputTable& want, const ServoOutputTable& got) {
     TEST_ASSERT_EQUAL_UINT8(want.count, got.count);
     for (uint8_t i = 0; i < want.count; ++i) {
-        const ServoOutputRow& w = want.rows[i];
-        const ServoOutputRow& g = got.rows[i];
-        TEST_ASSERT_EQUAL_UINT8(w.driver, g.driver);
-        TEST_ASSERT_EQUAL_UINT8(w.channel, g.channel);
-        for (uint8_t slot = 0; slot < SERVO_OUTPUT_PART_SLOTS; ++slot) {
-            TEST_ASSERT_EQUAL_STRING(w.parts[slot], g.parts[slot]);
+        for (const ServoOutputRowField& field : kServoOutputRowFields) {
+            char w[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            char g[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, want.rows[i], w, sizeof(w)));
+            TEST_ASSERT_TRUE(servoOutputRowFieldFormat(field, got.rows[i], g, sizeof(g)));
+            char where[48] = {};
+            snprintf(where, sizeof(where), "row %u %s", (unsigned)i, field.name);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(w, g, where);
         }
-        TEST_ASSERT_EQUAL_UINT16(w.open_us, g.open_us);
-        TEST_ASSERT_EQUAL_UINT16(w.centre_us, g.centre_us);
-        TEST_ASSERT_EQUAL_UINT16(w.close_us, g.close_us);
-        TEST_ASSERT_EQUAL_UINT16(w.throw_ms, g.throw_ms);
-        TEST_ASSERT_EQUAL_UINT16(w.accel_ms, g.accel_ms);
-        TEST_ASSERT_EQUAL_UINT16(w.release_ms, g.release_ms);
-        TEST_ASSERT_EQUAL_UINT8(w.easing, g.easing);
-        TEST_ASSERT_EQUAL_UINT8(w.boot, g.boot);
-        TEST_ASSERT_EQUAL_UINT8(w.component, g.component);
-        TEST_ASSERT_EQUAL_UINT8(w.led_count, g.led_count);
-        TEST_ASSERT_EQUAL(w.calibrated, g.calibrated);
     }
 }
 
@@ -340,33 +334,41 @@ ServoOutputTable rowsLikeSetUp() {
     return table;
 }
 
-// Every field a row can be set to, moved off rowsLikeSetUp() on some row.
+// Every row Setting moved off rowsLikeSetUp() on every Output it exists on, by
+// its declaration and through the row's own merge - never a hand list, so a
+// row Setting declared tomorrow is carried by the round trip the day it is
+// declared. Each row also drives a Part rowsLikeSetUp() puts on no Output.
 ServoOutputTable rowsUnlikeSetUp() {
-    ServoOutputTable table = {};
-    servoOutputTableDefaults(&table);
-    ServoOutputRow& arm1 = table.rows[0];
-    arm1.component = SERVO_COMP_MG996R;
-    arm1.open_us = 1800;
-    arm1.centre_us = 1550;
-    arm1.close_us = 1200;
-    arm1.calibrated = true;
-    arm1.throw_ms = 800;
-    arm1.accel_ms = 150;
-    arm1.easing = SERVO_EASE_SOFT;
-    arm1.boot = SERVO_BOOT_HOME_HOLD;
-    TEST_ASSERT_TRUE(servoOutputAddPart(&arm1, "doorFL"));
-    TEST_ASSERT_TRUE(servoOutputAddPart(&arm1, "utilUp"));
-    ServoOutputRow& aux1 = table.rows[2];
-    aux1.component = SERVO_COMP_RGB;
-    aux1.led_count = 42;
-    ServoOutputRow& aux2 = table.rows[3];
-    aux2.component = SERVO_COMP_MG90S;
-    aux2.open_us = 600;
-    aux2.centre_us = 1400;
-    aux2.close_us = 2400;
-    aux2.easing = SERVO_EASE_OVERSHOOT;
-    aux2.boot = SERVO_BOOT_HOME_RELEASE;
-    TEST_ASSERT_TRUE(servoOutputAddPart(&aux2, "gripArm"));
+    const ServoOutputTable like = rowsLikeSetUp();
+    ServoOutputTable table = like;
+    size_t index = 0;
+    size_t part = 0;
+    for (uint8_t r = 0; r < table.count; ++r) {
+        ServoOutputRow& row = table.rows[r];
+        const BoardOutput* board =
+            row.driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(row.channel) : nullptr;
+        for (size_t s = 0; s < outputRowSettingCount(); ++s) {
+            const OutputRowSetting& setting = outputRowSettingAt(s);
+            if (setting.store != RowSettingStore::Row || !outputRowSettingIsOn(setting, board)) {
+                continue;
+            }
+            int32_t value = 0;
+            TEST_ASSERT_TRUE_MESSAGE(rowSettingOtherValue(setting, row, index++, &value), setting.key);
+            ServoOutputEdit edit = {};
+            edit.driver = row.driver;
+            edit.channel = row.channel;
+            outputRowSettingSetOnEdit(setting, value, &edit);
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, servoOutputApplyEdit(&row, edit), setting.key);
+        }
+
+        servoOutputClearParts(&row);
+        while (part < DROID_PART_COUNT && servoOutputTableFindPart(like, droidPartIdAt(part)) <
+                                              SERVO_OUTPUT_ROW_MAX) {
+            ++part;
+        }
+        TEST_ASSERT_TRUE(part < DROID_PART_COUNT);
+        TEST_ASSERT_TRUE(servoOutputAddPart(&row, droidPartIdAt(part++)));
+    }
     return table;
 }
 

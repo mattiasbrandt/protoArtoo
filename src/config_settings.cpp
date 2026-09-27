@@ -12,8 +12,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <type_traits>
-
 #include "api_helpers.h"          // parseDriveValue(), parseUint32Value(), parseBoolValue()
 #include "audio_dollar_parser.h"  // AUDIO_TRACK_*, AUDIO_RAND_* - the audio defaults
 #include "board_outputs.h"
@@ -329,18 +327,31 @@ constexpr size_t kConfigSettingCount = sizeof(kConfigSettings) / sizeof(kConfigS
 // it and names what it moved, because the band can narrow after the ends were
 // recorded and refusing would throw a calibration away (ADR 0068).
 // -----------------------------------------------------------------------------
-// A row Setting's storage, from a row member and the edit member that carries
-// it: one type, or the edit would write a different width than the row reads.
-template <typename RowMember, typename EditMember>
-constexpr SettingStorage rowStorageOf() {
-    static_assert(std::is_same<RowMember, EditMember>::value,
-                  "a row Setting's ServoOutputRow and ServoOutputEdit members must share a type");
-    return settingStorageOf<RowMember>();
+// A row Setting's storage, row offset, edit offset and edit bit, read off the
+// row's own field table (kServoOutputRowFields, include/servo_output_row.h) by
+// the bit, so none of them is restated here. That table already holds each
+// member to the edit member that carries it.
+constexpr SettingStorage rowStorageOf(ServoOutputRowFieldKind kind) {
+    switch (kind) {
+        case SERVO_ROW_FIELD_U16:
+            return SettingStorage::U16;
+        case SERVO_ROW_FIELD_BOOL:
+            return SettingStorage::Bool;
+        case SERVO_ROW_FIELD_PARTS:
+            return SettingStorage::Text;
+        case SERVO_ROW_FIELD_DRIVER:
+        case SERVO_ROW_FIELD_U8:
+        case SERVO_ROW_FIELD_EASING:
+        case SERVO_ROW_FIELD_BOOT:
+        case SERVO_ROW_FIELD_COMPONENT:
+        default:
+            return SettingStorage::U8;  // a byte, or an enum stored in one
+    }
 }
 
-#define PA_ROW_FIELD(member)                                                             \
-    rowStorageOf<decltype(ServoOutputRow::member), decltype(ServoOutputEdit::member)>(), \
-        (uint16_t)offsetof(ServoOutputRow, member), (uint16_t)offsetof(ServoOutputEdit, member)
+#define PA_ROW_FIELD(bit)                                                                   \
+    rowStorageOf(servoOutputRowFieldOf(bit).kind), servoOutputRowFieldOf(bit).rowOffset,    \
+        servoOutputRowFieldOf(bit).editOffset, (uint16_t)(bit)
 
 // When each takes effect: the Motion Profile, the ends, the calibrated bit and
 // the Parts are read off the live row on every move, and so is the servo model
@@ -349,37 +360,66 @@ constexpr SettingStorage rowStorageOf() {
 // (servoTaskInit(), auxLedTask(), the boot pass). A `component` change between
 // a servo and a light is read at start too (servoTaskInit()'s lit mask); the
 // Lights page, the one door that makes it, says so itself (data/lights.js).
-const OutputRowSetting kOutputRowSettings[] = {
+constexpr OutputRowSetting kOutputRowSettings[] = {
     {"wired", ApplyTiming::AtReboot, RowSettingStore::Wired, RowSettingOn::Every, SettingStorage::Bool, 0, 0, 0,
      SettingRule::Bool, 0, 1, nullptr},
-    {"component", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(component),
-     SERVO_FIELD_COMPONENT, SettingRule::Words, 0, 0, &kComponentWords},
-    {"ledCount", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::LightCapable, PA_ROW_FIELD(led_count),
-     SERVO_FIELD_LED_COUNT, SettingRule::Range, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX, nullptr},
-    {"throwMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(throw_ms),
-     SERVO_FIELD_THROW_MS, SettingRule::Range, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, nullptr},
-    {"accelMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(accel_ms),
-     SERVO_FIELD_ACCEL_MS, SettingRule::Range, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, nullptr},
-    {"ease", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(easing), SERVO_FIELD_EASING,
+    {"component", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_COMPONENT),
+     SettingRule::Words, 0, 0, &kComponentWords},
+    {"ledCount", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::LightCapable, PA_ROW_FIELD(SERVO_FIELD_LED_COUNT),
+     SettingRule::Range, SERVO_LIGHT_LEDS_MIN, SERVO_LIGHT_LEDS_MAX, nullptr},
+    {"throwMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_THROW_MS),
+     SettingRule::Range, SERVO_THROW_MS_MIN, SERVO_THROW_MS_MAX, nullptr},
+    {"accelMs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_ACCEL_MS),
+     SettingRule::Range, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, nullptr},
+    {"ease", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_EASING),
      SettingRule::Words, 0, 0, &kEasingWords},
-    {"boot", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(boot), SERVO_FIELD_BOOT,
+    {"boot", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_BOOT),
      SettingRule::Words, 0, 0, &kBootWords},
-    {"openUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(open_us), SERVO_FIELD_OPEN,
+    {"openUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_OPEN),
      SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
-    {"centreUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(centre_us),
-     SERVO_FIELD_CENTRE, SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
-    {"closeUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(close_us),
-     SERVO_FIELD_CLOSE, SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
-    {"calibrated", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(calibrated),
-     SERVO_FIELD_CALIBRATED, SettingRule::Bool, 0, 1, nullptr},
-    {"parts", ApplyTiming::Immediate, RowSettingStore::Parts, RowSettingOn::Every, SettingStorage::Text, 0, 0,
-     SERVO_FIELD_PARTS, SettingRule::Range, 0, SERVO_OUTPUT_PART_SLOTS, nullptr},
+    {"centreUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_CENTRE),
+     SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
+    {"closeUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_CLOSE),
+     SettingRule::Range, SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US, nullptr},
+    {"calibrated", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_CALIBRATED),
+     SettingRule::Bool, 0, 1, nullptr},
+    {"parts", ApplyTiming::Immediate, RowSettingStore::Parts, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_PARTS),
+     SettingRule::Range, 0, SERVO_OUTPUT_PART_SLOTS, nullptr},
 };
 
 #undef PA_ROW_FIELD
 #undef PA_SETTING_FIELD
 
 constexpr size_t kOutputRowSettingCount = sizeof(kOutputRowSettings) / sizeof(kOutputRowSettings[0]);
+
+constexpr bool sameText(const char* a, const char* b) {
+    while (*a != '\0' && *a == *b) {
+        ++a;
+        ++b;
+    }
+    return *a == *b;
+}
+
+// A row Setting stored on the row is named by its field's one name, and an
+// edit can carry it: the key GET writes and POST reads is the row field's name
+// (kServoOutputRowFields), not a second spelling of it. The key is still
+// written out in the declaration, where tools/setting_declarations.py reads it
+// for the words check; this holds the two to one spelling.
+constexpr bool rowSettingsNameTheirFields() {
+    for (const OutputRowSetting& setting : kOutputRowSettings) {
+        if (setting.store == RowSettingStore::Wired) {
+            continue;
+        }
+        const ServoOutputRowField& field = servoOutputRowFieldOf(setting.fieldBit);
+        if (!sameText(setting.key, field.name) ||
+            (setting.store == RowSettingStore::Row && field.editOffset == SERVO_ROW_FIELD_NO_EDIT)) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(rowSettingsNameTheirFields(),
+              "each Output row Setting's key is its row field's name, and an edit carries it");
 
 // -----------------------------------------------------------------------------
 // Storage

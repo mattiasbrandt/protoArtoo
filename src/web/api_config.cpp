@@ -815,8 +815,8 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         // config-write chain include/config.h measures, and an edit can only
         // ever report the three pulse widths plus the component -- the row it
         // lands on was normalised when it was loaded, so nothing else on it can
-        // newly fail. "open, centre, close, component took the safe default" is
-        // 44. The note truncates safely if that ever grows.
+        // newly fail. "openUs, centreUs, closeUs, component took the safe
+        // default" is 58. The note truncates safely if that ever grows.
         char note[64] = {};
         servoOutputRepairNote(servoOutputRepair.firstRowMask, true, note, sizeof(note));
         PA_LOG_WARN(TAG, "servo output %u: %s - the fitted component's range does not reach it",

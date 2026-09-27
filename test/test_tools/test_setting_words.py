@@ -68,12 +68,22 @@ def web_api(droid: str, row: str, records_and_acts: str = RECORD_AND_ACT_WORDS) 
     )
 
 
-def fixtures(tmp: str) -> dict:
+# The row keys a page may save, as data/outputs.js lists them.
+OUTPUTS = """
+  const PATCH_FIELDS = {
+    throwMs: { key: "throwMs", can: (output) => output.motionSettable },
+  };
+"""
+
+
+def fixtures(tmp: str, outputs: str = OUTPUTS) -> dict:
     record = Path(tmp) / "config_record_droid_build.cpp"
     record.write_text(RECORD)
     acts = Path(tmp) / "api_config_apply.cpp"
     acts.write_text(ACTS)
-    return {"records": [record], "acts": acts, "pages": []}
+    patch = Path(tmp) / "outputs.js"
+    patch.write_text(outputs)
+    return {"records": [record], "acts": acts, "pages": [], "outputs": patch}
 
 
 class Check(unittest.TestCase):
@@ -135,6 +145,21 @@ class Check(unittest.TestCase):
         self.assertEqual(1, len(errors), errors)
         self.assertIn("throwMs", errors[0])
 
+
+    def test_a_page_saving_an_undeclared_row_key_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Path(tmp) / "config_settings.cpp"
+            settings.write_text(SETTINGS)
+            api = Path(tmp) / "web_api.js"
+            api.write_text(web_api('    speedLimitMax: { word: "t", path: "drive.speedLimitMax", applies: "immediate" },\n'
+                                   '    scream: { word: "s", applies: "immediate" },\n    bank: { word: "b" },',
+                                   '    throwMs: { word: "t", applies: "immediate" },'))
+            outputs = OUTPUTS.replace(
+                "  };", '    type: { key: "type", can: () => true, value: String },\n  };')
+            errors: list[str] = []
+            words.check(errors, settings=settings, web_api=api, **fixtures(tmp, outputs))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("row key type", errors[0])
 
     def test_a_key_past_fifteen_characters_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:

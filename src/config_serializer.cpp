@@ -92,9 +92,9 @@ uint16_t adoptLegacyFixedServoKeys(const ConfigReader& r, ServoOutputRow* row) {
 // `component` names one, and its LEDs are that row's `led_count`.
 //
 // ONLY ONTO A ROW WITH NO ANSWER OF ITS OWN. `unanswered` has bit i set for a
-// row whose record is absent or has the thirteen-field shape stored before
-// #413; neither can hold a Light Type answer, so the keys are the only answer
-// there is. A fourteen-field record was written by this firmware and already
+// row whose record is absent or is a shape stored before #413, without the LED
+// count; neither can hold a Light Type answer, so the keys are the only answer
+// there is. A record with the LED count was written by this firmware and already
 // carries whatever the builder set -- an LED count, or a servo put back on
 // the wire -- and the keys can still be in NVS beside it: they are removed
 // only by a save that landed whole, so one failed row write keeps them. Adopting
@@ -629,13 +629,16 @@ void configDeserializeServoOutputs(const ConfigReader& r, ServoOutputTable* out,
         // A repair is still counted: the only thing an adoption can report is a
         // pulse width the component band had to move, and a builder's own number
         // changing under them is exactly what this project says out loud.
-        bool oldShape = false;
+        uint16_t absent = 0;
         if (stored.length() == 0) {
             rowMask[i] = adoptLegacyFixedServoKeys(r, &parsed);
             unanswered |= (uint32_t)1u << i;
         } else {
-            rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed, &oldShape);
-            if (oldShape) {
+            rowMask[i] = servoOutputRowParse(stored.c_str(), fallback, &parsed, &absent);
+            // Asked of the LED count by name rather than "any older shape": a
+            // record stored after #413 carries the Light Type's answer however
+            // many fields are appended after it.
+            if ((absent & SERVO_FIELD_LED_COUNT) != 0) {
                 unanswered |= (uint32_t)1u << i;
             }
         }
