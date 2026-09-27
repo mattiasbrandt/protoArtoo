@@ -29,7 +29,6 @@
 
 #ifdef ARDUINO
 #include <freertos/FreeRTOS.h>
-#include <esp_heap_caps.h>
 #endif
 
 #include "logging.h"

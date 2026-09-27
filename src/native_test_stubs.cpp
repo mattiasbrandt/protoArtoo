@@ -23,11 +23,6 @@ portMUX_TYPE robotStateMux = 0;
 // Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
-// Arduino ESP instance, declared by test/stubs/include/Arduino.h. Nothing in
-// the native build reads the heap through it: the heap readings have their own
-// stand-ins below ("Heap readings").
-ESPClass ESP;
-
 // Logging sinks. Defined further down, beside the log ring stand-in they are
 // built on -- see "Log ring stand-in" below. paLogInit() stays a no-op here:
 // the ring is lazily initialised on first use so a test that fills
