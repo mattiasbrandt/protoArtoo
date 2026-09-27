@@ -913,8 +913,16 @@
   // A press: take the Output, and keep asking for it from here on.
   const takeHold = () => {
     dial.holding = true;
+    // Not yet seen pulsing since this take: see paintDial().
+    dial.confirmed = false;
     startKeepalive();
-    return sendHold({ refresh: false });
+    const taken = sendHold({ refresh: false });
+    // A take the droid refused left nothing standing, so the next reading's
+    // "no pulse" is the truth and puts take it again back on the panel.
+    taken.then((ok) => {
+      if (!ok && dial !== null) dial.confirmed = true;
+    });
+    return taken;
   };
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") stopKeepalive();
@@ -1068,8 +1076,18 @@
 
     // The Output has gone limp under the dial: one of the firmware's two
     // bounds, or the estop. The panel says which, and one press takes it back.
+    //
+    // Except a read from before the take. Outputs boot limp, so the reading
+    // the dial opens on - and one already in flight when the take went out -
+    // says "no pulse" about a pin the droid is now holding. Believing it
+    // cleared `holding` at once, the keepalive never ran and the hold ended
+    // at the 3 s expiry (#355 finding 9). So "no pulse" only ends the hold
+    // once the dial has seen the Output pulsing since its take; a reason the
+    // droid gives for letting go - a bound, the estop, sleep, pulses off -
+    // ends it whenever it arrives.
     const live = OUTPUTS.live(output);
-    const limp = live.state === "limp";
+    if (live.state === "pulsing") dial.confirmed = true;
+    const limp = live.state === "limp" && (dial.confirmed || live.reason !== "off");
     if (limp) dial.holding = false;
     dialResume.hidden = !limp;
     if (limp && !dial.sweeping) {

@@ -457,11 +457,12 @@
    *                Output table, which is not the same as no pulse
    *   pulsing      there is a pulse on it; `word` is null, and the page draws
    *                the position its own way
-   *   limp         no pulse, and `word` says why
+   *   limp         no pulse, and `word` says why; `reason` is the droid's
+   *                own token for it ("off" when it gave none)
    *
    * @param {object|null} output - one this module handed out, or null before
    *   the table has answered
-   * @returns {{state: string, word: string|null}}
+   * @returns {{state: string, word: string|null, reason?: string}}
    */
   const live = (output) => {
     const words = window.PALiveReading;
@@ -474,7 +475,8 @@
     if (!facts) throw new Error(`${output.address} is not an Output this module handed out`);
     if (!facts.reported) return Object.freeze({ state: "unknown", word: words.UNKNOWN });
     if (output.commandedUs !== null) return Object.freeze({ state: "pulsing", word: null });
-    return Object.freeze({ state: "limp", word: LIMP_WORDS[facts.limp] || LIMP_WORDS.off });
+    const reason = LIMP_WORDS[facts.limp] ? facts.limp : "off";
+    return Object.freeze({ state: "limp", word: LIMP_WORDS[reason], reason });
   };
 
   /**

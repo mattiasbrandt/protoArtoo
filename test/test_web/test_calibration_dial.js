@@ -82,6 +82,51 @@ test("the hold is kept alive while the dial is open, and stops when it is closed
   assert.equal(env.dialOpen(), false);
 });
 
+// Outputs boot limp (#414), so the dial usually opens on a row the droid last
+// reported with no pulse. That reading is from before the take, and a page that
+// believed it stopped asking at once: the keepalive never ran and the droid let
+// go at the 3 s expiry, with the panel already saying "take it again" about a
+// pin it was holding (#355 finding 9). ARM5 is the fake droid's limp row.
+test("a dial opened on a limp Output keeps holding it until the droid says it let go", async () => {
+  const env = await bootServos();
+  env.pressCalibrate("ledc:5");
+  await sleep(20);
+  assert.equal(env.dialOpen(), true);
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  assert.ok(keepalive, "a keepalive runs while the dial is open");
+
+  // Before any new reading: the take is standing, so a tick refreshes it.
+  const before = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, before + 1, "the hold it just took is kept alive, not dropped on a stale reading");
+  assert.doesNotMatch(env.dialNote(), /take it again/, "the panel does not say it let go of a pin it holds");
+
+  // The droid answers with the Output held, then one of its bounds fires.
+  await env.frame();
+  env.wentLimp("ledc:5", "expiry");
+  await env.frame();
+  const after = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, after, "once the droid let go, the page stops asking");
+  assert.match(env.dialNote(), /take it again/);
+});
+
+test("a take the droid refuses puts take it again back on the panel", async () => {
+  const env = await bootServos();
+  env.nudgeFails = Object.assign(new Error("refused"), { status: 409 });
+  env.pressCalibrate("ledc:5");
+  await sleep(20);
+  await env.frame();
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  const before = env.holds().length;
+  keepalive?.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, before, "nothing was taken, so nothing is kept alive");
+  assert.match(env.dialNote(), /take it again/, "and the builder is offered the way back");
+});
+
 // The word a move is sent with is the Output's label exactly as the firmware
 // gave it - the board's own word, which is what POST /api/servo takes (ADR 0033
 // Amendment 2026-09-19). A FireBeetle 2 prints GPIO 49, space included; a page
