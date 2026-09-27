@@ -8271,7 +8271,6 @@ button.droid-build-card:disabled {
 }
 
 .component-sub-channels .output-plates {
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: var(--space-xs);
   margin-block: 0;
 }
@@ -8294,10 +8293,6 @@ button.droid-build-card:disabled {
 /* The two-column radio plate keeps its picture the size of its neighbours'. */
 .component-cards > .component-plate:has(.component-sub-channels, .component-receivers) > .component-card > .component-card-art {
   max-height: 188px;
-}
-
-.component-sub-channels .output-plates {
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
 }
 
 .component-sub-channels .output-plate .toggle-label {
@@ -8521,10 +8516,16 @@ button.output-setting-head:focus-visible {
    operator 2026-09-19). #369's squares put the channel name, the board's
    header label and the state on one line in a 72 px column, and the state ran
    out of the plate. Here the state sits under the name, the column is wide
-   enough for "CH 6" and "OFF" at any width, and the header label is not
-   repeated: on the Artoo it reads "CH1" beside "CH 1", the same words twice. */
+   enough for the channel's name and "OFF" at any width, and the header label
+   is not repeated: on the Artoo it reads "CH1" beside the name, the same
+   words twice.
+
+   The name is "RC channel 6" now (#432), and the 76 px this column was sized
+   to for "CH 6" spilled it past its tick at 1440 (#355). 112 px holds it with
+   room to spare, and in the radio's plate at 1440 that is three ticks a row:
+   the six channels as two even rows of three. */
 .component-sub-channels .output-plates {
-  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
 }
 
 .component-sub-channels .output-plate .toggle-switch {
