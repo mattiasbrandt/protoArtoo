@@ -28,7 +28,7 @@ inline const char* webWebpContentType() {
 // underscore, starting with a letter. Anything else -- a query string, a
 // second slash, a '..', an uppercase letter -- is rejected, so this cannot
 // be talked into opening a different file.
-inline bool webPathIsProductPhoto(const char* uri) {
+inline bool webPathIsWebpPicture(const char* uri) {
     if (uri == nullptr) {
         return false;
     }

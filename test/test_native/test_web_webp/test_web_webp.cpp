@@ -48,37 +48,37 @@ void test_every_registry_photograph_path_is_claimed() {
         "/dfplayer_mini.webp",
     };
     for (size_t i = 0; i < sizeof(kPaths) / sizeof(kPaths[0]); ++i) {
-        TEST_ASSERT_TRUE_MESSAGE(webPathIsProductPhoto(kPaths[i]), kPaths[i]);
+        TEST_ASSERT_TRUE_MESSAGE(webPathIsWebpPicture(kPaths[i]), kPaths[i]);
     }
 }
 
 void test_a_jpg_product_path_is_not_ours() {
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.jpg"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/hotrc_ds650.jpg"));
 }
 
 void test_null_and_empty_are_not_product_photographs() {
-    TEST_ASSERT_FALSE(webPathIsProductPhoto(nullptr));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto(""));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/.webp"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture(nullptr));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture(""));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/.webp"));
 }
 
 void test_path_traversal_and_extra_segments_are_rejected() {
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/../secrets.webp"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/foo/bar.webp"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/FOO.webp"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.webp?x=1"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("hotrc_ds650.webp"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.WEBP"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/1abc.webp"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/../secrets.webp"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/foo/bar.webp"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/FOO.webp"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/hotrc_ds650.webp?x=1"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("hotrc_ds650.webp"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/hotrc_ds650.WEBP"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/1abc.webp"));
 }
 
 void test_an_svg_path_is_not_claimed_as_a_photograph() {
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.svg"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/hotrc_ds650.svg"));
 }
 
 void test_the_webp_suffix_is_required() {
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650"));
-    TEST_ASSERT_FALSE(webPathIsProductPhoto("/hotrc_ds650.web"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/hotrc_ds650"));
+    TEST_ASSERT_FALSE(webPathIsWebpPicture("/hotrc_ds650.web"));
 }
 
 int main() {

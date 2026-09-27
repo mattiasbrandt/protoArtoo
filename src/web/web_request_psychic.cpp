@@ -663,7 +663,7 @@ void initPsychicWebServer() {
         auto handleProductPhoto = [](PsychicRequest* vendorReq,
                                      PsychicResponse* vendorResp) -> esp_err_t {
             const String path = vendorReq->path();
-            if (!webPathIsProductPhoto(path.c_str()) || !LittleFS.exists(path)) {
+            if (!webPathIsWebpPicture(path.c_str()) || !LittleFS.exists(path)) {
                 WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
                 WebRequest req(&ctx);
                 handleNotFound(req);
