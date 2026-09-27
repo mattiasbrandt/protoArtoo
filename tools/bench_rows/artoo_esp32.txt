@@ -373,6 +373,17 @@ send system.status.logs
 pause Run: HEADED=1 BASE=http://10.0.0.22 node test/playwright/console-sweep.js -- zero console errors on every page. Press Enter.
 send system.status.health
 
+# B2a (#344) - the real 3-client SSE budget. The 4th client is refused with
+# 503 "event stream at capacity" (src/web/api_events.cpp), and a tab that
+# changes screen holds ONE slot for the whole session instead of taking and
+# releasing one per navigation. Both exist only on hardware; #344 left them
+# here. Run with no browser tab open on the board.
+@row 344 the-fourth-stream-is-refused
+send system.status.health
+pause Open three streams (for i in 1 2 3; do curl -sN http://10.0.0.22/api/events >/dev/null & done), then curl -s -o /dev/null -w '%{http_code}' http://10.0.0.22/api/events and keep the code. Fetch GET /api/status (sseClients, refusedSseCap), then kill the three curls. Press Enter.
+pause Open ONE tab, walk every surface in the nav, then fetch GET /api/status: keep sseClients and sseClientsPeak. Press Enter.
+send system.status.health
+
 # B2b (#359) - STOP takes the press on every surface, dialogs open included.
 # A safety invariant and a shipped defect. The script leaves the estop latched;
 # the health read proves the press reached the firmware.
