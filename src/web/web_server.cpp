@@ -15,7 +15,6 @@
 #ifdef ARDUINO
 #include <Update.h>
 #endif
-#include <esp_heap_caps.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -31,6 +30,7 @@
 #include "../../include/config.h"
 #include "../../include/config_cache.h"
 #include "../../include/failed_alloc_tracker.h"
+#include "../../include/heap_reading.h"
 #include "../../include/api_aux_led.h"  // LitWireReading, formatLitWiresJson()
 #include "../../include/aux_led.h"
 #include "../../include/board_outputs.h"
@@ -84,16 +84,6 @@ bool littleFsReady = false;
 // admission middleware reaches it through the opaque api_profiler.h interface,
 // which compiles away in ordinary images.
 
-#ifdef ARDUINO
-static size_t largestFreeBlock8Bit() {
-    return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-#else
-static size_t largestFreeBlock8Bit() {
-    return SIZE_MAX;
-}
-#endif
-
 // Sized for the longest stamp the version scheme composes (include/status_json.h),
 // so the copy in loadFsVersion() never truncates the identity acceptance runs
 // verify.
@@ -117,20 +107,14 @@ const uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS = 20000;
 
 namespace {
 
-// MALLOC_CAP_INTERNAL - dominated by a constant ~36 KB leftover-IRAM block
-// that malloc can never allocate. Kept ONLY to keep the legacy
-// heapLargestBlock status field stable for existing consumers; never use it
-// for heap-health decisions. The real pool is largestFreeBlock8Bit().
-static uint32_t webHeapMaxAlloc() {
-    return (uint32_t)ESP.getMaxAllocHeap();
-}
-
+// The OTA heap log lines carry the figures /api/status publishes under the
+// same names: the Internal Data Heap's free and minimum, and the Buffer
+// Reading as largest8bit (include/heap_reading.h).
 static void logOtaHeapCheckpoint(const char* label) {
-    PA_LOG_INFO("ArduinoOTA", "%s heap free=%lu min=%lu largest8bit=%lu",
-                label,
-                (unsigned long)ESP.getFreeHeap(),
-                (unsigned long)ESP.getMinFreeHeap(),
-                (unsigned long)largestFreeBlock8Bit());
+    const HeapInternalDataReading dataHeap = heapReadInternalData();
+    PA_LOG_INFO("ArduinoOTA", "%s heap free=%lu min=%lu largest8bit=%lu", label,
+                (unsigned long)dataHeap.free, (unsigned long)dataHeap.minEver,
+                (unsigned long)heapReadBufferLargest());
 }
 
 void loadFsVersion() {
@@ -271,12 +255,9 @@ static void captureStatusJsonInputs(StatusJsonInputs* in) {
     }
     taskEXIT_CRITICAL(&robotStateMux);
     in->uptimeMs = millis();
-    in->heapFree = ESP.getFreeHeap();
-    in->heapMin = ESP.getMinFreeHeap();
-    in->heapLargestBlock = webHeapMaxAlloc();
-    // Why each of the next three is published is said where it is written
-    // (src/web/status_json.cpp).
-    in->heapLargest8bit = (uint32_t)largestFreeBlock8Bit();
+    // Which reading each heap key is, and why each of the next two is
+    // published, is said where they are written (src/web/status_json.cpp).
+    captureStatusHeapReadings(in);
     in->failedAllocs = failedAllocTrackerCount();
     in->sseClients = (unsigned)webEventStreamClientCount();
     in->firmwareVersion = PA_FIRMWARE_VERSION;
@@ -501,10 +482,11 @@ static void otaServiceTask(void*) {
         if (s_lastOtaLoggedPct == 255 || pct == 100U ||
             pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
             s_lastOtaLoggedPct = pct;
+            const HeapInternalDataReading dataHeap = heapReadInternalData();
             PA_LOG_INFO("ArduinoOTA", "progress %u%% heap free=%lu min=%lu largest8bit=%lu",
-                        (unsigned)pct, (unsigned long)ESP.getFreeHeap(),
-                        (unsigned long)ESP.getMinFreeHeap(),
-                        (unsigned long)largestFreeBlock8Bit());
+                        (unsigned)pct, (unsigned long)dataHeap.free,
+                        (unsigned long)dataHeap.minEver,
+                        (unsigned long)heapReadBufferLargest());
         }
     });
     ArduinoOTA.onEnd([]() {

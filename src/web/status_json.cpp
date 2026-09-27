@@ -3,7 +3,9 @@
 //
 // formatStatusJson(): the /api/status document written from a captured
 // StatusJsonInputs (include/status_json.h). Holds no device dependency, so the
-// native suite builds the same document the droid sends (#428).
+// native suite builds the same document the droid sends (#428). The heap part
+// of the capture lives here too, reading through include/heap_reading.h, whose
+// native stand-in a test can set.
 // =============================================================================
 
 #include "status_json.h"
@@ -15,6 +17,7 @@
 #include "audio_sound_member.h"
 #include "audio_task.h"
 #include "drive_speed_preset.h"
+#include "heap_reading.h"
 #include "web_admission.h"
 #include "web_event_stream.h"
 #include "web_response_deadline.h"
@@ -70,6 +73,17 @@ bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, cons
 
 }  // namespace
 
+void captureStatusHeapReadings(StatusJsonInputs* in) {
+    if (in == nullptr) {
+        return;
+    }
+    const HeapInternalDataReading dataHeap = heapReadInternalData();
+    in->heapFree = dataHeap.free;
+    in->heapMin = dataHeap.minEver;
+    in->heapLargestBlock = dataHeap.largest;
+    in->heapLargest8bit = heapReadBufferLargest();
+}
+
 bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& in) {
     if (buffer == nullptr || bufferSize == 0) {
         return false;
@@ -121,10 +135,10 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         in.uptimeMs, in.firmwareVersion, in.fsVersion,
         in.resetReason,
         in.heapFree, in.heapMin, (unsigned long)in.heapLargestBlock,
-        // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
-        // heapLargestBlock above uses MALLOC_CAP_INTERNAL and can diverge
-        // wildly from what the guards actually see; both are emitted so the
-        // divergence itself is observable.
+        // The Buffer Reading, the figure every admission guard judges by.
+        // heapLargestBlock above is the Internal Data Heap's largest block;
+        // on the ESP32-P4 this one counts PSRAM and can be megabytes larger.
+        // Both are emitted so the divergence itself is observable.
         (unsigned long)in.heapLargest8bit,
         // Failed allocations since boot, from the always-compiled tracker
         // (include/failed_alloc_tracker.h). ADR 0017's heap rule wants this
@@ -151,7 +165,8 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         // this same payload is by definition never the one that caused a
         // refusal, so a bare refusal count cannot say how far the floor was
         // crossed -- and crossing depth is what the out-of-scope rule demands
-        // before any floor is argued about.
+        // before any floor is argued about. Both are Buffer Readings, like
+        // heapLargest8bit (include/heap_reading.h).
         (unsigned long)g_webAcceptRejectLargestBlock,
         g_webAcceptMinLargestBlockSeen == UINT32_MAX
             ? -1L

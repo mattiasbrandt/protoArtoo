@@ -33,6 +33,7 @@
 #include "board_outputs.h"
 #include "component_registry.h"
 #include "drive_motion_test_hooks.h"  // g_test_millis
+#include "heap_reading_test_hooks.h"   // g_test_heap_internal_data, g_test_heap_buffer_largest
 #include "reset_reason.h"
 #include "status_json.h"
 #include "web_admission.h"
@@ -209,6 +210,8 @@ void setUp(void) {
     memset(g_fsVersion, 'f', sizeof(g_fsVersion) - 1);
     g_test_millis = 1000;
     setCountersToTheirWidest();
+    g_test_heap_internal_data = {262144, 262144, 262144};
+    g_test_heap_buffer_largest = 262144;
 }
 
 void tearDown(void) {
@@ -290,8 +293,31 @@ void test_the_worst_case_status_document_fits_its_buffer(void) {
     TEST_ASSERT_EQUAL_STRING(worst, bounded);
 }
 
+// Each heap key publishes one named reading (#381): heapFree, heapMin and
+// heapLargestBlock the Internal Data Heap, heapLargest8bit the Buffer Reading.
+// heapLargestBlock read a third mask here once, so the same key meant two
+// things on /api/status and /api/health. The values are distinct and the
+// Buffer Reading is P4-sized, so a key wired to the wrong reading shows.
+void test_the_heap_keys_publish_their_readings(void) {
+    g_test_heap_internal_data = {41000, 38000, 30000};
+    g_test_heap_buffer_largest = 4000000;
+
+    StatusJsonInputs in = widestInputs();
+    captureStatusHeapReadings(&in);
+    static char body[kUnbounded];
+    TEST_ASSERT_TRUE(formatStatusJson(body, sizeof(body), in));
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(deserializeJson(doc, body) == DeserializationError::Ok);
+    TEST_ASSERT_EQUAL_UINT32(41000, doc["heapFree"].as<uint32_t>());
+    TEST_ASSERT_EQUAL_UINT32(38000, doc["heapMin"].as<uint32_t>());
+    TEST_ASSERT_EQUAL_UINT32(30000, doc["heapLargestBlock"].as<uint32_t>());
+    TEST_ASSERT_EQUAL_UINT32(4000000, doc["heapLargest8bit"].as<uint32_t>());
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_worst_case_status_document_fits_its_buffer);
+    RUN_TEST(test_the_heap_keys_publish_their_readings);
     return UNITY_END();
 }

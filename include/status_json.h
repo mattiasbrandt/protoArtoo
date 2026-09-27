@@ -108,6 +108,13 @@ struct StatusJsonInputs {
 #endif
 };
 
+// The heap part of that capture: heapFree, heapMin and heapLargestBlock are the
+// Internal Data Heap, heapLargest8bit is the Buffer Reading
+// (include/heap_reading.h). buildStatusJson() calls it; it is defined beside
+// the format rather than in src/web/web_server.cpp so the native suite can
+// prove which reading each key publishes.
+void captureStatusHeapReadings(StatusJsonInputs* in);
+
 // The buffer both senders build the document in: GET /api/status in the web
 // request scratch (include/web_request_scratch.h) and the WebEvents "status"
 // event in that task's own body buffer (src/web/web_server.cpp).

@@ -70,7 +70,7 @@ typedef struct {
 } ProfilerRequestTrace;
 
 typedef struct {
-    // Tier 1 globals, read straight from the IDF heap APIs
+    // Tier 1 globals: the Internal Data Heap (include/heap_reading.h)
     uint32_t heapFree;
     uint32_t heapMin;
     uint32_t heapLargest;
@@ -121,9 +121,10 @@ static inline const char* profilerHwmStatus(uint32_t hwmBytes) {
 // failedAllocTrackerInit() beside this call.
 void profilerInit();
 
-// Close the current monitoring window (reading its local low-water mark via
-// heap_caps_get_info before stopping) and open a new window with newLabel.
-// Each closed window is stored as a snapshot entry in the ring.
+// Close the current monitoring window (reading the Internal Data Heap's local
+// low-water mark via heapReadInternalDataInfo() before stopping) and open a new
+// window with newLabel. Each closed window is stored as a snapshot entry in the
+// ring.
 // Call from SafetyMonitorTask on mode transitions (RC link, dome connect, etc.).
 void profilerModeTransition(const char* newLabel);
 

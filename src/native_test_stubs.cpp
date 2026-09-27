@@ -23,8 +23,9 @@ portMUX_TYPE robotStateMux = 0;
 // Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
-// Arduino ESP instance (heap methods used by console_module.cpp)
-// Minimal stub with zero values — avoids affecting other 1756 tests
+// Arduino ESP instance, declared by test/stubs/include/Arduino.h. Nothing in
+// the native build reads the heap through it: the heap readings have their own
+// stand-ins below ("Heap readings").
 ESPClass ESP;
 
 // Logging sinks. Defined further down, beside the log ring stand-in they are
@@ -930,4 +931,32 @@ RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* 
     return g_test_dispatch_outcome;
 }
 
+// -----------------------------------------------------------------------------
+// Heap readings (include/heap_reading.h). src/heap_reading.cpp reads the
+// ESP-IDF heap and is not in the native build; these return values a test sets
+// through include/heap_reading_test_hooks.h, defaulting to 262144, the figure
+// the native tests written before the module assumed.
+#include "heap_reading_test_hooks.h"
+HeapInternalDataReading g_test_heap_internal_data = {262144, 262144, 262144};
+uint32_t g_test_heap_buffer_largest = 262144;
+
+HeapInternalDataReading heapReadInternalData() {
+    return g_test_heap_internal_data;
+}
+
+uint32_t heapReadInternalDataFree() {
+    return g_test_heap_internal_data.free;
+}
+
+uint32_t heapReadBufferLargest() {
+    return g_test_heap_buffer_largest;
+}
+
+void heapReadInternalDataInfo(HeapInternalDataInfo* out) {
+    if (out == nullptr) {
+        return;
+    }
+    *out = HeapInternalDataInfo{};
+    out->minimumFreeBytes = g_test_heap_internal_data.minEver;
+}
 #endif

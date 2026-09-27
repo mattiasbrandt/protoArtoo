@@ -33,6 +33,7 @@
 #include "failsafe_boot_sbus.h"
 #include "failsafe_boot_twdt.h"
 #include "failsafe_gate.h"
+#include "heap_reading.h"
 #include "ledc_pwm.h"
 #include "log_buffer.h"
 #include "mood.h"
@@ -95,7 +96,7 @@ void logBootHealth() {
                 "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu audio_volume=%u",
                 cfg.drive.speedLimitMax, (unsigned long)cfg.drive.sbusTimeoutMs,
                 (unsigned long)cfg.drive.webDriveTimeoutMs, cfg.audio.audioVolume);
-    PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)ESP.getFreeHeap());
+    PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)heapReadInternalDataFree());
 }
 
 }  // namespace

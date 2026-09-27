@@ -67,8 +67,8 @@ struct HealthSnapshot {
 };
 
 // Capture the health snapshot: estop/SBUS diagnostics under robotStateMux,
-// WiFi connectivity through the network manager seam, heap through the
-// Arduino/esp_heap_caps APIs (stubbed on native builds).
+// WiFi connectivity through the network manager seam, and the Internal Data
+// Heap through include/heap_reading.h (stubbed on native builds).
 // thread-safe: yes (owns its own short critical section)
 void captureHealthSnapshot(HealthSnapshot* out);
 
@@ -235,9 +235,9 @@ void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const c
 //         wifiConnected     - true if control-surface WiFi is available (AP active or STA
 //         connected) wifiClientConnected - true if at least one station is attached to soft AP
 //         fsReady           - true if LittleFS is mounted
-//         heapFree          - current free heap in bytes
-//         heapMin           - minimum free heap since boot in bytes
-//         heapLargestBlock  - largest contiguous free heap block in bytes
+//         heapFree          - Internal Data Heap free bytes (include/heap_reading.h)
+//         heapMin           - Internal Data Heap low-water mark since boot, bytes
+//         heapLargestBlock  - Internal Data Heap largest free block, bytes
 //         wifiRssi          - STA RSSI in dBm (0 when STA disconnected)
 //         uptimeMs          - milliseconds since boot (#225, same key /api/status uses)
 //         resetReason       - resetReasonName()'s static string for the last reset (#225)

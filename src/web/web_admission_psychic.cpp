@@ -14,7 +14,6 @@
 #include <Arduino.h>
 #include <PsychicHttp.h>
 #include <esp_err.h>
-#include <esp_heap_caps.h>
 #include <esp_http_server.h>
 #include <esp_timer.h>
 #include <stdio.h>
@@ -22,6 +21,7 @@
 
 #include "../../include/api_admission_trace.h"
 #include "../../include/api_profiler.h"
+#include "../../include/heap_reading.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
 #include "../../include/web_backend_psychic.h"
@@ -130,9 +130,11 @@ static_assert(2 * (size_t)FILE_CHUNK_SIZE + kUploadParserBufferSlack <=
 
 // Sampler function for the admission session. Called by the session when the
 // rate check passes and a heap sample is needed. Updates the low-water mark.
-// The session manages caching, so this just does the walk.
+// The session manages caching, so this just does the walk. Admission is judged
+// by the Buffer Reading (include/heap_reading.h): on the ESP32-P4 a request
+// buffer over 4,096 B can come from PSRAM, so PSRAM is rightly counted here.
 size_t sessionHeapSampler(void*) {
-    const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const size_t largest = heapReadBufferLargest();
     // The low-water mark the guard itself observed. /api/status reports
     // the resting value, which by definition is never the one that caused
     // a refusal, so without this the depth of a transient dip is invisible.
@@ -171,7 +173,7 @@ void traceDecision(WebAdmissionTraceLayer layer, WebAdmissionTraceOutcome outcom
     // each captures its own clock at a different point relative to the sampler.
     const uint32_t nowMs = millis();
 #if PA_ADMISSION_TRACE_FRESH
-    const uint32_t fresh = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const uint32_t fresh = heapReadBufferLargest();
 #else
     const uint32_t fresh = 0;
 #endif

@@ -97,6 +97,7 @@
                                   // set-volume's own queue stub (#221 remainder)
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
                                   // own queue stub (#221 remainder)
+#include "heap_reading_test_hooks.h"  // g_test_heap_* - the health heap keys (#381)
 #include "web_server_test_hooks.h"  // g_test_restart_requests - system.action.reboot's (#225)
                                      // own observation hook, shared with test_api_motion_routes.cpp
 
@@ -409,6 +410,8 @@ void setUp() {
     seqStoreIndexClear();
     g_test_seq_delete_ok = true;
     g_test_seq_delete_calls = 0;
+    g_test_heap_internal_data = {262144, 262144, 262144};
+    g_test_heap_buffer_largest = 262144;
     // Armed after this setUp()'s own seeding: from here every config write
     // must run inside a Write Window, as it must on the droid after boot (#418).
     configWriteWindowArm(true);
@@ -462,6 +465,21 @@ void test_health_executes_synchronously_and_carries_real_state() {
                                 "field must be named littleFsReady (the API JSON key), not fsReady");
     TEST_ASSERT_NULL_MESSAGE(capturedValue("fsReady"),
                              "fsReady is not a real JSON key on this response");
+}
+
+// The health snapshot behind system.status.health, which GET /api/health
+// renders too, publishes its three heap keys from the Internal Data Heap and
+// never the Buffer Reading (#381): heapLargestBlock was the 8-bit block here
+// and the INTERNAL block on /api/status. On the ESP32-P4 the Buffer Reading
+// counts PSRAM, which is why it is set megabytes apart.
+void test_health_heap_keys_are_the_internal_data_heap() {
+    g_test_heap_internal_data = {41000, 38000, 30000};
+    g_test_heap_buffer_largest = 4000000;
+    runQuery("system.status.health");
+
+    TEST_ASSERT_EQUAL_STRING("41000", capturedValue("heapFree"));
+    TEST_ASSERT_EQUAL_STRING("38000", capturedValue("heapMin"));
+    TEST_ASSERT_EQUAL_STRING("30000", capturedValue("heapLargestBlock"));
 }
 
 // =============================================================================
@@ -5537,6 +5555,7 @@ int main(int, char**) {
 
     RUN_TEST(test_health_three_way_field_match);
     RUN_TEST(test_health_executes_synchronously_and_carries_real_state);
+    RUN_TEST(test_health_heap_keys_are_the_internal_data_heap);
 
     RUN_TEST(test_wifi_three_way_field_match);
     RUN_TEST(test_wifi_carries_active_wifi_config_ssid);

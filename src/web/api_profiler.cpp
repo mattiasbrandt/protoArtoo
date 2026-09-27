@@ -10,10 +10,9 @@
 //
 // IDF 5.5 API usage (pioarduino 55.03.37 = IDF 5.5.2):
 //   Tier 1:
-//     heap_caps_get_free_size(MALLOC_CAP_8BIT)
-//     heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)
-//     heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)
-//     heap_caps_get_info()    -> multi_heap_info_t
+//     heapReadInternalData()      - free, minimum, largest of the Internal Data
+//     heapReadInternalDataInfo()    Heap and its allocator counters; the mask is
+//                                   chosen in include/heap_reading.h, not here
 //     uxTaskGetStackHighWaterMark()
 //     heap_caps_monitor_local_minimum_free_size_start/stop() - scoped low-water marks
 //     heap_caps_register_failed_alloc_callback() - NOT here: the hook and its
@@ -54,6 +53,7 @@
 
 #include "api_json_response.h"
 #include "failed_alloc_tracker.h"
+#include "heap_reading.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "web_server.h"
@@ -239,10 +239,10 @@ void profilerModeTransition(const char* newLabel) {
     // read without the mutex here; we take it only to mark the window closed/open
     // so buildProfilerJson (web handler) sees a consistent state.
     if (s_windowOpen) {
-        multi_heap_info_t info;
-        heap_caps_get_info(&info, MALLOC_CAP_8BIT);
-        uint32_t localMin = (uint32_t)info.minimum_free_bytes;
-        uint32_t largestBlock = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        HeapInternalDataInfo info = {};
+        heapReadInternalDataInfo(&info);
+        uint32_t localMin = info.minimumFreeBytes;
+        uint32_t largestBlock = heapReadInternalData().largest;
         heap_caps_monitor_local_minimum_free_size_stop();
         pushSnapshot(s_windowLabel, localMin, largestBlock, s_windowOpenTs);
         taskENTER_CRITICAL(&s_windowMux);
@@ -410,8 +410,8 @@ bool profilerRequestTraceAt(size_t index, ProfilerRequestTrace* out) {
 // interrupts disabled on a real-time core - unacceptably long critical section for a diagnostic.
 //
 // The Tier 1 globals are read here too, not by each adapter: fragRatio is a
-// derived number, and two adapters deriving it from two separate reads of
-// heap_caps_get_free_size() could print two different ratios for one snapshot.
+// derived number, and two adapters deriving it from two separate readings of
+// the heap could print two different ratios for one snapshot.
 //
 // Tier 2 (CONFIG_HEAP_TASK_TRACKING per-task heap attribution) is deliberately
 // NOT part of this reading and stays inside the JSON adapter below. No
@@ -425,19 +425,21 @@ void profilerRead(ProfilerReading* out) {
         return;
     }
 
-    // Tier 1 global metrics - direct IDF 5.5 APIs (no mux needed)
-    out->heapFree = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    out->heapMin = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
-    out->heapLargest = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    out->fragRatio =
-        (out->heapFree > 0U) ? (1.0f - (float)out->heapLargest / (float)out->heapFree) : 0.0f;
+    // Tier 1 global metrics: the Internal Data Heap, the same reading
+    // /api/status publishes as heapFree/heapMin/heapLargestBlock (no mux
+    // needed).
+    const HeapInternalDataReading dataHeap = heapReadInternalData();
+    out->heapFree = dataHeap.free;
+    out->heapMin = dataHeap.minEver;
+    out->heapLargest = dataHeap.largest;
+    out->fragRatio = heapInternalDataFragRatio(dataHeap);
 
-    multi_heap_info_t info;
-    heap_caps_get_info(&info, MALLOC_CAP_8BIT);
-    out->allocBlocks = (uint32_t)info.allocated_blocks;
-    out->freeBlocks = (uint32_t)info.free_blocks;
-    out->totalBlocks = (uint32_t)info.total_blocks;
-    out->windowMinFree = (uint32_t)info.minimum_free_bytes;
+    HeapInternalDataInfo info = {};
+    heapReadInternalDataInfo(&info);
+    out->allocBlocks = info.allocatedBlocks;
+    out->freeBlocks = info.freeBlocks;
+    out->totalBlocks = info.totalBlocks;
+    out->windowMinFree = info.minimumFreeBytes;
 
     // Failed allocations come from the always-compiled tracker
     // (include/failed_alloc_tracker.h), which owns the IDF hook. The profiler
