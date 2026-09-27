@@ -788,7 +788,14 @@ nav > a {
   font-weight: 600;
 }
 
-.note {
+/* The Sequences dome step's notice about which panel map it is drawing
+   (data/seq.js) is a note, and is drawn as one: amber where the builder has
+   something to do about the dome -- it is not answering, or answers in a
+   layout this build cannot read -- blue while it is still being asked, or
+   when the map shown is the last one it sent. It had no rule at all, and read
+   as loose body text above the map (#355). */
+.note,
+.dome-layout-notice {
   padding: var(--space-sm) var(--space-md);
   background: var(--well);
   border-left: 2px solid var(--border-strong);
@@ -803,11 +810,15 @@ nav > a {
   font-weight: 600;
 }
 
-.note-act {
+.note-act,
+.dome-layout-vendored,
+.dome-layout-error {
   border-left-color: var(--warning);
 }
 
-.note-info {
+.note-info,
+.dome-layout-pending,
+.dome-layout-cached {
   border-left-color: var(--accent);
 }
 
