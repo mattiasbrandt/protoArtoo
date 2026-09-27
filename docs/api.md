@@ -2184,6 +2184,8 @@ provisioning/recovery flow (ADR 0015).
   Provisioning or Network Recovery Mode this is the Default AP Credential's
   SSID (`protoArtoo`), not necessarily the operator's saved Standalone AP
   Mode SSID.
+- `staSsid`: the network the client side is joined to, or trying to join
+  (empty when it has none).
 - `networkRecovery`: `true` only while Network Recovery Mode is active for
   this boot (entered via the local power-cycle gesture — see
   [docs/wifi-provisioning.md](wifi-provisioning.md)). It does not indicate
@@ -2198,7 +2200,7 @@ curl -s http://artoo.local/api/wifi
 #### Example response
 
 ```json
-{"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","wifiRssi":-70,"networkRecovery":false}
+{"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","staSsid":"HomeNetwork","wifiRssi":-70,"networkRecovery":false}
 ```
 
 ### POST /api/wifi
