@@ -9,9 +9,19 @@
 # (docs/console-protocol.md's "no expect directive" decision) -- a reviewer
 # reads the transcript against the linked ticket.
 #
+# Plain requests to the droid's own routes are `http` steps, not pauses: they
+# go to --http-base (or --http's base), and the answers a row keeps (`> FILE`)
+# land in --run-dir. Board 1 has no network (its C6 is unflashable): run it
+# with --no-http, and every http step prints [HTTP-SKIPPED] instead of the run
+# being refused.
+#
 # Run with either adapter:
-#   python3 tools/console_client.py --port /dev/ttyACM0 --script tools/bench_rows/firebeetle2.txt
-#   python3 tools/console_client.py --http http://<host> --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --port /dev/ttyACM0 --http-base http://<host> \
+#     --run-dir tasks/bench-run-p4 --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --http http://<host> --run-dir tasks/bench-run-p4 \
+#     --script tools/bench_rows/firebeetle2.txt
+#   python3 tools/console_client.py --port /dev/ttyACM0 --no-http \
+#     --script tools/bench_rows/firebeetle2.txt                       (board 1)
 #
 # Select rows (by name only, e.g. "detach-replug" -- not the ticket number):
 #   --rows detach-replug,tab-completion   (explicit order, not file order)
@@ -306,13 +316,16 @@ send system.status.health
 # this chip arm gives audio its own controller (UART_PORT_AUDIO=3) where
 # artoo-esp32 shares one with the dome link, and PA_CAP_DEDICATED_AUDIO_UART
 # reports 1 here and 0 there. The Lane manifest is HTTP-only by design (see the
-# block comment above), so both reads happen at the pause.
+# block comment above), so both reads are one kept GET /api/identity; checking
+# every lane against this chip's arm of include/config.h is #355's.
 @row 339 the-controller-says-where-it-routes-on-the-p4
 send system.api.get-identity
-pause Fetch GET /api/identity from this board and keep board_lanes and board_capabilities for #355. Check every lane against this chip's arm of include/config.h. Press Enter.
+http GET /api/identity > p4-routes-identity.json
 send system.status.health
 
 # A7 (#340) on the P4 - the Component Member change, which board 1 cannot make.
+# The change stays a pause: "the other supported member" depends on which one
+# this board reports fitted in the answers above, which the sheet cannot know.
 @row 340 the-sound-member-survives-a-reboot-on-the-p4
 send system.api.get-components
 send sound.status.current
@@ -327,12 +340,15 @@ send sound.status.current
 # distinctive pre-migration values are written over HTTP BEFORE the Wave 0
 # image is flashed, and #355 carries the numbers for this board (they are
 # deliberately different from artoo's so the two transcripts cannot be
-# confused). Endpoints are not console-readable, so both reads are HTTP.
+# confused). Endpoints are not console-readable, so both reads are HTTP, kept
+# for #355 to check the ten endpoint values in. With both reads http steps the
+# row has no pause, so --skip-manual selects it: whether this board's NVS still
+# holds a crossing to make is #355's to say, not the sheet's.
 @row 345 the-calibration-crosses-onto-the-rows-on-the-p4
-pause Fetch GET /api/config and keep the ten endpoint values for #355 - they must be this board's pre-migration numbers, not defaults. Press Enter.
+http GET /api/config > p4-calibration-pre-migration-config.json
 send system.action.set-mode mode=stationary
 send system.status.health
-pause Fetch GET /api/config again. The first save has now run, so this is the post-migration read. Press Enter.
+http GET /api/config > p4-calibration-post-migration-config.json
 
 # =============================================================================
 # Epic #175 closure session (#355) -- the P4's half, only if the operator puts
@@ -343,15 +359,19 @@ pause Fetch GET /api/config again. The first save has now run, so this is the po
 # on artoo and is cut on #355, not repeated. system.status.health carries the
 # heap keys, resetReason and estop, so those reads need no HTTP. Rows marked
 # HTTP need a working C6 (board 2, by operator decision only); skip them on
-# board 1.
+# board 1. The image and last-run rows also run on board 1, where --no-http
+# skips their http steps and the Console sends still answer.
 # =============================================================================
 
-# Axis 1 - the image is what we think it is. On board 1 (no HTTP) read the
-# version from the boot log instead of the pause's fetch.
+# Axis 1 - the image is what we think it is: firmwareVersion and the
+# filesystem stamp both name the intended commit, no -dirty. On board 1 (no
+# HTTP, --no-http) the two fetches are skipped: read the version from the boot
+# log in system.status.logs instead.
 @row 355 the-image-is-what-we-think-on-the-p4
 send system.status.health
 send system.status.logs
-pause HTTP: fetch GET /api/status (firmwareVersion) and /fs-version.json - both name the intended commit, no -dirty. Board 1: check the boot log above instead. Press Enter.
+http GET /api/status
+http GET /fs-version.json
 
 # #428 on the P4 - a requested restart runs on SafetyMonitor's stack here too
 # (5,120 B on this chip).
@@ -389,8 +409,11 @@ send system.status.health
 # the fix was read from the disassembly and never run. Board 1 exercises the
 # Console task; the web Console path (httpd stack) needs HTTP, so board 2.
 # #430 - the P4 stacks were raised +15,872 B: the idle heap is read beside it.
+# The web Console half is two http steps (board 2 only; --no-http skips them on
+# board 1); #355 reads resetReason in the GET /api/status answer.
 @row 427 the-last-run-op-answers-on-the-p4
 send system.status.health
 send dome.api.get-sequence-last-run
 send system.status.health
-pause HTTP (board 2 only): POST /api/console command=dome.api.get-sequence-last-run and keep the answer; then GET /api/status resetReason. Board 1: skip. Press Enter.
+http POST /api/console command=dome.api.get-sequence-last-run > p4-web-console-last-run.json
+http GET /api/status
