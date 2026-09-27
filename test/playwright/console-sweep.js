@@ -1,44 +1,70 @@
 // Console-error sweep across every served page on the live controller.
 // Standing requirement: zero console errors on any page.
+//
+// HEADED=1 opens a real window for a bench session the operator watches;
+// STEP=1 also waits for Enter after each page so he can stop on one. The
+// default stays headless for unattended runs.
 const { chromium } = require("playwright");
+const fs = require("node:fs");
+const path = require("node:path");
+const readline = require("node:readline");
 
 const BASE = process.env.BASE || "http://10.0.0.22";
-const PAGES = ["index.html","drive.html","dome.html","sound.html","servo.html",
-               "seq.html","rc.html","configuration.html","maintenance.html","setup.html",
-               "wifi.html","firmware.html"];
+// Read from data/ rather than listed by hand: a hand list went stale as the
+// epic added Parts, Wiring, Lights and the Dashboard document, and a sweep
+// that never loads a page says nothing about it. Underscore-prefixed pages
+// are excluded on purpose: _recovery_kernel.html is the recovery kernel,
+// driven by its own scripts in test/playwright/recovery/.
+const DATA_DIR = path.join(__dirname, "..", "..", "data");
+const PAGES = fs.readdirSync(DATA_DIR)
+  .filter((f) => f.endsWith(".html") && !f.startsWith("_"))
+  .sort();
 const SETTLE_MS = Number(process.env.SETTLE_MS || 6000);
+const HEADED = process.env.HEADED === "1";
+const STEP = process.env.STEP === "1";
+
+const waitForEnter = (prompt) => new Promise((resolve) => {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  rl.question(prompt, () => { rl.close(); resolve(); });
+});
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: !HEADED });
   const summary = [];
-  for (const p of PAGES) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    const jsErrors = [], consoleErrors = [], resourceErrors = [];
-    page.on("pageerror", (e) => jsErrors.push(String(e).split("\n")[0]));
-    page.on("console", (m) => {
-      if (m.type() !== "error") return;
-      const t = m.text();
-      (t.startsWith("Failed to load resource") ? resourceErrors : consoleErrors).push(t.slice(0, 160));
-    });
-    try {
-      await page.goto(`${BASE}/${p}`, { waitUntil: "domcontentloaded", timeout: 20000 });
-      await page.waitForTimeout(SETTLE_MS);   // let the bootstrap finish; never networkidle (SSE stays open)
-    } catch (e) {
-      jsErrors.push("NAV FAILED: " + e.message.split("\n")[0]);
+  // Closed on every exit, a failed one included: headed, an abandoned run
+  // leaves a real window on the operator's desktop.
+  try {
+    for (const p of PAGES) {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      const jsErrors = [], consoleErrors = [], resourceErrors = [];
+      page.on("pageerror", (e) => jsErrors.push(String(e).split("\n")[0]));
+      page.on("console", (m) => {
+        if (m.type() !== "error") return;
+        const t = m.text();
+        (t.startsWith("Failed to load resource") ? resourceErrors : consoleErrors).push(t.slice(0, 160));
+      });
+      try {
+        await page.goto(`${BASE}/${p}`, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(SETTLE_MS);   // let the bootstrap finish; never networkidle (SSE stays open)
+      } catch (e) {
+        jsErrors.push("NAV FAILED: " + e.message.split("\n")[0]);
+      }
+      const uniq = (a) => [...new Set(a)];
+      summary.push({ page: p, js: uniq(jsErrors), console: uniq(consoleErrors), resource: uniq(resourceErrors) });
+      if (STEP) await waitForEnter(`${p}: ${jsErrors.length + consoleErrors.length} errors. Enter for the next page... `);
+      await page.close();
     }
-    const uniq = (a) => [...new Set(a)];
-    summary.push({ page: p, js: uniq(jsErrors), console: uniq(consoleErrors), resource: uniq(resourceErrors) });
-    await page.close();
+  } finally {
+    await browser.close();
   }
-  await browser.close();
 
   let bad = 0;
-  console.log("page             jsErr consoleErr resourceErr");
-  console.log("---------------- ----- ---------- -----------");
+  console.log("page                 jsErr consoleErr resourceErr");
+  console.log("-------------------- ----- ---------- -----------");
   for (const s of summary) {
     const n = s.js.length + s.console.length;
     if (n > 0) bad++;
-    console.log(`${s.page.padEnd(16)} ${String(s.js.length).padStart(5)} ${String(s.console.length).padStart(10)} ${String(s.resource.length).padStart(11)}`);
+    console.log(`${s.page.padEnd(20)} ${String(s.js.length).padStart(5)} ${String(s.console.length).padStart(10)} ${String(s.resource.length).padStart(11)}`);
   }
   console.log("");
   for (const s of summary) {
