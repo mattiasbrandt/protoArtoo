@@ -27,7 +27,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../include/api_not_found.h"
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
@@ -245,6 +244,36 @@ void streamCloseCallback(httpd_handle_t hd, int sockfd) {
         close(sockfd);
     }
 }
+
+// =============================================================================
+// Pictures (include/web_webp.h)
+//
+// Answers image/webp for every /<id>.webp the image carries, whichever page
+// names it: product photographs and Droid Build pictures alike (#355). One
+// global handler rather than an endpoint per id, so a picture added to an
+// asset set needs no route, and the server holds one handler object instead
+// of an endpoint, a PsychicWebHandler and a uri string per registry row.
+//
+// A plain PsychicHandler, not PsychicWebHandler: the web handler records every
+// client it sees in its own list, and the server only tells *endpoint*
+// handlers when a client closes (PsychicHttpServer::closeCallback), so a
+// global PsychicWebHandler would keep pointers to closed clients forever.
+// This one keeps no per-request state; canHandle() and handleRequest() run
+// back to back on the server task for the same request.
+// =============================================================================
+class WebpPictureHandler : public PsychicHandler {
+  public:
+    bool canHandle(PsychicRequest* request) override {
+        const String path = request->path();
+        return webWebpPictureRequestClaimed(request->method() == HTTP_GET, path.c_str()) &&
+               LittleFS.exists(path);
+    }
+
+    esp_err_t handleRequest(PsychicRequest* request, PsychicResponse* response) override {
+        PsychicFileResponse file(response, LittleFS, request->path(), String(webWebpContentType()));
+        return file.send();
+    }
+};
 
 }  // namespace
 
@@ -656,29 +685,12 @@ void initPsychicWebServer() {
     // from web_server.cpp verbatim.
     if (webLittleFsMounted()) {
         // PsychicHttp's MIME table has no .webp and falls back to text/plain
-        // (PsychicFileResponse.cpp:107-133). The picker photographs live at
-        // /<registry-id>.webp; one endpoint per product, registered before
-        // serveStatic(), answers image/webp (#316, ADR 0065). There is no
-        // shared prefix, so a trailing-wildcard template cannot name them.
-        auto handleProductPhoto = [](PsychicRequest* vendorReq,
-                                     PsychicResponse* vendorResp) -> esp_err_t {
-            const String path = vendorReq->path();
-            if (!webPathIsProductPhoto(path.c_str()) || !LittleFS.exists(path)) {
-                WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
-                WebRequest req(&ctx);
-                handleNotFound(req);
-                return ctx.result;
-            }
-            PsychicFileResponse file(vendorResp, LittleFS, path, String(webWebpContentType()));
-            return file.send();
-        };
-#define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key)
-#define PA_COMPONENT_PART(value, id, name, category, protocol, status, capabilities, gate, \
-                          included)                                                        \
-        s_server.on("/" id ".webp", HTTP_GET, handleProductPhoto);
-#include "../../include/component_registry.inc"
-#undef PA_COMPONENT_PART
-#undef PA_COMPONENT_CATEGORY
+        // (PsychicFileResponse.cpp:107-133). One global handler, added ahead
+        // of serveStatic() so it is asked first, answers image/webp for every
+        // /<id>.webp picture the image carries (#316, #355, ADR 0065). Global
+        // handlers are consulted in the order they were added, after no
+        // endpoint matched (PsychicHttpServer::_process).
+        s_server.addHandler(new WebpPictureHandler());
         s_server.serveStatic("/", LittleFS, "/")->setDefaultFile("index.html")->setCacheControl("no-cache");
     } else {
         PA_LOG_WARN(TAG, "LittleFS not mounted; static serving unavailable");
