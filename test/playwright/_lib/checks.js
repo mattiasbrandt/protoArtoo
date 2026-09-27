@@ -1,13 +1,15 @@
-// The harness every rule script under test/playwright/<surface>/ can run on:
-// the browser, the write guard, the precondition, the PASS/FAIL table and the
-// close. A script supplies its rule, its precondition and its checks; this
-// supplies everything a script would otherwise copy, and the write guard in
-// particular is kept in one place because it is the thing that stops a check
-// from reaching the droid.
+// The harness every script under test/playwright/ runs on: the browser, the
+// write guard, the precondition, the PASS/FAIL table, STEP and the close. A
+// rule script supplies its rule, its precondition and its checks to runCheck()
+// and this supplies the rest; the older multi-rule scripts
+// (shell/stop-every-surface.js, shell/status-plate-truth.js,
+// parts/parts-surface.js, console-sweep.js) keep their own flow and take the
+// pieces one by one. The write guard in particular is kept in one place
+// because it is the thing that stops a check from reaching the droid.
 //
-// Conventions (test/playwright/shell/stop-every-surface.js's): BASE_URL
-// (default http://10.0.0.22), headed unless HEADLESS=true, STEP=1 the only
-// thing that waits on stdin, 1440x900, FIXTURE=1 for the offline proof against
+// Conventions (test/playwright/README.md): BASE_URL (default
+// http://10.0.0.22), headed unless HEADLESS=true, STEP=1 the only thing that
+// waits on stdin, 1440x900, FIXTURE=1 for the offline proof against
 // tools/serve_editor_fixture.py with ./fixture_routes.js under it, and
 // SELFTEST=<name> (FIXTURE=1 only) to force a script's own checks to fail.
 //
@@ -25,6 +27,7 @@ const STEP = process.env.STEP === '1';
 const FIXTURE = process.env.FIXTURE === '1';
 const SELFTEST = process.env.SELFTEST || '';
 const SETTLE_MS = Number(process.env.SETTLE_MS || 1500);
+const VIEWPORT = { width: 1440, height: 900 };
 
 const PASS = 'PASS';
 const FAIL = 'FAIL';
@@ -38,6 +41,7 @@ const pathOf = (url) => {
 
 const formOf = (body) => Object.fromEntries(new URLSearchParams(body || ''));
 
+// STEP=1 is the only thing that waits on stdin.
 const step = async (prompt) => {
   if (!STEP) return;
   await new Promise((resolve) => {
@@ -47,6 +51,27 @@ const step = async (prompt) => {
       resolve();
     });
   });
+};
+
+// ---------------------------------------------------------------------------
+// The browser
+// ---------------------------------------------------------------------------
+const launchBrowser = () => chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
+
+// Closes every closable (a fixture, a relay, a context holder), then the
+// browser - on every exit, a failed one included: headed, an abandoned run
+// leaves a real window on the operator's desktop. One that fails to close is
+// reported and the rest are still closed.
+const closeAll = async (browser, closables = []) => {
+  for (const closable of closables) {
+    if (!closable) continue;
+    try {
+      await closable.close();
+    } catch (error) {
+      console.error(`could not close a fixture, relay or context: ${String(error.message).split('\n')[0]}`);
+    }
+  }
+  if (browser) await browser.close();
 };
 
 // ---------------------------------------------------------------------------
@@ -81,6 +106,18 @@ const installGuard = async (page, allow = () => false) => {
 };
 
 const describeWrite = (entry) => `${entry.allowed ? 'sent' : 'BLOCKED'} ${entry.method} ${entry.path} ${entry.body.slice(0, 80)}`.trim();
+
+// What the guard stopped from `since` on, one line each, for a script that
+// lists the stopped writes itself.
+const blockedWrites = (writes, since = 0) =>
+  writes.slice(since).filter((entry) => !entry.allowed).map((entry) => `${entry.method} ${entry.path} ${entry.body.slice(0, 60)}`.trim());
+
+// The writes a guard commonly lets out, as `allow` predicates. Both are
+// runtime only and change nothing the droid keeps.
+//   the Dashboard console's read-only catalog load (`operations`/`help`);
+const isConsoleCatalogLoad = (entry) => entry.method === 'POST' && entry.path === '/api/console' && /^command=(operations|help)\b/.test(entry.body);
+//   RC's verbose-log toggle (POST /api/rc/debug).
+const isRcDebugToggle = (entry) => entry.method === 'POST' && entry.path === '/api/rc/debug';
 
 // ---------------------------------------------------------------------------
 // Reading the droid
@@ -120,6 +157,32 @@ const estopMustBe = (latched) => async ({ page }) => {
   if (latched && !estop.latched) return 'the estop is CLEAR and this rule is about a latched one. Latch it (STOP on any surface), then run this again.';
   if (!latched && estop.latched) return 'the estop is LATCHED. Clear it on Foot Drive or the Dashboard, then run this again.';
   return null;
+};
+
+// Precondition on Sleep Mode, as runCheck() takes it.
+const sleepMustBe = (asleep) => async ({ page }) => {
+  const answer = await readJson(page, '/api/status');
+  if (answer.status !== 200 || !answer.json || typeof answer.json.sleepMode !== 'boolean') {
+    return `Sleep Mode could not be read: GET /api/status answered ${answer.status}: ${answer.text}`;
+  }
+  if (asleep && !answer.json.sleepMode) return 'the droid is AWAKE and this rule is about a sleeping one. Put it to sleep on the Dashboard, then run this again.';
+  if (!asleep && answer.json.sleepMode) return 'the droid is in Sleep Mode. Wake it on the Dashboard, then run this again.';
+  return null;
+};
+
+// Every precondition in turn; the first that does not hold is the answer.
+const allOf = (...preconditions) => async (ctx) => {
+  for (const precondition of preconditions) {
+    const why = await precondition(ctx);
+    if (why) return why;
+  }
+  return null;
+};
+
+// A precondition that does not hold: said once, and exit code 2.
+const notAssessed = (why) => {
+  console.error(`\nNOT ASSESSED - precondition does not hold: ${why}`);
+  process.exitCode = 2;
 };
 
 // Whether guided Setup is drawn over Configuration on this droid, by
@@ -284,7 +347,8 @@ const createReport = (title) => {
 //   rule          the standing rule, printed as the table's title
 //   artifactDir   where screenshots go (created)
 //   allow(entry)  which writes the guard lets through; default none
-//   fixture       options for ./fixture_routes.js when FIXTURE=1
+//   fixture       options for ./fixture_routes.js when FIXTURE=1 (`droid`,
+//                 `estop`, `textPlainPhotos`; its header)
 //   selftests     the SELFTEST names this script knows; anything else is refused
 //   precondition  async (ctx) => null, or the reason it does not hold; run on a
 //                 neutral page of the droid's origin before any surface opens
@@ -305,14 +369,14 @@ const runCheck = async ({ rule, artifactDir, allow = () => false, fixture: fixtu
   }
   fs.mkdirSync(artifactDir, { recursive: true });
   const report = createReport(rule);
-  const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
+  const browser = await launchBrowser();
   const holders = [];
   const pageErrors = [];
   const allWrites = [];
   let refused = null;
 
   const openPage = async (options = fixtureOptions) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+    const context = await browser.newContext({ viewport: VIEWPORT, acceptDownloads: true });
     const fixture = FIXTURE ? await require('./fixture_routes.js').install(context, options) : null;
     const holder = {
       context,
@@ -337,21 +401,16 @@ const runCheck = async ({ rule, artifactDir, allow = () => false, fixture: fixtu
       await landNeutral(first.page);
       refused = await precondition(ctx);
     }
-    if (refused) {
-      console.error(`\nNOT ASSESSED - precondition does not hold: ${refused}`);
-    } else {
-      await run(ctx);
-    }
+    if (!refused) await run(ctx);
   } catch (error) {
     console.error(`${rule}: could not complete:`, error);
     report.add('x', 'the script ran to the end', FAIL, String(error.message).split('\n')[0]);
   } finally {
-    for (const holder of holders) await holder.close();
-    await browser.close();
+    await closeAll(browser, holders);
   }
 
   if (refused) {
-    process.exitCode = 2;
+    notAssessed(refused);
     return;
   }
   const writes = allWrites.flat();
@@ -377,6 +436,7 @@ module.exports = {
   FIXTURE,
   SELFTEST,
   SETTLE_MS,
+  VIEWPORT,
   PASS,
   FAIL,
   NOT_ASSESSED,
@@ -384,12 +444,20 @@ module.exports = {
   pathOf,
   formOf,
   step,
+  launchBrowser,
+  closeAll,
   installGuard,
   describeWrite,
+  blockedWrites,
+  isConsoleCatalogLoad,
+  isRcDebugToggle,
   landNeutral,
   readJson,
   readEstop,
   estopMustBe,
+  sleepMustBe,
+  allOf,
+  notAssessed,
   guidedSetup,
   waitSettled,
   loadSurface,

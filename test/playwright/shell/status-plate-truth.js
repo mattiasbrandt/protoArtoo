@@ -115,9 +115,9 @@
 //   BASE_URL=http://<board>   the controller (default http://10.0.0.22)
 //   HEADLESS=true             no window
 // Offline proof: FIXTURE=1 BASE_URL=http://127.0.0.1:4173 HEADLESS=true against
-// python3 tools/serve_editor_fixture.py (routes in ./_fixture_routes.js; the
-// outside latch goes to the fixture's own small server, which page.route never
-// sees either).
+// python3 tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js,
+// its 'bench' droid; the outside latch goes to the fixture's own small server,
+// which page.route never sees either).
 // Self-tests, each must FAIL the check it names:
 //   SELFTEST_REMOUNT=1   swaps the plate for a copy mid-walk (a);
 //   SELFTEST_BLANK=1     empties one chip mid-walk (a);
@@ -132,14 +132,12 @@
 //                        back on screen (h);
 //   SELFTEST_DEAFPLATE=1 breaks the browser's link before the outside latch,
 //                        so the plate cannot hear it (g).
-const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { mkdirSync } = require('node:fs');
+const lib = require('../_lib/checks.js');
 
-const BASE_URL = (process.env.BASE_URL || 'http://10.0.0.22').replace(/\/$/, '');
-const HEADLESS = process.env.HEADLESS === 'true';
-const FIXTURE = process.env.FIXTURE === '1';
+const { BASE_URL, FIXTURE, pathOf } = lib;
 const SELFTEST_REMOUNT = process.env.SELFTEST_REMOUNT === '1';
 const SELFTEST_BLANK = process.env.SELFTEST_BLANK === '1';
 const SELFTEST_NOBREAK = process.env.SELFTEST_NOBREAK === '1';
@@ -229,26 +227,7 @@ const readPlate = (page) =>
   }, CHIPS);
 
 // The browser-side write guard (header), for any page.
-const guard = async (page, blocked) => {
-  await page.route('**/*', async (route) => {
-    const request = route.request();
-    if (request.method() === 'GET' || request.method() === 'HEAD') return route.fallback();
-    const url = request.url();
-    const path = url.slice(url.indexOf('/', url.indexOf('//') + 2)).split('?')[0];
-    const body = request.postData() || '';
-    const allowed =
-      (request.method() === 'POST' && path === '/api/rc/debug') ||
-      (request.method() === 'POST' && path === '/api/console' && /^command=(operations|help)\b/.test(body));
-    if (allowed) return route.fallback();
-    blocked.push(`${request.method()} ${path} ${body.slice(0, 60)}`.trim());
-    return route.abort('blockedbyclient');
-  });
-};
-
-const pathOf = (url) => {
-  const rest = url.slice(url.indexOf('/', url.indexOf('//') + 2));
-  return rest.split('?')[0];
-};
+const allowWrite = (entry) => lib.isRcDebugToggle(entry) || lib.isConsoleCatalogLoad(entry);
 
 // Opens a surface through the nav and waits for it to be on screen and mounted.
 const goTo = async (page, surface) => {
@@ -307,24 +286,21 @@ const readPartsToggle = (page) =>
 
 (async () => {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
-  const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
+  const browser = await lib.launchBrowser();
   let fixture = null;
   let relay = null;
   let refused = null;
   let latchedByScript = false;
   const walk = [];
-  const checks = [];
-  const check = (name, ok, detail) => {
-    checks.push({ name, ok, detail });
-    console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`);
-  };
-  const blocked = [];
+  const report = lib.createReport('Status Plate truth');
+  const check = (id, name, ok, detail) => report.add(id, name, lib.verdict(ok), detail);
+  const guarded = [];
   try {
     // =======================================================================
     // A. The browser with no stream
     // =======================================================================
-    const quiet = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    if (FIXTURE) fixture = await require('./_fixture_routes.js').install(quiet);
+    const quiet = await browser.newContext({ viewport: lib.VIEWPORT });
+    if (FIXTURE) fixture = await require('../_lib/fixture_routes.js').install(quiet, { droid: 'bench' });
     await quiet.addInitScript(() => {
       delete window.EventSource;
     });
@@ -335,7 +311,7 @@ const readPartsToggle = (page) =>
       });
     }
     const q = await quiet.newPage();
-    await guard(q, blocked);
+    guarded.push(await lib.installGuard(q, allowWrite));
     const started = Date.now();
     const seen = [];
     q.on('request', (request) => {
@@ -346,15 +322,8 @@ const readPartsToggle = (page) =>
     await q.waitForSelector('#status-plate-region', { timeout: 20000 });
 
     // PRECONDITION (header).
-    const status = await q.evaluate(async () => {
-      const response = await fetch('/api/status', { cache: 'no-store' });
-      if (!response.ok) throw new Error(`GET /api/status answered ${response.status}`);
-      return response.json();
-    });
-    if (status.estop !== false) {
-      refused = `the droid reports estop=${status.estop}; this script needs the estop CLEAR. Clear it on Foot Drive or the Dashboard, then run it again.`;
-      throw new Error(refused);
-    }
+    refused = await lib.estopMustBe(false)({ page: q });
+    if (refused) throw new Error(refused);
 
     await q.waitForFunction(() => document.getElementById('status-plate-region').dataset.freshness === 'live', null, { timeout: 30000 });
     const streamless = await q.evaluate(() => window.PAStatusStream.isSupported() === false);
@@ -374,7 +343,8 @@ const readPartsToggle = (page) =>
       const bad = gaps.filter((gap) => gap < GAP_MIN_MS || gap > GAP_MAX_MS);
       const expected = Math.floor((to - from) / POLL_MS);
       check(
-        'e one GET /api/status per ~5 s across Dashboard, Foot Drive, Sound',
+        'e',
+        'one GET /api/status per ~5 s across Dashboard, Foot Drive, Sound',
         streamless && at.length >= expected - 1 && at.length <= expected + 1 && bad.length === 0,
         `${streamless ? '' : 'the browser still reports a stream, so nothing here was the fallback; '}` +
           `${at.length} reads in ${((to - from) / 1000).toFixed(1)} s (expected ${expected}±1), gaps ${gaps.map((gap) => (gap / 1000).toFixed(2)).join(', ')} s`,
@@ -391,7 +361,8 @@ const readPartsToggle = (page) =>
       await q.waitForTimeout(2000);
       const returnReads = reads(back, Date.now() - started);
       check(
-        'e the status poll pauses while the tab is hidden, asks on return',
+        'e',
+        'the status poll pauses while the tab is hidden, asks on return',
         hiddenReads.length === 0 && returnReads.length >= 1,
         `${hiddenReads.length} reads in 12 s hidden; ${returnReads.length} within 2 s of coming back` +
           (returnReads.length ? ` (after ${returnReads[0] - back} ms)` : ''),
@@ -420,7 +391,8 @@ const readPartsToggle = (page) =>
       if (keep !== null) await q.evaluate((id) => window.clearInterval(id), keep);
       const afterCount = count(leftAt, Date.now() - started);
       check(
-        `f leaving ${label} stops GET ${path}`,
+        'f',
+        `leaving ${label} stops GET ${path}`,
         onCount >= 2 && afterCount === 0,
         `${onCount} reads in 3 s on ${label}${onCount >= 2 ? '' : ' (its poll was never seen running, so leaving proves nothing)'}; ${afterCount} in the 3 s after leaving`,
       );
@@ -431,11 +403,11 @@ const readPartsToggle = (page) =>
     // =======================================================================
     // B. The browser with the stream
     // =======================================================================
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const context = await browser.newContext({ viewport: lib.VIEWPORT });
     if (fixture) await fixture.addContext(context);
     relay = await startRelay(FIXTURE ? `http://127.0.0.1:${fixture.ssePort}/events` : `${BASE_URL}/api/events`);
     const page = await context.newPage();
-    await guard(page, blocked);
+    guarded.push(await lib.installGuard(page, allowWrite));
     // The stream goes through the relay from the very first load.
     await page.route('**/api/events*', (route) => route.continue({ url: `http://127.0.0.1:${relay.port}/events` }));
 
@@ -539,7 +511,7 @@ const readPartsToggle = (page) =>
       console.log(`${row.result} walk ${surface}${row.reasons.length ? ` - ${row.reasons.join('; ')}` : ''}`);
     }
     const blanks = await page.evaluate(() => window.__blankChips.slice());
-    check('a no chip was blank at any moment of the walk', blanks.length === 0, blanks.length ? [...new Set(blanks)].join(', ') : '');
+    check('a', 'no chip was blank at any moment of the walk', blanks.length === 0, blanks.length ? [...new Set(blanks)].join(', ') : '');
     await page.screenshot({ path: `${ARTIFACT_DIR}/plate-after-walk.png` });
 
     // -----------------------------------------------------------------------
@@ -597,14 +569,15 @@ const readPartsToggle = (page) =>
     const left = await page
       .waitForFunction(() => document.getElementById('status-plate-region').dataset.freshness !== 'live', null, { timeout: 10000 })
       .then(() => true, () => false);
-    check('b plate leaves "live" when the link breaks', left, left ? `after ${Date.now() - cutAt} ms` : 'still "live" 10 s after the break');
+    check('b', 'plate leaves "live" when the link breaks', left, left ? `after ${Date.now() - cutAt} ms` : 'still "live" 10 s after the break');
 
     // (d) while broken: Parts first (on screen), then Servos.
     await page.waitForTimeout(500);
     const partsBroken = await readPartsToggle(page);
     await page.screenshot({ path: `${ARTIFACT_DIR}/parts-contact-lost.png` });
     check(
-      'd Parts refuses Open it while contact is lost, and says why',
+      'd',
+      'Parts refuses Open it while contact is lost, and says why',
       partsBefore !== null && !partsBroken.enabled && partsBroken.why === PARTS_WAITS,
       partsBefore === null
         ? 'no Part offered the act before the break, so its refusal proves nothing'
@@ -623,12 +596,13 @@ const readPartsToggle = (page) =>
     const estopChip = (await readPlate(page)).values.estop;
     await page.screenshot({ path: `${ARTIFACT_DIR}/servo-contact-lost.png` });
     check(
-      'd every Servos move act is refused while contact is lost',
+      'd',
+      'every Servos move act is refused while contact is lost',
       servoBefore.visibleEnabled > 0 && servoBroken.total > 0 && servoBroken.enabled === 0,
       `before: ${servoBefore.enabled}/${servoBefore.total} enabled; while lost: ${servoBroken.enabled}/${servoBroken.total} enabled` +
         (servoBefore.visibleEnabled > 0 ? '' : ' (none were enabled before, so the refusal proves nothing)'),
     );
-    check('d the ESTOP chip reads FINDING OUT while contact is lost', estopChip === 'FINDING OUT', `"${estopChip}"`);
+    check('d', 'the ESTOP chip reads FINDING OUT while contact is lost', estopChip === 'FINDING OUT', `"${estopChip}"`);
 
     // Past the 1.5 s "just now" window, and long enough for a reconnect try
     // or two to be refused.
@@ -636,16 +610,17 @@ const readPartsToggle = (page) =>
     const broken = await readPlate(page);
     await page.screenshot({ path: `${ARTIFACT_DIR}/plate-link-broken.png` });
     console.log(`While broken: freshness=${broken.freshness}, "${broken.text}", ${broken.estopLine}`);
-    check('b data-freshness reads "finding-out" while broken', broken.freshness === 'finding-out', `data-freshness="${broken.freshness}"`);
+    check('b', 'data-freshness reads "finding-out" while broken', broken.freshness === 'finding-out', `data-freshness="${broken.freshness}"`);
     check(
-      'b freshness line says reconnecting or could not report',
+      'b',
+      'freshness line says reconnecting or could not report',
       broken.text.includes(RECONNECTING) || broken.text.includes(COULD_NOT_REPORT),
       `"${broken.text}"`,
     );
-    check('b freshness line does not say "just now"', !broken.text.includes('just now'), `"${broken.text}"`);
-    check('b estop line goes back to finding out', broken.estopLine === 'Estop: finding out', `"${broken.estopLine}"`);
+    check('b', 'freshness line does not say "just now"', !broken.text.includes('just now'), `"${broken.text}"`);
+    check('b', 'estop line goes back to finding out', broken.estopLine === 'Estop: finding out', `"${broken.estopLine}"`);
     const blankWhileBroken = Object.entries(broken.values).filter(([, value]) => value === '').map(([id]) => id);
-    check('b no chip is blank while broken', blankWhileBroken.length === 0, JSON.stringify(broken.values));
+    check('b', 'no chip is blank while broken', blankWhileBroken.length === 0, JSON.stringify(broken.values));
     console.log(`Requests refused during the break: ${aborted.length}`);
 
     // -----------------------------------------------------------------------
@@ -660,9 +635,9 @@ const readPartsToggle = (page) =>
     const after = await readPlate(page);
     await page.screenshot({ path: `${ARTIFACT_DIR}/plate-recovered.png` });
     console.log(`After the routes were lifted: freshness=${after.freshness}, "${after.text}", ${after.estopLine}`);
-    check('c plate returns to "live" on its own', back, back ? `after ${Date.now() - liftedAt} ms` : 'not live 45 s after the routes were lifted');
-    check('c freshness line stops saying reconnecting', !after.text.includes(RECONNECTING), `"${after.text}"`);
-    check('c estop line leaves finding out', after.estopLine !== 'Estop: finding out', `"${after.estopLine}"`);
+    check('c', 'plate returns to "live" on its own', back, back ? `after ${Date.now() - liftedAt} ms` : 'not live 45 s after the routes were lifted');
+    check('c', 'freshness line stops saying reconnecting', !after.text.includes(RECONNECTING), `"${after.text}"`);
+    check('c', 'estop line leaves finding out', after.estopLine !== 'Estop: finding out', `"${after.estopLine}"`);
 
     // -----------------------------------------------------------------------
     // (h) The Surface resumed note stays up while the refresh fails
@@ -695,11 +670,12 @@ const readPartsToggle = (page) =>
         .waitForFunction(() => !document.querySelector('#shell-content > .surface-resumed'), null, { timeout: 8000 })
         .then(() => true, () => false);
       check(
-        'h resumed note stays up on Servos while its refresh fails',
+        'h',
+        'resumed note stays up on Servos while its refresh fails',
         onReturn === RESUMED && whileFailing === RESUMED && refusedSince >= 3,
         `on return: ${onReturn === null ? 'no note' : `"${onReturn}"`}; after ${refusedSince} refused reads: ${whileFailing === null ? 'no note' : 'still up'}`,
       );
-      check('h resumed note comes down once Servos answers', cleared, cleared ? '' : 'still up 8 s after the Outputs read was let through');
+      check('h', 'resumed note comes down once Servos answers', cleared, cleared ? '' : 'still up 8 s after the Outputs read was let through');
     }
 
     // -----------------------------------------------------------------------
@@ -734,7 +710,8 @@ const readPartsToggle = (page) =>
       const plateAfter = await readPlate(page);
       await page.screenshot({ path: `${ARTIFACT_DIR}/plate-outside-latch.png` });
       check(
-        'g a latch sent outside the browser reaches the plate without navigating',
+        'g',
+        'a latch sent outside the browser reaches the plate without navigating',
         response.ok() && plateBefore.values.estop === 'CLEAR' && reached && whereAfter.page === where.page && whereAfter.hash === where.hash,
         `ESTOP ${plateBefore.values.estop} -> ${plateAfter.values.estop}, "${plateAfter.estopLine}"` +
           (reached ? ` after ${tookMs} ms` : ' - not within 5 s') +
@@ -742,20 +719,23 @@ const readPartsToggle = (page) =>
       );
     }
 
+    const blocked = guarded.flatMap((writes) => lib.blockedWrites(writes));
     if (blocked.length) {
       console.log('\nWrites the guard stopped before they reached the droid:');
       [...new Set(blocked)].forEach((line) => console.log(`  ${line}`));
     }
   } catch (error) {
-    if (refused) console.error(`REFUSED: ${refused}`);
-    else console.error('status-plate-truth could not complete:', error);
-    process.exitCode = refused ? 2 : 1;
+    if (!refused) {
+      console.error('status-plate-truth could not complete:', error);
+      process.exitCode = 1;
+    }
   } finally {
-    await browser.close();
-    if (relay) await relay.close();
-    if (fixture) await fixture.close();
+    await lib.closeAll(browser, [relay, fixture]);
   }
-  if (refused) return;
+  if (refused) {
+    lib.notAssessed(refused);
+    return;
+  }
 
   const yes = (value) => (value === undefined ? '-' : value ? 'yes' : 'NO');
   console.log('\nsurface        same-node chips-filled freshness   result');
@@ -765,15 +745,13 @@ const readPartsToggle = (page) =>
       [row.surface.padEnd(14), yes(row.sameNode).padEnd(9), yes(row.filled).padEnd(12), String(row.freshness ?? '-').padEnd(11), row.result].join(' '),
     );
   }
-  console.log('\ncheck                                                                       result');
-  console.log('--------------------------------------------------------------------------- ------');
-  for (const item of checks) console.log(`${item.name.padEnd(75)} ${item.ok ? 'PASS' : 'FAIL'}`);
-  const failed = walk.filter((row) => row.result !== 'PASS').length + checks.filter((item) => !item.ok).length;
-  const total = walk.length + checks.length;
+  report.print();
+  const failed = walk.filter((row) => row.result !== 'PASS').length + report.rows.filter((row) => row.result !== lib.PASS).length;
+  const total = walk.length + report.rows.length;
   console.log(`\n=== Status Plate truth: ${total - failed}/${total} PASS ===`);
   console.log(`Screenshots under ${ARTIFACT_DIR}`);
   if (latchedByScript) {
     console.log('\nThe estop is LATCHED on the droid: this script latched it from outside the browser (check g). It does not release it: release it on Foot Drive or the Dashboard when you are ready.');
   }
-  if (failed || walk.length === 0 || checks.length < 20) process.exitCode = 1;
+  if (failed || walk.length === 0 || report.rows.length < 20) process.exitCode = 1;
 })();

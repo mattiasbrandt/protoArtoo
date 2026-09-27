@@ -1,19 +1,54 @@
 // Browser-side stand-ins for the controller routes tools/serve_editor_fixture.py
-// does not answer, for the scripts that run through ./checks.js runCheck().
+// does not answer, for every script under test/playwright/ that takes FIXTURE=1:
+// the rule scripts through ./checks.js runCheck(), and the older scripts
+// (shell/stop-every-surface.js, shell/status-plate-truth.js,
+// parts/parts-surface.js, console-sweep.js) that install it themselves.
 //
 // Loaded ONLY when FIXTURE=1. Against the live controller nothing here runs,
 // so a live run is the script and the droid and nothing in between.
 //
-// Started from test/playwright/shell/_fixture_routes.js (the SSE stand-in and
-// the "refuse and keep" write rule are that file's) and widened for what these
-// scripts read: the lineup, the photographs, a Light wire, the calibration
-// dial's hold and its two firmware bounds, and the estop letting go of every
-// Output. That file belongs to other scripts, so this one is a copy rather
-// than an edit; the two can be merged once both settle.
+// Why a module and not a fixture-server edit: the fixture server is shared by
+// every other script and deliberately 404s any /api/* route it does not have
+// (its header, #261). These answers are shaped for these scripts' needs, so
+// they live beside them and ride on Playwright's routing instead.
 //
-// Options (install(context, options)): `estop: true` starts the droid latched
-// (and its enabled Outputs already let go); `textPlainPhotos: [ids]` answers
-// those registry photographs as text/plain, for a self-test.
+// THE TWO DROIDS. install(context, { droid }) answers as one of two droids.
+// Every route below is answered for both; only the shapes of four answers
+// differ, and each script keeps the droid its checks were proved against.
+//   'artoo' (the default) - five Artoo-style Outputs from include/board_outputs.h
+//       (ARM1 carrying two body panels, calibrated; ARM2 wired with nothing on
+//       it; AUX1 and AUX2 not wired; AUX3 the CBI on an LED strip), a
+//       configured droid's config (components, Droid Build, a guided Setup
+//       record of a droid configured before it existed), and a full identity
+//       and status frame.
+//   'bench' - five wired ARMs with no light, ARM1 ganged to two body panels and
+//       FOLLOWING: its commanded width alternates 1400/1600 on every Outputs
+//       read, so a once-a-second follow actually changes a value, which is
+//       what makes "only values change" a test rather than a formality. The
+//       config is the older-firmware answer with no droidBuild key, so the
+//       Parts picture draws every marker; the status frame carries the six
+//       fields data/live_reading.js requires and just enough for every Status
+//       Plate chip to read a value.
+//
+// Other options: `estop: true` starts the droid latched (and its enabled
+// Outputs already let go); `textPlainPhotos: [ids]` answers those registry
+// photographs as text/plain, for a self-test.
+//
+// THE STATUS STREAM is the one route page.route cannot fake faithfully:
+// route.fulfill() hands over a finished body, so an EventSource reading it
+// sees the stream END, errors and reconnects - a flapping link, which is the
+// exact thing status-plate-truth.js measures. So /api/events is continued to a
+// small real SSE server started here, which holds the connection open.
+//
+// The same small server also takes POST /api/estop, so a script can latch the
+// estop from OUTSIDE the browser the way a second client or the Console would
+// on the bench: page.route never sees a request made with Playwright's own
+// request API, so that write has to reach something that is not a route.
+//
+// One droid, many browsers: install() routes the first context and hands back
+// addContext(), which routes another context against the SAME state and the
+// same stream, so a fresh browser context meets the droid the first one left
+// (the estop it latched, the sleep it asked for).
 //
 // WHAT IT MODELS, AND FROM WHERE. Each behaviour below is the firmware's, read
 // from the source named beside it, so a script that passes here passes for the
@@ -30,14 +65,35 @@
 //     `limp: "expiry"` (include/servo_hold.h, src/tasks/servo_task.cpp holdArm).
 //   - POST /api/estop latches and releases every ENABLED Output with
 //     `limp: "estop"` (releaseAllOutputs, include/servo_halt.h). Enabled is the
-//     wired tick on a row that carries no light (isArmEnabled's lit mask).
+//     wired tick on a row that carries no light (isArmEnabled's lit mask). A
+//     status is pushed on the first trigger only (src/failsafe_gate.cpp
+//     failsafeTrigger, requestStatusBroadcastNow); a repeat is idempotent.
 //   - A hold under a latched estop is answered 200 and changes nothing: the
 //     route queues it and ServoTask refuses it (src/web/api_servo.cpp).
 //   - POST /api/config with `outputs` rows saves a row's ledCount and answers
-//     the config (sendConfigSnapshot()).
+//     the config (sendConfigSnapshot()). POST /api/config with nothing but
+//     guidedSetupVisited=<step> (data/setup.js saveVisited) is taken and kept
+//     in `state.accepted`, so it is never mistaken for nothing having been
+//     written.
+//   - POST /api/sleep and /api/wake answer {ok, sleepMode, changed}
+//     (docs/api.md) and push a status only when the posture changed
+//     (src/web/api_system.cpp).
 //   - A client admitted to /api/events is pushed a status, and so is every
 //     other open client (src/web/api_events.cpp).
-// Shapes follow docs/api.md; they are a plausible artoo with nothing but USB
+//   - GET /api/rc and GET /api/rc/map answer as docs/api.md gives them for a
+//     droid with no receiver switched on. Without them the RC surface's
+//     sections fail and the bootstrap retries them on its own clock, which is
+//     a request nothing on the surface asked for - and exactly what a "leaving
+//     a surface stops its polling" count must not be confused by.
+//   - GET /api/seq/list and /api/seq/builtins answer an empty JSON array each
+//     (docs/api.md): no Learned Sequences, and the factory list left empty
+//     rather than invented.
+// Any other write is refused with 400 and kept in `state.writes`, so a script
+// that asserts "no writes" has something to read. Any other read goes to the
+// fixture server, which 404s it the way the controller answers a route it does
+// not have.
+//
+// Shapes follow docs/api.md; they are a plausible droid with nothing but USB
 // connected, not a copy of any one board's answer.
 const http = require('node:http');
 const fs = require('node:fs');
@@ -46,6 +102,7 @@ const path = require('node:path');
 const REPO = path.resolve(__dirname, '..', '..', '..');
 const ASSETS = path.join(REPO, 'data', 'asset-sets', 'default');
 const HOLD_EXPIRY_MS = 3000;
+const DROIDS = ['artoo', 'bench'];
 
 // The Component Registry, read from the one file the firmware builds it from.
 const readRegistry = () => {
@@ -96,99 +153,119 @@ const readRegistry = () => {
   return { categories, parts };
 };
 
-// Five Artoo-style Outputs (include/board_outputs.h ids and labels). ARM1
-// carries two body panels and is calibrated; AUX3 carries the CBI and the LED
-// strip Light Type, so Lights has a wire with an LED count; ARM2 is wired with
-// nothing on it; AUX1 and AUX2 are not wired.
-const initialOutputs = () =>
-  [
+// One Output row in GET /api/servo/outputs's shape (docs/api.md).
+const outputRow = ({ n, id, name, wired, parts, calibrated, lightCapable, component, following = false }) => ({
+  address: `ledc:${n - 1}`,
+  name,
+  id,
+  switchable: true,
+  wired,
+  lightCapable,
+  ledCount: lightCapable ? 16 : null,
+  throwMs: 400,
+  accelMs: 100,
+  ease: 'none',
+  boot: 'limp',
+  parts,
+  bandLoUs: 1000,
+  bandHiUs: 2000,
+  component,
+  openUs: calibrated ? 2000 : null,
+  centreUs: calibrated ? 1500 : null,
+  closeUs: calibrated ? 1000 : null,
+  calibrated,
+  commandedUs: null,
+  targetUs: null,
+  nudgesDone: 0,
+  held: false,
+  limp: 'off',
+  // Not a firmware field: which row the 'bench' droid moves on every read.
+  // Stripped from every answer.
+  following,
+});
+
+const initialOutputs = (droid) => {
+  if (droid === 'bench') {
+    return [1, 2, 3, 4, 5].map((n) =>
+      outputRow({
+        n,
+        id: `arm${n}`,
+        name: `ARM${n}`,
+        wired: true,
+        parts: n === 1 ? ['bodyPanel1', 'bodyPanel2'] : [],
+        calibrated: n === 1,
+        lightCapable: false,
+        component: 'none',
+        following: n === 1,
+      }),
+    );
+  }
+  // Five Artoo-style Outputs (include/board_outputs.h ids and labels). ARM1
+  // carries two body panels and is calibrated; AUX3 carries the CBI and the
+  // LED strip Light Type, so Lights has a wire with an LED count; ARM2 is
+  // wired with nothing on it; AUX1 and AUX2 are not wired.
+  return [
     { n: 1, id: 'arm1', name: 'ARM1', wired: true, parts: ['bodyPanel1', 'bodyPanel2'], calibrated: true },
     { n: 2, id: 'arm2', name: 'ARM2', wired: true, parts: [], calibrated: false },
     { n: 3, id: 'aux1', name: 'AUX1', wired: false, parts: [], calibrated: false },
     { n: 4, id: 'aux2', name: 'AUX2', wired: false, parts: [], calibrated: false },
     { n: 5, id: 'aux3', name: 'AUX3', wired: true, parts: ['cbi'], calibrated: false, light: true },
-  ].map((row) => ({
-    address: `ledc:${row.n - 1}`,
-    name: row.name,
-    id: row.id,
-    switchable: true,
-    wired: row.wired,
-    lightCapable: row.n >= 3,
-    ledCount: row.n >= 3 ? 16 : null,
-    throwMs: 400,
-    accelMs: 100,
-    ease: 'none',
-    boot: 'limp',
-    parts: row.parts,
-    bandLoUs: 1000,
-    bandHiUs: 2000,
-    component: row.light ? 'rgb' : 'mg996r',
-    openUs: row.calibrated ? 2000 : null,
-    centreUs: row.calibrated ? 1500 : null,
-    closeUs: row.calibrated ? 1000 : null,
-    calibrated: row.calibrated,
-    commandedUs: null,
-    targetUs: null,
-    nudgesDone: 0,
-    held: false,
-    limp: 'off',
-  }));
+  ].map((row) => outputRow({ ...row, lightCapable: row.n >= 3, component: row.light ? 'rgb' : 'mg996r' }));
+};
 
-// Enabled in ServoTask's sense: wired, and not a wire kept for a light.
-const isEnabledOutput = (row) => row.wired && row.component !== 'rgb';
-
-const parseForm = (body) => Object.fromEntries(new URLSearchParams(body || ''));
-
-const install = async (context, options = {}) => {
-  const registry = readRegistry();
-  const registryIds = new Set(registry.parts.map((part) => part.id));
-
-  const state = {
-    estop: options.estop === true,
-    outputs: initialOutputs(),
-    // Wall-clock of the last hold command per address, while a hold stands.
-    holds: new Map(),
-    writes: [],
-    outputsReads: 0,
-    config: {
-      drive: { speedLimitMax: 40, speedPreset: 'normal', webDriveTimeoutMs: 500, stationary: false },
-      rc: { inputMode: 'standard_pwm', activeInputMode: 'standard_pwm', sbusTimeoutMs: 300, sbus: { recvCh2: false }, member: 'rc_radio' },
-      activeToggles: ['drive', 'rcCh1', 'rcCh2'],
-      components: {
-        domeEsc: { enabled: false, label: 'DOME' },
-        rcCh1: { enabled: true, label: 'CH1' },
-        rcCh2: { enabled: true, label: 'CH2' },
-        rcCh3: { enabled: false, label: 'CH3' },
-        rcCh4: { enabled: false, label: 'CH4' },
-        rcCh5: { enabled: false, label: 'CH5' },
-        rcCh6: { enabled: false, label: 'CH6' },
-        drive: { enabled: true, label: 'S1' },
-        audio: { enabled: false, label: 'S2', member: 'dy_sv5w', activeMember: 'dy_sv5w' },
-        protoR2link: { enabled: false, label: 'S3' },
-      },
-      system: { logLevel: 3 },
-      droidBuild: {
-        domeDesign: 'mk4',
-        domeVariant: 'complex',
-        bodyDesign: 'mk4',
-        bodyVariant: 'complex',
-        fitted: ['bodyPanel1', 'bodyPanel2', 'cbi', 'dataPanel', 'pie1', 'panel1'],
-      },
-      // A controller configured before guided Setup existed: no record at all.
-      guidedSetup: { run: 'not-run', visited: [], recorded: false, summaryDone: false },
-      wifi: {
-        provisioned: true,
-        mode: 'client',
-        staSsid: 'bench-ap',
-        staPasswordSet: true,
-        apSsid: 'protoartoo',
-        apPasswordSet: false,
-        pendingApply: false,
-      },
+const initialConfig = (droid) => {
+  // No droidBuild key: the older-firmware answer, so the Parts picture falls
+  // back to drawing every marker rather than only the fitted ones.
+  if (droid === 'bench') return { system: { logLevel: 3 } };
+  return {
+    drive: { speedLimitMax: 40, speedPreset: 'normal', webDriveTimeoutMs: 500, stationary: false },
+    rc: { inputMode: 'standard_pwm', activeInputMode: 'standard_pwm', sbusTimeoutMs: 300, sbus: { recvCh2: false }, member: 'rc_radio' },
+    activeToggles: ['drive', 'rcCh1', 'rcCh2'],
+    components: {
+      domeEsc: { enabled: false, label: 'DOME' },
+      rcCh1: { enabled: true, label: 'CH1' },
+      rcCh2: { enabled: true, label: 'CH2' },
+      rcCh3: { enabled: false, label: 'CH3' },
+      rcCh4: { enabled: false, label: 'CH4' },
+      rcCh5: { enabled: false, label: 'CH5' },
+      rcCh6: { enabled: false, label: 'CH6' },
+      drive: { enabled: true, label: 'S1' },
+      audio: { enabled: false, label: 'S2', member: 'dy_sv5w', activeMember: 'dy_sv5w' },
+      protoR2link: { enabled: false, label: 'S3' },
+    },
+    system: { logLevel: 3 },
+    droidBuild: {
+      domeDesign: 'mk4',
+      domeVariant: 'complex',
+      bodyDesign: 'mk4',
+      bodyVariant: 'complex',
+      fitted: ['bodyPanel1', 'bodyPanel2', 'cbi', 'dataPanel', 'pie1', 'panel1'],
+    },
+    // A controller configured before guided Setup existed: no record at all.
+    guidedSetup: { run: 'not-run', visited: [], recorded: false, summaryDone: false },
+    wifi: {
+      provisioned: true,
+      mode: 'client',
+      staSsid: 'bench-ap',
+      staPasswordSet: true,
+      apSsid: 'protoartoo',
+      apPasswordSet: false,
+      pendingApply: false,
     },
   };
+};
 
-  const identity = () => ({
+const identityOf = (droid) => {
+  if (droid === 'bench') {
+    return {
+      droidName: 'fixture-artoo',
+      mdnsUseName: true,
+      board: 'artoo_esp32',
+      board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
+      build_flags: { PA_HEAP_PROFILE: false, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
+    };
+  }
+  return {
     droidName: 'fixture-artoo',
     mdnsUseName: true,
     board: 'artoo_esp32',
@@ -205,16 +282,61 @@ const install = async (context, options = {}) => {
       protor2link: { uart: 2, tx: 33, rx: 34 },
     },
     build_flags: { PA_HEAP_PROFILE: false, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
-  });
+  };
+};
+
+// Enabled in ServoTask's sense: wired, and not a wire kept for a light.
+const isEnabledOutput = (row) => row.wired && row.component !== 'rgb';
+
+const parseForm = (body) => Object.fromEntries(new URLSearchParams(body || ''));
+
+const install = async (context, options = {}) => {
+  const droid = options.droid || 'artoo';
+  if (!DROIDS.includes(droid)) throw new Error(`fixture_routes: no droid called "${droid}" (${DROIDS.join(', ')})`);
+  const registry = readRegistry();
+  const registryIds = new Set(registry.parts.map((part) => part.id));
+  const identity = identityOf(droid);
+
+  const state = {
+    droid,
+    estop: options.estop === true,
+    sleep: false,
+    outputs: initialOutputs(droid),
+    // Wall-clock of the last hold command per address, while a hold stands.
+    holds: new Map(),
+    // Writes refused (kept so "no writes" has something to read), and the
+    // guided Setup visit record taken.
+    writes: [],
+    accepted: [],
+    outputsReads: 0,
+    config: initialConfig(droid),
+  };
 
   const status = () => {
+    if (droid === 'bench') {
+      return {
+        // The six fields data/live_reading.js requires of a frame.
+        estop: state.estop,
+        sbusHwFailsafe: false,
+        sbusSignalLost: false,
+        webDriveExpired: false,
+        webControlEnabled: false,
+        sleepMode: state.sleep,
+        // Enough beyond them for every Status Plate chip to read a value.
+        drive: { backend: 'none' },
+        speedLimitMax: 40,
+        rcCh1: { state: 'not_seen' },
+        stationary: false,
+        uptimeMs: Date.now() % 100000000,
+      };
+    }
     const frame = {
       estop: state.estop,
       sbusHwFailsafe: false,
       sbusSignalLost: false,
       webDriveExpired: false,
       webControlEnabled: false,
-      sleepMode: false,
+      sleepMode: state.sleep,
       drive: { state: 'idle', detail: 'Enabled' },
       speedLimitMax: 40,
       speedPreset: 'normal',
@@ -246,12 +368,55 @@ const install = async (context, options = {}) => {
     return frame;
   };
 
+  // The Outputs answer. A following row that the droid still drives moves to
+  // its other width on each read.
+  const outputsAnswer = () => {
+    state.outputsReads += 1;
+    state.outputs.forEach((row) => {
+      if (!row.following || row.limp !== 'off') return;
+      row.commandedUs = state.outputsReads % 2 === 0 ? 1400 : 1600;
+      row.targetUs = row.commandedUs;
+    });
+    return {
+      outputs: state.outputs.map(({ following, ...row }) => ({ ...row, parts: row.parts.slice() })),
+    };
+  };
+
+  const releaseAll = (reason) => {
+    state.outputs.forEach((row) => {
+      if (!isEnabledOutput(row)) return;
+      state.holds.delete(row.address);
+      row.held = false;
+      row.commandedUs = null;
+      row.targetUs = null;
+      row.limp = reason;
+    });
+  };
+
   // The SSE stand-in. Every open client is pushed each change, and a client
   // arriving is itself a change (src/web/api_events.cpp).
   const clients = new Set();
   const frameText = () => `event: status\ndata: ${JSON.stringify(status())}\n\n`;
   const push = () => clients.forEach((res) => res.write(frameText()));
+
+  // The latch, from a page or from outside the browser (header).
+  const latch = () => {
+    const was = state.estop;
+    state.estop = true;
+    releaseAll('estop');
+    if (!was) push();
+  };
+
   const server = http.createServer((req, res) => {
+    // The latch from outside the browser (header). Answered the way
+    // src/web/api_estop.cpp answers it.
+    if (req.method === 'POST' && req.url.startsWith('/api/estop')) {
+      req.resume();
+      latch();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+      return;
+    }
     if (!req.url.startsWith('/events')) {
       res.writeHead(404);
       res.end();
@@ -289,17 +454,6 @@ const install = async (context, options = {}) => {
     });
   }, 100);
 
-  const releaseAll = (reason) => {
-    state.outputs.forEach((row) => {
-      if (!isEnabledOutput(row)) return;
-      state.holds.delete(row.address);
-      row.held = false;
-      row.commandedUs = null;
-      row.targetUs = null;
-      row.limp = reason;
-    });
-  };
-
   // A droid that starts latched has already been through the latch's edge.
   if (state.estop) releaseAll('estop');
 
@@ -312,6 +466,29 @@ const install = async (context, options = {}) => {
     state.writes.push(`${method} ${apiPath} ${String(body || '').slice(0, 80)}`.trim());
     return json(route, { ok: false, error: 'fixture refuses writes' }, 400);
   };
+
+  // POST /api/sleep and /api/wake (header).
+  const setSleep = (route, sleeping) => {
+    const changed = state.sleep !== sleeping;
+    state.sleep = sleeping;
+    if (changed) push();
+    return json(route, { ok: true, sleepMode: sleeping, changed });
+  };
+
+  // GET /api/rc for a droid with no receiver switched on (header).
+  const rcDiagnostics = () => ({
+    mode: state.config.rc?.inputMode || 'standard_pwm',
+    updatedMs: Date.now() % 100000000,
+    sources: {
+      sbus1: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
+      sbus2: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
+      pwm: { enabled: false, linked: false, ageMs: 0, lostFrames: 0, failsafe: false },
+    },
+    channels: [],
+    digital: {},
+    mappingProfile: { channels: [] },
+    raw: {},
+  });
 
   const servoPost = (route, body) => {
     const form = parseForm(body);
@@ -343,6 +520,11 @@ const install = async (context, options = {}) => {
   };
 
   const configPost = (route, request, body) => {
+    // Guided Setup's visit record (data/setup.js saveVisited): taken, and kept.
+    if (/^guidedSetupVisited=[^&]*$/.test(body)) {
+      state.accepted.push(`POST /api/config ${body}`);
+      return json(route, { ok: true });
+    }
     const type = request.headers()['content-type'] || '';
     if (!type.includes('application/json')) return refuse(route, 'POST', '/api/config', body);
     let parsed;
@@ -371,7 +553,7 @@ const install = async (context, options = {}) => {
 
   // The photographs: image/webp for a registry id, text/plain for any other
   // file the set carries, as the device answers them.
-  await context.route('**/*.webp*', async (route) => {
+  const photoHandler = async (route) => {
     const url = new URL(route.request().url());
     const name = path.basename(url.pathname, '.webp');
     const file = path.join(ASSETS, `${name}.webp`);
@@ -380,9 +562,9 @@ const install = async (context, options = {}) => {
     // `textPlainPhotos` is a self-test's: registry ids answered the wrong way.
     const typed = registryIds.has(name) && !(options.textPlainPhotos || []).includes(name);
     return route.fulfill({ status: 200, contentType: typed ? 'image/webp' : 'text/plain', body });
-  });
+  };
 
-  await context.route('**/api/**', async (route) => {
+  const apiHandler = async (route) => {
     const request = route.request();
     const url = request.url();
     const apiPath = url.slice(url.indexOf('/api/')).split('?')[0];
@@ -394,33 +576,44 @@ const install = async (context, options = {}) => {
       return;
     }
     if (method === 'GET') {
-      if (apiPath === '/api/identity') return json(route, identity());
+      if (apiPath === '/api/identity') return json(route, identity);
       if (apiPath === '/api/identity/components') return json(route, registry);
       if (apiPath === '/api/status') return json(route, status());
       if (apiPath === '/api/config') return json(route, state.config);
-      if (apiPath === '/api/servo/outputs') {
-        state.outputsReads += 1;
-        return json(route, { outputs: state.outputs.map((row) => ({ ...row, parts: row.parts.slice() })) });
+      if (apiPath === '/api/servo/outputs') return json(route, outputsAnswer());
+      if (apiPath === '/api/rc') return json(route, rcDiagnostics());
+      if (apiPath === '/api/rc/map') {
+        return json(route, { mode: state.config.rc?.inputMode || 'standard_pwm', map: [], capacity: { total: 14, used: 0 } });
       }
-      if (apiPath === '/api/rc/map') return json(route, { mode: state.config.rc.inputMode, map: [] });
+      if (apiPath === '/api/seq/list' || apiPath === '/api/seq/builtins') return json(route, []);
       // Every other read goes to the fixture server, which 404s it the way
       // the controller answers a route it does not have.
       return route.fallback();
     }
     if (method === 'POST' && apiPath === '/api/estop') {
-      state.estop = true;
-      releaseAll('estop');
-      push();
+      latch();
       return json(route, { ok: true });
     }
+    if (method === 'POST' && apiPath === '/api/sleep') return setSleep(route, true);
+    if (method === 'POST' && apiPath === '/api/wake') return setSleep(route, false);
     if (method === 'POST' && apiPath === '/api/servo') return servoPost(route, body);
     if (method === 'POST' && apiPath === '/api/config') return configPost(route, request, body);
     return refuse(route, method, apiPath, body);
-  });
+  };
+
+  const routeContext = async (target) => {
+    await target.route('**/*.webp*', photoHandler);
+    await target.route('**/api/**', apiHandler);
+  };
+  await routeContext(context);
 
   return {
     state,
     ssePort,
+    // Routes another browser context against this same droid (header).
+    addContext: routeContext,
+    // Sends every open stream the current status, as a state change on the
+    // droid would; a self-test that changes `state` calls it.
     push,
     // The operator clearing the latch on Foot Drive or the Dashboard, which
     // these scripts never do themselves.
@@ -433,9 +626,11 @@ const install = async (context, options = {}) => {
         clearInterval(expiryTimer);
         clients.forEach((res) => res.end());
         server.close(() => resolve());
+        // A browser that is gone may leave its socket half-open; do not let
+        // it hold the script's exit.
         server.closeAllConnections();
       }),
   };
 };
 
-module.exports = { install };
+module.exports = { install, DROIDS };

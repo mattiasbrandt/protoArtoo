@@ -84,21 +84,28 @@
 //           the surface's own showModal() helper (data/seq.js). Cancel closes
 //           it; nothing is restored. The wipe dialog is the same helper and
 //           needs a stored sequence, so it is not opened separately.
-//   parts,  the move question is a native <dialog>, and the surface opens it
-//   servo   only for a move that takes a Part off one Output onto another -
-//           reaching it through the page means a Part already wired, and a move
-//           that is NOT announced goes straight to POST /api/config. So the
-//           script calls the same dialog.showModal() on the same element that
-//           data/parts_mapping.js calls, and closes it with dialog.close().
-//           No move is asked, so no answer can send one.
+//   parts,  the move question, opened through the page the way a builder
+//   servo   opens it: the surface asks it only for a move that takes a Part off
+//           the Output it is on and puts it on another (data/parts_mapping.js
+//           moveFor, `announce`). On Parts, a Part already on an Output has
+//           another Output chosen in its row's picker; on Servos, a Part
+//           already on one Output is picked in another Output's "Put a part
+//           on" picker. Either change reaches the page's own mover.request(),
+//           which opens the dialog - no POST is sent until the question is
+//           answered "Move it", and it never is: the dialog's Cancel closes it.
+//           With no Part on any Output there is no move to ask about, and the
+//           row is NOT ASSESSED with that reason (never PASS). The guard aborts
+//           any write regardless.
 //
 // WHAT IT DOES NOT DO. It never releases the estop: release is a deliberate
 // operator act on Foot Drive or the Dashboard (ADR 0048), and the closing line
 // says so. It writes no configuration, moves nothing and needs nothing wired
-// but USB (Bench-Mode). Pressing STOP latches the real estop; that is the
-// point, and POST /api/estop is idempotent (src/failsafe_gate.cpp). Once the
-// first press has latched it, "reaches Estop: latched" on later surfaces is
-// already true - the press on those is proved by the POST and its feedback.
+// but USB (Bench-Mode); the move question needs a Part on an Output in the
+// droid's mapping, which is configuration, not a wire. Pressing STOP latches
+// the real estop; that is the point, and POST /api/estop is idempotent
+// (src/failsafe_gate.cpp). Once the first press has latched it, "reaches
+// Estop: latched" on later surfaces is already true - the press on those is
+// proved by the POST and its feedback.
 // Sleep is entered and left again; if the wake press fails the script says
 // so and the droid is left asleep for the operator to wake on the Dashboard.
 //
@@ -109,7 +116,8 @@
 //   STEP=1                    wait for Enter after each surface
 //   HEADLESS=true             no window
 // Offline proof: FIXTURE=1 BASE_URL=http://127.0.0.1:4173 HEADLESS=true against
-// python3 tools/serve_editor_fixture.py (routes in ./_fixture_routes.js).
+// python3 tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js,
+// its 'bench' droid).
 // Self-tests, each must FAIL the rule it names:
 //   SELFTEST_COVER=1     lays a transparent sheet over STOP on every surface of
 //                        the walk (5), and every row of that table must FAIL;
@@ -127,15 +135,11 @@
 //   SELFTEST_FRESHCLEAR=1 (FIXTURE=1 only) the fixture's droid answers "not
 //                        latched" before the fresh browser opens: rule 7
 //                        must FAIL.
-const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const { mkdirSync } = require('node:fs');
-const readline = require('node:readline');
+const lib = require('../_lib/checks.js');
 
-const BASE_URL = (process.env.BASE_URL || 'http://10.0.0.22').replace(/\/$/, '');
-const HEADLESS = process.env.HEADLESS === 'true';
-const STEP = process.env.STEP === '1';
-const FIXTURE = process.env.FIXTURE === '1';
+const { BASE_URL, FIXTURE, SETTLE_MS } = lib;
 const SELFTEST_COVER = process.env.SELFTEST_COVER === '1';
 const SELFTEST_UNLATCH = process.env.SELFTEST_UNLATCH === '1';
 const SELFTEST_NONOTICE = process.env.SELFTEST_NONOTICE === '1';
@@ -147,7 +151,6 @@ if ((SELFTEST_UNLATCH || SELFTEST_FRESHCLEAR) && !FIXTURE) {
   console.error('SELFTEST_UNLATCH and SELFTEST_FRESHCLEAR need FIXTURE=1');
   process.exit(2);
 }
-const SETTLE_MS = Number(process.env.SETTLE_MS || 1500);
 const ARTIFACT_DIR = 'output/playwright/issue-359';
 
 const STOP = '#shell-estop-button';
@@ -186,40 +189,61 @@ const DIALOGS = {
       if (await cancel.isVisible()) await cancel.click({ timeout: 3000 });
     },
   },
-  parts: nativeDialog('#parts-move-dialog'),
-  servo: nativeDialog('#outputs-move-dialog'),
+  parts: moveQuestion('#parts-move-dialog', async (page) => {
+    // A Part row whose picker shows an Output, and another Output to choose.
+    const pick = await page.evaluate(() => {
+      for (const row of document.querySelectorAll('#parts-table [data-part]')) {
+        const select = row.querySelector('select');
+        if (!select || select.disabled || select.value === 'none') continue;
+        const other = [...select.options].find((option) => option.value !== 'none' && option.value !== select.value);
+        if (other) return { part: row.dataset.part, to: other.value };
+      }
+      return null;
+    });
+    if (!pick) return null;
+    await page.selectOption(`#parts-table [data-part="${pick.part}"] select`, pick.to, { timeout: 5000 });
+    return `${pick.part} to ${pick.to}`;
+  }),
+  servo: moveQuestion('#outputs-move-dialog', async (page) => {
+    // A Part on one Output, picked in another Output's "Put a part on".
+    const pick = await page.evaluate(() => {
+      const outputs = window.PAOutputs.list();
+      const from = outputs.find((output) => output.parts.length > 0);
+      if (!from) return null;
+      const to = outputs.find((output) => output !== from && document.querySelector(`#outputs-table [data-output="${output.address}"] select.outputs-add`));
+      return to ? { part: from.parts[0], to: to.address } : null;
+    });
+    if (!pick) return null;
+    await page.selectOption(`#outputs-table [data-output="${pick.to}"] select.outputs-add`, pick.part, { timeout: 5000 });
+    return `${pick.part} to ${pick.to}`;
+  }),
 };
 
-function nativeDialog(selector) {
+// The move question, opened by the page (header). `choose` makes the builder's
+// pick and says what it asked for, or null when no Part is on an Output. open()
+// returns null once the dialog is up, or the reason the row is NOT ASSESSED.
+function moveQuestion(selector, choose) {
   return {
     name: 'move question',
     open: async (page) => {
       await page.waitForSelector(selector, { state: 'attached', timeout: 10000 });
-      await page.evaluate((sel) => {
-        const dialog = document.querySelector(sel);
-        dialog.querySelector('.move-title').textContent = 'Bench check';
-        dialog.querySelector('.move-body').textContent = 'Opened by stop-every-surface.js. Nothing is being moved.';
-        dialog.showModal();
-      }, selector);
-      assert.equal(await page.evaluate((sel) => document.querySelector(sel).open, selector), true, 'dialog did not open');
+      await page.waitForFunction(() => window.PAOutputs?.known().table, null, { timeout: 20000 });
+      const asked = await choose(page);
+      if (!asked) return 'no Part is on an Output, so there is no move for the page to ask about';
+      const shown = await page
+        .waitForFunction((sel) => document.querySelector(sel)?.open === true, selector, { timeout: 5000 })
+        .then(() => true, () => false);
+      assert.equal(shown, true, `the page did not open the move question for ${asked}`);
+      return null;
     },
     close: async (page) => {
-      await page.evaluate((sel) => {
-        const dialog = document.querySelector(sel);
-        if (dialog && dialog.open) dialog.close();
-      }, selector);
+      const open = () => page.evaluate((sel) => document.querySelector(sel)?.open === true, selector);
+      if (!(await open())) return;
+      await page.locator(`${selector} .move-cancel`).click({ timeout: 3000 });
+      assert.equal(await open(), false, 'Cancel did not close the move question');
     },
   };
 }
-
-const waitForEnter = (prompt) =>
-  new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(prompt, () => {
-      rl.close();
-      resolve();
-    });
-  });
 
 // Opens a surface through the nav, as an operator does, and waits for it to
 // mount and settle. A surface in two Activity Groups has two links to the one
@@ -325,35 +349,29 @@ const reachReasons = async (page) => {
   return reasons;
 };
 
-// The droid's status as the browser reads it, through the same routes the
-// page uses (so FIXTURE=1 answers it too).
-const readStatus = (page) =>
-  page.evaluate(async () => {
-    const response = await fetch('/api/status', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`GET /api/status answered ${response.status}`);
-    return response.json();
-  });
+// PRECONDITION (header), read through the same routes the page uses (so
+// FIXTURE=1 answers it too).
+const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
 
 (async () => {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
-  const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
+  const browser = await lib.launchBrowser();
   let fixture = null;
   const rows = [];
   const latchWalk = { precondition: null, rows: [] };
   // Checks 1-4 and 7, one row each.
-  const checks = [];
-  const check = (name, reasons, detail = '') => {
+  const report = lib.createReport('Notice, sleep, keyboard, recovery, fresh browser');
+  const check = (id, name, reasons, detail = '') => {
     const ok = reasons.length === 0;
-    checks.push({ name, ok });
-    console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${ok ? (detail ? ` - ${detail}` : '') : ` - ${reasons.join('; ')}`}`);
+    report.add(id, name, lib.verdict(ok), ok ? detail : reasons.join('; '));
   };
   // What the state line says as the run ends, for the closing line.
   let finalLine = null;
   let refused = null;
   let leftAsleep = false;
   try {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    if (FIXTURE) fixture = await require('./_fixture_routes.js').install(context);
+    const context = await browser.newContext({ viewport: lib.VIEWPORT });
+    if (FIXTURE) fixture = await require('../_lib/fixture_routes.js').install(context, { droid: 'bench' });
     const page = await context.newPage();
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(String(error).split('\n')[0]));
@@ -370,23 +388,15 @@ const readStatus = (page) =>
 
     // The write guard (header). A page route, so it runs before the fixture's
     // context route and hands everything it allows on to it.
-    let blocked = [];
     let allowSleep = false;
-    await page.route('**/*', async (route) => {
-      const request = route.request();
-      if (request.method() === 'GET' || request.method() === 'HEAD') return route.fallback();
-      const url = request.url();
-      const path = url.slice(url.indexOf('/', url.indexOf('//') + 2)).split('?')[0];
-      const body = request.postData() || '';
-      const allowed =
-        (request.method() === 'POST' && path === '/api/estop') ||
-        (request.method() === 'POST' && path === '/api/rc/debug') ||
-        (request.method() === 'POST' && path === '/api/console' && /^command=(operations|help)\b/.test(body)) ||
-        (allowSleep && request.method() === 'POST' && (path === '/api/sleep' || path === '/api/wake'));
-      if (allowed) return route.fallback();
-      blocked.push(`${request.method()} ${path} ${body.slice(0, 60)}`.trim());
-      return route.abort('blockedbyclient');
-    });
+    const writes = await lib.installGuard(
+      page,
+      (entry) =>
+        (entry.method === 'POST' && entry.path === '/api/estop') ||
+        lib.isRcDebugToggle(entry) ||
+        lib.isConsoleCatalogLoad(entry) ||
+        (allowSleep && entry.method === 'POST' && (entry.path === '/api/sleep' || entry.path === '/api/wake')),
+    );
     const blockedBySurface = [];
 
     await page.goto(`${BASE_URL}/#home`, { waitUntil: 'domcontentloaded' });
@@ -394,11 +404,8 @@ const readStatus = (page) =>
     await page.waitForSelector('#shell-nav [data-surface-link]', { timeout: 20000 });
 
     // PRECONDITION (header): estop clear, not asleep.
-    const before = await readStatus(page);
-    if (before.estop !== false || before.sleepMode !== false) {
-      refused = `the droid reports estop=${before.estop} sleepMode=${before.sleepMode}; this script needs the estop CLEAR and the droid AWAKE. Clear the estop and wake the droid on the Dashboard, then run it again.`;
-      throw new Error(refused);
-    }
+    refused = await precondition({ page });
+    if (refused) throw new Error(refused);
 
     // The surface list the droid is actually serving, read from its shell.js
     // rather than copied here, so a surface added later is walked too.
@@ -470,7 +477,7 @@ const readStatus = (page) =>
       } catch (error) {
         reasons.push(`could not run: ${String(error.message).split('\n')[0]}`);
       }
-      check('1 ignored input notice on a refused press, and its route', reasons, detail);
+      check('1', 'ignored input notice on a refused press, and its route', reasons, detail);
     }
 
     // -----------------------------------------------------------------------
@@ -528,7 +535,7 @@ const readStatus = (page) =>
         }
         allowSleep = false;
       }
-      check('2 sleep overlay: STOP and ESTOP chip topmost, both presses land', reasons);
+      check('2', 'sleep overlay: STOP and ESTOP chip topmost, both presses land', reasons);
     }
 
     // -----------------------------------------------------------------------
@@ -584,7 +591,7 @@ const readStatus = (page) =>
         await page.evaluate((sel) => document.querySelector(sel)?.removeAttribute('tabindex'), STOP).catch(() => {});
         await DIALOGS.seq.close(page).catch((error) => reasons.push(`dialog did not close: ${error.message}`));
       }
-      check('3 keyboard: Tab from the Sequences dialog reaches STOP; Enter and Space press it', reasons, detail);
+      check('3', 'keyboard: Tab from the Sequences dialog reaches STOP; Enter and Space press it', reasons, detail);
     }
 
     // -----------------------------------------------------------------------
@@ -599,7 +606,7 @@ const readStatus = (page) =>
       const reasons = [];
       let detail = '';
       if (!entry) {
-        check(`4 recovery view (${mode}): STOP topmost and takes a press`, ['no unmounted surface left to load']);
+        check('4', `recovery view (${mode}): STOP topmost and takes a press`, ['no unmounted surface left to load']);
         continue;
       }
       const pattern = `**${entry.doc}`;
@@ -656,7 +663,7 @@ const readStatus = (page) =>
         if (!cleared) reasons.push(`the view did not clear once ${entry.doc} was let through`);
         mounted.add(entry.page);
       }
-      check(`4 recovery view (${mode}): STOP and ESTOP chip topmost, STOP press lands`, reasons, detail);
+      check('4', `recovery view (${mode}): STOP and ESTOP chip topmost, STOP press lands`, reasons, detail);
     }
 
     // -----------------------------------------------------------------------
@@ -665,7 +672,7 @@ const readStatus = (page) =>
     for (const surface of surfaces) {
       const row = { surface, dialog: '-', reasons: [] };
       rows.push(row);
-      blocked = [];
+      const since = writes.length;
       const fail = (reason) => row.reasons.push(reason);
       try {
         await openSurface(page, surface, fail);
@@ -673,7 +680,8 @@ const readStatus = (page) =>
         const dialog = DIALOGS[surface];
         if (dialog) {
           row.dialog = dialog.name;
-          await dialog.open(page);
+          row.notAssessed = (await dialog.open(page)) || null;
+          if (row.notAssessed) row.dialog = 'not opened';
         }
         if (SELFTEST_COVER) {
           await page.evaluate(() => {
@@ -746,10 +754,13 @@ const readStatus = (page) =>
           await DIALOGS[surface].close(page).catch((error) => fail(`dialog did not close: ${error.message}`));
         }
       }
+      const blocked = lib.blockedWrites(writes, since);
       if (blocked.length) blockedBySurface.push({ surface, writes: [...new Set(blocked)] });
-      row.result = row.reasons.length ? 'FAIL' : 'PASS';
-      console.log(`${row.result} ${surface}${row.reasons.length ? ` - ${row.reasons.join('; ')}` : ''}`);
-      if (STEP) await waitForEnter(`${surface}: ${row.result}. Enter for the next surface... `);
+      // A dialog that could not be opened leaves the row unproved, never PASS.
+      row.result = row.reasons.length ? lib.FAIL : row.notAssessed ? lib.NOT_ASSESSED : lib.PASS;
+      const why = row.reasons.length ? row.reasons.join('; ') : row.notAssessed || '';
+      console.log(`${row.result} ${surface}${why ? ` - ${why}` : ''}`);
+      await lib.step(`${surface}: ${row.result}.`);
     }
 
     // -----------------------------------------------------------------------
@@ -780,7 +791,7 @@ const readStatus = (page) =>
       for (const [index, surface] of surfaces.entries()) {
         const row = { surface, reasons: [] };
         latchWalk.rows.push(row);
-        blocked = [];
+        const since = writes.length;
         const fail = (reason) => row.reasons.push(reason);
         try {
           const pressesBefore = presses;
@@ -800,10 +811,11 @@ const readStatus = (page) =>
         } catch (error) {
           fail(`could not run: ${String(error.message).split('\n')[0]}`);
         }
+        const blocked = lib.blockedWrites(writes, since);
         if (blocked.length) blockedBySurface.push({ surface: `${surface} (latch walk)`, writes: [...new Set(blocked)] });
         row.result = row.reasons.length ? 'FAIL' : 'PASS';
         console.log(`${row.result} latch walk ${surface}${row.reasons.length ? ` - ${row.reasons.join('; ')}` : ''}`);
-        if (STEP) await waitForEnter(`${surface}: latch ${row.result}. Enter for the next surface... `);
+        await lib.step(`${surface}: latch ${row.result}.`);
       }
     }
 
@@ -815,7 +827,7 @@ const readStatus = (page) =>
     {
       const reasons = [];
       let detail = '';
-      const fresh = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const fresh = await browser.newContext({ viewport: lib.VIEWPORT });
       try {
         if (fixture) {
           await fixture.addContext(fresh);
@@ -824,17 +836,7 @@ const readStatus = (page) =>
         const second = await fresh.newPage();
         // Nothing but reads leaves this one: GETs, and the Dashboard
         // console's read-only `operations`/`help` catalog load.
-        const freshBlocked = [];
-        await second.route('**/*', (route) => {
-          const request = route.request();
-          if (request.method() === 'GET' || request.method() === 'HEAD') return route.fallback();
-          const url = request.url();
-          const path = url.slice(url.indexOf('/', url.indexOf('//') + 2)).split('?')[0];
-          const body = request.postData() || '';
-          if (request.method() === 'POST' && path === '/api/console' && /^command=(operations|help)\b/.test(body)) return route.fallback();
-          freshBlocked.push(`${request.method()} ${path} ${body.slice(0, 60)}`.trim());
-          return route.abort('blockedbyclient');
-        });
+        const freshWrites = await lib.installGuard(second, lib.isConsoleCatalogLoad);
         // Every text the state line takes from the moment shell.js writes it.
         await second.addInitScript(() => {
           window.__estopTrail = [];
@@ -887,6 +889,7 @@ const readStatus = (page) =>
         else if (!secondRead) reasons.push('"Clear estop" was enabled, then disabled again');
         const trail = await second.evaluate(() => window.__estopTrail.slice());
         if (trail.includes('Estop: clear')) reasons.push(`the state line read "Estop: clear" on the way: ${JSON.stringify(trail)}`);
+        const freshBlocked = lib.blockedWrites(freshWrites);
         detail =
           `"${line}" after ${readAfter} ms; trail ${JSON.stringify(trail)}; Clear estop enabled: ${firstRead && secondRead ? 'yes, both reads' : 'no'} (not pressed)` +
           (freshBlocked.length ? `; writes the guard stopped: ${[...new Set(freshBlocked)].join(' | ')}` : '');
@@ -896,7 +899,7 @@ const readStatus = (page) =>
       } finally {
         await fresh.close();
       }
-      check('7 a fresh browser reads the latch and offers Clear estop', reasons, detail);
+      check('7', 'a fresh browser reads the latch and offers Clear estop', reasons, detail);
     }
 
     if (blockedBySurface.length) {
@@ -908,14 +911,17 @@ const readStatus = (page) =>
       [...new Set(pageErrors)].forEach((line) => console.log(`  ${line}`));
     }
   } catch (error) {
-    if (refused) console.error(`REFUSED: ${refused}`);
-    else console.error('stop-every-surface could not complete:', error);
-    process.exitCode = refused ? 2 : 1;
+    if (!refused) {
+      console.error('stop-every-surface could not complete:', error);
+      process.exitCode = 1;
+    }
   } finally {
-    await browser.close();
-    if (fixture) await fixture.close();
+    await lib.closeAll(browser, [fixture]);
   }
-  if (refused) return;
+  if (refused) {
+    lib.notAssessed(refused);
+    return;
+  }
 
   const yes = (value) => (value === undefined ? '-' : value ? 'yes' : 'NO');
   console.log('\nsurface        dialog          visible enabled ptr-events topmost pressed stop-sent latched result');
@@ -936,8 +942,12 @@ const readStatus = (page) =>
       ].join(' '),
     );
   }
-  const failed = rows.filter((row) => row.result !== 'PASS');
-  console.log(`\n=== STOP on every surface: ${rows.length - failed.length}/${rows.length} PASS ===`);
+  const failed = rows.filter((row) => row.result === lib.FAIL);
+  const unproved = rows.filter((row) => row.result === lib.NOT_ASSESSED);
+  console.log(
+    `\n=== STOP on every surface: ${rows.length - failed.length - unproved.length}/${rows.length} PASS` +
+      `${unproved.length ? `, ${unproved.length} NOT ASSESSED (${unproved.map((row) => row.surface).join(', ')})` : ''} ===`,
+  );
 
   console.log('\nLatch walk: every surface again, nothing pressed');
   console.log('surface        state line                 result');
@@ -950,11 +960,8 @@ const readStatus = (page) =>
   const latchTotal = latchWalk.rows.length + (latchWalk.precondition ? 1 : 0);
   console.log(`\n=== Latch survives navigation: ${latchTotal - latchFailed}/${latchTotal} PASS ===`);
 
-  console.log('\ncheck                                                                          result');
-  console.log('------------------------------------------------------------------------------ ------');
-  for (const item of checks) console.log(`${item.name.padEnd(78)} ${item.ok ? 'PASS' : 'FAIL'}`);
-  const checksFailed = checks.filter((item) => !item.ok).length;
-  console.log(`\n=== Notice, sleep, keyboard, recovery, fresh browser: ${checks.length - checksFailed}/${checks.length} PASS ===`);
+  report.print();
+  const checksFailed = report.rows.filter((row) => row.result !== lib.PASS).length;
   console.log(`Screenshots under ${ARTIFACT_DIR}`);
   if (leftAsleep) {
     console.log('\nThe droid was put in Sleep Mode and did NOT wake on "Wake Droid". Wake it on the Dashboard.');
@@ -964,5 +971,5 @@ const readStatus = (page) =>
   } else if (stopsAnswered > 0) {
     console.log(`\nThe estop was latched during this run, and the state line now reads "${finalLine ?? 'unknown'}". This script released nothing: check the droid on Foot Drive or the Dashboard.`);
   }
-  if (failed.length || rows.length === 0 || latchFailed || latchTotal === 0 || checksFailed || checks.length < 6) process.exitCode = 1;
+  if (failed.length || rows.length === 0 || latchFailed || latchTotal === 0 || checksFailed || report.rows.length < 6) process.exitCode = 1;
 })();

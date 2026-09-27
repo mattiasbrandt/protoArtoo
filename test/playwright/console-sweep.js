@@ -52,14 +52,15 @@
 //                         runs)
 //   STEP=1                also wait for Enter after each page
 // Offline proof: FIXTURE=1 BASE=http://127.0.0.1:4173 against python3
-// tools/serve_editor_fixture.py (routes in ./shell/_fixture_routes.js).
+// tools/serve_editor_fixture.py (routes in ./_lib/fixture_routes.js, its
+// 'bench' droid).
 // Self-test: SELFTEST_LAYOUT=1 puts a 1600 px wide block in the work area,
 // hides one plate chip and moves STOP past the right edge on every shell
 // page, and overflow, cells and stop must each FAIL.
 const { chromium } = require("playwright");
 const fs = require("node:fs");
 const path = require("node:path");
-const readline = require("node:readline");
+const lib = require("./_lib/checks.js");
 
 const BASE = (process.env.BASE || "http://10.0.0.22").replace(/\/$/, "");
 // Read from data/ rather than listed by hand: a hand list went stale as the
@@ -73,10 +74,8 @@ const PAGES = fs.readdirSync(DATA_DIR)
   .sort();
 const SETTLE_MS = Number(process.env.SETTLE_MS || 6000);
 const HEADED = process.env.HEADED === "1";
-const STEP = process.env.STEP === "1";
-const FIXTURE = process.env.FIXTURE === "1";
+const { FIXTURE, VIEWPORT } = lib;
 const SELFTEST_LAYOUT = process.env.SELFTEST_LAYOUT === "1";
-const VIEWPORT = { width: 1440, height: 900 };
 const PLATE_CELLS = 8;
 
 // The decision above, made from the page's source.
@@ -88,10 +87,9 @@ const shellKindOf = (file) => {
   return null;
 };
 
-const waitForEnter = (prompt) => new Promise((resolve) => {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.question(prompt, () => { rl.close(); resolve(); });
-});
+// The one configuration write the guard lets out (header).
+const isGuidedSetupVisit = (entry) =>
+  entry.method === "POST" && entry.path === "/api/config" && /^guidedSetupVisited=[^&]*$/.test(entry.body);
 
 // The layout reading, taken in the page.
 const readLayout = (page) =>
@@ -129,9 +127,9 @@ const readLayout = (page) =>
     for (const p of PAGES) {
       const shellKind = shellKindOf(p);
       const context = await browser.newContext({ viewport: VIEWPORT });
-      const fixture = FIXTURE ? await require("./shell/_fixture_routes.js").install(context) : null;
+      const fixture = FIXTURE ? await require("./_lib/fixture_routes.js").install(context, { droid: "bench" }) : null;
       const page = await context.newPage();
-      const jsErrors = [], consoleErrors = [], resourceErrors = [], blocked = [];
+      const jsErrors = [], consoleErrors = [], resourceErrors = [];
       page.on("pageerror", (e) => jsErrors.push(String(e).split("\n")[0]));
       page.on("console", (m) => {
         if (m.type() !== "error") return;
@@ -139,20 +137,10 @@ const readLayout = (page) =>
         (t.startsWith("Failed to load resource") ? resourceErrors : consoleErrors).push(t.slice(0, 160));
       });
       // The write guard (header).
-      await page.route("**/*", async (route) => {
-        const request = route.request();
-        if (request.method() === "GET" || request.method() === "HEAD") return route.fallback();
-        const url = request.url();
-        const routePath = url.slice(url.indexOf("/", url.indexOf("//") + 2)).split("?")[0];
-        const body = request.postData() || "";
-        const allowed =
-          (request.method() === "POST" && routePath === "/api/rc/debug") ||
-          (request.method() === "POST" && routePath === "/api/console" && /^command=(operations|help)\b/.test(body)) ||
-          (request.method() === "POST" && routePath === "/api/config" && /^guidedSetupVisited=[^&]*$/.test(body));
-        if (allowed) return route.fallback();
-        blocked.push(`${request.method()} ${routePath} ${body.slice(0, 60)}`.trim());
-        return route.abort("blockedbyclient");
-      });
+      const writes = await lib.installGuard(
+        page,
+        (entry) => lib.isRcDebugToggle(entry) || lib.isConsoleCatalogLoad(entry) || isGuidedSetupVisit(entry),
+      );
       if (SELFTEST_LAYOUT) {
         await page.addInitScript(() => {
           window.addEventListener("load", () => {
@@ -193,13 +181,12 @@ const readLayout = (page) =>
           if (layout.clipped.length) layoutReasons.push(`clipped chip values: ${layout.clipped.join(", ")}`);
         }
       }
-      summary.push({ page: p, shellKind, js: uniq(jsErrors), console: uniq(consoleErrors), resource: uniq(resourceErrors), blocked: uniq(blocked), domMs, loadMs, layout, layoutReasons });
-      if (STEP) await waitForEnter(`${p}: ${jsErrors.length + consoleErrors.length} errors, layout ${shellKind ? (layoutReasons.length ? "FAIL" : "PASS") : "n/a"}. Enter for the next page... `);
-      await context.close();
-      if (fixture) await fixture.close();
+      summary.push({ page: p, shellKind, js: uniq(jsErrors), console: uniq(consoleErrors), resource: uniq(resourceErrors), blocked: uniq(lib.blockedWrites(writes)), domMs, loadMs, layout, layoutReasons });
+      await lib.step(`${p}: ${jsErrors.length + consoleErrors.length} errors, layout ${shellKind ? (layoutReasons.length ? "FAIL" : "PASS") : "n/a"}.`);
+      await lib.closeAll(null, [context, fixture]);
     }
   } finally {
-    await browser.close();
+    await lib.closeAll(browser);
   }
 
   let bad = 0;

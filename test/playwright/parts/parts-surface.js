@@ -76,7 +76,8 @@
 //   BASE_URL=http://<board>   the controller (default http://10.0.0.22)
 //   HEADLESS=true             no window
 // Offline proof: FIXTURE=1 BASE_URL=http://127.0.0.1:4173 HEADLESS=true against
-// python3 tools/serve_editor_fixture.py (routes in ../shell/_fixture_routes.js).
+// python3 tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js,
+// its 'bench' droid).
 // Self-tests, each must FAIL its check: SELFTEST_REBUILD=1 swaps the hovered
 // picker for a copy mid-frame; SELFTEST_HIDE=1 hides one row once answered;
 // SELFTEST_NOTWIRED=1 rewords one unwired row's "- not wired -";
@@ -84,12 +85,10 @@
 // SELFTEST_POSITION=1 gives one light row a position cell;
 // SELFTEST_DESELECT=1 picks the picked marker again (which lets it go) after
 // the first Outputs read lands.
-const { chromium } = require('playwright');
 const { mkdirSync } = require('node:fs');
+const lib = require('../_lib/checks.js');
 
-const BASE_URL = (process.env.BASE_URL || 'http://10.0.0.22').replace(/\/$/, '');
-const HEADLESS = process.env.HEADLESS === 'true';
-const FIXTURE = process.env.FIXTURE === '1';
+const { BASE_URL, FIXTURE } = lib;
 const SELFTEST_REBUILD = process.env.SELFTEST_REBUILD === '1';
 const SELFTEST_HIDE = process.env.SELFTEST_HIDE === '1';
 const SELFTEST_NOTWIRED = process.env.SELFTEST_NOTWIRED === '1';
@@ -121,27 +120,18 @@ const hiddenRows = (page) =>
 
 (async () => {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
-  const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
+  const browser = await lib.launchBrowser();
   let fixture = null;
-  const checks = [];
-  const check = (name, ok, detail) => {
-    checks.push({ name, ok, detail });
-    console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`);
-  };
+  const report = lib.createReport('Parts surface');
+  // Rows are numbered in the order they are checked.
+  const check = (name, ok, detail) => report.add(report.rows.length + 1, name, lib.verdict(ok), detail);
   try {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    if (FIXTURE) fixture = await require('../shell/_fixture_routes.js').install(context);
+    const context = await browser.newContext({ viewport: lib.VIEWPORT });
+    if (FIXTURE) fixture = await require('../_lib/fixture_routes.js').install(context, { droid: 'bench' });
     const page = await context.newPage();
 
     // The write guard: nothing but reads leaves this browser.
-    const blocked = [];
-    await page.route('**/*', async (route) => {
-      const request = route.request();
-      if (request.method() === 'GET' || request.method() === 'HEAD') return route.fallback();
-      const url = request.url();
-      blocked.push(`${request.method()} ${url.slice(url.indexOf('/', url.indexOf('//') + 2))}`);
-      return route.abort('blockedbyclient');
-    });
+    const writes = await lib.installGuard(page);
 
     // The droid's own answer, each time it lands, so the rows are checked
     // against what the droid said rather than against a copy made here.
@@ -525,20 +515,17 @@ const hiddenRows = (page) =>
     await page.screenshot({ path: `${ARTIFACT_DIR}/parts-read-failing.png` });
     await page.unroute('**/api/servo/outputs*', refuse);
 
+    const blocked = lib.blockedWrites(writes);
     check('Parts sent no write of its own', blocked.length === 0, blocked.length ? [...new Set(blocked)].join(', ') : '');
   } catch (error) {
     console.error('parts-surface could not complete:', error);
     process.exitCode = 1;
   } finally {
-    await browser.close();
-    if (fixture) await fixture.close();
+    await lib.closeAll(browser, [fixture]);
   }
 
-  console.log('\ncheck                                                                          result');
-  console.log('------------------------------------------------------------------------------ ------');
-  for (const item of checks) console.log(`${item.name.padEnd(78)} ${item.ok ? 'PASS' : 'FAIL'}`);
-  const failed = checks.filter((item) => !item.ok).length;
-  console.log(`\n=== Parts surface: ${checks.length - failed}/${checks.length} PASS ===`);
+  report.print();
+  const failed = report.rows.filter((row) => row.result !== lib.PASS).length;
   console.log(`Screenshots under ${ARTIFACT_DIR}`);
-  if (failed || checks.length === 0) process.exitCode = 1;
+  if (failed || report.rows.length === 0) process.exitCode = 1;
 })();

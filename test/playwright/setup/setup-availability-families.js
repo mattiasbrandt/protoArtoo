@@ -8,19 +8,28 @@
 // color, compare - is the reference project's own enforcement
 // (r2d2-astromech-simulator v1.79.0, tests/chrome.test.js:509).
 //
-// Run against tools/serve_editor_fixture.py: the surfaces carry a PA:INCLUDE
-// that a plain static server does not expand, and none of their scripts load
-// without it. The component rows are Configuration's and the Memory Profiler
-// panel is Maintenance's since #404 split the Setup page, so each state is
-// read on the surface that carries its element.
-const { chromium } = require('playwright');
+// The component rows are Configuration's and the Memory Profiler panel is
+// Maintenance's since #404 split the Setup page, so each state is read on the
+// surface that carries its element. Every /api/** request is answered here
+// (identity, config, a one-frame stream), on a droid or offline alike, so it
+// writes nothing and needs no FIXTURE=1.
+//
+// RUN:
+//   NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
+//     node test/playwright/setup/setup-availability-families.js
+//   BASE_URL=http://<board>   the controller (default http://10.0.0.22)
+//   HEADLESS=true             no window
+// Offline: BASE_URL=http://127.0.0.1:<port> against
+// python3 tools/serve_editor_fixture.py - the surfaces carry a PA:INCLUDE that
+// a plain static server does not expand, and none of their scripts load
+// without it.
 const assert = require('node:assert/strict');
 const { mkdirSync } = require('node:fs');
+const lib = require('../_lib/checks.js');
 
-const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const { BASE_URL } = lib;
 const CONFIGURATION_URL = `${BASE_URL}/configuration.html`;
 const MAINTENANCE_URL = `${BASE_URL}/maintenance.html`;
-const HEADLESS = process.env.HEADLESS === 'true';
 const ARTIFACT_DIR = 'output/playwright/issue-341';
 
 const identity = {
@@ -37,6 +46,9 @@ const config = {
     audio: { enabled: true },
   },
   system: { logLevel: 3 },
+  // Guided Setup's run ended and its summary dismissed, so it is not drawn
+  // over the Configuration rows this reads (data/setup.js loadRun).
+  guidedSetup: { run: 'completed', visited: [], recorded: true, summaryDone: true },
 };
 
 // What a row is wearing, as the browser computed it.
@@ -58,8 +70,8 @@ const READ = `(row) => {
 
 (async () => {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
-  const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 35 });
-  const page = await browser.newPage({ viewport: { width: 1080, height: 900 } });
+  const browser = await lib.launchBrowser();
+  const page = await browser.newPage({ viewport: lib.VIEWPORT });
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(String(error)));
 
@@ -228,6 +240,6 @@ const READ = `(row) => {
     console.error('Availability family check failed:', error);
     process.exitCode = 1;
   } finally {
-    await browser.close();
+    await lib.closeAll(browser);
   }
 })();
