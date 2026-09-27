@@ -65,7 +65,7 @@
 #   # (`http GET /api/config > before.json`): the base they go to, and where kept
 #   # answers are written. Either transport; see "The `http` directive" below.
 #   python3 tools/console_client.py --port /dev/ttyUSB0 --http-base http://10.0.0.22 \
-#       --run-dir bench-run --script tools/bench_rows/artoo_esp32.txt
+#       --run-dir tasks/bench-run --script tools/bench_rows/artoo_esp32.txt
 # =============================================================================
 
 import argparse
@@ -1798,7 +1798,7 @@ def http_side_channel_refusal(args, directives: list[Directive]) -> str | None:
 
 class _AppendDirective(argparse.Action):
     """Appends a Directive onto one shared `directives` list in declaration
-    order, so --send/--raw/--key/--sendlen/--listen/--pause interleave on
+    order, so --send/--raw/--key/--sendlen/--listen/--pause/--http-step interleave on
     the command line exactly the way lines in a --script file would --
     composing a scripted run directly on the command line is the same
     engine, not a second one."""
