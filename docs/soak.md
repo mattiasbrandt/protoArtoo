@@ -142,7 +142,7 @@ different shapes, and some do not publish it at all.
 | --- | --- | --- |
 | `artoo` | the `artoo_esp32` product image | No `bootCount`; `resetReason` is a name, not a number; no recovery-ladder block (the board has no companion radio); no reset route |
 | `shipping` | the `firebeetle2` product image | Same as `artoo`, plus the recovery ladder nested under `hostedLink`; still no reset route (#243) |
-| `bench` | `bringup/p4_hosted_bench.cpp`, built by `firebeetle2_hosted_bench` | Built to be measured: `bootCount`, the raw reset-reason enum, flat ladder counters, a reset route, and an `/api/events` stream whose payload is a monotonic frame counter |
+| `bench` | `bench/p4_hosted_bench.cpp`, built by `firebeetle2_hosted_bench` | Built to be measured: `bootCount`, the raw reset-reason enum, flat ladder counters, a reset route, and an `/api/events` stream whose payload is a monotonic frame counter |
 
 **The mode is declared and then checked. It is never sniffed.** You pass
 `--image`, and at preflight the harness verifies the payload really has that

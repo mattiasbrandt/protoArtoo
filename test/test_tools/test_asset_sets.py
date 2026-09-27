@@ -45,14 +45,17 @@ class AssetSetDeclarations(unittest.TestCase):
             self.assertIn(value, known, f"{env} names asset set {value!r}, which is not one of {known}")
 
     def test_artoo_carries_legacy_and_p4_carries_default(self):
-        """The P4 family extends env:artoo_esp32, so without its own declaration it
-        would silently inherit the 4 MB board's set -- the exact trap this checks."""
+        """Every P4 env resolves the `default` set from a declaration in its own
+        chain, not from a fallback. A P4 env re-parented onto env:artoo_esp32
+        would silently take the 640 KB board's set -- the trap this checks."""
         self.assertEqual(self.config.get("env:artoo_esp32", "custom_asset_set", "default"), "legacy")
-        for env in ("firebeetle2", "firebeetle2_bringup"):
+        p4_envs = [env for env in self.config.envs() if env.startswith("firebeetle2")]
+        self.assertIn("firebeetle2", p4_envs)
+        for env in p4_envs:
             self.assertEqual(
-                self.config.get(f"env:{env}", "custom_asset_set", "default"),
+                self.config.get(f"env:{env}", "custom_asset_set", None),
                 "default",
-                f"{env} inherited the artoo-esp32 asset set instead of declaring its own",
+                f"{env} does not resolve the P4 asset set from its own chain",
             )
 
     def test_every_artoo_variant_inherits_legacy(self):

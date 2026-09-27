@@ -232,7 +232,7 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 //   UART1  drive backend            UART_PORT_DRIVE
 //   UART2  dome link, permanently   UART_PORT_DOME
 //   UART3  audio module, TX and RX  UART_PORT_AUDIO
-//   UART4  unclaimed by the firmware (borrowed by bringup/p4_rt_bench.cpp)
+//   UART4  unclaimed by the firmware (borrowed by bench/p4_rt_bench.cpp)
 //
 // This costs no GPIO. UART0-UART4 route TX/RX to any pin through the GPIO
 // matrix (spec sheet "UART Lane Plan"), so audio keeps the two pins it already

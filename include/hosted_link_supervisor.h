@@ -9,7 +9,7 @@
 // rejoin, task creation, ESP_HOSTED_EVENT registration, and logging -- all
 // stay in src/web/web_network_manager_hosted.cpp. This header/its .cpp own
 // only the phase model the #184 bench proved on hardware
-// (bringup/p4_hosted_bench.cpp:179-192):
+// (bench/p4_hosted_bench.cpp:179-192):
 //
 //     idle -> armed -> attempting -> {idle, degraded}
 //
@@ -31,7 +31,7 @@
 #include <stdint.h>
 
 // Recovery ladder bounds, device-proven on the #184 bench
-// (bringup/p4_hosted_bench.cpp:119-120): each attempt's own SDIO card-init
+// (bench/p4_hosted_bench.cpp:119-120): each attempt's own SDIO card-init
 // timeout (sdio_drv.c CARD_INIT_TIMEOUT_MS = 1500ms, with internal retries)
 // needs to fully settle before the next attempt starts, so the interval sits
 // well above that; five attempts over roughly 25-35s rode out a transient

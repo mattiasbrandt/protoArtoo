@@ -1,6 +1,6 @@
 /**
  * P4 ESP-Hosted WiFi reliability bench sketch — #184
- * Lives in bringup/ (fenced outside src/) as a throwaway test image.
+ * Lives in bench/ (fenced outside src/) as a throwaway test image.
  *
  * Tests SDIO WiFi transport stability using PsychicHttp server.
  * Provides endpoints for:

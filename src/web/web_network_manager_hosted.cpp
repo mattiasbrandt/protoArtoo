@@ -20,7 +20,7 @@
 // stale-true after the reboot and is not cleared by hostedDeinitWiFi()
 // (device-proven, #184 bench session). The rejoin below bypasses WiFi.begin()
 // entirely and goes through raw esp_wifi_* calls instead, in the vendor's own
-// order, ported from the device-proven bringup/p4_hosted_bench.cpp (recovered
+// order, ported from the device-proven bench/p4_hosted_bench.cpp (recovered
 // on attempt 1/5 on hardware, client-unreachable to reachable in ~10s, host
 // still running, bootCount unchanged) -- see hostedRejoinAfterRecovery()
 // below for the full rationale, carried from the bench almost verbatim.
@@ -84,7 +84,7 @@ static volatile bool g_staConnected = false;
 // custom_sdkconfig (platformio.ini) leaves that symbol undefined (#189), so
 // the event fires and the host survives -- but nothing reconnects on its
 // own. This is that missing subscriber, ported from the device-proven
-// bringup/p4_hosted_bench.cpp rather than re-derived (#189's own instruction:
+// bench/p4_hosted_bench.cpp rather than re-derived (#189's own instruction:
 // "port its shape, do not re-derive it").
 //
 // The decision logic (phase model, attempt bound) lives in
@@ -126,7 +126,7 @@ static portMUX_TYPE g_hostedRejoinMux = portMUX_INITIALIZER_UNLOCKED;
 // log_e()) -- the bypass has to be complete: mode -> config -> start ->
 // connect through raw ESP-IDF calls only, in the vendor's own
 // station_example.c example_wifi_init_sta() order, exactly as
-// bringup/p4_hosted_bench.cpp:654-670 proved on hardware.
+// bench/p4_hosted_bench.cpp:654-670 proved on hardware.
 //
 // STA rejoin only: this mirrors the bench, which has no posture concept and
 // is STA-only. A C6 reset while the controller's boot posture was actually
@@ -340,7 +340,7 @@ static void hostedTransportUpHandler(void* arg, esp_event_base_t base, int32_t i
 static void hostedRegisterLinkSupervision() {
     // Create the recovery task BEFORE registering the event handlers below.
     // Order is load-bearing (#184 device review, mirrored from
-    // bringup/p4_hosted_bench.cpp:1085-1098): hostedTransportFailureHandler()
+    // bench/p4_hosted_bench.cpp:1085-1098): hostedTransportFailureHandler()
     // only notifies g_hostedRecoveryTaskHandle when it is non-null, and
     // hostedLinkSupervisorOnTransportFailure() only arms a fresh ladder once
     // per Idle->Armed edge -- an event arriving in the window between
@@ -414,7 +414,7 @@ HostedLinkStatusSnapshot hostedLinkQueryStatus() {
 // firing: reaching terminal Degraded needs five consecutive co-processor
 // failures over ~25-35s, the fitted C6 is healthy, and no shipping image could
 // provoke a transport failure at all. This is the missing provocation --
-// the same 100 ms enable-line pulse bringup/p4_hosted_bench.cpp:742-780 proved
+// the same 100 ms enable-line pulse bench/p4_hosted_bench.cpp:742-780 proved
 // on hardware, ported into the image that ships the ladder rather than
 // re-derived.
 //

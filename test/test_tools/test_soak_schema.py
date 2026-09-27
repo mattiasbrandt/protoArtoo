@@ -10,7 +10,7 @@ both cheap:
    which report keys each image may emit.
 2. **Drift guards** that read the firmware sources the schemas were derived
    from (`src/web/web_server.cpp` and `src/web/status_json.cpp`,
-   `include/reset_reason.h`, `include/config.h`, `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
+   `include/reset_reason.h`, `include/config.h`, `bench/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
    or a board capability stops gating what the schemas assume it gates, this
    suite goes red instead of the harness silently reading a field that is no
    longer there.
@@ -42,7 +42,7 @@ STATUS_BUILDER_CPP = WEB_SERVER_CPP + STATUS_JSON_CPP
 # include/reset_reason.h (header-only, so the Console's system.status.health
 # query can call it from a native-compiled translation unit too).
 RESET_REASON_H = (REPO_ROOT / "include" / "reset_reason.h").read_text()
-BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
+BENCH_CPP = (REPO_ROOT / "bench" / "p4_hosted_bench.cpp").read_text()
 CONFIG_H = (REPO_ROOT / "include" / "config.h").read_text()
 WEB_ADMISSION_CPP = (REPO_ROOT / "src" / "web" / "web_admission.cpp").read_text()
 WEB_ADMISSION_PSYCHIC_CPP = (REPO_ROOT / "src" / "web" / "web_admission_psychic.cpp").read_text()
@@ -717,14 +717,14 @@ class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
         self.assertIn("artoo_esp32", str(caught.exception))
 
     def test_a_child_env_inherits_its_parents_flags_when_it_declares_none(self):
-        # [env:firebeetle2] declares no build_flags of its own; it extends
-        # [env:firebeetle2_bringup], which does. PlatformIO resolves it that
-        # way and so must this -- a resolver that only looked at the env's own
-        # section would report the shipping image as having no floor.
-        self.assertNotRegex(pio_section("env:firebeetle2"), r"(?m)^build_flags\s*=")
-        self.assertRegex(pio_section("env:firebeetle2"), r"(?m)^extends\s*=\s*env:firebeetle2_bringup")
-        self.assertEqual(soak.resolve_admission_floor("firebeetle2").ordinary_bytes,
-                         soak.resolve_admission_floor("firebeetle2_bringup").ordinary_bytes)
+        # [env:firebeetle2_ota] declares no build_flags of its own; it extends
+        # [env:firebeetle2], which does. PlatformIO resolves it that way and so
+        # must this -- a resolver that only looked at the env's own section
+        # would report the OTA image as having no floor.
+        self.assertNotRegex(pio_section("env:firebeetle2_ota"), r"(?m)^build_flags\s*=")
+        self.assertRegex(pio_section("env:firebeetle2_ota"), r"(?m)^extends\s*=\s*env:firebeetle2\s*$")
+        self.assertEqual(soak.resolve_admission_floor("firebeetle2_ota").ordinary_bytes,
+                         soak.resolve_admission_floor("firebeetle2").ordinary_bytes)
 
     def test_a_bench_override_replaces_the_ordinary_floor_only(self):
         declared_override = declared_macro_values(soak.ADMISSION_FLOOR_OVERRIDE_MACRO)
@@ -1009,7 +1009,7 @@ class BenchCompilesNoAdmissionGuard(unittest.TestCase):
     def test_the_bench_env_compiles_none_of_src(self):
         section = pio_section("env:firebeetle2_hosted_bench")
         self.assertIn("-<*>", section)
-        self.assertIn("+<../bringup/p4_hosted_bench.cpp>", section)
+        self.assertIn("+<../bench/p4_hosted_bench.cpp>", section)
         self.assertNotIn("+<*>", section)
 
     def test_the_bench_env_would_otherwise_resolve_a_floor(self):

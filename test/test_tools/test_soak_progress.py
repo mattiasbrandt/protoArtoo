@@ -41,7 +41,7 @@ import soak  # noqa: E402
 # #428; web_server.cpp captures the state it is written from.
 STATUS_BUILDER_CPP = ((REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
                       + (REPO_ROOT / "src" / "web" / "status_json.cpp").read_text())
-BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
+BENCH_CPP = (REPO_ROOT / "bench" / "p4_hosted_bench.cpp").read_text()
 
 BENCH = soak.SCHEMAS["bench"]
 SHIPPING = soak.SCHEMAS["shipping"]
