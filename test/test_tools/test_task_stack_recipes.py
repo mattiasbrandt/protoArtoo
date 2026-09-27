@@ -1,32 +1,31 @@
 """Every project-created task has a Measured Chain recipe, on every chip (#271).
 
-`tools/task_stack_recipes.json` is the recipe table ADR 0040 asks for: per task
-and per chip, the environment walked, the root symbols, the frames stitched by
-hand across an indirect call, and the profiler-image substitution where the
-product image's chain is not the deeper one. Three separate things can rot, and
-each has a class of test here:
+`tools/task_stack_recipes.json` is the recipe table ADR 0040 asks for, and the
+one home of every Recorded Chain (ADR 0040, amended 2026-09-27): per task and
+per chip, the environment walked, the root symbols, the frames stitched by hand
+across an indirect call, the chain that walk recorded, the task's stack, the
+reason wherever that stack is not what the rule gives, and why the chain is as
+deep as it is today. `include/task_stack_figures.h` is generated from it. Three
+separate things can rot, and each has a class of test here:
 
 1. **The table can miss a task.** That is how `/api/profiler` came to report
    nine of ten tasks (#250), and it is why the criterion is the task, not the
    file it happens to be created in. Every `xTaskCreate*` call site in `src/` is
    scanned, and every registered name must have a recipe.
 
-2. **A constant can drift from its derivation.** `include/config.h` declares the
-   chain and the stack; the recipe records which of them the sizing rule
-   produced and, where the rule was declined, why. So each arm is re-derived
-   here: `applied` must equal the rule for its OWN chain, `above` must exceed
-   it, `declined` must sit below the rule and still cover the chain, with a
-   written reason. A hand-edited value that clears its chain but not the rule is
-   red, which is what "a constant cannot drift from its derivation" means.
+2. **A figure can drift from its derivation.** The rule state of an arm is
+   derived from its two figures, never stored, so what is asserted is what must
+   hold for every arm: the stack covers the chain, stacks move in 512 B steps,
+   an arm off the rule says why and an arm on it carries no stale reason, and
+   the ESP32-P4 pays the rule everywhere. None of it restates a figure.
 
-3. **The gate row can read the header wrongly.**
-   `tools/check_task_stack_chains.py` parses `include/config.h` rather than
-   compiling it, because it runs as a slice-gate row where a C++ probe per
-   environment is cost the row does not need. That parse is proven here against
-   a compiler probe that includes the real headers under each `PA_BOARD` value -
-   the same technique test_board_chip_sized_constants.py uses, and the only way
-   a host test sees the ESP32-P4 arm at all (platformio.ini env:native always
-   builds PA_BOARD_ARTOO_ESP32).
+3. **The build can compile something else.** The header is generated and
+   committed, and config.h includes it per chip. A compiler probe includes the
+   real headers under each `PA_BOARD` value and reads back what each board
+   actually compiles - the only way a host test sees the ESP32-P4 arm at all
+   (platformio.ini env:native always builds PA_BOARD_ARTOO_ESP32) - and the
+   rule's C++ copy is checked against its Python copy there. Byte drift between
+   the recipe and the committed header is test_task_stack_figures_drift.py's.
 
 What this file does NOT do is re-walk the chains. That needs a linked image and
 is `tools/check_task_stack_chains.py`, run as a gate row against the artoo build
@@ -58,6 +57,7 @@ PROBE_HEADER_SET = (
     "board_lanes.inc",
     "build_flags.inc",
     "firebeetle_required_pins.inc",
+    "task_stack_figures.h",
 )
 
 BOARD_TO_CHIP = {
@@ -65,10 +65,9 @@ BOARD_TO_CHIP = {
     "PA_BOARD_FIREBEETLE2": "esp32p4",
 }
 
-def rule_stack_for_chain(chain_bytes: int) -> int:
-    """The #248 sizing rule: chain + 25%, rounded up to the next 512 bytes."""
-    need = (chain_bytes * 5 + 3) // 4
-    return ((need + 511) // 512) * 512
+# Chains the rule's two copies are compared on: the step boundaries either side
+# of a rounding, and every recorded chain (added in the test).
+RULE_PROBE_CHAINS = (1, 409, 410, 511, 512, 3152, 4095, 4096, 4097, 8601, 8602)
 
 
 class TaskStackRecipes(unittest.TestCase):
@@ -84,9 +83,13 @@ class TaskStackRecipes(unittest.TestCase):
 
     # -- the compiler probe ---------------------------------------------------
 
-    def _probe_source(self, board_macro, names):
+    def _probe_source(self, board_macro, names, chains):
         emit = "\n".join(
-            f'    std::printf("{name} %u\\n", (unsigned){name});' for name in names
+            f'    std::printf("const {name} %u\\n", (unsigned){name});' for name in names
+        )
+        rule = "\n".join(
+            f'    std::printf("rule {chain} %u\\n", (unsigned)taskStackByTheRule({chain}U));'
+            for chain in chains
         )
         return "\n".join(
             [
@@ -100,23 +103,42 @@ class TaskStackRecipes(unittest.TestCase):
                 "#include <cstdio>",
                 "int main() {",
                 emit,
+                rule,
+                "    for (const TaskStackFigure& row : TASK_STACK_FIGURES) {",
+                '        std::printf("row %s %u %u\\n", row.task, (unsigned)row.chainBytes,',
+                "                    (unsigned)row.stackBytes);",
+                "    }",
                 "    return 0;",
                 "}",
                 "",
             ]
         )
 
-    def _probe(self, board_macro, names):
-        key = (board_macro, tuple(names))
-        if key in self._probe_cache:
-            return self._probe_cache[key]
+    def _probe(self, chip):
+        """What the real headers compile to under this chip's board.
+
+        {"const": {CONSTANT: value}, "rule": {chain: stack}, "rows": [(task,
+        chain, stack)]} - the named constants for every task the recipe gives
+        this chip, the C++ rule on RULE_PROBE_CHAINS plus every recorded chain,
+        and the generated figure table in its order.
+        """
+        if chip in self._probe_cache:
+            return self._probe_cache[chip]
+        board = next(b for b, c in BOARD_TO_CHIP.items() if c == chip)
+        names = []
+        for entry in self.recipes["tasks"]:
+            if chip in entry["chips"]:
+                names.extend((entry["chain_constant"], entry["stack_constant"]))
+        chains = sorted(set(RULE_PROBE_CHAINS) | {
+            arm["chain_bytes"] for entry in self.recipes["tasks"]
+            for arm in entry["chips"].values()})
         with tempfile.TemporaryDirectory() as tmp:
             staged = Path(tmp) / "include"
             staged.mkdir()
             for header in PROBE_HEADER_SET:
                 shutil.copyfile(INCLUDE_DIR / header, staged / header)
             source = Path(tmp) / "task_stack_probe.cpp"
-            source.write_text(self._probe_source(board_macro, names), encoding="utf-8")
+            source.write_text(self._probe_source(board, names, chains), encoding="utf-8")
             binary = Path(tmp) / "task_stack_probe"
             compiled = subprocess.run(
                 [self.compiler, "-std=c++17", "-I", str(staged), str(source),
@@ -127,22 +149,22 @@ class TaskStackRecipes(unittest.TestCase):
             ran = subprocess.run([str(binary)], capture_output=True, text=True,
                                  check=False, timeout=10)
             self.assertEqual(ran.returncode, 0, ran.stderr)
-        values = {}
-        for line in ran.stdout.split("\n"):
-            if line.strip():
-                name, value = line.split()
-                values[name] = int(value)
-        self._probe_cache[key] = values
+        values = {"const": {}, "rule": {}, "rows": []}
+        for line in ran.stdout.splitlines():
+            kind, *fields = line.split()
+            if kind == "const":
+                values["const"][fields[0]] = int(fields[1])
+            elif kind == "rule":
+                values["rule"][int(fields[0])] = int(fields[1])
+            else:
+                values["rows"].append((fields[0], int(fields[1]), int(fields[2])))
+        self._probe_cache[chip] = values
         return values
 
-    def _constants_for(self, chip):
-        """{CONSTANT: value} for one chip, from the real headers via the probe."""
-        board = next(b for b, c in BOARD_TO_CHIP.items() if c == chip)
-        names = []
-        for entry in self.recipes["tasks"]:
-            if chip in entry["chips"]:
-                names.extend((entry["chain_constant"], entry["stack_constant"]))
-        return self._probe(board, names)
+    def _arms(self):
+        for name, entry in self.by_task.items():
+            for chip, arm in entry["chips"].items():
+                yield name, entry, chip, arm
 
     # -- 1. the table names every task the tree creates ------------------------
 
@@ -184,100 +206,46 @@ class TaskStackRecipes(unittest.TestCase):
                 self.assertIn(name, self.by_task)
                 self.assertNotEqual(self.by_task[name]["created_in"], "src/main.cpp")
 
-    # -- 2. constants are re-derived from their chains -------------------------
+    # -- 2. properties of the one source ---------------------------------------
 
-    def test_every_arm_covers_its_own_chain(self):
-        """The floor, on both chips. This is what the static_asserts enforce."""
-        for chip in ("esp32", "esp32p4"):
-            values = self._constants_for(chip)
-            for name, entry in self.by_task.items():
-                arm = entry["chips"].get(chip)
-                if arm is None:
-                    continue
-                with self.subTest(chip=chip, task=name):
-                    chain = values[entry["chain_constant"]]
-                    stack = values[entry["stack_constant"]]
-                    self.assertGreaterEqual(
-                        stack, chain,
-                        f"{entry['stack_constant']} is below "
-                        f"{entry['chain_constant']} on {chip}",
-                    )
+    def test_every_arm_carries_both_figures_and_a_note(self):
+        """The shape the header generator refuses to work without."""
+        self.assertEqual(checker.recipe_shape_problems(self.recipes), [])
 
-    def test_every_arm_matches_the_recorded_chain(self):
-        """config.h and the recipe table must not be able to disagree.
+    def test_every_stack_covers_its_chain(self):
+        """The floor, which config.h's static_assert also enforces per chip."""
+        for name, _, chip, arm in self._arms():
+            with self.subTest(chip=chip, task=name):
+                self.assertGreaterEqual(arm["stack_bytes"], arm["chain_bytes"])
 
-        The gate row compares a fresh walk against config.h's constant; the
-        recipe records the figure that walk produced when it was written. If the
-        two drift apart, the row is enforcing a number nothing measured.
-        """
-        for chip in ("esp32", "esp32p4"):
-            values = self._constants_for(chip)
-            for name, entry in self.by_task.items():
-                arm = entry["chips"].get(chip)
-                if arm is None:
-                    continue
-                with self.subTest(chip=chip, task=name):
-                    self.assertEqual(
-                        values[entry["chain_constant"]], arm["chain_bytes"],
-                        f"{entry['chain_constant']} on {chip} does not equal the "
-                        "chain recorded in the recipe table",
-                    )
-
-    def test_every_arm_follows_its_recorded_derivation(self):
-        """`applied` is the rule exactly; `above` exceeds it; `declined` is below.
-
-        This is the assertion that stops a constant drifting from the derivation
-        it claims. A value hand-edited to something that still clears its chain
-        but no longer follows the rule it says it follows is red here.
-        """
-        for chip in ("esp32", "esp32p4"):
-            values = self._constants_for(chip)
-            for name, entry in self.by_task.items():
-                arm = entry["chips"].get(chip)
-                if arm is None:
-                    continue
-                with self.subTest(chip=chip, task=name):
-                    chain = values[entry["chain_constant"]]
-                    stack = values[entry["stack_constant"]]
-                    by_rule = rule_stack_for_chain(chain)
-                    state = arm["rule"]
-                    if state == "applied":
-                        self.assertEqual(
-                            stack, by_rule,
-                            f"{entry['stack_constant']} on {chip} claims the rule "
-                            f"but {chain} by the rule is {by_rule}",
-                        )
-                    elif state == "above":
-                        self.assertGreater(
-                            stack, by_rule,
-                            f"{entry['stack_constant']} on {chip} claims to sit "
-                            "above the rule but does not",
-                        )
-                    elif state == "declined":
-                        self.assertLess(
-                            stack, by_rule,
-                            f"{entry['stack_constant']} on {chip} claims the rule "
-                            "was declined but it is at or above it - relabel it",
-                        )
-                    else:
-                        self.fail(f"unknown rule state {state!r}")
-                    self.assertEqual(stack % 512, 0, "stacks are 512-byte steps")
+    def test_every_stack_is_a_whole_512_byte_step(self):
+        """A value between steps means somebody typed a number instead of a size."""
+        for name, _, chip, arm in self._arms():
+            with self.subTest(chip=chip, task=name):
+                self.assertEqual(arm["stack_bytes"] % 512, 0)
 
     def test_every_departure_from_the_rule_carries_its_reason(self):
-        """#248's argument is the only thing that licenses declining the rule.
+        """#248's argument is what licenses a stack off the rule, so it is recorded.
 
-        ADR 0040 requires the decline to be recorded beside the constant. Beside
-        it in config.h is prose; here it is checked, so a later arm cannot be
-        moved off the rule silently.
+        The state is derived from the two figures, so a stack edited off the rule
+        without a reason is red here, and so is a re-derivation that moved an arm
+        off it silently. The other direction holds too: an arm the rule sizes
+        exactly carries no reason, because one left behind after the arm moved
+        onto the rule would explain a departure that no longer exists.
         """
-        for name, entry in self.by_task.items():
-            for chip, arm in entry["chips"].items():
-                with self.subTest(chip=chip, task=name):
-                    if arm["rule"] == "applied":
-                        continue
+        for name, _, chip, arm in self._arms():
+            with self.subTest(chip=chip, task=name):
+                state = checker.rule_state(arm["chain_bytes"], arm["stack_bytes"])
+                if state == "applied":
+                    self.assertNotIn(
+                        "reason", arm,
+                        f"{name} on {chip} follows the rule but still carries a "
+                        "reason for departing from it")
+                else:
                     self.assertTrue(
                         arm.get("reason", "").strip(),
-                        f"{name} on {chip} is {arm['rule']} the rule with no "
+                        f"{name} on {chip} is {state} the rule for its chain "
+                        f"({checker.rule_stack(arm['chain_bytes'])}) with no "
                         "recorded reason",
                     )
 
@@ -294,100 +262,104 @@ class TaskStackRecipes(unittest.TestCase):
                 continue
             with self.subTest(task=name):
                 self.assertEqual(
-                    arm["rule"], "applied",
-                    f"{name} declines the sizing rule on the ESP32-P4, which has "
-                    "the free heap to pay it; #248's reason is an artoo-esp32 "
+                    checker.rule_state(arm["chain_bytes"], arm["stack_bytes"]),
+                    "applied",
+                    f"{name}'s ESP32-P4 stack is not the rule for its chain, which "
+                    "the free heap there pays for; #248's reason is an artoo-esp32 "
                     "argument",
                 )
 
-    # -- 3. the gate row's parser reads what the compiler reads ----------------
+    def test_no_note_is_the_rewrite_placeholder(self):
+        """--rewrite replaces a moved chain's note with a placeholder; it must not ship.
 
-    def test_the_gate_rows_parser_agrees_with_the_compiler(self):
-        """tools/check_task_stack_chains.py parses config.h; prove the parse.
-
-        A parser that silently returned half a ladder would make the gate row
-        pass on tasks it never checked, which is the failure mode this whole
-        ticket exists to remove.
+        The old note explained the old figure. Committing the placeholder would
+        leave a figure nobody has explained.
         """
-        parsed = checker.parse_chip_constants()
+        for name, _, chip, arm in self._arms():
+            with self.subTest(chip=chip, task=name):
+                self.assertTrue(arm["note"].strip())
+                self.assertFalse(
+                    arm["note"].startswith(checker.NOTE_PLACEHOLDER_PREFIX),
+                    f"{name} on {chip} still carries the --rewrite placeholder note",
+                )
+
+    # -- 3. what the build compiles --------------------------------------------
+
+    def test_each_board_compiles_the_recipes_figures(self):
+        """config.h, through the generated header, declares the recipe's figures.
+
+        Per chip, so an arm generated under the wrong chip macro, or a config.h
+        that stopped including the header, is red on the board it breaks.
+        """
         for chip in ("esp32", "esp32p4"):
-            compiled = self._constants_for(chip)
-            for constant, value in compiled.items():
-                with self.subTest(chip=chip, constant=constant):
-                    self.assertIn(
-                        constant, parsed[chip],
-                        f"{constant} is compiled into the {chip} arm but the gate "
-                        "row's parser does not see it",
-                    )
-                    self.assertEqual(parsed[chip][constant], value)
+            compiled = self._probe(chip)["const"]
+            for name, entry in self.by_task.items():
+                arm = entry["chips"].get(chip)
+                if arm is None:
+                    continue
+                with self.subTest(chip=chip, task=name):
+                    self.assertEqual(compiled[entry["chain_constant"]], arm["chain_bytes"])
+                    self.assertEqual(compiled[entry["stack_constant"]], arm["stack_bytes"])
+
+    def test_each_boards_figure_table_is_its_recipe_arms_in_order(self):
+        """TASK_STACK_FIGURES is what the native floors test walks; it must be whole.
+
+        Also where HostedRecovery's absence on artoo-esp32 is proven: the task
+        is in no artoo image (src/web/web_network_manager_hosted.cpp is
+        whole-file guarded on PA_CAP_HOSTED_WIFI), so a figure for it there
+        would be made up.
+        """
+        for chip in ("esp32", "esp32p4"):
+            with self.subTest(chip=chip):
+                expected = [
+                    (entry["task"], entry["chips"][chip]["chain_bytes"],
+                     entry["chips"][chip]["stack_bytes"])
+                    for entry in self.recipes["tasks"] if chip in entry["chips"]
+                ]
+                self.assertEqual(self._probe(chip)["rows"], expected)
+        self.assertNotIn("HostedRecovery", [row[0] for row in self._probe("esp32")["rows"]])
+
+    def test_the_rules_two_copies_agree(self):
+        """The rule is written once in Python and once in C++; they must be one rule.
+
+        Compared on the step boundaries and on every recorded chain, so a
+        rounding change in either copy is red wherever it would move a stack.
+        """
+        compiled = self._probe("esp32")["rule"]
+        self.assertTrue(compiled)
+        for chain, stack in compiled.items():
+            with self.subTest(chain=chain):
+                self.assertEqual(stack, checker.rule_stack(chain))
 
     # -- the recipe's own internal consistency --------------------------------
 
     def test_each_arm_is_walked_from_its_chips_product_image(self):
         """The gate re-walks the product image, so every arm must name it.
 
-        An arm recorded against a profiler image would be skipped by the row and
-        silently never re-walked. The profiler figure belongs in
-        `profiler_bytes`, and the substitution in `deeper_image`.
+        An arm recorded against another image would be skipped by the row and
+        silently never re-walked. The Recorded Chain is the product image's walk
+        (ADR 0040, amended 2026-09-27).
         """
         product = {
             chip: spec["product"]
             for chip, spec in self.recipes["metadata"]["envs"].items()
         }
-        for name, entry in self.by_task.items():
-            for chip, arm in entry["chips"].items():
-                with self.subTest(chip=chip, task=name):
-                    self.assertEqual(arm["env"], product[chip])
-
-    def test_the_recorded_chain_is_the_deeper_of_the_two_images(self):
-        """config.h is compiled into the profiler image too, so it must cover it.
-
-        #245 sized SafetyMonitor from the profiler image for this reason, and at
-        #271 the artoo arm of that same task was 16 B under it.
-        """
-        for name, entry in self.by_task.items():
-            for chip, arm in entry["chips"].items():
-                with self.subTest(chip=chip, task=name):
-                    self.assertEqual(
-                        arm["chain_bytes"],
-                        max(arm["product_bytes"], arm["profiler_bytes"]),
-                    )
-                    if arm["product_bytes"] != arm["profiler_bytes"]:
-                        self.assertTrue(
-                            arm.get("deeper_image", "").strip(),
-                            f"{name} on {chip} takes its chain from the deeper "
-                            "image with no recorded substitution",
-                        )
+        for name, _, chip, arm in self._arms():
+            with self.subTest(chip=chip, task=name):
+                self.assertEqual(arm["env"], product[chip])
 
     def test_a_stitched_frame_carries_the_reason_it_is_stitched(self):
         """A hand-added frame or table is a hole in the walk, so it must say which one."""
-        for name, entry in self.by_task.items():
-            for chip, arm in entry["chips"].items():
-                with self.subTest(chip=chip, task=name):
-                    stitches = arm.get("frames", []) + arm.get("tables", [])
-                    if not stitches:
-                        continue
-                    self.assertTrue(
-                        arm.get("stitch_reason", "").strip(),
-                        f"{name} on {chip} stitches {stitches} into its "
-                        "chain without saying what the walker could not follow",
-                    )
-
-    def test_hosted_recovery_is_declared_on_the_p4_arm_only(self):
-        """The task is in no artoo image, so a chain for it there would be made up.
-
-        src/web/web_network_manager_hosted.cpp is whole-file guarded on
-        PA_CAP_HOSTED_WIFI. Twelve tasks on artoo-esp32, thirteen on the P4.
-        """
-        entry = self.by_task["HostedRecovery"]
-        self.assertEqual(sorted(entry["chips"]), ["esp32p4"])
-        parsed = checker.parse_chip_constants()
-        self.assertIn(entry["stack_constant"], parsed["esp32p4"])
-        self.assertNotIn(
-            entry["stack_constant"], parsed["esp32"],
-            "an artoo-esp32 arm declares a stack for a task that board never "
-            "creates",
-        )
+        for name, _, chip, arm in self._arms():
+            with self.subTest(chip=chip, task=name):
+                stitches = arm.get("frames", []) + arm.get("tables", [])
+                if not stitches:
+                    continue
+                self.assertTrue(
+                    arm.get("stitch_reason", "").strip(),
+                    f"{name} on {chip} stitches {stitches} into its "
+                    "chain without saying what the walker could not follow",
+                )
 
     def test_the_table_covers_thirteen_tasks_twelve_of_them_on_artoo(self):
         self.assertEqual(len(self.recipes["tasks"]), 13)
@@ -441,6 +413,70 @@ class ChainJudgementIsPerChip(unittest.TestCase):
     def test_a_chip_with_no_recorded_judgement_is_refused(self):
         with self.assertRaises(checker.Fatal):
             checker.judge_arm("esp32s3", 1000, "X_CHAIN", 1000, "X_STACK", 2048)
+
+
+class RewriteMovesAStackOnlyWhenAccepted(unittest.TestCase):
+    """--rewrite records every walked chain, and a stack only when told to.
+
+    A raise is the operator's decision (ADR 0040, amended 2026-09-27), so
+    re-walking must never move a stack as a side effect - including the case
+    where the chain has grown past it and the build will refuse to compile.
+    """
+
+    def arm(self, chain, stack, **extra):
+        return {"env": "artoo_esp32", "roots": ["t"], "chain_bytes": chain,
+                "stack_bytes": stack, "note": "why it is this deep", **extra}
+
+    def test_a_grown_chain_is_recorded_and_the_stack_is_left(self):
+        arm = self.arm(4000, 5120)
+        outcome = checker.rerecord_arm(arm, 4400, False, "T_STACK_BYTES", "T")
+        self.assertEqual((arm["chain_bytes"], arm["stack_bytes"]), (4400, 5120))
+        self.assertEqual(arm["note"], checker.NOTE_PLACEHOLDER)
+        self.assertTrue(outcome.changed and outcome.placeholder)
+        self.assertEqual(outcome.stack_moved, 0)
+        # 4400 -> 5500 -> 5632: the stack is now below the rule, with no reason.
+        self.assertEqual(len(outcome.warnings), 1)
+        self.assertIn("no 'reason'", outcome.warnings[0])
+
+    def test_a_chain_past_its_stack_is_recorded_and_said_to_break_the_build(self):
+        arm = self.arm(4000, 5120)
+        outcome = checker.rerecord_arm(arm, 5200, False, "T_STACK_BYTES", "T")
+        self.assertEqual(arm["stack_bytes"], 5120)
+        self.assertIn("static_assert", outcome.warnings[0])
+        self.assertIn("--accept T", outcome.warnings[0])
+
+    def test_accepting_takes_the_rule_and_drops_a_reason_that_no_longer_applies(self):
+        arm = self.arm(4000, 6144, reason="an earlier raise")
+        outcome = checker.rerecord_arm(arm, 4000, True, "T_STACK_BYTES", "T")
+        self.assertEqual(arm["stack_bytes"], checker.rule_stack(4000))
+        self.assertEqual(outcome.stack_moved, 5120 - 6144)
+        self.assertNotIn("reason", arm)
+        # The chain did not move, so the note still describes it.
+        self.assertEqual(arm["note"], "why it is this deep")
+        self.assertFalse(outcome.placeholder)
+        self.assertEqual(outcome.warnings, [])
+
+    def test_an_unchanged_arm_is_not_touched(self):
+        arm = self.arm(4000, 5120)
+        before = dict(arm)
+        outcome = checker.rerecord_arm(arm, 4000, False, "T_STACK_BYTES", "T")
+        self.assertEqual(arm, before)
+        self.assertFalse(outcome.changed)
+
+    def test_accept_names_are_checked_before_anything_is_built(self):
+        recipes = {"tasks": [
+            {"task": "A", "chips": {"esp32": {"env": "artoo_esp32"}}},
+            {"task": "B", "chips": {"esp32p4": {"env": "firebeetle2"}}},
+        ]}
+        self.assertEqual(
+            checker.accepted_tasks(recipes, "esp32", "artoo_esp32", ["A:esp32"], False),
+            {"A"})
+        for bad in ("B", "A:esp32p4", "Nope"):
+            with self.subTest(accept=bad):
+                with self.assertRaises(checker.Fatal):
+                    checker.accepted_tasks(recipes, "esp32", "artoo_esp32", [bad], False)
+        self.assertEqual(
+            checker.accepted_tasks(recipes, "esp32", "artoo_esp32", [], True), {"A"})
 
 
 if __name__ == "__main__":

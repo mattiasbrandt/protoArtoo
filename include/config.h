@@ -490,34 +490,41 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // -----------------------------------------------------------------------------
 // Task stacks (chip-target specific)
 // -----------------------------------------------------------------------------
-// EVERY project-created task has a Measured Chain and a compile-enforced floor
-// here, on both chip arms (ADR 0040). Thirteen of them: the ten created in
+// EVERY project-created task has a Recorded Chain and a compile-enforced floor,
+// on both chip arms (ADR 0040). Thirteen of them: the ten created in
 // src/main.cpp, plus WebEvents and the ArduinoOTA task (src/web/web_server.cpp)
 // and HostedRecovery (src/web/web_network_manager_hosted.cpp, which exists only
 // where PA_CAP_HOSTED_WIFI is 1, so twelve tasks on artoo-esp32 and thirteen on
 // the ESP32-P4). loopTask is sized by ARDUINO_LOOP_STACK_SIZE in platformio.ini
 // and stays outside.
 //
-// The chain is a `*_MEASURED_CHAIN_BYTES` constant rather than a number in this
-// comment, and `static_assert(*_STACK_BYTES >= *_MEASURED_CHAIN_BYTES)` below
-// makes a stack that no longer covers its own measurement fail at the
-// declaration. The recipe that produced each chain -- environment, root
-// symbols, the frames stitched by hand across an indirect call, the
-// profiler-image substitution -- is tools/task_stack_recipes.json, and
-// tools/check_task_stack_chains.py re-walks every one of them from a linked
-// image, so a slice that deepens a chain past its constant fails there instead
-// of on a board. That is the half #226 found the expensive way: the assert
-// stops the CONSTANT being trimmed; only the re-walk notices the CHAIN growing.
+// The figures are not written here. tools/task_stack_recipes.json is their one
+// home (ADR 0040, amended 2026-09-27): per task and per chip, the chain the
+// product image walks, the task's stack, the reason wherever that stack is not
+// what the rule below gives, and why the chain is as deep as it is today.
+// include/task_stack_figures.h is generated from it and declares every
+// `*_MEASURED_CHAIN_BYTES` and `*_STACK_BYTES` constant for the selected chip
+// target. A re-derivation is a command rather than an edit of this file:
+//
+//   python3 tools/check_task_stack_chains.py --rewrite --chip esp32
+//
+// builds and walks the chip's product image, records every chain, prints the
+// stack the rule wants against the stack each task has and what taking it
+// costs, and moves a stack only when told to (--accept): a raise is the
+// operator's decision. Without --rewrite the same tool is the slice gate's
+// row, re-walking the recipes and failing a chain that outgrew its figure.
 //
 // Task stacks differ per chip target. The cause is not the boards, and it is
 // not a general "RISC-V frames are wider": the deepest call chain under several
 // of these tasks runs through newlib, whose float-formatting frames are much
 // wider on RISC-V (_svfprintf_r 800 -> 1152 B, _dtoa_r 160 -> 416) while the
-// P4's allocator frames are smaller and partly cancel it (#245).
+// P4's allocator frames are smaller and partly cancel it (#245). The artoo-esp32
+// image links newlib nano printf and the ESP32-P4 keeps full newlib, so a
+// chain that reaches a formatted log line is shallower on artoo-esp32.
 //
 // SIZING RULE: the stack holds the measured worst-case static chain plus 25%,
-// rounded up to the next 512 bytes. Two things make that a rule rather than a
-// preference:
+// rounded up to the next 512 bytes (taskStackByTheRule() in the generated
+// header). Two things make that a rule rather than a preference:
 //
 //  - It reproduces, from the measurement alone, the size #245 arrived at by
 //    judgement: that chain is 3152 B, and 3152 * 1.25 = 3940 -> 4096.
@@ -526,496 +533,43 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //    RV_STK_FRMSZ = 160 B (37 words aligned to 16, riscv/rvruntime-frames.h),
 //    and vectors.S allocates it with save_general_regs on the *interrupted
 //    task's* stack before any switch to the ISR stack -- so a nested pair of
-//    interrupts costs 320 B here, on top of every number below.
+//    interrupts costs 320 B here, on top of every chain.
 //
-// #248 raised DomeTask (3072 was 208 B SHORT of its P4 chain), AuxLedTask and
-// SafetyMonitor on the ESP32-P4 by that rule; their chains are the constants
-// below now, re-walked at this tip rather than restated from that ticket.
-//
-// Every chain is a LOWER bound: indirect calls are not followed, and a cycle in
-// the call graph is cut. Read the margin as cover for what the measurement
-// cannot see, not as slack to spend.
-//
-// The Xtensa measurement is much weaker than the RISC-V one: objdump emits
-// ~37% of the artoo image's function bodies as data rather than instructions
-// (2530 of roughly 6800 at this tip -- tools/check_task_stack_chains.py prints
-// the exact figure for the image it just read, which moves by a function or two
-// between builds), so any artoo chain crossing one is truncated, while the
-// ESP32-P4 image decodes whole (none of roughly 7450). Artoo numbers can prove
-// an overrun and cannot prove a margin. That asymmetry is exactly what makes
-// the re-walk safe to fail a build on: it can MISS growth and cannot report
-// FALSE growth.
+// Every chain is a LOWER bound: an indirect call the recipe does not stitch is
+// not followed, and a cycle in the call graph is cut. Read the margin as cover
+// for what the measurement cannot see, not as slack to spend. The Xtensa walk
+// is the weaker of the two: objdump prints about a third of the artoo image's
+// function bodies as data, and tools/stack_usage_report.py decodes those from a
+// copy of the image without .xt.prop -- tools/check_task_stack_chains.py prints
+// how many it recovered and how many it could not. That asymmetry is what
+// makes the re-walk safe to fail a build on: it can MISS growth and cannot
+// report FALSE growth.
 //
 // Which arms get the rule, and why the two chips answer differently:
 //
 //  - ESP32-P4: every arm is exactly the rule applied to its own chain. The
-//    board has the free heap to buy the margin, and #245/#248/#250/#256 already
-//    put eight of them there.
-//  - artoo-esp32: four arms are the rule, two sit ABOVE it because an earlier
-//    ticket deliberately raised them past it, and six DECLINE it on #248's
-//    reason -- raising all six costs 6144 B against ~42.7 KB of measured free
-//    heap, for margin the Xtensa walk cannot confirm. Each decline is recorded
-//    beside its constant. Declining the rule never declines the floor: every
-//    arm still covers its own chain, and the static_asserts below are what say
-//    so.
+//    board has the free heap to buy the margin.
+//  - artoo-esp32: an arm may sit ABOVE the rule, where an earlier decision
+//    raised it past it on evidence the rule does not carry, or DECLINE it on
+//    #248's reason: the margin costs heap on the scarce chip, for cover the
+//    Xtensa walk cannot confirm. Declining the rule never declines the floor:
+//    every arm still covers its own chain, and the static_asserts below are
+//    what say so.
 //
-// `#if defined` rather than `#if`: PA_CHIP_TARGET_* are presence macros defined
-// only for the selected chip (see "Chip target mapping" above), not 0/1 Board
-// Capability Gates, so `#if` on the undefined one would silently take the wrong
-// branch. Keying on the chip target rather than on PA_BOARD also means a second
-// board variant on either chip inherits the right size without a new case here.
-// DriveTask and DomeLinkTask were sized the same way and for the same reason
-// (#250): both exceeded their old stacks on ESP32-P4, and on ESP32 DriveTask
-// was at risk.
+// Which arm is which is derived from its two figures every time it is needed,
+// never stored, so it cannot disagree with them; the generated header names it
+// beside each stack, and the recipe carries the reason for every departure.
 //
-// Why the two chips diverge here at all: DomeLinkTask's own frame is 2256 B on
-// RISC-V against far less on Xtensa, because GCC splits an allocation past
-// 2032 B into two `addi sp,sp,-N` instructions -- the same split that hid this
-// overrun until tools/stack_usage_report.py was taught to accumulate them.
-//
-// ⚠️ DriveTask's ESP32 arm was raised past its own figure deliberately: that
-// figure read as 32 B under the old 4096 and is the floor of an unknown, not
-// headroom, so the 50 Hz drive loop is raised on both chips rather than only
-// where an overrun is provable (#250). DomeLinkTask's ESP32 arm was held at
-// 6144 by the same tight-heap argument that holds it there now.
-//
-// RCInputTask, AudioTask and WebEvents were sized the same way (#256). These
-// three were still single-valued artoo-era literals. WebEvents is the one that
-// moved: its own comment already named the risk -- 4096 overflowed on ESP32 in
-// _dtoa_r, and that frame is 160 -> 416 B on RISC-V -- and the P4 chain sat
-// past the inherited 6144 before the 25% margin.
-//
-// ESP32 WebEvents was recorded from the profiler image at #256, because the
-// product image's body was emitted as data (.xt.prop) then. It decodes in both
-// images at this tip and they agree, so the arm is walked from the product
-// image now; AudioTask's ESP32 arm is still the profiler image, which is the
-// deeper of the two. Both substitutions are recorded per arm in
-// tools/task_stack_recipes.json rather than only here.
-//
-// ConsoleTask, sized the same way (#226). It is the only stack in this block
-// whose under-size was reproduced as a device fault rather than inferred from a
-// walk, and it was reproduced on BOTH boards: `system.config.log-level
-// value=debug` over the serial Console Adapter reboots the FireBeetle 2 with a
-// RISC-V "Stack protection fault" (SP 476 B below the 5120 B bounds) and the
-// artoo-esp32 with the Xtensa spelling of the same event, "Stack canary
-// watchpoint triggered (Console)". The same write over HTTP answers normally on
-// both boards: it shares configApply()/configCommitApplied() and every
-// ConfigSnapshot copy below them, and differs only in the task it runs on --
-// the web server task has 8 KB.
-//
-// So this is not the P4 chain divergence the rest of this block is about. The
-// literal was justified by a measured high-water mark, which is exactly the
-// evidence that cannot see a path that has not run yet, and no config write
-// could reach this task until the write path landed. The firmware's own
-// instrumentation says both boards were already close after one trivial
-// command: 1448 B free on artoo-esp32, 900-1124 B on the FireBeetle 2.
-//
-//                   old    ESP32 chain    ESP32-P4 chain
-//   ConsoleTask    5120       9008           9120       <- both chips over, by ~4 KB
-//
-// The cause is frame depth, and it is provable without leaving project code:
-// consoleTask 320 + embeddedCliProcess 80 + onCliCommand 64 +
-// consoleExecuteCommand 1888 + consoleWriteScalarConfigField 2064 +
-// configCommitApplied 320 + commandedSetStationary 1264 = 6000 B on ESP32
-// (6048 on ESP32-P4) before one byte of newlib or ESP-IDF. Not recursion, not a
-// VLA, not alloca: every frame on the chain is reported fixed, and the only
-// cycles the walk cuts sit in the ESP-IDF heap and log tail underneath it -- a
-// cut edge makes the reported total a LOWER bound, so it cannot be where the
-// number came from. Three nested frames on the config-write path each carried a
-// ConfigSnapshot (944 B then, 916 B today) by value --
-// consoleWriteScalarConfigField's `working` plus the ConfigCommitOutcome it got
-// back (944 + 948 in one frame), and commandedSetStationary's `cfg` -- on top of
-// consoleExecuteCommand's own 1888 B and the ~2.3 KB newlib tail that every
-// PA_LOG_* from this task pays through embedded-cli's print path.
-//
-// Reproducing it needs the two halves stitched by hand, because embedded-cli
-// reaches the command callback through `cli->onCommand`, an indirect call the
-// walker does not follow. Below onCliCommand, a status or api op is called
-// through a pointer read from g_statusExecutors, which --stitch-table walks
-// (#429):
-//
-//   export PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Werror -fstack-usage"
-//   make build BUILD_ENV=<env>
-//   python3 tools/stack_usage_report.py --env <env> --root onCliCommand
-//     --stitch-table consoleExecuteCommand=g_statusExecutors   (one command)
-//   python3 tools/stack_usage_report.py --env <env> --root consoleTask --frames embeddedCliProcess
-//
-// chain = onCliCommand total + consoleTask frame + embeddedCliProcess frame
-// (8608 + 320 + 80 on ESP32; 8688 + 336 + 96 on ESP32-P4 when the panic was
-// diagnosed). embeddedCliProcess's frame already contains parseCommand and
-// onControlInput, which GCC inlines into it -- both are ABSENT as symbols, which
-// is what confirms it rather than a missing measurement.
-//
-// Where on the chain the peak sat, which the bench observed independently: the
-// value read back unchanged after the reboot, so the frame blew before the NVS
-// write committed. The walk said the same thing -- the deepest point was
-// commandedSetStationary and the log emit under it, which configCommitApplied()
-// reaches before it opens Preferences. No configuration was ever half-applied by
-// that fault.
-//
-// The raise was the correct first move and was never the resting state: it paid
-// the rule on a chain carrying 1892 B of snapshot copies that did not have to be
-// there. ADR 0011's 2026-09-04 amendment took them out (#269) -- the Commit Step
-// writes its post-commit snapshot back through `working` instead of returning
-// one, and the Commanded Mode setters sync the config cache by field instead of
-// round-tripping the whole snapshot -- and the chain fell again with them.
-//
-// The two frames that lost a snapshot each: consoleWriteScalarConfigField
-// 2064 -> 1104 (1120 on ESP32-P4) and commandedSetStationary 1264 -> 320. The
-// walk's deepest branch is no longer the config write at all -- it now runs
-// through the RC trigger dispatch the Console action executor shares
-// (processTriggerAction and the newlib tail below it), which is why the chain
-// falls by less than the 1904 B those two frames gave back.
-//
-// The constants below are re-derived from a walk at this tip, and a walk is the
-// only thing they may be derived from: #269 measured 7568/7552 on its own
-// branch and #270 measured 8512 on its own, both cutting the same deepest
-// branch, so neither figure described the merged tree. Then #226 wave 10 put a
-// deeper branch back: consoleExecuteCommand now reaches
-// consoleWriteAudioTracksField (1216 B) and audioTracksCommitApplied (1280 B)
-// on its way to the newlib tail, and the chain rose to 7360 on ESP32 and 7984
-// on the ESP32-P4. The two chips no longer land on the same 512-byte step, and
-// the reason they briefly did was coincidence: the chains differ, and each
-// field on either side moves them independently.
-//
-// The two chips also moved by different amounts -- +336 B on ESP32 against
-// +848 B on the ESP32-P4, for the same source change -- and that asymmetry is
-// the Xtensa lower bound showing itself: the new branch is partly invisible on
-// an image where a third of the function bodies are emitted as data. Read the
-// ESP32 figure as the smaller of two truths, not as the better outcome.
-//
-// Why the standard margin here and not a smaller one: the chains are LOWER
-// bounds in the same two ways the raised ones were -- objdump emits Xtensa bodies
-// as data, and the walk cuts cycles in the ESP-IDF heap and log tail -- so 25% is
-// buying headroom against what the tool cannot see, not against what it measured.
-// The one shrink that was available and rejected at the time, hoisting `working`
-// and the commit outcome into the module's static area, stays rejected: 1892 B of
-// .bss to save stack was never the trade to make when the copies themselves could
-// go, and they now have.
-//
-// The Console pays the rule on artoo-esp32 where DomeLinkTask above declines it,
-// and the difference is the evidence, not the size: DomeLinkTask's raise would
-// buy margin no measurement could confirm, while the Console's under-size was two
-// reboots on two boards. The same tight-heap argument points the other way.
-//
-// One block for every per-chip task stack. #248 and #250 each added a pair and
-// arrived here by separate branches; keeping two adjacent, identical #if ladders
-// would mean a third ticket adds a third, and a reader has to check all of them
-// to answer "what is this task's stack on this chip".
-//
-// Each arm carries the task's chain and its stack, in that order, with the
-// derivation in the trailing comment: `rule` where the stack is exactly the
-// chain by the rule, `above rule` where an earlier ticket deliberately went
-// further, and `rule declined` with the reason where the arm pays the floor
-// only. Sorted the same way on both arms so the two are diffable side by side.
-#if defined(PA_CHIP_TARGET_ESP32P4)
-// Every arm below is exactly the rule applied to its own chain.
-//
-// Re-derived 2026-09-26 (#430), every arm: the walk now follows the IDF log
-// print hook (paLogIdfVprintf) from every ESP-IDF log call, and this chip keeps
-// full newlib, so the hook's vsnprintf carries the float formatting tail on
-// every task that can reach an ESP-IDF log. ESP-IDF's impossible null-pointer
-// log in esp_cache_get_alignment() is no longer walked. The product and
-// profiler images walk alike. Operator decision 2026-09-26: raise by the rule.
-// Nine stacks go up (+16896 B); RCInputTask's chain fell 6544 -> 5568, so its
-// stack follows the rule down, 8192 -> 7168 (-1024 B); net +15872 B. The
-// dated notes below give the figures each arm had before.
-//
-// Re-walked 2026-09-13 (#256 reopen) on firebeetle2 at 569ff095. Ten of
-// thirteen chains had gone stale: writeFrameCounted() reaches
-// consoleCdcProbeLog() on the USB-CDC drop path (this chip only), and that
-// DEBUG line pays the RISC-V newlib float tail on every task that logs
-// through paLogLine() before the Console bind. Not a decoder fault: 0 of
-// 7634 bodies emitted as data, and the edge is a real jal at
-// console_serial_output.cpp:462. DomeLink, WebEvents and ArduinoOTA do not
-// take that path; their chain figures are the fresh walk, stacks unchanged.
-// SafetyMonitor still records the deeper profiler image (4064 vs product 3888).
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 5088;
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6656;  // rule: 5088 -> 6360 -> 6656
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5568;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // rule: 5568 -> 6960 -> 7168
-// Re-derived 2026-09-17: 4000 -> 4016, and this one is NOT #365's -- it is C1d
-// (#364, 075cf487) surfacing on the first ESP32-P4 walk since. That slice
-// rewrote 295 lines of servo_task.cpp and re-derived no chain; its gate builds
-// artoo_esp32 only, where the Xtensa constant still covered the result, and
-// this arm was last walked 2026-09-13 (a20b306d), three days earlier. The
-// deepest branch is driveArmTo -> resolveArmPulse -> paLogLine ->
-// consoleCdcProbeLog -> the RISC-V newlib float tail, and resolveArmPulse is
-// the function C1d gave the component clamp and its "outside what a %s takes"
-// line. #365 does not touch servo_task.cpp; it only ran the both-chip walk its
-// own re-derivation owed and found this. The rule lands on the step the stack
-// already is; the floor holds by 1104 B.
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3824;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 5120;  // rule: 3824 -> 4780 -> 5120
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 4096;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 5120;  // rule: 4096 -> 5120 -> 5120
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 7104;
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 9216;  // rule: 7104 -> 8880 -> 9216
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 5456;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 7168;  // rule: 5456 -> 6820 -> 7168
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 9712;
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 12288;  // rule: 9712 -> 12140 -> 12288
-// Walked again 2026-09-25 (#428) with the requested restart's shutdown handlers
-// stitched under esp_restart() (tools/task_stack_recipes.json): the restart
-// branch is 800 B - esp_sync_timekeeping_timers 784, ESP-Hosted's esp_wifi_stop
-// 528 - under the 3888 B the product image already walks, with or without the
-// IDF log print hook. The figure does not move.
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3824;
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 5120;  // rule: 3824 -> 4780 -> 5120
-// Re-derived 2026-09-17 (#365): 4576 -> 4656. sequenceDispatcherTask()'s OWN
-// frame went 544 -> 624 B when the bulk centre landed. centreOneOutput() is a
-// single-caller static and the compiler inlines it, so the 70-byte
-// ServoOutputRow it reads -- one row at a time, as each Output's turn comes --
-// is reserved on the task's root frame rather than on a callee's. The 4032 B
-// below the root is unchanged, and on THIS chip it is a different branch from
-// the Xtensa arm's: drainBestEffort -> dispatchAction -> dispatchBodyMove ->
-// paLogLine -> consoleCdcProbeLog -> the RISC-V newlib float tail, the USB-CDC
-// drop path #256 recorded. The rule lands on the step the stack already is, so
-// the allocation does not move; the floor holds by 1488 B.
-// Re-derived 2026-09-23 (#414): 4656 -> 4672, the same +16 B as the Xtensa arm
-// and from the same cause: the boot pass's owed-release check copies the
-// Output's ServoCommandedPosition onto the inlined root frame. The rule lands
-// on the step the stack already is, so the allocation does not move.
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 5776;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 7680;  // rule: 5776 -> 7220 -> 7680
-// Re-derived 2026-09-18 (#369): Console 8320 -> 8352 and WebEvents 5776 ->
-// 5792. ConfigSnapshot grew 912 -> 916 B when SystemConfig gained rc_member,
-// the Radio Controller's Component Member, and both chains carry a snapshot by
-// value; the pre-slice base walks 8320 and 5776 on this chip. The rule lands
-// on the steps the stacks already are, so neither allocation moves.
-// Re-derived 2026-09-19 (#412): Console 8352 -> 8368. The Console now names an
-// Output by the running board's label, and onCliCommand's deepest route (from
-// consoleExecuteCommand) walks 7904 against 7888 at the pre-slice base; the
-// rule still lands on 10752, so the allocation does not move.
-// Re-derived 2026-09-24 (#418): Console 8368 -> 8384. Every config write now
-// runs through a Write Window, and the deepest route goes
-// consoleWriteAudioTracksField -> audioTracksWriteWindow (48 B) ->
-// audioTracksCommitApplied -> configCacheApply -> the holder check's log line
-// for a write outside its window (configWriteWindowExpectHeld -> paLogLine ->
-// the snprintf/_dtoa_r tail). onCliCommand walks 7920 against the recorded
-// 7904; every other task walks within its constant. The rule still lands on
-// 10752, so the allocation does not move.
-// Re-derived 2026-09-25 (#425): Console 8384 -> 8464. Every Apply Core refusal
-// now carries its field, reason and accepts (an 81 B ApplyRefusal), and the
-// AudioTracksApplyResult on consoleWriteAudioTracksField's frame (1248 B) holds
-// one. Same deepest route as #418's; onCliCommand walks 8000 against the
-// recorded 7920, the stitched frames are unchanged, and every other task walks
-// within its constant. The rule still lands on 10752, so the allocation does
-// not move.
-// Re-derived 2026-09-25 (#428): Console 8464 -> 9696. The walk now follows every
-// executor table consoleExecuteCommand() calls through - the six direct-action
-// tables and the audio-config and scalar-config tables, besides
-// g_statusExecutors. The firebeetle2 walk at aa8a81cd gives onCliCommand 9232,
-// deepest via consoleExecuteSoundVolumeConfig -> audioSetVolumeCommitApplied ->
-// saveConfigToNvs -> configPersist -> the holder check's log line; the stitched
-// frames (368 + 96) are unchanged. Judged by allocation (ADR 0040, 2026-09-25
-// amendment) the rule, 9696 -> 12120 -> 12288, no longer fits 10752, so the
-// stack is raised to it.
-// Re-derived 2026-09-26 (#431): Console 11504 -> 11520. Each Setting is
-// declared once and the Console's Setting ops check through it; the
-// coordinator's firebeetle2 walk of the merged tree at 78268e66 gives
-// onCliCommand 11056 against the recorded 11040, and the stitched frames
-// (368 + 96) are unchanged. The rule still lands on 14848, so the allocation
-// does not move.
-// Re-derived 2026-09-26 (#432): Console 11520 -> 11536. Each Record is one
-// module the config doors loop over; the coordinator's firebeetle2 walk of the
-// merged tree at 9876614f gives onCliCommand 11072 against the recorded 11056,
-// and the stitched frames (368 + 96) are unchanged. The rule still lands on
-// 14848, so the allocation does not move.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 11536;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 14848;  // rule: 11536 -> 14420 -> 14848
-// Re-derived 2026-09-23 (#413): WebEvents 5792 -> 6000. Status now reports each
-// lit wire on its own (fa8eed74, e277d325), and the chain carries that through
-// the status serializer; the pre-slice base 3f2accaf walks 5792 on this chip.
-// The rule lands on the step the stack already is, so the allocation does not
-// move.
-// Re-derived 2026-09-25 (#428): WebEvents 6000 -> 6048. buildStatusJson() is
-// now a capture step and formatStatusJson() on this task, one frame deeper; the
-// firebeetle2 walk at aa8a81cd gives 6048. The rule still lands on 7680.
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 7264;
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 9216;  // rule: 7264 -> 9080 -> 9216
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 6416;
-constexpr uint32_t OTA_TASK_STACK_BYTES = 8192;  // rule: 6416 -> 8020 -> 8192
-// HostedRecovery exists only where PA_CAP_HOSTED_WIFI is 1, which today is this
-// chip alone (src/web/web_network_manager_hosted.cpp is whole-file guarded on
-// it), so its pair is declared on this arm only. A future board on another chip
-// that turns the capability on fails at the static_assert below rather than
-// inheriting a number measured on someone else's silicon.
-constexpr uint32_t HOSTED_RECOVERY_TASK_MEASURED_CHAIN_BYTES = 4560;
-constexpr uint32_t HOSTED_RECOVERY_TASK_STACK_BYTES = 6144;  // rule: 4560 -> 5700 -> 6144
-#elif defined(PA_CHIP_TARGET_ESP32)
-// Every chain in this arm was re-derived 2026-09-26 (#430) from a walk that
-// changed three ways at once, and the older notes below give the figures they
-// replaced: the image links newlib nano printf (the Framework Envelope in
-// platformio.ini), about 430 B shallower on every worst chain; the walk follows
-// the IDF log print hook (paLogIdfVprintf) from every ESP-IDF log call, up to
-// about 1.2 KB deeper where one is reachable; and ESP-IDF's impossible
-// null-pointer log in esp_cache_get_alignment(), which sat under every malloc,
-// is no longer walked (tools/task_stack_recipes.json "infeasible_calls"). Each
-// figure is the deeper of the artoo_esp32 and artoo_esp32_profiler walks.
-constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 4080;
-// above rule (5120): #250 raised the 50 Hz drive loop on both chips rather than
-// only where an overrun is provable, because this figure is the floor of an
-// unknown. Not lowered to the rule here -- that would undo that decision.
-constexpr uint32_t DRIVE_TASK_STACK_BYTES = 5632;
-// Re-derived 2026-09-12 (#354): 5248 -> 5616. The RC path now starts the
-// :SE30..:SE36 body routines through sequenceStart() -- directly from
-// rcDispatchSingleAction(), and through the dome RX parser for a :SE command
-// binding -- where it used to queue a ServoCommand, so the walk reaches the
-// Sequence Coordinator's lookup and request send. At this chain the rule lands
-// exactly on the 7168 this arm already held above the old rule (the pre-#256
-// literal), so the arm moves from "above rule" to the rule itself; the stack
-// does not change.
-// Re-derived 2026-09-25 (#428): 5616 -> 4944. The RC dispatch reads the config
-// fields it uses by name instead of three 916 B ConfigSnapshot copies
-// (loadTier2TriggerBindings, the PWM signal check, the RC watchdog), so the walk
-// fell by 672 B. Operator decision 2026-09-25: the stack follows the rule down,
-// full margin kept, and the 512 B goes back to the heap.
-// Re-derived 2026-09-26 (#430): 4944 -> 5152. The rule stays on 6656.
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5152;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 6656;  // rule: 5152 -> 6440 -> 6656
-// Re-derived 2026-09-11 (#342): 3200 -> 3216. One Xtensa frame step on
-// setArmPosition(), spent on the ADR 0041 drive-command clamp -- the door that
-// stops servo.action.set-position driving a fitted part past what its component
-// takes, and the one route around the band that a stored-endpoint clamp cannot
-// cover. It is what the clamp costs once the interface is as narrow as the
-// answer: the pair of whole-ServoOutputRow copies that first paid for it, here
-// and on getOpenClosePositions(), is gone, and the cache now hands back one
-// number and one enum. The 3200 it replaces was the chain exactly, with no
-// headroom at all, so any byte added to this frame tripped it whoever added it.
-// The stack does not move with it -- the rule takes 3216 -> 4020 -> 4096, the
-// 4096 this arm already held, leaving 880 B spare.
-// Re-derived 2026-09-26 (#430): 3216 -> 3184. The rule stays on 4096.
-constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3184;
-constexpr uint32_t SERVO_TASK_STACK_BYTES = 4096;  // rule: 3184 -> 3980 -> 4096
-// Re-derived 2026-09-25 (#430): 2992 -> 3264. The walk now decodes the function
-// bodies objdump used to print as data, and this chain runs through one of them:
-// __wrap_log_printf (esp_diagnostics, a 128 B frame), reached from real
-// error-log paths. The 3072 it had stood on since before #271 was declined off
-// the rule on #248's tight-heap reason with an 80 B floor, and the fuller walk
-// puts the chain 192 B OVER it. Operator decision 2026-09-25: raise to the rule,
-// paid from the heap #428 freed.
-// Re-derived again 2026-09-26 (#430): 3264 -> 3200. The rule stays on 4096.
-constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 3200;
-constexpr uint32_t DOME_TASK_STACK_BYTES = 4096;  // rule: 3200 -> 4000 -> 4096
-// Re-derived 2026-09-26 (#430): 5280 -> 4240, both images alike. The tail that
-// made the profiler image deeper, described below, was the impossible
-// null-pointer log under esp_cache_get_alignment(), and it is no longer walked.
-// The rule is now 5632, so the 6144 stack sits ABOVE it rather than declining
-// it; the stack is not lowered here (#430 changes no stack for heap).
-constexpr uint32_t AUDIO_TASK_MEASURED_CHAIN_BYTES = 4240;
-// Before #430: rule declined (6656, +512 B): #248's tight-heap reason. The chain grew 608 B
-// when #226 wave 10 landed, and the growth is the walk seeing further rather
-// than this task running deeper -- the extra frames are an ESP-IDF log/queue
-// tail below esp_cache_get_alignment() that the product image still reports as
-// 4528 because a body on the way is emitted as data. Floor holds by 864 B.
-constexpr uint32_t AUDIO_TASK_STACK_BYTES = 6144;
-// Re-derived 2026-09-26 (#430): 3504 -> 2752. The rule is now 3584, so the 4096
-// stack sits ABOVE it; it was declined (4608) on #248's tight-heap reason. The
-// stack is not lowered here.
-constexpr uint32_t AUX_LED_TASK_MEASURED_CHAIN_BYTES = 2752;
-constexpr uint32_t AUX_LED_TASK_STACK_BYTES = 4096;
-constexpr uint32_t DOME_LINK_TASK_MEASURED_CHAIN_BYTES = 6112;
-// rule declined (7680, +1536 B): #248's tight-heap reason, named on #250. Floor
-// holds by 32 B, the thinnest declined floor in the block. Re-derived
-// 2026-09-25 (#430) from 5872: the walk decodes the bodies objdump used to
-// print as data, and the chain gains 32 B through __wrap_log_printf; the
-// decline stands (operator decision 2026-09-25). Re-derived again 2026-09-26
-// (#430) from 5904: the chain still fits, so the decline stands.
-constexpr uint32_t DOME_LINK_TASK_STACK_BYTES = 6144;
-// Walked again 2026-09-25 (#428): since #428 this task runs esp_restart(), and
-// with it every registered shutdown handler. The recipe stitches the two this
-// image registers and walks the closed esp_wifi_stop from its archive members:
-// the restart branch is 368 + 32 + 32 + 2016 = 2448 B, under the 2880 B the
-// product image already walks, so the figure does not move. Not followed, as
-// in every other chain in this file: the IDF log print hook (paLogIdfVprintf),
-// which esp_wifi_stop's error paths reach; with it the branch is 3616 B, and
-// the rule, 3616 -> 4520 -> 4608, would not fit this 4096 B stack. Reported on
-// #428 for an allocation decision; the stack is not changed here. Since #430
-// the hook is walked, and nano formatting shortens what it calls: see below.
-// Re-derived 2026-09-26 (#430): 3088 -> 3280, from the profiler image (the
-// product image walks 3088). The rule now lands one step up, 3280 -> 4100 ->
-// 4608, so the stack is raised: this arm follows the rule. It was:
-// rule: 3088 -> 3860 -> 4096. Raised from 3072 by #271, and this is the one arm
-// in the block where the floor did NOT already hold: the artoo profiler image
-// (PA_LOG_LEVEL=4, PA_HEAP_PROFILE=1 -- the image you flash when the board is
-// already misbehaving) walks 3088 B here against the product image's 2944, and
-// the constant is compiled into both. #245 sized the ESP32-P4 arm from the same
-// deeper image for the same reason. A floor that fails is not the margin
-// question #248 declined; it is an overrun, so the rule is paid.
-constexpr uint32_t SAFETY_MONITOR_MEASURED_CHAIN_BYTES = 3280;
-constexpr uint32_t SAFETY_MONITOR_STACK_BYTES = 4608;  // rule: 3280 -> 4100 -> 4608
-// Re-derived 2026-09-17 (#365): 4336 -> 4416, the same +80 B as the ESP32-P4
-// arm and from the same cause -- sequenceDispatcherTask()'s own frame goes
-// 528 -> 608 B because the inlined centreOneOutput()'s 70-byte ServoOutputRow
-// lands on it (70 B at Xtensa's 16-byte stack alignment is exactly 80). The
-// 3808 B below the root is unchanged: it is still seqStorePrepare ->
-// protocolCheck -> pcFailAt -> snprintf float formatting -> the first-use
-// heap/log-mutex tail (#250), and the bulk centre's own branch is nowhere near
-// it. The rule lands on the step the stack already is; the floor holds by
-// 1216 B.
-// Re-derived 2026-09-23 (#414): 4416 -> 4432. The boot pass runs on the same
-// cursor as back to centre, and the owed release it checks - a copy of the
-// Output's ServoCommandedPosition - lands on the same inlined root frame,
-// 608 -> 624 B. The 3808 B below the root is unchanged. The rule lands on the
-// step the stack already is; the floor holds by 1200 B.
-// Re-derived 2026-09-26 (#430): 4432 -> 3888. The walk's deepest route was the
-// snprintf float tail under the Learned Sequence load; nano formatting and the
-// dropped null-pointer log take 544 B off it. This arm follows the rule, so the
-// stack follows it down one step, 5632 -> 5120, and 512 B goes back to the heap.
-constexpr uint32_t SEQ_DISPATCHER_TASK_MEASURED_CHAIN_BYTES = 3888;
-constexpr uint32_t SEQ_DISPATCHER_TASK_STACK_BYTES = 5120;  // rule: 3888 -> 4860 -> 5120
-// Re-derived 2026-09-12 (#354): 7360 -> 7376, the deepest branch now running
-// consoleExecuteCommand -> dispatchRcTriggerActionTest -> ... ->
-// handleSequenceCommand -> sequenceStart() -> domeQueueTx -> logQueueDrop:
-// testing an RC :SE binding from the Console starts the body routine through the
-// Sequence Coordinator where it used to queue a ServoCommand. The rule moves the
-// stack one step, 9216 -> 9728, which is heap on this board; declining it on
-// #248's reason (keep 9216, which still covers the chain) is the alternative.
-// Re-derived 2026-09-25 (#425): 7376 -> 7456. Every Apply Core refusal now
-// carries its field, reason and accepts (an 81 B ApplyRefusal), and the
-// AudioTracksApplyResult on consoleWriteAudioTracksField's frame (1248 B) holds
-// one. The deepest route is now consoleWriteAudioTracksField ->
-// audioTracksWriteWindow -> audioTracksCommitApplied -> configCacheApply -> the
-// holder check's log line -> the snprintf/_dtoa_r tail; onCliCommand walks
-// 7056 against the recorded 6976, and the two stitched frames are unchanged.
-// The rule still lands on 9728, so the allocation does not move.
-// Re-derived 2026-09-25 (#428): 7456 -> 8688. The walk now follows every
-// executor table consoleExecuteCommand() calls through - the six direct-action
-// tables and the audio-config and scalar-config tables, besides
-// g_statusExecutors - where it used to stop at the call. onCliCommand walks
-// 8288, its deepest route consoleExecuteSoundVolumeConfig ->
-// audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist -> the holder
-// check's log line -> the snprintf/_dtoa_r tail; the two stitched frames are
-// unchanged. Operator decision 2026-09-25: raise to the rule, full margin, since
-// #428 freed 26.8 KB of static RAM and this is the task that saves config to
-// flash.
-// Re-derived 2026-09-26 (#430): 8688 -> 8896. The rule stays on 11264.
-constexpr uint32_t CONSOLE_TASK_MEASURED_CHAIN_BYTES = 8896;
-constexpr uint32_t CONSOLE_TASK_STACK_BYTES = 11264;  // rule: 8896 -> 11120 -> 11264
-constexpr uint32_t WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES = 4992;
-// rule declined (6656, +512 B): #248's tight-heap reason, named on #256. Floor
-// holds by 1152 B. Re-derived 2026-09-26 (#430) from 5904; the rule was 7680
-// and the floor 240 B. Re-walked from 5888 at #228: buildStatusJson()'s own frame is
-// the deepest in this chain, and publishing failedAllocs and queueOverflowCount
-// grew it 16 B. Xtensa only -- the ESP32-P4 arm re-walked unchanged.
-constexpr uint32_t WEB_EVENTS_TASK_STACK_BYTES = 6144;
-constexpr uint32_t OTA_TASK_MEASURED_CHAIN_BYTES = 3440;
-// rule declined (4608, +512 B): #248's tight-heap reason, applied to this
-// task's first measurement (#271). Floor holds by 656 B. Re-derived 2026-09-26
-// (#430) from 3904, when the rule was 5120 and the floor 192 B. Re-derived 2026-09-25 (#430) from 3696: the walk decodes
-// the bodies objdump used to print as data, and the chain gains 208 B through
-// __wrap_log_printf; the decline stands (operator decision 2026-09-25).
-constexpr uint32_t OTA_TASK_STACK_BYTES = 4096;
-#else
-  #error "task stack sizes have no value for this chip target"
-#endif
+// Not a lever: moving a task's large locals into static storage to shorten its
+// chain. It was rejected for the Console's config write (#269) -- 1892 B of
+// .bss to save stack, when the copies themselves could go, and they went.
+#include "task_stack_figures.h"
 
 // The floor is compile-enforced rather than promised by the comment above,
 // because a comment is what let ConsoleTask stand 4 KB below its own chain until
-// it took both boards down (#226). A later edit that lowers a stack below its
-// chain, or raises a chain past its stack, fails at the declaration -- on both
-// chips, in every environment that includes this header.
+// it took both boards down (#226). A recipe that lowers a stack below its chain,
+// or records a chain past its stack, fails the compile here -- on both chips, in
+// every environment that includes this header.
 //
 // This is half the guard. It fixes the constant to the chain; nothing here can
 // notice the CHAIN growing, because the chain is itself a recorded number. That
