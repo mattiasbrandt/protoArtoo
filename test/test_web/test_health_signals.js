@@ -44,7 +44,7 @@ const HEALTHY_PAYLOAD = Object.freeze({
   wifiConnected: true,
   wifiRssi: -52,
   littleFsReady: true,
-  heapLargest8bit: 90000,
+  heapLargestBlock: 90000,
   heapFree: 150000,
   dome_link: { state: "connected", transport: "uart" },
   audio: { state: "idle", driver: "CHIRP Audio Trigger", output: "on", link_ok: true, rx_status: "available" },
@@ -122,23 +122,32 @@ test("file system reads OK when mounted, FAIL when it said so, OFF when it did n
 // -----------------------------------------------------------------------------
 
 test("memory keeps amber for a reported low number and reads OFF for no number", () => {
-  const normal = toSignalMap({ heapLargest8bit: 90000 });
+  const normal = toSignalMap({ heapLargestBlock: 90000 });
   assert.equal(normal["h-heap"].state, "ok");
   assert.equal(normal["h-heap"].reason, "Normal");
 
   // Between the warn and fail floors: reported, degraded, and the builder can
   // act on it. This is what amber is kept for.
-  const low = toSignalMap({ heapLargest8bit: 13000 });
+  const low = toSignalMap({ heapLargestBlock: 13000 });
   assert.equal(low["h-heap"].state, "warn");
   assert.equal(low["h-heap"].reason, "Low");
 
-  const critical = toSignalMap({ heapLargest8bit: 9000 });
+  const critical = toSignalMap({ heapLargestBlock: 9000 });
   assert.equal(critical["h-heap"].state, "fail");
   assert.equal(critical["h-heap"].reason, "Critical");
 
   const noNumber = toSignalMap({});
   assert.equal(noNumber["h-heap"].state, "off");
   assert.equal(noNumber["h-heap"].reason, UNKNOWN);
+});
+
+// On the ESP32-P4 the Buffer Reading counts PSRAM, so it reads megabytes while
+// the droid's own RAM runs out. The Memory light must follow the Internal Data
+// Heap, or it stays green through exactly the failure it exists to show.
+test("memory reads the droid's own RAM, not a figure PSRAM can hold up", () => {
+  const p4Starved = toSignalMap({ heapLargestBlock: 9000, heapLargest8bit: 33000000 });
+  assert.equal(p4Starved["h-heap"].state, "fail");
+  assert.equal(p4Starved["h-heap"].reason, "Critical");
 });
 
 // -----------------------------------------------------------------------------

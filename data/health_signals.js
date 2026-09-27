@@ -75,12 +75,14 @@
     const heapBytes = Number(payload.heapFree);
     const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
 
-    // Judge memory health by the largest allocatable DRAM block — the value
-    // the device's admission control keys on (requests are shed below its
-    // floors: 14000 for new work, 12000 at accept). heapLargestBlock is NOT
-    // used here: it reads a capability mask dominated by leftover IRAM that
-    // malloc can never allocate, so it sits frozen regardless of pressure.
-    const largest = Number(payload.heapLargest8bit);
+    // Judge memory health by the Internal Data Heap's largest free block
+    // (heapLargestBlock, include/heap_reading.h): the droid's own RAM, which
+    // counts no IRAM on the artoo-esp32 and no PSRAM on the ESP32-P4. NOT
+    // heapLargest8bit: that is the Buffer Reading admission sheds requests by,
+    // and on the P4 it counts megabytes of PSRAM, so it stays high while the
+    // internal heap runs out. The floors are the admission ones until the
+    // bench day (#355) measures this reading's own.
+    const largest = Number(payload.heapLargestBlock);
     if (Number.isFinite(largest) && largest >= 0) {
       const warnAt = t.largestWarn ?? 16000;
       const failAt = t.largestCritical ?? 12000;
@@ -89,7 +91,7 @@
       return healthSignal("fail", "Critical");
     }
 
-    // Older firmware without heapLargest8bit: fall back to total free heap.
+    // A payload without heapLargestBlock: fall back to total free heap.
     // Neither number present is a reading we do not have, not a low one.
     if (!Number.isFinite(heapBytes) || heapBytes < 0) return healthSignal("off", unknown);
 

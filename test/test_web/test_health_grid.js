@@ -43,7 +43,7 @@ const HEALTHY_FRAME = Object.freeze({
   wifiConnected: true,
   wifiRssi: -52,
   littleFsReady: true,
-  heapLargest8bit: 90000,
+  heapLargestBlock: 90000,
   dome_link: { state: "connected", transport: "uart" },
   audio: { state: "idle", driver: "CHIRP Audio Trigger", output: "on", link_ok: true, rx_status: "available" },
   domeEnabled: true,
@@ -174,9 +174,12 @@ test("a degraded reading the controller did send still lights amber", () => {
 
   // Largest allocatable block between the warn and fail floors: reported,
   // degraded, and something the builder can act on.
-  dash.send({ ...HEALTHY_FRAME, heapLargest8bit: 13000 });
+  dash.send({ ...HEALTHY_FRAME, heapLargestBlock: 13000 });
 
   assert.equal(dash.stateOf("h-heap"), "warn");
   assert.equal(dash.textOf("h-heap"), "Low");
   assert.equal(dash.summary(), "7 signals · 6 ok · 1 degraded");
+  // The readout beside the light shows the very number the light judged, so a
+  // builder can see why it is amber.
+  assert.match(String(dash.env.element("readout-heap-detail").textContent), /\b13 kB\b/);
 });

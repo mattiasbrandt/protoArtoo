@@ -449,12 +449,11 @@
         ? window.PALiveReading.UNKNOWN
         : `${free}<small>kB</small>`;
     }
-    // The largest allocatable block, not the total, because that is the number
-    // the Health signal beside it judges memory on and the one the device's
-    // admission control sheds requests against (data/health_signals.js). A
-    // builder looking at plenty free and a red Memory light has to be able to
-    // see why from here.
-    const largest = kilobytes(payload.heapLargest8bit);
+    // The Internal Data Heap's largest free block, not the total, because that
+    // is the number the Health signal beside it judges memory on
+    // (data/health_signals.js). A builder looking at plenty free and a red
+    // Memory light has to be able to see why from here.
+    const largest = kilobytes(payload.heapLargestBlock);
     setText(
       readoutHeapDetail,
       largest === null ? "" : `largest free piece ${largest} kB. The Memory light reads this one.`,
