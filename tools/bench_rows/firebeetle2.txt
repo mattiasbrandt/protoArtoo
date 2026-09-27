@@ -384,3 +384,13 @@ send system.status.health
 @row 404 configuration-and-maintenance-on-the-p4
 pause HTTP: open /setup.html and /#setup (both land on Configuration), then Maintenance. Press Enter.
 send system.status.health
+
+# #427 on the P4 - the last-run Console op overflowed its stack on this chip;
+# the fix was read from the disassembly and never run. Board 1 exercises the
+# Console task; the web Console path (httpd stack) needs HTTP, so board 2.
+# #430 - the P4 stacks were raised +15,872 B: the idle heap is read beside it.
+@row 427 the-last-run-op-answers-on-the-p4
+send system.status.health
+send dome.api.get-sequence-last-run
+send system.status.health
+pause HTTP (board 2 only): POST /api/console command=dome.api.get-sequence-last-run and keep the answer; then GET /api/status resetReason. Board 1: skip. Press Enter.
