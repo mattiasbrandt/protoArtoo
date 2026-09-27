@@ -148,8 +148,10 @@ commits on the epic were re-derivations.
 - **The profiler figure is dropped.** The Recorded Chain is the product
   image's walk. The profiler-image body substitution for a body the product
   image emits as data stays; only the separately recorded profiler figure goes.
-  Recorded so the cost is known: SafetyMonitor's profiler image walked 4,064 B
-  against the product's 3,888 B.
+  Recorded so the cost is known, as measured by the first rewrite (#381): on
+  artoo SafetyMonitor's product image walks 3,088 B against the 3,280 B recorded
+  from the profiler image, and Console 8,768 B against 8,896 B. On the ESP32-P4
+  the two images no longer differ.
 - **Tests assert properties of the one source, not copies of it:** the stack
   covers the chain, stacks move in 512 B steps, a stack off the rule carries a
   reason, and the rule is written once. The first decision's "the native test
