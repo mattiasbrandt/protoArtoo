@@ -74,8 +74,10 @@ test("Apply and reboot sends the reboot once there is something to apply", async
 // ("staSsid is required for WiFi Client Mode") and reached the screen as it
 // was, and the page found the box by searching that sentence for a field name
 // (#355 finding 11, ADR 0059). The field, reason and accepts are the contract;
-// each refusal here keeps the droid's sentence as a decoy, and the last one's
-// sentence names no field at all, so only the field can put it on its box.
+// each refusal here keeps the droid's sentence as a decoy, and one sentence
+// names no field at all, so only the field can put it on its box. An emptied
+// name and a name too long are both out of range, and only what the page sent
+// tells a missing name from a long one.
 test("a refused WiFi save says what to fix in the builder's words, on the box it is about", async () => {
   const shipped = {};
   vm.runInNewContext(readFileSync(new URL("../../data/web_api.js", import.meta.url), "utf8"), {
@@ -102,7 +104,7 @@ test("a refused WiFi save says what to fix in the builder's words, on the box it
 
   const BOXES = ["wifi-sta-ssid", "wifi-sta-password", "wifi-ap-ssid", "wifi-ap-password"];
   const invalid = new Map();
-  BOXES.forEach((id) => {
+  [...BOXES, "wifi-mode-client"].forEach((id) => {
     env.element(id).setAttribute = (name, value) => {
       if (name === "aria-invalid") invalid.set(id, value);
     };
@@ -138,6 +140,33 @@ test("a refused WiFi save says what to fix in the builder's words, on the box it
       box: "wifi-ap-ssid",
       says: "Name of the droid's own network is required for Standalone AP Mode",
     },
+    {
+      mode: "standalone_ap",
+      values: { "wifi-ap-ssid": "x".repeat(33) },
+      error: "apSsid must be at most 32 characters",
+      envelope: { field: "apSsid", reason: "out-of-range" },
+      box: "wifi-ap-ssid",
+      says: "Name of the droid's own network is too long",
+    },
+    {
+      mode: "client",
+      values: { "wifi-sta-ssid": "bench", "wifi-sta-password": "x".repeat(64) },
+      error: "staPassword must be at most 63 characters",
+      envelope: { field: "staPassword", reason: "out-of-range" },
+      box: "wifi-sta-password",
+      says: "Password of the network it joins is too long",
+    },
+    {
+      // The mode is a pair of radios with no line of its own: the refusal is
+      // the form's line, and the mode is the control marked.
+      mode: "client",
+      values: { "wifi-sta-ssid": "bench" },
+      error: "wifiMode must be client or standalone_ap",
+      envelope: { field: "wifiMode", reason: "out-of-range", accepts: "client,standalone_ap" },
+      box: "wifi-mode-client",
+      line: false,
+      says: "WiFi mode must be WiFi Client Mode or Standalone AP Mode",
+    },
   ];
   for (const each of cases) {
     refusal = each;
@@ -146,14 +175,19 @@ test("a refused WiFi save says what to fix in the builder's words, on the box it
     await press(env, "wifi-settings-form", "submit", { preventDefault: () => {} });
     await env.settle();
 
-    assert.equal(env.element(`${each.box}-error`).textContent, each.says, `the ${each.box} box says what to fix`);
+    const shown = [];
+    if (each.line !== false) {
+      const onBox = env.element(`${each.box}-error`).textContent;
+      assert.equal(onBox, each.says, `the ${each.box} box says what to fix`);
+      shown.push(onBox);
+    }
     assert.equal(invalid.get(each.box), "true", `the ${each.box} box is marked as the one refused`);
     for (const other of BOXES.filter((id) => id !== each.box)) {
       assert.equal(env.element(`${other}-error`).textContent, "", `${other} says nothing about ${each.envelope.field}`);
     }
     const feedback = env.element("wifi-settings-feedback").textContent;
     assert.equal(feedback, each.says, "the form's line says the same");
-    for (const said of [feedback, env.element(`${each.box}-error`).textContent]) {
+    for (const said of [feedback, ...shown]) {
       assert.doesNotMatch(said, /staSsid|staPassword|apSsid|apPassword|wifiMode/, "no wire name reaches the screen");
     }
   }
