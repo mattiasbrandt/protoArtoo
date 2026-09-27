@@ -2871,8 +2871,11 @@ body.sleep-mode-active {
    blue consequence note is .note .note-info. */
 
 
-/* Tooltip styles — exclude buttons and interactive elements */
-[title]:not(button):not(.btn):not(input):not(select):not(.indicator-text) {
+/* Tooltip styles — exclude buttons and interactive elements. A Status Plate
+   chip is one: a press opens the surface where its thing is changed, so it
+   carries the pointer, not the help cursor and a dotted underline under its
+   label and value (#355). */
+[title]:not(button):not(.btn):not(input):not(select):not(.indicator-text):not(.status-chip) {
   cursor: help;
   text-decoration: underline dotted;
   text-decoration-color: var(--text-dim);
