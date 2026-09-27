@@ -81,7 +81,7 @@
           "frames": [],
           "chain_bytes": 5088,
           "stack_bytes": 6656,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1312 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B."
         }
       }
     },
@@ -109,7 +109,7 @@
           "frames": [],
           "chain_bytes": 5568,
           "stack_bytes": 7168,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: rcInputTask -> dispatchSbusBindingsForSource() -> dispatchProcessorOutput() [clone .constprop.0] -> rcDispatchTriggerResults() -> rcDispatchSingleAction() -> parseMarcduinoCommand() -> ...; widest frames _svfprintf_r 1152 B, rcInputTask 576 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B."
         }
       }
     },
@@ -137,7 +137,7 @@
           "frames": [],
           "chain_bytes": 3824,
           "stack_bytes": 5120,
-          "note": "resolveArmPulse's clamp log line is this task's logging route, reached from the drive path. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "resolveArmPulse's clamp log line is this task's logging route, reached from the drive path. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: servoTask -> driveArmTo() -> writeArmPulse() -> ledcPwmSetPulseWidth() -> ledc_set_duty -> esp_log -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, servoTask 400 B."
         }
       }
     },
@@ -165,7 +165,7 @@
           "frames": [],
           "chain_bytes": 4096,
           "stack_bytes": 5120,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeTask -> setDomeSpeed() -> ledcPwmSetPulseWidth() -> ledc_set_duty -> esp_log -> paLogIdfVprintf() -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, domeTask 416 B, _dtoa_r 416 B."
         }
       }
     },
@@ -194,7 +194,7 @@
           "frames": [],
           "chain_bytes": 7104,
           "stack_bytes": 9216,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1504 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B."
         }
       }
     },
@@ -223,7 +223,7 @@
           "frames": [],
           "chain_bytes": 5456,
           "stack_bytes": 7168,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: auxLedTask -> operator new() -> __cxa_allocate_exception -> ()::pool::allocate() [clone .constprop.0] -> __gnu_cxx::__mutex::lock() -> __cxa_throw -> ...; widest frames _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B, emitFramedLineCounted() [clone .part.0] 432 B."
         }
       }
     },
@@ -252,7 +252,7 @@
           "frames": [],
           "chain_bytes": 9712,
           "stack_bytes": 12288,
-          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2192 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B."
         }
       }
     },
@@ -307,7 +307,7 @@
           "stitch_reason": "As on artoo-esp32, esp_restart() runs every registered shutdown handler on this task (#428). This image registers esp_sync_timekeeping_timers (esp_timer_impl_init_system_time) and esp_wifi_stop (set_default_wifi_handlers, ESP-Hosted's esp_wifi_with_remote.c, which decodes in full).",
           "chain_bytes": 3824,
           "stack_bytes": 5120,
-          "note": "The requested-restart branch under esp_restart() and its stitched shutdown handlers is shallower than the product walk. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "The requested-restart branch under esp_restart() and its stitched shutdown handlers is shallower than the product walk. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: safetyMonitorTask -> EspClass::restart() -> esp_restart -> esp_wifi_stop -> esp_wifi_remote_stop -> rpc_wifi_stop -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, safetyMonitorTask 400 B."
         }
       }
     },
@@ -335,7 +335,7 @@
           "frames": [],
           "chain_bytes": 5776,
           "stack_bytes": 7680,
-          "note": "The same inlined root frame as the artoo-esp32 arm, and the same body-move log line under drainBestEffort -> dispatchAction -> dispatchBodyMove. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "The same inlined root frame as the artoo-esp32 arm, and the same body-move log line under drainBestEffort -> dispatchAction -> dispatchBodyMove. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: sequenceDispatcherTask -> seqStorePrepare() -> ArduinoJson::V743PB22::DeserializationError ArduinoJson::V743PB22::detail::deserialize<ArduinoJson::V743PB22::detail::JsonDeserializer, ArduinoJson::V743PB22::JsonDocument&, fs::File&, , 0>() -> _Unwind_Resume -> uw_init_context_1 -> pthread_once -> ...; widest frames _svfprintf_r 1152 B, _Unwind_Resume 912 B, sequenceDispatcherTask 640 B, uw_init_context_1 432 B."
         }
       }
     },
@@ -439,7 +439,7 @@
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status, api, direct-action or audio-config op through a pointer read from g_statusExecutors, one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors; the Setting ops are direct calls (#431).",
           "chain_bytes": 11536,
           "stack_bytes": 14848,
-          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook)."
+          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1872 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1200 B, _svfprintf_r 1152 B."
         }
       }
     },
@@ -468,7 +468,7 @@
           "frames": [],
           "chain_bytes": 7264,
           "stack_bytes": 9216,
-          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1488 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B."
         }
       }
     },
@@ -497,7 +497,7 @@
           "frames": [],
           "chain_bytes": 6416,
           "stack_bytes": 8192,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: otaServiceTask -> ArduinoOTAClass::handle() -> ArduinoOTAClass::_onRx() -> PBKDF2_HMACBuilder::PBKDF2_HMACBuilder() -> PBKDF2_HMACBuilder::setPassword() -> PBKDF2_HMACBuilder::setPassword() -> ...; widest frames _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, ArduinoOTAClass::_onRx() 864 B, uw_init_context_1 432 B."
         }
       }
     },
@@ -515,7 +515,7 @@
           "frames": [],
           "chain_bytes": 4560,
           "stack_bytes": 6144,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). The route itself was not recorded with this figure; --rewrite --chip esp32p4 prints it."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: hostedRecoveryTaskFn -> hostedInitWiFi -> hostedInit -> esp_hosted_init -> esp_hosted_add_channel -> transport_drv_add_channel -> ...; widest frames _svfprintf_r 1152 B, hostedRecoveryTaskFn 896 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B."
         }
       },
       "note": "No esp32 arm: src/web/web_network_manager_hosted.cpp is whole-file guarded on PA_CAP_HOSTED_WIFI, which is 0 on artoo-esp32, so this task is in no artoo image and there is nothing there to walk."
