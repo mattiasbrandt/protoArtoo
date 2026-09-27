@@ -528,8 +528,8 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 //
 //  - It reproduces, from the measurement alone, the size #245 arrived at by
 //    judgement: that chain is 3152 B, and 3152 * 1.25 = 3940 -> 4096.
-//  - 25% of each chain here is at least 800 B, which covers the interrupt cost
-//    the chain figures deliberately exclude. The RISC-V exception frame is
+//  - 25% of every chain here is several hundred bytes, more than the interrupt
+//    cost the chain figures deliberately exclude. The RISC-V exception frame is
 //    RV_STK_FRMSZ = 160 B (37 words aligned to 16, riscv/rvruntime-frames.h),
 //    and vectors.S allocates it with save_general_regs on the *interrupted
 //    task's* stack before any switch to the ISR stack -- so a nested pair of
