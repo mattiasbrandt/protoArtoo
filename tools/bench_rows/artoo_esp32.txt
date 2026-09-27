@@ -265,7 +265,7 @@ pause Flash artoo_esp32 firmware AND filesystem images, let it boot, re-attach, 
 # Configuration: a droid configured before guided Setup existed is left alone,
 # and reading the page writes nothing (#351, data/setup.js).
 @row 351 first-visit-writes-nothing
-pause Run: HEADED=1 BASE_URL=http://10.0.0.22 node test/playwright/bench/first-visit-writes-nothing.js, then press Enter
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/configuration/configured-droid-writes-nothing.js, then press Enter
 send system.status.health
 
 @row 413 after-the-flash-nothing-moved
@@ -480,12 +480,14 @@ send system.status.logs
 pause #428: with every RC channel on, fetch GET /api/status - it must parse whole, never "status payload overflow". Press Enter.
 
 # The browser pass (#355 section E), at 1440 px. Agents run it in phase 1,
-# headed so the operator can watch along, but never with STEP=1: that waits
-# for Enter, and nobody is at the keys. Each pause runs one script; the sends
-# around it are the Console's view of the same minutes. Close every browser.
-@row 355 every-surface-loads-clean
-pause Run: HEADED=1 BASE=http://10.0.0.22 node test/playwright/console-sweep.js -- zero console errors on every page. Press Enter.
-send system.status.health
+# headed so the operator can watch along (the per-surface scripts are headed
+# by default; the sweep needs HEADED=1), but never with STEP=1: that waits for
+# Enter, and nobody is at the keys. Each script is a general rule for its
+# surface (test/playwright/<surface>/<rule>.js); every pause runs one or a
+# group, and the sends around it are the Console's view of the same minutes.
+# Prefix every run with NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules
+# and close every browser. Order is by precondition: estop CLEAR first, then
+# the scripts that latch it, then the ones that need it latched.
 
 # B2a (#344) - the real 3-client SSE budget. The 4th client is refused with
 # 503 "event stream at capacity" (src/web/api_events.cpp), and a tab that
@@ -498,26 +500,53 @@ pause Open three streams (for i in 1 2 3; do curl -sN http://10.0.0.22/api/event
 pause Open ONE tab, walk every surface in the nav, then fetch GET /api/status: keep sseClients and sseClientsPeak. Press Enter.
 send system.status.health
 
+# Estop CLEAR, nothing written: the read-only rule of every surface the epic
+# built or changed.
+@row 355 the-surfaces-read-only
+send system.status.health
+pause Run each with BASE_URL=http://10.0.0.22: test/playwright/configuration/*.js (except configured-droid-writes-nothing.js), maintenance/*.js, dashboard/*.js, wiring/*.js, rc/*.js, wifi/*.js, shell/nav-has-no-setup-entry.js, shell/config-read-once-per-mount.js, lights/dome-light-pick-survives-frames.js, then setup/setup-availability-families.js. Keep every table. Press Enter.
+send system.status.health
+
+# B3 (#346) + B2c (#360) + #419 - the Status Plate tells the truth. Shipped
+# defects. Its last check latches the estop from outside the browser.
+@row 346 the-plate-tells-the-truth
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/status-plate-truth.js, then press Enter
+send system.status.health
+send system.action.estop-clear
+
+# C1a (#347) and the Parts surface.
+@row 347 the-parts-surface
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/parts/parts-surface.js, then press Enter
+send system.status.health
+
+# #415 - WRITES CONFIG and puts it back: a Light's LED count saves once.
+@row 415 an-led-count-saves-once
+pause Run: BASE_URL=http://10.0.0.22 node test/playwright/lights/led-count-saves-once.js, then press Enter
+send servo.api.get-outputs
+
+# SAFETY (ADR 0064, #417 F8) - the dial never re-takes a released Output.
+# Part 1 latches the estop; the Console clears it; Part 2 hides the tab.
+@row 417 the-dial-never-retakes
+pause Run: PART=1 BASE_URL=http://10.0.0.22 node test/playwright/servo/dial-never-retakes-a-released-output.js, then press Enter
+send system.status.health
+send system.action.estop-clear
+pause Run: PART=2 BASE_URL=http://10.0.0.22 node test/playwright/servo/dial-never-retakes-a-released-output.js, then press Enter
+send servo.api.get-outputs
+
 # B2b (#359) - STOP takes the press on every surface, dialogs open included.
-# A safety invariant and a shipped defect. The script leaves the estop latched;
-# the health read proves the press reached the firmware.
+# A safety invariant and a shipped defect. It leaves the estop latched; the
+# health read proves the press reached the firmware.
 @row 359 stop-takes-the-press
 send system.status.health
 pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/stop-every-surface.js, then press Enter
 send system.status.health
 
-# B3 (#346) + B2c (#360) - the Status Plate survives navigation and reads
-# stale, not fresh, when the browser stops hearing the droid. Shipped defects.
-@row 346 the-plate-tells-the-truth
-pause Run: BASE_URL=http://10.0.0.22 node test/playwright/shell/status-plate-truth.js, then press Enter
+# Estop LATCHED: what it must refuse (#363 #372 #364 #421), and the sweep, run
+# now so the plate's longest words (LATCHED, STOPPED) are the ones measured.
+@row 355 the-latched-droid
 send system.status.health
-
-# C1a (#347) and the surfaces the C-line built. Parts is scripted; the rest
-# are looks: the wiring sheet renders from Board Lanes and prints (#366), the
-# droid picture tells unfitted from undrivable (#374), words, pins and colors
-# agree after D2 (#353), and drawings serve for rc_radio and mrbaddeley (#369).
-@row 347 the-surfaces-the-c-line-built
-pause Run: BASE_URL=http://10.0.0.22 node test/playwright/parts/parts-surface.js. Then open Wiring (print it), Parts -> Droid Build and the Component Picker. Press Enter.
+pause Run with BASE_URL=http://10.0.0.22: test/playwright/shell/estop-latched-refusals.js and test/playwright/servo/estop-leaves-outputs-limp.js; then HEADED=1 BASE=http://10.0.0.22 node test/playwright/console-sweep.js. Press Enter.
+send system.action.estop-clear
 send system.status.health
 
 # The Console catalog against its pinned counts. The epic added routes, and a
