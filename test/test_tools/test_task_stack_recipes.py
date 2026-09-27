@@ -478,6 +478,33 @@ class RewriteMovesAStackOnlyWhenAccepted(unittest.TestCase):
         self.assertEqual(
             checker.accepted_tasks(recipes, "esp32", "artoo_esp32", [], True), {"A"})
 
+    def test_accept_all_leaves_a_stack_held_off_the_rule_on_purpose(self):
+        # A recorded reason is a decision to be off the rule, above it (#250) or
+        # below it (#248). A sweep must not undo it in either direction; only
+        # naming the task does.
+        recipes = {"tasks": [
+            {"task": "OnRule", "chips": {"esp32": {"env": "artoo_esp32"}}},
+            {"task": "Above", "chips": {"esp32": {"env": "artoo_esp32",
+                                                  "reason": "raised on purpose"}}},
+            {"task": "Declined", "chips": {"esp32": {"env": "artoo_esp32",
+                                                     "reason": "heap is scarce"}}},
+        ]}
+        self.assertEqual(
+            checker.accepted_tasks(recipes, "esp32", "artoo_esp32", [], True), {"OnRule"})
+        self.assertEqual(
+            checker.accepted_tasks(recipes, "esp32", "artoo_esp32", ["Above"], False),
+            {"Above"})
+
+    def test_accept_all_on_the_real_recipe_moves_no_reasoned_arm(self):
+        recipes = checker.load_recipes()
+        for chip, product in (("esp32", "artoo_esp32"), ("esp32p4", "firebeetle2")):
+            chosen = checker.accepted_tasks(recipes, chip, product, [], True)
+            for task in recipes["tasks"]:
+                arm = task["chips"].get(chip)
+                if arm and arm.get("reason", "").strip():
+                    with self.subTest(chip=chip, task=task["task"]):
+                        self.assertNotIn(task["task"], chosen)
+
 
 if __name__ == "__main__":
     unittest.main()

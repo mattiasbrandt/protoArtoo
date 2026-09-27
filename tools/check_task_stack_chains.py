@@ -13,7 +13,9 @@ THREE MODES
         against the stack it has and what accepting it would cost in RAM; then
         regenerate include/task_stack_figures.h. A stack changes only with
         --accept TASK (repeatable) or --accept-all: a raise is the operator's
-        decision, never a side effect of re-walking.
+        decision, never a side effect of re-walking. --accept-all leaves every
+        arm that records a `reason` alone: a stack held above or below the rule
+        on purpose moves only when that task is named.
 
     python3 tools/check_task_stack_chains.py --generate
         GENERATE. Regenerate include/task_stack_figures.h from the recipe as it
@@ -876,13 +878,23 @@ def accepted_tasks(recipes: dict, chip: str, product: str,
 
     Checked before anything is built, so a typo costs a second rather than a
     build and a walk.
+
+    --accept-all skips an arm that records a `reason`. That reason is a decision
+    to hold the stack off the rule - DriveTask above it (#250), DomeLinkTask
+    below it (#248) - and a sweep would undo it in either direction without
+    anyone having looked at that task. Naming the task is how such a decision
+    is changed.
     """
     eligible = [
         task["task"] for task in recipes["tasks"]
         if chip in task["chips"] and task["chips"][chip]["env"] == product
     ]
     if accept_all:
-        return set(eligible)
+        return {
+            task["task"] for task in recipes["tasks"]
+            if task["task"] in eligible
+            and not task["chips"][chip].get("reason", "").strip()
+        }
     chosen: set[str] = set()
     for item in accept:
         name, _, named_chip = item.partition(":")
@@ -1060,7 +1072,8 @@ def main(argv=None) -> int:
              "TASK or TASK:chip)")
     accept.add_argument(
         "--accept-all", action="store_true",
-        help="rewrite mode: --accept every task walked on the chip")
+        help="rewrite mode: --accept every task walked on the chip, except one whose "
+             "arm records a 'reason' for being off the rule; name that task to move it")
     parser.add_argument(
         "--no-build", action="store_true",
         help="rewrite mode: walk the image already in .pio/build/<env> instead of "
