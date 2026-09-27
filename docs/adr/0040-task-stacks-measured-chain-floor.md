@@ -120,3 +120,40 @@ found after the slice that moved it had merged (#381 rows 20 and 41).
 The gate still walks artoo only; the P4 is still walked at bench time and in the
 coordinator's post-merge run. The rule's 25% margin is what a P4 stack is sized
 by, so growth there is a failure only once it eats that margin.
+
+## Amendment (2026-09-27, architecture review before #175 closure): the recipe is the one home, and a re-derivation is a command
+
+"A re-measure is a re-run" held for checking and not for recording. A
+re-derivation was a hand edit of up to six files - the `config.h` constant, its
+trailing rule comment, dated prose above it, three recipe fields, the floors
+test's table, the Console's board-config test and the chip-sized test's
+expected stacks - and the copies went stale: `config.h` prose named a WebEvents
+chain 1,216 B behind its constant, and `89bc9f49` moved a P4 figure in
+`config.h` alone and left the base red until `df7bbd04`. 21 of the last 150
+commits on the epic were re-derivations.
+
+**We decided:**
+
+- **`tools/task_stack_recipes.json` is the one home of every Recorded Chain,**
+  with each arm's stack, its reason where the stack is not the rule's, and a
+  note that says why the chain is as deep as it is today. The history of how it
+  got there is the git log's, not the recipe's and not `config.h`'s.
+- **A tool writes it and generates the constants.** A rewrite mode of
+  `check_task_stack_chains.py` walks the product image and records the chain.
+  It prints the stack the rule wants and what that costs, and changes a stack
+  only when told to accept it: a raise stays the operator's decision. A
+  generated, committed header carries the `*_MEASURED_CHAIN_BYTES` and
+  `*_STACK_BYTES` constants; `config.h` includes it and keeps its
+  `static_assert`s.
+- **The profiler figure is dropped.** The Recorded Chain is the product
+  image's walk. The profiler-image body substitution for a body the product
+  image emits as data stays; only the separately recorded profiler figure goes.
+  Recorded so the cost is known: SafetyMonitor's profiler image walked 4,064 B
+  against the product's 3,888 B.
+- **Tests assert properties of the one source, not copies of it:** the stack
+  covers the chain, stacks move in 512 B steps, a stack off the rule carries a
+  reason, and the rule is written once. The first decision's "the native test
+  re-derives the constant from the chain by the rule" survives as that property.
+
+The gate is unchanged: it still walks artoo only, and the P4 amendment above
+still stands.

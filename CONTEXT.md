@@ -846,8 +846,16 @@ A task's worst-case static call depth from its entry function, as obtained by wa
 _Avoid_: high-water mark (for sizing), stack usage, "sized with margin" without the chain
 
 **Recorded Chain**:
-The `*_MEASURED_CHAIN_BYTES` constant in `include/config.h` for one task on one chip: a **Measured Chain** as last written down by hand. A task stack is sized and floored against this number, not against a fresh walk, so the two drift apart silently whenever nobody re-walks - which is what the gate row and the bench walk exist to catch (ADR 0040).
-_Avoid_: recorded constant, "the constant" unqualified, using **Measured Chain** for the written-down number
+A task's **Measured Chain** on one chip as last written down, in `tools/task_stack_recipes.json` - the one home, written by the rewrite mode of `tools/check_task_stack_chains.py` and carried into the `*_MEASURED_CHAIN_BYTES` constants by a generated header `include/config.h` includes. A task stack is sized and floored against this number, not against a fresh walk, so the two drift apart whenever nobody re-walks - which is what the gate row and the bench walk exist to catch (ADR 0040, amended 2026-09-27).
+_Avoid_: recorded constant, "the constant" unqualified, using **Measured Chain** for the written-down number, editing a chain figure by hand
+
+**Internal Data Heap**:
+The heap a byte-addressable allocation can come from on the chip's own RAM: `MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT`, which leaves out artoo's IRAM-only heap and the ESP32-P4's PSRAM. It is what "is the droid's RAM healthy" is read from - the low-heap warning, fragmentation, and the `heapFree`, `heapMin` and `heapLargestBlock` it publishes on every door.
+_Avoid_: free heap unqualified, `ESP.getFreeHeap()` (it counts IRAM on artoo), a capability mask chosen at the call site
+
+**Buffer Reading**:
+The largest single buffer a request handler could be given right now: the largest free `MALLOC_CAP_8BIT` block, which on the ESP32-P4 includes PSRAM because `malloc` hands out a buffer over 4,096 B from there. Admission is judged by it, and it is published as `heapLargest8bit`. Distinct from the **Internal Data Heap**: on the P4 the two can differ by megabytes.
+_Avoid_: using it for heap health, largest block unqualified
 
 **Console Client**:
 A host program that carries an operator's or an agent's lines to one Console Adapter and renders the Console Records it answers - the Live Logs page for the browser adapter, the first-party serial terminal for the serial adapter - owning no command rules, completion or readiness claims of its own; listening to the serial line without sending is the same program with nothing to say.
@@ -985,7 +993,7 @@ _Avoid_: web control, network authentication, console unlock, blanket gate, a fa
 - **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
 - A **Commit Step** refreshes exactly one **Working Snapshot** and serializes every writer of its configuration path, adapters and Commanded Mode setters alike
 - Every log line is written once, to the **Log Ring**; the serial **Console Adapter** is its only serial reader and the only writer of the serial wire after it binds
-- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its **Recorded Chain**; the sizing margin above the chain is a per-chip judgement recorded beside the constant
+- Every project-created task has one **Measured Chain** recipe per chip, and its stack is never below its **Recorded Chain**; the sizing margin above the chain is a per-chip judgement recorded beside the chain in the recipe
 - Stack safety is two links, not one: a compile-time assert gives `stack >= `**Recorded Chain**, and re-walking gives **Measured Chain**` <= `**Recorded Chain**. Only both together give `stack >= `**Measured Chain**. Where the walk is not run, the second link is absent and the property is unverified rather than false
 
 ## Example Dialogue
