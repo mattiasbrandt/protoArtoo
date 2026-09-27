@@ -25,6 +25,7 @@ import os
 import pty
 import random
 import select
+import shutil
 import signal
 import socket
 import subprocess
@@ -1644,7 +1645,7 @@ def _fake_args(**overrides):
     """A minimal stand-in for argparse's Namespace -- only the attributes
     build_provenance_header()/its helpers actually read."""
     base = dict(port="/dev/ttyFAKE0", baud=115200, http=None, status=None,
-                board=None, image=None)
+                board=None, image=None, http_base=None, run_dir=None, no_http=False)
     base.update(overrides)
     return types.SimpleNamespace(**base)
 
@@ -1729,6 +1730,34 @@ class ProvenanceAndColor(unittest.TestCase):
              mock.patch.object(console_client, "lookup_by_id", return_value=None):
             header = console_client.build_provenance_header(args)
         self.assertIn("BOARD: (not asserted)", header)
+
+    def test_the_http_base_and_run_dir_are_on_the_header(self):
+        args = _fake_args(http_base="http://10.0.0.22", run_dir="bench-run")
+        with mock.patch.object(console_client, "fetch_json_status", return_value=None), \
+             mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        self.assertIn("HTTP-BASE: http://10.0.0.22", header)
+        self.assertIn(f"RUN-DIR: {os.path.abspath('bench-run')}", header)
+
+    def test_the_http_base_answers_the_image_line_when_nothing_else_does(self):
+        args = _fake_args(http_base="http://10.0.0.22")
+        with mock.patch.object(console_client, "fetch_json_status",
+                                return_value={"firmwareVersion": "v7", "fsVersion": "fs-v7"}) as fetch, \
+             mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        fetch.assert_called_once_with("http://10.0.0.22")
+        self.assertIn("IMAGE: firmwareVersion=v7 fsVersion=fs-v7", header)
+
+    def test_no_http_says_so_and_asks_nobody_for_the_image(self):
+        args = _fake_args(no_http=True)
+        with mock.patch.object(console_client, "fetch_json_status") as fetch, \
+             mock.patch.object(console_client, "git_head_and_dirty", return_value=("abcdef01", False)), \
+             mock.patch.object(console_client, "lookup_by_id", return_value=None):
+            header = console_client.build_provenance_header(args)
+        fetch.assert_not_called()
+        self.assertIn("HTTP-BASE: none (--no-http asserted: http steps are skipped)", header)
 
     def test_repo_line_is_explicit_unknown_when_git_metadata_is_unavailable(self):
         args = _fake_args()
@@ -1832,6 +1861,436 @@ class DirectiveParsingAndHelpers(unittest.TestCase):
         self.assertEqual(lines[1].strip(), "Step 2: wait 5 seconds.")
         self.assertEqual(lines[2].strip(), "Step 3: press Enter here.")
         self.assertIn("press Enter", lines[3])
+
+
+class HttpStepParsing(unittest.TestCase):
+    """The `http` directive's grammar: a method, a path, POST pairs in written
+    order, and an optional `> FILE`. Every refusal here happens when the
+    sheet loads, before anything is sent."""
+
+    def test_a_get_is_a_method_and_a_path(self):
+        step = console_client.parse_http_step("GET /api/config", "f:1")
+        self.assertEqual((step.method, step.path, step.form, step.save),
+                         ("GET", "/api/config", [], None))
+
+    def test_a_query_rides_in_the_path(self):
+        step = console_client.parse_http_step("GET /api/seq?name=wave", "f:1")
+        self.assertEqual(step.path, "/api/seq?name=wave")
+
+    def test_post_pairs_keep_their_written_order_and_repeats(self):
+        step = console_client.parse_http_step(
+            "POST /api/config rcInputMode=elrs enableRcCh1=true enableRcCh1=false", "f:1")
+        self.assertEqual(step.form, [("rcInputMode", "elrs"), ("enableRcCh1", "true"),
+                                     ("enableRcCh1", "false")])
+
+    def test_a_value_keeps_a_hash_an_equals_and_a_quoted_space(self):
+        step = console_client.parse_http_step(
+            'POST /api/manual-command command=#st note=a=b droidName="R2 D2"', "f:1")
+        self.assertEqual(step.form, [("command", "#st"), ("note", "a=b"),
+                                     ("droidName", "R2 D2")])
+
+    def test_the_answer_file_is_named_after_a_redirect_either_spelling(self):
+        for arg in ("GET /api/config > before.json", "GET /api/config >before.json"):
+            with self.subTest(arg=arg):
+                step = console_client.parse_http_step(arg, "f:1")
+                self.assertEqual((step.path, step.save), ("/api/config", "before.json"))
+
+    def test_a_post_can_keep_its_answer_too(self):
+        step = console_client.parse_http_step(
+            "POST /api/console command=system.status.health > health.json", "f:1")
+        self.assertEqual(step.form, [("command", "system.status.health")])
+        self.assertEqual(step.save, "health.json")
+
+    def test_malformed_steps_are_refused_with_their_source(self):
+        cases = {
+            "": "method and a path",
+            "GET": "method and a path",
+            "PUT /api/config": "not one of GET, POST",
+            "get /api/config": "not one of GET, POST",
+            "GET api/config": "single '/'",
+            "GET //evil.example/api": "single '/'",
+            "GET http://10.0.0.22/api/config": "single '/'",
+            "GET /api/config k=v": "GET carries no body",
+            "POST /api/config rcMember": "not a key=value pair",
+            "POST /api/config =rc_radio": "not a key=value pair",
+            "GET /api/config > ../escape.json": "not a file name",
+            "GET /api/config > sub/dir.json": "not a file name",
+            "GET /api/config > .hidden": "not a file name",
+            "GET /api/config >": "must be the last thing",
+            "GET /api/config > a.json b.json": "must be the last thing",
+            "POST /api/config > a.json k=v": "must be the last thing",
+            'POST /api/config droidName="R2': "No closing quotation",
+        }
+        for arg, fragment in cases.items():
+            with self.subTest(arg=arg):
+                with self.assertRaises(console_client.ScriptUsageError) as ctx:
+                    console_client.parse_http_step(arg, "sheet.txt:7")
+                self.assertIn(fragment, str(ctx.exception))
+                self.assertIn("sheet.txt:7", str(ctx.exception))
+
+    def test_a_malformed_step_fails_the_sheet_at_load_not_at_the_bench(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "sheet.txt")
+            with open(path, "w") as f:
+                f.write("@row 1 fine\nsend help\n@row 2 broken\nhttp GET api/config\n")
+            with self.assertRaises(console_client.ScriptUsageError) as ctx:
+                console_client.load_script_file(path)
+        self.assertIn(":4", str(ctx.exception))
+
+    def test_the_directive_line_carries_the_whole_step_verbatim(self):
+        d = console_client.parse_directive_line(
+            "http POST /api/config rcMember=rc_radio > after.json", "f:1")
+        self.assertEqual((d.kind, d.arg), ("http", "POST /api/config rcMember=rc_radio > after.json"))
+
+
+class HttpStepSelection(unittest.TestCase):
+    """An `http` step needs no person, so it never makes a row manual; and
+    the rows a refusal names are the ones that were selected."""
+
+    def test_a_row_of_sends_and_http_steps_is_agent_runnable(self):
+        _, blocks = console_client.split_into_row_blocks(_directives(
+            ("row", "369 radio"), ("http", "POST /api/config rcMember=rc_radio"),
+            ("send", "system.api.get-components"),
+            ("row", "370 amber"), ("pause", "change the receiver on Configuration"),
+        ))
+        selected = console_client.select_rows(blocks, None, True)
+        self.assertEqual([b.label for b in selected], ["radio"])
+
+    def test_the_rows_using_and_keeping_http_answers_are_named(self):
+        flat = _directives(
+            ("timeout", "8"),
+            ("row", "413 before"), ("http", "GET /api/config > before.json"),
+            ("http", "GET /api/servo/outputs > outputs.json"),
+            ("row", "355 image"), ("http", "GET /api/status"),
+            ("row", "219 discovery"), ("send", "operations"),
+        )
+        using, saving = console_client.http_step_rows(flat)
+        self.assertEqual(using, ["413 before", "355 image"])
+        self.assertEqual(saving, ["413 before"])
+
+    def test_a_step_before_any_row_is_named_as_the_preamble(self):
+        using, _ = console_client.http_step_rows(_directives(("http", "GET /api/status")))
+        self.assertEqual(using, ["(preamble)"])
+
+
+class _DroidRoutesHandler(http.server.BaseHTTPRequestHandler):
+    """A stand-in for the droid's own routes, answering the shapes a bench
+    row meets: a JSON 200, a form POST echoed back, a 404, a 400 refusal, an
+    answer that stalls, and a connection closed with no answer at all."""
+
+    def log_message(self, format, *args):
+        pass
+
+    def _answer(self, status, body, content_type="application/json"):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        self.server.seen.append(("GET", self.path, None, None))
+        if self.path == "/api/config":
+            self._answer(200, b'{"rc":{"member":"rc_radio"}}')
+        elif self.path == "/api/stall":
+            time.sleep(self.server.stall_seconds)
+            try:
+                self._answer(200, b"{}")
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # the client gave up on its timeout: the outcome under test
+
+        elif self.path == "/api/hangup":
+            self.close_connection = True  # no status line: the peer just goes
+        else:
+            self._answer(404, b'{"error":"not found"}')
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self.server.seen.append(("POST", self.path, body, self.headers.get("Content-Type")))
+        if self.path == "/api/config":
+            form = urllib.parse.parse_qs(body.decode("utf-8"))
+            if "rcMember" in form and form["rcMember"] != ["rc_radio"]:
+                self._answer(400, b'{"error":"rcMember is not a radio this firmware lists"}')
+                return
+            self._answer(200, b'{"ok":true}')
+        else:
+            self._answer(404, b'{"error":"not found"}')
+
+
+class _DroidRoutesStub:
+    def __init__(self, stall_seconds: float = 1.5):
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _DroidRoutesHandler)
+        self.httpd.seen = []
+        self.httpd.stall_seconds = stall_seconds
+        self.httpd.daemon_threads = True
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.httpd.server_port}"
+
+    @property
+    def seen(self):
+        return self.httpd.seen
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=2)
+
+
+def _closed_port_url() -> str:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()  # nothing listens here now
+    return f"http://127.0.0.1:{port}"
+
+
+class _NoTransport:
+    """run_scripted() needs a transport; an `http`-only run must never touch
+    it, and this one says so loudly if it is touched."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"an http step reached the Console transport ({name})")
+
+
+class HttpStepsAgainstAStub(unittest.TestCase):
+    """The `http` directive against a local server standing in for the
+    droid's routes: what reaches the wire, what reaches the transcript, what
+    is kept, and that no answer at all is a failed step rather than a crash."""
+
+    def setUp(self):
+        self.stub = _DroidRoutesStub()
+        self.addCleanup(self.stub.close)
+        self.run_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.run_dir, True)
+
+    def run_steps(self, *steps, base=None, timeout=2.0, skip=False):
+        side = console_client.HttpSideChannel(
+            self.stub.base_url if base is None else base, self.run_dir, skip=skip)
+        directives = [console_client.Directive("http", s, "test") for s in steps]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            worst = console_client.run_scripted(_NoTransport(), directives, timeout, side)
+        return worst, out.getvalue()
+
+    def test_a_get_prints_its_marker_status_and_body(self):
+        worst, out = self.run_steps("GET /api/config")
+        self.assertEqual(worst, console_client.EXIT_OK)
+        self.assertIn(f"--- http GET {self.stub.base_url}/api/config ---", out)
+        self.assertIn("HTTP 200 OK (28 bytes, application/json)", out)
+        self.assertIn('{"rc":{"member":"rc_radio"}}\n', out)
+        self.assertEqual(self.stub.seen, [("GET", "/api/config", None, None)])
+
+    def test_a_post_sends_its_pairs_form_encoded_in_order(self):
+        worst, out = self.run_steps(
+            'POST /api/config rcMember=rc_radio droidName="R2 D2" command=#st')
+        self.assertEqual(worst, console_client.EXIT_OK)
+        method, path, body, content_type = self.stub.seen[0]
+        self.assertEqual((method, path), ("POST", "/api/config"))
+        self.assertEqual(body, b"rcMember=rc_radio&droidName=R2+D2&command=%23st")
+        self.assertTrue(content_type.startswith("application/x-www-form-urlencoded"))
+        self.assertIn("body=b'rcMember=rc_radio&droidName=R2+D2&command=%23st' ---", out)
+        self.assertIn('{"ok":true}', out)
+
+    def test_a_post_with_no_pairs_sends_an_empty_body(self):
+        worst, _ = self.run_steps("POST /api/config")
+        self.assertEqual(worst, console_client.EXIT_OK)
+        self.assertEqual(self.stub.seen[0][:3], ("POST", "/api/config", b""))
+
+    def test_a_kept_answer_is_the_exact_body_in_the_run_directory(self):
+        worst, out = self.run_steps("GET /api/config > before-flash-config.json")
+        self.assertEqual(worst, console_client.EXIT_OK)
+        path = os.path.join(self.run_dir, "before-flash-config.json")
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), b'{"rc":{"member":"rc_radio"}}')
+        self.assertIn(f"--- kept {path} (28 bytes, HTTP 200) ---", out)
+
+    def test_a_kept_answer_is_never_overwritten(self):
+        path = os.path.join(self.run_dir, "before.json")
+        with open(path, "wb") as f:
+            f.write(b"the before-the-flash copy")
+        worst, out = self.run_steps("GET /api/config > before.json", "GET /api/status")
+        self.assertEqual(worst, console_client.EXIT_HTTP_STEP_FAILED)
+        self.assertIn(f"[HTTP-FAILED] GET {self.stub.base_url}/api/config: answer not kept in {path}", out)
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), b"the before-the-flash copy")
+        self.assertEqual(len(self.stub.seen), 2, "the run carried on to the next step")
+
+    def test_a_404_is_an_answer_not_a_failure(self):
+        worst, out = self.run_steps("GET /api/nope")
+        self.assertEqual(worst, console_client.EXIT_OK)
+        self.assertIn("HTTP 404 Not Found", out)
+        self.assertIn('{"error":"not found"}', out)
+        self.assertNotIn("[HTTP-FAILED]", out)
+
+    def test_a_refusal_is_printed_and_can_be_kept(self):
+        worst, out = self.run_steps("POST /api/config rcMember=nope > refusal.json")
+        self.assertEqual(worst, console_client.EXIT_OK)
+        self.assertIn("HTTP 400 Bad Request", out)
+        self.assertIn("rcMember is not a radio this firmware lists", out)
+        with open(os.path.join(self.run_dir, "refusal.json"), "rb") as f:
+            self.assertIn(b"rcMember is not a radio", f.read())
+        self.assertIn("HTTP 400) ---", out)
+
+    def test_a_refused_connection_is_a_failed_step_and_the_run_carries_on(self):
+        dead = _closed_port_url()
+        side = console_client.HttpSideChannel(dead, self.run_dir)
+        live = console_client.HttpSideChannel(self.stub.base_url, self.run_dir)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            first = side.request(console_client.parse_http_step("GET /api/config > a.json", "t"), 2.0)
+            second = live.request(console_client.parse_http_step("GET /api/config", "t"), 2.0)
+        self.assertFalse(first)
+        self.assertTrue(second)
+        self.assertIn(f"[HTTP-FAILED] GET {dead}/api/config:", out.getvalue())
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "a.json")),
+                         "nothing is kept when nothing answered")
+
+    def test_run_scripted_maps_a_refused_connection_to_exit_5(self):
+        worst, out = self.run_steps("GET /api/config", base=_closed_port_url())
+        self.assertEqual(worst, console_client.EXIT_HTTP_STEP_FAILED)
+        self.assertIn("[HTTP-FAILED]", out)
+
+    def test_a_stalled_answer_fails_within_the_timeout(self):
+        started = time.monotonic()
+        worst, out = self.run_steps("GET /api/stall", timeout=0.5)
+        self.assertLess(time.monotonic() - started, 2.5)
+        self.assertEqual(worst, console_client.EXIT_HTTP_STEP_FAILED)
+        self.assertIn(f"[HTTP-FAILED] GET {self.stub.base_url}/api/stall:", out)
+
+    def test_a_hangup_with_no_answer_is_a_failed_step(self):
+        worst, out = self.run_steps("GET /api/hangup")
+        self.assertEqual(worst, console_client.EXIT_HTTP_STEP_FAILED)
+        self.assertIn(f"[HTTP-FAILED] GET {self.stub.base_url}/api/hangup:", out)
+
+    def test_no_http_prints_a_skip_and_sends_nothing(self):
+        worst, out = self.run_steps("POST /api/config rcMember=rc_radio > x.json", skip=True)
+        self.assertEqual(worst, console_client.EXIT_OK)
+        self.assertIn("[HTTP-SKIPPED] POST /api/config: --no-http", out)
+        self.assertEqual(self.stub.seen, [])
+        self.assertEqual(os.listdir(self.run_dir), [])
+
+    def test_a_step_with_no_side_channel_is_a_usage_error(self):
+        directives = [console_client.Directive("http", "GET /api/config", "sheet:3")]
+        with self.assertRaises(console_client.ScriptUsageError):
+            console_client.run_scripted(_NoTransport(), directives, 1.0, None)
+
+
+class HttpStepsEndToEnd(unittest.TestCase):
+    """main(): the base and run-directory refusals, decided on the rows
+    actually selected and before any port is opened, and a whole run that
+    mixes Console sends and `http` steps."""
+
+    SHEET = (
+        "timeout 2\n"
+        "@row 219 discovery\n"
+        "send operations\n"
+        "@row 413 before-the-flash\n"
+        "http GET /api/config > before-flash-config.json\n"
+        "@row 355 the-image\n"
+        "http GET /api/status\n"
+    )
+
+    def setUp(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        self.sheet = os.path.join(root, "sheet.txt")
+        with open(self.sheet, "w") as f:
+            f.write(self.SHEET)
+        self.run_dir = os.path.join(root, "run")
+        self.console = _ConsoleStub({"operations": (
+            200, b'{"records":[{"id":1,"type":"end","status":"ok","outcome":"completed"}]}')})
+        self.addCleanup(self.console.close)
+        self.droid = _DroidRoutesStub()
+        self.addCleanup(self.droid.close)
+
+    def client(self, *extra):
+        return subprocess.run(
+            [sys.executable, str(MODULE_PATH), "--script", self.sheet, "--no-color", *extra],
+            capture_output=True, text=True, timeout=20,
+        )
+
+    def test_no_base_is_refused_before_the_port_opens_and_names_the_rows(self):
+        # No --http either, so the transport would be the serial default:
+        # the refusal must come first, not an open() error for a missing port.
+        r = self.client("--port", "/dev/ttyNONEXISTENT")
+        self.assertEqual(r.returncode, console_client.EXIT_TOOL_FAILURE)
+        self.assertIn("no --http-base", r.stderr)
+        self.assertIn("413 before-the-flash, 355 the-image", r.stderr)
+        self.assertNotIn("could not open", r.stderr)
+        self.assertEqual(r.stdout, "")
+
+    def test_a_kept_answer_with_no_run_dir_is_refused_and_names_the_row(self):
+        r = self.client("--port", "/dev/ttyNONEXISTENT", "--http-base", self.droid.base_url)
+        self.assertEqual(r.returncode, console_client.EXIT_TOOL_FAILURE)
+        self.assertIn("no --run-dir", r.stderr)
+        self.assertIn("413 before-the-flash", r.stderr)
+        self.assertNotIn("355 the-image", r.stderr)
+
+    def test_rows_that_send_no_http_need_no_base(self):
+        r = self.client("--http", self.console.base_url, "--rows", "discovery")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("=== row 219 discovery ===", r.stdout)
+
+    def test_no_http_and_a_base_together_are_refused(self):
+        r = self.client("--port", "/dev/ttyNONEXISTENT", "--no-http",
+                        "--http-base", self.droid.base_url)
+        self.assertEqual(r.returncode, console_client.EXIT_TOOL_FAILURE)
+        self.assertIn("--no-http", r.stderr)
+
+    def test_a_whole_run_mixes_console_sends_and_http_steps(self):
+        r = self.client("--http", self.console.base_url, "--http-base", self.droid.base_url,
+                        "--run-dir", self.run_dir)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"HTTP-BASE: {self.droid.base_url}", r.stdout)
+        self.assertIn(f"RUN-DIR: {self.run_dir}", r.stdout)
+        self.assertIn("< id=1 type=end status=ok outcome=completed", r.stdout)
+        self.assertIn(f"--- http GET {self.droid.base_url}/api/config ---", r.stdout)
+        self.assertIn("HTTP 404 Not Found", r.stdout)  # the stub has no /api/status
+        with open(os.path.join(self.run_dir, "before-flash-config.json"), "rb") as f:
+            self.assertEqual(f.read(), b'{"rc":{"member":"rc_radio"}}')
+
+    def test_the_http_base_defaults_to_the_http_transport(self):
+        # One stub serving both: --http's base is the droid, so an `http`
+        # step with no --http-base goes there.
+        r = self.client("--http", self.droid.base_url, "--rows", "the-image")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"--- http GET {self.droid.base_url}/api/status ---", r.stdout)
+
+    def test_a_failed_step_exits_5_after_finishing_the_run(self):
+        r = self.client("--http", self.console.base_url, "--http-base", _closed_port_url(),
+                        "--run-dir", self.run_dir)
+        self.assertEqual(r.returncode, console_client.EXIT_HTTP_STEP_FAILED, r.stderr)
+        self.assertEqual(r.stdout.count("[HTTP-FAILED]"), 2)
+        self.assertIn("=== row 355 the-image ===", r.stdout)
+
+    def test_the_command_line_flag_is_the_same_directive(self):
+        r = subprocess.run(
+            [sys.executable, str(MODULE_PATH), "--http-base", self.droid.base_url,
+             "--port", "/dev/ttyNONEXISTENT", "--http-step", "GET api/config"],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(r.returncode, console_client.EXIT_TOOL_FAILURE)
+        self.assertIn("--http-step: http: path 'api/config'", r.stderr)
+
+    def test_no_http_is_refused_beside_the_http_transport(self):
+        # --http is itself a network path to the droid, so asserting there is
+        # none contradicts it.
+        r = self.client("--http", self.console.base_url, "--no-http", "--rows", "the-image")
+        self.assertEqual(r.returncode, console_client.EXIT_TOOL_FAILURE)
+        self.assertIn("--no-http", r.stderr)
+
+    def test_no_http_lifts_both_refusals_for_a_networkless_board(self):
+        # The serial case, decided without a port: a board with no network
+        # runs the http rows' sends, and its skips are in the transcript.
+        args = types.SimpleNamespace(no_http=True, http_base=None, http=None, run_dir=None)
+        flat = console_client.flatten_rows(*console_client.split_into_row_blocks(
+            console_client.load_script_file(self.sheet)))
+        self.assertIsNone(console_client.http_side_channel_refusal(args, flat))
 
 
 class ReadLinesFdBurstDrain(unittest.TestCase):
