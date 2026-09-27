@@ -711,14 +711,14 @@ class AdmissionFloorIsReadFromPlatformioIni(unittest.TestCase):
         self.assertIn("artoo_esp32", str(caught.exception))
 
     def test_a_child_env_inherits_its_parents_flags_when_it_declares_none(self):
-        # [env:firebeetle2] declares no build_flags of its own; it extends
-        # [env:firebeetle2_bringup], which does. PlatformIO resolves it that
-        # way and so must this -- a resolver that only looked at the env's own
-        # section would report the shipping image as having no floor.
-        self.assertNotRegex(pio_section("env:firebeetle2"), r"(?m)^build_flags\s*=")
-        self.assertRegex(pio_section("env:firebeetle2"), r"(?m)^extends\s*=\s*env:firebeetle2_bringup")
-        self.assertEqual(soak.resolve_admission_floor("firebeetle2").ordinary_bytes,
-                         soak.resolve_admission_floor("firebeetle2_bringup").ordinary_bytes)
+        # [env:firebeetle2_ota] declares no build_flags of its own; it extends
+        # [env:firebeetle2], which does. PlatformIO resolves it that way and so
+        # must this -- a resolver that only looked at the env's own section
+        # would report the OTA image as having no floor.
+        self.assertNotRegex(pio_section("env:firebeetle2_ota"), r"(?m)^build_flags\s*=")
+        self.assertRegex(pio_section("env:firebeetle2_ota"), r"(?m)^extends\s*=\s*env:firebeetle2\s*$")
+        self.assertEqual(soak.resolve_admission_floor("firebeetle2_ota").ordinary_bytes,
+                         soak.resolve_admission_floor("firebeetle2").ordinary_bytes)
 
     def test_a_bench_override_replaces_the_ordinary_floor_only(self):
         declared_override = declared_macro_values(soak.ADMISSION_FLOOR_OVERRIDE_MACRO)
