@@ -1771,6 +1771,23 @@ class DirectiveParsingAndHelpers(unittest.TestCase):
         with self.assertRaises(console_client.ScriptUsageError):
             console_client.parse_directive_line("frobnicate foo", "f:1")
 
+    def test_a_bad_or_missing_sheet_is_an_error_line_and_exit_1_not_a_traceback(self):
+        with tempfile.TemporaryDirectory() as root:
+            bad = os.path.join(root, "bad.txt")
+            with open(bad, "w") as f:
+                f.write("@row 1 fine\nsystem.status.health\n")  # the missing `send`
+            for sheet, fragment in ((bad, "bad.txt:2: unknown directive"),
+                                    (os.path.join(root, "absent.txt"), "could not read --script")):
+                with self.subTest(sheet=sheet):
+                    r = subprocess.run(
+                        [sys.executable, str(MODULE_PATH), "--port", "/dev/ttyNONEXISTENT",
+                         "--script", sheet],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertEqual(r.returncode, console_client.EXIT_TOOL_FAILURE)
+                    self.assertIn(fragment, r.stderr)
+                    self.assertNotIn("Traceback", r.stderr)
+
     def test_resolve_key_bytes_maps_known_names(self):
         self.assertEqual(console_client.resolve_key_bytes("tab"), b"\t")
         self.assertEqual(console_client.resolve_key_bytes("up,up,enter"), b"\x1b[A\x1b[A\r")

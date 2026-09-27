@@ -1641,8 +1641,15 @@ def main() -> int:
     args = parser.parse_args()
 
     script_directives: list[Directive] = []
-    if args.script:
-        script_directives.extend(load_script_file(args.script))
+    try:
+        if args.script:
+            script_directives.extend(load_script_file(args.script))
+    except ScriptUsageError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_TOOL_FAILURE
+    except OSError as e:
+        print(f"ERROR: could not read --script {args.script}: {e}", file=sys.stderr)
+        return EXIT_TOOL_FAILURE
     script_directives.extend(getattr(args, "directives", None) or [])
 
     if script_directives:
