@@ -60,10 +60,10 @@ target runs the capture mode, which is read-only and cannot send anything you
 type. `make console` is the one that opens a session you can type at (it
 resolves the port for you); `pio device monitor -e <env>` above works too.
 
-**Flash the right firmware image.** `firebeetle2_bringup` is an early
-bring-up image that only prints a banner and answers nothing — it is not the
-Console. The image that runs the Console is `firebeetle2` (and, on the
-classic board, `artoo_esp32` or one of its variants).
+**Flash the right firmware image.** The image that runs the Console is
+`firebeetle2` (and, on the classic board, `artoo_esp32` or one of its
+variants). `firebeetle2_hosted_bench` is a bench harness that builds none of
+the firmware — it is not the Console.
 
 **Once attached**, the controller prints a ready banner and a prompt:
 
