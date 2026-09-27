@@ -11,11 +11,18 @@
 # about firebeetle2 (CONTEXT.md "Bench-Mode", 2026-09-17).
 # Human-only steps are `pause` directives; what a row is expected
 # to answer stays on #216's own criterion, never written here
-# (docs/console-protocol.md's "no expect directive" decision).
+# (docs/console-client.md "Bench sheets and @row": there is no expect directive).
+#
+# Plain requests to the droid's own routes (keep GET /api/config, POST
+# /api/config with a known value) are `http` steps, not pauses: they need the
+# droid's address in --http-base, and the answers a row keeps (`> FILE`) land
+# in --run-dir. A pause is left only where a person, a browser page, a flash
+# or a value only this droid knows is needed.
 #
 # Run (serial is this board's primary transport; --http only if this board's
 # own WiFi is up and reachable):
-#   python3 tools/console_client.py --port /dev/ttyUSB0 --script tools/bench_rows/artoo_esp32.txt
+#   python3 tools/console_client.py --port /dev/ttyUSB0 --http-base http://10.0.0.22 \
+#     --run-dir tasks/bench-run-artoo --script tools/bench_rows/artoo_esp32.txt
 #
 # Select rows (by name only, e.g. "safe-attach" -- not the ticket number):
 #   --rows safe-attach,grouped-wifi-config   (explicit order, not file order)
@@ -152,7 +159,8 @@ send system.action.reboot-wifi-module
 # Two limits, stated rather than discovered at the bench:
 #   - The Console cannot SET a Component Member or an endpoint; those arrive on
 #     POST /api/config, and no page builds them until C3 (#351) and C1 (#347).
-#     So those steps are `pause` directives naming the request, not `send`.
+#     So those steps are `http` steps where the sheet knows the value, and a
+#     `pause` naming the request where only the droid does -- never `send`.
 #   - Ceiling for the whole block is Controller Upload Verified. Bench-Mode
 #     means nothing is connected to the board, so a row wanting a moving arm
 #     is Not Assessed and says so.
@@ -161,7 +169,9 @@ send system.action.reboot-wifi-module
 # A7 (#340) - "Say which sound module is actually fitted, and change it later,
 # rather than it being decided when the firmware was built." The CHANGE is the
 # capability, so one reading proves nothing: read the lineup and the fitted
-# member, change it, reboot, and hear which module answers.
+# member, change it, reboot, and hear which module answers. The change stays a
+# pause: "the other supported member" depends on which one this droid reports
+# fitted in the answers above, which the sheet cannot know.
 @row 340 sound-member-survives-a-reboot
 send system.api.get-components
 send sound.status.current
@@ -185,18 +195,20 @@ send sound.action.play-track track=1
 # describes a field inside another response, never an independently executable
 # command -- so it answers err/unavailable/not-executable, as it did on
 # 2026-09-11. There is no servo.config.* operation either. Both reads are
-# therefore GET /api/config at a pause.
+# therefore GET /api/config, kept as an http step.
 #
 # system.action.set-mode is the SAVE. It calls saveConfigToNvs(), which runs
 # configSaveServoOutputs() before configSave() (src/config_store.cpp), so an ordinary
 # mode change IS a full config save and is what performs the migration. That is
 # why "don't touch servo settings yet" is not sufficient guidance to a bench
-# operator: the first save of ANY kind migrates.
+# operator: the first save of ANY kind migrates. With both reads now http
+# steps the row has no pause, so --skip-manual selects it: whether this
+# board's NVS still holds a crossing to make is #355's to say, not the sheet's.
 @row 345 calibration-crosses-onto-the-rows
-pause Fetch GET /api/config and keep the ten endpoint values for #355 - they must be the pre-migration numbers, not defaults. Press Enter.
+http GET /api/config > calibration-pre-migration-config.json
 send system.action.set-mode mode=stationary
 send system.status.health
-pause Fetch GET /api/config again. The first save has now run, so this is the post-migration read. Press Enter.
+http GET /api/config > calibration-post-migration-config.json
 
 # A6 (#339) - "The controller says where it actually routes each signal." The
 # Lane manifest is HTTP-only by design and the console cannot stand in for it:
@@ -205,12 +217,13 @@ pause Fetch GET /api/config again. The first save has now run, so this is the po
 # system.api.get-identity deliberately answers with the two ConfigSnapshot
 # fields and NOT the board manifest (consoleExecuteSystemApiGetIdentity,
 # src/console/console_module.cpp). So the console sends prove the controller is
-# up and answering as itself, and the lane evidence is fetched over HTTP at the
-# pause -- the same split this sheet's header already uses for flash and heap
-# figures that are read from /api/status rather than typed at the console.
+# up and answering as itself, and the lane evidence is fetched over HTTP -- the
+# same split this sheet's header already uses for flash and heap figures that
+# are read from /api/status rather than typed at the console. #355 reads
+# board_lanes from the kept answer.
 @row 339 the-controller-says-where-it-routes
 send system.api.get-identity
-pause Fetch GET /api/identity from this board and keep the board_lanes object for #355, then press Enter
+http GET /api/identity > routes-identity.json
 send system.status.health
 
 # A1a-A1d (#337 #356 #357 #358) - "Every part on your droid has a name the
@@ -231,7 +244,7 @@ send sound.status.current
 pause Upload this image over USB, let it boot, re-attach, then press Enter
 send system.status.health
 send servo.api.get-outputs
-pause Fetch GET /api/servo/outputs from this board and keep the answer for #355, then press Enter
+http GET /api/servo/outputs > wire-module-servo-outputs.json
 
 # =============================================================================
 # Epic #175 closure session (#355) -- what Waves 0-3 left for the board
@@ -255,10 +268,16 @@ pause Fetch GET /api/servo/outputs from this board and keep the answer for #355,
 # the load-time clamp). The main-lineage crossing is NOT reachable here: this
 # board's NVS is epic-lineage and a main-lineage image is never flashed to it.
 # Flashing the filesystem image replaces LittleFS, so stored Learned
-# Sequences are lost: back them up in this row.
+# Sequences are lost: back them up in this row. The three plain reads are http
+# steps; the pause keeps what a sheet cannot do: the Backup file is built by the
+# Maintenance page (it is what row restore-an-older-backup restores), and the
+# sequences are fetched by names only this droid's list knows.
 @row 413 before-the-flash
 send system.status.health
-pause BEFORE flashing: keep GET /api/config (whole), GET /api/servo/outputs, a Maintenance -> Backup file, and every Learned Sequence (GET /api/seq/list, then GET /api/seq?name=... each). Press Enter.
+http GET /api/config > before-flash-config.json
+http GET /api/servo/outputs > before-flash-servo-outputs.json
+http GET /api/seq/list > before-flash-seq-list.json
+pause BEFORE flashing: keep a Maintenance -> Backup file, and every Learned Sequence named in before-flash-seq-list.json (GET /api/seq?name=... each). Press Enter.
 pause Flash artoo_esp32 firmware AND filesystem images, let it boot, re-attach, then press Enter
 
 # The first browser visit after the flash, before anything else opens
@@ -268,16 +287,21 @@ pause Flash artoo_esp32 firmware AND filesystem images, let it boot, re-attach, 
 pause Run: BASE_URL=http://10.0.0.22 node test/playwright/configuration/configured-droid-writes-nothing.js, then press Enter
 send system.status.health
 
+# The comparison with the before-the-flash copies is #355's: the lit Output
+# reads component rgb with its old LED count and wired tick, a stored "simple"
+# reads "basic", and nothing else moved.
 @row 413 after-the-flash-nothing-moved
 send system.status.health
 send servo.api.get-outputs
-pause Fetch GET /api/config and GET /api/servo/outputs and compare with the before-the-flash copies. The lit Output reads component rgb with its old LED count and wired tick; a stored "simple" reads "basic"; nothing else moved. Press Enter.
+http GET /api/config > after-flash-config.json
+http GET /api/servo/outputs > after-flash-servo-outputs.json
 
 # Axis 1 - the image is what we think it is. firmwareVersion and the
 # filesystem stamp are HTTP-only; a -dirty or stale image voids the session.
 @row 355 the-image-is-what-we-think
 send system.status.health
-pause Fetch GET /api/status (firmwareVersion) and /fs-version.json. Both must name the intended commit, with no -dirty. Press Enter.
+http GET /api/status
+http GET /fs-version.json
 
 # #381 row 39 - the idle Internal Data Heap after #427-#430, at the default log
 # level. Since ccf72dd3 the heap keys carry no IRAM, so the 2026-09-11 figures
@@ -285,7 +309,7 @@ pause Fetch GET /api/status (firmwareVersion) and /fs-version.json. Both must na
 # answer, so it is recorded beside it.
 @row 381 idle-heap-baseline
 send system.status.health
-pause Fetch GET /api/config and keep the components block (which are enabled) for #355. Press Enter.
+http GET /api/config > idle-heap-config.json
 send system.status.health
 
 # #371 - GET /api/config now measures, allocates and frees per request (up to
@@ -309,31 +333,45 @@ send system.status.health
 # made before Output rows existed. The receipt must name what did not land
 # (no servo_outputs in that file), and the sound member, the Droid Build and
 # guidedSetup must come back whole (a restore once dropped two of them).
+#
+# The restore is the Maintenance page's own flow, so it stays a pause; the read
+# after it is an http step, and comparing components.audio.member, droidBuild
+# and guidedSetup with the backup is #355's.
 @row 423 restore-an-older-backup
 send system.status.health
-pause Restore the before-the-flash backup from Maintenance -> Backup. Keep the receipt text. Fetch GET /api/config and compare components.audio.member, droidBuild and guidedSetup with the backup. Press Enter.
+pause Restore the before-the-flash backup from Maintenance -> Backup. Keep the receipt text. Press Enter.
+http GET /api/config > after-restore-config.json
 send system.status.health
 send system.status.logs
 
 # #343 + #368 - a written Droid Build crosses a real reboot, and a mixed
 # design saves without complaint. The row #343's critic recorded was never
 # committed; this is it.
+#
+# The write stays a pause: fittedParts is sent whole, and "the fitted parts
+# plus gripArm" is this droid's current set, which the sheet cannot know. The
+# read after the reboot is an http step; body own, dome mk41, gripArm still
+# fitted and no seeded part removed is #355's to check in it.
 @row 343 droid-build-survives-a-reboot
 pause POST /api/config with bodyDesign=own and the fitted parts plus gripArm, and domeDesign=mk41 (an MK4.1 dome over the body). Keep the answer. Press Enter.
 send system.action.reboot
-pause Wait for the board to come back, fetch GET /api/config droidBuild: body own, dome mk41, gripArm still fitted, no seeded part removed. Press Enter.
+pause Wait for the board to come back, re-attach, then press Enter
+http GET /api/config > droid-build-after-reboot-config.json
 
 # #426 - artoo stores five Learned Sequences, the droid reports the cap, and
 # the sixth save is refused. The budget was re-derived because the earlier
 # figure was two blocks optimistic - a defect this repo shipped.
+# The saves stay a pause: a near-12 KB sequence body does not fit on a sheet line.
 @row 426 five-sequences-and-no-sixth
 send system.status.health
-pause Fetch GET /api/identity (learned_sequence_cap). Save five near-12 KB Learned Sequences (POST /api/seq), then a sixth: keep every HTTP result and the sixth's refusal text. Press Enter.
+http GET /api/identity
+pause Save five near-12 KB Learned Sequences (POST /api/seq), then a sixth: keep every HTTP result and the sixth's refusal text. Press Enter.
 send system.status.health
 send system.status.logs
 
 # #427 - a 12,289-16,384 B body is refused by PsychicHttp itself with a 400
-# and a closed connection, and nothing resets.
+# and a closed connection, and nothing resets. A pause, not an http step: a
+# ~13 KB body does not fit on a sheet line.
 @row 427 an-oversize-body-is-refused
 send system.status.health
 pause POST a ~13 KB body to /api/config and keep the status code and body. Press Enter.
@@ -358,12 +396,14 @@ send system.status.logs
 
 # #430 - newlib nano printf, adopted on the condition that nothing is lost.
 # dome.status.current is a %.3f; the SafetyMonitor heap line carries frag= as
-# a decimal; GET /api/actions logs "(<n> entries)" at debug level.
+# a decimal; GET /api/actions logs "(<n> entries)" at debug level. GET
+# /api/status must parse, with domeTargetSpeed a decimal.
 @row 430 nano-printf-keeps-its-numbers
 send dome.status.current
 send system.status.logs
 send system.config.log-level value=debug
-pause Fetch GET /api/status (it must parse, with domeTargetSpeed a decimal) and GET /api/actions. Press Enter.
+http GET /api/status
+http GET /api/actions
 send system.status.logs
 send system.config.log-level value=info
 
@@ -379,22 +419,28 @@ send system.action.disable-web-control
 
 # #364 - the dial's short expiry fires and the Output goes limp, read from
 # the firmware with nothing on the pin. Needs one enabled Output; if none is,
-# this row is Not Assessed and says so.
+# this row is Not Assessed and says so. The hold stays a pause: which Output is
+# enabled is this droid's (read it in the get-outputs answer above), not the
+# sheet's. The read after it is an http step; that row reading commandedUs
+# null, limp "expiry" is #355's to check.
 @row 364 a-hold-expires-limp
 send system.action.enable-web-control
 send servo.api.get-outputs
-pause POST /api/servo action=hold arm=<an enabled Output> positionUs=1500, wait 4 s, then fetch GET /api/servo/outputs: that row reads commandedUs null, limp "expiry". Press Enter.
+pause POST /api/servo action=hold arm=<an enabled Output> positionUs=1500, wait 4 s, then press Enter.
+http GET /api/servo/outputs
 send servo.api.get-outputs
 
 # #364 (ADR 0043) - estop and Sleep release every enabled Output, replacing
 # the park. The physical limp is droid-only; the firmware's state is not.
+# Every enabled row reading commandedUs null, limp "estop", then limp "sleep",
+# is #355's to check in the two reads.
 @row 364 estop-and-sleep-release-every-output
 send system.action.estop
 send servo.api.get-outputs
-pause Fetch GET /api/servo/outputs: every enabled row reads commandedUs null, limp "estop". Press Enter.
+http GET /api/servo/outputs
 send system.action.estop-clear
 send system.action.sleep
-pause Fetch GET /api/servo/outputs: every enabled row reads limp "sleep". Press Enter.
+http GET /api/servo/outputs
 send system.action.wake
 send system.action.disable-web-control
 
@@ -415,31 +461,41 @@ send system.action.disable-web-control
 # routing is tested natively; the HTTP 400 in api_system.cpp is not.
 @row 379 st-and-sm-are-refused
 send system.status.health
-pause POST /api/manual-command command=#st, then command=#sm: keep both status codes and bodies, then GET /api/status (stationary unchanged). Press Enter.
+http POST /api/manual-command command=#st
+http POST /api/manual-command command=#sm
+http GET /api/status
 
 # #349 + #356 - a body step naming a Part no Output claims reports
 # part-not-assigned at run and the sequence carries on. Nothing moves: LEDC is
-# disabled on this bench.
+# disabled on this bench. The route reads the sequence from `name`
+# (handleSeqTestPost, src/web/api_seq.cpp); the `command=` this step once
+# named is not a field it reads. `listen 20` is the 20 s the sequence runs for,
+# watching its log go past on serial.
 @row 349 an-unclaimed-part-is-skipped-not-fatal
 send system.config.log-level value=debug
-pause POST /api/seq/test command=DM:SE30, wait 20 s, press Enter
+http POST /api/seq/test name=DM:SE30
+listen 20
 send system.status.logs
 send system.config.log-level value=info
 
 # #354 - the Factory catalog listing got its own ceiling after shipping a 500
 # at 4,359 B. #348 - /api/serial names this board's silk, not a hard-coded S3.
+# #355 reads the two answers: builtins a 200 listing DM:SE30 to DM:SE36, serial
+# labels equal to include/component_labels.inc for artoo.
 @row 354 factory-list-and-serial-labels
-pause Fetch GET /api/seq/builtins (200, DM:SE30 to DM:SE36 listed) and GET /api/serial (labels equal include/component_labels.inc for artoo). Press Enter.
+http GET /api/seq/builtins
+http GET /api/serial
 send system.status.health
 
 # #369 - the stored RC Radio crosses a reboot and is the active member.
 @row 369 the-stored-radio-survives-a-reboot
 send system.api.get-components
-pause POST /api/config with rcMember=rc_radio, then press Enter
+http POST /api/config rcMember=rc_radio
 send system.action.reboot
 pause Wait for the board to come back, re-attach, then press Enter
 send system.api.get-components
-pause Fetch GET /api/config (rc.member) and GET /api/identity/components. Press Enter.
+http GET /api/config
+http GET /api/identity/components
 
 # #370 - the amber "restart required" line is cleared by a real restart, and
 # the new receiver is then the one running.
@@ -457,27 +513,36 @@ send system.status.health
 
 # #371 - guided Setup, one pass. The visited bits crossing a real reboot on
 # real NVS is the half no native test reaches.
+# The Setup pages are a person's; the reads between them are http steps, and
+# the second reboot is a send rather than a step inside a pause.
 @row 371 guided-setup-one-pass
-pause Run guided Setup to the end once (keep the summary card: changed / Waiting for a restart / Not asked, and "n of N questions answered"), then start it again and take the skip path. Fetch GET /api/config and keep the guidedSetup fields. Press Enter.
+pause Run guided Setup to the end once (keep the summary card: changed / Waiting for a restart / Not asked, and "n of N questions answered"), then start it again and take the skip path. Press Enter.
+http GET /api/config > guided-setup-after-the-pass-config.json
 send system.action.reboot
-pause Wait for the board to come back: the summary card is still there until Done. Press Done, reboot once more (system.action.reboot), and fetch GET /api/config (guidedSetup.summaryDone). Press Enter.
+pause Wait for the board to come back: the summary card is still there until Done. Press Done, then press Enter.
+send system.action.reboot
+pause Wait for the board to come back, re-attach, then press Enter
+http GET /api/config > guided-setup-after-done-config.json
 
 # #369 and #431 (fix 68ad608a) - ELRS reads nothing, and survives a reboot.
 # A stored ELRS mode used to load as dual SBUS. With every RC channel on, the
 # board must look exactly like one with no receiver: no RC task, no SBUS
 # decoder, drive keeping its zero frames, the estop latch untouched. Run late:
 # it leaves the board in ELRS mode, and the board is left as the test leaves it.
+# "Every RC channel" is enableRcCh1..enableRcCh6 (src/config_settings.cpp).
+# #428: with every RC channel on, the last GET /api/status must parse whole,
+# never "status payload overflow".
 @row 369 elrs-reads-nothing
 send rc.config.mode
 send system.status.health
-pause POST /api/config with rcInputMode=elrs and every RC channel on, then press Enter
+http POST /api/config rcInputMode=elrs enableRcCh1=true enableRcCh2=true enableRcCh3=true enableRcCh4=true enableRcCh5=true enableRcCh6=true
 send system.action.reboot
 pause Wait for the board to come back, re-attach, then press Enter
 send rc.config.mode
 send rc.status.snapshot
 send system.status.health
 send system.status.logs
-pause #428: with every RC channel on, fetch GET /api/status - it must parse whole, never "status payload overflow". Press Enter.
+http GET /api/status
 
 # The browser pass (#355 section E), at 1440 px. Agents run it in phase 1,
 # headed so the operator can watch along (the per-surface scripts are headed
@@ -493,7 +558,9 @@ pause #428: with every RC channel on, fetch GET /api/status - it must parse whol
 # 503 "event stream at capacity" (src/web/api_events.cpp), and a tab that
 # changes screen holds ONE slot for the whole session instead of taking and
 # releasing one per navigation. Both exist only on hardware; #344 left them
-# here. Run with no browser tab open on the board.
+# here. Run with no browser tab open on the board. Both steps stay pauses: the
+# GET /api/status reads have to happen while the streams or the tab are open,
+# which only the person holding them can time.
 @row 344 the-fourth-stream-is-refused
 send system.status.health
 pause Open three streams (for i in 1 2 3; do curl -sN http://10.0.0.22/api/events >/dev/null & done), then curl -s -o /dev/null -w '%{http_code}' http://10.0.0.22/api/events and keep the code. Fetch GET /api/status (sseClients, refusedSseCap), then kill the three curls. Press Enter.
@@ -559,9 +626,10 @@ send system.api.get-components
 # #418 + #427 - read once, after every write above and before the profiler
 # flash wipes the log: no config write ran
 # outside its Write Window (logged on device, never a reset), and whether the
-# SafetyMonitor low-heap warning fired during the big bodies.
+# SafetyMonitor low-heap warning fired during the big bodies. #355 searches the
+# kept log for "ran outside its Write Window" and "low heap entered".
 @row 418 no-write-outside-its-window
-pause Fetch GET /api/logs and search for "ran outside its Write Window" and "low heap entered". Keep both results. Press Enter.
+http GET /api/logs > write-window-logs.json
 send system.status.health
 
 # #381 row 12 and #430 - the profiler image, flashed ONCE, last. It is the only
@@ -576,5 +644,5 @@ send system.status.health
 pause Flash artoo_esp32_profiler (confirm firmwareVersion), open Dashboard in three tabs so SSE clients are connected, then press Enter
 send system.status.health
 send system.api.get-profiler
-pause Fetch GET /api/profiler and keep taskStacks[] and fragRatio for #355. Press Enter.
+http GET /api/profiler > profiler.json
 send system.api.get-profiler

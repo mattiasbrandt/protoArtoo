@@ -10,8 +10,9 @@
 # Opens the port without becoming its controlling terminal and without touching
 # DTR/RTS on POSIX systems. Output goes to stdout; status/errors go to stderr.
 # Exit code 0 on success in every mode; scripted mode's other codes (a request
-# that never closed, a sink-confirmed drop, an adapter-confirmed cap) are the
-# EXIT_* constants in the "Scripted mode" section below.
+# that never closed, a sink-confirmed drop, an adapter-confirmed cap, an `http`
+# step that got no answer) are the EXIT_* constants in the "Scripted mode"
+# section below.
 #
 # The default POSIX backend is one of the attach methods measured at 0/5 resets
 # (docs/troubleshooting.md, "Serial monitor caveat"). The --pyserial backend is
@@ -34,6 +35,8 @@
 # browser adapter's POST /api/console -- from a flat file of one directive per
 # line, so a bench row is a tracked, replayable transcript instead of a hand
 # session. See "Scripted mode" below for the directive grammar and exit codes.
+# Its `http` directive is a side channel to the droid's own routes at
+# --http-base, beside whichever adapter carries the Console.
 #
 # Usage:
 #   # Capture for 10 s (default), print to stdout:
@@ -57,13 +60,21 @@
 #
 #   # Scripted, browser adapter -- same directive grammar, POST /api/console instead:
 #   python3 tools/console_client.py --http http://artoo.local --send system.status.health
+#
+#   # A sheet whose rows also make plain requests to the droid's own routes
+#   # (`http GET /api/config > before.json`): the base they go to, and where kept
+#   # answers are written. Either transport; see "The `http` directive" below.
+#   python3 tools/console_client.py --port /dev/ttyUSB0 --http-base http://10.0.0.22 \
+#       --run-dir tasks/bench-run --script tools/bench_rows/artoo_esp32.txt
 # =============================================================================
 
 import argparse
+import http.client
 import json
 import os
 import re
 import select
+import shlex
 import signal
 import socket
 import subprocess
@@ -467,11 +478,20 @@ def stream_forever_pyserial(s) -> None:
 # more specific diagnosis than 3 (a server-confirmed drop), which is more
 # specific than 2 (we simply never heard a close) -- so "highest number wins"
 # tracks "most specific finding wins".
+#
+# 5 is the `http` side channel's own verdict: a request the sheet asked for got
+# no answer at all (refused, timed out, reset mid-body) or its answer could not
+# be kept. It ranks above 2-4 because those describe an answer that is in the
+# transcript but incomplete, while 5 means evidence the row exists to collect
+# is absent from it entirely. An HTTP status of any kind -- a 404, a 400
+# refusal -- is an answer, printed, and never reaches this code (the same rule
+# as status=err above: the droid saying no is data).
 EXIT_OK = 0
 EXIT_TOOL_FAILURE = 1
 EXIT_TIMEOUT = 2
 EXIT_LOSS = 3
 EXIT_ADAPTER_CAPPED = 4
+EXIT_HTTP_STEP_FAILED = 5
 
 DEFAULT_SEND_TIMEOUT = 8.0   # tasks/console_bench.py's --timeout default
 DEFAULT_LISTEN_SECONDS = 2.0  # tasks/console_bench.py's raw/key drain floor was 1.5s; rounded up
@@ -574,11 +594,27 @@ def build_provenance_header(args) -> list[str]:
 
     lines.append(f"BOARD: {args.board} (asserted)" if args.board else "BOARD: (not asserted)")
 
+    # The `http` directive's side channel, when this run has one. Printed so a
+    # transcript says which host its HTTP answers came from, and where the
+    # answers it kept were written.
+    http_base = resolve_http_base(args)
+    if args.no_http:
+        lines.append("HTTP-BASE: none (--no-http asserted: http steps are skipped)")
+    elif http_base:
+        lines.append(f"HTTP-BASE: {http_base}")
+    if args.run_dir:
+        lines.append(f"RUN-DIR: {os.path.abspath(args.run_dir)}")
+
     status = None
     if args.http:
         status = fetch_json_status(args.http)
     elif args.status:
         status = fetch_json_status(args.status)
+    elif http_base and not args.no_http:
+        # A run that names the droid's HTTP base for its side channel has
+        # already said where the droid is; asking it for its own image
+        # identity there beats an UNKNOWN line.
+        status = fetch_json_status(http_base)
     if status is not None:
         fw = status.get("firmwareVersion", "UNKNOWN")
         fs = status.get("fsVersion", "UNKNOWN")
@@ -1301,6 +1337,235 @@ class HttpTransport:
         pass  # settle exists to let a serial attach-reprint land first; no-op over HTTP
 
 
+# =============================================================================
+# The `http` directive: the droid's own HTTP routes as a side channel
+#
+# A bench row often needs a plain request beside its Console commands -- keep
+# GET /api/config before a flash, POST /api/config rcMember=rc_radio before a
+# reboot. That is not the Console: it is not POST /api/console, it has no
+# record grammar, and it runs on either transport (a serial sheet reaches the
+# droid's routes over its WiFi at the same time). So it gets its own base URL
+# (--http-base) and its own transcript lines, and it never feeds a verdict:
+# whatever status the droid answers with is printed as an answer, exactly as a
+# status=err record is. Only "no answer at all" is a failed step.
+#
+#   http GET <path> [> <file>]
+#   http POST <path> [key=value ...] [> <file>]
+#
+# POST pairs are sent form-urlencoded, in the order written, which is how the
+# droid's routes read their parameters (src/web/web_param_source.cpp, and
+# data/web_api.js's postForm on the browser side). Tokens are split with shell
+# quoting rules, so a value carrying a space is written `droidName="R2 D2"`.
+# `> <file>` also writes the raw response body to <file> inside --run-dir.
+# =============================================================================
+
+HTTP_STEP_METHODS = ("GET", "POST")
+
+# A kept answer is written into --run-dir under exactly this name: no path
+# separator, no leading dot, so a sheet can neither climb out of the run
+# directory nor hide a file in it.
+_HTTP_SAVE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+# The read loop's chunk size. Any value works; this one keeps a large
+# /api/config answer (up to 6,144 B, #371) to two reads.
+_HTTP_READ_CHUNK = 4096
+
+
+class HttpStep:
+    """One parsed `http` directive. `form` keeps the pairs in written order
+    (a list, not a dict): the order is what goes on the wire, and a repeated
+    key stays repeated rather than silently keeping the last one."""
+
+    __slots__ = ("method", "path", "form", "save")
+
+    def __init__(self, method: str, path: str, form: list[tuple[str, str]], save: str | None):
+        self.method = method
+        self.path = path
+        self.form = form
+        self.save = save
+
+
+def parse_http_step(arg: str, source: str) -> HttpStep:
+    """Parse an `http` directive's argument, or raise ScriptUsageError naming
+    `source`. Called when a sheet is loaded, so a malformed step fails the
+    whole sheet before anything is sent, and again when the step runs."""
+    try:
+        tokens = shlex.split(arg)
+    except ValueError as e:
+        raise ScriptUsageError(f"{source}: http: {e}") from None
+
+    save: str | None = None
+    for i, token in enumerate(tokens):
+        if not token.startswith(">"):
+            continue
+        # `> file` or `>file`, and only as the last thing on the line: a
+        # redirect in the middle would leave it ambiguous which tokens are
+        # the body.
+        name = token[1:] if len(token) > 1 else (tokens[i + 1] if i + 1 < len(tokens) else "")
+        consumed = 1 if len(token) > 1 else 2
+        if i + consumed != len(tokens):
+            raise ScriptUsageError(
+                f"{source}: http: '>' must be the last thing on the line, followed by one file name")
+        if not name or not _HTTP_SAVE_NAME_RE.match(name):
+            raise ScriptUsageError(
+                f"{source}: http: {name!r} is not a file name to keep the answer in "
+                "(letters, digits, '.', '_' and '-'; no path, no leading dot)")
+        save = name
+        tokens = tokens[:i]
+        break
+
+    if len(tokens) < 2:
+        raise ScriptUsageError(
+            f"{source}: http needs a method and a path, e.g. `http GET /api/config`")
+    method, path, pairs = tokens[0], tokens[1], tokens[2:]
+    if method not in HTTP_STEP_METHODS:
+        raise ScriptUsageError(
+            f"{source}: http: method {method!r} is not one of {', '.join(HTTP_STEP_METHODS)}")
+    if not path.startswith("/") or path.startswith("//"):
+        raise ScriptUsageError(
+            f"{source}: http: path {path!r} must start with a single '/' "
+            "(the host comes from --http-base, never from the sheet)")
+
+    form: list[tuple[str, str]] = []
+    for pair in pairs:
+        key, eq, value = pair.partition("=")
+        if not eq or not key:
+            raise ScriptUsageError(
+                f"{source}: http: {pair!r} is not a key=value pair for the request body")
+        form.append((key, value))
+    if form and method == "GET":
+        raise ScriptUsageError(
+            f"{source}: http: GET carries no body; put a query in the path instead "
+            f"(e.g. /api/seq?name=...)")
+    return HttpStep(method, path, form, save)
+
+
+def http_step_rows(directives: "list[Directive]") -> tuple[list[str], list[str]]:
+    """(rows using `http` at all, rows keeping an answer with `>`), by the
+    `@row` label each step sits under, in first-seen order -- what a refusal
+    names so the operator knows which rows to deselect. A step before any
+    row marker is reported as `(preamble)`."""
+    using: list[str] = []
+    saving: list[str] = []
+    current = "(preamble)"
+    for d in directives:
+        if d.kind == "row":
+            current = d.arg
+        elif d.kind == "http":
+            if current not in using:
+                using.append(current)
+            if parse_http_step(d.arg, d.source).save and current not in saving:
+                saving.append(current)
+    return using, saving
+
+
+class HttpSideChannel:
+    """Performs `http` steps against the droid's own routes at `base_url`.
+
+    `skip` is --no-http: the operator's assertion that this board has no
+    network (FireBeetle board 1's C6 is unflashable). Every step then prints
+    one [HTTP-SKIPPED] line and sends nothing -- stated in the transcript,
+    never silent, and never a verdict either way.
+    """
+
+    def __init__(self, base_url: str | None, run_dir: str | None, skip: bool = False):
+        self.base_url = base_url.rstrip("/") if base_url else None
+        self.run_dir = run_dir
+        self.skip = skip
+
+    def request(self, step: HttpStep, timeout: float) -> bool:
+        """Run one step and print it into the transcript. True when an answer
+        arrived (whatever its status) and, if asked, was kept; False when the
+        step failed, with the reason already printed as [HTTP-FAILED]."""
+        body = (urllib.parse.urlencode(step.form).encode("utf-8")
+                if step.method == "POST" else None)
+        if self.skip:
+            print(f"[HTTP-SKIPPED] {step.method} {step.path}: --no-http "
+                  "(this board has no network)", flush=True)
+            return True
+        if self.base_url is None:
+            # main() refuses such a run before the first send; this is the
+            # guard for a caller that did not.
+            raise ScriptUsageError("http directive with no --http-base to send it to")
+
+        url = self.base_url + step.path
+        marker = f"--- http {step.method} {url}"
+        if body is not None:
+            marker += f" body={body!r}"
+        print(marker + " ---", flush=True)
+
+        what = f"{step.method} {url}"
+        request = urllib.request.Request(url, data=body, method=step.method)
+        if body is not None:
+            request.add_header("Content-Type",
+                               "application/x-www-form-urlencoded;charset=UTF-8")
+
+        deadline = time.monotonic() + timeout
+        try:
+            try:
+                resp = urllib.request.urlopen(request, timeout=timeout)
+            except urllib.error.HTTPError as e:
+                # A 4xx/5xx is the droid answering, not a failure: read it
+                # like any other answer.
+                resp = e
+            with resp:
+                status_code = resp.getcode()
+                reason = getattr(resp, "reason", "") or ""
+                content_type = resp.headers.get("Content-Type", "") if resp.headers else ""
+                chunks = []
+                while True:
+                    if time.monotonic() > deadline:
+                        print(f"[HTTP-FAILED] {what}: the answer did not finish within "
+                              f"{timeout}s", flush=True)
+                        return False
+                    chunk = resp.read(_HTTP_READ_CHUNK)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
+            # URLError: refused, DNS, unreachable. HTTPException: a malformed
+            # or truncated answer (IncompleteRead, RemoteDisconnected).
+            # OSError: a reset or a socket timeout (TimeoutError is one).
+            print(f"[HTTP-FAILED] {what}: {e}", flush=True)
+            return False
+
+        data = b"".join(chunks)
+        head = f"HTTP {status_code}"
+        if reason:
+            head += f" {reason}"
+        head += f" ({len(data)} bytes"
+        if content_type:
+            head += f", {content_type}"
+        print(head + ")", flush=True)
+        if data:
+            text = data.decode("utf-8", "replace")
+            print(text if text.endswith("\n") else text + "\n", end="", flush=True)
+
+        if step.save is None:
+            return True
+        if self.run_dir is None:
+            raise ScriptUsageError(
+                f"http: `> {step.save}` needs --run-dir to keep the answer in")
+        path = os.path.join(self.run_dir, step.save)
+        try:
+            # "x": an answer already kept under this name is evidence from an
+            # earlier step or run (a before-the-flash copy), and a replay must
+            # not quietly replace it with an after one.
+            with open(path, "xb") as f:
+                f.write(data)
+        except OSError as e:
+            print(f"[HTTP-FAILED] {what}: answer not kept in {path}: {e}", flush=True)
+            return False
+        print(f"--- kept {path} ({len(data)} bytes, HTTP {status_code}) ---", flush=True)
+        return True
+
+
+def resolve_http_base(args) -> str | None:
+    """The `http` side channel's base URL: --http-base, else the --http
+    transport's own base (it is the same droid), else None."""
+    return args.http_base or args.http
+
+
 class Directive:
     __slots__ = ("kind", "arg", "source")
 
@@ -1311,7 +1576,7 @@ class Directive:
 
 
 _DIRECTIVE_KINDS = frozenset(
-    {"send", "raw", "key", "sendlen", "listen", "settle", "timeout", "pause", "row"}
+    {"send", "raw", "key", "sendlen", "listen", "settle", "timeout", "pause", "http", "row"}
 )
 
 
@@ -1330,6 +1595,10 @@ def parse_directive_line(line: str, source: str) -> Directive | None:
     arg = parts[1] if len(parts) > 1 else ""
     if kind not in _DIRECTIVE_KINDS:
         raise ScriptUsageError(f"{source}: unknown directive {kind!r}")
+    if kind == "http":
+        # Checked at load, not only when it runs: a sheet with a malformed
+        # step fails before its first send, not halfway down a bench session.
+        parse_http_step(arg, source)
     return Directive(kind, arg, source)
 
 
@@ -1430,10 +1699,13 @@ def run_pause(text: str) -> None:
 
 
 def run_scripted(transport: "SerialTransport | HttpTransport", directives: list[Directive],
-                  initial_timeout: float = DEFAULT_SEND_TIMEOUT) -> int:
+                  initial_timeout: float = DEFAULT_SEND_TIMEOUT,
+                  http_side: HttpSideChannel | None = None) -> int:
     """Execute `directives` against `transport` (either adapter). Returns the
     worst exit code seen across the whole run (EXIT_OK if every request
-    closed with no loss and the adapter never capped an answer)."""
+    closed with no loss, the adapter never capped an answer and every `http`
+    step got an answer). `http` steps go to `http_side`, never to
+    `transport`: they are the droid's own routes, not the Console."""
     worst = EXIT_OK
     current_timeout = initial_timeout
     current_listen = DEFAULT_LISTEN_SECONDS
@@ -1488,25 +1760,60 @@ def run_scripted(transport: "SerialTransport | HttpTransport", directives: list[
             current_timeout = float(d.arg)
         elif d.kind == "pause":
             run_pause(d.arg)
+        elif d.kind == "http":
+            if http_side is None:
+                raise ScriptUsageError(
+                    f"{d.source}: http directive with no --http-base to send it to")
+            # The current `timeout` bounds the answer, as it bounds a send.
+            if not http_side.request(parse_http_step(d.arg, d.source), current_timeout):
+                worst = max(worst, EXIT_HTTP_STEP_FAILED)
         else:
             raise ScriptUsageError(f"{d.source}: unhandled directive {d.kind!r}")
 
     return worst
 
 
+def http_side_channel_refusal(args, directives: list[Directive]) -> str | None:
+    """Why this run's `http` steps cannot be performed as given, or None.
+
+    Decided on the rows actually selected (after --rows/--skip-manual), so a
+    run that selects none of a sheet's `http` rows needs no base. The message
+    names the rows, because the operator's ways out are to give the missing
+    option or to leave those rows out."""
+    if args.no_http and (args.http_base or args.http):
+        return ("--no-http says this board has no network, but --http-base/--http "
+                "names one; give one or the other")
+    using, saving = http_step_rows(directives)
+    if not using or args.no_http:
+        return None
+    if not resolve_http_base(args):
+        return ("these rows send `http` steps and there is no --http-base to send them to: "
+                f"{', '.join(using)}. Pass --http-base http://<droid>, or --no-http on a board "
+                "with no network, or leave those rows out with --rows.")
+    if saving and not args.run_dir:
+        return ("these rows keep HTTP answers with `> FILE` and there is no --run-dir to keep "
+                f"them in: {', '.join(saving)}. Pass --run-dir <directory>.")
+    return None
+
+
 class _AppendDirective(argparse.Action):
     """Appends a Directive onto one shared `directives` list in declaration
-    order, so --send/--raw/--key/--sendlen/--listen/--pause interleave on
+    order, so --send/--raw/--key/--sendlen/--listen/--pause/--http-step interleave on
     the command line exactly the way lines in a --script file would --
     composing a scripted run directly on the command line is the same
     engine, not a second one."""
+
+    # A flag whose dest cannot be its directive's name: `--http` was already
+    # the Console's HTTP transport when the `http` directive arrived.
+    _KIND_BY_DEST = {"http_step": "http"}
 
     def __call__(self, parser, namespace, values, option_string=None):
         directives = getattr(namespace, "directives", None)
         if directives is None:
             directives = []
             setattr(namespace, "directives", directives)
-        directives.append(Directive(self.dest, values, f"--{self.dest}"))
+        kind = self._KIND_BY_DEST.get(self.dest, self.dest)
+        directives.append(Directive(kind, values, option_string or f"--{self.dest}"))
 
 
 def main() -> int:
@@ -1588,6 +1895,11 @@ def main() -> int:
         help="Scripted directive: print TEXT and wait for Enter on the controlling terminal."
     )
     parser.add_argument(
+        "--http-step", action=_AppendDirective, metavar="'METHOD PATH [k=v ...] [> FILE]'",
+        help="Scripted directive: one request to the droid's own HTTP routes at --http-base "
+             "(the `http` directive). Quote it as one argument."
+    )
+    parser.add_argument(
         "--settle", type=float, default=None,
         help=f"Scripted mode: seconds to wait before the first serial send "
              f"(default: {DEFAULT_SETTLE_SECONDS})."
@@ -1602,6 +1914,21 @@ def main() -> int:
         help="Scripted mode transport: the browser adapter's POST /api/console "
              "at BASE-URL, instead of --port. Interactive never goes over HTTP; "
              "raw/key/listen directives are refused."
+    )
+    parser.add_argument(
+        "--http-base", default=None, metavar="BASE-URL",
+        help="Scripted mode: where `http` directives go, e.g. http://10.0.0.22 -- the droid's "
+             "own routes, a side channel beside either transport. Defaults to --http's base."
+    )
+    parser.add_argument(
+        "--run-dir", default=None, metavar="DIR",
+        help="Scripted mode: directory `http ... > FILE` keeps answers in (created if missing). "
+             "A file already there is never overwritten."
+    )
+    parser.add_argument(
+        "--no-http", action="store_true",
+        help="Scripted mode: assert this board has no network. Every `http` step prints "
+             "[HTTP-SKIPPED] and sends nothing, instead of the run being refused."
     )
     parser.add_argument(
         "--board", default=None, metavar="LABEL",
@@ -1641,9 +1968,19 @@ def main() -> int:
     args = parser.parse_args()
 
     script_directives: list[Directive] = []
-    if args.script:
-        script_directives.extend(load_script_file(args.script))
-    script_directives.extend(getattr(args, "directives", None) or [])
+    try:
+        if args.script:
+            script_directives.extend(load_script_file(args.script))
+        for d in getattr(args, "directives", None) or []:
+            if d.kind == "http":
+                parse_http_step(d.arg, d.source)  # a script line gets this at load
+            script_directives.append(d)
+    except ScriptUsageError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_TOOL_FAILURE
+    except OSError as e:
+        print(f"ERROR: could not read --script {args.script}: {e}", file=sys.stderr)
+        return EXIT_TOOL_FAILURE
 
     if script_directives:
         preamble, blocks = split_into_row_blocks(script_directives)
@@ -1672,13 +2009,25 @@ def main() -> int:
         initial_timeout = args.timeout if args.timeout is not None else DEFAULT_SEND_TIMEOUT
         color = resolve_color(args)
 
+        refusal = http_side_channel_refusal(args, script_directives)
+        if refusal:
+            print(f"ERROR: {refusal}", file=sys.stderr)
+            return EXIT_TOOL_FAILURE
+        if args.run_dir:
+            try:
+                os.makedirs(args.run_dir, exist_ok=True)
+            except OSError as e:
+                print(f"ERROR: could not create --run-dir {args.run_dir}: {e}", file=sys.stderr)
+                return EXIT_TOOL_FAILURE
+        http_side = HttpSideChannel(resolve_http_base(args), args.run_dir, skip=args.no_http)
+
         if args.http:
             for line in build_provenance_header(args):
                 print(line, flush=True)
             print(f"[console] {args.http} (HTTP, scripted)", file=sys.stderr)
             transport = HttpTransport(args.http, color=color)
             try:
-                return run_scripted(transport, script_directives, initial_timeout)
+                return run_scripted(transport, script_directives, initial_timeout, http_side)
             except (ScriptUsageError, ConsoleClientToolFailure) as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return EXIT_TOOL_FAILURE
@@ -1701,7 +2050,7 @@ def main() -> int:
         transport = SerialTransport(fd, args.port, args.baud, settle_seconds=settle,
                                      color=color, reattach_timeout=reattach_timeout)
         try:
-            return run_scripted(transport, script_directives, initial_timeout)
+            return run_scripted(transport, script_directives, initial_timeout, http_side)
         except (ScriptUsageError, ConsoleClientToolFailure) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return EXIT_TOOL_FAILURE
