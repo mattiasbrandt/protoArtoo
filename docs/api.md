@@ -2311,10 +2311,9 @@ curl -s http://artoo.local/api/validation
 
 Enables sleep mode.
 
-- Requires `webControlEnabled=true`
-- Success: `200` JSON from sleep formatter (`ok`, `sleepMode`, `changed`)
+- Needs no web control: Sleep is a subsystem state, not a drive command, so it works in Stationary Mode too (`29ceddd2`)
+- Success: `200` JSON from sleep formatter (`ok`, `sleepMode`, `changed`); a change pushes a status to the event stream
 - Errors:
-- `409` `{"ok":false,"error":"web control is not enabled"}`
 - `500` `{"ok":false,"error":"sleep response overflow"}`
 
 #### Example request
@@ -2333,10 +2332,9 @@ curl -s -X POST http://artoo.local/api/sleep
 
 Disables sleep mode.
 
-- Requires `webControlEnabled=true`
-- Success: `200` JSON from wake formatter (`ok`, `sleepMode`, `changed`)
+- Needs no web control: Sleep is a subsystem state, not a drive command, so it works in Stationary Mode too (`29ceddd2`)
+- Success: `200` JSON from wake formatter (`ok`, `sleepMode`, `changed`); a change pushes a status to the event stream
 - Errors:
-- `409` `{"ok":false,"error":"web control is not enabled"}`
 - `500` `{"ok":false,"error":"wake response overflow"}`
 
 #### Example request
