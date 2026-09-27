@@ -34,7 +34,12 @@ ADR 0059 forbids - so this fails instead:
    something else - the Sound page, a sequence called Scream - is not about the
    Setting and is not flagged; nor is a component key that is a plain word
    (`drive`, `audio`), which names pages and lanes too, so for those toggles the
-   form name is what marks a line as about the Setting.
+   form name is what marks a line as about the Setting;
+7. every row key data/outputs.js may save (`PATCH_FIELDS`, each entry's
+   `key`) is a declared Output row Setting. The browser keeps its own list of
+   what a page may save, because serving the row table was rejected (ADR 0068,
+   amended 2026-09-27); this holds that list to the declaration, so a key the
+   droid would refuse cannot sit there unnoticed.
 
 And, because the words check is the one place every declaration is read and
 the Preferences double in the native tests enforces neither: no NVS key is
@@ -59,6 +64,7 @@ import setting_declarations  # tools/, beside this script
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_API = ROOT / "data" / "web_api.js"
+OUTPUTS = ROOT / "data" / "outputs.js"
 # ESP-IDF NVS keys are at most 15 characters (NVS_KEY_NAME_MAX_SIZE - 1).
 NVS_KEY_MAX_LEN = 15
 
@@ -105,6 +111,21 @@ def browser_words(web_api: Path | None = None) -> tuple[dict[str, str], dict[str
             _entries(_object_body(text, "ROW_SETTING_WORDS")))
 
 
+def patch_field_keys(outputs: Path | None = None) -> list[str]:
+    """Each row key in data/outputs.js's `PATCH_FIELDS`, in its order."""
+    path = outputs or OUTPUTS
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"const PATCH_FIELDS = \{", text)
+    if match is None:
+        raise ValueError(f"PATCH_FIELDS is not declared in {path.name}")
+    depth = 1
+    at = match.end()
+    while depth and at < len(text):
+        depth += {"{": 1, "}": -1}.get(text[at], 0)
+        at += 1
+    return re.findall(r'\bkey:\s*"([\w-]+)"', text[match.end():at - 1])
+
+
 def _timing(errors: list[str], name: str, entry: str, declared: str) -> None:
     """The entry states the firmware's timing token, or an error says which."""
     applies = re.search(r'applies:\s*"([\w-]+)"', entry)
@@ -144,7 +165,7 @@ def _labels_named_twice(errors: list[str], droid: dict[str, str], settings: Path
 
 def check(errors: list[str], settings: Path | None = None, web_api: Path | None = None,
           records: list[Path] | None = None, acts: Path | None = None,
-          pages: list[Path] | None = None) -> None:
+          pages: list[Path] | None = None, outputs: Path | None = None) -> None:
     droid, row = browser_words(web_api)
     if pages is None:
         pages = [page for page in sorted(WEB_API.parent.glob("*.js")) if page.name != WEB_API.name]
@@ -190,6 +211,13 @@ def check(errors: list[str], settings: Path | None = None, web_api: Path | None 
             errors.append(
                 f"{name} is a declared CHIRP binding part with no words in SETTING_WORDS "
                 f"({WEB_API.name})"
+            )
+    declared_rows = {setting.key for setting in setting_declarations.row_settings(settings)}
+    for key in patch_field_keys(outputs):
+        if key not in declared_rows:
+            errors.append(
+                f"{(outputs or OUTPUTS).name} may save the row key {key}, which is no declared "
+                "Output row Setting - the droid would refuse it"
             )
     for setting in setting_declarations.row_settings(settings):
         if setting.key not in row:
