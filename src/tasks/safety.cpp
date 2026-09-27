@@ -17,11 +17,10 @@
 // =============================================================================
 
 #include <Arduino.h>
-#include <esp_heap_caps.h>
 
 #include "api_profiler.h"
 #include "failed_alloc_tracker.h"
-#include "heap_health.h"
+#include "heap_reading.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "safety.h"
@@ -162,27 +161,17 @@ void safetyMonitorTask(void* pvParameters) {
 
         profilerObserveOptionalSubsystems();
 
-        // Heap health: warn on low free heap, high fragmentation, and log periodic metrics.
-        // freeHeap is the Arduino internal figure, kept only for the periodic log below
-        // beside data_free so the two can be compared.
-        uint32_t freeHeap = ESP.getFreeHeap();
-        // Fragmentation pair: both terms come from ONE capability mask, and the mask
-        // that matters for safety is the internal 8-bit data heap. INTERNAL alone
-        // would count IRAM-only regions malloc cannot return for byte-addressable
-        // data (artoo-esp32); 8BIT alone includes PSRAM, which on the ESP32-P4 made
-        // largest (~33 MB) dwarf internal free (~114 KB), so frag read -287.92 and
-        // the <10 KB WARN below was structurally dead (#245 defect 2).
-        uint32_t dataHeapFree =
-            (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        uint32_t largestBlock =
-            (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        float fragRatio = heapFragRatio(dataHeapFree, largestBlock);
+        // Heap health: warn on low free heap, high fragmentation, and log periodic
+        // metrics. All of it reads the Internal Data Heap (include/heap_reading.h),
+        // which owns the mask and the reasoning for it: IRAM would keep the free
+        // figure above the 20 KB threshold on artoo-esp32, so the warning could
+        // never fire there, and PSRAM would make the fragmentation pair
+        // meaningless on the ESP32-P4 (#245 defect 2).
+        const HeapInternalDataReading dataHeap = heapReadInternalData();
+        const uint32_t dataHeapFree = dataHeap.free;
+        const uint32_t largestBlock = dataHeap.largest;
+        float fragRatio = heapInternalDataFragRatio(dataHeap);
 
-        // Low heap reads the same data heap as the fragmentation pair. ESP.getFreeHeap()
-        // is heap_caps_get_free_size(MALLOC_CAP_INTERNAL), which on the classic ESP32
-        // (artoo-esp32) includes the IRAM heap - 42,392 B on the image #427 measured -
-        // that malloc cannot hand out for byte-addressable data. That alone kept the
-        // figure above this 20 KB threshold, so the warning could never fire there.
         bool nowLowHeap = (dataHeapFree < 20480);
         if (nowLowHeap && !lastLowHeap) {
             PA_LOG_WARN(TAG, "low heap entered: %lu bytes free, largest block: %u bytes",
@@ -214,10 +203,9 @@ void safetyMonitorTask(void* pvParameters) {
         static int periodicCount = 0;
         if (++periodicCount >= 60) {  // ~6 s at 10 Hz
             periodicCount = 0;
-            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu data_free=%lu largest=%u frag=%.2f",
-                         (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
-                         (unsigned long)dataHeapFree, (unsigned)largestBlock,
-                         (double)fragRatio);
+            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu largest=%u frag=%.2f",
+                         (unsigned long)dataHeapFree, (unsigned long)dataHeap.minEver,
+                         (unsigned)largestBlock, (double)fragRatio);
         }
 
         profilerPeriodicCollect();

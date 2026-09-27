@@ -80,7 +80,7 @@ static constexpr size_t LOG_LINE_MAX = 128;
 //
 // The deepest rung costs 28672 B, which is 27.4% of the ~102 KB of internal
 // free heap the ESP32-P4 has after the static growth in this ticket (#245
-// measured ~114 KB; see heap_health.h and tasks/safety.cpp). artoo-esp32's
+// measured ~114 KB; see heap_reading.h and tasks/safety.cpp). artoo-esp32's
 // deepest rung costs 12288 B of its 42692 B, i.e. 28.8%, so the P4 buys 2.3x
 // the history for a slightly smaller share of its heap. A failed ring
 // allocation is not fatal on either board: paLogRingApplyBootDepth keeps the
