@@ -345,6 +345,7 @@ send sound.status.current
 # row has no pause, so --skip-manual selects it: whether this board's NVS still
 # holds a crossing to make is #355's to say, not the sheet's.
 @row 345 the-calibration-crosses-onto-the-rows-on-the-p4
+pause ONE-SHOT, and it SAVES the config and sets Stationary Mode: run this row only on a board whose NVS still holds pre-migration servo keys (the 2026-09-11 Wave 0 check already crossed both bench boards). Press Enter to run it, or Ctrl-C to stop.
 http GET /api/config > p4-calibration-pre-migration-config.json
 send system.action.set-mode mode=stationary
 send system.status.health
