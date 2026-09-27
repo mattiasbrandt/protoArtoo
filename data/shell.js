@@ -703,10 +703,13 @@
   const chipHtml = (chip) => {
     // Label over value, with the signal light inside the value line: the shape
     // an instrument uses, where the label is the engraving on the panel and the
-    // value is what the needle says (ADR 0066).
+    // value is what the needle says (ADR 0066). The word has a span of its
+    // own because a repaint writes the word and nothing else: written into the
+    // value line, it took the light with it on the first frame (#355).
     const inner =
       `<span class="status-chip-label">${chip.label}</span>` +
-      `<span class="status-chip-value"><span class="status-chip-dot"></span>${CHIP_FINDING_OUT}</span>`;
+      `<span class="status-chip-value"><span class="status-chip-dot"></span>` +
+      `<span class="status-chip-word">${CHIP_FINDING_OUT}</span></span>`;
     const shared = `class="status-chip" id="chip-${chip.id}" data-chip="${chip.id}" title="${chipAffordance(chip)}"`;
     return chip.page === null
       ? `<button type="button" ${shared}>${inner}</button>`
@@ -1051,7 +1054,7 @@
   PLATE_CHIPS.forEach((chip) => {
     const node = document.getElementById(`chip-${chip.id}`);
     if (!node) return;
-    plateCells.set(chip.id, { node, value: node.querySelector(".status-chip-value") });
+    plateCells.set(chip.id, { node, word: node.querySelector(".status-chip-word") });
   });
 
   // One writer for every cell, so no chip can grow a rendering path of its own
@@ -1064,7 +1067,7 @@
       if (!cell) return;
       const painted = reading.status ? chip.read(reading.status, reading) : chipState("", CHIP_FINDING_OUT);
       cell.node.className = painted.state ? `status-chip status-chip-${painted.state}` : "status-chip";
-      if (cell.value) cell.value.textContent = painted.value;
+      if (cell.word) cell.word.textContent = painted.value;
     });
   };
 
