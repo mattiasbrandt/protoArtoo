@@ -636,6 +636,91 @@ void test_every_field_round_trips_through_storage() {
     TEST_ASSERT_EQUAL_UINT16(2300, servoOutputHighUs(back));
 }
 
+// The stored text, byte for byte (ADR 0068, amended 2026-09-27). Every word
+// each vocabulary has, a Part list both empty and full, and `calibrated` both
+// ways: a row a controller stored yesterday must read the same today, so these
+// strings only change when the stored form is meant to.
+namespace {
+
+struct GoldenRow {
+    ServoOutputRow row;
+    const char* stored;
+};
+
+ServoOutputRow goldenRow(uint8_t channel, ServoComponentType component) {
+    ServoOutputRow row = {};
+    servoOutputRowDefaults(&row, SERVO_DRIVER_LEDC, channel, component);
+    return row;
+}
+
+void goldenRows(GoldenRow out[4]) {
+    out[0] = {goldenRow(LEDC_CH_ARM1, SERVO_COMP_MG996R),
+              "ledc:0:-:2000:1500:1000:1000:250:0:none:limp:mg996r:0:1"};
+
+    ServoOutputRow full = goldenRow(LEDC_CH_ARM2, SERVO_COMP_MG90S);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "utilUp"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "utilLo"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "doorFL"));
+    TEST_ASSERT_TRUE(servoOutputAddPart(&full, "gripArm"));
+    full.open_us = 700;
+    full.centre_us = 1500;
+    full.close_us = 2300;
+    full.throw_ms = 1450;
+    full.accel_ms = 310;
+    full.release_ms = 4000;
+    full.easing = SERVO_EASE_SOFT;
+    full.boot = SERVO_BOOT_HOME_HOLD;
+    full.calibrated = true;
+    full.led_count = 7;
+    out[1] = {full, "ledc:1:utilUp,utilLo,doorFL,gripArm:700:1500:2300:1450:310:4000:soft:home-hold:mg90s:1:7"};
+
+    ServoOutputRow one = goldenRow(LEDC_CH_AUX1, SERVO_COMP_NONE);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&one, "other3"));
+    one.open_us = 1100;
+    one.centre_us = 1400;
+    one.close_us = 1900;
+    one.throw_ms = SERVO_THROW_MS_MIN;
+    one.accel_ms = SERVO_ACCEL_MS_MAX;
+    one.release_ms = SERVO_RELEASE_MS_MAX;
+    one.easing = SERVO_EASE_OVERSHOOT;
+    one.boot = SERVO_BOOT_HOME_RELEASE;
+    one.calibrated = true;
+    one.led_count = SERVO_LIGHT_LEDS_MAX;
+    out[2] = {one, "ledc:3:other3:1100:1400:1900:20:10000:60000:overshoot:home-release:none:1:255"};
+
+    ServoOutputRow lit = goldenRow(LEDC_CH_AUX2, SERVO_COMP_RGB);
+    lit.throw_ms = SERVO_THROW_MS_MAX;
+    lit.accel_ms = SERVO_ACCEL_MS_MIN;
+    lit.led_count = 42;
+    out[3] = {lit, "ledc:4:-:2000:1500:1000:10000:1:0:none:limp:rgb:0:42"};
+}
+
+}  // namespace
+
+void test_the_stored_text_is_byte_for_byte_what_it_was() {
+    GoldenRow rows[4];
+    goldenRows(rows);
+    // Read over a fallback unlike every golden row, so a field the parse
+    // skipped would show as the fallback's value in the text written back.
+    ServoOutputRow fallback = goldenRow(LEDC_CH_AUX3, SERVO_COMP_MG996R);
+    fallback.throw_ms = 999;
+    fallback.accel_ms = 99;
+    fallback.release_ms = 9;
+    fallback.led_count = 9;
+    for (const GoldenRow& golden : rows) {
+        char stored[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+        TEST_ASSERT_TRUE(servoOutputRowFormat(stored, sizeof(stored), golden.row));
+        TEST_ASSERT_EQUAL_STRING(golden.stored, stored);
+
+        ServoOutputRow parsed = {};
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, servoOutputRowParse(golden.stored, fallback, &parsed),
+                                         golden.stored);
+        char again[SERVO_OUTPUT_ROW_STR_MAX + 1] = {};
+        TEST_ASSERT_TRUE(servoOutputRowFormat(again, sizeof(again), parsed));
+        TEST_ASSERT_EQUAL_STRING(golden.stored, again);
+    }
+}
+
 void test_a_row_added_without_an_address_is_reported() {
     ServoOutputTable saved = {};
     servoOutputTableDefaults(&saved);
@@ -1127,6 +1212,7 @@ int main(int, char**) {
     RUN_TEST(test_an_unaddressable_channel_is_repaired);
 
     RUN_TEST(test_every_field_round_trips_through_storage);
+    RUN_TEST(test_the_stored_text_is_byte_for_byte_what_it_was);
     RUN_TEST(test_a_row_added_without_an_address_is_reported);
     RUN_TEST(test_a_device_that_never_wrote_a_row_reports_nothing);
     RUN_TEST(test_a_damaged_stored_row_is_counted_and_named);
