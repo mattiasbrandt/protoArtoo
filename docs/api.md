@@ -2184,8 +2184,8 @@ provisioning/recovery flow (ADR 0015).
   Provisioning or Network Recovery Mode this is the Default AP Credential's
   SSID (`protoArtoo`), not necessarily the operator's saved Standalone AP
   Mode SSID.
-- `staSsid`: the network the client side is joined to, or trying to join
-  (empty when it has none).
+- `staSsid`: the network the client side is joined to; empty while it is
+  not connected (`include/web_network_manager.h`).
 - `networkRecovery`: `true` only while Network Recovery Mode is active for
   this boot (entered via the local power-cycle gesture — see
   [docs/wifi-provisioning.md](wifi-provisioning.md)). It does not indicate
