@@ -19,7 +19,6 @@
       "core_dir": "~/.platformio-p4",
       "size_tool": "riscv32-esp-elf-size",
       "envs": [
-        "firebeetle2_bringup",
         "firebeetle2",
         "firebeetle2_hosted_bench",
         "firebeetle2_ota",
@@ -53,19 +52,6 @@
       "fs_baseline_measured_at": "0b55e00f",
       "fs_baseline_bytes": 397312,
       "fs_budget_rationale": "Measured 397,312 B at fs_baseline_measured_at: 40 files staging to 299,320 B of content, which LittleFS rounds into 97 blocks of 4,096 B. Rounding is the larger half of the cost and is not noise - 102,088 B of it, 70,892 B from the 26 files already larger than one block. Ceiling is the whole 655,360 B partition, with no reserve: unlike flash there are no OTA headers to leave room for. Budget at 409,600 B is 100 blocks, three blocks of slack over the baseline - deliberately tight, because this budget exists to make growth visible and 15% of slack would have hidden the growth that prompted it. epic/operator-experience already measures 434,176 B (106 blocks) and is expected to trip this once on merge; that raise states its own arithmetic here rather than being bumped quietly (ADR 0065). Measurement is the count of blocks in littlefs.bin that are not erased (all 0xFF); the file's own size is always the full partition and is never the measurement."
-    },
-    "firebeetle2_bringup": {
-      "board": "FireBeetle 2 ESP32-P4",
-      "platform": "esp32p4",
-      "partition_flash_bytes": 3145728,
-      "flash_ceiling_bytes": 3113728,
-      "dram_limit_bytes": 327680,
-      "flash_budget_bytes": 400000,
-      "ram_budget_bytes": 45000,
-      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
-      "baseline_flash_bytes": 334448,
-      "baseline_ram_bytes": 24222,
-      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes). The earlier 321,774 B figure stamped 8fea3c7 is not reproduced by rebuilding 8fea3c7 with the current P4 packages (334,448 B, identical to now), so that delta is package- or method-side, not a source change. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
     },
     "firebeetle2": {
       "board": "FireBeetle 2 ESP32-P4 (full firmware)",

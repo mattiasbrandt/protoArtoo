@@ -66,7 +66,7 @@ jobs:
         # Adding a future backend or board is one entry here — do not
         # hand-roll more jobs. Excluded on purpose: artoo_esp32_prod
         # (self-build-only), *_check (compile-only), *_profiler* (dev
-        # tooling), *_bringup and *_bench (not the firmware), *_ota
+        # tooling), *_bench (not the firmware), *_ota
         # (identical firmware.bin to its non-OTA counterpart, just a
         # different upload_protocol).
         #

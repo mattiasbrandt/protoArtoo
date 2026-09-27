@@ -48,7 +48,7 @@ class BudgetFileValidation(unittest.TestCase):
 
     def test_all_required_envs_have_budgets(self):
         """All P4 envs from Makefile P4_ENVS must be in budgets file."""
-        required_envs = {"artoo_esp32", "firebeetle2_bringup", "firebeetle2"}
+        required_envs = {"artoo_esp32", "firebeetle2"}
         budgets = slice_verify.load_budgets()
         env_list = set(budgets["envs"].keys())
         missing = required_envs - env_list
@@ -176,7 +176,7 @@ class PlatformIOCoreDirSelection(unittest.TestCase):
 
     def test_p4_envs_use_p4_core_dir(self):
         """P4 environments should use ~/.platformio-p4."""
-        for env in ["firebeetle2_bringup", "firebeetle2"]:
+        for env in ["firebeetle2", "firebeetle2_hosted_bench"]:
             core_dir = slice_verify.get_platformio_core_dir(env)
             self.assertIn(".platformio-p4", core_dir,
                          f"{env} should use P4 core dir")
