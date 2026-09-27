@@ -32,7 +32,7 @@
 // release edge settles in about 5 ms. Anything slower at the C6_RST test pad
 // is a circuit fault rather than RC
 // (docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md, "The C6 reset net").
-// 100 ms is also the figure bringup/p4_hosted_bench.cpp:112 proved on
+// 100 ms is also the figure bench/p4_hosted_bench.cpp:112 proved on
 // hardware; this is a port of that pulse, not a re-derivation of it.
 constexpr uint32_t kHostedLinkResetAssertMs = 100;
 
@@ -47,7 +47,7 @@ struct HostedLinkResetOutcome {
 
     // Both edges were driven. API acceptance is not electrical proof: only a
     // scope on the C6_RST pad, or the module's own boot log, shows the module
-    // really rebooted (the same boundary bringup/p4_hosted_bench.cpp records
+    // really rebooted (the same boundary bench/p4_hosted_bench.cpp records
     // as resetEvidenceBoundary).
     bool driven() const { return assertResult == ESP_OK && releaseResult == ESP_OK; }
 };

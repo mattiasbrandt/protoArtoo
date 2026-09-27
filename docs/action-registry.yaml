@@ -2727,7 +2727,7 @@ entries:
   marcduino_cmd: null
   # No REST route, deliberately (operator decision 2026-08-30, #243): a web
   # request for this reset is answered over the very link it takes down, which
-  # is what forced bringup/p4_hosted_bench.cpp's 202-Accepted plus
+  # is what forced bench/p4_hosted_bench.cpp's 202-Accepted plus
   # RESET_RESPONSE_GRACE_MS machinery. The Controller Console reaches it
   # without a route of its own.
   api_path: null

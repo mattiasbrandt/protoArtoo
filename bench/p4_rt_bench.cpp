@@ -1,6 +1,6 @@
 /**
  * P4 RT safety/continuity bench harness (#195)
- * Lives in bringup/ (fenced outside src/) and runs alongside the full firmware.
+ * Lives in bench/ (fenced outside src/) and runs alongside the full firmware.
  *
  * Exercises the three device-criteria for #195 (watchdog reset, SBUS failsafe,
  * 50 Hz drive continuity) using synthetic SBUS loopback and serial observation.

@@ -10,7 +10,7 @@ both cheap:
    which report keys each image may emit.
 2. **Drift guards** that read the firmware sources the schemas were derived
    from (`src/web/web_server.cpp`, `include/reset_reason.h`, `include/config.h`,
-   `bringup/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
+   `bench/p4_hosted_bench.cpp`). If a payload field is renamed on any image,
    or a board capability stops gating what the schemas assume it gates, this
    suite goes red instead of the harness silently reading a field that is no
    longer there.
@@ -36,7 +36,7 @@ WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
 # include/reset_reason.h (header-only, so the Console's system.status.health
 # query can call it from a native-compiled translation unit too).
 RESET_REASON_H = (REPO_ROOT / "include" / "reset_reason.h").read_text()
-BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
+BENCH_CPP = (REPO_ROOT / "bench" / "p4_hosted_bench.cpp").read_text()
 CONFIG_H = (REPO_ROOT / "include" / "config.h").read_text()
 WEB_ADMISSION_CPP = (REPO_ROOT / "src" / "web" / "web_admission.cpp").read_text()
 WEB_ADMISSION_PSYCHIC_CPP = (REPO_ROOT / "src" / "web" / "web_admission_psychic.cpp").read_text()
@@ -1003,7 +1003,7 @@ class BenchCompilesNoAdmissionGuard(unittest.TestCase):
     def test_the_bench_env_compiles_none_of_src(self):
         section = pio_section("env:firebeetle2_hosted_bench")
         self.assertIn("-<*>", section)
-        self.assertIn("+<../bringup/p4_hosted_bench.cpp>", section)
+        self.assertIn("+<../bench/p4_hosted_bench.cpp>", section)
         self.assertNotIn("+<*>", section)
 
     def test_the_bench_env_would_otherwise_resolve_a_floor(self):

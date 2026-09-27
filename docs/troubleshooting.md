@@ -301,7 +301,7 @@ Two consequences, both of which have cost time:
 
 **Trust `/api/status` `firmwareVersion` (or `data/fw-version.json`). Do not read
 provenance out of the app descriptor.** Nothing in `src/`, `include/` or
-`bringup/` reads it — grep for `esp_app_get_description` / `esp_app_desc`
+`bench/` reads it — grep for `esp_app_get_description` / `esp_app_desc`
 returns zero hits — so it is inert for the firmware and misleads only humans and
 external tooling.
 

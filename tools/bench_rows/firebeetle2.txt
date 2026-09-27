@@ -197,7 +197,7 @@ listen 2
 send system.config.log-level value=info
 
 # #243 - the WiFi module reboot that makes #189's bounded recovery ladder
-# provable on the shipping image instead of only in bringup/p4_hosted_bench.cpp.
+# provable on the shipping image instead of only in bench/p4_hosted_bench.cpp.
 # Serial only, deliberately: over WiFi the answer would travel on the link the
 # command takes down. What the row must show is on #243.
 #

@@ -15,7 +15,7 @@ it does is a GET, plus the one POST that the C6-reset driver exists to make.
 Three Image Modes can be driven, selected by --image and never sniffed (see
 StatusSchema for why the declaration is checked rather than inferred):
 
-  bench     bringup/p4_hosted_bench.cpp, env firebeetle2_hosted_bench. Built
+  bench     bench/p4_hosted_bench.cpp, env firebeetle2_hosted_bench. Built
             to be measured: bootCount, the raw esp_reset_reason_t, flat
             recovery-ladder counters, POST /api/c6/reset, and an /api/events
             stream whose payload is a monotonic frame counter.
@@ -43,7 +43,7 @@ earlier revisions of this harness carried a self-test with its own parse loop,
 which stayed green while the real parser was broken outright. A test that does
 not drive the production path proves nothing about it.
 
-Bench endpoint contract, read directly from bringup/p4_hosted_bench.cpp
+Bench endpoint contract, read directly from bench/p4_hosted_bench.cpp
 rather than assumed (b990b88, 1ee0640):
   GET  /api/health    -> "OK" liveness.
   GET  /api/status    -> JSON; see handleStatus() (line ~840) for the full
@@ -833,7 +833,7 @@ SERIES_KEY_SSE_CLIENTS = "sseClientsConnected"
 class SseFrame:
     """One complete SSE event, as delimited by a blank line.
 
-    bringup/p4_hosted_bench.cpp:813 calls `events.send(frame)` with only the
+    bench/p4_hosted_bench.cpp:813 calls `events.send(frame)` with only the
     payload -- id=0, event=nullptr, reconnect=0 are PsychicEventSource.h:86's
     defaults, never overridden by this bench. PsychicEventSource.cpp's
     _generateEventMessage_impl() (line 236, seeded at
@@ -1285,7 +1285,7 @@ TRANSPORT_EXCEPTIONS = (OSError, ConnectionError, TimeoutError, socket.timeout, 
 # image. The framing is the same on both (SseFrameParser reads it); what is
 # carried inside it is not:
 #
-#   bench     bringup/p4_hosted_bench.cpp:812 sends the monotonic frame
+#   bench     bench/p4_hosted_bench.cpp:812 sends the monotonic frame
 #             counter as the whole payload, one frame per second, with no
 #             id: and no event: line. Continuity is arithmetic.
 #   shipping  eventStreamTask() (src/web/web_server.cpp:793-900) ticks once a
@@ -1681,7 +1681,7 @@ class StatusSchema:
     the same measurements, and the differences are structural rather than
     cosmetic:
 
-      bench     bringup/p4_hosted_bench.cpp handleStatus() -- built to be
+      bench     bench/p4_hosted_bench.cpp handleStatus() -- built to be
                 measured: bootCount (RTC_DATA_ATTR, survives a CPU reset and
                 not a power cycle), resetReason as the raw esp_reset_reason_t
                 int, the ladder counters flat at the top level, and
@@ -2010,17 +2010,17 @@ class BenchStatusSchema(StatusSchema):
     enforces_sse_client_cap = False
     # [env:firebeetle2_hosted_bench] does resolve the admission floor flags --
     # it extends [env:firebeetle2] and inherits its build_flags -- but its
-    # `build_src_filter = -<*> +<../bringup/p4_hosted_bench.cpp>`
+    # `build_src_filter = -<*> +<../bench/p4_hosted_bench.cpp>`
     # (platformio.ini:624-627) means NONE of src/ is compiled, so
     # src/web/web_admission_psychic.cpp, the only code that reads those flags,
     # is not in the image. Reporting a floor of 9000 for this board would be a
     # claim about a gate the binary does not contain, and its handleStatus()
-    # (bringup/p4_hosted_bench.cpp:840-880) publishes none of the refusal
+    # (bench/p4_hosted_bench.cpp:840-880) publishes none of the refusal
     # counters that would corroborate one. So the floor is not "unresolvable"
     # here, it is inapplicable, and the report says which.
     enforces_admission_floor = False
     admission_absence_note = (
-        "<no admission floor on this image: bringup/p4_hosted_bench.cpp is built with "
+        "<no admission floor on this image: bench/p4_hosted_bench.cpp is built with "
         "build_src_filter = -<*> (platformio.ini:624-627), so src/web/web_admission_psychic.cpp "
         "-- the only code that reads PA_ADMISSION_MIN_LARGEST_FREE_BLOCK -- is not compiled "
         "in, and handleStatus() publishes no refusal counters. There is no level at which "
@@ -2038,7 +2038,7 @@ class BenchStatusSchema(StatusSchema):
     restart_field = "bootCount"
     restart_verb = "advanced"
     ladder_container = None
-    # bringup/p4_hosted_bench.cpp handleStatus(), flat at the top level.
+    # bench/p4_hosted_bench.cpp handleStatus(), flat at the top level.
     ladder_fields = {
         "state": "recoveryLadderState",
         "transportFailureCount": "hostedTransportFailureCount",
@@ -2152,7 +2152,7 @@ class ProductImageStatusSchema(StatusSchema):
     # dropped for missing its send deadline (g_webSseEvicted,
     # src/web/web_request_psychic.cpp:180). Both are what an operator watching a
     # multi-hour soak wants to see move, or not move, while it runs. The bench
-    # image publishes neither -- bringup/p4_hosted_bench.cpp handleStatus() has
+    # image publishes neither -- bench/p4_hosted_bench.cpp handleStatus() has
     # no cap and no evicting registry -- so they stay None there and its
     # progress lines carry no such key.
     sse_refused_cap_field = "refusedSseCap"
@@ -2265,7 +2265,7 @@ class ShippingStatusSchema(ProductImageStatusSchema):
     # simply is not implemented -- tracked on #243.
     reset_unavailable_reason = (
         "the shipping image publishes no C6 reset route -- POST /api/c6/reset "
-        "exists only on bringup/p4_hosted_bench.cpp, and the shipping seam route "
+        "exists only on bench/p4_hosted_bench.cpp, and the shipping seam route "
         "table (src/web/web_seam_routes.cpp) registers none. The reset cannot be "
         "provoked, so nothing about recovery can be measured on this image. "
         "Shipping-image C6 reset recovery is tracked on #243; run this driver "
@@ -3260,7 +3260,7 @@ def run_sse_soak(
     baseline_admission = schema.admission(baseline, "baseline /api/status")
     # The recovery ladder, required at the baseline on every image that has
     # one. Its transportUpEventCount is posted by the SDIO driver's own
-    # transport_active_cb() (bringup/p4_hosted_bench.cpp:574-589 on the bench,
+    # transport_active_cb() (bench/p4_hosted_bench.cpp:574-589 on the bench,
     # hostedTransportUpHandler() at src/web/web_network_manager_hosted.cpp:317
     # on the shipping image), independent of anything the sketch believes --
     # the corroborating signal #184 added after WiFi.status() was shown to
@@ -4167,7 +4167,7 @@ def run_c6_reset_recovery(
     # trigger, so it is the one place in this harness where these fields carry
     # the most evidence -- everywhere else the ladder is watched rather than
     # exercised. Types read from
-    # bringup/p4_hosted_bench.cpp:937-957 -- recoveryLadderState is
+    # bench/p4_hosted_bench.cpp:937-957 -- recoveryLadderState is
     # recoveryPhaseName()'s const char* (idle/armed/attempting/degraded),
     # the rest are unsigned int counters.
     #
@@ -4885,7 +4885,7 @@ def run(args: argparse.Namespace, monitor: Optional[RunMonitor] = None) -> tuple
 def _fixture_frame_bytes(counter: int) -> bytes:
     """Byte-exact reproduction of PsychicEventSource.cpp's
     _generateEventMessage_impl() (line 236) for exactly the call
-    bringup/p4_hosted_bench.cpp's emitSseFrame() makes: events.send(frame)
+    bench/p4_hosted_bench.cpp's emitSseFrame() makes: events.send(frame)
     with event=nullptr, id=0, reconnect=0 (PsychicEventSource.h:86
     defaults). Because id and reconnect are 0 (falsy in the vendor's
     `if (id)` / `if (reconnect)` checks) and event is NULL, only the data:
@@ -4919,7 +4919,7 @@ FIXTURE_STATUS_BODY = {
     "hostedIsInitialized": True,
     "sseFramesSent": 42,
     "sseClientsConnected": 1,
-    # bringup/p4_hosted_bench.cpp:876-877. No heapMin counterpart on this
+    # bench/p4_hosted_bench.cpp:876-877. No heapMin counterpart on this
     # image, and no admission counters at all -- that absence is the schema's
     # enforces_admission_floor = False, and it is what the fixture must look
     # like for the bench half of the self-test to mean anything.
@@ -6681,7 +6681,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--image", choices=sorted(SCHEMAS), default="bench",
         help="which firmware image is on the board, and therefore which /api/status "
-             "schema to read: 'bench' (bringup/p4_hosted_bench.cpp, env "
+             "schema to read: 'bench' (bench/p4_hosted_bench.cpp, env "
              "firebeetle2_hosted_bench), 'shipping' (the firebeetle2 product image) or "
              "'artoo' (the artoo_esp32 product image). Declared, never sniffed -- the "
              "declaration is checked against the payload at preflight and a mismatch is "

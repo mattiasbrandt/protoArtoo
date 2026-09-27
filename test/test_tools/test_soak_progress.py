@@ -38,7 +38,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 import soak  # noqa: E402
 
 WEB_SERVER_CPP = (REPO_ROOT / "src" / "web" / "web_server.cpp").read_text()
-BENCH_CPP = (REPO_ROOT / "bringup" / "p4_hosted_bench.cpp").read_text()
+BENCH_CPP = (REPO_ROOT / "bench" / "p4_hosted_bench.cpp").read_text()
 
 BENCH = soak.SCHEMAS["bench"]
 SHIPPING = soak.SCHEMAS["shipping"]

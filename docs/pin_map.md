@@ -121,7 +121,7 @@ The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Stan
 
 **No audio/dome UART sharing on this board (#254).** The ESP32-P4 has five HP UARTs, so each
 consumer gets its own controller: `UART0` console, `UART1` drive, `UART2` dome, `UART3` audio,
-`UART4` unclaimed by the firmware (borrowed by `bringup/p4_rt_bench.cpp`). The allocation is
+`UART4` unclaimed by the firmware (borrowed by `bench/p4_rt_bench.cpp`). The allocation is
 declared in `include/config.h` as `UART_PORT_DRIVE` / `UART_PORT_DOME` / `UART_PORT_AUDIO`, and
 `PA_CAP_DEDICATED_AUDIO_UART` is 1 here.
 
