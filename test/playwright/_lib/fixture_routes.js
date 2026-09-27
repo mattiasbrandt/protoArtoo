@@ -55,10 +55,11 @@
 // reason it would on the droid:
 //   - GET /api/identity/components is parsed out of include/component_registry.inc
 //     at install time, not typed here. `included` follows the artoo_esp32 build.
-//   - /<id>.webp answers image/webp only for a Component Registry id, and a
-//     picture that is not one (mrbaddeley) answers text/plain: the device
-//     registers the image/webp handler per registry id and serveStatic() falls
-//     back to text/plain for .webp (src/web/web_request_psychic.cpp).
+//   - /<id>.webp answers image/webp for every picture the set carries whose
+//     name has the safe shape (lowercase letters, digits, underscore): one
+//     handler claims the shape, not a list of ids, so Droid Build pictures
+//     such as mrbaddeley answer image/webp too (include/web_webp.h
+//     webPathIsWebpPicture, src/web/web_request_psychic.cpp, #355 finding 4).
 //   - POST /api/servo hold/release: a press takes the Output, `refresh=1` only
 //     refreshes a hold that stands and is dropped otherwise, and a hold nobody
 //     refreshes for SERVO_HOLD_EXPIRY_MS (3000, include/config.h) goes limp with
@@ -294,7 +295,6 @@ const install = async (context, options = {}) => {
   const droid = options.droid || 'artoo';
   if (!DROIDS.includes(droid)) throw new Error(`fixture_routes: no droid called "${droid}" (${DROIDS.join(', ')})`);
   const registry = readRegistry();
-  const registryIds = new Set(registry.parts.map((part) => part.id));
   const identity = identityOf(droid);
 
   const state = {
@@ -551,16 +551,17 @@ const install = async (context, options = {}) => {
     return json(route, state.config);
   };
 
-  // The photographs: image/webp for a registry id, text/plain for any other
-  // file the set carries, as the device answers them.
+  // The pictures: image/webp for every safely named file the set carries, as
+  // the device answers them since #355 finding 4.
   const photoHandler = async (route) => {
     const url = new URL(route.request().url());
     const name = path.basename(url.pathname, '.webp');
     const file = path.join(ASSETS, `${name}.webp`);
     if (!fs.existsSync(file)) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'Not found' });
     const body = fs.readFileSync(file);
-    // `textPlainPhotos` is a self-test's: registry ids answered the wrong way.
-    const typed = registryIds.has(name) && !(options.textPlainPhotos || []).includes(name);
+    // `textPlainPhotos` is a self-test's: pictures answered the wrong way.
+    const safeShape = /^[a-z][a-z0-9_]*$/.test(name);
+    const typed = safeShape && !(options.textPlainPhotos || []).includes(name);
     return route.fulfill({ status: 200, contentType: typed ? 'image/webp' : 'text/plain', body });
   };
 
