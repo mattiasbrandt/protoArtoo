@@ -1463,6 +1463,20 @@ class ShippedBenchRows(unittest.TestCase):
         selected = console_client.select_rows(blocks, None, True)
         self.assertTrue(selected, "--skip-manual left nothing runnable")
 
+    def test_every_kept_answer_has_its_own_file_name(self):
+        # A kept answer is never overwritten, so two steps in one sheet naming
+        # the same file would make the second fail at the bench -- and the
+        # first is usually the before-the-flash copy that cannot be retaken.
+        for filename in ("firebeetle2.txt", "artoo_esp32.txt"):
+            with self.subTest(sheet=filename):
+                names = [
+                    console_client.parse_http_step(d.arg, d.source).save
+                    for d in console_client.load_script_file(str(self.BENCH_ROWS_DIR / filename))
+                    if d.kind == "http"
+                ]
+                kept = [n for n in names if n is not None]
+                self.assertEqual(len(kept), len(set(kept)), f"{filename} reuses a file: {kept}")
+
     def test_every_row_directive_is_a_known_kind(self):
         # load_script_file() already raises on an unknown directive keyword
         # (a bare command missing its `send` prefix is the classic mistake
