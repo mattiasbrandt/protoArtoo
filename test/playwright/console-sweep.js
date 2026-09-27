@@ -43,14 +43,22 @@ const waitForEnter = (prompt) => new Promise((resolve) => {
         const t = m.text();
         (t.startsWith("Failed to load resource") ? resourceErrors : consoleErrors).push(t.slice(0, 160));
       });
+      let domMs = null, loadMs = null;
       try {
         await page.goto(`${BASE}/${p}`, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForTimeout(SETTLE_MS);   // let the bootstrap finish; never networkidle (SSE stays open)
+        // The browser's own Navigation Timing, not a stopwatch around goto():
+        // the performance axis of a bench session is measured, never felt.
+        const nav = await page.evaluate(() => {
+          const e = performance.getEntriesByType("navigation")[0];
+          return e ? { dom: e.domContentLoadedEventEnd, load: e.loadEventEnd } : null;
+        });
+        if (nav) { domMs = Math.round(nav.dom); loadMs = Math.round(nav.load); }
       } catch (e) {
         jsErrors.push("NAV FAILED: " + e.message.split("\n")[0]);
       }
       const uniq = (a) => [...new Set(a)];
-      summary.push({ page: p, js: uniq(jsErrors), console: uniq(consoleErrors), resource: uniq(resourceErrors) });
+      summary.push({ page: p, js: uniq(jsErrors), console: uniq(consoleErrors), resource: uniq(resourceErrors), domMs, loadMs });
       if (STEP) await waitForEnter(`${p}: ${jsErrors.length + consoleErrors.length} errors. Enter for the next page... `);
       await page.close();
     }
@@ -59,12 +67,12 @@ const waitForEnter = (prompt) => new Promise((resolve) => {
   }
 
   let bad = 0;
-  console.log("page                 jsErr consoleErr resourceErr");
-  console.log("-------------------- ----- ---------- -----------");
+  console.log("page                 jsErr consoleErr resourceErr domMs loadMs");
+  console.log("-------------------- ----- ---------- ----------- ----- ------");
   for (const s of summary) {
     const n = s.js.length + s.console.length;
     if (n > 0) bad++;
-    console.log(`${s.page.padEnd(20)} ${String(s.js.length).padStart(5)} ${String(s.console.length).padStart(10)} ${String(s.resource.length).padStart(11)}`);
+    console.log(`${s.page.padEnd(20)} ${String(s.js.length).padStart(5)} ${String(s.console.length).padStart(10)} ${String(s.resource.length).padStart(11)} ${String(s.domMs ?? "-").padStart(5)} ${String(s.loadMs ?? "-").padStart(6)}`);
   }
   console.log("");
   for (const s of summary) {
