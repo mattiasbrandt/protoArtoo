@@ -6,8 +6,8 @@
 # scripted mode (#264) can express. Human-only steps (physical attach/detach,
 # flashing, pressing heap from a browser) are `pause` directives; what a row
 # is expected to answer stays on #215's own criterion, never written here
-# (docs/console-protocol.md's "no expect directive" decision) -- a reviewer
-# reads the transcript against the linked ticket.
+# (docs/console-client.md "Bench sheets and @row": there is no expect
+# directive) -- a reviewer reads the transcript against the linked ticket.
 #
 # Plain requests to the droid's own routes are `http` steps, not pauses: they
 # go to --http-base (or --http's base), and the answers a row keeps (`> FILE`)

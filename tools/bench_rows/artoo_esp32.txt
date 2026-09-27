@@ -11,7 +11,7 @@
 # about firebeetle2 (CONTEXT.md "Bench-Mode", 2026-09-17).
 # Human-only steps are `pause` directives; what a row is expected
 # to answer stays on #216's own criterion, never written here
-# (docs/console-protocol.md's "no expect directive" decision).
+# (docs/console-client.md "Bench sheets and @row": there is no expect directive).
 #
 # Plain requests to the droid's own routes (keep GET /api/config, POST
 # /api/config with a known value) are `http` steps, not pauses: they need the
