@@ -812,7 +812,7 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
         result.servoOutputs.edits, result.servoOutputs.count);
     if (servoOutputRepair.rowsRepaired > 0) {
         // 64 B rather than the boot path's 96: this frame is on the Console
-        // config-write chain include/config.h measures, and an edit can only
+        // config-write chain the stack recipe measures, and an edit can only
         // ever report the three pulse widths plus the component -- the row it
         // lands on was normalised when it was loaded, so nothing else on it can
         // newly fail. "openUs, centreUs, closeUs, component took the safe

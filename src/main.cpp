@@ -512,7 +512,7 @@ void setup() {
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates; omitted when dome output is disabled
     // at boot (ADR 0027: not spawning the owning task at all is the preferred form).
-    // Size is chip-target specific; DRIVE_TASK_STACK_BYTES in include/config.h carries
+    // Size is chip-target specific; DRIVE_TASK_STACK_BYTES (tools/task_stack_recipes.json) carries
     // the measured worst-case chain for both chips and why ESP32 is raised too even
     // though its own figure reads as 32 B under (that figure is a lower bound).
     xTaskCreatePinnedToCore(driveTask, "DriveTask", DRIVE_TASK_STACK_BYTES, nullptr, 5,
@@ -521,12 +521,12 @@ void setup() {
         // The SBUS decoders this boot's RC mode reads, and no others, here
         // rather than in the task: nothing on Core 1 allocates after setup().
         rcInputAllocateDecoders(rcPlan);
-        // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES in include/config.h
+        // Size is chip-target specific; RC_INPUT_TASK_STACK_BYTES (tools/task_stack_recipes.json)
         // carries the measured chain and the sizing rule on each chip.
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", RC_INPUT_TASK_STACK_BYTES,
                                 nullptr, 5, nullptr, 1);
     }
-    // Size is chip-target specific; SERVO_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; SERVO_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule. What this line used to say
     // -- "HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096"
     // -- was a high-water mark, the same evidence class that let the Console
@@ -535,7 +535,7 @@ void setup() {
     xTaskCreatePinnedToCore(servoTask, "ServoTask", SERVO_TASK_STACK_BYTES, nullptr, 4, nullptr,
                             1);
     if (bootCfg.system.enable_dome_esc) {
-        // Size is chip-target specific; DOME_TASK_STACK_BYTES in include/config.h
+        // Size is chip-target specific; DOME_TASK_STACK_BYTES (tools/task_stack_recipes.json)
         // carries the measured chain and the sizing rule. The note this line used
         // to carry -- "sized from profiler HWM: 108 B free at 2048 B" -- was an
         // artoo-esp32 reading, and on the ESP32-P4 the same source needs 3280 B,
@@ -549,7 +549,7 @@ void setup() {
     // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
     // task at all is the preferred form).
     if (bootCfg.system.enable_audio) {
-        // Size is chip-target specific; AUDIO_TASK_STACK_BYTES in include/config.h
+        // Size is chip-target specific; AUDIO_TASK_STACK_BYTES (tools/task_stack_recipes.json)
         // carries the measured chain and, per chip, the sizing rule or why it is
         // declined.
         xTaskCreatePinnedToCore(audioTask, "AudioTask", AUDIO_TASK_STACK_BYTES, nullptr, 3,
@@ -558,7 +558,7 @@ void setup() {
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.
-    // Size is chip-target specific; AUX_LED_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; AUX_LED_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule.
     if (auxLedTaskReady) {
         xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", AUX_LED_TASK_STACK_BYTES, nullptr, 2,
@@ -567,7 +567,7 @@ void setup() {
 
     // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
-    // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES in include/config.h.
+    // Size is chip-target specific; DOME_LINK_TASK_STACK_BYTES (tools/task_stack_recipes.json).
     // The old note here -- "4096: profiler measured 988 B free at 3072 B ... HTTPClient
     // call-chain needs 3 KB+" -- was reasoned from a high-water mark, which only ever
     // reports the deepest path that actually ran. The static worst case is
@@ -577,7 +577,7 @@ void setup() {
                             nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
-    // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES in include/config.h
+    // Size is chip-target specific; SAFETY_MONITOR_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the per-target frame evidence, the margin and how to reproduce it.
     //
     // What this comment used to say was wrong in both halves, and both errors
@@ -599,7 +599,7 @@ void setup() {
     // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
-    // Size is chip-target specific; SEQ_DISPATCHER_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; SEQ_DISPATCHER_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule. The depth is the Learned Sequence
     // load on this task's own stack (seqStorePrepare -> protocolCheck -> pcFailAt ->
     // snprintf float formatting -> first-use heap/log-mutex tail), 240 B past the 4096
@@ -611,7 +611,7 @@ void setup() {
     // ADR 0036: persistent Controller Console, no network dependency, no dynamic
     // allocation in its loop. Created on both boards (P4 USB CDC, artoo UART0 bridge).
     //
-    // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES in include/config.h
+    // Size is chip-target specific; CONSOLE_TASK_STACK_BYTES (tools/task_stack_recipes.json)
     // carries the measured chain and the sizing rule. What this line used to say --
     // "stack sized from measured high-water mark with margin" -- is why 5120 stood:
     // a high-water mark reports only the paths that have actually run, and no

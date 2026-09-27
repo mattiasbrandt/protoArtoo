@@ -101,7 +101,7 @@ static void restartIfRequested() {
 // safetyMonitorTask()
 // Observer-only audit task. Logs state transitions and health warnings.
 // Core 0, priority 2, 10 Hz. Stack size is chip-target specific and lives with
-// its evidence at SAFETY_MONITOR_STACK_BYTES in include/config.h; it is not
+// its evidence in its recipe (tools/task_stack_recipes.json); it is not
 // repeated here, because the figure this line used to name (2048) had been
 // stale since the task was created with a larger one.
 // Does NOT feed TWDT  --  this is not a real-time task.

@@ -550,8 +550,8 @@ void startHttpServerOnce() {
 
     // Start OTA task in background - MUST NOT block WiFi event handler (causes TWDT)
     //
-    // Size is chip-target specific; OTA_TASK_STACK_BYTES in include/config.h carries the
-    // measured chain and the sizing rule. This task had no static measurement at all
+    // Size is chip-target specific; OTA_TASK_STACK_BYTES (tools/task_stack_recipes.json) carries
+    // the measured chain and the sizing rule. This task had no static measurement at all
     // until #271 walked it, and the 4096 it used to hard-code covers its artoo-esp32
     // chain by 400 B -- on a walk that is a lower bound. On the ESP32-P4 that same
     // 4096 had 96 B to spare, thinner than one interrupt entry, and was raised.
@@ -583,7 +583,7 @@ void webServerInit() {
     networkManagerInitialize();
 
     if (!eventTaskStarted) {
-        // Size is chip-target specific; WEB_EVENTS_TASK_STACK_BYTES in include/config.h
+        // Size is chip-target specific; WEB_EVENTS_TASK_STACK_BYTES (tools/task_stack_recipes.json)
         // carries the measured chain. The 6144 this used to hard-code was sized from
         // an ESP32 DoubleException in _dtoa_r after a 4096 overflow, once
         // requestStatusBroadcastNow() call sites grew from rare hardware edges to
