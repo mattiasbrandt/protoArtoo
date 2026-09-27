@@ -607,22 +607,13 @@
     window.PABootstrap.refreshSections(SECTIONS.map(([name]) => name));
   };
 
-  // Save and reboot are user commands: they take priority over automatic page
-  // work, and are never auto-retried, so a non-idempotent write cannot be
-  // replayed by recovery.
-  const onSaveSubmit = (event) => {
-    if (!window.PABootstrap) return saveSettings(event);
-    event.preventDefault();
-    window.PABootstrap.submitCommand("wifi-save", () => saveSettings(event));
-  };
-
-  const onApplyClicked = () => {
-    if (!window.PABootstrap) return rebootToApply();
-    window.PABootstrap.submitCommand("wifi-reboot", () => rebootToApply());
-  };
-
-  if (form) form.addEventListener("submit", onSaveSubmit);
-  if (applyButton) applyButton.addEventListener("click", onApplyClicked);
+  // Save and reboot are user commands: they run on the press, straight to the
+  // droid, and are never auto-retried, so a non-idempotent write cannot be
+  // replayed by recovery. They used to go through PABootstrap.submitCommand,
+  // which 857f4787 removed as unused while these two still called it, so both
+  // presses threw and did nothing (#355 finding 2).
+  if (form) form.addEventListener("submit", saveSettings);
+  if (applyButton) applyButton.addEventListener("click", rebootToApply);
   if (reloadButton) reloadButton.addEventListener("click", onReloadClicked);
   [modeClient, modeStandaloneAp].forEach((input) => {
     if (input) input.addEventListener("change", syncModeOptions);
