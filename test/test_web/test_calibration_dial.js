@@ -113,6 +113,38 @@ test("a dial opened on a limp Output keeps holding it until the droid says it le
   assert.match(env.dialNote(), /take it again/);
 });
 
+test("a reason the droid gives for letting go ends the hold even before the dial saw it pulse", async () => {
+  const env = await bootServos();
+  env.pressCalibrate("ledc:5");
+  await sleep(20);
+  // The first reading after the take already says a bound fired.
+  env.wentLimp("ledc:5", "expiry");
+  await env.frame();
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  const before = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, before, "the droid said it let go, so the page stops asking");
+  assert.match(env.dialNote(), /take it again/);
+});
+
+test("no pulse after the dial saw its hold standing ends the hold", async () => {
+  const env = await bootServos();
+  env.pressCalibrate("ledc:5");
+  await sleep(20);
+  await env.frame();
+  // The droid restarted: the Output is back to no pulse, with no reason given.
+  const row = env.outputs.find((each) => each.address === "ledc:5");
+  Object.assign(row, { commandedUs: null, targetUs: null, held: false, limp: "off" });
+  await env.frame();
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  const before = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.equal(env.holds().length, before, "a hold the droid no longer has is not asked for");
+  assert.match(env.dialNote(), /take it again/);
+});
+
 test("a take the droid refuses puts take it again back on the panel", async () => {
   const env = await bootServos();
   env.nudgeFails = Object.assign(new Error("refused"), { status: 409 });
