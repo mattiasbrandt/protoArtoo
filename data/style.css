@@ -6288,9 +6288,19 @@ body[data-page="maintenance"] .status-item .hint {
   border-left: 2px dashed var(--border);
 }
 
-/* margin: auto is what centres a modal <dialog>; the reset at the top of this
-   file zeroes every margin, which left it pinned to the top-left corner. */
+/* The move question is opened non-modally (data/parts_mapping.js), so it is
+   not in the top layer and has no ::backdrop: a modal one would put the whole
+   page under it, the Latching Estop included (ADR 0048, #359). It is fixed and
+   centred instead, drawn inside #shell-content's stacking context like the
+   Sequences dialogs, so it covers the surface and never the chrome. Its scrim
+   is a spread shadow, which catches no pointer: what stops a press behind the
+   question is the surface going inert. margin: auto centres it; the reset at
+   the top of this file zeroes every margin, which once pinned it top-left. */
 .parts-move-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  height: fit-content;
   margin: auto;
   width: calc(100% - 2 * var(--space-lg));
   max-width: 32rem;
@@ -6299,11 +6309,7 @@ body[data-page="maintenance"] .status-item .hint {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-plate);
-  box-shadow: var(--elev-3);
-}
-
-.parts-move-dialog::backdrop {
-  background: color-mix(in srgb, var(--scrim) 70%, transparent);
+  box-shadow: var(--elev-3), 0 0 0 100vmax color-mix(in srgb, var(--scrim) 70%, transparent);
 }
 
 /* A dialog's title is a question and its buttons are verbs (pattern 10), so the
