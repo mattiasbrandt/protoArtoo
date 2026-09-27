@@ -697,6 +697,8 @@ static void consoleExecuteSystemStatusHealth(uint32_t requestId, const ConsoleRe
     if (sink->onRecordField) sink->onRecordField(requestId, "heapMin", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapLargestBlock);
     if (sink->onRecordField) sink->onRecordField(requestId, "heapLargestBlock", tempBuf);
+    snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.heapLargest8bit);
+    if (sink->onRecordField) sink->onRecordField(requestId, "heapLargest8bit", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%ld", snap.wifiRssi);
     if (sink->onRecordField) sink->onRecordField(requestId, "wifiRssi", tempBuf);
     snprintf(tempBuf, sizeof(tempBuf), "%lu", snap.uptimeMs);

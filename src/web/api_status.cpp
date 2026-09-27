@@ -53,7 +53,7 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     formatHealthJson(buffer, bufferSize, snap.estop, snap.sbusSignalLost, snap.sbusHwFailsafe,
                      snap.webControlEnabled, snap.wifiConnected, snap.wifiClientConnected,
                      snap.littleFsReady, snap.heapFree, snap.heapMin, snap.heapLargestBlock,
-                     snap.wifiRssi, snap.uptimeMs, snap.resetReason);
+                     snap.heapLargest8bit, snap.wifiRssi, snap.uptimeMs, snap.resetReason);
 }
 
 // GET /api/wifi - active connection diagnostics, read by the WiFi page
@@ -103,7 +103,8 @@ void handleSerialGet(WebRequest& req) {
 // resetReason (#225) is a variable-length string - resetReasonName()'s
 // longest literal is "DEEPSLEEP" (9 chars) - so this is no longer the fixed
 // upper bound the prior comment claimed. Worst case (every numeric field
-// maxed, "DEEPSLEEP") is 303 bytes; 384 keeps headroom above that.
+// maxed, "DEEPSLEEP") is 332 bytes since heapLargest8bit joined it; 384 keeps
+// headroom above that.
 void handleHealthGet(WebRequest& req) {
     char body[384];
     buildHealthJson(body, sizeof(body));

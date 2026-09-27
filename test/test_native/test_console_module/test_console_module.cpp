@@ -434,7 +434,7 @@ void test_health_three_way_field_match() {
     // Same shape formatHealthJson() actually emits - values are arbitrary,
     // only the key set matters here.
     formatHealthJson(json, sizeof(json), true, false, false, true, false, false, true, 1000, 900,
-                     800, -50, 123456, "SOFTWARE");
+                     800, 0, -50, 123456, "SOFTWARE");
     std::vector<std::string> jsonKeys = jsonTopLevelKeys(json);
     std::vector<std::string> registryFields = catalogFieldNames("system.status.health");
 
@@ -480,6 +480,9 @@ void test_health_heap_keys_are_the_internal_data_heap() {
     TEST_ASSERT_EQUAL_STRING("41000", capturedValue("heapFree"));
     TEST_ASSERT_EQUAL_STRING("38000", capturedValue("heapMin"));
     TEST_ASSERT_EQUAL_STRING("30000", capturedValue("heapLargestBlock"));
+    // The Buffer Reading, which admission sheds by: the one heap figure a serial
+    // session has when HTTP has gone dark under pressure.
+    TEST_ASSERT_EQUAL_STRING("4000000", capturedValue("heapLargest8bit"));
 }
 
 // =============================================================================

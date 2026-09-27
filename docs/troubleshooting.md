@@ -113,22 +113,25 @@ make console
 ```text
 < id=9 type=begin operation=system.status.health
 < id=9 type=field name=heapFree value=...
-< id=9 type=field name=heapLargestBlock value=1076
+< id=9 type=field name=heapLargestBlock value=...
+< id=9 type=field name=heapLargest8bit value=1076
 < id=9 type=end status=ok outcome=completed
 ```
 
-> **`heapLargestBlock` on that record is the number you want** — unlike the
-> `/api/status` field of the same name warned about above. The Console's
-> health snapshot fills it from `MALLOC_CAP_8BIT`
-> (`captureHealthSnapshot()`, `src/web/api_status_serializers.cpp`), which
-> is the pool the admission guards themselves measure and the same value
-> `/api/status` publishes separately as `heapLargest8bit`. The same name, two
-> different measurements, one on each surface — under pressure the serial one
-> is the one to trust.
+> **`heapLargest8bit` on that record is the number admission sheds by** — the
+> Buffer Reading, the same key and the same value as on `/api/status`
+> (`captureHealthSnapshot()`, `src/web/api_status_serializers.cpp`, reading
+> through `include/heap_reading.h`). `heapLargestBlock` beside it is the
+> Internal Data Heap, the droid's own RAM. On artoo, which has no PSRAM, the
+> two read about the same; on the ESP32-P4 the Buffer Reading counts PSRAM
+> and can be megabytes larger, so a low `heapLargestBlock` there is internal
+> RAM running out while admission still sees room. Records taken before
+> #381 had only `heapLargestBlock`, and it held the 8-bit pool.
 
-`system.status.health` answers with thirteen fields — estop, the two SBUS
+`system.status.health` answers with fourteen fields — estop, the two SBUS
 flags, web control, the WiFi and filesystem flags, `heapFree`, `heapMin`,
-`heapLargestBlock`, `wifiRssi`, `uptimeMs` and `resetReason`. The admission
+`heapLargestBlock`, `heapLargest8bit`, `wifiRssi`, `uptimeMs` and
+`resetReason`. The admission
 and Core 1 counters below are **not** among them and have no Console operation
 today: read them from `/api/status` once HTTP answers again.
 
@@ -165,7 +168,8 @@ filesystem `v1.0.0-684-g017b168d+epic-serial-console`. Heap was driven down
 with six SSE clients (three admitted, the cap) plus sustained page and asset
 load:
 
-- `heapLargestBlock` on the serial record read **1 076 B** — below all three
+- `heapLargestBlock` on the serial record read **1 076 B** (then the 8-bit
+  pool, today's `heapLargest8bit`) — below all three
   floors (accept 8500, ordinary request 9000, diagnostic 7500).
 - `/api/status` **returned nothing at all**; `system.status.health` answered in
   full over serial (`id=9`, complete field set, `end status=ok

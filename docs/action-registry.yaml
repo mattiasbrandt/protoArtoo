@@ -2997,6 +2997,7 @@ entries:
   - heapFree
   - heapMin
   - heapLargestBlock
+  - heapLargest8bit
   - wifiRssi
   - uptimeMs
   - resetReason

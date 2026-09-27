@@ -2154,8 +2154,9 @@ it is on the admission layer's short list of read-only diagnostic paths
 - Fields: `estop`, `sbusSignalLost`, `sbusHwFailsafe`, `webControlEnabled`,
   `wifiConnected`, `wifiClientConnected`, `littleFsReady`, `heapFree`,
   `heapMin`, `heapLargestBlock` (the Internal Data Heap, the same reading
-  `/api/status` publishes under these names), `wifiRssi`, `uptimeMs`,
-  `resetReason`
+  `/api/status` publishes under these names), `heapLargest8bit` (the Buffer
+  Reading admission judges by, as on `/api/status`), `wifiRssi`, `uptimeMs`,
+  `resetReason`. The Console's `system.status.health` answers the same fields
 
 #### Example request
 
@@ -2166,7 +2167,7 @@ curl -s http://artoo.local/api/health
 #### Example response
 
 ```json
-{"estop":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webControlEnabled":false,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"uptimeMs":27790,"resetReason":"POWERON"}
+{"estop":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webControlEnabled":false,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"heapLargest8bit":132000,"wifiRssi":-70,"uptimeMs":27790,"resetReason":"POWERON"}
 ```
 
 ### GET /api/wifi

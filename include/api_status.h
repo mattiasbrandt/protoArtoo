@@ -61,6 +61,9 @@ struct HealthSnapshot {
     unsigned long heapFree;
     unsigned long heapMin;
     unsigned long heapLargestBlock;
+    // The Buffer Reading admission judges requests by: what a serial session
+    // needs when HTTP has gone dark under heap pressure (include/heap_reading.h).
+    unsigned long heapLargest8bit;
     long wifiRssi;
     unsigned long uptimeMs;
     const char* resetReason;
@@ -238,6 +241,7 @@ void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const c
 //         heapFree          - Internal Data Heap free bytes (include/heap_reading.h)
 //         heapMin           - Internal Data Heap low-water mark since boot, bytes
 //         heapLargestBlock  - Internal Data Heap largest free block, bytes
+//         heapLargest8bit   - the Buffer Reading, the figure admission judges by, bytes
 //         wifiRssi          - STA RSSI in dBm (0 when STA disconnected)
 //         uptimeMs          - milliseconds since boot (#225, same key /api/status uses)
 //         resetReason       - resetReasonName()'s static string for the last reset (#225)
@@ -245,8 +249,9 @@ void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const c
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi,
-                      unsigned long uptimeMs, const char* resetReason);
+                      unsigned long heapMin, unsigned long heapLargestBlock,
+                      unsigned long heapLargest8bit, long wifiRssi, unsigned long uptimeMs,
+                      const char* resetReason);
 
 // Endpoint handlers
 void handleWifiGet(WebRequest& req);

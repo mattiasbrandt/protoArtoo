@@ -113,18 +113,19 @@ void formatSerialJson(char* buf, size_t bufSize, const char* driveLabel, const c
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi,
-                      unsigned long uptimeMs, const char* resetReason) {
+                      unsigned long heapMin, unsigned long heapLargestBlock,
+                      unsigned long heapLargest8bit, long wifiRssi, unsigned long uptimeMs,
+                      const char* resetReason) {
     snprintf(buf, bufSize,
              "{\"estop\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webControlEnabled\":%s,"
              "\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,"
-             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
-             "\"uptimeMs\":%lu,\"resetReason\":\"%s\"}",
+             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,"
+             "\"wifiRssi\":%ld,\"uptimeMs\":%lu,\"resetReason\":\"%s\"}",
              estop ? "true" : "false", sbusSignalLost ? "true" : "false",
              sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
              wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
-             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi, uptimeMs,
-             resetReason);
+             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, heapLargest8bit,
+             wifiRssi, uptimeMs, resetReason);
 }
 
 // =============================================================================
@@ -168,6 +169,9 @@ void captureHealthSnapshot(HealthSnapshot* out) {
     out->heapFree = dataHeap.free;
     out->heapMin = dataHeap.minEver;
     out->heapLargestBlock = dataHeap.largest;
+    // The Buffer Reading beside it, so the serial record carries the figure
+    // admission sheds requests by when HTTP cannot answer.
+    out->heapLargest8bit = heapReadBufferLargest();
 }
 
 void captureWifiStatusSnapshot(WifiStatusSnapshot* out) {
