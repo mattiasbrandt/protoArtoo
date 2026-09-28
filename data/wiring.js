@@ -632,10 +632,9 @@
   // own paper (see "The paper beneath the stylesheet"), and the tables and
   // prose are plain HTML a browser prints legibly on its own. The one <link> is
   // an icon that is an empty data: URL, because without one a browser goes
-  // looking for a favicon beside the file. And <base> points back at the droid
-  // that made it, so the "Put it on an output in Parts" links still reach Parts
-  // when this is opened from a download folder rather than resolving against
-  // the disk.
+  // looking for a favicon beside the file. It carries no link back to the
+  // droid: the Unused list's links to Parts were the last, and that list is
+  // Parts' own now (#411).
   //
   // WHAT IT LEAVES OUT: everything that writes - the Outputs plates and the
   // part-first picker are the screen's, mounted beside the sheet and never
@@ -647,7 +646,7 @@
   // put into every board slot the generator left. Without it the slots stay
   // empty and the board is a plain block, which is still a true sheet.
   // ---------------------------------------------------------------------------
-  const wiringSheetFile = (sheet, origin = "", boardArt = "") => {
+  const wiringSheetFile = (sheet, boardArt = "") => {
     const madeAt = stampText(sheet.stamp);
     const about = sheet.droidName ? `${sheet.droidName} - ${madeAt}` : madeAt;
     const pictured = (html) =>
@@ -657,7 +656,6 @@
       '<html lang="en"><head><meta charset="utf-8">' +
       `<title>Wiring - ${esc(about)}</title>` +
       '<link rel="icon" href="data:,">' +
-      (origin ? `<base href="${escAttr(origin)}/">` : "") +
       "</head><body>" +
       `<h1>Wiring</h1>` +
       `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
@@ -844,7 +842,7 @@
     }
     try {
       const sheet = paint(sheetStamp(new Date()));
-      const file = inkedForFile(wiringSheetFile(sheet, window.location?.origin || "", boardArtForFile()));
+      const file = inkedForFile(wiringSheetFile(sheet, boardArtForFile()));
       if (savedUrl) URL.revokeObjectURL(savedUrl);
       savedUrl = URL.createObjectURL(new Blob([file], { type: "text/html" }));
       saveLink.setAttribute("href", savedUrl);
