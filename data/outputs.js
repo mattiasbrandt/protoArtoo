@@ -108,6 +108,12 @@
   // ---------------------------------------------------------------------------
   let config = null; // GET /api/config's whole answer, or the last save's
   let rows = null; // GET /api/servo/outputs rows, read by readRow()
+  // Table reads, numbered in the order they were ISSUED, and which of them the
+  // rows came from. Reads overlap - the follow's, an act's, a save's - so the
+  // order they land in says nothing about what the droid had done by then;
+  // readMark()/readSince() below are how a page asks the question that does.
+  let tableReads = 0;
+  let rowsRead = 0;
   let outputs = Object.freeze([]);
   // What each Output was first reported with this session: its wired tick,
   // its Light Type and its LED count. All three are read once when the droid
@@ -249,11 +255,18 @@
     return api;
   };
 
+  // Numbered before the request goes out, so the number is when the droid was
+  // asked, not when it answered. take() is the one way rows are set.
   const readTable = async (api) => {
+    const read = ++tableReads;
     const answer = await api.get("/api/servo/outputs");
     const table = answer?.data?.outputs;
     if (!Array.isArray(table)) throw new Error("the droid's outputs answer carries no table");
-    return table.map(readRow);
+    return { table: table.map(readRow), read };
+  };
+  const take = ({ table, read }) => {
+    rows = table;
+    rowsRead = read;
   };
 
   const readConfig = async (api) => {
@@ -283,7 +296,7 @@
     // publishes a join of a new half with an old one.
     const table = await readTable(api);
     const answer = await readConfig(api);
-    rows = table;
+    take(table);
     config = answer;
     publish();
     return { config, outputs };
@@ -298,7 +311,7 @@
    * @returns {Promise<object[]>} the Outputs
    */
   const refresh = async ({ handle = null } = {}) => {
-    rows = await readTable(apiFor(handle));
+    take(await readTable(apiFor(handle)));
     publish();
     return outputs;
   };
@@ -413,12 +426,12 @@
         // are theirs.
         const answer = result?.data;
         config = answer && typeof answer === "object" && answer.drive ? answer : await readConfig(api);
-        rows = await readTable(api);
+        take(await readTable(api));
       } catch (error) {
         // What the droid holds, not the answer it refused - it may have taken
         // a save whose answer never arrived.
         try {
-          rows = await readTable(api);
+          take(await readTable(api));
           config = await readConfig(api);
           publish();
         } catch (reloadError) {
@@ -480,6 +493,26 @@
   };
 
   /**
+   * Where the table reads have got to: a mark to hand readSince() later.
+   * Taken when something is known to have reached the droid - an act it has
+   * answered - it lets a page tell a reading that could have seen that act
+   * from one the droid was asked for before it.
+   *
+   * @returns {number}
+   */
+  const readMark = () => tableReads;
+
+  /**
+   * Whether what this module holds was read by a read issued after `mark`
+   * (readMark()). Only such a reading can say anything about what happened
+   * at the mark; one issued before it may land later and still predate it.
+   *
+   * @param {number} mark
+   * @returns {boolean}
+   */
+  const readSince = (mark) => rowsRead > mark;
+
+  /**
    * Follow the table: one read a second, while the surface that asked is on
    * screen. The handle is that surface's (#360): the shell stops it when the
    * operator leaves and starts it again on the way back, and a read that fails
@@ -517,6 +550,8 @@
     refresh,
     follow,
     live,
+    readMark,
+    readSince,
     list: () => outputs,
     at,
     forPart,
