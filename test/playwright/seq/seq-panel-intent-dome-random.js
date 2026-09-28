@@ -74,7 +74,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await page.waitForTimeout(100);
 
       // Click dome type chip
-      const domeChip = lastStep.locator('[data-type="dome"]');
+      // The Panel Action chip: the dome sub-mode chips share data-type="dome".
+      const domeChip = lastStep.locator('[data-type="dome"]:not([data-dome-mode])');
       await domeChip.click();
       await page.waitForTimeout(100);
 
@@ -149,29 +150,26 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     // Test 4: Toggle to advanced mode shows text input
-    await test('Dome advanced mode toggle works', async () => {
+    await test('Dome mode toggle cycles panel -> presets -> advanced', async () => {
       const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
-      const fieldsContainer = lastStep.locator('.step-fields');
+      // Re-queried after each press: the fields are re-rendered per mode.
+      const fields = () => lastStep.locator('.step-fields');
 
-      // Find and click the advanced mode toggle
-      const toggleBtn = fieldsContainer.locator('.dome-mode-toggle');
-      const toggleCount = await toggleBtn.count();
-      if (toggleCount === 0) {
-        throw new Error('No .dome-mode-toggle button found in fields container');
+      // Panel mode's toggle goes to the visual presets.
+      await fields().locator('.dome-mode-toggle').click();
+      await page.waitForTimeout(200);
+      if ((await fields().locator('select[data-field="preset"]').count()) !== 1) {
+        throw new Error('Expected the visual preset select after the first press');
       }
 
-      await toggleBtn.click();
+      // The presets' toggle goes to advanced: a raw command input.
+      await fields().locator('.dome-mode-toggle').click();
       await page.waitForTimeout(200);
-
-      // After toggle to advanced, should see text input with placeholder @0T6, *HP0, :SE07
-      // Re-query the fieldsContainer since it may have been re-rendered
-      const fieldsContainerAfter = lastStep.locator('.step-fields');
-      const textInput = fieldsContainerAfter.locator('input[type="text"][data-field="cmd"]');
-      const textInputCount = await textInput.count();
-      if (textInputCount === 0) {
-        throw new Error('Expected text input in advanced mode after toggle');
+      const textInput = fields().locator('input[type="text"][data-field="cmd"]');
+      if ((await textInput.count()) === 0) {
+        throw new Error('Expected text input in advanced mode after the second press');
       }
 
       const placeholder = await textInput.getAttribute('placeholder');

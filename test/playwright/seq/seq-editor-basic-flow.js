@@ -60,10 +60,11 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       const nameInput = page.locator('#seq-editor-name');
       await nameInput.fill('DM:TESTCOPY');
 
-      const summaryEl = page.locator('#seq-editor-validation-summary');
-      const text = await summaryEl.textContent();
-      if (!text.includes('✓')) {
-        throw new Error(`Expected valid status, got: ${text}`);
+      // The verdict carries no glyph; its status class says which it is.
+      const valid = await page.locator('#seq-editor-validation-summary .seq-validation-valid').count();
+      if (valid !== 1) {
+        const text = await page.locator('#seq-editor-validation-summary').textContent();
+        throw new Error(`Expected valid status, got: ${text.trim()}`);
       }
     });
 

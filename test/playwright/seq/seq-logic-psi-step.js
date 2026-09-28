@@ -332,7 +332,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     // Test 14: Step type picker includes domeLogic (check via JavaScript)
-    await test('step type picker includes domeLogic in rendered HTML', async () => {
+    await test('step type picker offers Logic / PSI Mode, and it makes a dome DL: step', async () => {
       const steps = page.locator('.step-card');
       const firstStep = steps.nth(0);
 
@@ -344,23 +344,35 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         await page.waitForTimeout(100);
       }
 
-      // Check if domeLogic chip exists in DOM (even if not visible in current step)
-      const domeLogicChipCount = await page.locator('button[data-type="domeLogic"]').count();
-      if (domeLogicChipCount < 1) {
-        throw new Error(`domeLogic type chip not found in DOM`);
+      // Logic / PSI is a dome sub-mode chip, not a step type of its own.
+      const chip = firstStep.locator('button[data-type="dome"][data-dome-mode="logic"]');
+      if ((await chip.count()) !== 1) {
+        throw new Error('Logic / PSI Mode chip not found on the expanded step');
       }
-
-      // Verify it has the correct label
-      const firstChip = page.locator('button[data-type="domeLogic"]').first();
-      const text = await firstChip.textContent();
+      const text = await chip.textContent();
       if (!text.includes('Logic / PSI Mode')) {
         throw new Error(`Expected 'Logic / PSI Mode' in chip text, got: '${text}'`);
       }
+
+      // The step already holds a DL: command; make it a Sound step first, so
+      // the chip has something to change.
+      await firstStep.locator('button[data-type="audio"]').click();
+      await page.waitForTimeout(150);
+      const before = await page.evaluate(() => window.__seqEditorForTesting.editorState.current.steps[0]);
+      if (before.type !== 'audio') {
+        throw new Error(`Could not make the step a Sound step first: type=${before.type}`);
+      }
+
+      await steps.nth(0).locator('button[data-type="dome"][data-dome-mode="logic"]').click();
+      await page.waitForTimeout(150);
+      const step = await page.evaluate(() => window.__seqEditorForTesting.editorState.current.steps[0]);
+      if (step.type !== 'dome' || !String(step.cmd || '').startsWith('DL:')) {
+        throw new Error(`Expected a dome step with a DL: cmd, got type=${step.type} cmd=${step.cmd}`);
+      }
     });
 
-    // Test 15: Verify domeLogic in reference panel
-    await test('domeLogic appears in reference panel (What Each Step Type Does)', async () => {
-      // Open reference panel if not open
+    // The reference panel lists Logic / PSI under the dome step it belongs to.
+    await test('reference panel names logic/PSI under the dome step', async () => {
       const refToggle = page.locator('.step-type-reference-toggle');
       const isExpanded = await refToggle.getAttribute('aria-expanded');
       if (isExpanded === 'false') {
@@ -368,40 +380,15 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         await page.waitForTimeout(100);
       }
 
-      // Check for domeLogic in reference list
       const refPanel = page.locator('.step-type-reference-panel');
       const panelText = await refPanel.textContent();
-      if (!panelText.includes('Logic / PSI Mode')) {
-        throw new Error(`Expected 'Logic / PSI Mode' in reference panel, got: '${panelText}'`);
-      }
-
-      // Verify description is there too
-      if (!panelText.includes('logic or PSI')) {
-        throw new Error(`Expected logic/PSI description in reference panel`);
+      if (!panelText.includes('logic/PSI')) {
+        throw new Error(`Expected logic/PSI in the reference panel, got: '${panelText.replace(/\s+/g, ' ').trim()}'`);
       }
     });
 
-    // Test 16: Validation detects invalid targets (SeqProtocolCheck already tested in Test 2)
-    // This is covered by Test 2 which validates that invalid targets are rejected.
-    // Additional UI verification is deferred to a separate test file that tests error surfacing
-    // in isolation (since error rendering in multi-test sessions can be timing-dependent).
-    await test('validation catches invalid domeLogic targets (confirmed in Test 2)', async () => {
-      // This passes if we reach here - Test 2 confirmed SeqProtocolCheck rejects invalid targets
-      const validationResult = await page.evaluate(() => {
-        const step = { t: 0, type: 'domeLogic', cmd: 'DL:INVALID:MARCH:RED:10' };
-        return window.SeqProtocolCheck && window.SeqProtocolCheck.validateStep
-          ? window.SeqProtocolCheck.validateStep(step, 0, [step])
-          : null;
-      });
-
-      if (!validationResult || validationResult.ok) {
-        throw new Error(`Expected validation to fail, but it passed`);
-      }
-
-      if (!validationResult.error || !validationResult.error.includes('not a valid target')) {
-        throw new Error(`Expected error about invalid target, got: '${validationResult.error}'`);
-      }
-    });
+    // An invalid DL: target is rejected by Protocol Check through the dome
+    // branch; that is the "rejects invalid DL target (via dome type)" test above.
 
   } catch (error) {
     console.error('Fatal error:', error);

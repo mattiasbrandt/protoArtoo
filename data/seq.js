@@ -915,7 +915,7 @@
                 .join("")}
             </select>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
-            <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
+            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
           `;
         } else if (domeMode === "logic") {
           // Logic/PSI Mode (DL:) structured step
@@ -1246,7 +1246,7 @@
               <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
             </select>
             <span class="dome-cmd-preview">:${action}${target}</span>
-            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
+            <button class="dome-mode-toggle" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
             <div class="dome-panel-advisory hidden"></div>
           `;
@@ -1994,7 +1994,8 @@
       });
     }
 
-    // Dome mode toggle (panel ↔ preset ↔ advanced)
+    // Dome mode toggle, one cycle: panel -> preset -> advanced -> panel. Each
+    // mode's button is labelled with the mode it goes to next.
     const toggleBtn = fieldsContainer.querySelector(".dome-mode-toggle");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", (e) => {
@@ -2214,36 +2215,33 @@
         if (!card) return;
         const stepIdx = parseInt(card.dataset.stepIndex, 10);
 
-        // For Logic/PSI sub-mode chips, only toggle within their group
-        const isLogicChip = chip.dataset.domeMode === "logic";
-        if (isLogicChip) {
-          card.querySelectorAll(".step-type-dome-sub").forEach((c) => {
-            c.classList.toggle("active", c === chip);
-            c.setAttribute("aria-pressed", c === chip ? "true" : "false");
-          });
-        } else {
-          card.querySelectorAll(".step-type-chip").forEach((c) => {
-            c.classList.toggle("active", c === chip);
-            c.setAttribute("aria-pressed", c === chip ? "true" : "false");
-          });
-        }
+        // Logic / PSI, Logic Text and Holo Effect are dome sub-modes: a step in
+        // one is a dome step, so it lights the main dome chip beside its own,
+        // exactly as the step renders. Every other chip in the card goes dark -
+        // the step's type is read back from the first lit chip
+        // (validateAndUpdateStep), so a chip left lit from the previous type
+        // would turn the step back into that type.
+        const domeMode = chip.dataset.domeMode || null;
+        const isMainDomeChip = (c) => c.dataset.type === "dome" && !c.dataset.domeMode;
+        card.querySelectorAll(".step-type-chip").forEach((c) => {
+          const lit = c === chip || (domeMode !== null && isMainDomeChip(c));
+          c.classList.toggle("active", lit);
+          c.setAttribute("aria-pressed", lit ? "true" : "false");
+        });
 
         const newType = chip.dataset.type;
         // Clear all old type-specific fields; keep only t, assign new type + defaults
         const { t } = editorState.current.steps[stepIdx];
         let newDefaults = stepTypeDefaults[newType] || {};
 
-        // Special handling for Logic/PSI/Text/Holo: all dome sub-modes
-        if (isLogicChip) {
-          const isTextChip = chip.dataset.domeMode === "text";
-          const isHoloChip = chip.dataset.domeMode === "holo";
-          if (isTextChip) {
-            newDefaults = { cmd: "DT:LOGIC:DEFAULT:5:0:" };
-          } else if (isHoloChip) {
-            newDefaults = { cmd: "DH:A:FLASH" };
-          } else {
-            newDefaults = { cmd: "DL:LOGIC:NORMAL" };
-          }
+        // A dome sub-mode starts from its own command, which is what tells the
+        // step's fields which mode to draw.
+        if (domeMode === "text") {
+          newDefaults = { cmd: "DT:LOGIC:DEFAULT:5:0:" };
+        } else if (domeMode === "holo") {
+          newDefaults = { cmd: "DH:A:FLASH" };
+        } else if (domeMode === "logic") {
+          newDefaults = { cmd: "DL:LOGIC:NORMAL" };
         }
 
         editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
@@ -2258,16 +2256,12 @@
 
         // If switching to dome type, attach appropriate listeners
         if (newType === "dome") {
-          if (isLogicChip) {
-            const isTextChip = chip.dataset.domeMode === "text";
-            const isHoloChip = chip.dataset.domeMode === "holo";
-            if (isTextChip) {
-              attachDomeTextListeners(fieldsContainer, stepIdx);
-            } else if (isHoloChip) {
-              attachDomeHoloListeners(fieldsContainer, stepIdx);
-            } else {
-              attachDomeLogicListeners(fieldsContainer, stepIdx);
-            }
+          if (domeMode === "text") {
+            attachDomeTextListeners(fieldsContainer, stepIdx);
+          } else if (domeMode === "holo") {
+            attachDomeHoloListeners(fieldsContainer, stepIdx);
+          } else if (domeMode === "logic") {
+            attachDomeLogicListeners(fieldsContainer, stepIdx);
           } else {
             attachDomePanelIntentListeners(fieldsContainer, stepIdx);
           }
@@ -2293,8 +2287,11 @@
       });
     });
 
-    // Step field inputs
-    document.querySelectorAll(".step-fields [data-field]").forEach((input) => {
+    // Step field inputs, and each step's time offset: .step-t sits beside the
+    // fields rather than among them, and validateAndUpdateStep() reads it back
+    // into the step like any field. Without a listener of its own, a changed
+    // time never reached the step, and Save sent the old one.
+    document.querySelectorAll(".step-fields [data-field], .step-card .step-t").forEach((input) => {
       const card = input.closest(".step-card");
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
