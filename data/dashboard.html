@@ -23,87 +23,49 @@
       </div>
     </div>
 
-    <!-- One bay, three plates, divided by seams rather than by gaps: what this
-         droid is, what it is doing, and the two numbers the Status Plate
-         deliberately leaves off (#324). -->
-    <div class="bay dash-top">
-      <section>
-        <div class="sect"><h2>This droid</h2><span class="sub">read from the running Body Controller</span></div>
-        <!-- No picture. This surface has never held one, and CONTEXT.md "Body
-             View" puts a recognisable droid silhouette in its _Avoid_ list on
-             purpose: the real drawing of the droid is an arrangement, not a
-             likeness (#317, ADR 0063), so an outline on the surface a builder
-             most expects the real thing teaches the wrong model of what the
-             Body View will be. The Body View is C4's and is not built. -->
-        <dl class="build">
-          <div>
-            <dt>Droid Build</dt>
-            <dd><span class="waiting" id="build-design"></span><span class="hint" id="build-design-detail"></span></dd>
-          </div>
-          <div>
-            <dt>Firmware</dt>
-            <dd><span class="waiting" id="build-firmware"></span><span class="hint" id="build-firmware-detail"></span></dd>
-          </div>
-          <div>
-            <dt>Uptime</dt>
-            <dd><span class="waiting" id="build-uptime"></span><span class="hint" id="build-uptime-detail"></span></dd>
-          </div>
-        </dl>
-      </section>
-
+    <!-- What the droid is doing, first: the three controls that change it,
+         side by side in one bay and divided by seams. What the droid is and
+         its telemetry sit at the foot of the page, in This droid. -->
+    <div class="bay dash-controls">
       <section>
         <div class="sect">
           <h2>Controls</h2>
           <span class="sub"><span class="waiting" id="snapshot-mode"></span> &middot; <span class="waiting" id="snapshot-mood"></span> &middot; <span class="waiting" id="snapshot-sleep"></span></span>
         </div>
 
-        <div class="ctl">
-          <h3>Operation mode <span class="now waiting" id="opmode-now"></span></h3>
-          <div class="seg opmode-grid" role="group" aria-label="Operation mode">
-            <button class="opmode-btn drive active" id="opmode-drive" type="button" title="Feet on. The sticks drive the droid." aria-label="Set operation mode to Driving" aria-pressed="true">Driving</button>
-            <button class="opmode-btn stationary" id="opmode-stationary" type="button" title="Feet locked. Dome and sound still work." aria-label="Set operation mode to Stationary" aria-pressed="false">Stationary</button>
+        <div class="ctl-row">
+          <div class="ctl">
+            <h3>Operation mode <span class="now waiting" id="opmode-now"></span></h3>
+            <div class="seg opmode-grid" role="group" aria-label="Operation mode">
+              <button class="opmode-btn drive active" id="opmode-drive" type="button" title="Feet on. The sticks drive the droid." aria-label="Set operation mode to Driving" aria-pressed="true">Driving</button>
+              <button class="opmode-btn stationary" id="opmode-stationary" type="button" title="Feet locked. Dome and sound still work." aria-label="Set operation mode to Stationary" aria-pressed="false">Stationary</button>
+            </div>
+            <p class="hint">Stationary locks the feet. Dome and sound still work.</p>
+            <div id="opmode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
           </div>
-          <p class="hint">Stationary locks the feet. Dome and sound still work.</p>
-          <div id="opmode-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        </div>
 
-        <div class="ctl">
-          <h3>Mood <span class="now waiting" id="mood-now"></span></h3>
-          <div class="mood-grid" role="group" aria-label="Mood">
-            <button class="btn mood-btn quiet" id="mood-quiet" type="button" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">Quiet</button>
-            <button class="btn mood-btn mid" id="mood-mid" type="button" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">Mid-Awake</button>
-            <button class="btn mood-btn full" id="mood-full" type="button" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">Full-Awake</button>
-            <button class="btn mood-btn awakeplus" id="mood-awakeplus" type="button" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">Awake+</button>
+          <div class="ctl">
+            <h3>Mood <span class="now waiting" id="mood-now"></span></h3>
+            <div class="mood-grid" role="group" aria-label="Mood">
+              <button class="btn mood-btn quiet" id="mood-quiet" type="button" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">Quiet</button>
+              <button class="btn mood-btn mid" id="mood-mid" type="button" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">Mid-Awake</button>
+              <button class="btn mood-btn full" id="mood-full" type="button" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">Full-Awake</button>
+              <button class="btn mood-btn awakeplus" id="mood-awakeplus" type="button" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">Awake+</button>
+            </div>
+            <p class="hint">Each step up adds chatter, then holo movement, then holo lights.</p>
+            <div id="mood-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
           </div>
-          <p class="hint">Each step up adds chatter, then holo movement, then holo lights.</p>
-          <div id="mood-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        </div>
 
-        <div class="ctl">
-          <h3>Sleep <span class="now waiting" id="sleep-now"></span></h3>
-          <!-- A readout, not a control: the Sleep act is in the topbar with the
-               other two that act on the droid, so its explanation belongs at
-               that entrance and not here (ADR 0059). What survives the cut is
-               the half a builder has to know - a sleeping droid can still be
-               driven and can still be stopped. -->
-          <p class="hint">Lights, panels and chatter rest. Drive and the estop stay awake.</p>
+          <div class="ctl">
+            <h3>Sleep <span class="now waiting" id="sleep-now"></span></h3>
+            <!-- A readout, not a control: the Sleep act is in the topbar with the
+                 other two that act on the droid, so its explanation belongs at
+                 that entrance and not here (ADR 0059). What survives the cut is
+                 the half a builder has to know - a sleeping droid can still be
+                 driven and can still be stopped. -->
+            <p class="hint">Lights, panels and chatter rest. Drive and the estop stay awake.</p>
+          </div>
         </div>
-      </section>
-
-      <section>
-        <div class="sect"><h2>Readouts</h2><span class="sub">not on the plate</span></div>
-        <dl class="readouts">
-          <div class="readout">
-            <dt>Memory free</dt>
-            <dd class="waiting" id="readout-heap"></dd>
-            <span class="hint" id="readout-heap-detail"></span>
-          </div>
-          <div class="readout">
-            <dt>WiFi signal</dt>
-            <dd class="waiting" id="readout-wifi"></dd>
-            <span class="hint" id="readout-wifi-detail"></span>
-          </div>
-        </dl>
       </section>
     </div>
 
@@ -148,9 +110,10 @@
       </div>
     </div>
 
-    <!-- Components (shown only when hardware is enabled) -->
+    <!-- Readouts: what each fitted component reports (shown only when one
+         does). The id keeps its old name; app.js fills it. -->
     <div class="card hidden" id="component-status-card">
-      <div class="sect"><h2>Components</h2><span class="sub" id="component-summary"></span></div>
+      <div class="sect"><h2>Readouts</h2><span class="sub" id="component-summary"></span></div>
       <div id="component-status-grid" class="status-grid"></div>
     </div>
 
@@ -194,6 +157,47 @@
         <p class="hint">Type <b>help</b> for the list.</p>
       </div>
     </details>
+
+    <!-- What this droid is and how it is running: identity, then the two
+         numbers the Status Plate deliberately leaves off (#324). Detail a
+         builder looks up rather than watches, so it sits at the foot of the
+         page (#399, operator review 2026-09-28). -->
+    <div class="card" id="this-droid-card">
+      <div class="sect"><h2>This droid</h2><span class="sub">read from the running Body Controller</span></div>
+      <!-- No picture. This surface has never held one, and CONTEXT.md "Body
+           View" puts a recognisable droid silhouette in its _Avoid_ list on
+           purpose: the real drawing of the droid is an arrangement, not a
+           likeness (#317, ADR 0063), so an outline on the surface a builder
+           most expects the real thing teaches the wrong model of what the
+           Body View will be. The Body View is C4's and is not built. -->
+      <dl class="build">
+        <div>
+          <dt>Droid Build</dt>
+          <dd><span class="waiting" id="build-design"></span><span class="hint" id="build-design-detail"></span></dd>
+        </div>
+        <div>
+          <dt>Firmware</dt>
+          <dd><span class="waiting" id="build-firmware"></span><span class="hint" id="build-firmware-detail"></span></dd>
+        </div>
+        <div>
+          <dt>Uptime</dt>
+          <dd><span class="waiting" id="build-uptime"></span><span class="hint" id="build-uptime-detail"></span></dd>
+        </div>
+        <!-- app.js writes these two values with innerHTML (a number and its
+             unit), so their cue is a sibling of the dd rather than inside it,
+             where the write would wipe it. -->
+        <div>
+          <dt>Memory free</dt>
+          <dd class="waiting" id="readout-heap"></dd>
+          <span class="hint" id="readout-heap-detail"></span>
+        </div>
+        <div>
+          <dt>WiFi signal</dt>
+          <dd class="waiting" id="readout-wifi"></dd>
+          <span class="hint" id="readout-wifi-detail"></span>
+        </div>
+      </dl>
+    </div>
 
     <!-- The Dashboard's topbar actions (#344). All three act on the DROID -
          park it, release the latch, restart the controller - rather than on

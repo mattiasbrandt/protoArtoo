@@ -4634,60 +4634,35 @@ body[data-page="maintenance"] .status-item .hint {
 /* ---------------------------------------------------------------------------
    Dashboard (ADR 0066).
 
-   Three plates in one bay - what this droid is, what it is doing, and the two
-   numbers the Status Plate leaves off - then the health signals and the
-   controller's log.
+   What the droid is doing first - the three controls in one bay - then the
+   health signals, the components' readouts, the dome and the controller's
+   log. What the droid is and its telemetry close the page, in This droid:
+   detail a builder looks up rather than watches (#399, operator review
+   2026-09-28).
    --------------------------------------------------------------------------- */
 
-.dash-top {
+/* The three controls side by side, divided by seams rather than by cards of
+   their own. Sleep is a readout with a cue, so it takes the narrow column. */
+.ctl-row {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
 }
 
-/* The identity plate is a readout: a label, a value, and the one line that
-   says where the value came from. No picture - data/dashboard.html has never
-   held one, and CONTEXT.md "Body View" puts a recognisable droid silhouette in
-   its _Avoid_ list, because the real drawing of the droid is an arrangement
-   and not a likeness (#317, ADR 0063). The Body View is C4's. */
-.build > div {
-  padding: var(--space-md) 0;
-  border-bottom: 1px solid var(--border);
+.ctl-row > .ctl {
+  min-width: 0;
+  padding: 0 var(--space-lg);
 }
 
-.build > div:first-child {
-  padding-top: 0;
+.ctl-row > .ctl:first-child {
+  padding-left: 0;
 }
 
-.build > div:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+.ctl-row > .ctl:last-child {
+  padding-right: 0;
 }
 
-.build dt {
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.build dd {
-  margin: 2px 0 0;
-  font-size: var(--fs-body);
-}
-
-.build dd .hint {
-  display: block;
-  margin-top: 2px;
-}
-
-/* One control and its cue, divided from the next by a seam rather than by a
-   card of its own. */
-.ctl + .ctl {
-  margin-top: var(--space-lg);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--border);
+.ctl-row > .ctl + .ctl {
+  border-left: 1px solid var(--border);
 }
 
 .ctl h3 {
@@ -4713,23 +4688,35 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
-/* The two numbers the Status Plate deliberately leaves off (#324): telemetry
-   belongs to the Dashboard, and the plate carries what bites fastest. */
-.readouts {
+/* This droid: five readouts in one row - a label, a value, and the one line
+   that says where the value came from or what it means. No picture -
+   data/dashboard.html has never held one, and CONTEXT.md "Body View" puts a
+   recognisable droid silhouette in its _Avoid_ list, because the real drawing
+   of the droid is an arrangement and not a likeness (#317, ADR 0063). The
+   Body View is C4's. */
+.build {
   display: grid;
-  gap: var(--space-md);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-.readout {
-  padding: var(--space-md) 0;
-  border-bottom: 1px solid var(--border);
+.build > div {
+  min-width: 0;
+  padding: 0 var(--space-lg);
 }
 
-.readout:last-child {
-  border-bottom: 0;
+.build > div:first-child {
+  padding-left: 0;
 }
 
-.readout dt {
+.build > div:last-child {
+  padding-right: 0;
+}
+
+.build > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.build dt {
   color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
@@ -4739,22 +4726,19 @@ body[data-page="maintenance"] .status-item .hint {
   text-transform: uppercase;
 }
 
-.readout dd {
+.build dd {
   margin: 2px 0 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-readout);
-  font-weight: 500;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-body);
 }
 
-.readout dd small {
+/* A number and its unit (Memory free, WiFi signal), written by app.js. */
+.build dd small {
   margin-left: var(--space-2xs);
   color: var(--text-faint);
   font-size: var(--fs-sect);
 }
 
-.readout .hint {
+.build .hint {
   display: block;
   margin-top: 2px;
 }
@@ -6679,15 +6663,16 @@ body[data-page="maintenance"] .status-item .hint {
    than beside the frame they override: several surfaces declare their own
    grid at the same specificity further down the file, and a media block
    written next to the base rule loses to every one of them. Measured at
-   820 px, where .dash-top's three-column base rule outranked both blocks
+   820 px, where the Dashboard's three-column base rule outranked both blocks
    below and the Dashboard stayed in two columns past its own breakpoint. */
 /* ---------------------------------------------------------------------------
    The frame's breakpoints (ADR 0066).
 
-   1100 px: the rail becomes a top strip and the Dashboard's bay goes to two
-   columns. 900 px: the bays stack and the Status Plate folds to two rows of
-   four. 1440 and 820 - the two widths #399 asks every surface to render at -
-   both land inside a stable layout rather than on a boundary.
+   1100 px: the rail becomes a top strip and the Dashboard's This droid wraps
+   to two rows. 900 px: the bays and the Dashboard's controls stack and the
+   Status Plate folds to two rows of four. 1440 and 820 - the two widths
+   #399 asks every surface to render at - both land inside a stable layout
+   rather than on a boundary.
    --------------------------------------------------------------------------- */
 @media (max-width: 1100px) {
   body {
@@ -6759,23 +6744,20 @@ body[data-page="maintenance"] .status-item .hint {
     display: none;
   }
 
-  .dash-top {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* This droid's five readouts wrap to three and two. The seam goes with the
+     row: a cell that starts a row has nothing to its left to divide from. */
+  .build {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--space-lg);
   }
 
-  .dash-top > section:last-child {
-    grid-column: 1 / -1;
+  .build > div:nth-child(3n + 1) {
+    padding-left: 0;
     border-left: 0;
-    border-top: 1px solid var(--border);
   }
 
-  .dash-top > section:last-child .readouts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .dash-top > section:last-child .readout {
-    border-bottom: 0;
-    padding: 0;
+  .build > div:nth-child(3n) {
+    padding-right: 0;
   }
 }
 
@@ -6801,9 +6783,25 @@ body[data-page="maintenance"] .status-item .hint {
     border-top: 1px solid var(--border);
   }
 
-  .dash-top,
-  .dash-top > section:last-child .readouts {
+  /* The controls and This droid stack, each cell divided from the next by a
+     seam along its top instead of its left. */
+  .ctl-row,
+  .build {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+
+  .ctl-row > .ctl,
+  .build > div {
+    padding: 0;
+  }
+
+  .ctl-row > .ctl + .ctl,
+  .build > div + div {
+    margin-top: var(--space-lg);
+    padding-top: var(--space-lg);
+    border-left: 0;
+    border-top: 1px solid var(--border);
   }
 
   .status-plate {
