@@ -103,45 +103,49 @@ test("a body Part is drawn on exactly one face", () => {
   assert.deepEqual(errors, [], "no Part was refused a second face");
 });
 
-// A builder aims at the middle of what they want. On a body face, the middle
-// of every Part's pick target must land on that Part and not on one drawn over
-// it: a fitted arm once took every click aimed at the door it sits behind
-// (#372, gripArm over doorFR). Read from the mounted markup, in paint order,
-// with every Part shown: a rect takes the pointer unless it is a footprint
-// drawn only (`.bv-footprint.is-drawn-only`, pointer-events: none in
-// data/style.css), and the topmost rect under a point is the one that gets it.
-// The dome's pieces are paths from the vendored map and are not modelled here.
-test("on a body face, the middle of every Part's pick target picks that Part", () => {
+// A builder aims at the middle of what they want, and so does a browser
+// asked to click a Part: the middle of the Part's group. On a body face that
+// point must land on that Part and not on one drawn over it: a fitted arm
+// once took every click aimed at the door it sits behind (#372, gripArm over
+// doorFR). Read from the mounted markup in paint order, with every Part
+// shown. Only a rect inside a Part's own group takes the pointer; a footprint
+// drawn apart from its Part (`.bv-drawn`) takes none (data/style.css), and the
+// topmost rect under a point is the one that gets it. The dome's pieces are
+// paths from the vendored map and are not modelled here.
+test("on a body face, the middle of every Part picks that Part", () => {
   const { host, BodyView, mount } = boot();
   const view = mount();
   view.update({ shown: view.markerIds() });
 
   const num = (node, name) => Number(node.getAttribute(name));
+  const boxOf = (rect) => ({ x: num(rect, "x"), y: num(rect, "y"), w: num(rect, "width"), h: num(rect, "height") });
+  const inside = (box, x, y) => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
   ["front", "rear"].forEach((faceId) => {
     const face = host.querySelectorAll(".bv-face").find((node) => node.dataset.face === faceId);
-    const targets = face
-      .querySelectorAll("rect")
-      .filter((rect) => rect.closest("[data-marker]") && !rect.classList.contains("is-drawn-only"))
-      .map((rect) => ({
-        marker: rect.closest("[data-marker]").dataset.marker,
-        x: num(rect, "x"),
-        y: num(rect, "y"),
-        w: num(rect, "width"),
-        h: num(rect, "height"),
-      }));
-    const placed = Object.keys(BodyView.GEOMETRY[faceId]);
+    const cells = face.querySelectorAll("[data-marker]");
     assert.deepEqual(
-      [...new Set(targets.map((t) => t.marker))].sort(),
-      [...placed].sort(),
-      `every Part on the ${faceId} face has a pick target`
+      cells.map((cell) => cell.dataset.marker).sort(),
+      Object.keys(BodyView.GEOMETRY[faceId]).sort(),
+      `every Part placed on the ${faceId} face is drawn there`
     );
-    targets.forEach((target) => {
-      const cx = target.x + target.w / 2;
-      const cy = target.y + target.h / 2;
-      const topmost = targets
-        .filter((t) => cx >= t.x && cx <= t.x + t.w && cy >= t.y && cy <= t.y + t.h)
-        .pop();
-      assert.equal(topmost.marker, target.marker, `the middle of ${target.marker} on the ${faceId} face picks it`);
+    const takers = face
+      .querySelectorAll("rect")
+      .filter((rect) => rect.closest("[data-marker]"))
+      .map((rect) => ({ marker: rect.closest("[data-marker]").dataset.marker, ...boxOf(rect) }));
+    cells.forEach((cell) => {
+      const boxes = cell.querySelectorAll("rect").map(boxOf);
+      const left = Math.min(...boxes.map((b) => b.x));
+      const top = Math.min(...boxes.map((b) => b.y));
+      const right = Math.max(...boxes.map((b) => b.x + b.w));
+      const bottom = Math.max(...boxes.map((b) => b.y + b.h));
+      const cx = (left + right) / 2;
+      const cy = (top + bottom) / 2;
+      const topmost = takers.filter((t) => inside(t, cx, cy)).pop();
+      assert.equal(
+        topmost && topmost.marker,
+        cell.dataset.marker,
+        `the middle of ${cell.dataset.marker} on the ${faceId} face picks it`
+      );
     });
   });
 });
