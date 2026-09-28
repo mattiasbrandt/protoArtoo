@@ -22,8 +22,9 @@
 // dropped the moment the droid answers.
 //
 // Wiring's sheet itself stays a reference: data/wiring.js generates the
-// document and writes nothing. These plates are the one thing on that surface
-// that writes, and they write only through data/outputs.js.
+// document and writes nothing. These plates write beside it, only through
+// data/outputs.js, and so does the part-first picker under them
+// (data/parts_mapping.js picker()).
 //
 // WHEN EACH VIEW'S ANSWER BITES is its row Setting's timing, which the
 // firmware declares and the Setting's entry mirrors (data/web_api.js, #432),

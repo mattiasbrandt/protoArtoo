@@ -3,41 +3,31 @@
 //
 // THE RULES IT HOLDS - the ones that need a browser, checked without writing
 // anything. The rule is the quoted line; the ticket is history, in brackets.
-//   - "One row per Part, grouped by class, with counts in the headings"
-//     (history: #347): every group heading reads "<label> - <n> <unit>" and
-//     <n> is the number of rows under it; every Part in the served catalog
-//     (window.DroidParts) has exactly one row.
-//   - "A Part with no Output reads - not wired -" (history: #347): every Part
-//     no row of GET /api/servo/outputs carries shows "- not wired -" (en
-//     dashes) as its chosen Output and is not marked wired; every Part an
-//     Output carries shows that Output. The summary's two counts match the
-//     same answer.
-//   - "No row is hidden, in any state" (history: #347): every row is rendered
-//     visible (Element.checkVisibility with opacity and visibility, and a box
-//     with height) while the Outputs are still being found out, once they
-//     have answered, while the Outputs read is failing, and with a Part picked
-//     on the droid picture.
+// The part-first picker's own rules (one row per Part, "- not wired -", light
+// rows) moved to Wiring with the picker (operator, 2026-09-28 on #411):
+// test/playwright/wiring/every-part-has-a-picker-row.js.
+//   - "Unused lists every Part this image moves that no Output claims, and no
+//     other" (history: #411, moved here from Wiring): the list's rows are the
+//     catalog Parts whose control path is neither the dome link nor none, less
+//     every Part a row of GET /api/servo/outputs carries - against the droid's
+//     own answer - each row offers "Give it an output", and the summary counts
+//     the rows.
+//   - "No row is hidden, in any state" (history: #347): every Unused row is
+//     rendered visible (Element.checkVisibility with opacity and visibility,
+//     and a box with height) once the Outputs have answered, while the
+//     Outputs read is failing, and with a Part picked on the droid picture.
 //   - "Per-frame updates touch only values; no full re-render occurs while a
 //     control is under the pointer" (history: #347): the pointer rests on a
-//     table picker, on a droid-picture marker and on an act button in the
-//     picture's panel in turn, while at least three once-a-second Outputs
+//     droid-picture marker, on an act button in the picture's panel and on an
+//     Unused row's act in turn, while at least three once-a-second Outputs
 //     reads land; each hovered element must still be the same node, still
-//     connected, still under the pointer, and no row, picker, marker or act
-//     button may be removed from the document meanwhile. The Outputs read is
+//     connected, still under the pointer, and no marker, act button or Unused
+//     row may be removed from the document meanwhile. The Outputs read is
 //     Parts' per-frame feed (data/outputs.js follow, once a second). Status
 //     frames are counted and printed too, but an idle Bench-Mode droid pushes
 //     one only when something changes (data/shell.js,
 //     requestStatusBroadcastNow), so none arriving is not a failure.
 //   - "Parts sends no write of its own on a visit" (history: #347).
-//   - "A light Part shows what a light can promise and nothing else"
-//     (history: #357; data/droid_part_kind.js, data/parts.js:84): every
-//     catalog Part whose `kind` is "light" has a row carrying partkind-light
-//     and the "light" tag, and no other row carries the class; the treatment
-//     is DRAWN (the row heading's left border computes to dashed,
-//     data/style.css); and a light row draws no position or release column -
-//     it has exactly the table's header columns, the header names no position
-//     or release column, and the row holds no position bar, commanded width,
-//     release, throw or motion cell and no microsecond value in its heading.
 //   - "A Part picked on the droid picture stays picked while the
 //     once-a-second Outputs reads land" (history: #352): the marker keeps
 //     .is-selected and aria-pressed="true", its row in the picture's Parts
@@ -49,20 +39,15 @@
 // :hover across real network frames only exist here.
 //
 // WHAT IT SKIPS, AND WHY.
-//   - A move (choosing another Output for a Part), its announcement and
-//     steal-not-share: every path ends in POST /api/config, a configuration
-//     write, and a Part moved on the bench droid stays moved. The question
-//     dialog's reach over STOP is stop-every-surface.js's.
-//   - Open it / Close it, Drop from build / Add to build, Give it an output:
-//     each either moves an Output (POST /api/servo, /api/dome/cmd) or writes
-//     the Droid Build (POST /api/config). The act buttons are hovered, never
-//     pressed. Picking a marker on the picture is pressed: it only selects
-//     (data/parts.js, "THE VIEW NEVER WRITES").
-//   - "A fresh droid shows every catalog Part, none on an Output, and all 5
-//     default Outputs carry no Part": true only of a droid nobody has wired,
-//     and the bench droid's mapping is whatever it holds. The script checks
-//     the rows against the droid's own answer instead, which holds on any
-//     droid.
+//   - Open it / Close it, Drop from build / Add to build: each either moves an
+//     Output (POST /api/servo, /api/dome/cmd) or writes the Droid Build (POST
+//     /api/config). The act buttons are hovered, never pressed. Picking a
+//     marker on the picture is pressed: it only selects (data/parts.js, "THE
+//     VIEW NEVER WRITES"). Give it an output leaves the surface for Wiring, and
+//     the web suite holds where it lands (test_body_view_on_parts.js).
+//   - A fresh droid's Unused list: true only of a droid nobody has wired, and
+//     the bench droid's mapping is whatever it holds. The script checks the
+//     list against the droid's own answer instead, which holds on any droid.
 //   - "A rename never produces a new id", "both targets build": not browser
 //     questions.
 //   - The estop-latched state: reaching it from here would be a press of STOP.
@@ -79,10 +64,8 @@
 // python3 tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js,
 // its 'bench' droid).
 // Self-tests, each must FAIL its check: SELFTEST_REBUILD=1 swaps the hovered
-// picker for a copy mid-frame; SELFTEST_HIDE=1 hides one row once answered;
-// SELFTEST_NOTWIRED=1 rewords one unwired row's "- not wired -";
-// SELFTEST_UNLIGHT=1 takes partkind-light off one light row;
-// SELFTEST_POSITION=1 gives one light row a position cell;
+// Unused act for a copy mid-frame; SELFTEST_HIDE=1 hides one Unused row once
+// answered; SELFTEST_UNUSED=1 takes one row out of the Unused list;
 // SELFTEST_DESELECT=1 picks the picked marker again (which lets it go) after
 // the first Outputs read lands.
 const { mkdirSync } = require('node:fs');
@@ -91,17 +74,13 @@ const lib = require('../_lib/checks.js');
 const { BASE_URL, FIXTURE } = lib;
 const SELFTEST_REBUILD = process.env.SELFTEST_REBUILD === '1';
 const SELFTEST_HIDE = process.env.SELFTEST_HIDE === '1';
-const SELFTEST_NOTWIRED = process.env.SELFTEST_NOTWIRED === '1';
-const SELFTEST_UNLIGHT = process.env.SELFTEST_UNLIGHT === '1';
-const SELFTEST_POSITION = process.env.SELFTEST_POSITION === '1';
+const SELFTEST_UNUSED = process.env.SELFTEST_UNUSED === '1';
 const SELFTEST_DESELECT = process.env.SELFTEST_DESELECT === '1';
 const HOLD_MS = Number(process.env.HOLD_MS || 2500);
 const FRAMES = Number(process.env.FRAMES || 3);
 const ARTIFACT_DIR = 'output/playwright/issue-347';
 
-// data/parts_mapping.js NOT_WIRED, en dashes and all.
-const NOT_WIRED = '\u2013 not wired \u2013';
-const ROWS = '#parts-table [data-part]';
+const ROWS = '#parts-unused [data-part]';
 
 // Every row that is not rendered visible, by Part id.
 const hiddenRows = (page) =>
@@ -160,7 +139,7 @@ const hiddenRows = (page) =>
     await page.route('**/api/servo/outputs*', hold);
 
     await page.goto(`${BASE_URL}/#parts`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector(ROWS, { timeout: 30000 });
+    await page.waitForSelector('#parts-unused-summary', { timeout: 30000 });
     // Long enough to be seen, and to be sure the page is not about to answer
     // from somewhere else.
     await page.waitForTimeout(HOLD_MS);
@@ -168,18 +147,15 @@ const hiddenRows = (page) =>
     // -----------------------------------------------------------------------
     // State 1: the Outputs are still being waited for
     // -----------------------------------------------------------------------
-    const waiting = await page.evaluate((selector) => ({
-      summary: document.getElementById('parts-summary').textContent,
-      dots: getComputedStyle(document.getElementById('parts-summary'), '::after').content,
-      disabled: [...document.querySelectorAll(`${selector} select`)].every((select) => select.disabled),
+    const waiting = await page.evaluate(() => ({
+      summary: document.getElementById('parts-unused-summary').textContent,
+      dots: getComputedStyle(document.getElementById('parts-unused-summary'), '::after').content,
       answered: window.PAOutputs.known().table,
-    }), ROWS);
+    }));
     if (waiting.answered) {
-      check('no row hidden while waiting', false, 'the Outputs answered before the hold; state not reached');
+      check('the Unused summary waits for the Outputs', false, 'the Outputs answered before the hold; state not reached');
     } else {
-      const state1 = await hiddenRows(page);
-      check('no row hidden while waiting', state1.hidden.length === 0 && state1.total > 0, `${state1.total} rows, hidden: ${state1.hidden.join(', ') || 'none'}`);
-      check('summary shows the waiting dots, pickers wait', waiting.summary === '' && waiting.dots.includes('...') && waiting.disabled, `"${waiting.summary}", dots ${waiting.dots}, all disabled: ${waiting.disabled}`);
+      check('the Unused summary waits for the Outputs', waiting.summary === '' && waiting.dots.includes('...'), `"${waiting.summary}", dots ${waiting.dots}`);
       await page.screenshot({ path: `${ARTIFACT_DIR}/parts-waiting.png` });
     }
     await page.unroute('**/api/servo/outputs*', hold);
@@ -188,153 +164,56 @@ const hiddenRows = (page) =>
     // -----------------------------------------------------------------------
     // State 2: answered
     // -----------------------------------------------------------------------
-    await page.waitForFunction(() => /parts on an output/.test(document.getElementById('parts-summary').textContent), null, {
+    await page.waitForFunction(() => /^\d+ parts?$/.test(document.getElementById('parts-unused-summary').textContent), null, {
       timeout: 30000,
     });
-    await page.waitForFunction(() => window.PAOutputs.known().table, null, { timeout: 10000 });
+    if (!lastOutputs) {
+      const deadline = Date.now() + 5000;
+      while (!lastOutputs && Date.now() < deadline) await page.waitForTimeout(200);
+    }
     if (SELFTEST_HIDE) {
       await page.evaluate((selector) => {
         document.querySelector(selector).style.display = 'none';
       }, ROWS);
     }
-
-    // Counts in the headings, and one row per catalog Part.
-    const groups = await page.evaluate(() => {
-      const catalog = window.DroidParts.parts.map((part) => part.id);
-      const rows = [...document.querySelectorAll('#parts-table [data-part]')].map((row) => row.dataset.part);
-      return {
-        catalog,
-        rows,
-        groups: [...document.querySelectorAll('#parts-table tbody[data-group]')].map((body) => ({
-          id: body.dataset.group,
-          heading: body.querySelector('.parts-group th').textContent,
-          rows: body.querySelectorAll('[data-part]').length,
-        })),
-      };
-    });
-    const badHeadings = groups.groups.filter((group) => {
-      const match = group.heading.match(/^(.+) \u2014 (\d+) (part|parts|placeholder|placeholders)$/);
-      if (!match) return true;
-      const count = Number(match[2]);
-      const singular = match[3] === 'part' || match[3] === 'placeholder';
-      return count !== group.rows || singular !== (count === 1);
-    });
-    check(
-      'every group heading counts the rows under it',
-      groups.groups.length > 0 && badHeadings.length === 0,
-      badHeadings.length ? badHeadings.map((group) => `"${group.heading}" over ${group.rows} rows`).join('; ') : groups.groups.map((group) => group.heading).join(' | '),
-    );
-    const missing = groups.catalog.filter((id) => !groups.rows.includes(id));
-    const doubled = groups.rows.filter((id, index) => groups.rows.indexOf(id) !== index);
-    check(
-      'one row per catalog Part',
-      missing.length === 0 && doubled.length === 0 && groups.rows.length === groups.catalog.length,
-      `${groups.rows.length} rows for ${groups.catalog.length} Parts${missing.length ? `, missing ${missing.join(', ')}` : ''}${doubled.length ? `, doubled ${doubled.join(', ')}` : ''}`,
-    );
-
-    // "- not wired -", against the droid's own answer.
-    if (!lastOutputs) {
-      const deadline = Date.now() + 5000;
-      while (!lastOutputs && Date.now() < deadline) await page.waitForTimeout(200);
+    if (SELFTEST_UNUSED) {
+      await page.evaluate((selector) => document.querySelector(selector).remove(), ROWS);
     }
-    if (SELFTEST_NOTWIRED) {
-      await page.evaluate((selector) => {
-        const row = [...document.querySelectorAll(selector)].find((each) => !each.classList.contains('is-wired'));
-        row.querySelector('select').selectedOptions[0].textContent = 'not wired';
-      }, ROWS);
-    }
-    const onOutput = new Map();
-    (lastOutputs?.outputs || []).forEach((output) => (output.parts || []).forEach((id) => onOutput.set(id, String(output.address))));
-    const rowsNow = await page.evaluate((selector) =>
-      [...document.querySelectorAll(selector)].map((row) => {
-        const select = row.querySelector('select');
-        return {
-          id: row.dataset.part,
-          wired: row.classList.contains('is-wired'),
-          value: select.value,
-          shown: select.selectedOptions[0] ? select.selectedOptions[0].textContent : '',
-        };
-      }), ROWS);
-    const unwired = rowsNow.filter((row) => !onOutput.has(row.id));
-    const unwiredWrong = unwired.filter((row) => row.shown !== NOT_WIRED || row.wired || row.value !== 'none');
+
+    // The list against the droid's own answer: what this image moves (a
+    // control path that is neither the dome link nor none), less every Part
+    // an Output carries.
+    const claimed = new Set();
+    (lastOutputs?.outputs || []).forEach((output) => (output.parts || []).forEach((id) => claimed.add(id)));
+    const unusedNow = await page.evaluate((selector) => ({
+      expected: window.DroidParts.parts
+        .filter((part) => part.control !== null && part.control !== undefined && part.control !== 'dome-link')
+        .map((part) => part.id),
+      rows: [...document.querySelectorAll(selector)].map((row) => ({
+        id: row.dataset.part,
+        act: row.querySelector('[data-wire]')?.textContent.trim() || '',
+      })),
+      summary: document.getElementById('parts-unused-summary').textContent,
+    }), ROWS);
+    const expected = unusedNow.expected.filter((id) => !claimed.has(id));
+    const shownIds = unusedNow.rows.map((row) => row.id);
+    const missingUnused = expected.filter((id) => !shownIds.includes(id));
+    const strayUnused = shownIds.filter((id) => !expected.includes(id));
+    const noAct = unusedNow.rows.filter((row) => row.act !== 'Give it an output').map((row) => row.id);
+    const countOk = unusedNow.summary === `${shownIds.length} ${shownIds.length === 1 ? 'part' : 'parts'}`;
     check(
-      'every Part with no Output reads "- not wired -"',
-      lastOutputs !== null && unwired.length > 0 && unwiredWrong.length === 0,
+      'Unused lists every Part this image moves that no Output claims, and no other',
+      lastOutputs !== null && missingUnused.length === 0 && strayUnused.length === 0 && noAct.length === 0 && countOk,
       lastOutputs === null
         ? 'no Outputs answer was seen'
-        : `${unwired.length} unwired${unwiredWrong.length ? `; wrong: ${unwiredWrong.slice(0, 5).map((row) => `${row.id} shows "${row.shown}"`).join(', ')}` : ''}`,
+        : `${shownIds.length} rows, summary "${unusedNow.summary}"` +
+            (missingUnused.length ? `; missing ${missingUnused.join(', ')}` : '') +
+            (strayUnused.length ? `; claimed but listed ${strayUnused.join(', ')}` : '') +
+            (noAct.length ? `; no "Give it an output" on ${noAct.join(', ')}` : ''),
     );
-    const wiredRows = rowsNow.filter((row) => onOutput.has(row.id));
-    const wiredWrong = wiredRows.filter((row) => row.value !== onOutput.get(row.id) || !row.wired || row.shown === NOT_WIRED);
-    check(
-      'every Part on an Output shows that Output',
-      wiredWrong.length === 0,
-      `${wiredRows.length} wired${wiredWrong.length ? `; wrong: ${wiredWrong.map((row) => `${row.id} shows "${row.shown}"`).join(', ')}` : ''}`,
-    );
-    const catalogIds = new Set(groups.catalog);
-    const outputs = lastOutputs?.outputs || [];
-    const expectSummary =
-      `${groups.catalog.filter((id) => onOutput.has(id)).length} of ${groups.catalog.length} parts on an output \u00b7 ` +
-      `${outputs.filter((output) => (output.parts || []).length === 0).length} of ${outputs.length} outputs driving nothing`;
-    const summary = await page.textContent('#parts-summary');
-    check('summary counts match the droid\'s answer', summary.startsWith(expectSummary), `"${summary}"`);
-    const strangers = [...onOutput.keys()].filter((id) => !catalogIds.has(id));
-    if (strangers.length) console.log(`Note: the droid drives Parts this page does not know: ${strangers.join(', ')}`);
 
     const state2 = await hiddenRows(page);
-    check('no row hidden once answered', state2.hidden.length === 0, `${state2.total} rows, hidden: ${state2.hidden.join(', ') || 'none'}`);
-
-    // -----------------------------------------------------------------------
-    // Light-kind rows (#357)
-    // -----------------------------------------------------------------------
-    if (SELFTEST_UNLIGHT || SELFTEST_POSITION) {
-      await page.evaluate(([unlight, position]) => {
-        const light = document.querySelector('#parts-table tr.partkind-light');
-        if (!light) return;
-        if (position) light.insertAdjacentHTML('beforeend', '<td><span class="outputs-bar"></span>1500 \u00b5s</td>');
-        if (unlight) light.classList.remove('partkind-light');
-      }, [SELFTEST_UNLIGHT, SELFTEST_POSITION]);
-    }
-    const kinds = await page.evaluate(() => {
-      const table = document.querySelector('#parts-table table');
-      const headers = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
-      const lightIds = window.DroidParts.parts.filter((part) => part.kind === 'light').map((part) => part.id);
-      const drawnAway = '.outputs-bar, .outputs-now, .outputs-tick, .outputs-us, .outputs-width, .outputs-release, .outputs-throw, .outputs-motion';
-      const rows = [...table.querySelectorAll('tr[data-part]')].map((row) => ({
-        id: row.dataset.part,
-        light: lightIds.includes(row.dataset.part),
-        classed: row.classList.contains('partkind-light'),
-        tag: row.querySelector('.parts-kind')?.textContent.trim() || '',
-        cells: row.children.length,
-        drawn: row.querySelector(drawnAway) !== null,
-        micro: /\u00b5s/.test(row.querySelector('th').textContent),
-        border: getComputedStyle(row.querySelector('th')).borderLeftStyle,
-      }));
-      return { headers, lightIds, rows };
-    });
-    const lightRows = kinds.rows.filter((row) => row.light);
-    const positionHeaders = kinds.headers.filter((text) => /position|release|travel|throw/i.test(text));
-    const lightWrong = lightRows
-      .map((row) => {
-        const why = [];
-        if (!row.classed) why.push('no partkind-light');
-        if (row.tag !== 'light') why.push(`tag "${row.tag}"`);
-        if (row.border !== 'dashed') why.push(`heading border ${row.border}`);
-        if (row.cells !== kinds.headers.length) why.push(`${row.cells} cells under ${kinds.headers.length} columns`);
-        if (row.drawn) why.push('a position/release cell');
-        if (row.micro) why.push('a microsecond value');
-        return why.length ? `${row.id}: ${why.join(', ')}` : null;
-      })
-      .filter(Boolean);
-    const strayClass = kinds.rows.filter((row) => !row.light && row.classed).map((row) => row.id);
-    check(
-      'light Parts carry partkind-light and draw no position or release column',
-      lightRows.length > 0 && lightRows.length === kinds.lightIds.length && lightWrong.length === 0 && strayClass.length === 0 && positionHeaders.length === 0,
-      `${lightRows.length} light rows of ${kinds.lightIds.length} light Parts (${kinds.lightIds.join(', ')}); columns: ${kinds.headers.join(' | ')}` +
-        (positionHeaders.length ? `; a position/release column: ${positionHeaders.join(', ')}` : '') +
-        (lightWrong.length ? `; wrong: ${lightWrong.join('; ')}` : '') +
-        (strayClass.length ? `; partkind-light on a Part that is not a light: ${strayClass.join(', ')}` : ''),
-    );
+    check('no Unused row hidden once answered', state2.hidden.length === 0, `${state2.total} rows, hidden: ${state2.hidden.join(', ') || 'none'}`);
     await page.screenshot({ path: `${ARTIFACT_DIR}/parts-answered.png`, fullPage: true });
 
     // -----------------------------------------------------------------------
@@ -343,7 +222,7 @@ const hiddenRows = (page) =>
     // Anything the pointer can rest on, watched for removal from the document.
     await page.evaluate(() => {
       window.__removed = [];
-      const watched = 'tr[data-part], select, [data-marker], [data-act], tbody, table';
+      const watched = 'tr[data-part], [data-wire], [data-marker], [data-act], tbody, table';
       const observer = new MutationObserver((records) => {
         records.forEach((record) =>
           record.removedNodes.forEach((node) => {
@@ -354,7 +233,7 @@ const hiddenRows = (page) =>
           }),
         );
       });
-      ['parts-table', 'bodyview-drawing', 'bodyview-panel'].forEach((id) => {
+      ['parts-unused', 'bodyview-drawing', 'bodyview-panel'].forEach((id) => {
         const host = document.getElementById(id);
         if (host) observer.observe(host, { childList: true, subtree: true });
       });
@@ -431,18 +310,23 @@ const hiddenRows = (page) =>
       );
     };
 
-    // A table picker, on a Part the droid has nothing on where there is one.
-    const pickerRow = unwired[0] ? unwired[0].id : rowsNow[0].id;
-    await underPointer(
-      'a table picker',
-      `#parts-table [data-part="${pickerRow}"] select`,
-      SELFTEST_REBUILD
-        ? (sel) => {
-            const select = document.querySelector(sel);
-            select.replaceWith(select.cloneNode(true));
-          }
-        : null,
-    );
+    // An Unused row's act, where the list has one. Hovered, never pressed.
+    const unusedAct = await page.$(`${ROWS} [data-wire]`);
+    if (unusedAct) {
+      const actPart = await unusedAct.getAttribute('data-wire');
+      await underPointer(
+        'an Unused row\'s "Give it an output"',
+        `#parts-unused [data-wire="${actPart}"]`,
+        SELFTEST_REBUILD
+          ? (sel) => {
+              const button = document.querySelector(sel);
+              button.replaceWith(button.cloneNode(true));
+            }
+          : null,
+      );
+    } else {
+      report.add(report.rows.length + 1, 'an Unused row\'s "Give it an output" stays the same node under the pointer', lib.NOT_ASSESSED, 'every Part is on an output');
+    }
 
     // The droid picture: pick a marker (selection only), then rest on it and
     // on an act button in its panel. Never pressed.
@@ -452,7 +336,7 @@ const hiddenRows = (page) =>
       await marker.click();
       await page.waitForTimeout(300);
       const state3 = await hiddenRows(page);
-      check('no row hidden with a Part picked', state3.hidden.length === 0, `${state3.total} rows, hidden: ${state3.hidden.join(', ') || 'none'}`);
+      check('no Unused row hidden with a Part picked', state3.hidden.length === 0, `${state3.total} rows, hidden: ${state3.hidden.join(', ') || 'none'}`);
 
       // The pick survives the once-a-second Outputs reads (#352).
       const readPick = () =>
@@ -512,7 +396,7 @@ const hiddenRows = (page) =>
     await page.route('**/api/servo/outputs*', refuse);
     await page.waitForTimeout(3500);
     const state4 = await hiddenRows(page);
-    check('no row hidden while the Outputs read fails', state4.hidden.length === 0, `${state4.total} rows, hidden: ${state4.hidden.join(', ') || 'none'}`);
+    check('no Unused row hidden while the Outputs read fails', state4.hidden.length === 0, `${state4.total} rows, hidden: ${state4.hidden.join(', ') || 'none'}`);
     await page.screenshot({ path: `${ARTIFACT_DIR}/parts-read-failing.png` });
     await page.unroute('**/api/servo/outputs*', refuse);
 

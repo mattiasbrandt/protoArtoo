@@ -606,8 +606,9 @@
     }
 
     // A wire carrying a light that lights nothing declared is worth saying: the
-    // strip is on and the droid cannot say what it is lighting. A Part is given
-    // its wire on Parts, so that is where this points.
+    // strip is on and the droid cannot say what it is lighting. A Part is put
+    // on its Output on Wiring (operator, 2026-09-28 on #411), so that is where
+    // this points.
     if (spareNote) {
       const carried = OUTPUTS.list().filter((wire) => wire.light);
       const spare = carried.length > lit;
@@ -615,8 +616,8 @@
       if (spare) {
         const many = carried.length - lit > 1;
         spareNote.textContent = many
-          ? `${carried.length - lit} wires carry a light with nothing on them. Give each one its Part on Parts.`
-          : `A wire carries an ${carried[0].light.label} with no light on it. Give one its wire on Parts.`;
+          ? `${carried.length - lit} wires carry a light with nothing on them. Give each one its Part on Wiring.`
+          : `A wire carries an ${carried[0].light.label} with no light on it. Give one its wire on Wiring.`;
       }
     }
   };

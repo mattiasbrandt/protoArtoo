@@ -84,11 +84,12 @@
 //           the surface's own showModal() helper (data/seq.js). Cancel closes
 //           it; nothing is restored. The wipe dialog is the same helper and
 //           needs a stored sequence, so it is not opened separately.
-//   parts,  the move question, opened through the page the way a builder
+//   wiring, the move question, opened through the page the way a builder
 //   servo   opens it: the surface asks it only for a move that takes a Part off
 //           the Output it is on and puts it on another (data/parts_mapping.js
-//           moveFor, `announce`). On Parts, a Part already on an Output has
-//           another Output chosen in its row's picker; on Servos, a Part
+//           moveFor, `announce`). On Wiring, a Part already on an Output has
+//           another Output chosen in its row of the part-first picker (moved
+//           there from Parts, #411); on Servos, a Part
 //           already on one Output is picked in another Output's "Put a part
 //           on" picker. Either change reaches the page's own mover.request(),
 //           which opens the dialog - no POST is sent until the question is
@@ -189,10 +190,10 @@ const DIALOGS = {
       if (await cancel.isVisible()) await cancel.click({ timeout: 3000 });
     },
   },
-  parts: moveQuestion('#parts-move-dialog', async (page) => {
+  wiring: moveQuestion('#wiring-move-dialog', async (page) => {
     // A Part row whose picker shows an Output, and another Output to choose.
     const pick = await page.evaluate(() => {
-      for (const row of document.querySelectorAll('#parts-table [data-part]')) {
+      for (const row of document.querySelectorAll('#wiring-parts-table [data-part]')) {
         const select = row.querySelector('select');
         if (!select || select.disabled || select.value === 'none') continue;
         const other = [...select.options].find((option) => option.value !== 'none' && option.value !== select.value);
@@ -201,7 +202,7 @@ const DIALOGS = {
       return null;
     });
     if (!pick) return null;
-    await page.selectOption(`#parts-table [data-part="${pick.part}"] select`, pick.to, { timeout: 5000 });
+    await page.selectOption(`#wiring-parts-table [data-part="${pick.part}"] select`, pick.to, { timeout: 5000 });
     return `${pick.part} to ${pick.to}`;
   }),
   servo: moveQuestion('#outputs-move-dialog', async (page) => {

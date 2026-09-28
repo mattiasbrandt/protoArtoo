@@ -29,7 +29,7 @@ test("taking a Part off another Output from Servos is asked in the part-first ta
   assert.equal(
     env.byId("outputs-move-body").textContent,
     "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
-      "ARM1 keeps driving Right body door. Upper utility arm is on ARM3 too — they will move together.",
+      "ARM1 keeps Right body door. Upper utility arm is on ARM3 too — they will move together.",
   );
 
   env.answerMove(true);

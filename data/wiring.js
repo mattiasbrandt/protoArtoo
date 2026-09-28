@@ -4,9 +4,11 @@
 // Wiring (CONTEXT.md "Wiring"): the destination that answers the one question
 // no other screen can -- "I am holding a servo wire: which output does it go
 // to, and which part will it move?" The sheet is a reference, not a control
-// surface: it writes nothing, and no act on it reaches the droid. The Outputs
-// plates under it are the one thing on this surface that writes, and they are
-// data/output_settings.js's, mounted by the screen caller below.
+// surface: it writes nothing, and no act on it reaches the droid. What writes
+// is under it, mounted by the screen caller below and never part of the
+// sheet: the Outputs plates (data/output_settings.js), and the part-first
+// picker that puts a Part on an Output, with its move question
+// (data/parts_mapping.js picker(); operator, 2026-09-28 on #411).
 //
 // EVERYTHING ON IT IS GENERATED. The wires come from the Board Lanes the
 // running firmware reports (GET /api/identity), the Outputs from
@@ -76,29 +78,12 @@
   //
   // The operator's words from the Wiring design review (#411): "The wires"
   // for the loom, "Power wiring" for the shared rail. The section the sheet
-  // used to call "What this image will drive" is gone - which part an Output
-  // moves is the Parts mapping's job - and only its "Unused" list stays, as
-  // the last section on the page (operator, 2026-09-19).
+  // used to call "What this image will drive" is gone (operator, 2026-09-19),
+  // and its last list, the Parts no Output claims, went to Parts (operator,
+  // 2026-09-28: it "makes more sense to have in the parts page").
   const PLATES = Object.freeze({
     wires: "The wires",
     rail: "Power wiring",
-    unused: "Unused",
-  });
-
-  // ---------------------------------------------------------------------------
-  // Unused
-  //
-  // A Part no Output claims: the one list the sheet keeps. Its token is the
-  // Availability Reason for exactly this (CONTEXT.md "Availability Reason"),
-  // and it rides on each row so a reader does not re-derive it. `footnote` is
-  // what the foot of the sheet says about the list, written beside it.
-  // ---------------------------------------------------------------------------
-  const UNUSED = Object.freeze({
-    id: "part-not-assigned",
-    noun: ["part", "parts"],
-    footnote:
-      "<b>Unused</b>: no output claims the part. Moves you author for it wait until " +
-      "one does.",
   });
 
   // ---------------------------------------------------------------------------
@@ -131,30 +116,6 @@
   // the saved bench copy has no page under it either.
   const OUTPUTS_PLATE = "Outputs";
   const SWITCHES_PLACE = "Configuration";
-
-  // Where a Part is put on an Output. Parts is the surface that owns that act,
-  // and it is a destination that exists.
-  const PARTS_ROUTE = '<a href="/parts.html">Parts</a>';
-
-  // ---------------------------------------------------------------------------
-  // The rows
-  // ---------------------------------------------------------------------------
-
-  // What this image could move at all, which is what bounds the promise. A
-  // Part whose control path is the dome link is the Dome Controller's to move,
-  // not this image's, and a Part that declares no control path (the two dome
-  // orientation fixtures) is not moved by anything. Both are named and counted
-  // on the sheet rather than dropped -- see outOfScopeHtml() -- because a bound
-  // a builder cannot see is indistinguishable from a row that went missing.
-  //
-  // This is the first reader of the catalog's `control` field in the browser,
-  // and it is reading it for the question the field answers: what path a Part
-  // CAN be driven through on the design. What drives it on THIS droid is still
-  // the Servo Output rows and never this field (#375), which is the join below.
-  const drivableHere = (part) =>
-    part.control !== null && part.control !== undefined && part.control !== "dome-link";
-
-  const outOfScope = (part) => !drivableHere(part);
 
   // ---------------------------------------------------------------------------
   // Finding a signal's Component Toggle
@@ -198,20 +159,6 @@
     const label = entry ? entry.label : null;
     return typeof label === "string" && label !== "" ? label : "";
   };
-
-  // The model's `outputs` are data/outputs.js's Outputs, in the firmware's
-  // order. This file knows no Output of its own - which exist, what each is
-  // called and whether it is wired are the running firmware's answer
-  // (operator, 2026-09-19 on #411) - and asks that module which one a Part is
-  // on rather than working it out again.
-  const unusedRows = ({ parts = [], outputs = [] } = {}) =>
-    parts
-      .filter((part) => drivableHere(part) && !window.PAOutputs.forPart(part.id, outputs))
-      .map((part) => ({
-        tier: UNUSED.id,
-        part,
-        why: `No output claims ${esc(part.name)}. Put it on one in ${PARTS_ROUTE}.`,
-      }));
 
   // ---------------------------------------------------------------------------
   // The Board Lanes: the serial links, one wire each
@@ -516,8 +463,8 @@
   // lane's own wire now, after the board's label.
   //
   // Which part an Output moves is on its box, because that is what is on the
-  // end of the wire; which Output a part should be on is the Parts mapping's
-  // job, and this sheet does not answer it.
+  // end of the wire. Which Output a part should be on is the picker's under
+  // the sheet, and the sheet itself does not answer it.
   // ---------------------------------------------------------------------------
   const partNames = (parts, ids) => {
     const byId = new Map(parts.map((part) => [part.id, part.name]));
@@ -607,92 +554,6 @@
   };
 
   // ---------------------------------------------------------------------------
-  // The tables
-  // ---------------------------------------------------------------------------
-
-  // A part's design name, and the three things that field can say. `cadName`
-  // absent is a name nobody has read out of the design files yet; `cadName`
-  // null is a part the design does not carry at all, which is what marks a
-  // Common Addition (data/droid_parts.js). Wiring is the declared bridge
-  // between the two naming systems (CONTEXT.md "Part"), so neither case prints
-  // as a blank cell a builder would read as a missing row.
-  const designNameHtml = (part) => {
-    if (typeof part.cadName === "string" && part.cadName !== "") {
-      return `<span class="wiring-cad">${esc(part.cadName)}</span>`;
-    }
-    if (part.cadName === null) {
-      return '<span class="wiring-dim">a common addition, no design name</span>';
-    }
-    return '<span class="wiring-dim">not read out of the design files yet</span>';
-  };
-
-  const whereHtml = (part) => {
-    const position = part.position ? esc(part.position) : "";
-    const bearing = typeof part.bearingDeg === "number" ? `${part.bearingDeg}&deg;` : "";
-    if (position && bearing) return `${position} · ${bearing}`;
-    return position || bearing || '<span class="wiring-dim">wherever you wired it</span>';
-  };
-
-  const partNameHtml = (part) => {
-    const shorthand = part.shorthand
-      ? ` <span class="wiring-shorthand">${esc(part.shorthand)}</span>`
-      : "";
-    const kind = part.kind ? ` <span class="wiring-kind">${esc(part.kind)}</span>` : "";
-    return `${esc(part.name)}${shorthand}${kind}`;
-  };
-
-  const whyCellHtml = (why) => (why ? `<span class="wiring-why">${why}</span>` : "");
-
-  // The Unused list: a part, its design name, where it sits on the droid, and
-  // the next move. No Output column - every row in it has none.
-  const unusedTableHtml = (rows) =>
-    '<table class="wiring-table"><thead><tr>' +
-    "<th>Part</th><th>Design name</th><th>Where</th><th>Why</th>" +
-    "</tr></thead><tbody>" +
-    rows
-      .map(
-        (row) =>
-          `<tr class="wiring-row" data-tier="${row.tier}" data-part="${
-            escAttr(row.part.id)
-          }">` +
-          `<th scope="row">${partNameHtml(row.part)}</th>` +
-          `<td class="wiring-design">${designNameHtml(row.part)}</td>` +
-          `<td>${whereHtml(row.part)}</td>` +
-          `<td class="wiring-reason">${whyCellHtml(row.why)}</td></tr>`
-      )
-      .join("") +
-    "</tbody></table>";
-
-  // ---------------------------------------------------------------------------
-  // The bound, said out loud
-  //
-  // The parts this image does not move are named and counted rather than
-  // filtered away in silence. No row is hidden (#296): a row that is outside
-  // the promise is outside it for a reason the sheet states, and this one
-  // carries no link and no destination because there is nothing for a builder
-  // to do about it -- a settled no (CONTEXT.md "Availability Family").
-  // ---------------------------------------------------------------------------
-  const outOfScopeHtml = (parts) => {
-    const outside = parts.filter(outOfScope);
-    if (outside.length === 0) return "";
-    const domeLink = outside.filter((part) => part.control === "dome-link").length;
-    const noPath = outside.length - domeLink;
-    const clauses = [];
-    if (domeLink > 0) {
-      clauses.push(
-        `${plural(domeLink, ["part", "parts"])} the Dome Controller moves over the dome link`
-      );
-    }
-    if (noPath > 0) {
-      clauses.push(`${plural(noPath, ["part", "parts"])} nothing on this droid moves at all`);
-    }
-    return (
-      `<p class="hint wiring-bound">Outside this sheet: ${clauses.join(" and ")}. ` +
-      `This image sends them no signal.</p>`
-    );
-  };
-
-  // ---------------------------------------------------------------------------
   // The two pieces that do not depend on what the droid answered
   //
   // They are generated anyway, and that is the point: the subtitle and the
@@ -725,24 +586,6 @@
     `idle draw.</div>`;
 
   // ---------------------------------------------------------------------------
-  // The footnote under Unused
-  //
-  // What the list means, and - when any row carries one - what a design name
-  // is. A line for a column the sheet does not show is never written.
-  // ---------------------------------------------------------------------------
-  const footnoteHtml = (rows) => {
-    if (rows.length === 0) return "";
-    const lines = [`<li>${UNUSED.footnote}</li>`];
-    if (rows.some((row) => typeof row.part.cadName === "string" && row.part.cadName !== "")) {
-      lines.push(
-        "<li><b>Design name</b> is the part's name in the files you printed it from, the " +
-          "same one your slicer shows. Label the wire with it.</li>"
-      );
-    }
-    return `<ul class="wiring-footnote">${lines.join("")}</ul>`;
-  };
-
-  // ---------------------------------------------------------------------------
   // wiringDocument()
   // The whole sheet, as markup, from one read of the droid. Pure: the minute it
   // is stamped with arrives in the model as a sheetStamp() string, so the
@@ -750,13 +593,11 @@
   // pictures print.
   // ---------------------------------------------------------------------------
   const wiringDocument = (model = {}) => {
-    const parts = model.parts || [];
     const droidName = typeof model.droidName === "string" ? model.droidName : "";
     const boardName = typeof model.boardName === "string" ? model.boardName : "";
     const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
     const made = { droidName, stamp };
     const wires = sheetWires(model);
-    const unused = unusedRows(model);
     const idle = wires.filter((wire) => !wire.live).length;
 
     return {
@@ -770,17 +611,10 @@
       stamp,
       fileName: sheetFileName(droidName, stamp),
       wires,
-      unused,
       wiresSummary: `${plural(wires.length, ["wire", "wires"])} · ${idle} not wired`,
       wiresHtml: wires.length
         ? wiresDiagramHtml(wires, made, boardName)
         : '<p class="hint">This image reports no wires to draw.</p>',
-      unusedSummary: plural(unused.length, UNUSED.noun),
-      unusedHtml:
-        (unused.length
-          ? unusedTableHtml(unused)
-          : '<p class="hint">Every part is on an output.</p>') + outOfScopeHtml(parts),
-      footnoteHtml: footnoteHtml(unused),
     };
   };
 
@@ -798,21 +632,21 @@
   // own paper (see "The paper beneath the stylesheet"), and the tables and
   // prose are plain HTML a browser prints legibly on its own. The one <link> is
   // an icon that is an empty data: URL, because without one a browser goes
-  // looking for a favicon beside the file. And <base> points back at the droid
-  // that made it, so the "Put it on an output in Parts" links still reach Parts
-  // when this is opened from a download folder rather than resolving against
-  // the disk.
+  // looking for a favicon beside the file. It carries no link back to the
+  // droid: the Unused list's links to Parts were the last, and that list is
+  // Parts' own now (#411).
   //
-  // WHAT IT LEAVES OUT: Unused. The screen keeps it, last; the bench copy is
-  // the wires and their power, and a list of parts nothing claims is not
-  // something a builder takes to the bench (operator, 2026-09-19 on #411).
+  // WHAT IT LEAVES OUT: everything that writes - the Outputs plates and the
+  // part-first picker are the screen's, mounted beside the sheet and never
+  // made by the generator. The bench copy is the wires and their power
+  // (operator, 2026-09-19 on #411).
   //
   // `boardArt` is the one thing the file is handed besides the sheet: the
   // board's picture, already made standalone by the caller (boardArtForFile()),
   // put into every board slot the generator left. Without it the slots stay
   // empty and the board is a plain block, which is still a true sheet.
   // ---------------------------------------------------------------------------
-  const wiringSheetFile = (sheet, origin = "", boardArt = "") => {
+  const wiringSheetFile = (sheet, boardArt = "") => {
     const madeAt = stampText(sheet.stamp);
     const about = sheet.droidName ? `${sheet.droidName} - ${madeAt}` : madeAt;
     const pictured = (html) =>
@@ -822,7 +656,6 @@
       '<html lang="en"><head><meta charset="utf-8">' +
       `<title>Wiring - ${esc(about)}</title>` +
       '<link rel="icon" href="data:,">' +
-      (origin ? `<base href="${escAttr(origin)}/">` : "") +
       "</head><body>" +
       `<h1>Wiring</h1>` +
       `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
@@ -840,7 +673,6 @@
     CADENCE,
     PLATES,
     sheetWires,
-    unusedRows,
     loomRows,
     promiseHtml,
     railHtml,
@@ -894,13 +726,23 @@
   write("wiring-rail", railHtml());
   write("wiring-wires-heading", esc(PLATES.wires));
   write("wiring-rail-heading", esc(PLATES.rail));
-  write("wiring-unused-heading", esc(PLATES.unused));
 
-  // The Outputs plates under the sheet: the one control on this surface, drawn
-  // and saved by data/output_settings.js from the answer the sheet reads.
+  // The Outputs plates under the sheet, drawn and saved by
+  // data/output_settings.js from the answer the sheet reads.
   window.PAOutputSettings?.mount("wired", {
     body: document.getElementById("wiring-outputs-body"),
     feedback: document.getElementById("wiring-outputs-feedback"),
+  });
+
+  // And under them the part-first picker, where a Part is put on an Output,
+  // moved with the question first, or taken off (data/parts_mapping.js
+  // picker(), #347). Mounted here and never made by wiringDocument(): the
+  // printed sheet stays a reference that writes nothing (CONTEXT.md "Wiring").
+  window.PAParts?.picker({
+    table: document.getElementById("wiring-parts-table"),
+    summary: document.getElementById("wiring-parts-summary"),
+    feedback: document.getElementById("wiring-parts-feedback"),
+    dialog: document.getElementById("wiring-move-dialog"),
   });
 
   // ---------------------------------------------------------------------------
@@ -969,9 +811,6 @@
     const sheet = wiringDocument({ ...model(), stamp });
     write("wiring-wires-summary", sheet.wiresSummary);
     write("wiring-wires", sheet.wiresHtml);
-    write("wiring-unused-summary", sheet.unusedSummary);
-    write("wiring-unused", sheet.unusedHtml);
-    write("wiring-footnote", sheet.footnoteHtml);
     fillBoardArt();
     return sheet;
   };
@@ -1003,7 +842,7 @@
     }
     try {
       const sheet = paint(sheetStamp(new Date()));
-      const file = inkedForFile(wiringSheetFile(sheet, window.location?.origin || "", boardArtForFile()));
+      const file = inkedForFile(wiringSheetFile(sheet, boardArtForFile()));
       if (savedUrl) URL.revokeObjectURL(savedUrl);
       savedUrl = URL.createObjectURL(new Blob([file], { type: "text/html" }));
       saveLink.setAttribute("href", savedUrl);
@@ -1021,6 +860,15 @@
   };
 
   saveLink?.addEventListener("click", saveSheet);
+
+  // A Part moved in the picker lands on the droid and is read back, and the
+  // wire it now hangs off names it: the sheet follows every read of the
+  // Outputs once the droid has answered. Only while Wiring is on screen - the
+  // other surfaces read the same module, and a sheet repainted out of sight
+  // is repainted again on the way back (loadSheet() below).
+  window.PAOutputs.onChange(() => {
+    if (answered && document.body?.dataset?.page === "wiring") paint();
+  });
 
   // One section for one answer. The sheet is a join of three reads and a half
   // answer is not a sheet -- a table painted from outputs the droid reported
@@ -1042,10 +890,9 @@
   // surface, and POST /api/identity republishes it (data/shell.js).
   //
   // It repaints only once the droid's own table has answered. The lanes alone
-  // would draw a sheet with every part under "Unused" and no outputs
-  // at all - which is the right answer for a fresh droid and a wrong one for
-  // every other, so it is not a sheet worth flashing up on the way to the real
-  // one.
+  // would draw a sheet with no outputs at all - which is the right answer for
+  // a fresh droid and a wrong one for every other, so it is not a sheet worth
+  // flashing up on the way to the real one.
   window.addEventListener("pa:identity-available", (event) => {
     identity = event.detail;
     if (answered) paint();
@@ -1057,6 +904,7 @@
       "/outputs.js": "the outputs",
       "/wiring.js": "the wiring sheet",
       "/output_settings.js": "the outputs",
+      "/parts_mapping.js": "the parts on each output",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {
       label: "the wiring sheet",
@@ -1068,7 +916,7 @@
   // Owned by this surface, so the shell stops it when the operator leaves and
   // starts it again on the way back (#360). There is no cadence: a reference
   // surface has no live reading to keep up with, and the one thing that must
-  // not go stale is the sheet after a Part was moved on Parts - which is a
+  // not go stale is the sheet after a Part was moved on Servos - which is a
   // return, not a tick.
   //
   // A return is `runOnStart`, because the shell restarts a surface's polls on
