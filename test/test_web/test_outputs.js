@@ -230,7 +230,7 @@ test("a refused act names its Output from what was sent, never in the droid's se
     {
       sent: { movePart: "doorFL", movePartFrom: "ledc:0", movePartTo: "ledc:4" },
       status: 409,
-      body: { error: "that Output already drives as many Parts as it can - move one off it first",
+      body: { error: "that Output already has as many Parts as it can take - move one off it first",
         field: "movePartTo", reason: "conflict" },
       says: "GPIO 5",
     },

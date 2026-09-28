@@ -88,7 +88,7 @@ bool oneOutputUndriven(uint8_t armId, char* reason, size_t reasonSize) {
     if (outputWirePinKeptForLight(saved, armId)) {
         snprintf(reason, reasonSize, "%s carries a light, not a servo.", name);
     } else if (saved.wired) {
-        snprintf(reason, reasonSize, "Restart the droid to drive %s.", name);
+        snprintf(reason, reasonSize, "Restart the droid to use %s.", name);
     } else {
         snprintf(reason, reasonSize, "%s is not wired. Mark it on Wiring.", name);
     }

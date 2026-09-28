@@ -1085,7 +1085,7 @@ void test_servo_refuses_an_output_nothing_drives_since_boot() {
     WebRequestTestBackend hold;
     post("ARM2", "hold", hold);
     TEST_ASSERT_EQUAL_INT(409, hold.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(hold.sentBody, "Restart the droid to drive ARM2."));
+    TEST_ASSERT_NOT_NULL(strstr(hold.sentBody, "Restart the droid to use ARM2."));
 
     // Pulses off too: it answers for an Output as much as a move does.
     WebRequestTestBackend release;
