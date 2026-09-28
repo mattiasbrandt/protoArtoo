@@ -1850,22 +1850,6 @@ input[type="number"]::-webkit-inner-spin-button {
   font-size: 0.82rem;
 }
 
-/* A compact number box, inline in a row of acts: the typed pulse width on
-   Servos. It keeps a 44 px target, which is the bench tablet's floor, and takes
-   the frame's own focus ring rather than a second spelling of one. */
-input.input-narrow {
-  width: 108px;
-  min-height: 44px;
-  padding: var(--space-sm) var(--space-md);
-  color: var(--text);
-  background: color-mix(in srgb, var(--lift) 4%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  font: inherit;
-  font-size: var(--fs-cell);
-  transition: border-color 0.2s ease;
-}
-
 .field-checkbox {
   display: flex;
   align-items: center;
@@ -6624,10 +6608,10 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .outputs-address {
-  margin-left: var(--space-xs);
+  margin-left: var(--space-sm);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .outputs-parts {
@@ -6639,25 +6623,29 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-dim);
 }
 
+/* The commanded position: a slim well, the width the controller has put on
+   the pin as its fill, and the tick where the move ends. A readout, so it is
+   drawn in the inks and never in the interaction blue. */
 .outputs-bar {
   position: relative;
-  height: 10px;
-  min-width: 6rem;
+  height: 6px;
+  min-width: 7rem;
   background: var(--well);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .outputs-now {
   width: 0;
   height: 100%;
-  background: var(--silver);
+  border-radius: var(--radius-pill);
+  background: var(--text-dim);
 }
 
 .outputs-tick {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: -3px;
+  bottom: -3px;
   left: 0;
   width: 2px;
   margin-left: -1px;
@@ -6672,14 +6660,14 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-us {
   display: block;
-  margin-top: var(--space-2xs);
+  margin-top: var(--space-xs);
   font-family: var(--font-mono);
   font-size: var(--fs-sect);
+  font-variant-numeric: tabular-nums;
   color: var(--text-dim);
 }
 
 .outputs-release {
-  font-size: var(--fs-sect);
   color: var(--text-dim);
 }
 
@@ -6729,104 +6717,362 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* ---------------------------------------------------------------------------
-   Parts (#364): the calibration dial
+   Servos (#399, operator review 2026-09-28: "way too cluttered, too many
+   simply ugly square boxes").
 
-   A panel below the output-first table, never a modal: the builder is looking
-   at the droid, not at the page, and a modal would cover the table they are
-   calibrating against (the reference project puts its dial in the same place,
-   r2d2-astromech-simulator v1.79.0).
-
-   Its own block, added beside the Parts rules rather than editing them: the
-   Surface Anatomy sweep (#395, ADR 0066) re-draws this whole destination
-   later, and a slice that restyled shared rules on the way would have to be
-   unpicked. No emoji on any control here, per that same decision - every one
-   of them is the word #291 settled.
-
-   The slider is the dial. It is the one control that must never be rebuilt
-   under the pointer, which is a rule in data/parts.js rather than here; what
-   this adds is that it is wide enough to drive a part with at the bench.
-
-   Every size here is one of the anatomy's type steps, picked by the job the
-   text does rather than by what it used to measure: a button is --fs-cell, a
-   sentence the panel says about the output is --fs-cell, a caption beside a
-   control is --fs-hint, and the commanded width is --fs-readout, the same step
-   the anatomy's own dial paints that number at.
+   One Output is one <tbody> of two lines (data/servo.js outputRowHtml): the
+   main line - name, what it drives, where it was told to go, the drive acts
+   and the two row acts - and under it one quiet line of how it lets go, how
+   it moves and what it does at power-up, each named inline. A seam divides
+   one Output from the next; nothing inside an Output is boxed.
    --------------------------------------------------------------------------- */
-.outputs-acts {
+.outputs-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.outputs-table thead th:last-child {
+  text-align: right;
+}
+
+.outputs-table .outputs-row th,
+.outputs-table .outputs-row td {
+  height: auto;
+  border-bottom: 0;
+  vertical-align: middle;
+}
+
+.outputs-table .outputs-main > th,
+.outputs-table .outputs-main > td {
+  padding: var(--space-md) var(--space-md) var(--space-2xs);
+}
+
+.outputs-table .outputs-sub > td {
+  padding: 0 var(--space-md) var(--space-md);
+}
+
+.outputs-table .outputs-row > tr:last-child > td,
+.outputs-table .outputs-row th[scope="row"] {
+  border-bottom: 1px solid var(--border);
+}
+
+.outputs-table .outputs-row th[scope="row"] {
+  vertical-align: top;
+  padding-top: var(--space-md);
   white-space: nowrap;
 }
 
-.outputs-acts .btn {
-  margin-right: var(--space-2xs);
+.outputs-table .outputs-row .parts-name {
+  font-weight: 600;
+}
+
+.outputs-table .outputs-row:hover > tr > th,
+.outputs-table .outputs-row:hover > tr > td {
+  background: color-mix(in srgb, var(--lift) 2%, var(--surface));
+}
+
+.outputs-row.is-held th {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* What it drives, with the part picker under it as a quiet line rather than a
+   form field: a pick is a request, and the cell's first word is the answer. */
+.outputs-drives .parts-output {
+  max-width: 22ch;
+  min-height: 26px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-sect);
+  padding: 0;
+}
+
+.outputs-drives .parts-output:hover,
+.outputs-drives .parts-output:focus-visible {
+  color: var(--text);
+}
+
+/* Driving an Output from its row (#412): the typed width, then the four drive
+   acts as one joined control - four answers to "where to?" - or the one
+   sentence that says why the row offers none. */
+.outputs-drive {
+  white-space: nowrap;
+}
+
+.outputs-drive-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.outputs-drive-acts[hidden] {
+  display: none;
+}
+
+.outputs-drive-acts .outputs-width {
+  width: 72px;
+}
+
+.outputs-go-group {
+  display: inline-flex;
+}
+
+.outputs-go-group > .btn {
+  border-radius: 0;
+  background: transparent;
+}
+
+.outputs-go-group > .btn + .btn {
+  margin-left: -1px;
+}
+
+.outputs-go-group > .btn:first-child {
+  border-radius: var(--radius-xs) 0 0 var(--radius-xs);
+}
+
+.outputs-go-group > .btn:last-child {
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+}
+
+.outputs-go-group > .btn:hover {
+  position: relative;
+  background: var(--surface-alt);
+}
+
+.outputs-drive-note {
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+/* The two row acts: calibrate is the one this surface is for, so it takes
+   the accent edge; pulses off is quiet. */
+.outputs-acts {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.outputs-acts .btn + .btn {
+  margin-left: var(--space-2xs);
 }
 
 .outputs-acts .btn[hidden] {
   display: none;
 }
 
-.outputs-row.is-held th {
-  border-left: 2px solid var(--accent);
+.outputs-acts .outputs-calibrate {
+  border-color: var(--accent);
 }
 
+/* The settings line: each setting a mono name and its control, side by side
+   and wrapping, in the voice of a caption rather than a form. */
+.outputs-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-xl);
+  font-size: var(--fs-sect);
+  color: var(--text-dim);
+}
+
+.outputs-motion {
+  display: contents;
+}
+
+.outputs-setting {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.outputs-setting[hidden],
+.outputs-boot-risk[hidden] {
+  display: none;
+}
+
+.outputs-setting-name {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.outputs-motion-word {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.outputs-motion-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.outputs-motion-field .number-cell {
+  width: 64px;
+  min-height: 26px;
+  font-size: var(--fs-sect);
+}
+
+/* The two small pickers on the line: the shared .seg at caption size. */
+.outputs-settings .seg > button {
+  min-height: 26px;
+  padding: 0 var(--space-sm);
+  font-size: var(--fs-sect);
+}
+
+.outputs-boot-risk {
+  color: var(--warning);
+}
+
+/* ---------------------------------------------------------------------------
+   The calibration dial (#291, #364, ADR 0064), redrawn with the rows (#399).
+
+   It opens under the rows for one Output at a time, never as a modal: the
+   builder is looking at the droid, not at the page. Not a box on the card - a
+   seam over it and the accent down its edge, so it reads as the row it came
+   from opened up. Grouped by what the builder does in turn: drive the part,
+   record an end, then the tools and the way out.
+
+   The slider is the dial. It is the one control that must never be rebuilt
+   under the pointer, which is a rule in data/servo.js rather than here; what
+   this adds is that it is wide and tall enough to drive a part with at the
+   bench.
+   --------------------------------------------------------------------------- */
 .cal-panel {
+  display: grid;
+  gap: var(--space-md);
   margin-top: var(--space-lg);
-  padding: var(--space-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--well);
+  padding: var(--space-lg) 0 0 var(--space-lg);
+  border-top: 1px solid var(--border-strong);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .cal-panel[hidden] {
   display: none;
 }
 
+.cal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-xl);
+}
+
 .cal-panel h4 {
-  margin-bottom: var(--space-xs);
-  color: var(--silver-bright);
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-h2);
 }
 
 .cal-band {
-  margin-bottom: var(--space-sm);
-  font-size: var(--fs-cell);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
   color: var(--text-dim);
+}
+
+.cal-desc {
+  margin: 0;
 }
 
 .cal-drive {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-xs);
-  margin-bottom: var(--space-sm);
+  gap: var(--space-md);
 }
 
-/* The dial itself. flex-basis keeps it the widest thing in the row, so a drag
-   covers the band in a usable number of pixels. */
-.cal-slider {
+/* The dial itself, as the product's fader at bench scale: flex-basis keeps it
+   the widest thing on the line, so a drag covers the band in a usable number
+   of pixels, and it is tall enough to be aimed at. */
+.cal-slider.fader {
   flex: 1 1 18rem;
   min-width: 12rem;
+  height: 20px;
+}
+
+.cal-slider.fader::-webkit-slider-thumb {
+  width: 8px;
+  height: 20px;
+}
+
+.cal-slider.fader::-moz-range-track,
+.cal-slider.fader::-moz-range-progress {
+  height: 20px;
+}
+
+.cal-slider.fader::-moz-range-thumb {
+  width: 8px;
+  height: 20px;
 }
 
 /* The number the dial is standing at, and the one thing on this panel a builder
    reads at arm's length while looking at the droid rather than at the page. The
    floor is in ch of its own mono face, so it holds the widest string it can
-   ever show ("2500 µs") without the row reflowing as the value changes. */
+   ever show ("2500 µs") without the line reflowing as the value changes. */
 .cal-readout {
   min-width: 7ch;
   font-family: var(--font-mono);
   font-size: var(--fs-readout);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
   color: var(--text);
+}
+
+/* Record an end: the three captures as one joined control, and the ends the
+   row holds beside it. */
+.cal-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md) var(--space-xl);
+}
+
+.cal-sets {
+  flex: 0 0 auto;
+}
+
+.cal-sets > button {
+  min-height: 36px;
+  padding: 0 var(--space-xl);
+  color: var(--text);
+}
+
+.cal-sets > button:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.cal-sets > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cal-ends {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+/* The tools on the left and the way out on the right, one line. */
+.cal-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
 }
 
 .cal-acts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-xs);
-  margin-bottom: var(--space-sm);
-}
-
-.cal-acts .btn {
-  padding: var(--space-2xs) var(--space-sm);
+  gap: var(--space-2xs);
 }
 
 /* An explanation for a control that moves something is visible text at the
@@ -6834,25 +7080,20 @@ body[data-page="maintenance"] .status-item .hint {
 .cal-hint {
   margin-right: var(--space-sm);
   font-size: var(--fs-hint);
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 /* A narrowing that is on. Not a Status Color -- #327 reserves those for state
    -- so it reads as a pressed control rather than as a warning. */
 .cal-acts .btn.is-on {
   border-color: var(--accent);
-  color: var(--silver-bright);
-}
-
-.cal-ends {
-  margin-bottom: var(--space-sm);
-  font-family: var(--font-mono);
-  font-size: var(--fs-cell);
-  color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text);
 }
 
 .cal-note {
   min-height: 1.2em;
+  margin: 0;
   font-size: var(--fs-cell);
 }
 
@@ -7109,15 +7350,6 @@ body[data-page="maintenance"] .status-item .hint {
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Back to centre, on the output-first table (#365)
-
-   The act sits above the rows it acts on, with its one line of answer beside
-   it: a button and a sentence on one line, wrapping to two on a narrow bench
-   tablet rather than squeezing either. The sentence is a .feedback, so it takes
-   the three outcome colors every other answer on this page takes, and nothing
-   here redefines them.
-   --------------------------------------------------------------------------- */
 /* A product shown rather than picked (#412): the RC page's radio and receiver,
    one picker card each at the width a picker grid gives one. */
 .component-shown {
@@ -7126,39 +7358,30 @@ body[data-page="maintenance"] .status-item .hint {
   margin-block: var(--space-sm);
 }
 
-/* Driving an Output from its row (#412): a typed width and the four drive
-   acts on one line, or the one sentence that says why the row offers none. */
-.outputs-drive {
-  white-space: nowrap;
-}
-
-.outputs-drive-acts {
-  display: inline-flex;
+/* Find by Moving and back to centre, over the rows on one line (#412, #399):
+   pick the Part and find it on the left, send every Output to centre on the
+   right with its one line of answer before the button. The run panel takes
+   the find button's place while it lasts. */
+.outputs-tools {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2xs);
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-xl);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--border);
 }
 
-.outputs-drive-acts[hidden] {
-  display: none;
-}
-
-.outputs-drive-acts .outputs-width {
-  width: 9ch;
-}
-
-.outputs-drive-note {
-  font-size: var(--fs-cell);
-  color: var(--text-dim);
-}
-
-/* Find by Moving over the rows (#412): pick the Part, then the run panel takes
-   the button's place on the same line while it lasts. */
 .outputs-find {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-xs) var(--space-sm);
-  margin-block: var(--space-sm);
+  gap: var(--space-sm);
+}
+
+.outputs-find .parts-output {
+  width: auto;
+  min-width: 24ch;
 }
 
 .outputs-find .parts-find-run {
@@ -7168,19 +7391,88 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-bulk {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-xs) var(--space-sm);
-  margin-block: var(--space-sm);
-}
-
-.outputs-bulk .btn {
-  padding: var(--space-2xs) var(--space-sm);
+  gap: var(--space-md);
 }
 
 .outputs-bulk .feedback {
-  flex: 1 1 18ch;
   margin: 0;
+  max-width: 48ch;
+  text-align: right;
+}
+
+/* Servo assignment: one strip of Outputs divided by seams, not a row of
+   boxed cards. The plates are data/output_settings.js's and Wiring draws the
+   same ones as boards, so everything here is scoped to this surface. Wired is
+   a lit dot beside the word, not a blue card. */
+.servo-assignment .output-plates {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0;
+}
+
+.servo-assignment .output-plates > .output-setting {
+  align-content: start;
+  padding: 0 var(--space-lg);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The shared .is-on rule sits later in the file and paints a wired plate
+   blue; here wired is the dot below, so the plate stays unlit. */
+.servo-assignment .output-plates > .output-setting.is-on {
+  border-color: transparent;
+  background: transparent;
+}
+
+.servo-assignment .output-plates > .output-setting + .output-setting {
+  border-left: 1px solid var(--border);
+}
+
+.servo-assignment .output-plates > .output-setting:first-child {
+  padding-left: 0;
+}
+
+.servo-assignment .output-setting-head {
+  justify-content: space-between;
+  min-height: 28px;
+}
+
+.servo-assignment .output-setting .toggle-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+}
+
+.servo-assignment .output-setting .toggle-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--border-strong);
+}
+
+.servo-assignment .output-setting.is-on .toggle-status {
+  color: var(--text-dim);
+}
+
+.servo-assignment .output-setting.is-on .toggle-status::before {
+  background: var(--accent-bright);
+}
+
+.servo-assignment .output-parts {
+  margin: 0;
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+.servo-assignment .output-seg > button {
+  min-height: 28px;
+  font-size: var(--fs-sect);
 }
 
 /* ---------------------------------------------------------------------------
