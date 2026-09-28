@@ -392,6 +392,13 @@
     return days > 0 ? `${days}d ${clock}` : clock;
   };
 
+  // tools/extract_version.py stamps the filesystem with "fs-" and then the
+  // firmware's own version, so the two strings of one build differ by exactly
+  // that prefix and must never be compared as they stand.
+  const FS_VERSION_PREFIX = "fs-";
+  const assetsBuild = (assets) =>
+    assets.startsWith(FS_VERSION_PREFIX) ? assets.slice(FS_VERSION_PREFIX.length) : assets;
+
   const renderIdentityPlate = (payload) => {
     const firmware = String(payload.firmwareVersion || "").trim();
     const assets = String(payload.fsVersion || "").trim();
@@ -403,7 +410,7 @@
       buildFirmwareDetail,
       !firmware || !assets
         ? ""
-        : firmware === assets
+        : firmware === assetsBuild(assets)
           ? `web assets ${assets} - match`
           : `web assets ${assets} - does not match the firmware`,
     );

@@ -542,7 +542,8 @@ test("a failed identity is diagnosed from the firmware the droid reports running
     const { context, windowMock, mockDocument } = loadContextWithIdentity();
     windowMock.PAApi = {
       get: async (path) => {
-        if (path === "/fw-version.json") return { data: { fwVersion: "2.0.0" } };
+        // The file exactly as tools/extract_version.py writes it.
+        if (path === "/fw-version.json") return { data: { firmwareVersion: "2.0.0" } };
         throw new Error(`unexpected GET ${path}`);
       },
     };
