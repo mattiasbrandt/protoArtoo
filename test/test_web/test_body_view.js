@@ -103,6 +103,49 @@ test("a body Part is drawn on exactly one face", () => {
   assert.deepEqual(errors, [], "no Part was refused a second face");
 });
 
+// A builder aims at the middle of what they want. On a body face, the middle
+// of every Part's pick target must land on that Part and not on one drawn over
+// it: a fitted arm once took every click aimed at the door it sits behind
+// (#372, gripArm over doorFR). Read from the mounted markup, in paint order,
+// with every Part shown: a rect takes the pointer unless it is a footprint
+// drawn only (`.bv-footprint.is-drawn-only`, pointer-events: none in
+// data/style.css), and the topmost rect under a point is the one that gets it.
+// The dome's pieces are paths from the vendored map and are not modelled here.
+test("on a body face, the middle of every Part's pick target picks that Part", () => {
+  const { host, BodyView, mount } = boot();
+  const view = mount();
+  view.update({ shown: view.markerIds() });
+
+  const num = (node, name) => Number(node.getAttribute(name));
+  ["front", "rear"].forEach((faceId) => {
+    const face = host.querySelectorAll(".bv-face").find((node) => node.dataset.face === faceId);
+    const targets = face
+      .querySelectorAll("rect")
+      .filter((rect) => rect.closest("[data-marker]") && !rect.classList.contains("is-drawn-only"))
+      .map((rect) => ({
+        marker: rect.closest("[data-marker]").dataset.marker,
+        x: num(rect, "x"),
+        y: num(rect, "y"),
+        w: num(rect, "width"),
+        h: num(rect, "height"),
+      }));
+    const placed = Object.keys(BodyView.GEOMETRY[faceId]);
+    assert.deepEqual(
+      [...new Set(targets.map((t) => t.marker))].sort(),
+      [...placed].sort(),
+      `every Part on the ${faceId} face has a pick target`
+    );
+    targets.forEach((target) => {
+      const cx = target.x + target.w / 2;
+      const cy = target.y + target.h / 2;
+      const topmost = targets
+        .filter((t) => cx >= t.x && cx <= t.x + t.w && cy >= t.y && cy <= t.y + t.h)
+        .pop();
+      assert.equal(topmost.marker, target.marker, `the middle of ${target.marker} on the ${faceId} face picks it`);
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // One vocabulary, body and dome alike
 // ---------------------------------------------------------------------------
