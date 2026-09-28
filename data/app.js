@@ -240,7 +240,7 @@
     if (lastStatus) renderComponentStatus(lastStatus);
   };
 
-  // What one row of the Components card says. protoR2link and the sound link
+  // What one row of the Readouts card says. protoR2link and the sound link
   // are the health-signal model's word, the same one the Health card, the
   // Status Plate, Maintenance and Sound show (data/health_signals.js, #422),
   // and carry no line of their own beneath it: the firmware's detail there
@@ -251,9 +251,29 @@
     audio: (payload) => HEALTH_SIGNAL_MODEL.readSoundLink(payload, { unknown: window.PALiveReading.UNKNOWN }),
   };
 
+  // The lamp beside each row's state (CONTEXT.md "Status Color"). The two
+  // links take the health-signal model's own light, so they match Health and
+  // the Status Plate. Every other row is the firmware's state word
+  // (src/web/status_json.cpp), and only a word that reports something heard
+  // lights: SBUS frames arriving or lost, and the dome ESC's and the foot
+  // drive's command, which Health reads as ok (evaluateDomeEsc). Everything
+  // else is grey, `ready` above all: an Output says ready whether or not a
+  // servo is on it, and PWM channels say it with nothing measured, so a green
+  // there would be the "we did not check" the colour must never say.
+  const COMPONENT_STATE_LIGHTS = Object.freeze({
+    active: "ok",
+    signal_lost: "fail",
+    spinning: "ok",
+    idle: "ok",
+    commanding: "ok",
+  });
+
   const componentReading = (key, payload) => {
     const readLink = LINK_COMPONENT_READERS[key];
-    if (readLink && HEALTH_SIGNAL_MODEL) return { state: readLink(payload).word, detail: "" };
+    if (readLink && HEALTH_SIGNAL_MODEL) {
+      const { state, word } = readLink(payload);
+      return { state: word, detail: "", light: state };
+    }
     const entry = payload[key];
     let state = entry ? "enabled" : "disabled";
     let detail = entry ? COMPONENT_ENABLED_TEXT : COMPONENT_DISABLED_TEXT;
@@ -261,7 +281,7 @@
       state = entry.state || "enabled";
       detail = entry.detail || COMPONENT_ENABLED_TEXT;
     }
-    return { state: String(state).replace(/_/g, " "), detail };
+    return { state: String(state).replace(/_/g, " "), detail, light: COMPONENT_STATE_LIGHTS[state] || "off" };
   };
 
   const renderComponentStatus = (payload) => {
@@ -286,27 +306,34 @@
     if (signature !== renderedComponentIds) {
       renderedComponentIds = signature;
       const items = active.map(([key, label]) => {
-        const { state, detail } = componentReading(key, payload);
+        const { state, detail, light } = componentReading(key, payload);
+        const safeDetail = window.PAUtils.escapeHtml(detail);
         return `
-        <div class="status-item" id="comp-${key}">
+        <div class="readout" id="comp-${key}" data-light="${light}">
           <dt>${label}</dt>
           <dd id="state-${key}">${window.PAUtils.escapeHtml(state)}</dd>${detail
             ? `
-          <div class="desc mt-6" id="detail-${key}">${window.PAUtils.escapeHtml(detail)}</div>`
+          <div class="readout-detail" id="detail-${key}" title="${safeDetail}">${safeDetail}</div>`
             : ""}
         </div>`;
       }).join("");
-      componentStatusGrid.innerHTML = `<dl class="status-grid">${items}</dl>`;
+      componentStatusGrid.innerHTML = `<dl class="readouts">${items}</dl>`;
     } else {
       // Patch only the text content when component set hasn't changed
       active.forEach(([key]) => {
-        const { state, detail } = componentReading(key, payload);
+        const { state, detail, light } = componentReading(key, payload);
+
+        const itemEl = document.getElementById(`comp-${key}`);
+        if (itemEl) itemEl.dataset.light = light;
 
         const stateEl = document.getElementById(`state-${key}`);
         if (stateEl) stateEl.textContent = state;
 
         const detailEl = document.getElementById(`detail-${key}`);
-        if (detailEl) detailEl.textContent = detail;
+        if (detailEl) {
+          detailEl.textContent = detail;
+          detailEl.title = detail;
+        }
       });
     }
   };
@@ -926,7 +953,7 @@
     renderLogLevelPill(level);
   };
 
-  // The Outputs' names for the Components card: the servo table alone, read
+  // The Outputs' names for the Readouts card: the servo table alone, read
   // through data/outputs.js (#415).
   const loadOutputNames = async ({ handle = null } = {}) => {
     adoptOutputLabels(await window.PAOutputs.refresh({ handle: handle ?? window.PAApi }));

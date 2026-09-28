@@ -202,3 +202,37 @@ test("the component card names both links in the model's words", async () => {
   assert.match(card, new RegExp(`<dd id="state-protoR2link">${model.readProtoR2link(payload, words).word}</dd>`));
   assert.match(card, new RegExp(`<dd id="state-audio">${model.readSoundLink(payload, words).word}</dd>`));
 });
+
+// A Readouts lamp is a health signal, so a green one says something was heard
+// (CONTEXT.md "Status Color": a thing never asked reads grey, never good). An
+// Output reports `ready` whether or not a servo is on it, and a PWM channel
+// reports it with nothing measured, so neither lights; SBUS frames arriving
+// do, and a lost SBUS link is red. The lamp follows the frame on the patch
+// path too, not only when the card is first drawn.
+test("a Readouts lamp lights green only for a state that reports something heard", async () => {
+  const lampOf = (env, key) => env.element("component-status-grid").innerHTML
+    .match(new RegExp(`id="comp-${key}" data-light="(\\w+)"`))?.[1];
+
+  const rows = [servoRow("ledc:0", "GPIO 49")];
+  const { id } = rows[0];
+  const env = dashboard(
+    {
+      [id]: { state: "ready", detail: "Target 1500 us" },
+      rcCh1: { state: "active", detail: "Drive SBUS active" },
+      rcCh3: { state: "standby", detail: "SBUS spare wire" },
+    },
+    { rows },
+  );
+  await env.window.PALiveReading.read();
+  await env.runSection("app-output-names");
+  await env.settle();
+
+  assert.equal(lampOf(env, id), "off", "an Output that only says ready is not lit");
+  assert.equal(lampOf(env, "rcCh3"), "off", "a standby wire is not lit");
+  assert.equal(lampOf(env, "rcCh1"), "ok", "SBUS frames arriving light green");
+
+  const lost = mountDashboard();
+  lost.send({ rcCh1: { state: "active" } });
+  lost.send({ rcCh1: { state: "signal_lost" } });
+  assert.equal(lost.env.element("comp-rcCh1")?.dataset.light, "fail", "a lost link turns red where it stands");
+});

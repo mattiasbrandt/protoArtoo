@@ -3145,8 +3145,10 @@ body.sleep-mode-active {
 /* Tooltip styles — exclude buttons and interactive elements. A Status Plate
    chip is one: a press opens the surface where its thing is changed, so it
    carries the pointer, not the help cursor and a dotted underline under its
-   label and value (#355). */
-[title]:not(button):not(.btn):not(input):not(select):not(.indicator-text):not(.status-chip) {
+   label and value (#355). A Dashboard readout's detail carries its whole
+   line in the title only because the tile cuts it to one line, so it is not
+   help either. */
+[title]:not(button):not(.btn):not(input):not(select):not(.indicator-text):not(.status-chip):not(.readout-detail) {
   cursor: help;
   text-decoration: underline dotted;
   text-decoration-color: var(--text-dim);
@@ -4851,19 +4853,6 @@ body[data-page="maintenance"] .status-item .hint {
   }
 }
 
-/* What is left of the pre-anatomy margin utilities. A swept surface spaces the
-   parts of a plate with the ladder rule further up (.card > * + *), so the
-   two below are the last two readers in data/ - the Dashboard's component
-   detail lines and Sound's mood-map feedback - and the block ends when they
-   are swept too.
-
-   Gone with this slice: .mt-12 and .mt-16, whose last readers were WiFi's and
-   Firmware's markup; .mt-10, .mt-20, .mb-6, .mb-12, .block and .flex, which
-   no served file referenced at all; and .text-warning, whose only readers were
-   Firmware's two "Warning:" lines - a consequence beside a control is a
-   .note .note-act now (ADR 0066, docs/ui-copy-voice.md rules 11 and 12). */
-.mt-6 { margin-top: 6px; }
-
 /* ---------------------------------------------------------------------------
    Dashboard (ADR 0066).
 
@@ -4921,106 +4910,323 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
-/* This droid: five readouts in one row - a label, a value, and the one line
-   that says where the value came from or what it means. No picture -
-   data/dashboard.html has never held one, and CONTEXT.md "Body View" puts a
-   recognisable droid silhouette in its _Avoid_ list, because the real drawing
-   of the droid is an arrangement and not a likeness (#317, ADR 0063). The
-   Body View is C4's. */
+/* ---- Readouts and This droid: instrument tiles ----
+   Both sections are rows of tiles on the card's plate: a soft face with no
+   frame of its own, told apart by the air between them. Inside a tile the
+   label is small and quiet, the value is the loudest thing, and the detail is
+   one quiet line under it (#399, operator review 2026-09-28: "make the
+   readouts look alot better"). Scoped to these two sections: the other
+   .status-grid pages (Maintenance, Sound, WiFi) keep their own rows. */
+.readouts,
 .build {
   display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.readouts {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+/* This droid: five facts in one row. No picture - data/dashboard.html has
+   never held one, and CONTEXT.md "Body View" puts a recognisable droid
+   silhouette in its _Avoid_ list, because the real drawing of the droid is an
+   arrangement and not a likeness (#317, ADR 0063). The Body View is C4's. */
+.build {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.readout,
 .build > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
   min-width: 0;
-  padding: 0 var(--space-lg);
+  padding: var(--space-md) var(--space-lg) var(--space-lg);
+  border-radius: var(--radius-soft);
+  background: color-mix(in srgb, var(--lift) 3%, var(--surface));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lift) 5%, transparent);
 }
 
-.build > div:first-child {
-  padding-left: 0;
-}
-
-.build > div:last-child {
-  padding-right: 0;
-}
-
-.build > div + div {
-  border-left: 1px solid var(--border);
-}
-
+.readout dt,
 .build dt {
   color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  font-weight: 600;
+  font-size: var(--fs-sect);
+  font-weight: 500;
   line-height: 1.4;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
+.readout dd,
 .build dd {
-  margin: 2px 0 0;
-  font-size: var(--fs-body);
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The state is a component's reading, so it carries the lamp that says how
+   that reading is doing (CONTEXT.md "Status Color"): the same droid LED the
+   Health rows light, set by app.js from COMPONENT_STATE_LIGHTS. Never blue:
+   blue is interaction. This droid's facts are identity and numbers, not
+   health, and take no lamp. */
+.readout dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.readout dd::before {
+  content: "";
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--text-dim);
+  opacity: 0.4;
+}
+
+.readout[data-light="ok"] dd::before {
+  background: var(--success);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent);
+  opacity: 1;
+}
+
+.readout[data-light="warn"] dd::before {
+  background: var(--warning);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--warning) 60%, transparent);
+  opacity: 1;
+}
+
+.readout[data-light="fail"] dd::before {
+  background: var(--danger);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 60%, transparent);
+  opacity: 1;
+}
+
+/* One quiet line. The firmware's longer details ("Drive SBUS active, last
+   12 ms ago, lost frames 0") are cut with an ellipsis; app.js puts the whole
+   line in the title. */
+.readout-detail {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A number and its unit (Memory free, WiFi signal), written by app.js. */
 .build dd small {
   margin-left: var(--space-2xs);
   color: var(--text-faint);
-  font-size: var(--fs-sect);
+  font-size: var(--fs-cell);
+  font-weight: 400;
 }
 
 .build .hint {
   display: block;
-  margin-top: 2px;
+  margin-top: 0;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--fs-cell);
+  font-weight: 400;
+  line-height: 1.4;
 }
 
-/* ---- Mood Selector ---- */
-.mood-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-sm);
-}
-
-/* The Mood buttons are .btn with a taller target: four answers to one
-   question, laid out two by two so the words have room at the rail's width.
-   Which Mood is which is the word, and nothing else - the emoji that used to
-   label them went with ADR 0066. */
-.mood-btn {
-  min-height: 44px;
-}
-
-/* The four Moods used to wear four hues when selected, which put amber on
-   Mid-Awake and green on Awake+ - color spent on a choice the builder made,
-   not on a state they can act on. Selection is one thing and looks like one
-   thing. Which Mood is which is the word. */
-.mood-btn.active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-/* ---- Operation Mode ---- */
-/* Two mutually exclusive answers to one question, so the segmented control
-   rather than two buttons: .opmode-grid is the recess and .opmode-btn the
-   segments, both dressed by the anatomy's .seg above. */
+/* ---- Operation Mode ----
+   A two-state switch: a capsule recess and one raised thumb that slides to
+   the side the droid is in. The thumb is drawn by the recess, not by the
+   buttons, and follows aria-pressed (renderOpMode), so it moves when the
+   droid's frame says so and never on the press alone. Dressed on top of the
+   anatomy's .seg, which the markup still carries. */
 .opmode-grid {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 3px;
+  border-color: var(--border);
+  border-radius: var(--radius-pill);
+  isolation: isolate;
 }
 
-.opmode-btn {
-  min-height: 44px;
+.opmode-grid::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface-alt));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--lift) 12%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
+    var(--elev-1);
+  transition: transform 0.22s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.15s ease;
+}
+
+.opmode-grid:has(> .opmode-btn:last-child[aria-pressed="true"])::before {
+  transform: translateX(100%);
+}
+
+/* Before the droid has said which mode it is in, no side is chosen. */
+.opmode-grid:not(:has(> .opmode-btn[aria-pressed="true"]))::before {
+  opacity: 0;
+}
+
+.opmode-grid > .opmode-btn {
+  min-height: 40px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-body);
+  transition: color 0.15s ease;
+}
+
+.opmode-grid > .opmode-btn[aria-pressed="true"],
+.opmode-grid > .opmode-btn.active {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.opmode-grid > .opmode-btn:focus-visible {
+  outline-offset: 2px;
+  border-radius: var(--radius-pill);
+}
+
+.opmode-grid > .opmode-btn:disabled {
+  cursor: progress;
 }
 
 /* Drive and Stationary are both deliberate Commanded Modes. Stationary used to
    wear amber, which read as "something is wrong" for a mode the operator chose
    on purpose; both now look selected the same way. */
 
-@media (max-width: 500px) {
-  .mood-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+/* ---- Mood ----
+   Mood is a level - each step adds chatter, then holo movement, then holo
+   lights - so it is drawn as one: four steps in one recess, each with a bar
+   that rises with the step, and every bar up to the droid's mood lit. The
+   lighting reads aria-pressed through :has(), so renderActiveMood paints
+   nothing new. The four Moods used to wear four hues when selected; which
+   Mood is which is the word, and the lit bars are the one interaction blue. */
+.mood-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-soft);
+  background: var(--well);
+}
+
+.mood-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-sm);
+  border: 0;
+  border-radius: calc(var(--radius-soft) - 3px);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--fs-cell);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mood-btn::before {
+  content: "";
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-xs);
+  background: var(--border-strong);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mood-btn:nth-child(2)::before {
+  height: 8px;
+}
+
+.mood-btn:nth-child(3)::before {
+  height: 12px;
+}
+
+.mood-btn:nth-child(4)::before {
+  height: 16px;
+}
+
+.mood-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--lift) 4%, transparent);
+}
+
+.mood-btn[aria-pressed="true"]::before,
+.mood-btn:has(~ .mood-btn[aria-pressed="true"])::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.mood-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.mood-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mood-btn:disabled {
+  cursor: progress;
+}
+
+/* ---- Sleep ----
+   A switch that shows the state and takes no press: the Sleep act is in the
+   topbar (ADR 0059). It reads body.sleep-mode-active, which setSleepUi()
+   sets from the droid's frame. On is the interaction blue, as a chosen
+   posture takes no Status Color. */
+.sleep-switch {
+  position: relative;
+  width: 52px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--well);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.sleep-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-round);
+  background: var(--text-faint);
+  box-shadow: var(--elev-1);
+  transition: transform 0.22s cubic-bezier(0.3, 0.7, 0.2, 1), background 0.2s ease;
+}
+
+body.sleep-mode-active .sleep-switch {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 30%, var(--well));
+}
+
+body.sleep-mode-active .sleep-switch-knob {
+  transform: translateX(24px);
+  background: var(--text);
 }
 
 /* Reduced motion preference */
@@ -7372,20 +7578,9 @@ body[data-page="maintenance"] .status-item .hint {
     display: none;
   }
 
-  /* This droid's five readouts wrap to three and two. The seam goes with the
-     row: a cell that starts a row has nothing to its left to divide from. */
+  /* This droid's five tiles wrap to three and two. */
   .build {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    row-gap: var(--space-lg);
-  }
-
-  .build > div:nth-child(3n + 1) {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .build > div:nth-child(3n) {
-    padding-right: 0;
   }
 }
 
@@ -7424,21 +7619,22 @@ body[data-page="maintenance"] .status-item .hint {
     border-top: 1px solid var(--border);
   }
 
-  /* The controls and This droid stack, each cell divided from the next by a
-     seam along its top instead of its left. */
+  /* The controls stack, each divided from the next by a seam along its top
+     instead of its left; This droid's tiles stack with the air between them. */
   .ctl-row,
   .build {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ctl-row {
     row-gap: 0;
   }
 
-  .ctl-row > .ctl,
-  .build > div {
+  .ctl-row > .ctl {
     padding: 0;
   }
 
-  .ctl-row > .ctl + .ctl,
-  .build > div + div {
+  .ctl-row > .ctl + .ctl {
     margin-top: var(--space-lg);
     padding-top: var(--space-lg);
     border-left: 0;
