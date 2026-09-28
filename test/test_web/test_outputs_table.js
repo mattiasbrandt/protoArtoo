@@ -21,7 +21,7 @@ test("taking a Part off another Output from Servos is asked in the part-first ta
     env.window.PAParts.moveFor(env.window.PAOutputs.list(), "doorFL", "ledc:3"),
   );
 
-  const picker = env.pickOnOutput("ledc:3", "doorFL");
+  env.pickOnOutput("ledc:3", "doorFL");
   assert.equal(env.posts.length, 0, "nothing reaches the droid before the builder answers");
   assert.equal(env.dialog.open, true);
   assert.equal(env.byId("outputs-move-title").textContent, expected.title);
@@ -31,7 +31,6 @@ test("taking a Part off another Output from Servos is asked in the part-first ta
     "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
       "ARM1 keeps driving Right body door. Upper utility arm is on ARM3 too — they will move together.",
   );
-  assert.equal(picker.value, "", "the picker goes back to its prompt");
 
   env.answerMove(true);
   await sleep(20);

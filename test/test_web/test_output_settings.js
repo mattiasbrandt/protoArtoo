@@ -55,10 +55,11 @@ const ROWS = () => describe([
 const CONFIG = () => ({ drive: { speedLimitMax: 300 } });
 
 // Wiring's and Servos' hosts, each reading the droid the way the surface does
-// (data/outputs.js load()) and mounting its view of the plates.
+// (data/outputs.js load()) and mounting its view: Wiring's plates in one body,
+// Servos' picks each in the slot its host keeps on that Output's row.
 const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
   const document = new MiniDocument();
-  for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-feedback"]) {
+  for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-timing", "servo-types-feedback"]) {
     const node = document.createElement("div");
     node.id = id;
     document.body.appendChild(node);
@@ -99,8 +100,20 @@ const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
     body: document.getElementById("wiring-outputs-body"),
     feedback: document.getElementById("wiring-outputs-feedback"),
   });
+  // Servos' rows, as data/servo.js keeps them: one slot per Output.
+  const slots = new Map();
+  const slot = (address) => {
+    if (!slots.has(address)) {
+      const node = document.createElement("div");
+      node.setAttribute("data-output", address);
+      document.getElementById("servo-types-body").appendChild(node);
+      slots.set(address, node);
+    }
+    return slots.get(address);
+  };
   window.PAOutputSettings.mount("type", {
-    body: document.getElementById("servo-types-body"),
+    slot,
+    timing: document.getElementById("servo-types-timing"),
     feedback: document.getElementById("servo-types-feedback"),
   });
   await window.PAOutputs.load();
@@ -118,6 +131,7 @@ const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
     wiring: (address) => plate("wiring-outputs-body", address),
     wiringPlates: () => document.getElementById("wiring-outputs-body").querySelectorAll("[data-output]"),
     servos: (address) => plate("servo-types-body", address),
+    servosLine: () => document.getElementById("servo-types-timing"),
     // Wiring's in-use press is the plate's head button.
     inUse: (address) => plate("wiring-outputs-body", address).querySelector("[aria-pressed]"),
     option: (root, value) => root.querySelectorAll("[data-value]").find((node) => node.getAttribute("data-value") === value),
@@ -164,7 +178,6 @@ test("a second wire can carry a light without taking it off the first", async ()
 test("an in-use tick waits for the next start until it is put back; a servo type never waits", async () => {
   const env = await boot();
   const wiringLine = () => env.wiring("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
-  const servosLine = () => env.servos("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
   assert.equal(wiringLine().dataset.pending, "false", "nothing is waiting on a fresh read");
 
   env.inUse("ledc:3").fire("click", {});
@@ -172,7 +185,7 @@ test("an in-use tick waits for the next start until it is put back; a servo type
   assert.equal(wiringLine().dataset.pending, "true", "the droid still runs the outputs it started with");
   // Servos' answer is used at once, and an immediate answer says nothing at
   // all (operator, 2026-09-19 on #412).
-  assert.equal(servosLine().textContent, "", "Servos' answer is used at once, so it carries no line");
+  assert.equal(env.servosLine().textContent, "", "Servos' answer is used at once, so it carries no line");
 
   env.inUse("ledc:3").fire("click", {});
   await env.flush();

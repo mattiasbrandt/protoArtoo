@@ -6640,7 +6640,7 @@ body[data-page="maintenance"] .status-item .hint {
    drawn in the inks and never in the interaction blue. */
 .outputs-bar {
   position: relative;
-  height: 6px;
+  height: 10px;
   min-width: 7rem;
   background: var(--well);
   border-radius: var(--radius-pill);
@@ -6656,8 +6656,8 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-tick {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
+  top: -4px;
+  bottom: -4px;
   left: 0;
   width: 2px;
   margin-left: -1px;
@@ -6729,22 +6729,19 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* ---------------------------------------------------------------------------
-   Servos (#399, operator review 2026-09-28: "way too cluttered, too many
-   simply ugly square boxes").
+   Servos (#399, operator reviews 2026-09-28: "way too cluttered, too many
+   simply ugly square boxes", then "clean and nice UX and UI look").
 
-   One Output is one <tbody> of two lines (data/servo.js outputRowHtml): the
-   main line - name, what it drives, where it was told to go, the drive acts
-   and the two row acts - and under it one quiet line of how it lets go, how
-   it moves and what it does at power-up, each named inline. A seam divides
-   one Output from the next; nothing inside an Output is boxed.
+   One Output is one <tbody> (data/servo.js outputRowHtml). Its first line is
+   all a builder sees at rest: the Output and the servo it carries, what it
+   drives, the commanded position as the widest thing on the line, the drive
+   acts as the one prominent control, and three quiet word-acts. Its second
+   line is closed until the row's settings press opens it. A seam divides one
+   Output from the next; nothing inside an Output is boxed.
    --------------------------------------------------------------------------- */
 .outputs-table {
   border-collapse: separate;
   border-spacing: 0;
-}
-
-.outputs-table thead th:last-child {
-  text-align: right;
 }
 
 .outputs-table .outputs-row th,
@@ -6756,52 +6753,68 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-table .outputs-main > th,
 .outputs-table .outputs-main > td {
-  padding: var(--space-md) var(--space-md) var(--space-2xs);
+  padding: var(--space-lg) var(--space-md);
 }
 
-.outputs-table .outputs-sub > td {
-  padding: 0 var(--space-md) var(--space-md);
-}
-
-.outputs-table .outputs-row > tr:last-child > td,
-.outputs-table .outputs-row th[scope="row"] {
-  border-bottom: 1px solid var(--border);
+.outputs-table .outputs-row + .outputs-row > .outputs-main > th,
+.outputs-table .outputs-row + .outputs-row > .outputs-main > td {
+  border-top: 1px solid var(--border);
 }
 
 .outputs-table .outputs-row th[scope="row"] {
   vertical-align: top;
-  padding-top: var(--space-md);
   white-space: nowrap;
 }
 
 .outputs-table .outputs-row .parts-name {
+  font-size: var(--fs-body);
   font-weight: 600;
-}
-
-.outputs-table .outputs-row:hover > tr > th,
-.outputs-table .outputs-row:hover > tr > td {
-  background: color-mix(in srgb, var(--lift) 2%, var(--surface));
 }
 
 .outputs-row.is-held th {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* What it drives, with the part picker under it as a quiet line rather than a
-   form field: a pick is a request, and the cell's first word is the answer. */
-.outputs-drives .parts-output {
-  max-width: 22ch;
-  min-height: 26px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: var(--fs-sect);
-  padding: 0;
+/* Which servo the Output carries (data/output_settings.js draws it): the
+   shared segmented bar at caption size, sized to its words. An Output that is
+   not wired keeps its pick, which still saves, drawn quieter: there is
+   nothing on the wire for it to drive yet. */
+.outputs-model:not(:empty) {
+  margin-top: var(--space-sm);
 }
 
-.outputs-drives .parts-output:hover,
-.outputs-drives .parts-output:focus-visible {
+.outputs-model .seg {
+  display: inline-flex;
+}
+
+.outputs-model .seg > button {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0 var(--space-sm);
+  font-size: var(--fs-hint);
+}
+
+.outputs-model:not(.is-on) .seg {
+  opacity: 0.7;
+}
+
+.outputs-table .outputs-drives {
+  min-width: 18ch;
   color: var(--text);
+}
+
+/* Parts marks a light's row with a dashed edge; here the row's own drive
+   cell already says a light has no position, so the edge would be a second,
+   wordless way of saying it. */
+.outputs-table .outputs-row.partkind-light th {
+  border-left: 0;
+}
+
+/* The commanded position is the row's anchor: the widest cell, and the bar
+   thick enough to read the gap between fill and tick from the bench. */
+.outputs-table .outputs-position {
+  width: 26%;
+  min-width: 12rem;
 }
 
 /* Driving an Output from its row (#412): the typed width, then the four drive
@@ -6823,6 +6836,7 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-drive-acts .outputs-width {
   width: 72px;
+  min-height: 30px;
 }
 
 .outputs-go-group {
@@ -6856,15 +6870,24 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-dim);
 }
 
-/* The two row acts: calibrate is the one this surface is for, so it takes
-   the accent edge; pulses off is quiet. */
+/* The row's word-acts: no frame, so the drive control stays the one thing on
+   the line that looks pressable at a glance. Calibrate, what this surface is
+   for, carries the accent in its ink; pulses off and settings are dim. */
 .outputs-acts {
   white-space: nowrap;
   text-align: right;
 }
 
-.outputs-acts .btn + .btn {
-  margin-left: var(--space-2xs);
+.outputs-acts .btn {
+  padding: 0 var(--space-sm);
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.outputs-acts .btn:hover {
+  border-color: transparent;
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
 .outputs-acts .btn[hidden] {
@@ -6872,17 +6895,58 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .outputs-acts .outputs-calibrate {
-  border-color: var(--accent);
+  color: var(--accent-bright);
 }
 
-/* The settings line: each setting a mono name and its control, side by side
-   and wrapping, in the voice of a caption rather than a form. */
-.outputs-settings {
+/* + part sits under what the Output drives, as quiet as the row's word-acts. */
+.outputs-drives .outputs-add-open {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-sm) var(--space-xl);
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 24px;
+  margin-top: var(--space-2xs);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-faint);
   font-size: var(--fs-sect);
+}
+
+.outputs-drives .outputs-add-open:hover,
+.outputs-drives .outputs-add-open[aria-expanded="true"] {
+  border-color: transparent;
+  color: var(--text);
+}
+
+.outputs-more svg.i,
+.outputs-find .parts-find svg.i {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+
+.outputs-more[aria-expanded="true"],
+.outputs-find .parts-find[aria-expanded="true"] {
+  color: var(--text);
+}
+
+.outputs-more[aria-expanded="true"] svg.i,
+.outputs-find .parts-find[aria-expanded="true"] svg.i {
+  transform: rotate(90deg);
+}
+
+/* The settings line, opened in place under its row: a recessed strip, each
+   setting a mono name in one column and its control beside it. */
+.outputs-table .outputs-sub > td {
+  padding: var(--space-md) var(--space-lg) var(--space-lg);
+  background: color-mix(in srgb, var(--well) 55%, var(--surface));
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.outputs-settings {
+  display: grid;
+  gap: var(--space-md);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
 }
 
@@ -6891,15 +6955,45 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .outputs-setting {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 16ch 1fr;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-md);
 }
 
+.outputs-setting > :not(.outputs-setting-name) {
+  grid-column: 2;
+}
+
+.outputs-motion-set {
+  grid-template-columns: 16ch auto auto auto 1fr;
+}
+
+.outputs-motion-set > .outputs-motion-field,
+.outputs-motion-set > .seg {
+  grid-column: auto;
+}
+
+.outputs-boot {
+  grid-template-columns: 16ch auto 1fr;
+}
+
+.outputs-boot > .outputs-boot-risk {
+  grid-column: auto;
+}
+
+.outputs-settings[hidden],
+.outputs-add[hidden],
 .outputs-setting[hidden],
 .outputs-boot-risk[hidden] {
   display: none;
+}
+
+/* Both panels open: the Parts sit under the settings, across a seam. */
+.outputs-settings:not([hidden]) + .outputs-add:not([hidden]) {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
 }
 
 .outputs-setting-name {
@@ -6919,24 +7013,83 @@ body[data-page="maintenance"] .status-item .hint {
 .outputs-motion-field {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2xs);
+  gap: var(--space-sm);
 }
 
 .outputs-motion-field .number-cell {
   width: 64px;
-  min-height: 26px;
-  font-size: var(--fs-sect);
+  min-height: 28px;
 }
 
-/* The two small pickers on the line: the shared .seg at caption size. */
+.outputs-settings .seg {
+  display: inline-flex;
+  justify-self: start;
+}
+
 .outputs-settings .seg > button {
+  flex: 0 0 auto;
   min-height: 26px;
-  padding: 0 var(--space-sm);
+  padding: 0 var(--space-md);
   font-size: var(--fs-sect);
 }
 
 .outputs-boot-risk {
   color: var(--warning);
+}
+
+/* Parts as wrapping pills, grouped (data/servo.js partPills): a row's "put a
+   part on" and Find by moving's tray. The group name sits in its own column
+   so the pills of every group start on one line. */
+.part-pills-group {
+  display: grid;
+  grid-template-columns: 18ch 1fr;
+  align-items: start;
+  gap: var(--space-md);
+}
+
+.part-pills-group + .part-pills-group {
+  margin-top: var(--space-sm);
+}
+
+.part-pills-name {
+  padding-top: 4px;
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
+}
+
+.part-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.part-pill {
+  padding: 3px var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--well);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.part-pill:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.part-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.part-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------------------
@@ -7001,24 +7154,24 @@ body[data-page="maintenance"] .status-item .hint {
    the widest thing on the line, so a drag covers the band in a usable number
    of pixels, and it is tall enough to be aimed at. */
 .cal-slider.fader {
-  flex: 1 1 18rem;
+  flex: 1 1 24rem;
   min-width: 12rem;
-  height: 20px;
+  height: 32px;
 }
 
 .cal-slider.fader::-webkit-slider-thumb {
-  width: 8px;
-  height: 20px;
+  width: 10px;
+  height: 32px;
 }
 
 .cal-slider.fader::-moz-range-track,
 .cal-slider.fader::-moz-range-progress {
-  height: 20px;
+  height: 32px;
 }
 
 .cal-slider.fader::-moz-range-thumb {
-  width: 8px;
-  height: 20px;
+  width: 10px;
+  height: 32px;
 }
 
 /* The number the dial is standing at, and the one thing on this panel a builder
@@ -7093,6 +7246,19 @@ body[data-page="maintenance"] .status-item .hint {
   margin-right: var(--space-sm);
   font-size: var(--fs-hint);
   color: var(--text-faint);
+}
+
+/* The dial's tools are word-acts, as on the rows: the joined captures above
+   stay the one framed control, and done is the one framed way out. */
+.cal-acts .btn.btn-quiet {
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.cal-acts .btn.btn-quiet:hover {
+  border-color: transparent;
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
 /* A narrowing that is on. Not a Status Color -- #327 reserves those for state
@@ -7371,17 +7537,17 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* Find by Moving and back to centre, over the rows on one line (#412, #399):
-   pick the Part and find it on the left, send every Output to centre on the
-   right with its one line of answer before the button. The run panel takes
-   the find button's place while it lasts. */
+   find a Part on the left, send every Output to centre on the right with its
+   one line of answer before the button. Find by moving opens its tray of
+   Parts under the line; the run panel takes the button's place while it
+   lasts. */
 .outputs-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm) var(--space-xl);
-  padding-bottom: var(--space-md);
-  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-md);
 }
 
 .outputs-find {
@@ -7389,11 +7555,6 @@ body[data-page="maintenance"] .status-item .hint {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
-}
-
-.outputs-find .parts-output {
-  width: auto;
-  min-width: 24ch;
 }
 
 .outputs-find .parts-find-run {
@@ -7413,78 +7574,23 @@ body[data-page="maintenance"] .status-item .hint {
   text-align: right;
 }
 
-/* Servo assignment: one strip of Outputs divided by seams, not a row of
-   boxed cards. The plates are data/output_settings.js's and Wiring draws the
-   same ones as boards, so everything here is scoped to this surface. Wired is
-   a lit dot beside the word, not a blue card. */
-.servo-assignment .output-plates {
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0;
+.outputs-find-tray {
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  background: color-mix(in srgb, var(--well) 55%, var(--surface));
+  border-radius: var(--radius-plate);
 }
 
-.servo-assignment .output-plates > .output-setting {
-  align-content: start;
-  padding: 0 var(--space-lg);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+.outputs-find-tray[hidden] {
+  display: none;
 }
 
-/* The shared .is-on rule sits later in the file and paints a wired plate
-   blue; here wired is the dot below, so the plate stays unlit. */
-.servo-assignment .output-plates > .output-setting.is-on {
-  border-color: transparent;
-  background: transparent;
-}
-
-.servo-assignment .output-plates > .output-setting + .output-setting {
-  border-left: 1px solid var(--border);
-}
-
-.servo-assignment .output-plates > .output-setting:first-child {
-  padding-left: 0;
-}
-
-.servo-assignment .output-setting-head {
-  justify-content: space-between;
-  min-height: 28px;
-}
-
-.servo-assignment .output-setting .toggle-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2xs);
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-}
-
-.servo-assignment .output-setting .toggle-status::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-round);
-  background: var(--border-strong);
-}
-
-.servo-assignment .output-setting.is-on .toggle-status {
-  color: var(--text-dim);
-}
-
-.servo-assignment .output-setting.is-on .toggle-status::before {
-  background: var(--accent-bright);
-}
-
-.servo-assignment .output-parts {
+.outputs-find-tray > .hint {
   margin: 0;
-  font-size: var(--fs-cell);
-  color: var(--text-dim);
 }
 
-.servo-assignment .output-seg > button {
-  min-height: 28px;
-  font-size: var(--fs-sect);
+.outputs-marks {
+  margin: 0 0 var(--space-sm);
 }
 
 /* ---------------------------------------------------------------------------

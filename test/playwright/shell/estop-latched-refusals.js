@@ -62,13 +62,9 @@ lib.runCheck({
     // a: find by moving -------------------------------------------------------
     await lib.loadSurface(page, 'servo');
     await page.waitForFunction(() => document.getElementById('shell-estop-state').textContent === 'Estop: latched', null, { timeout: 15000 });
+    // The button itself is the refusal: it is what opens the Parts to find,
+    // so while it is refused there is no Part to press.
     const find = page.locator('#outputs-find .parts-find');
-    const pick = await page.evaluate(() => {
-      const select = document.getElementById('outputs-find-part');
-      const option = [...select.options].find((each) => each.value !== '');
-      return select.disabled || !option ? null : option.value;
-    });
-    if (pick) await page.selectOption('#outputs-find-part', pick);
     if (ungate) {
       await page.evaluate(() => {
         const button = document.querySelector('#outputs-find .parts-find');
