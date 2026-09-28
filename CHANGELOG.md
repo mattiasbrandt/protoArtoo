@@ -263,7 +263,7 @@ the patch releases, whose notes live on their own GitHub Release.
 - **A part that will not move, a capture that is not recorded, says why.** Move
   a part on Wiring to an output that is full, or record an end the droid will
   not take, and the page names the part and the output: "Rear-left body door
-  did not move: ARM1 no longer has it". Each component switch and each
+  did not move: ARM1 no longer has that part". Each component switch and each
   sound is called one thing on every page - RC channel 1, Dome link, Short
   Cantina - and a setting that waits for the next start or a restart says so
   on every page that shows it.
