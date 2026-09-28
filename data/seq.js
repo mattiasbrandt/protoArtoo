@@ -915,7 +915,7 @@
                 .join("")}
             </select>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
-            <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
+            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
           `;
         } else if (domeMode === "logic") {
           // Logic/PSI Mode (DL:) structured step
@@ -1246,7 +1246,7 @@
               <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
             </select>
             <span class="dome-cmd-preview">:${action}${target}</span>
-            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
+            <button class="dome-mode-toggle" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
             <div class="dome-panel-advisory hidden"></div>
           `;
@@ -1994,7 +1994,8 @@
       });
     }
 
-    // Dome mode toggle (panel ↔ preset ↔ advanced)
+    // Dome mode toggle, one cycle: panel -> preset -> advanced -> panel. Each
+    // mode's button is labelled with the mode it goes to next.
     const toggleBtn = fieldsContainer.querySelector(".dome-mode-toggle");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", (e) => {
