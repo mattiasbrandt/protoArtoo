@@ -55,16 +55,69 @@ function newPage(droidBuild) {
   return context.window;
 }
 
+// The shipped seam, catalog and drawing in one page, as the Dashboard and
+// Sequences load them. `get` answers the page's reads.
+function shippedModules(context) {
+  ["droid_parts.js", "dome_panel_model.js", "droid_build.js"].forEach((name) =>
+    vm.runInNewContext(read(name), context));
+  return context.window;
+}
+
 // A stand-in for the seam carrying one stated answer. complementFor() answers
 // the way data/droid_build.js does, including the distinction that matters:
-// `known: false` is a complement nobody has read, not an empty one.
+// `known: false` is a complement nobody has read, not an empty one. Whether
+// the built-in drawing is theirs is the shipped seam's own answer, never a
+// copy of it here: two copies of that rule is how an MK4.1 dome lost its map
+// (#409).
 function seam(design, variant, complementKnown) {
   return {
     load: () => Promise.resolve(null),
     current: () => ({ dome: { design, variant }, body: { design, variant }, fitted: [] }),
     complementFor: () => ({ ids: [], known: complementKnown }),
+    showsBuiltInDome: shippedModules({ window: {} }).DroidBuild.showsBuiltInDome,
   };
 }
+
+// The whole chain, with the dome unreachable and the droid holding `droidBuild`.
+async function shippedPage(droidBuild) {
+  const context = {
+    window: {
+      PAAssetsReady: true,
+      addEventListener() {},
+      localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {} },
+      PAApi: {
+        get: (route) => Promise.resolve(route === "/api/config"
+          ? { ok: true, status: 200, data: { droidBuild } }
+          : { ok: false, status: 503, data: null }),
+      },
+      DomeCommandMap: { resolvePanelCommand: () => null },
+    },
+    setTimeout,
+    clearTimeout,
+    Promise,
+  };
+  shippedModules(context);
+  vm.runInNewContext(read("dome_layout.js"), context);
+  await context.window.DomeLayout.load();
+  return context.window.DomeLayout;
+}
+
+// MK4.1's dome seeds copy MK4 Complex's until its own list is read, and the
+// catalog says it is drawn as MK4 Complex meanwhile. With the dome out of
+// reach the Dashboard showed no map and nothing to press (#409, from the #355
+// bench): the rule was written twice, by hand, and neither copy knew.
+test("a dome drawn as the built-in design gets its map; a design the catalog does not carry does not", async () => {
+  const mk41 = await shippedPage({ domeDesign: "mk41", domeVariant: "", bodyDesign: "mk4",
+                                   bodyVariant: "complex", fitted: [] });
+  assert.equal(mk41.getSource(), "vendored");
+  assert.equal(mk41.getModel().usesVendoredDrawing, true);
+  assert.equal(mk41.getModel().warning, null);
+
+  const unknown = await shippedPage({ domeDesign: "mk9", domeVariant: "", bodyDesign: "mk4",
+                                      bodyVariant: "complex", fitted: [] });
+  assert.equal(unknown.getSource(), "stated-design");
+  assert.equal(unknown.getModel().usesVendoredDrawing, false);
+});
 
 test("a dome the built-in drawing is not of is not drawn as theirs", async () => {
   const page = newPage(seam("own", "", true));

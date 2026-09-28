@@ -911,16 +911,22 @@
     }, HOLD_KEEPALIVE_MS);
   };
   // A press: take the Output, and keep asking for it from here on.
+  //
+  // `take` is this press's own record: `after` stays null until the droid has
+  // answered it, then holds the table-read mark from that moment, which is
+  // the line paintDial() judges every limp reading against. A fresh object
+  // per press, so a late answer to an earlier press - two quick presses, a
+  // sweep's legs - can never stamp its mark on a later one. The droid refusing
+  // the take is an answer too: nothing is standing, and the next reading's
+  // limp is the truth.
   const takeHold = () => {
+    const take = { after: null };
+    dial.take = take;
     dial.holding = true;
-    // Not yet seen pulsing since this take: see paintDial().
-    dial.confirmed = false;
     startKeepalive();
     const taken = sendHold({ refresh: false });
-    // A take the droid refused left nothing standing, so the next reading's
-    // "no pulse" is the truth and puts take it again back on the panel.
-    taken.then((ok) => {
-      if (!ok && dial !== null) dial.confirmed = true;
+    taken.then(() => {
+      take.after = OUTPUTS.readMark();
     });
     return taken;
   };
@@ -961,6 +967,8 @@
       // The droid has the Output as far as this page knows. Cleared when an
       // answer says it let go, so the keepalive stops asking for it.
       holding: true,
+      // The last press, set by takeHold() below before anything paints.
+      take: null,
     };
     dialPanel.hidden = false;
     setNote("");
@@ -1077,17 +1085,27 @@
     // The Output has gone limp under the dial: one of the firmware's two
     // bounds, or the estop. The panel says which, and one press takes it back.
     //
-    // Except a read from before the take. Outputs boot limp, so the reading
-    // the dial opens on - and one already in flight when the take went out -
-    // says "no pulse" about a pin the droid is now holding. Believing it
-    // cleared `holding` at once, the keepalive never ran and the hold ended
-    // at the 3 s expiry (#355 finding 9). So "no pulse" only ends the hold
-    // once the dial has seen the Output pulsing since its take; a reason the
-    // droid gives for letting go - a bound, the estop, sleep, pulses off -
-    // ends it whenever it arrives.
+    // Only a reading the droid was asked for AFTER it answered the take can
+    // say that. The reading the dial opens on, and one already in flight when
+    // the take went out, describe the Output before the take, and whatever
+    // reason they carry is the reason it went limp THEN: "off" from boot
+    // (#355 finding 9), "estop" from an estop latched and cleared before the
+    // dial opened (#417). Believing either ended the fresh take at once, so
+    // the keepalive never ran. The reason is not the test and must not become
+    // one again - a list of stale reasons is only ever one reason short. The
+    // order of the reads is the test (data/outputs.js readSince()).
+    //
+    // The droid answers a take once it is queued, and ServoTask drains that
+    // queue every 20 ms tick (src/tasks/servo_task.cpp), so a read issued
+    // after the answer - a whole browser round trip later - finds it applied.
+    // One that beat the tick would put take it again up one press early; it
+    // can never keep asking for a pin the droid has let go.
+    //
+    // An estop latched after the take does not wait for any of this: the
+    // status stream ends the hold the moment it is heard (below).
     const live = OUTPUTS.live(output);
-    if (live.state === "pulsing") dial.confirmed = true;
-    const limp = live.state === "limp" && (dial.confirmed || live.reason !== "off");
+    const take = dial.take;
+    const limp = live.state === "limp" && take.after !== null && OUTPUTS.readSince(take.after);
     if (limp) dial.holding = false;
     dialResume.hidden = !limp;
     if (limp && !dial.sweeping) {

@@ -1269,10 +1269,12 @@ static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
 // be read as the same row. `-` is the absent value throughout: no member
 // setting, no active member, no Board Capability Gate.
 //
-// Sound is named explicitly rather than keyed off memberKey because the
-// boot-latched accessor is Sound's own. A second family that grows a member
-// setting brings its own accessor, and reusing this one for it would report
-// Sound's module under another family's name.
+// Each family with a member setting is named explicitly rather than keyed off
+// memberKey, because each brings its own accessor: Sound's is boot-latched,
+// the Radio Controller's is the saved choice (nothing on the controller runs
+// on the radio), resolved the way GET /api/identity/components resolves it.
+// Reusing one family's accessor for another would report its member under the
+// wrong family's name.
 //
 // One buffer for both loops: this runs on the Console task, whose worst-case
 // static chain is a measured constant ADR 0040's checker re-derives from the
@@ -1287,10 +1289,12 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
 
         for (size_t i = 0; i < COMPONENT_CATEGORY_TABLE_SIZE; ++i) {
             const ComponentCategoryEntry& cat = COMPONENT_CATEGORIES[i];
-            const ComponentPartEntry* active =
-                cat.id == COMPONENT_CATEGORY_SOUND
-                    ? componentPartByValue(configCacheReadActiveSoundMember())
-                    : nullptr;
+            const ComponentPartEntry* active = nullptr;
+            if (cat.id == COMPONENT_CATEGORY_SOUND) {
+                active = componentPartByValue(configCacheReadActiveSoundMember());
+            } else if (cat.id == COMPONENT_CATEGORY_RADIO_CONTROLLER) {
+                active = componentResolveMember(cat.id, configCacheReadRcMember());
+            }
             snprintf(itemBuf, sizeof(itemBuf),
                      "category:%s name:%s selectable:%u memberKey:%s activeMember:%s", cat.token,
                      cat.name, (unsigned)componentCategorySelectableCount(cat.id),

@@ -26,13 +26,15 @@
  * and tier 3 of the Layout Fallback Hierarchy consults it before showing this
  * picture: an MK4 complex dome is what these fourteen ring panels and six pies
  * ARE, so showing them to a builder who stated anything else would be a drawing
- * of somebody else's droid presented as theirs. The variant is named too - a
- * simple MK4 dome cannot grow the complex pies, so this drawing promises parts
- * that builder can never fit.
+ * of somebody else's droid presented as theirs - unless the catalog says their
+ * design is drawn as this one while its own list is unread (MK4.1, #409). The
+ * variant is named too - a basic MK4 dome cannot grow the complex pies, so this
+ * drawing promises parts that builder can never fit.
  */
 
-// The design and variant this SVG draws, read by data/dome_layout.js. It is
-// here rather than there because it is a fact about this picture.
+// The design and variant this SVG draws, read by DroidBuild.showsBuiltInDome()
+// (data/droid_build.js), which the Dashboard, Sequences and Parts all ask. It
+// is here rather than there because it is a fact about this picture.
 window.DOME_PANEL_MAP_DESIGN = 'mk4';
 window.DOME_PANEL_MAP_VARIANT = 'complex';
 

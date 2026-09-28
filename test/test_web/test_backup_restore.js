@@ -63,14 +63,27 @@ class FileReaderNow {
 
 // Restore `backup` onto a droid whose rows take a POST /api/config body's
 // `outputs` the way the firmware does - a Part a row states comes off the row
-// it was on - and whose config is the GET shape it was sent.
-const restore = async (backup) => {
+// it was on - and whose config is the GET shape it was sent. Like the
+// firmware, it refuses the whole body over a fitted Part the catalog does not
+// model, and with `soundOff` it refuses a volume (409, #370).
+const restore = async (backup, { soundOff = false } = {}) => {
   let env = null;
   const rows = freshDroid();
+  const { DroidParts } = partsGlobals();
+  const modelled = new Set(DroidParts.parts.map((part) => part.id));
   let config = { drive: { speedLimitMax: 100 } };
   env = loadPageModule("maintenance.js", {
     respond: (path, opts) => {
+      if (path === "/api/audio" && opts.method === "GET") return { data: { output: soundOff ? "off" : "on" } };
+      if (path === "/api/audio" && soundOff) {
+        throw Object.assign(new Error("Sound is off."), { kind: "http", status: 409 });
+      }
       if (opts.method === "POST" && path === "/api/config") {
+        if ((opts.body.droidBuild?.fitted || []).some((id) => !modelled.has(id))) {
+          throw Object.assign(new Error("fittedParts names a Part this build does not model"), {
+            kind: "http", status: 400, field: "fittedParts", reason: "out-of-range", accepts: null,
+          });
+        }
         const { outputs = [], ...sent } = opts.body;
         outputs.forEach((row) => {
           (row.parts || []).forEach((part) => rows.forEach((each) => {
@@ -88,7 +101,8 @@ const restore = async (backup) => {
     overrides: {
       PAFeatureAvailability: createFeatureAvailability(),
       FileReader: FileReaderNow,
-      PAOutputs: outputsModule(() => env.window.PAApi),
+      DroidParts,
+      PAOutputs: outputsModule(() => env.window.PAApi, { DroidParts }),
     },
   });
   await env.settle();
@@ -99,7 +113,7 @@ const restore = async (backup) => {
   const posts = (path) => env.requests
     .filter((request) => request.method === "POST" && request.path === path)
     .map((request) => request.opts.body);
-  return { rows, posts, receipt: env.element("backup-feedback").textContent };
+  return { rows, posts, config: () => config, receipt: env.element("backup-feedback").textContent };
 };
 
 // What the backup says each Output holds, read the way a builder would read
@@ -151,6 +165,27 @@ test("an Output the backup names and this droid lacks is not sent, and the recei
   assert.ok(!sent.includes("pca:3"), "a row for an Output this droid lacks is not sent");
   assert.equal(sent.length, 5, "and every Output it has is");
   assert.match(receipt, /Core config: partial — pca:3 not on this droid/);
+});
+
+// The backup the #355 bench restored (2026-09-28): made before #409 retired
+// `drawer`, onto a droid with Sound off. The droid refuses a fitted list naming
+// a Part it does not model, so the retired id used to fail the whole Core
+// config - droid build, Sound pick and Guided Setup with it - and the volume
+// read as a failure. The retired id is dropped and named; the volume is left
+// out and said to be.
+test("a backup naming a retired Part, restored with Sound off, lands the rest and names what it left out", async () => {
+  const backup = structuredClone(OLDER_BACKUP);
+  backup.config.droidBuild.fitted.push("drawer");
+  const { posts, config, receipt } = await restore(backup, { soundOff: true });
+
+  const landed = config();
+  assert.deepEqual(landed.droidBuild?.fitted, ["doorFL", "utilUp", "gripArm"],
+    "every fitted Part this build models lands, and the retired one does not");
+  assert.deepEqual(landed.guidedSetup, OLDER_BACKUP.config.guidedSetup);
+  assert.equal(landed.components?.audio?.member, OLDER_BACKUP.config.components.audio.member);
+  assert.match(receipt, /Core config: partial — [^\n]*drawer/, `the dropped Part is not named: ${receipt}`);
+  assert.equal(posts("/api/audio").length, 0, "no volume is sent to a droid with Sound off");
+  assert.match(receipt, /Audio tracks: restored[^\n]*volume/, `the skipped volume is not said: ${receipt}`);
 });
 
 // A backup that puts one Part on two Outputs is refused by the droid as a

@@ -198,8 +198,17 @@ PART_KINDS = frozenset(("light",))
 
 DESIGN_KEYS = frozenset(
     ("id", "preselected", "card", "halves", "label", "short", "blurb", "note",
-     "variants", "default_variant", "seeds", "picture")
+     "variants", "default_variant", "seeds", "picture", "dome_drawn_as")
 )
+
+# `dome_drawn_as`: the design and variant whose dome drawing stands in for this
+# design's dome until one of its own is read - `{design: mk4, variant:
+# complex}` on MK4.1, whose dome seeds copy MK4 Complex's (#409). It is what
+# DroidBuild.showsBuiltInDome() follows (data/droid_build.js), so the fact sits
+# beside the seeds it goes with and one edit here retires both. It names a
+# supported design offered for the dome, never one that stands in itself, so
+# the answer is one hop and cannot loop.
+DOME_DRAWN_AS_KEYS = frozenset(("design", "variant"))
 
 # `picture`: the asset-set picture a design card shows - the id of a drawing
 # (`art-<id>`) in the legacy set and a photograph (`/<id>.webp`) in the
@@ -651,6 +660,25 @@ def read_designs(doc, declared_ids, problems, halves=None):
             else:
                 row["picture"] = picture
 
+        drawn_as = design.get("dome_drawn_as")
+        if drawn_as is not None:
+            if (
+                not isinstance(drawn_as, dict)
+                or "design" not in drawn_as
+                or set(drawn_as) - DOME_DRAWN_AS_KEYS
+                or not all(isinstance(v, str) for v in drawn_as.values())
+            ):
+                problems.append(
+                    f"{where}: dome_drawn_as is {drawn_as!r}; it names a `design` "
+                    "and, where that design has variants, a `variant`"
+                )
+            else:
+                # Checked against the other rows once they are all read.
+                row["domeDrawnAs"] = {
+                    "design": drawn_as["design"],
+                    "variant": drawn_as.get("variant", ""),
+                }
+
         # Emitted only where it narrows: a design offered for both halves
         # carries no key, so there is one spelling of "both".
         halves_offered = design.get("halves")
@@ -778,6 +806,36 @@ def read_designs(doc, declared_ids, problems, halves=None):
             row["defaultVariant"] = default_variant
         row["variants"] = variant_rows
         rows.append(row)
+
+    # A stand-in drawing has to be one a builder could have picked for their
+    # dome at that variant; anything else draws a dome nobody can state.
+    by_id = {r["id"]: r for r in rows}
+    for row in rows:
+        drawn_as = row.get("domeDrawnAs")
+        if drawn_as is None:
+            continue
+        where = f"designs/{row['id']}"
+        if "dome" not in row.get("halves", DESIGN_HALVES):
+            problems.append(f"{where}: dome_drawn_as on a design not offered for the dome")
+        target = by_id.get(drawn_as["design"])
+        if (
+            target is None
+            or target is row
+            or target.get("card") != CARD_SUPPORTED
+            or "dome" not in target.get("halves", DESIGN_HALVES)
+            or "domeDrawnAs" in target
+        ):
+            problems.append(
+                f"{where}: dome_drawn_as names {drawn_as['design']!r}, which is "
+                "not another supported dome design with a drawing of its own"
+            )
+            continue
+        variant_ids = [v["id"] for v in target.get("variants", [])]
+        if (drawn_as["variant"] not in variant_ids) if variant_ids else drawn_as["variant"]:
+            problems.append(
+                f"{where}: dome_drawn_as variant {drawn_as['variant']!r} is not "
+                f"one of {drawn_as['design']}'s variants {variant_ids}"
+            )
 
     # Exactly one design is what a fresh controller starts on. None leaves a
     # fresh flash with no answer to record, which is the blank map ADR 0047
@@ -1335,6 +1393,10 @@ def generate_browser_module(catalog, output_path=None):
  * A variant whose complement is unknown carries `seeds: null`, never `[]`, so
  * reaching for it throws instead of quietly seeding an empty droid. `own`
  * carries `seeds: []`, which is a real and deliberate empty complement.
+ *
+ * `domeDrawnAs` on a design names the design and variant whose dome drawing
+ * stands in for its own while its dome seeds copy that design's. Its one
+ * reader is DroidBuild.showsBuiltInDome() (data/droid_build.js).
  *
  * `kind` is the Part Kind - what a Part usually IS, as opposed to what drives
  * it. Branch on this field, never on an id prefix or a name match. It is
