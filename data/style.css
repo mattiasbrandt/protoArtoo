@@ -35,16 +35,18 @@
 
    THE RETIRING SPELLINGS, AND WHERE THE SWEEP LEFT THEM. #399 drew all
    thirteen surfaces onto this layer, and each pass deleted the pre-anatomy
-   tokens it was the last reader of. --radius-md is the only one that went:
-   every other name below still has readers when the sweep ends, and they are
-   named here rather than left to be guessed at. Measured after the last pass:
+   tokens it was the last reader of. --radius-md is the only one that went
+   then, and --radius-lg followed when the 2026-09-28 rework of Foot Drive
+   deleted .rc-mode-card, its last reader: every other name below still had
+   readers when the sweep ended, and they are named here rather than left to
+   be guessed at. Measured after the sweep's last pass:
 
      --silver (4), --silver-bright (14), --white (5)   the pre-anatomy inks.
        The anatomy has three: --text, --text-dim, --text-faint.
      --space-3xs 2px (3), --space-xs 6px (12)   the pre-anatomy ladder's finer
        steps. The anatomy's ladder is 4 / 8 / 12 / 16 / 24 / 32.
-     --radius-sm (4), --radius-lg (1)   the pre-anatomy corners. An instrument
-       plate is chamfered (--radius-plate), not rounded, and a button keeps
+     --radius-sm (4)   the pre-anatomy corner. An instrument plate is
+       chamfered (--radius-plate), not rounded, and a button keeps
        --radius-xs so it still reads as a button.
 
    They survive because they are not on the surfaces: they are in shared
@@ -203,12 +205,11 @@
      asked for softer corners on Lights' plates on 2026-09-20 ("not very modern
      and sleek, looks very outdated"), and a dated operator decision is what
      this layer follows. A new step rather than the retiring --radius-lg, which
-     no new rule may reach for. */
+     no new rule could reach for and which has since gone. */
   --radius-soft: 10px;
   --radius-plate: 2px;
   --radius-xs: 3px;
   --radius-sm: 4px;
-  --radius-lg: 12px;
   --radius-pill: 999px;
   --radius-round: 50%;
 
@@ -1260,6 +1261,7 @@ body[data-page="firmware"] .card > * + * {
   color: var(--text-dim);
   background: var(--surface-alt);
   border: 1px solid var(--border-strong);
+  box-shadow: var(--elev-1);
   font-family: inherit;
   font-size: var(--fs-hint);
   font-weight: 600;
