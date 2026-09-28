@@ -1285,10 +1285,17 @@ def main() -> int:
             # PlatformIO's project checksum - the next plain pio invocation then
             # wipes every directory under .pio/build/. ADR 0040 assumed the flag
             # was needed; #271 measured that it is both unnecessary and destructive.
+            #
+            # Under the build lock, like the pio calls: the check reads the
+            # shared framework-arduinoespressif32-libs archives, which another
+            # worktree's first build extracts and rebuilds IN PLACE. Read
+            # unlocked, it raced one twice on #355's rework wave and failed on
+            # "no archives under .../esp32/lib" with nothing wrong in the slice.
             stage("stack chains", lambda: check_command_exit(
                 "task stack chains",
                 ["python3", "tools/check_task_stack_chains.py", "--env", "artoo_esp32"],
                 timeout=900,
+                lock=True,
             )),
         ])
     results.extend([
