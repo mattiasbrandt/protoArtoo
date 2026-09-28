@@ -2286,8 +2286,11 @@
       });
     });
 
-    // Step field inputs
-    document.querySelectorAll(".step-fields [data-field]").forEach((input) => {
+    // Step field inputs, and each step's time offset: .step-t sits beside the
+    // fields rather than among them, and validateAndUpdateStep() reads it back
+    // into the step like any field. Without a listener of its own, a changed
+    // time never reached the step, and Save sent the old one.
+    document.querySelectorAll(".step-fields [data-field], .step-card .step-t").forEach((input) => {
       const card = input.closest(".step-card");
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
