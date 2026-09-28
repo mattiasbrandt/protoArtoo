@@ -65,6 +65,10 @@ the patch releases, whose notes live on their own GitHub Release.
   see its servo and to open or close it. The arms are off until you add them
   from that list. The dome on the Dashboard and in Sequences is drawn the same
   way.
+- **Open a door from the Dashboard.** Dome panels on the Dashboard is now
+  Moving parts: your droid's body and dome, drawn side by side. Click a door,
+  panel or arm to open or close it. With the estop latched nothing moves, and
+  the card says so. Play a sequence from Sequences.
 - **Every answer says when it takes effect.** Each Setup question and each
   Configuration setting carries one line beside it: used at once, used from the
   droid's next start, or saved and needing a restart. Once you change something

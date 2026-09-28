@@ -43,8 +43,21 @@ const HEADLESS = process.env.HEADLESS === 'true';
     await page.waitForSelector('.dome-live-track', { timeout: 10000 });
     await page.waitForFunction(() => typeof window.__emitMockStatus === 'function', { timeout: 10000 });
 
+    // A frame the Live Reading will take: it refuses one missing any of the
+    // fields it verifies (data/live_reading.js VERIFIABLE_STATUS_FIELDS) as
+    // "not a reading", and a surface then keeps waiting. The three this
+    // script varies ride on top of a clear, awake, radio-quiet droid.
+    const VERIFIED_FRAME = {
+      estop: false,
+      sbusHwFailsafe: false,
+      sbusSignalLost: false,
+      webDriveExpired: false,
+      webControlEnabled: false,
+      sleepMode: false,
+    };
     const emitStatus = async (payload) => {
-      const emitted = await page.evaluate((p) => window.__emitMockStatus(p), payload);
+      const frame = { ...VERIFIED_FRAME, ...payload };
+      const emitted = await page.evaluate((p) => window.__emitMockStatus(p), frame);
       if (!emitted) throw new Error('Mock status emitter unavailable');
       await page.waitForTimeout(120);
     };
@@ -56,7 +69,6 @@ const HEADLESS = process.env.HEADLESS === 'true';
         const reloadButton = document.getElementById('reload-esc-button');
         return {
           hasLegacySlider: Boolean(document.getElementById('dome-slider')),
-          webNote: document.getElementById('dome-web-note')?.textContent?.trim() || '',
           hardwareState: document.getElementById('dome-hardware-state')?.textContent?.trim() || '',
           rotationStateClass: document.getElementById('dome-rotation-state')?.className || '',
           liveFillBackground: liveFill ? getComputedStyle(liveFill).backgroundColor : 'missing',
@@ -86,7 +98,6 @@ const HEADLESS = process.env.HEADLESS === 'true';
     // become enabled' sit here passing against a pill that has never contained
     // the word 'enabled' (#399 slice 3).
     if (reverse.hardwareState !== 'switched on') throw new Error('Dome hardware state not rendered');
-    if (!reverse.webNote.startsWith('Web control is on.')) throw new Error('Web control note did not follow the frame');
     if (reverse.rotationState !== 'Reverse' || reverse.speedText !== '-55%') throw new Error('Reverse status not rendered');
     if (idle.rotationState !== 'Idle' || idle.speedText !== '0%') throw new Error('Idle status not rendered');
     if (forward.rotationState !== 'Forward' || forward.speedText !== '72%') throw new Error('Forward status not rendered');

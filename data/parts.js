@@ -40,10 +40,7 @@
     partById,
     partLabel,
     listParts,
-    servoWord,
-    hasServoWord,
     optionText,
-    isLightRow,
   } = P;
 
   // The Output a Part is on, as the droid last answered.
@@ -283,140 +280,23 @@
 
   let drawing = null;
   let panel = null;
-
-  // What this page has told each dome piece, by the Panel Intent target the
-  // vendored map names it with. The dome reports nothing back, so this is the
-  // whole of what is known: a piece this page has told draws what it was told,
-  // and one it has not told draws no state at all. Closed is a position, and
-  // nobody said it (#417).
-  const domeTold = new Map();
-
-  // What one Part looks like on the picture, from the Output rows the droid
-  // last answered with. Commanded, all of it: `at` is the width the controller
-  // has put on the pin as a fraction of the travel the BUILDER recorded, so a
-  // reversed Endpoint Pair reads the same way round with no invert flag
-  // anywhere (ADR 0041), and an Output nobody has measured has no travel for a
-  // fraction to be of, which is its own mark rather than a made-up number.
-  //
-  // Whether there is a position at all, and the word when there is not, are
-  // data/outputs.js's answer, so a limp Part says why in the words Servos
-  // uses for the same Output.
-  const markFor = (partId) => {
-    const part = partById.get(partId);
-    if (!answered()) return { mark: view.MARKS.UNKNOWN, said: OUTPUTS.live(null).word };
-    const output = outputOf(partId);
-    if (!output) return { mark: view.MARKS.UNASSIGNED };
-    const live = OUTPUTS.live(output);
-    if (live.state === "unknown") return { mark: view.MARKS.UNKNOWN, said: live.word };
-    if (live.state === "limp") return { mark: view.MARKS.LIMP, said: live.word };
-    // A light has no travel, so it gets no position and no Open: the treatment
-    // removes what its Kind cannot promise (data/droid_part_kind.js).
-    if (kinds?.isLight(part)) return { mark: view.MARKS.UNKNOWN, said: `lit by ${output.name}` };
-    if (!output.calibrated) return { mark: view.MARKS.UNMEASURED };
-    const span = output.openUs - output.closeUs;
-    return { mark: view.MARKS.OPENABLE, at: span === 0 ? 0 : (output.commandedUs - output.closeUs) / span };
-  };
-
-  // A dome piece can stand for several Parts - a panel and the light on it -
-  // and it is one shape, so it draws the state of the Part on it that
-  // something drives, the panel before the light. A piece with no Output of
-  // ours but a Panel Intent target is the dome's to move, and draws what this
-  // page last told it, or nothing until it has told it anything.
-  const markerMark = (markerId) => {
-    const marker = drawing.markerOf(markerId);
-    if (marker.panTilt) return {};
-    const own = marker.parts.filter((id) => !kinds?.isLight(partById.get(id)));
-    const wired = own.concat(marker.parts).find((id) => answered() && outputOf(id) !== null);
-    if (wired) return markFor(wired);
-    if (marker.target) {
-      return domeTold.has(marker.target)
-        ? { mark: view.MARKS.OPENABLE, at: domeTold.get(marker.target) ? 1 : 0 }
-        : { mark: view.MARKS.UNKNOWN, said: "Not told yet" };
-    }
-    return markFor(own[0] || marker.parts[0]);
-  };
-
-  const fittedNow = () => {
-    const build = window.DroidBuild?.current();
-    return build ? build.fitted : null;
-  };
-
-  const designLabel = (half) => {
-    const build = window.DroidBuild?.current();
-    const design = build ? (catalog.designs || []).find((row) => row.id === build[half].design) : null;
-    if (!design) return "";
-    const variant = (design.variants || []).find((row) => row.id === build[half].variant);
-    return variant ? `${design.label} · ${variant.label}` : design.label;
-  };
-
-  // Which Parts are on this droid's picture: what the stated design seeds,
-  // plus whatever the builder has fitted beyond it - a Common Addition is on
-  // the picture once it is on the droid, and not before. Before the Droid
-  // Build has been read, the renderer's own default holds (everything but the
-  // additions), because an empty picture would read as "fitted nothing".
-  const pictureFor = () => {
-    const build = window.DroidBuild?.current();
-    const markerIds = drawing.markerIds();
-    if (!build) return { shown: null, domePending: false, domeNote: "" };
-    const onDroid = new Set(build.fitted);
-    ["body", "dome"].forEach((half) => {
-      const complement = window.DroidBuild.complementFor(build[half].design, build[half].variant, half);
-      complement.ids.forEach((id) => onDroid.add(id));
-    });
-    const shown = markerIds.filter((id) => drawing.markerOf(id).parts.some((partId) => onDroid.has(partId)));
-
-    // The dome drawing is the vendored MK4 Complex dome, and it is shown only
-    // where it IS the dome the builder says they built - the one rule the
-    // Dashboard's dome follows too (DroidBuild.showsBuiltInDome). A drawing of
-    // somebody else's dome presented as theirs is worse than none.
-    const dome = build.dome;
-    const domeComplement = window.DroidBuild.complementFor(dome.design, dome.variant, "dome");
-    const domePending = dome.design !== "" && !domeComplement.known;
-    const drawingIsTheirs = window.DroidBuild.showsBuiltInDome(dome.design, dome.variant);
-    let domeNote = "";
-    if (domePending) domeNote = "Dome parts pending. This build does not record which panels that dome carries.";
-    else if (!drawingIsTheirs) domeNote = "No drawing of that dome design yet.";
-    else if (!markerIds.some((id) => drawing.markerOf(id).half === "dome")) {
-      domeNote = "No dome drawing in this firmware.";
-    }
-    return { shown, domePending, domeNote };
-  };
-
-  // The Output a body Part's Open it would go through. POST /api/servo
-  // addresses an Output by the name a builder already knows it by, so an
-  // expander's unnamed row cannot be reached from here at all - the same bound
-  // the calibration dial keeps.
-  const servoOutputFor = (partId) => {
-    const output = answered() ? outputOf(partId) : null;
-    if (!output || !hasServoWord(output) || isLightRow(output) || !output.calibrated) return null;
-    return output;
-  };
+  // What a pick means - its mark, whether it may open, and the one request
+  // that opens it - is data/droid_picture.js's, shared with the Dashboard's
+  // Moving parts card so the two cannot disagree. Made once the drawing is.
+  let picture = null;
 
   // Everything the panel says about a pick, and the one sentence that says why
   // an act cannot run. Every refusal names the next move.
   const describePick = (markerId) => {
-    const marker = drawing.markerOf(markerId);
+    const decision = picture.decide(markerId, estop);
+    const { marker, mark, cls, output, isFitted, unwired, offButMapped } = decision;
     const parts = marker.parts;
-    const fitted = fittedNow();
-    const unfitted = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) === -1);
-    const onDroid = fitted === null ? [] : parts.filter((id) => fitted.indexOf(id) !== -1);
-    const isFitted = unfitted.length < parts.length;
-    const own = parts.filter((id) => !kinds?.isLight(partById.get(id)));
-    const wiredPart = own.concat(parts).find((id) => answered() && outputOf(id) !== null) || null;
-    const output = wiredPart === null ? null : outputOf(wiredPart);
-    const servoOutput = wiredPart === null ? null : servoOutputFor(wiredPart);
-    const unwired = parts.filter((id) => answered() && outputOf(id) === null);
-    // A Part off the droid with an Output still mapped: the two facts disagree,
-    // and neither is wrong, so the panel says both and changes neither.
-    const offButMapped = fitted !== null && !isFitted && output !== null;
-    const mark = markerMark(markerId);
-    const cls = marker.panTilt ? null : view.markClass(mark, isFitted);
-    const open = cls === "open";
+    const fitted = picture.fittedNow();
 
     let servo;
     if (output) servo = `On a servo (${output.name})`;
     else if (marker.target) servo = "On a servo (protoR2link)";
-    else if (!answered()) servo = OUTPUTS.live(null).word;
+    else if (!picture.answered()) servo = OUTPUTS.live(null).word;
     else servo = "No output mapped";
 
     const facts = [{ term: "Servo", value: servo }];
@@ -433,49 +313,13 @@
         ? parts.map((id) => partById.get(id)?.shorthand || partLabel(id)).join(" · ")
         : [part?.position, part?.cadName === null ? "Common Addition" : ""].filter(Boolean).join(" · ");
 
-    // The dome is moved over the dome link, so its Open it waits on nothing of
-    // ours but the estop; a body Part's waits on an Output with measured ends.
-    const canToggle = marker.panTilt
-      ? false
-      : output
-        ? servoOutput !== null
-        : Boolean(marker.target);
-
-    // A holoprojector is offered no act at all, so there is nothing refused
-    // to explain.
-    let why = "";
-    if (marker.panTilt) {
-      why = "";
-    } else if (offButMapped) {
-      why = `Not on your droid, but still mapped to ${output.name}. Add it back, or change its output.`;
-    } else if (!isFitted) {
-      why = "Not on your droid. Add it to your build first.";
-    } else if (!answered() && !marker.target) {
-      why = "Waiting for the droid to say what drives it.";
-    } else if (estop === "waiting") {
-      why = "Waiting to hear if the droid is stopped. Open waits for the answer.";
-    } else if (estop === "latched") {
-      why = "Estop latched. Nothing moves until it is cleared.";
-    } else if (!output && !marker.target) {
-      why = "No output mapped. Give it one first.";
-    } else if (output && isLightRow(output)) {
-      why = "A light has no travel. Nothing to open.";
-    } else if (output && !output.calibrated) {
-      why = "Ends not measured yet. Calibrate its output on Servos.";
-    } else if (output && !hasServoWord(output)) {
-      why = "Its output has no name this page can send to. Drive it from its row on Servos.";
-    }
-
     return {
+      ...decision,
       title: marker.label,
       subtitle,
       facts,
       acts: {
-        toggle: {
-          shown: !marker.panTilt,
-          label: open ? "Close it" : "Open it",
-          enabled: canToggle && isFitted && estop === "clear",
-        },
+        toggle: decision.toggle,
         fit: {
           shown: fitted !== null,
           label: isFitted ? "Drop from build" : "Add to build",
@@ -487,16 +331,6 @@
           enabled: parts.some((id) => rows.has(id)),
         },
       },
-      why,
-      marker,
-      open,
-      output: servoOutput,
-      isFitted,
-      onDroid,
-      unfitted,
-      unwired,
-      offButMapped,
-      wiredPart,
     };
   };
 
@@ -508,22 +342,18 @@
 
   const paintBody = () => {
     if (drawing === null) return;
-    const marks = {};
-    drawing.markerIds().forEach((markerId) => {
-      marks[markerId] = markerMark(markerId);
-    });
-    const picture = pictureFor();
+    const onPicture = picture.pictureFor();
     // One kind of state at a time. This surface shows the live kind - what the
     // droid was last told. A routine's moment is the same shape through the
     // same renderer and is never mixed into this one.
     drawing.update({
       kind: view.STATE_KINDS.LIVE,
-      marks,
-      shown: picture.shown,
-      fitted: fittedNow(),
-      stamp: designLabel("body"),
-      domePending: picture.domePending,
-      domeNote: picture.domeNote,
+      marks: picture.marks(),
+      shown: onPicture.shown,
+      fitted: picture.fittedNow(),
+      stamp: picture.designLabel("body"),
+      domePending: onPicture.domePending,
+      domeNote: onPicture.domeNote,
     });
     paintPanel();
   };
@@ -536,7 +366,7 @@
   // confirmed. The caller then reads fittedNow() for what actually happened,
   // which also covers a write that timed out after the droid took it.
   const writeFitted = (nextFitted) => {
-    const before = fittedNow();
+    const before = picture.fittedNow();
     return window.DroidBuild.applyDroidBuild({ fitted: nextFitted }).then((result) => {
       if (result.persisted) return;
       return window.DroidBuild.load({ refresh: true }).then((held) => {
@@ -546,13 +376,13 @@
   };
 
   const addToBuild = (ids, names) => {
-    const fitted = fittedNow();
+    const fitted = picture.fittedNow();
     if (fitted === null) return;
     const missing = ids.filter((id) => fitted.indexOf(id) === -1);
     if (missing.length === 0) return;
     writeFitted(fitted.concat(missing))
       .then(() => {
-        const now = fittedNow() || [];
+        const now = picture.fittedNow() || [];
         const took = missing.every((id) => now.indexOf(id) !== -1);
         showFeedback(
           took
@@ -572,13 +402,13 @@
   // Part that still has an Output mapped is said, with where to change it, and
   // never unmapped here.
   const dropFromBuild = (ids, names) => {
-    const fitted = fittedNow();
+    const fitted = picture.fittedNow();
     if (fitted === null) return;
     const leaving = ids.filter((id) => fitted.indexOf(id) !== -1);
     if (leaving.length === 0) return;
     writeFitted(fitted.filter((id) => leaving.indexOf(id) === -1))
       .then(() => {
-        const now = fittedNow() || [];
+        const now = picture.fittedNow() || [];
         if (!leaving.every((id) => now.indexOf(id) === -1)) {
           showFeedback(`${names} did not reach the droid, so nothing was dropped.`, "error");
           paintBody();
@@ -586,7 +416,7 @@
         }
         const mapped = [];
         leaving.forEach((id) => {
-          const output = answered() ? outputOf(id) : null;
+          const output = picture.answered() ? picture.outputOf(id) : null;
           if (output && mapped.indexOf(output.name) === -1) mapped.push(output.name);
         });
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
@@ -613,7 +443,7 @@
         // group: an arm without its claw is not a thing a builder has on the
         // bench (operator, 2026-09-19 on #373).
         const group = view.ADDITION_GROUPS.find((each) => each.ids.some((id) => pick.onDroid.indexOf(id) !== -1));
-        const fitted = fittedNow() || [];
+        const fitted = picture.fittedNow() || [];
         const leaving = group ? group.ids.filter((id) => fitted.indexOf(id) !== -1) : pick.onDroid;
         const whole = group && leaving.length === group.ids.length;
         dropFromBuild(leaving, whole ? group.label : leaving.map(partLabel).join(", "));
@@ -639,43 +469,11 @@
       return;
     }
     if (actId !== "toggle" || !pick.acts.toggle.enabled) return;
-    const verb = pick.open ? "close" : "open";
-    const label = pick.marker.label;
-    if (pick.output) {
-      const gang = pick.output.parts.filter((id) => pick.marker.parts.indexOf(id) === -1);
-      started(
-        window.PAApi.postForm(
-          "/api/servo",
-          { arm: servoWord(pick.output), action: verb },
-          { timeoutMs: 4000 }
-        ).then(
-          () => {
-            showFeedback(
-              `${label} told to ${verb}.` +
-                (gang.length ? ` ${listParts(gang)} ${gang.length === 1 ? "moves" : "move"} with it.` : ""),
-              "success"
-            );
-            refresh();
-          },
-          (error) => {
-            showFeedback(`${label} did not ${verb}: ${window.PAApi.messageFor(error)}`, "error");
-          }
-        )
-      );
-      return;
-    }
-    const target = pick.marker.target;
     started(
-      window.PAApi.postForm("/api/dome/cmd", { cmd: `${verb === "open" ? ":OP" : ":CL"}${target}` }).then(
-        () => {
-          domeTold.set(target, verb === "open");
-          showFeedback(`${label} told to ${verb}.`, "success");
-          paintBody();
-        },
-        (error) => {
-          showFeedback(`${label} did not ${verb}: ${window.PAApi.messageFor(error)}`, "error");
-        }
-      )
+      picture.openClose(pick).then((result) => {
+        showFeedback(result.text, result.level);
+        paintBody();
+      })
     );
   };
 
@@ -695,6 +493,7 @@
       onFace: () => paintPanel(),
       onAdd: (group) => addToBuild(group.ids, group.label),
     });
+    picture = window.PADroidPicture.caller(drawing);
     // The Fitted Parts, so the picture knows what is on this droid. One read,
     // shared with every other surface that wants the Droid Build
     // (data/droid_build.js holds it single-flight), and the picture draws from

@@ -34,6 +34,13 @@
 // Outputs already let go); `textPlainPhotos: [ids]` answers those registry
 // photographs as text/plain, for a self-test.
 //
+// FIXTURE_FITTED=<part ids, comma-separated> in the environment fits those
+// Parts on whichever droid a script runs, so a script with no option of its
+// own can meet a droid that carries a Common Addition - an arm is on the Parts
+// picture only once it is fitted. The artoo droid adds them to its Droid
+// Build; the bench droid, which has none, gets an MK4 Complex body and dome
+// with those and the Parts on its Outputs fitted. Unset, both droids answer exactly as above.
+//
 // THE STATUS STREAM is the one route page.route cannot fake faithfully:
 // route.fulfill() hands over a finished body, so an EventSource reading it
 // sees the stream END, errors and reconnects - a flapping link, which is the
@@ -99,6 +106,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const REPO = path.resolve(__dirname, '..', '..', '..');
 const ASSETS = path.join(REPO, 'data', 'asset-sets', 'default');
@@ -256,6 +264,32 @@ const initialConfig = (droid) => {
   };
 };
 
+// The FIXTURE_FITTED override (header). An id the catalog (data/droid_parts.js)
+// does not carry stops the script: it would otherwise run against a droid
+// that fits nothing new and pass for the wrong reason.
+const withFitted = (config, outputs, list) => {
+  const ids = String(list || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (ids.length === 0) return config;
+  const catalog = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(REPO, 'data', 'droid_parts.js'), 'utf8'), catalog);
+  const known = new Set(catalog.window.DroidParts.parts.map((part) => part.id));
+  const unknown = ids.filter((id) => !known.has(id));
+  if (unknown.length) throw new Error(`fixture_routes: FIXTURE_FITTED names no catalog Part: ${unknown.join(', ')}`);
+  // A droid with no Droid Build of its own still carries what its Outputs
+  // drive, so those stay fitted and keep offering their acts.
+  const build = config.droidBuild || {
+    domeDesign: 'mk4',
+    domeVariant: 'complex',
+    bodyDesign: 'mk4',
+    bodyVariant: 'complex',
+    fitted: outputs.flatMap((row) => row.parts || []),
+  };
+  return { ...config, droidBuild: { ...build, fitted: [...new Set([...build.fitted, ...ids])] } };
+};
+
 const identityOf = (droid) => {
   if (droid === 'bench') {
     return {
@@ -309,7 +343,7 @@ const install = async (context, options = {}) => {
     writes: [],
     accepted: [],
     outputsReads: 0,
-    config: initialConfig(droid),
+    config: withFitted(initialConfig(droid), initialOutputs(droid), process.env.FIXTURE_FITTED),
   };
 
   const status = () => {

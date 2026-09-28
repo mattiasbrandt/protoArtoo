@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/dome_control.js,/outputs.js,/app.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/body_art.js,/body_view.js,/outputs.js,/parts_mapping.js,/droid_picture.js,/dome_control.js,/app.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -117,22 +117,33 @@
       <div id="component-status-grid" class="status-grid"></div>
     </div>
 
-    <!-- Dome Control (Collapsible)
+    <!-- Moving parts (Collapsible): the droid's two drawings, the body and the
+         dome, and nothing else. A click on a drawn door, panel or arm opens or
+         closes it, held by the same estop and the same refusals as Parts
+         (data/droid_picture.js); a refused click sends nothing and says why
+         (#372, operator 2026-09-28). The ids keep their old dome-control
+         names: data/dome_control.js and the browser scripts reach the card
+         by them.
 
          Its own disclosure rather than a <details>: dome_control.js renders the
-         dome drawing lazily on the first expand and owns this header's
+         drawings lazily on the first expand and owns this header's
          aria-expanded, so the button and the hidden body are part of how it
          works and not a dressing choice. It is drawn as a disclosure like the
          one below it. -->
     <div class="disclose" id="dome-control-card">
       <button id="dome-control-header" class="dome-control-header" aria-expanded="false" aria-controls="dome-control-body">
         <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
-        <h2>Dome panels</h2>
+        <h2>Moving parts</h2>
         <span class="sub">open and close</span>
       </button>
       <div id="dome-control-body" class="dome-control-body disclose-body hidden">
         <div class="dome-control-feedback feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-        <!-- Dome SVG and sequence controls injected here -->
+        <div class="moving-parts">
+          <!-- The body drawing (data/body_view.js, Front and Rear) -->
+          <div class="moving-parts-body"></div>
+          <!-- The dome drawing and where it came from -->
+          <div class="moving-parts-dome"></div>
+        </div>
       </div>
     </div>
 
@@ -164,12 +175,10 @@
          page (#399, operator review 2026-09-28). -->
     <div class="card" id="this-droid-card">
       <div class="sect"><h2>This droid</h2><span class="sub">read from the running Body Controller</span></div>
-      <!-- No picture. This surface has never held one, and CONTEXT.md "Body
-           View" puts a recognisable droid silhouette in its _Avoid_ list on
-           purpose: the real drawing of the droid is an arrangement, not a
-           likeness (#317, ADR 0063), so an outline on the surface a builder
-           most expects the real thing teaches the wrong model of what the
-           Body View will be. The Body View is C4's and is not built. -->
+      <!-- No picture here: the droid is drawn once on this surface, in the
+           Moving parts card above (data/body_view.js, ADR 0063 as amended
+           2026-09-19), and a second drawing on the identity plate would be a
+           second thing to keep in step with it. -->
       <dl class="build">
         <div>
           <dt>Droid Build</dt>
