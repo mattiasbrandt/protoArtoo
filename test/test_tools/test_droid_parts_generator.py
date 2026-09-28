@@ -185,6 +185,15 @@ class GeneratorRefusals(unittest.TestCase):
         self.scratch.edit("legacy_ids: [simple]", "legacy_ids: [complex]")
         self.assertRefused("legacy_ids that are ambiguous")
 
+    def test_a_stand_in_dome_drawing_nobody_can_state(self):
+        """MK4.1 is drawn as MK4 Complex (#409); a stand-in naming a variant
+        the design does not publish would draw a dome no builder can state."""
+        self.scratch.edit(
+            "dome_drawn_as: {design: mk4, variant: complex}",
+            "dome_drawn_as: {design: mk4, variant: simple}",
+        )
+        self.assertRefused("is not one of mk4's variants")
+
     def test_a_design_that_does_not_say_which_card_it_is(self):
         """A surface guessing the kind from the id or the seeds is how `own`
         and an unread complement end up drawn alike (ADR 0047)."""

@@ -315,9 +315,34 @@ void test_the_heap_keys_publish_their_readings(void) {
     TEST_ASSERT_EQUAL_UINT32(4000000, doc["heapLargest8bit"].as<uint32_t>());
 }
 
+// In ELRS mode the controller reads no receiver (include/robot_state.h,
+// RC_INPUT_ELRS), so every RC channel is standby - not the SBUS branches'
+// not_seen, which told a builder on the #355 bench that the droid was waiting
+// for an SBUS frame it will never read. All six say the one ELRS line: rcCh3..6
+// said "elrs routing is configurable via /api/config" before.
+void test_elrs_mode_rc_channels_are_standby_without_sbus_words(void) {
+    StatusJsonInputs in = widestInputs();
+    in.rcInputMode = RC_INPUT_ELRS;
+    in.lastSbus1Ms = 0;
+    in.lastSbus2Ms = 0;
+    static char body[kUnbounded];
+    TEST_ASSERT_TRUE(formatStatusJson(body, sizeof(body), in));
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(deserializeJson(doc, body) == DeserializationError::Ok);
+    const char* elrsDetail = doc["rcCh1"]["detail"].as<const char*>();
+    TEST_ASSERT_NOT_NULL(elrsDetail);
+    TEST_ASSERT_NULL_MESSAGE(strstr(elrsDetail, "SBUS"), elrsDetail);
+    for (const char* key : {"rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"}) {
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("standby", doc[key]["state"].as<const char*>(), key);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(elrsDetail, doc[key]["detail"].as<const char*>(), key);
+    }
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_worst_case_status_document_fits_its_buffer);
     RUN_TEST(test_the_heap_keys_publish_their_readings);
+    RUN_TEST(test_elrs_mode_rc_channels_are_standby_without_sbus_words);
     return UNITY_END();
 }

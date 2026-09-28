@@ -114,6 +114,35 @@
     return { ids: seeds.filter((id) => halfOf(id) === half), known: true };
   }
 
+  /**
+   * May the built-in dome drawing be shown as this builder's dome?
+   *
+   * The one answer to that question: the Dashboard's dome card and Sequences
+   * (through data/dome_layout.js's tier 3) and the Parts page's dome half all
+   * ask here. The drawing declares what it is of (data/dome_panel_model.js);
+   * a design whose dome seeds copy another's until its own list is read says
+   * so in the catalog (`domeDrawnAs`, MK4.1 as MK4 Complex, #409) and is drawn
+   * as that design. Anything else - another design, another variant, a
+   * design this catalog does not carry - is not, because a drawing of
+   * somebody else's dome presented as theirs is worse than none.
+   *
+   * An unstated design keeps the drawing: a page or controller that records
+   * no Dome Design has made no statement that the drawing is wrong.
+   *
+   * @param {string} designId - '' when no Dome Design is stated
+   * @param {string} variantId
+   * @returns {boolean}
+   */
+  function showsBuiltInDome(designId, variantId) {
+    if (designId === '') {
+      return true;
+    }
+    const design = designById(designId);
+    const drawnAs = (design && design.domeDrawnAs) || { design: designId, variant: variantId };
+    return drawnAs.design === window.DOME_PANEL_MAP_DESIGN &&
+      drawnAs.variant === window.DOME_PANEL_MAP_VARIANT;
+  }
+
   // ── The applied build ──────────────────────────────────────────────────
 
   function emptyBuild() {
@@ -348,6 +377,7 @@
     isFitted,
     onChange,
     complementFor,
+    showsBuiltInDome,
     halfOf,
     fromConfig,
   };

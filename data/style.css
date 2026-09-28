@@ -556,10 +556,9 @@ button.status-pill:focus-visible {
    The nav rail, ordered by Activity Group (ADR 0048, #288, ADR 0066).
 
    A column at computer resolution and a strip at 1100 px and below (the
-   breakpoint block further down). A group is its label, the hint saying what
-   the builder is doing, and the surfaces it offers; the divider between groups
-   is drawn here rather than stored beside the data, so retiring a group stays
-   a render-time decision.
+   breakpoint block further down). A group is its label and the surfaces it
+   offers; the divider between groups is drawn here rather than stored beside
+   the data, so retiring a group stays a render-time decision.
 
    The rail's right edge is a panel seam, and the surface on screen lights two
    pixels of the link's own left edge - the dome has lines like that, and a
@@ -619,9 +618,6 @@ nav > a {
 }
 
 .nav-group-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3xs);
   margin: 0;
   padding: 0 var(--space-md) var(--space-2xs);
 }
@@ -632,12 +628,6 @@ nav > a {
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.nav-group-hint {
-  font-size: var(--fs-hint);
-  line-height: 1.4;
   color: var(--text-faint);
 }
 
@@ -6931,10 +6921,6 @@ body[data-page="maintenance"] .status-item .hint {
 
   .nav-group-head {
     padding: 0 var(--space-sm) 0 0;
-  }
-
-  .nav-group-hint {
-    display: none;
   }
 
   .nav-group-links {
