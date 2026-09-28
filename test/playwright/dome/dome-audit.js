@@ -27,7 +27,6 @@ async function collect(page, label) {
       liveFillWidth: getComputedStyle(document.getElementById('dome-live-fill')).width,
       speedValue: speed ? speed.textContent.trim() : '',
       hardwareState: document.getElementById('dome-hardware-state')?.textContent?.trim() || '',
-      webNote: document.getElementById('dome-web-note')?.textContent?.trim() || '',
       rotationState: document.getElementById('dome-rotation-state')?.textContent?.trim() || '',
       domeFeedback: domeFeedback
         ? { text: domeFeedback.textContent.trim(), className: domeFeedback.className }
