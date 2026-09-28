@@ -205,8 +205,8 @@ const BOARD_LABELS = {
       if (window.PAApi) {
         try {
           const fwResult = await window.PAApi.get("/fw-version.json", { timeoutMs: 2500, cache: "no-store" });
-          if (fwResult.data?.fwVersion) {
-            expectedFwVersion = String(fwResult.data.fwVersion);
+          if (fwResult.data?.firmwareVersion) {
+            expectedFwVersion = String(fwResult.data.firmwareVersion);
           }
         } catch (_error) {
           // Continue with unknown if fetch fails
