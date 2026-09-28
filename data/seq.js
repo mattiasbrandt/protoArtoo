@@ -25,7 +25,7 @@
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
-    expanded: new Set(), // Slice 1: Set of step indices that are expanded (presentation-only)
+    expanded: new Set(), // Set of step indices that are expanded (presentation-only)
   };
 
   // How many Learned Sequences this droid lets a builder save. It is a board
@@ -268,7 +268,7 @@
   };
 
   // =========================================================================
-  // Slice A: Load & Render List View
+  // Load & Render List View
   // =========================================================================
 
   // The two lists are two page sections (registered at the bottom of this
@@ -513,15 +513,15 @@
   };
 
   // =========================================================================
-  // Slice B: Full Editor View
+  // Full Editor View
   // =========================================================================
 
-  // Slice 5: Validate a step and return validation result
+  // Validate a step and return validation result
   const validateStepForCard = (step, stepIdx) => {
     return SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
   };
 
-  // Slice 1: Plain-English preview text for each step type
+  // Plain-English preview text for each step type
   const stepPreview = (step) => {
     switch (step.type) {
       case "audio":
@@ -664,7 +664,7 @@
     return { name: "Panel Action" };
   };
 
-  // Slice 4: Step type descriptions for reference panel
+  // Step type descriptions for reference panel
   const stepTypeDescriptions = {
     audio: "Play a sound or cue",
     dome: "Open, close, apply visual presets, or control logic/PSI mood on dome panels",
@@ -675,7 +675,7 @@
     end: "Mark the end of the sequence",
   };
 
-  // Slice 4: Render the reference panel (What Each Step Type Does)
+  // Render the reference panel (What Each Step Type Does)
   const renderStepTypeReference = () => {
     return `
       <div class="step-type-reference">
@@ -708,7 +708,7 @@
     }
     const preview = stepPreview(step);
 
-    // Slice 5: Get validation state for this step
+    // Get validation state for this step
     const validation = validateStepForCard(step, idx);
     const isInvalid = !validation.ok;
     const errorId = `step-card-error-${idx}`;
@@ -739,7 +739,7 @@
         <div class="step-card-expanded-content">
           <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
 
-          <!-- Slice 4: Grouped icon cards (Common + Advanced) -->
+          <!-- Grouped icon cards (Common + Advanced) -->
           <div class="step-type-picker">
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
@@ -798,7 +798,7 @@
     `;
   };
 
-  // Slice 2: Helper to render a grouped field section with optional label
+  // Helper to render a grouped field section with optional label
   const renderFieldGroup = (label, fieldsHtml) => {
     if (!fieldsHtml || fieldsHtml.trim() === "") return "";
     return `
@@ -811,7 +811,7 @@
     `;
   };
 
-  // Slice 2: Helper to generate a contextual help line for a step
+  // Helper to generate a contextual help line for a step
   const stepHelpLine = (step) => {
     switch (step.type) {
       case "audio":
@@ -2166,7 +2166,7 @@
       end: {},
     };
 
-    // Slice 1: Card expand/collapse listeners
+    // Card expand/collapse listeners
     document.querySelectorAll(".step-card").forEach((card) => {
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       const header = card.querySelector(".step-card-header");
@@ -2301,7 +2301,7 @@
       input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
     });
 
-    // Slice 4: Reference panel toggle (What Each Step Type Does)
+    // Reference panel toggle (What Each Step Type Does)
     document.querySelectorAll(".step-type-reference-toggle").forEach((toggle) => {
       toggle.addEventListener("click", (e) => {
         e.preventDefault();
@@ -2795,7 +2795,7 @@
   };
 
   // =========================================================================
-  // Import Modal (Placeholder for Slice F)
+  // Import Modal
   // =========================================================================
 
   const handleImportConfirm = async () => {
