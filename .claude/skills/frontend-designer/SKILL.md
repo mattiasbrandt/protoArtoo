@@ -24,12 +24,12 @@ Implementation guidance:
 - Ensure API latency or device unavailability has visible, actionable messaging.
 - Keep backend/dev-only detail out of primary copy; expose it via optional tooltips or secondary help text.
 - Use pill-style context/status boxes for concise state and mode communication.
-- NEVER an emoji on an operator surface. ADR 0066 retired it and `tools/check_surface_anatomy.py` fails the build on one. Where a glyph earns its place it is an icon from the project's own SVG sprite, inheriting the text colour, with its label still beside it.
+- NEVER an emoji on an operator surface. ADR 0066 retired it and `tools/check_surface_anatomy.py` fails the build on one. Where a glyph earns its place it is an icon from the project's own SVG sprite, inheriting the text color, with its label still beside it.
 - Prefer modern segmented/chip/radio-card option selectors over classic dropdowns when choices are small and known. Sized by how many there are:
   - up to about five: a segmented bar (`segmented()`, `data/output_settings.js`);
   - more than that: small pills that WRAP onto two or three lines, never a wider bar and never a menu;
-  - a colour: SWATCHES showing the colour itself, named once beneath the picked one. A colour named in a menu is a word doing a swatch's job.
-  - A token with no colour of its own (`DEFAULT`) gets a neutral dot. Never invent one for it.
+  - a color: SWATCHES showing the color itself, named once beneath the picked one. A color named in a menu is a word doing a swatch's job.
+  - A token with no color of its own (`DEFAULT`) gets a neutral dot. Never invent one for it.
 
 Control scale - the mistake this project makes most:
 - `.btn` and `.field` are PAGE- and FORM-scale house classes. Dropped on a card they are always too big, and this has been caught by the operator on three separate reviews.
