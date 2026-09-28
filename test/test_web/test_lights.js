@@ -181,3 +181,21 @@ test("an LED count saved before the page opened still waits for a restart", asyn
   const state = env.plateFor("dataPanel").querySelector(".light-state")?.textContent;
   assert.equal(state, "Waiting for a restart", "the droid started with 8, and 16 is saved");
 });
+
+// Every "no" names the builder's next move, and a destination the builder
+// cannot act on is the defect CONTEXT.md "Availability Family" records. A Part
+// is put on its Output on Wiring since the mapping moved there (operator,
+// 2026-09-28 on #411), so a lit wire with no Part on it sends them there and
+// not to Parts, which no longer has a picker to offer.
+test("a lit wire with no Part on it sends the builder to Wiring to put one on", async () => {
+  const answer = droid();
+  const spare = answer.outputs[2];
+  spare.wired = true;
+  spare.component = "rgb";
+  const env = await ready({ answer });
+
+  const note = env.parsed.getElementById("lights-body-spare");
+  assert.equal(note.classList.contains("hidden"), false, "the fixture has a lit wire lighting nothing");
+  assert.match(note.textContent, /on Wiring\.$/);
+  assert.doesNotMatch(note.textContent, /Parts/);
+});
