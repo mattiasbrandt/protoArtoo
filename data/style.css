@@ -6015,9 +6015,15 @@ body[data-page="maintenance"] .status-item .hint {
    its own column so the feedback line above them never moves either. */
 .moving-parts {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-lg);
   align-items: start;
+}
+
+/* The body drawn at the dome's scale beside it, not the full column width. */
+.moving-parts-body .bv-svg {
+  max-width: 440px;
+  margin: 0 auto;
 }
 
 .dome-svg-container {
