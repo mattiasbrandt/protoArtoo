@@ -369,6 +369,11 @@
 
       els.cardsContainer.innerHTML = html;
 
+      // A paint of nothing but waiting slots has no buttons to bind.
+      const cardsWritten = (learnedAnswered && sequences.length > 0)
+        || (factoryAnswered && untunedFactory.length > 0);
+      if (!cardsWritten) return;
+
       // Attach event listeners to Learned sequence action buttons
       els.cardsContainer.querySelectorAll('.seq-card-actions button:not([data-action="tune"])').forEach((btn) => {
         const action = btn.dataset.action;
