@@ -10,7 +10,12 @@
   // State & DOM References
   // =========================================================================
   let sequences = []; // Current list of learned sequences
-  let builtins = []; // Factory sequences (cached after first load)
+  let builtins = []; // Factory sequences
+  // Whether each list has answered at least once. Until it has, its place on
+  // the page waits rather than reading as empty: an unanswered list is not a
+  // list with nothing on it. A later re-read keeps the last answer on screen.
+  let learnedAnswered = false;
+  let factoryAnswered = false;
   let currentEditingSeq = null; // The sequence being edited (or null)
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
@@ -20,7 +25,7 @@
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
-    expanded: new Set(), // Slice 1: Set of step indices that are expanded (presentation-only)
+    expanded: new Set(), // Set of step indices that are expanded (presentation-only)
   };
 
   // How many Learned Sequences this droid lets a builder save. It is a board
@@ -263,36 +268,68 @@
   };
 
   // =========================================================================
-  // Slice A: Load & Render List View
+  // Load & Render List View
   // =========================================================================
 
-  const loadSequenceList = async () => {
-    try {
-      const result = await PAApi.get("/api/seq/list");
-      sequences = result.data || [];
-      await loadBuiltins();
-      renderListView();
-    } catch (error) {
-      console.error("Error loading sequences:", error);
-      sequences = [];
-      await loadBuiltins();
-      renderListView();
-    }
+  // The two lists are two page sections (registered at the bottom of this
+  // file). Each loads through the section's handle, so its deadline and
+  // cancellation are the run's, and each lets a failure through to the Page
+  // Recovery View, which waits out a busy controller, retries and says what is
+  // missing. Neither catches: a read swallowed here is a list that never comes
+  // back until a reload, which is how the factory list went missing after an
+  // upload (#434). Each paints on its own answer, so one list never waits on,
+  // or is wiped by, the other.
+  const LEARNED_SECTION = "seq-learned";
+  const FACTORY_SECTION = "seq-factory";
+
+  const loadLearned = async ({ handle = null } = {}) => {
+    const answer = await (handle || window.PAApi).get("/api/seq/list");
+    sequences = answer.data || [];
+    learnedAnswered = true;
+    renderListView();
   };
 
+  const loadFactory = async ({ handle = null } = {}) => {
+    const answer = await (handle || window.PAApi).get("/api/seq/builtins");
+    builtins = answer.data || [];
+    factoryAnswered = true;
+    renderListView();
+  };
+
+  // After a save, a wipe or a cancel the Learned list is read again through its
+  // section, so a failed re-read is the Page Recovery View's as well.
+  const refreshLearned = () => {
+    if (window.PABootstrap) {
+      window.PABootstrap.refreshSections([LEARNED_SECTION]);
+      return;
+    }
+    loadLearned().catch((error) => console.warn("[seq] your sequences unavailable:", error));
+  };
+
+  // A slot that has not had its answer yet: written empty with the waiting
+  // class, which data/style.css draws as the three moving dots.
+  const WAITING_SLOT = '<p class="hint waiting seq-section-waiting" role="status"></p>';
+
   const renderListView = () => {
-    // Update capacity (Learned sequences only)
+    // Update capacity (Learned sequences only). Empty while the list has not
+    // answered, so the slot's waiting class shows the dots instead of a count
+    // of nothing.
     const cap = learnedSequenceCap();
-    els.capacityDisplay.textContent = cap === null
-      ? `${sequences.length} saved`
-      : `${sequences.length} / ${cap} saved`;
+    if (!learnedAnswered) {
+      els.capacityDisplay.textContent = "";
+    } else {
+      els.capacityDisplay.textContent = cap === null
+        ? `${sequences.length} saved`
+        : `${sequences.length} / ${cap} saved`;
+    }
 
     // Compute untuned Factory sequences (those without a Learned override)
     const learnedNames = new Set(sequences.map(s => s.name));
     const untunedFactory = builtins.filter(b => !learnedNames.has(b.name));
 
-    // If no learned sequences AND no factory sequences, show empty state
-    if (sequences.length === 0 && untunedFactory.length === 0) {
+    // The empty state is a finding, so it needs both answers: nothing learned
+    // AND nothing from the factory.
+    if (learnedAnswered && factoryAnswered && sequences.length === 0 && untunedFactory.length === 0) {
       els.emptyState.classList.remove("hidden");
       els.populatedState.classList.add("hidden");
       els.cardsContainer.innerHTML = "";
@@ -304,7 +341,10 @@
       let html = "";
 
       // "Your sequences" section
-      if (sequences.length > 0) {
+      if (!learnedAnswered) {
+        html += '<h3 class="seq-section-heading">Your sequences</h3>';
+        html += WAITING_SLOT;
+      } else if (sequences.length > 0) {
         html += '<h3 class="seq-section-heading">Your sequences</h3>';
         // A firmware-only update can leave a droid holding more than it now
         // stores. Everything it holds still lists and plays; only a new save
@@ -319,12 +359,20 @@
       }
 
       // "Factory sequences" section
-      if (untunedFactory.length > 0) {
+      if (!factoryAnswered) {
+        html += '<h3 class="seq-section-heading">Factory sequences</h3>';
+        html += WAITING_SLOT;
+      } else if (untunedFactory.length > 0) {
         html += '<h3 class="seq-section-heading">Factory sequences</h3>';
         html += untunedFactory.map((builtin) => renderFactoryCard(builtin)).join("");
       }
 
       els.cardsContainer.innerHTML = html;
+
+      // A paint of nothing but waiting slots has no buttons to bind.
+      const cardsWritten = (learnedAnswered && sequences.length > 0)
+        || (factoryAnswered && untunedFactory.length > 0);
+      if (!cardsWritten) return;
 
       // Attach event listeners to Learned sequence action buttons
       els.cardsContainer.querySelectorAll('.seq-card-actions button:not([data-action="tune"])').forEach((btn) => {
@@ -423,19 +471,8 @@
   };
 
   // =========================================================================
-  // Load Factory Sequences
+  // Tune a Factory Sequence
   // =========================================================================
-
-  const loadBuiltins = async () => {
-    if (builtins.length > 0) return; // Already cached
-    try {
-      const result = await PAApi.get("/api/seq/builtins");
-      builtins = result.data || [];
-    } catch (error) {
-      console.error("Error loading builtins:", error);
-      throw error;
-    }
-  };
 
   const handleCloneBuiltin = async (builtinName) => {
     // The builtins list carries metadata only; fetch the one factory
@@ -476,15 +513,15 @@
   };
 
   // =========================================================================
-  // Slice B: Full Editor View
+  // Full Editor View
   // =========================================================================
 
-  // Slice 5: Validate a step and return validation result
+  // Validate a step and return validation result
   const validateStepForCard = (step, stepIdx) => {
     return SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
   };
 
-  // Slice 1: Plain-English preview text for each step type
+  // Plain-English preview text for each step type
   const stepPreview = (step) => {
     switch (step.type) {
       case "audio":
@@ -627,7 +664,7 @@
     return { name: "Panel Action" };
   };
 
-  // Slice 4: Step type descriptions for reference panel
+  // Step type descriptions for reference panel
   const stepTypeDescriptions = {
     audio: "Play a sound or cue",
     dome: "Open, close, apply visual presets, or control logic/PSI mood on dome panels",
@@ -638,7 +675,7 @@
     end: "Mark the end of the sequence",
   };
 
-  // Slice 4: Render the reference panel (What Each Step Type Does)
+  // Render the reference panel (What Each Step Type Does)
   const renderStepTypeReference = () => {
     return `
       <div class="step-type-reference">
@@ -671,7 +708,7 @@
     }
     const preview = stepPreview(step);
 
-    // Slice 5: Get validation state for this step
+    // Get validation state for this step
     const validation = validateStepForCard(step, idx);
     const isInvalid = !validation.ok;
     const errorId = `step-card-error-${idx}`;
@@ -702,7 +739,7 @@
         <div class="step-card-expanded-content">
           <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
 
-          <!-- Slice 4: Grouped icon cards (Common + Advanced) -->
+          <!-- Grouped icon cards (Common + Advanced) -->
           <div class="step-type-picker">
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
@@ -761,7 +798,7 @@
     `;
   };
 
-  // Slice 2: Helper to render a grouped field section with optional label
+  // Helper to render a grouped field section with optional label
   const renderFieldGroup = (label, fieldsHtml) => {
     if (!fieldsHtml || fieldsHtml.trim() === "") return "";
     return `
@@ -774,7 +811,7 @@
     `;
   };
 
-  // Slice 2: Helper to generate a contextual help line for a step
+  // Helper to generate a contextual help line for a step
   const stepHelpLine = (step) => {
     switch (step.type) {
       case "audio":
@@ -1660,7 +1697,7 @@
         els.editorView.classList.add("hidden");
         currentEditingSeq = null;
         editorState = { original: null, current: null, isNew: false, tuningFactory: null };
-        loadSequenceList();
+        refreshLearned();
       });
     }
   };
@@ -2129,7 +2166,7 @@
       end: {},
     };
 
-    // Slice 1: Card expand/collapse listeners
+    // Card expand/collapse listeners
     document.querySelectorAll(".step-card").forEach((card) => {
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       const header = card.querySelector(".step-card-header");
@@ -2264,7 +2301,7 @@
       input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
     });
 
-    // Slice 4: Reference panel toggle (What Each Step Type Does)
+    // Reference panel toggle (What Each Step Type Does)
     document.querySelectorAll(".step-type-reference-toggle").forEach((toggle) => {
       toggle.addEventListener("click", (e) => {
         e.preventDefault();
@@ -2470,7 +2507,7 @@
       editorState.isNew = false;
       editorState.tuningFactory = null;
       editorState.original = JSON.parse(JSON.stringify(editorState.current));
-      await loadSequenceList();
+      refreshLearned();
     } catch (error) {
       showEditorFeedback("Save failed: " + PAApi.messageFor(error), "error");
     } finally {
@@ -2647,7 +2684,7 @@
       } else {
         hideModal(els.modalWipe);
       }
-      await loadSequenceList();
+      refreshLearned();
     } catch (error) {
       els.modalWipeConfirm.disabled = false;
       alert("Error deleting sequence: " + PAApi.messageFor(error));
@@ -2758,7 +2795,7 @@
   };
 
   // =========================================================================
-  // Import Modal (Placeholder for Slice F)
+  // Import Modal
   // =========================================================================
 
   const handleImportConfirm = async () => {
@@ -2881,15 +2918,14 @@
   // can show recovery state if any fetch fails.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
   const SECTIONS = [
-    ["seq-list", () => PAApi.get("/api/seq/list").then(result => {
-      sequences = result.data || [];
-    }), "sequence list"],
-    ["seq-builtins", loadBuiltins, "factory sequences"],
+    [LEARNED_SECTION, loadLearned, "your sequences"],
+    [FACTORY_SECTION, loadFactory, "the factory sequences"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
-      loadSequenceList().catch(() => {});
+      loadLearned().catch((error) => console.warn("[seq] your sequences unavailable:", error));
+      loadFactory().catch((error) => console.warn("[seq] factory sequences unavailable:", error));
       return;
     }
     window.PABootstrap.setResourceLabels?.({
@@ -2912,9 +2948,9 @@
     // to the sequence list, and again if the shell replays it to a late mount.
     window.addEventListener("pa:identity-available", () => renderListView());
     window.addEventListener("pa:identity-unavailable", () => renderListView());
-    startPageLoad();
-    // Render the list after bootstrap sections are registered and may be loading.
+    // Paint the waiting list first; each section paints again on its answer.
     renderListView();
+    startPageLoad();
   };
 
   // Wait for shell and status_stream to be ready
@@ -2931,11 +2967,14 @@
     updateValidationSummary,
     renderListWith: (seqs) => {
       sequences = seqs || [];
+      learnedAnswered = true;
       renderListView();
     },
-    renderListWithMocks: (seqs, buitlins) => {
+    renderListWithMocks: (seqs, mockBuiltins) => {
       sequences = seqs || [];
-      builtins = buitlins || [];
+      builtins = mockBuiltins || [];
+      learnedAnswered = true;
+      factoryAnswered = true;
       renderListView();
     },
   };
