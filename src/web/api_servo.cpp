@@ -22,10 +22,13 @@
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "board_outputs.h"  // boardOutputForWord(), boardOutputWordList()
+#include "config_cache.h"   // configCacheOutputIsWired(), configCacheReadServoOutputComponent()
 #include "ledc_pwm.h"
 #include "logging.h"
+#include "output_wire.h"    // outputWirePinKeptForLight()
 #include "robot_state.h"
 #include "servo_helpers.h"  // servo_ledc_channel_to_arm_id()
+#include "servo_task.h"     // servoTaskDrivesOutput() - what ServoTask started with
 
 extern QueueHandle_t servoCmdQueue;
 
@@ -64,6 +67,39 @@ ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint
     cmd.timestampMs = millis();
     outcome.ok = (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE);
     return outcome;
+}
+
+namespace {
+
+// One Output's half of servoOutputUndriven(). The saved tick and component are
+// read only to say what a restart would do; whether anything drives it NOW is
+// ServoTask's snapshot alone.
+bool oneOutputUndriven(uint8_t armId, char* reason, size_t reasonSize) {
+    if (servoTaskDrivesOutput(armId)) {
+        return false;
+    }
+    const char* name = armId < BOARD_OUTPUT_COUNT ? boardOutputLabel(BOARD_OUTPUTS[armId]) : "";
+    const OutputWireInputs saved = {
+        configCacheOutputIsWired(armId),
+        configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, servo_arm_id_to_ledc_channel(armId)),
+    };
+    if (outputWirePinKeptForLight(saved, armId)) {
+        snprintf(reason, reasonSize, "%s carries a light, not a servo.", name);
+    } else if (saved.wired) {
+        snprintf(reason, reasonSize, "Restart the droid to drive %s.", name);
+    } else {
+        snprintf(reason, reasonSize, "%s is not wired. Mark it on Wiring.", name);
+    }
+    return true;
+}
+
+}  // namespace
+
+bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize) {
+    if (armId == 255) {
+        return oneOutputUndriven(0, reason, reasonSize) || oneOutputUndriven(1, reason, reasonSize);
+    }
+    return armId >= 0 && oneOutputUndriven((uint8_t)armId, reason, reasonSize);
 }
 
 namespace {
@@ -213,6 +249,16 @@ void handleServoPost(WebRequest& req) {
             return;
         }
         positionUs = (uint16_t)parsed;
+    }
+
+    // Last, after every check on the request itself: a malformed request is
+    // still told what is wrong with it. ServoTask drops a command for an Output
+    // it does not drive without a word, so this is the only place the caller
+    // can hear it - and a queued command would answer `ok` for nothing (#364).
+    char undriven[96] = {};
+    if (servoOutputUndriven(armId, undriven, sizeof(undriven))) {
+        webSendJsonError(req, 409, undriven);
+        return;
     }
 
     // Commit Step (ADR 0036 criterion 1, include/api_servo.h): the same

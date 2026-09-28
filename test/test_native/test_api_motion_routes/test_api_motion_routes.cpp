@@ -30,6 +30,7 @@
 #include "failsafe_gate.h"
 #include "robot_state.h"
 #include "servo_output_row.h"
+#include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
 #include "web_admission.h"
 #include "web_request_test_backend.h"
 #include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
@@ -173,6 +174,8 @@ void setUp() {
     g_test_restart_requests = 0;
     g_test_speed_preset_persist_ok = true;
     g_test_aux_led_queue_ok = true;
+    g_test_servo_wired_at_start_mask = 0xFF;
+    g_test_servo_driven_mask = 0xFF;
     g_test_dome_layout_status = {};
     g_test_dome_layout_payload = "";
     g_test_dome_layout_refresh_requests = 0;
@@ -1052,6 +1055,64 @@ void test_servo_hold_without_a_width_is_rejected() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "Missing positionUs parameter for hold"));
 }
 
+// An Output wired after boot has nothing behind it until the droid restarts
+// (#364, reopened from the #355 bench): ServoTask read the wired ticks at
+// start, and drops every command for an Output it did not start with. So the
+// route refuses rather than answering ok for a move nothing makes, and says
+// what would make it: a restart where the saved tick would drive it, Wiring
+// where it is not ticked at all. `both` is refused for its undriven half.
+void test_servo_refuses_an_output_nothing_drives_since_boot() {
+    // ARM2 ticked in the saved config, but not in the snapshot ServoTask took.
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_arm1 = true;
+    snap.system.enable_arm2 = true;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 1);
+
+    const auto post = [](const char* arm, const char* action, WebRequestTestBackend& backend) {
+        const WebRequestTestParam params[] = {{"arm", arm}, {"action", action}, {"positionUs", "1500"}};
+        backend.params = params;
+        backend.paramCount = 3;
+        WebRequest req(&backend);
+        handleServoPost(req);
+    };
+
+    WebRequestTestBackend hold;
+    post("ARM2", "hold", hold);
+    TEST_ASSERT_EQUAL_INT(409, hold.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(hold.sentBody, "Restart the droid to drive ARM2."));
+
+    // Pulses off too: it answers for an Output as much as a move does.
+    WebRequestTestBackend release;
+    post("ARM2", "release", release);
+    TEST_ASSERT_EQUAL_INT(409, release.sentCode);
+
+    WebRequestTestBackend both;
+    post("both", "open", both);
+    TEST_ASSERT_EQUAL_INT(409, both.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(both.sentBody, "ARM2"));
+
+    // The Output the droid did start with is untouched by its neighbour.
+    WebRequestTestBackend driven;
+    post("ARM1", "hold", driven);
+    TEST_ASSERT_EQUAL_INT(200, driven.sentCode);
+
+    // Not ticked at all: a restart alone would not drive it.
+    snap.system.enable_arm2 = false;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    WebRequestTestBackend unwired;
+    post("ARM2", "hold", unwired);
+    TEST_ASSERT_EQUAL_INT(409, unwired.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(unwired.sentBody, "ARM2 is not wired. Mark it on Wiring."));
+}
+
 // A dial stands on one row, so the `both` broadcast is refused the same way
 // a nudge's is - and the refusal names the action the caller asked for.
 void test_servo_hold_refuses_the_broadcast_arm() {
@@ -1442,6 +1503,7 @@ int main(int, char**) {
     RUN_TEST(test_servo_hold_takes_an_arm_and_a_width);
     RUN_TEST(test_servo_hold_without_a_width_is_rejected);
     RUN_TEST(test_servo_hold_refuses_the_broadcast_arm);
+    RUN_TEST(test_servo_refuses_an_output_nothing_drives_since_boot);
     RUN_TEST(test_servo_hold_out_of_range_is_rejected);
     RUN_TEST(test_servo_hold_refresh_takes_only_the_one_spelling);
     RUN_TEST(test_servo_release_takes_an_arm_and_no_width);

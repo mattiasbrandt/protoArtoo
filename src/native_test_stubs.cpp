@@ -158,6 +158,22 @@ void sequenceDispatcherInit() {
 QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue = nullptr;
 
+// ServoTask's boot snapshot (#364), one bit per armId. The real answer is
+// servoTaskInit()'s; include/servo_task_test_hooks.h says why both default to
+// every Output.
+#include "servo_task.h"
+#include "servo_task_test_hooks.h"  // declares the two masks, defined here
+uint8_t g_test_servo_wired_at_start_mask = 0xFF;
+uint8_t g_test_servo_driven_mask = 0xFF;
+
+bool servoTaskWiredAtStart(uint8_t armId) {
+    return armId < SERVO_ARM_COUNT && (g_test_servo_wired_at_start_mask & (1u << armId)) != 0;
+}
+
+bool servoTaskDrivesOutput(uint8_t armId) {
+    return armId < SERVO_ARM_COUNT && (g_test_servo_driven_mask & (1u << armId)) != 0;
+}
+
 bool g_test_commanded_web_control = false;
 unsigned g_test_web_control_calls = 0;
 unsigned g_test_restart_requests = 0;
