@@ -38,7 +38,7 @@ Control scale - the mistake this project makes most:
 - Before you hand a surface over, walk EVERY control on it - inputs, selects, buttons, labels, sliders - and check each sits at card scale. Do not make the operator find them one at a time.
 
 Control style - no "classic" square buttons (the operator's standing direction, 2026-09-28):
-- His words, from three reviews in one evening: *"the classic square buttons style looks way early 2000s web page ... have some modern sleek style or choice of toggles"*; *"the page design is way too cluttered too many simply ugly square boxes allover"*; and a restyle he rejected because it only *"rounded off some squares"*. Rounding corners, recolouring borders or re-spacing the same boxes is NOT a redesign and reads to him as no change.
+- His words, from three reviews in one evening: *"the classic square buttons style looks way early 2000s web page ... have some modern sleek style or choice of toggles"*; *"the page design is way too cluttered too many simply ugly square boxes allover"*; and a restyle he rejected because it only *"rounded off some squares"*. Rounding corners, recoloring borders or re-spacing the same boxes is NOT a redesign and reads to him as no change.
 - A choice is drawn as what it IS, never as a row of bordered buttons:
   - two states (Driving / Stationary): a **sliding pill switch** - a track in `--well`, a raised thumb that moves to the chosen side (`.opmode-grid`, `data/style.css`, #399 slice 6);
   - an on/off: a **toggle switch**, a track and a knob (`.sleep-switch`);
