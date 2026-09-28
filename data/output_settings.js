@@ -5,8 +5,8 @@
 // wired and what each carries - a servo, or a light. These
 // were Configuration's rows until the operator moved them where the question
 // is asked (2026-09-18 on #369): the wired ticks and the Light Type choice to
-// Wiring, beside where each wire plugs in, and the servo type to Servos, with
-// the line it drives.
+// Wiring, beside where each wire plugs in, and the servo type to Servos, on
+// the Output's own row there (#399, operator 2026-09-28: "clean and nice").
 //
 // THIS FILE DRAWS; data/outputs.js KNOWS. Which Outputs the droid has, what
 // each is called, whether it is wired, what is on its wire and what it can
@@ -183,35 +183,47 @@
     return plate;
   };
 
-  // Servos' plate: which servo the output carries. An Output set to LED strip
-  // has no servo, and says where that is answered.
-  //
-  // A host may say what is on the end of each Output's wire (`describe`,
-  // Servos' Part names): it goes under the head, and an Output with nothing
-  // assigned gets no line at all (operator, 2026-09-19 on #412: "if it has
-  // one"). Read-only: the assignment is Parts'.
-  const typePlate = (output, place, view) => {
-    const plate = element("div", "output-plate output-setting");
-    plate.dataset.output = output.address;
-    if (output.wired) plate.classList.add("is-on");
-    const head = element("div", "output-setting-head");
-    head.appendChild(element("span", "toggle-label", output.name));
-    head.appendChild(element("span", "toggle-status", output.wired ? WIRED : NOT_WIRED));
-    plate.appendChild(head);
-    const onIt = typeof view?.describe === "function" ? view.describe(output) : "";
-    if (onIt) plate.appendChild(element("p", "output-parts", onIt));
-    if (output.light) {
-      plate.appendChild(element("p", "hint output-setting-note", `Carries the ${output.light.label}. Set on Wiring.`));
-      return plate;
+  // Servos' pick: which servo the output carries, drawn into the slot the host
+  // keeps for that Output on its own row, so the row's name, what it drives and
+  // why it will not drive are the row's and not said twice. An Output set to
+  // a light has no servo to pick (its row says what it carries), and one the
+  // droid names no save fields for has nothing to pick with. The slot wears
+  // is-on while the Output is wired, from the same answer Wiring draws, so a
+  // tick there shows here at once.
+  const drawPick = (output, slot) => {
+    slot.classList.toggle("is-on", output.wired === true);
+    if (output.light || !output.switchable) {
+      slot.replaceChildren();
+      return;
     }
-    if (!output.switchable) return plate;
     const options = output.canLight ? [OUTPUTS.NO_SERVO, ...OUTPUTS.SERVO_MODELS] : OUTPUTS.SERVO_MODELS;
-    plate.appendChild(segmented(`${output.name} servo`, options, output.type,
+    slot.replaceChildren(segmented(`${output.name} servo`, options, output.type,
       (value) => change(output.address, { type: value })));
-    return plate;
+  };
+
+  // When this view's answer bites, beside the outputs it asks about.
+  const paintTiming = (view, host) => {
+    TIMING.paint(host, VIEW_TIMING[view.kind], { pending: VIEW_TIMING[view.kind] === TIMING.AT_REBOOT && waitingOnStart() });
+  };
+
+  // Servos' view has no body of its own: its picks live in the host's rows,
+  // which the host builds, so an Output with no row yet is simply not drawn
+  // and the host calls this again once it has built them (mount()'s answer).
+  // Until the rows have answered the host's own rows say so.
+  const renderPicks = (view) => {
+    if (!OUTPUTS.known().table) return;
+    OUTPUTS.list().forEach((output) => {
+      const slot = view.slot(output.address);
+      if (slot) drawPick(shown(output), slot);
+    });
+    if (view.timing) paintTiming(view, view.timing);
   };
 
   const render = (view) => {
+    if (view.kind === "type") {
+      renderPicks(view);
+      return;
+    }
     // A plate saves what the Output's row says, so it waits for the rows: until
     // they have answered there is no Output to draw, and the line says so in
     // the one word every surface uses for it (data/outputs.js live()).
@@ -225,10 +237,9 @@
       return;
     }
     const plates = element("div", "output-plates");
-    outputs.forEach((output, place) => plates.appendChild(view.plate(shown(output), place, view)));
-    // When this view's answer bites, beside the outputs it asks about.
+    outputs.forEach((output, place) => plates.appendChild(wiredPlate(shown(output), place)));
     const timing = element("p", "apply-timing");
-    TIMING.paint(timing, VIEW_TIMING[view.kind], { pending: VIEW_TIMING[view.kind] === TIMING.AT_REBOOT && waitingOnStart() });
+    paintTiming(view, timing);
     view.body.replaceChildren(plates, timing);
   };
 
@@ -243,15 +254,21 @@
    *
    * @param {"wired"|"type"} kind - Wiring's wired ticks, or Servos' servo types
    * @param {object} hosts
-   * @param {Element} hosts.body - where the plates go
-   * @param {Element} hosts.feedback - the save line under them
-   * @param {function} [hosts.describe] - what is on an Output's wire, or ""
+   * @param {Element} [hosts.body] - Wiring's: where the plates go
+   * @param {function} [hosts.slot] - Servos': the element on an Output's row
+   *   its pick goes in, by Output Address, or null while it has no row
+   * @param {Element} [hosts.timing] - Servos': the line saying when a pick bites
+   * @param {Element} hosts.feedback - the save line
+   * @returns {function|undefined} draws the view again, for a host that has
+   *   just rebuilt the rows its picks live in
    */
   const mount = (kind, hosts) => {
-    if (!hosts?.body || !hosts?.feedback) return;
-    const view = { ...hosts, kind: kind === "type" ? "type" : "wired", plate: kind === "type" ? typePlate : wiredPlate };
+    const type = kind === "type";
+    if (!hosts?.feedback || (type ? typeof hosts.slot !== "function" : !hosts.body)) return undefined;
+    const view = { ...hosts, kind: type ? "type" : "wired" };
     views.push(view);
     render(view);
+    return () => render(view);
   };
 
   window.PAOutputSettings = Object.freeze({ mount });

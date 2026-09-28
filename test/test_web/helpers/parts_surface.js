@@ -424,9 +424,9 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
 
   env.partsRegion = () => document.getElementById("parts-table");
   env.partRow = (id) => env.partsRegion().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
-  // Find by moving sits over Servos' rows: one picker of unwired Parts and one
-  // button, so the button a Part is found with is that one.
-  env.findPick = () => document.getElementById("outputs-find-part");
+  // Find by moving sits over Servos' rows: one button, which opens the Parts
+  // nothing drives as pills, and pressing one of those starts the run.
+  env.findTray = () => document.getElementById("outputs-find-tray");
   env.findButton = () => document.getElementById("outputs-find").querySelector(".parts-find");
   env.runPanel = () => document.querySelector(".parts-find-run");
   env.runText = () => env.runPanel()?.querySelector(".parts-find-text")?.textContent ?? null;
@@ -437,13 +437,12 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   env.cell = (address, className) => env.row(address).querySelector(`.${className}`);
   env.byId = (id) => document.getElementById(id);
   env.tier = (id) => document.querySelectorAll("[data-tier]").find((node) => node.dataset.tier === id).textContent;
-  // What a builder does with an Output row's part picker: choose, and the
-  // change reaches the table's delegated handler.
+  // What a builder does with an Output row's part pills: press one, and the
+  // click reaches the table's delegated handler.
   env.pickOnOutput = (address, partId) => {
-    const select = env.row(address).querySelector(".outputs-add");
-    select.value = partId;
-    env.region().fire("change", { target: select });
-    return select;
+    const pill = env.row(address).querySelectorAll("[data-part]").find((node) => node.dataset.part === partId);
+    env.region().fire("click", { target: pill });
+    return pill;
   };
   // The move question's two answers, by what they are rather than by an id.
   env.answerMove = (confirmed) => env.dialog.querySelector(confirmed ? ".move-confirm" : ".move-cancel").fire("click", {});
@@ -456,10 +455,11 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // and not an Output's settings, which go as a row.
   env.moves = () => env.posts.filter((post) => post.path === "/api/config" && post.form !== undefined);
   env.rowSaves = () => env.posts.filter((post) => post.path === "/api/config" && post.json !== undefined);
-  // The builder picks the Part and presses Find by moving.
+  // The builder presses Find by moving and then the Part.
   env.pressFind = (id) => {
-    env.findPick().value = id;
     env.findButton().fire("click", {});
+    const pill = env.findTray().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
+    env.findTray().fire("click", { target: pill });
   };
   env.pressThatOne = () => env.runPanel().querySelector(".parts-find-that").fire("click", {});
   env.pressStop = () => env.runPanel().querySelector(".parts-find-stop").fire("click", {});

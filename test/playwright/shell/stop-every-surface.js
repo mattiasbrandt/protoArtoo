@@ -205,16 +205,18 @@ const DIALOGS = {
     return `${pick.part} to ${pick.to}`;
   }),
   servo: moveQuestion('#outputs-move-dialog', async (page) => {
-    // A Part on one Output, picked in another Output's "Put a part on".
+    // A Part on one Output, pressed in another Output's "+ part" pills.
     const pick = await page.evaluate(() => {
       const outputs = window.PAOutputs.list();
       const from = outputs.find((output) => output.parts.length > 0);
       if (!from) return null;
-      const to = outputs.find((output) => output !== from && document.querySelector(`#outputs-table [data-output="${output.address}"] select.outputs-add`));
+      const to = outputs.find((output) => output !== from && document.querySelector(`#outputs-table [data-output="${output.address}"] .outputs-add-open`));
       return to ? { part: from.parts[0], to: to.address } : null;
     });
     if (!pick) return null;
-    await page.selectOption(`#outputs-table [data-output="${pick.to}"] select.outputs-add`, pick.part, { timeout: 5000 });
+    const row = `#outputs-table [data-output="${pick.to}"]`;
+    await page.click(`${row} .outputs-add-open`, { timeout: 5000 });
+    await page.click(`${row} .outputs-add [data-part="${pick.part}"]`, { timeout: 5000 });
     return `${pick.part} to ${pick.to}`;
   }),
 };

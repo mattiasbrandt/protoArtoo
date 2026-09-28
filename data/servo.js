@@ -3,9 +3,11 @@
 //
 // Servos (CONTEXT.md "Servos"): the body's Outputs as servos. One section of
 // Outputs, one row each, named by what the board prints beside the pin and by
-// the Part(s) on it. On each row a builder drives the servo (open, close, stop,
-// or a typed width sent once), records its ends with the calibration dial, and
-// takes the pulse off; Find by Moving and back to centre sit over the rows. It
+// the Part(s) on it. On each row a builder picks which servo it carries, drives
+// it (open, close, stop, or a typed width sent once), records its ends with the
+// calibration dial, and takes the pulse off; how it lets go, moves and powers
+// up, and which Parts are on it, open under the row on demand. Find by Moving
+// and back to centre sit over the rows. It
 // is the output-first side of the mapping Parts reads from the part's end, and
 // everything here moved from Parts on the operator's word (2026-09-19 on #412:
 // "move bascially all of the "Outputs" section pieces to the "Servos" page.
@@ -87,8 +89,8 @@
   const feedback = document.getElementById("outputs-feedback");
   const dialog = document.getElementById("outputs-move-dialog");
   const findBar = document.getElementById("outputs-find");
-  const findPick = document.getElementById("outputs-find-part");
-  if (!outputsRegion || !outputsSection || !dialog || !findBar || !findPick) return;
+  const findTray = document.getElementById("outputs-find-tray");
+  if (!outputsRegion || !outputsSection || !dialog || !findBar || !findTray) return;
   const findButton = findBar.querySelector(".parts-find");
   const centreBulk = outputsSection.querySelector(".outputs-bulk");
   const centreButton = centreBulk.querySelector(".outputs-centre");
@@ -102,7 +104,7 @@
   // Until the table answers, the section and the part picker say so in the
   // one word for it (data/outputs.js live()); the page's markup carries none.
   if (tiersNode) tiersNode.textContent = OUTPUTS.live(null).word;
-  findPick.innerHTML = `<option value="">${esc(OUTPUTS.live(null).word)}</option>`;
+  findTray.innerHTML = `<p class="hint">${esc(OUTPUTS.live(null).word)}</p>`;
 
   // The Outputs this page draws a row for are data/outputs.js's list, in the
   // order it gives them, each carrying whether it is wired and what it
@@ -114,44 +116,60 @@
   // (data/live_reading.js), false until the droid has said its estop is clear
   // and whenever contact with it is lost.
   let moveActsLive = false;
+  // Draws each row's servo pick again (data/output_settings.js mount(), at
+  // the foot of this file), for after the rows it lives in are rebuilt.
+  let redrawPicks = null;
 
   // ---------------------------------------------------------------------------
   // The table: built once per set of Outputs
   // ---------------------------------------------------------------------------
-  // Every catalog Part, grouped as Parts groups them, so a builder finds a Part
-  // the same way from either end.
-  const addOptions = groupParts(catalog.parts)
-    .map(
-      (group) =>
-        `<optgroup label="${esc(group.label)}">` +
-        group.parts.map((part) => `<option value="${esc(part.id)}">${esc(partLabel(part.id))}</option>`).join("") +
-        `</optgroup>`
-    )
-    .join("");
+  // Parts as wrapping pills, grouped as Parts groups them, so a builder finds
+  // a Part the same way from either end. Pills and not a drop-down: there are
+  // dozens, and the house picker beyond about five choices is pills that wrap
+  // (operator, 2026-09-28 on #399).
+  const partPills = (parts) =>
+    groupParts(parts)
+      .map(
+        (group) =>
+          `<div class="part-pills-group"><span class="part-pills-name">${esc(group.label)}</span><span class="part-pills">` +
+          group.parts
+            .map((part) => `<button class="part-pill" type="button" data-part="${esc(part.id)}">${esc(partLabel(part.id))}</button>`)
+            .join("") +
+          `</span></div>`
+      )
+      .join("");
+  // Every catalog Part, for each row's "put a part on".
+  const addPills = partPills(catalog.parts);
 
   // An Output nobody has named - an expander's row - shows its address as its
   // name, and a named one shows the address beside it. Every act starts
   // refused: none may run on a guess about the estop, and the droid has not
   // said yet.
   //
-  // One Output is one <tbody> of two lines (#399, operator review 2026-09-28:
-  // "too many simply ugly square boxes"): what it drives, where it was told to
-  // go and the acts on it, then a quiet line of how it lets go, how it moves
-  // and what it does at power-up. The <tbody> carries data-output, so every
-  // lookup below finds its cells in either line. The drive cell comes before
-  // the settings line on purpose: .outputs-drive-note and .outputs-drive-acts
-  // are looked up by their first match.
+  // One Output is one <tbody> of two lines (#399, operator reviews 2026-09-28:
+  // "too many simply ugly square boxes", then "clean and nice"). The first is
+  // what the builder acts on: the Output and which servo it carries, what it
+  // drives, where it was told to go, and the acts on it. The second holds two
+  // panels, each closed until its own press opens it: the settings (how it
+  // lets go, how it moves, what it does at power-up) and the Parts to put on
+  // it, which open from the Drives cell they change. The line shows while
+  // either is open. The <tbody> carries data-output, so every lookup below
+  // finds its cells in either line. The drive cell comes before the settings
+  // line on purpose: .outputs-drive-note and .outputs-drive-acts are looked up
+  // by their first match.
   const outputRowHtml = (output) => {
     const label = output.name;
     const address = output.label ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
     return (
       `<tbody class="parts-row outputs-row" data-output="${esc(output.address)}">` +
       `<tr class="outputs-main">` +
-      `<th scope="row" rowspan="2"><span class="parts-name">${esc(label)}</span>${address}` +
+      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}` +
+      // Which servo it carries: data/output_settings.js draws the pick here.
+      `<div class="outputs-model"></div>` +
       `<div class="hint outputs-narrowed" hidden></div></th>` +
-      `<td class="outputs-drives"><span class="outputs-parts"></span><select class="parts-output outputs-add" ` +
-      `aria-label="${esc(`Put a part on ${label}`)}"><option value="">Put a part on ${esc(label)}...</option>` +
-      `${addOptions}</select></td>` +
+      `<td class="outputs-drives"><span class="outputs-parts"></span>` +
+      `<button class="btn btn-sm btn-quiet outputs-add-open" type="button" aria-expanded="false" ` +
+      `aria-label="${esc(`Put a part on ${label}`)}">+ part</button></td>` +
       `<td class="outputs-position"><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
       `<span class="outputs-us"></span></td>` +
       // Driving it: the typed width goes out once and is saved nowhere; open
@@ -168,14 +186,17 @@
       `<button class="btn btn-sm outputs-go" type="button" data-action="stop" disabled aria-disabled="true">stop</button>` +
       `</span></span></td>` +
       `<td class="outputs-acts">` +
-      `<button class="btn btn-sm outputs-calibrate" type="button" ` +
+      `<button class="btn btn-sm btn-quiet outputs-calibrate" type="button" ` +
       `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
       `<button class="btn btn-sm btn-quiet outputs-off" type="button" ` +
       `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
+      `<button class="btn btn-sm btn-quiet outputs-more" type="button" aria-expanded="false" ` +
+      `aria-label="${esc(`Settings for ${label}`)}">settings` +
+      `<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>` +
       `</td></tr>` +
-      `<tr class="outputs-sub"><td colspan="4"><div class="outputs-settings">` +
-      `<span class="outputs-setting"><span class="outputs-setting-name">release</span>` +
-      `<span class="outputs-release"></span></span>` +
+      `<tr class="outputs-sub" hidden><td colspan="5"><div class="outputs-settings" hidden>` +
+      `<div class="outputs-setting"><span class="outputs-setting-name">release</span>` +
+      `<span class="outputs-release"></span></div>` +
       // How it moves (#414). The pill and the controls each sit in a plain
       // wrapper so `hidden` can take them off the line.
       `<div class="outputs-motion">` +
@@ -198,8 +219,12 @@
       OUTPUTS.BOOTS.map((boot) =>
         `<button type="button" role="radio" aria-checked="false" data-boot="${esc(boot.id)}">${esc(boot.label)}</button>`
       ).join("") +
-      `</div><span class="hint outputs-boot-risk">Hold keeps the drive on, so a blocked part grinds.</span>` +
-      `</div></div></td></tr></tbody>`
+      `</div><span class="hint outputs-boot-risk">Hold keeps the drive on, so a blocked part grinds.</span></div>` +
+      `</div>` +
+      // Putting a Part on it: a press is a request, not a state this control
+      // keeps, and the row's Drives cell says what the droid answered.
+      `<div class="outputs-add" role="group" aria-label="${esc(`Put a part on ${label}`)}" hidden>${addPills}</div>` +
+      `</td></tr></tbody>`
     );
   };
 
@@ -211,7 +236,8 @@
   const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
       `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
-      `<th scope="col">Commanded position</th><th scope="col">Drive it</th><th scope="col">Calibrate</th>` +
+      `<th scope="col">Commanded position</th><th scope="col">Drive it</th>` +
+      `<th scope="col" aria-label="Calibrate and settings"></th>` +
       `</tr></thead>` +
       outputs.map(outputRowHtml).join("") +
       `</table>`;
@@ -243,12 +269,20 @@
         bootRisk: node.querySelector(".outputs-boot-risk"),
         calibrate: node.querySelector(".outputs-calibrate"),
         off: node.querySelector(".outputs-off"),
+        more: node.querySelector(".outputs-more"),
+        addOpen: node.querySelector(".outputs-add-open"),
+        sub: node.querySelector(".outputs-sub"),
+        settings: node.querySelector(".outputs-settings"),
+        add: node.querySelector(".outputs-add"),
+        model: node.querySelector(".outputs-model"),
       });
     });
     outputAddresses = addresses;
     // The buttons are built refused; this is what makes them live again on a
     // droid whose estop is clear.
     gateActs();
+    // The servo picks live in the rows just built.
+    redrawPicks?.();
   };
 
   // Both marks against one span, so they cannot disagree about scale and the
@@ -270,8 +304,8 @@
   const isActable = (output) => isDriveable(output) && output.driven !== false;
 
   // Why an Output offers no drive, said the way a builder needs it, or "" when
-  // it does. Whether it is wired and what it carries are Wiring's and Servo
-  // assignment's answer; the route is refused for a row no board labels. An
+  // it does. Whether it is wired and what it carries are Wiring's and the
+  // row's servo pick's answer; the route is refused for a row no board labels. An
   // Output whose settings nobody can save has nothing set to refuse on.
   const driveRefusal = (output) => {
     if (!hasServoWord(output)) return "No name the servo route takes";
@@ -279,7 +313,7 @@
     if (!output.switchable) return "";
     if (output.light) return `Carries the ${output.light.label}`;
     if (!output.wired) return "Not wired. Mark it on Wiring";
-    if (!output.servo) return "No servo set above";
+    if (!output.servo) return "Pick its servo";
     // Wired since the droid started: the tick is read at start (#364).
     if (output.driven === false) return "Restart the droid to drive it";
     return "";
@@ -414,31 +448,29 @@
     }
   };
 
-  // The Parts Find by Moving can look for: every Part no Output drives, grouped
-  // as Parts groups them. Rebuilt only when that set changes, and never under
-  // the builder's pointer.
+  // The Parts Find by Moving can look for: every Part no Output drives, as the
+  // same grouped pills a row puts a Part on with. Rebuilt only when that set
+  // changes - a Part landing on an Output - and a pill is a press rather than
+  // a held choice, so a rebuild takes nothing out of the builder's hand.
   let findSet = null;
+  const findPills = () => findTray.querySelectorAll("[data-part]");
   const paintFindPick = () => {
     const unwired = catalog.parts.filter((part) => OUTPUTS.forPart(part.id) === null);
     const key = unwired.map((part) => part.id).join(",");
-    if (key !== findSet && document.activeElement !== findPick) {
-      const keep = findPick.value;
-      findPick.innerHTML = unwired.length
-        ? `<option value="">Pick a part nothing drives</option>` +
-          groupParts(unwired)
-            .map(
-              (group) =>
-                `<optgroup label="${esc(group.label)}">` +
-                group.parts.map((part) => `<option value="${esc(part.id)}">${esc(partLabel(part.id))}</option>`).join("") +
-                `</optgroup>`
-            )
-            .join("")
-        : `<option value="">Every part is on an output</option>`;
-      findPick.value = unwired.some((part) => part.id === keep) ? keep : "";
+    if (key !== findSet) {
+      findTray.innerHTML = unwired.length
+        ? partPills(unwired)
+        : `<p class="hint">Every part is on an output.</p>`;
       findSet = key;
+      // Built refused, as every move act is, then gated like the rest.
+      window.PAApi.gateControls(Array.from(findPills()), moveActsLive);
     }
-    findPick.disabled = unwired.length === 0;
     findButton.hidden = run !== null;
+  };
+
+  const showFindTray = (open) => {
+    findTray.hidden = !open;
+    findButton.setAttribute("aria-expanded", open ? "true" : "false");
   };
 
   // ---------------------------------------------------------------------------
@@ -483,27 +515,16 @@
 
   outputsRegion.addEventListener("change", (event) => {
     const box = event.target;
-    if (box?.classList?.contains("outputs-throw") || box?.classList?.contains("outputs-accel")) {
-      const address = box.closest?.("[data-output]")?.dataset.output;
-      if (!address) return;
-      const ms = Math.round(Number(box.value));
-      const key = box.classList.contains("outputs-throw") ? "throwMs" : "accelMs";
-      if (box.value === "" || !Number.isFinite(ms)) {
-        showFeedback("Type a time in milliseconds.", "warning");
-        return;
-      }
-      started(saveMotion(address, { [key]: ms }));
+    if (!box?.classList?.contains("outputs-throw") && !box?.classList?.contains("outputs-accel")) return;
+    const address = box.closest?.("[data-output]")?.dataset.output;
+    if (!address) return;
+    const ms = Math.round(Number(box.value));
+    const key = box.classList.contains("outputs-throw") ? "throwMs" : "accelMs";
+    if (box.value === "" || !Number.isFinite(ms)) {
+      showFeedback("Type a time in milliseconds.", "warning");
       return;
     }
-    const select = event.target;
-    if (!select?.classList?.contains("outputs-add")) return;
-    const address = select.closest?.("[data-output]")?.dataset.output;
-    const id = select.value;
-    if (!address || !id || !answered()) return;
-    // A pick is a request, not a state this control keeps: it goes back to its
-    // prompt, and the row's Drives cell says what the droid answered.
-    select.value = "";
-    mover.request(P.moveFor(OUTPUTS.list(), id, address), select);
+    started(saveMotion(address, { [key]: ms }));
   });
 
   // ---------------------------------------------------------------------------
@@ -561,8 +582,8 @@
   runPanel.className = "parts-find-run";
   runPanel.innerHTML =
     `<span class="parts-find-text" role="status" aria-live="polite"></span>` +
-    `<button class="btn accent parts-find-that" type="button">That one</button>` +
-    `<button class="btn parts-find-stop" type="button">Stop</button>`;
+    `<button class="btn btn-sm accent parts-find-that" type="button">That one</button>` +
+    `<button class="btn btn-sm parts-find-stop" type="button">Stop</button>`;
   const runText = runPanel.querySelector(".parts-find-text");
 
   // The Outputs a run steps through: nothing on them, a pulse on them (an
@@ -699,6 +720,7 @@
       return;
     }
     run = { partId, candidates: candidates.map((output) => output.address), at: -1, address: null, before: null, sending: false };
+    showFindTray(false);
     findBar.appendChild(runPanel);
     paintFindPick();
     nudgeNext();
@@ -711,7 +733,7 @@
     if (run === null) return;
     const { partId, address } = run;
     endRun();
-    mover.request(P.moveFor(OUTPUTS.list(), partId, address), findPick);
+    mover.request(P.moveFor(OUTPUTS.list(), partId, address), findButton);
   };
 
   const stopRun = () => {
@@ -722,16 +744,19 @@
   runPanel.querySelector(".parts-find-that").addEventListener("click", pickThatOne);
   runPanel.querySelector(".parts-find-stop").addEventListener("click", stopRun);
 
+  // The button opens the Parts to find; pressing one starts the run.
   findButton.addEventListener("click", () => {
+    if (findButton.disabled) return;
+    showFindTray(findTray.hidden);
+  });
+
+  findTray.addEventListener("click", (event) => {
+    const pill = event.target?.closest?.("[data-part]");
     // A browser delivers no click to a disabled button; this is the rule
     // itself: a refused control asks the droid for nothing, however the click
-    // arrived.
-    if (findButton.disabled) return;
-    if (!findPick.value) {
-      showFeedback("Pick the part to find first.", "warning");
-      return;
-    }
-    startRun(findPick.value);
+    // arrived. The pills are gated with the button (gateActs()).
+    if (!pill || pill.disabled) return;
+    startRun(pill.dataset.part);
   });
 
   // ---------------------------------------------------------------------------
@@ -1150,7 +1175,7 @@
     outputRows.forEach((row) => {
       window.PAApi.gateControls([row.calibrate, row.off, ...row.go], live);
     });
-    window.PAApi.gateControls([centreButton, findButton], live);
+    window.PAApi.gateControls([centreButton, findButton, ...findPills()], live);
     window.PAApi.gateControls(Array.from(dialPanel.querySelectorAll("button")), live);
     window.PAApi.gateControls([dialSlider], live);
   }
@@ -1299,6 +1324,22 @@
     // A browser delivers no click to a disabled button; this is the rule
     // itself: a refused control asks the droid for nothing.
     if (!address || button.disabled) return;
+    // Opening or closing one of the row's two panels: the page's own view,
+    // and nothing is asked of the droid.
+    const row = outputRows.get(address);
+    if (row && (button === row.more || button === row.addOpen)) {
+      const panel = button === row.more ? row.settings : row.add;
+      const open = panel.hidden;
+      panel.hidden = !open;
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+      row.sub.hidden = row.settings.hidden && row.add.hidden;
+      return;
+    }
+    // A Part put on this Output: the same request Parts makes (above).
+    if (button.dataset.part) {
+      if (answered()) mover.request(P.moveFor(OUTPUTS.list(), button.dataset.part, address), button);
+      return;
+    }
     if (button.dataset.ease) {
       const output = OUTPUTS.at(address);
       if (output && button.dataset.ease !== output.ease) started(saveMotion(address, { ease: button.dataset.ease }));
@@ -1360,17 +1401,17 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Servo assignment: which servo each Output carries, drawn by
-  // data/output_settings.js and shared with Wiring's wired ticks. Its plates
-  // name the Part(s) on each Output, and a save there - wired, and what each
-  // carries - decides what each row's drive cell offers, so the rows are
-  // repainted in place whenever data/outputs.js's answer changes.
+  // Which servo each Output carries, drawn by data/output_settings.js into each
+  // row's own slot and shared with Wiring's wired ticks. A save there - wired,
+  // and what each carries - decides what each row's drive cell offers, so the
+  // rows are repainted in place whenever data/outputs.js's answer changes. Its
+  // save line is the section's one feedback line.
   // ---------------------------------------------------------------------------
-  window.PAOutputSettings?.mount("type", {
-    body: document.getElementById("servo-types-body"),
-    feedback: document.getElementById("servo-types-feedback"),
-    describe: (output) => listParts(output.parts),
-  });
+  redrawPicks = window.PAOutputSettings?.mount("type", {
+    slot: (address) => outputRows.get(address)?.model ?? null,
+    timing: document.getElementById("servo-types-timing"),
+    feedback,
+  }) ?? null;
   // Every read of the Outputs - the follow's, an act's, a save's answer -
   // publishes once, and this is the one place the page paints from it, so a
   // read paints each row once (#421).
