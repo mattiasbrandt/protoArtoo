@@ -24,6 +24,7 @@
 #include <Preferences.h>  // the NVS double: per namespace, as the store's own save sees it
 
 #include "config_cache.h"
+#include "config_store.h"  // configLoadServoOutputs(), to seed a fresh Output table
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
@@ -1235,7 +1236,32 @@ void test_back_to_centre_signals_the_coordinator() {
     handleServoCentrePost(req);
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    TEST_ASSERT_EQUAL_STRING("{\"ok\":true}", backend.sentBody);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"skipped\":[]}", backend.sentBody);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
+}
+
+// An Output nothing drives since the droid started is passed over by the sweep
+// rather than spending a slot on a move ServoTask would drop (#364), and the
+// answer names it - the caller hears it here or nowhere.
+void test_back_to_centre_names_an_output_nothing_drives() {
+    {
+        // A fresh table: every board Output has a row with travel.
+        const ConfigWriteWindowForTest window;
+        Preferences prefs;
+        prefs.begin("proto", false);
+        prefs.clear();
+        ServoOutputRepairReport report = {};
+        configLoadServoOutputs(prefs, &report);
+        prefs.end();
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 2);  // ARM3, ticked after the droid started
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleServoCentrePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"skipped\":[\"ARM3\"]}", backend.sentBody);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)SRC_WEB_API, (uint8_t)robotState.bulkCentreRequest);
 }
 
@@ -1511,6 +1537,7 @@ int main(int, char**) {
     RUN_TEST(test_an_unknown_servo_action_names_every_action_there_is);
     RUN_TEST(test_back_to_centre_signals_the_coordinator);
     RUN_TEST(test_back_to_centre_takes_no_parameters);
+    RUN_TEST(test_back_to_centre_names_an_output_nothing_drives);
 
     RUN_TEST(test_aux_led_color_accepts_form_fields);
     RUN_TEST(test_aux_led_color_accepts_a_json_body);

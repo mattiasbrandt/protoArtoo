@@ -70,4 +70,17 @@ void handleServoPost(WebRequest& req);
 // transient flag and the expansion is the Coordinator's, which is the whole
 // reason the pace cannot be walked around from a browser. The body is empty;
 // there is nothing for a caller to decide.
+//
+// The answer names the Outputs the sweep will pass over because nothing drives
+// them (#364): `{"ok":true,"skipped":["ARM3"]}`, empty when none.
 void handleServoCentrePost(WebRequest& req);
+
+// The Outputs a press of back to centre passes over although they have travel,
+// because nothing moves them this boot - ServoTask does not drive the Output
+// (servoTaskDrivesOutput()), or this image has no driver for its address
+// (sequenceBodyCentrePlan()). The Sequence Coordinator skips exactly these rows
+// (src/tasks/sequence_dispatcher.cpp centreOneOutput()); this is the same two
+// questions asked ahead of the run, so the route and the Console can name them.
+// `visit` is handed each one's name - its board label, else its Output Address
+// - in table order. Returns how many.
+size_t servoCentreSkipped(void (*visit)(const char* name, void* ctx), void* ctx);

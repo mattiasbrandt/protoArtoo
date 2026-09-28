@@ -15,6 +15,7 @@
 #include "api_servo.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>  // strcasecmp()
@@ -27,6 +28,7 @@
 #include "logging.h"
 #include "output_wire.h"    // outputWirePinKeptForLight()
 #include "robot_state.h"
+#include "sequence_bulk_centre.h"  // sequenceBulkCentreHasTravel(), sequenceBodyCentrePlan()
 #include "servo_helpers.h"  // servo_ledc_channel_to_arm_id()
 #include "servo_task.h"     // servoTaskDrivesOutput() - what ServoTask started with
 
@@ -297,11 +299,48 @@ void handleServoPost(WebRequest& req) {
 // too. This route does not duplicate that judgement, which would put the same
 // rule in two places and let them disagree.
 // =============================================================================
+size_t servoCentreSkipped(void (*visit)(const char* name, void* ctx), void* ctx) {
+    size_t skipped = 0;
+    const uint8_t count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row) || !sequenceBulkCentreHasTravel(row)) {
+            continue;  // a light is passed over by design, not for want of a drive
+        }
+        const SeqBodyStepPlan plan = sequenceBodyCentrePlan(row);
+        if (plan.drive && servoTaskDrivesOutput(plan.armId)) {
+            continue;
+        }
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        const char* name = servoOutputAddressName(row.driver, row.channel);
+        if (name[0] == '\0') {
+            servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
+            name = address;
+        }
+        if (visit != nullptr) {
+            visit(name, ctx);
+        }
+        ++skipped;
+    }
+    return skipped;
+}
+
 void handleServoCentrePost(WebRequest& req) {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.bulkCentreRequest = SRC_WEB_API;
     taskEXIT_CRITICAL(&robotStateMux);
 
+    // What the sweep will pass over, named now: the Coordinator skips these
+    // rows without spending a slot on them, and this is the one answer the
+    // caller gets (#364).
+    JsonDocument doc;
+    doc["ok"] = true;
+    JsonArray skipped = doc["skipped"].to<JsonArray>();
+    servoCentreSkipped([](const char* name, void* ctx) { static_cast<JsonArray*>(ctx)->add(name); },
+                       &skipped);
+
     PA_LOG_INFO(TAG, "[WEB] back to centre requested");
-    req.send(200, "application/json", "{\"ok\":true}");
+    // A ceiling, not a size: twenty-four rows all skipped, each named by an
+    // eight-character address, is under 300 B.
+    webSendJsonDocument(req, doc, 512, TAG);
 }

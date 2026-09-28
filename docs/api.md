@@ -614,7 +614,9 @@ Queues servo command.
   `{"ok":false,"error":"Restart the droid to drive ARM2."}` when it is ticked now,
   `"ARM2 is not wired. Mark it on Wiring."` when it is not, and
   `"ARM3 carries a light, not a servo."` when its wire carries a light.
-  `GET /api/servo/outputs` `driven` says the same thing ahead of time.
+  `GET /api/servo/outputs` `driven` says the same thing ahead of time. The
+  Controller Console's `servo.action.*` rows refuse the same Outputs with
+  `unavailable` / `component-disabled`, and the same sentence as `detail`.
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
 #### Example request (open, Artoo PCB)
@@ -666,6 +668,11 @@ one press, and the controller paces the sweep itself.
   and is not the middle of its two ends — and not the fixed 1500 µs
   `action=stop` on `POST /api/servo` drives one output to.
 - A row recorded as an LED strip is skipped: a light has no centre to go back to.
+- An output nothing drives since the droid started - wired after boot, not
+  wired at all, or on a driver this build does not carry - is skipped too, at
+  no cost to the pace, and the answer names it in `skipped` (`driven` on
+  `GET /api/servo/outputs` says the same beforehand). The wired ticks are read
+  once at start (ADR 0027), so a restart is what brings one into the sweep.
 - Any estop, Sleep Mode, a running sequence starting, or `POST /api/seq/stop`
   ends the sweep where it has got to. Outputs already sent stay where they were
   sent; nothing is driven anywhere as the sweep ends. An estop also releases
@@ -675,9 +682,12 @@ one press, and the controller paces the sweep itself.
 - The controller refuses to start one under a latched estop or in Sleep Mode.
   The request is still answered `200`; the refusal is in the controller log,
   the same way an ordinary servo command refused under estop is.
-- Success: `200` `{"ok":true}`
+- Success: `200` `{"ok":true,"skipped":[]}`; `skipped` lists the outputs the
+  sweep passes over for want of a drive, by the board's label (`ARM3`), or by
+  Output Address where the board prints none.
 - The same act is on the Controller Console as `servo.action.centre-all`, which
-  takes no arguments either.
+  takes no arguments either, and names the same outputs in a `skipped` field
+  when there are any.
 
 #### Example request
 
@@ -685,10 +695,10 @@ one press, and the controller paces the sweep itself.
 curl -s -X POST http://artoo.local/api/servo/centre
 ```
 
-#### Example response
+#### Example response (ARM3 wired after the droid started)
 
 ```json
-{"ok":true}
+{"ok":true,"skipped":["ARM3"]}
 ```
 
 ### GET /api/servo/outputs

@@ -21,6 +21,7 @@
 // =============================================================================
 #pragma once
 
+#include <stdio.h>   // snprintf(), for centre-all's skipped list
 #include <stdlib.h>
 
 #include "console_direct_action_types.h"  // ConsoleDirectActionExecutorFn/Entry
@@ -59,6 +60,34 @@
 // SERVO_PULSE_NEUTRAL_US (there is no SERVO_CMD_STOP in the enum), so it
 // drives the servo to neutral like set-position with a fixed pulse width,
 // never a freeze-in-place.
+// An Output nothing drives since the droid started - a wired tick saved after
+// boot, one never ticked, or a wire carrying a light - is refused with the
+// reason rather than answered "queued": ServoTask drops the command without a
+// word, so a queued answer would be ok for nothing (#364). The sentence is the
+// one POST /api/servo refuses with (servoOutputUndriven(), include/
+// api_servo.h), carried as a field beside COMPONENT_DISABLED the way the sound
+// rows carry theirs (include/console_direct_action_sound.h), because the reason
+// token alone cannot say whether a restart or Wiring is what drives it. Called
+// last, just before the send, so a malformed line still gets its own answer.
+static bool consoleRefusedWhileUndriven(uint32_t requestId, const char* operationName,
+                                        int16_t armId, const ConsoleRecordSink* sink) {
+    char undriven[96] = {};
+    if (!servoOutputUndriven(armId, undriven, sizeof(undriven))) {
+        return false;
+    }
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "detail", undriven);
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                          CONSOLE_REASON_COMPONENT_DISABLED);
+    }
+    return true;
+}
+
 static void consoleExecuteServoCommand(uint32_t requestId, const char* operationName,
                                        ServoCommandType type, const ConsoleArgs& args,
                                        ConsoleCommandSource source, const ConsoleRecordSink* sink) {
@@ -101,6 +130,10 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
             return;
         }
         positionUs = (uint16_t)parsed;
+    }
+
+    if (consoleRefusedWhileUndriven(requestId, operationName, armId, sink)) {
+        return;
     }
 
     ServoSubmitOutcome outcome =
@@ -218,6 +251,10 @@ static void consoleExecuteServoStop(uint32_t requestId, const char* operationNam
         return;
     }
 
+    if (consoleRefusedWhileUndriven(requestId, operationName, armId, sink)) {
+        return;
+    }
+
     ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, SERVO_CMD_POSITION,
                                                      SERVO_PULSE_NEUTRAL_US,
                                                      consoleCommandSourceFor(source));
@@ -255,9 +292,42 @@ static void consoleExecuteServoCentreAll(uint32_t requestId, const char* operati
     robotState.bulkCentreRequest = consoleCommandSourceFor(source);
     taskEXIT_CRITICAL(&robotStateMux);
 
-    if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
+    // The Outputs the sweep passes over because nothing drives them, named the
+    // way POST /api/servo/centre names them (servoCentreSkipped(), #364), as
+    // one comma-separated field. Twenty-four eight-character addresses fit.
+    struct SkippedList {
+        char names[256];
+        size_t used;
+    } skipped = {{}, 0};
+    servoCentreSkipped(
+        [](const char* name, void* ctx) {
+            SkippedList* list = static_cast<SkippedList*>(ctx);
+            const int wrote = snprintf(list->names + list->used, sizeof(list->names) - list->used,
+                                       "%s%s", list->used > 0 ? "," : "", name);
+            if (wrote > 0) {
+                const size_t room = sizeof(list->names) - list->used - 1;
+                list->used += (size_t)wrote < room ? (size_t)wrote : room;
+            }
+        },
+        &skipped);
+
+    // Nothing skipped keeps the one result record this row always answered;
+    // a field needs the begin/end pair around it (docs/console-protocol.md).
+    if (skipped.used == 0) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
+                                CONSOLE_REASON_NONE);
+        }
+        return;
+    }
+    if (sink->onRecordBegin) {
+        sink->onRecordBegin(requestId, operationName);
+    }
+    if (sink->onRecordField) {
+        sink->onRecordField(requestId, "skipped", skipped.names);
+    }
+    if (sink->onRecordEnd) {
+        sink->onRecordEnd(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED, CONSOLE_REASON_NONE);
     }
 }
 
