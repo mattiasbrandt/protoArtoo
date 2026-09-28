@@ -27,7 +27,7 @@
     <!-- Which servo each Output carries (operator, 2026-09-18 on #369): drawn
          by data/output_settings.js, the same answer Wiring's wired ticks are
          part of, so the two cannot disagree. -->
-    <div class="card">
+    <div class="card servo-assignment">
       <div class="sect"><h2>Servo assignment</h2></div>
       <div id="servo-types-body"></div>
       <div id="servo-types-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -46,14 +46,18 @@
            (ADR 0059), and rule 7 of the maker voice: both marks are what the
            controller told the servo, never where it is. -->
       <p class="hint">The bar is where it was told to go, the tick where the move ends. Nothing reads a servo back.</p>
-      <div class="outputs-bulk">
-        <button class="btn outputs-centre" type="button" aria-label="Put every output back to the centre recorded for it" disabled aria-disabled="true">back to centre</button>
-        <p class="feedback" role="status" aria-live="polite">Each output goes to its own centre, one at a time, so the servos do not brown out.</p>
-      </div>
-      <div class="outputs-find" id="outputs-find">
-        <select class="parts-output outputs-find-part" id="outputs-find-part" aria-label="The part to find the output of" disabled>
-        </select>
-        <button class="btn btn-sm parts-find" type="button" aria-label="Find the output that moves this part by nudging each spare output" disabled aria-disabled="true">find by moving</button>
+      <!-- The two acts over every row, on one line: find an Output by moving it
+           on the left, send them all back to centre on the right. -->
+      <div class="outputs-tools">
+        <div class="outputs-find" id="outputs-find">
+          <select class="parts-output outputs-find-part" id="outputs-find-part" aria-label="The part to find the output of" disabled>
+          </select>
+          <button class="btn btn-sm parts-find" type="button" aria-label="Find the output that moves this part by nudging each spare output" disabled aria-disabled="true">find by moving</button>
+        </div>
+        <div class="outputs-bulk">
+          <p class="feedback" role="status" aria-live="polite">Each output goes to its own centre, one at a time, so the servos do not brown out.</p>
+          <button class="btn btn-sm outputs-centre" type="button" aria-label="Put every output back to the centre recorded for it" disabled aria-disabled="true">back to centre</button>
+        </div>
       </div>
       <div class="parts-table-wrap" id="outputs-table"></div>
       <!-- The calibration dial opens here, under the rows, for one Output at a time. -->

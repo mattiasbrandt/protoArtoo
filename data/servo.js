@@ -133,61 +133,73 @@
   // name, and a named one shows the address beside it. Every act starts
   // refused: none may run on a guess about the estop, and the droid has not
   // said yet.
+  //
+  // One Output is one <tbody> of two lines (#399, operator review 2026-09-28:
+  // "too many simply ugly square boxes"): what it drives, where it was told to
+  // go and the acts on it, then a quiet line of how it lets go, how it moves
+  // and what it does at power-up. The <tbody> carries data-output, so every
+  // lookup below finds its cells in either line. The drive cell comes before
+  // the settings line on purpose: .outputs-drive-note and .outputs-drive-acts
+  // are looked up by their first match.
   const outputRowHtml = (output) => {
     const label = output.name;
     const address = output.label ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
     return (
-      `<tr class="parts-row outputs-row" data-output="${esc(output.address)}">` +
-      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}` +
+      `<tbody class="parts-row outputs-row" data-output="${esc(output.address)}">` +
+      `<tr class="outputs-main">` +
+      `<th scope="row" rowspan="2"><span class="parts-name">${esc(label)}</span>${address}` +
       `<div class="hint outputs-narrowed" hidden></div></th>` +
-      `<td><span class="outputs-parts"></span><select class="parts-output outputs-add" ` +
+      `<td class="outputs-drives"><span class="outputs-parts"></span><select class="parts-output outputs-add" ` +
       `aria-label="${esc(`Put a part on ${label}`)}"><option value="">Put a part on ${esc(label)}...</option>` +
       `${addOptions}</select></td>` +
-      `<td><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
+      `<td class="outputs-position"><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
       `<span class="outputs-us"></span></td>` +
       // Driving it: the typed width goes out once and is saved nowhere; open
       // and close go to the ends recorded for it; stop drives it to centre and
       // does not hold it there.
       `<td class="outputs-drive"><span class="outputs-drive-note"></span>` +
       `<span class="outputs-drive-acts">` +
-      `<input class="input-narrow outputs-width" type="number" step="10" value="1500" ` +
+      `<input class="number-cell outputs-width" type="number" step="10" value="1500" ` +
       `aria-label="${esc(`Width to drive ${label} to, in microseconds`)}">` +
+      `<span class="outputs-go-group">` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="position" disabled aria-disabled="true">drive</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="open" disabled aria-disabled="true">open</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="close" disabled aria-disabled="true">close</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="stop" disabled aria-disabled="true">stop</button>` +
-      `</span></td>` +
-      `<td class="outputs-release"></td>` +
-      // How it moves (#414). The two numbers borrow the drive cell's compact
-      // box (.outputs-drive-acts .outputs-width); the pill and the controls
-      // each sit in a plain wrapper so `hidden` can take them off the row.
-      `<td class="outputs-motion">` +
-      `<div class="outputs-motion-off"><span class="status-pill pill-info">off until calibrated</span></div>` +
-      `<div class="outputs-motion-set">` +
-      `<div><span class="outputs-drive-acts"><input class="input-narrow outputs-width outputs-throw" type="number" step="10" ` +
-      `aria-label="${esc(`Time to full throw for ${label}, in milliseconds`)}"> ms to full throw</span></div>` +
-      `<div><span class="outputs-drive-acts"><input class="input-narrow outputs-width outputs-accel" type="number" step="10" ` +
-      `aria-label="${esc(`Time to get up to speed for ${label}, in milliseconds`)}"> ms to get up to speed</span></div>` +
+      `</span></span></td>` +
+      `<td class="outputs-acts">` +
+      `<button class="btn btn-sm outputs-calibrate" type="button" ` +
+      `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
+      `<button class="btn btn-sm btn-quiet outputs-off" type="button" ` +
+      `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
+      `</td></tr>` +
+      `<tr class="outputs-sub"><td colspan="4"><div class="outputs-settings">` +
+      `<span class="outputs-setting"><span class="outputs-setting-name">release</span>` +
+      `<span class="outputs-release"></span></span>` +
+      // How it moves (#414). The pill and the controls each sit in a plain
+      // wrapper so `hidden` can take them off the line.
+      `<div class="outputs-motion">` +
+      `<div class="outputs-setting outputs-motion-off"><span class="outputs-setting-name">motion</span>` +
+      `<span class="outputs-motion-word">off until calibrated</span></div>` +
+      `<div class="outputs-setting outputs-motion-set"><span class="outputs-setting-name">motion</span>` +
+      `<label class="outputs-motion-field"><input class="number-cell outputs-throw" type="number" step="10" ` +
+      `aria-label="${esc(`Time to full throw for ${label}, in milliseconds`)}"> ms to full throw</label>` +
+      `<label class="outputs-motion-field"><input class="number-cell outputs-accel" type="number" step="10" ` +
+      `aria-label="${esc(`Time to get up to speed for ${label}, in milliseconds`)}"> ms to get up to speed</label>` +
       `<div class="seg outputs-ease" role="radiogroup" aria-label="${esc(`How ${label} eases`)}">` +
       OUTPUTS.EASES.map((ease) =>
         `<button type="button" role="radio" aria-checked="false" data-ease="${esc(ease.id)}">${esc(ease.label)}</button>`
       ).join("") +
-      `</div></div>` +
+      `</div></div></div>` +
       // At power-up (#414): limp, the default, or home. Hold keeps the drive
       // on, and its one-sentence risk shows only while hold is picked.
-      `<div class="outputs-boot"><span class="outputs-drive-note">at power-up</span>` +
+      `<div class="outputs-setting outputs-boot"><span class="outputs-setting-name">at power-up</span>` +
       `<div class="seg outputs-boot-seg" role="radiogroup" aria-label="${esc(`What ${label} does at power-up`)}">` +
       OUTPUTS.BOOTS.map((boot) =>
         `<button type="button" role="radio" aria-checked="false" data-boot="${esc(boot.id)}">${esc(boot.label)}</button>`
       ).join("") +
-      `</div><div class="hint outputs-boot-risk">Hold keeps the drive on, so a blocked part grinds.</div>` +
-      `</div></td>` +
-      `<td class="outputs-acts">` +
-      `<button class="btn btn-sm outputs-calibrate" type="button" ` +
-      `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
-      `<button class="btn btn-sm outputs-off" type="button" ` +
-      `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
-      `</td></tr>`
+      `</div><span class="hint outputs-boot-risk">Hold keeps the drive on, so a blocked part grinds.</span>` +
+      `</div></div></td></tr></tbody>`
     );
   };
 
@@ -199,10 +211,10 @@
   const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
       `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
-      `<th scope="col">Commanded position</th><th scope="col">Drive it</th><th scope="col">Output Release</th>` +
-      `<th scope="col">Motion</th><th scope="col">Calibrate</th></tr></thead><tbody>` +
+      `<th scope="col">Commanded position</th><th scope="col">Drive it</th><th scope="col">Calibrate</th>` +
+      `</tr></thead>` +
       outputs.map(outputRowHtml).join("") +
-      `</tbody></table>`;
+      `</table>`;
     outputRows.clear();
     outputsRegion.querySelectorAll("[data-output]").forEach((node) => {
       outputRows.set(node.dataset.output, {
@@ -215,7 +227,8 @@
         narrowed: node.querySelector(".outputs-narrowed"),
         driveNote: node.querySelector(".outputs-drive-note"),
         driveActs: node.querySelector(".outputs-drive-acts"),
-        // The drive cell's own box: the Motion cell's two borrow its class.
+        // The drive cell's own box, by its cell: the motion line's two boxes
+        // share its .number-cell look and not its lookup.
         width: node.querySelector(".outputs-drive").querySelector(".outputs-width"),
         go: Array.from(node.querySelectorAll(".outputs-go")),
         release: node.querySelector(".outputs-release"),
@@ -785,34 +798,41 @@
   const dialPanel = document.createElement("section");
   dialPanel.className = "cal-panel";
   dialPanel.hidden = true;
+  // Grouped by what the builder does in turn: drive the part, record an end,
+  // then the tools that change the range or test it, and the way out. The
+  // three captures are one joined control, because they are three answers to
+  // "which end is this?" (#399, operator review 2026-09-28).
   dialPanel.innerHTML =
-    `<h4 class="cal-title"></h4>` +
-    `<p class="desc">Drive the part until it looks right, then press the end you are setting. The ` +
+    `<div class="cal-head"><h4 class="cal-title"></h4><p class="cal-band"></p></div>` +
+    `<p class="hint cal-desc">Drive the part until it looks right, then press the end you are setting. The ` +
     `servo holds while you watch, and goes limp a few seconds after you leave or after ten minutes.</p>` +
-    `<p class="cal-band"></p>` +
     `<div class="cal-drive">` +
-    `<button class="btn cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
-    `<input class="cal-slider" type="range" step="1" aria-label="Drive this output">` +
-    `<button class="btn cal-fine" type="button" data-step="1" aria-label="Up 5 microseconds">+5 µs</button>` +
+    `<button class="btn btn-sm btn-quiet cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
+    `<input class="cal-slider fader" type="range" step="1" aria-label="Drive this output">` +
+    `<button class="btn btn-sm btn-quiet cal-fine" type="button" data-step="1" aria-label="Up 5 microseconds">+5 µs</button>` +
     `<span class="cal-readout"></span>` +
     `</div>` +
-    `<div class="cal-acts">` +
-    `<button class="btn accent cal-set" type="button" data-end="close">Set MIN</button>` +
-    `<button class="btn accent cal-set" type="button" data-end="centre">Set CENTER</button>` +
-    `<button class="btn accent cal-set" type="button" data-end="open">Set MAX</button>` +
+    `<div class="cal-record">` +
+    `<div class="seg cal-sets" role="group" aria-label="Record this width as an end">` +
+    `<button class="cal-set" type="button" data-end="close">Set MIN</button>` +
+    `<button class="cal-set" type="button" data-end="centre">Set CENTER</button>` +
+    `<button class="cal-set" type="button" data-end="open">Set MAX</button>` +
     `</div>` +
     `<p class="cal-ends"></p>` +
+    `</div>` +
+    `<div class="cal-tools">` +
     `<div class="cal-acts">` +
-    `<button class="btn cal-reverse" type="button">reverse</button>` +
+    `<button class="btn btn-sm btn-quiet cal-reverse" type="button">reverse</button>` +
     `<span class="cal-hint">it swaps the two ends</span>` +
-    `<button class="btn cal-safe" type="button">safe range</button>` +
-    `<button class="btn cal-useends" type="button">use these ends</button>` +
-    `<button class="btn cal-sweep" type="button">test sweep</button>` +
+    `<button class="btn btn-sm btn-quiet cal-safe" type="button">safe range</button>` +
+    `<button class="btn btn-sm btn-quiet cal-useends" type="button">use these ends</button>` +
+    `<button class="btn btn-sm btn-quiet cal-sweep" type="button">test sweep</button>` +
     `</div>` +
     `<div class="cal-acts">` +
-    `<button class="btn cal-off" type="button">pulses off</button>` +
-    `<button class="btn cal-resume" type="button">take it again</button>` +
-    `<button class="btn cal-done" type="button">done</button>` +
+    `<button class="btn btn-sm btn-quiet cal-off" type="button">pulses off</button>` +
+    `<button class="btn btn-sm accent cal-resume" type="button">take it again</button>` +
+    `<button class="btn btn-sm cal-done" type="button">done</button>` +
+    `</div>` +
     `</div>` +
     `<p class="cal-note" role="status" aria-live="polite"></p>`;
   (document.getElementById("outputs-dial") || outputsSection).appendChild(dialPanel);
