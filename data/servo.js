@@ -72,7 +72,7 @@
   // (#318). A tier is a count, never a place a row moves to: the rows stay in
   // the order the wires plug in.
   const TIERS = [
-    { id: "driving", label: "Driving parts" },
+    { id: "driving", label: "Moving a part" },
     { id: "switched-off", label: "Wired but switched off" },
     { id: "no-part", label: "Output with no part" },
   ];
@@ -178,16 +178,16 @@
       `<td class="outputs-drive"><span class="outputs-drive-note"></span>` +
       `<span class="outputs-drive-acts">` +
       `<input class="number-cell outputs-width" type="number" step="10" value="1500" ` +
-      `aria-label="${esc(`Width to drive ${label} to, in microseconds`)}">` +
+      `aria-label="${esc(`Width to move ${label} to, in microseconds`)}">` +
       `<span class="outputs-go-group">` +
-      `<button class="btn btn-sm outputs-go" type="button" data-action="position" disabled aria-disabled="true">drive</button>` +
+      `<button class="btn btn-sm outputs-go" type="button" data-action="position" disabled aria-disabled="true">move</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="open" disabled aria-disabled="true">open</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="close" disabled aria-disabled="true">close</button>` +
       `<button class="btn btn-sm outputs-go" type="button" data-action="stop" disabled aria-disabled="true">stop</button>` +
       `</span></span></td>` +
       `<td class="outputs-acts">` +
       `<button class="btn btn-sm btn-quiet outputs-calibrate" type="button" ` +
-      `aria-label="${esc(`Calibrate ${label} by driving it`)}" disabled aria-disabled="true">calibrate</button>` +
+      `aria-label="${esc(`Calibrate ${label} by moving it`)}" disabled aria-disabled="true">calibrate</button>` +
       `<button class="btn btn-sm btn-quiet outputs-off" type="button" ` +
       `aria-label="${esc(`Take the pulse off ${label}`)}" disabled aria-disabled="true">pulses off</button>` +
       `<button class="btn btn-sm btn-quiet outputs-more" type="button" aria-expanded="false" ` +
@@ -219,7 +219,7 @@
       OUTPUTS.BOOTS.map((boot) =>
         `<button type="button" role="radio" aria-checked="false" data-boot="${esc(boot.id)}">${esc(boot.label)}</button>`
       ).join("") +
-      `</div><span class="hint outputs-boot-risk">Hold keeps the drive on, so a blocked part grinds.</span></div>` +
+      `</div><span class="hint outputs-boot-risk">Hold keeps the pulse on, so a blocked part grinds.</span></div>` +
       `</div>` +
       // Putting a Part on it: a press is a request, not a state this control
       // keeps, and the row's Drives cell says what the droid answered.
@@ -235,8 +235,8 @@
   // controller does across a reboot, not while this page is reading it (#318).
   const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
-      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Drives</th>` +
-      `<th scope="col">Commanded position</th><th scope="col">Drive it</th>` +
+      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Moves</th>` +
+      `<th scope="col">Commanded position</th><th scope="col">Move it</th>` +
       `<th scope="col" aria-label="Calibrate and settings"></th>` +
       `</tr></thead>` +
       outputs.map(outputRowHtml).join("") +
@@ -315,7 +315,7 @@
     if (!output.wired) return "Not wired. Mark it on Wiring";
     if (!output.servo) return "Pick its servo";
     // Wired since the droid started: the tick is read at start (#364).
-    if (output.driven === false) return "Restart the droid to drive it";
+    if (output.driven === false) return "Restart the droid to use it";
     return "";
   };
 
@@ -706,8 +706,8 @@
       );
       showFeedback(
         limpSpare
-          ? "Nothing to nudge. The spare outputs are limp, so none can twitch. Drive one first."
-          : "Nothing to nudge. Every output with a pulse already drives a part.",
+          ? "Nothing to nudge. The spare outputs are limp, so none can twitch. Move one first."
+          : "Nothing to nudge. Every output with a pulse already has a part.",
         "warning"
       );
       return;
@@ -829,11 +829,11 @@
   // "which end is this?" (#399, operator review 2026-09-28).
   dialPanel.innerHTML =
     `<div class="cal-head"><h4 class="cal-title"></h4><p class="cal-band"></p></div>` +
-    `<p class="hint cal-desc">Drive the part until it looks right, then press the end you are setting. The ` +
+    `<p class="hint cal-desc">Move the part until it looks right, then press the end you are setting. The ` +
     `servo holds while you watch, and goes limp a few seconds after you leave or after ten minutes.</p>` +
     `<div class="cal-drive">` +
     `<button class="btn btn-sm btn-quiet cal-fine" type="button" data-step="-1" aria-label="Down 5 microseconds">−5 µs</button>` +
-    `<input class="cal-slider fader" type="range" step="1" aria-label="Drive this output">` +
+    `<input class="cal-slider fader" type="range" step="1" aria-label="Move this output">` +
     `<button class="btn btn-sm btn-quiet cal-fine" type="button" data-step="1" aria-label="Up 5 microseconds">+5 µs</button>` +
     `<span class="cal-readout"></span>` +
     `</div>` +
@@ -910,7 +910,7 @@
   // trades them, so nothing here has to sort a pair.
   const endsSentence = (output) => {
     if (!output.calibrated) {
-      return "No ends recorded yet. Drive the part to one and press Set MIN or Set MAX.";
+      return "No ends recorded yet. Move the part to one and press Set MIN or Set MAX.";
     }
     return `MIN ${output.closeUs} µs · CENTER ${output.centreUs} µs · MAX ${output.openUs} µs`;
   };
@@ -1312,7 +1312,7 @@
     const said =
       findingPart !== null
         ? `${label} is limp, and that stopped the run finding ${partLabel(findingPart)}. ${partLabel(findingPart)} stays ${NOT_WIRED}.`
-        : `${label} is limp — nothing is driving it, so it will sit wherever it is.`;
+        : `${label} is limp — no pulse holds it, so it will sit wherever it is.`;
     if (dial !== null && dial.address === address) setNote(said, "success");
     showFeedback(said, findingPart !== null ? "warning" : "success");
     refresh();
@@ -1394,7 +1394,7 @@
       OUTPUTS.list().forEach((output) => markNotCurrent(output.address));
       window.PAUtils.showFeedback(
         centreSaid,
-        "The estop let go of every output. Nothing is being driven, so nothing is going back to centre.",
+        "The estop let go of every output. Every one is limp, so nothing is going back to centre.",
         "error"
       );
     }
@@ -1435,7 +1435,7 @@
       "/footer.js": "page footer",
     });
     window.PABootstrap.registerSection("servo-outputs", (opts) => loadOutputs({ ...opts, withConfig: true }), {
-      label: "the outputs and what they drive",
+      label: "the outputs and their parts",
     });
   } else {
     loadOutputs({ withConfig: true }).catch((error) => console.warn("[servo] outputs unavailable:", error));

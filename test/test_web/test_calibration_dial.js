@@ -229,7 +229,7 @@ test("pulses off from a row makes the Output limp at once and says which way it 
   await sleep(40);
 
   assert.deepEqual(env.releases().map((post) => post.form), [{ arm: "ARM1", action: "release" }]);
-  assert.match(env.feedback(), /ARM1 is limp — nothing is driving it, so it will sit wherever it is/);
+  assert.match(env.feedback(), /ARM1 is limp — no pulse holds it, so it will sit wherever it is/);
   await env.frame();
   assert.equal(env.text("ledc:0", "outputs-release"), "Limp - pulses off");
   assert.equal(env.text("ledc:0", "outputs-us"), "— off");
