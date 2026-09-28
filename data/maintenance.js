@@ -302,6 +302,15 @@
   // matched by the stored id the droid's own row carries; where the backup's
   // rows say something too, the row wins. Nothing else in the browser or the
   // firmware knows that shape.
+  //
+  // An older backup can also name a Part this build no longer models: `drawer`
+  // in droidBuild.fitted, retired by #409. POST /api/config refuses the whole
+  // body over one unknown id, and must - a live request naming a Part that does
+  // not exist is a real error - so the restore drops it here, against the Part
+  // catalog this page carries (data/droid_parts.js, generated from the same
+  // list as the firmware's), and names it in the receipt, as it does an Output
+  // this droid lacks. The NVS load drops such an id the same way
+  // (droidFittedPartsParse).
   const ROW_SETTINGS = [
     'wired', 'component', 'ledCount', 'throwMs', 'accelMs', 'ease', 'boot',
     'openUs', 'centreUs', 'closeUs', 'calibrated', 'parts',
@@ -357,11 +366,26 @@
     return { rows, missing };
   };
 
+  // The backup's config with every fitted Part this build does not model taken
+  // out, and those ids. Without the catalog nothing is dropped: the droid's
+  // refusal then says what is wrong, rather than a guess made here.
+  const configToRestore = (config) => {
+    const fitted = config?.droidBuild?.fitted;
+    const catalog = window.DroidParts?.parts;
+    if (!Array.isArray(fitted) || !Array.isArray(catalog)) return { config, retired: [] };
+    const known = new Set(catalog.map((part) => part.id));
+    const retired = fitted.filter((id) => !known.has(id));
+    if (retired.length === 0) return { config, retired };
+    const droidBuild = { ...config.droidBuild, fitted: fitted.filter((id) => known.has(id)) };
+    return { config: { ...config, droidBuild }, retired };
+  };
+
   const restoreConfiguration = async (backup) => {
     const { outputs } = await window.PAOutputs.load();
     const { rows, missing } = rowsToRestore(backup, outputs);
+    const { config, retired } = configToRestore(backup.config);
     try {
-      await window.PAApi.postJson('/api/config', { ...backup.config, outputs: rows }, { timeoutMs: 10000 });
+      await window.PAApi.postJson('/api/config', { ...config, outputs: rows }, { timeoutMs: 10000 });
     } catch (error) {
       // A refusal about an Output's row is worded by the module that knows the
       // Outputs, from the rows this restore sent; anything else is said as the
@@ -369,6 +393,7 @@
       throw window.PAOutputs.sayRefusal(error, rows);
     }
     const gaps = missing.map((name) => `${name} not on this droid`);
+    retired.forEach((id) => gaps.push(`${id} is no longer a Part`));
     // A file from before backups carried the Outputs' rows has no centre,
     // calibration or Part map to give back.
     if (!Array.isArray(backup.servo_outputs?.outputs)) gaps.push('no centre, calibration or Part map in this file');
@@ -423,15 +448,26 @@
         failed.push(loKey);
       }
     }
+    // With Sound off this boot nothing drives a module, and POST /api/audio
+    // refuses the volume (409, #370). The restore leaves it out and says so
+    // rather than counting it failed (operator, 2026-09-28). If the droid
+    // cannot say whether Sound is on, the volume is sent and its own answer
+    // decides.
+    const skipped = [];
     if (typeof tracks.volume === 'number') {
-      try {
-        await window.PAApi.postForm('/api/audio',
-          new URLSearchParams({ action: 'volume', level: tracks.volume }), { timeoutMs: 5000 });
-      } catch {
-        failed.push('volume');
+      const audio = await window.PAApi.get('/api/audio', { timeoutMs: 5000 }).catch(() => null);
+      if (audio?.data?.output === 'off') {
+        skipped.push('volume skipped, sound is off');
+      } else {
+        try {
+          await window.PAApi.postForm('/api/audio',
+            new URLSearchParams({ action: 'volume', level: tracks.volume }), { timeoutMs: 5000 });
+        } catch {
+          failed.push('volume');
+        }
       }
     }
-    return failed;
+    return { failed, skipped };
   };
 
   // ---- RESTORE: apply all selected sections ----
@@ -468,12 +504,11 @@
     }
 
     if (chkTracks?.checked && parsedBackup.audio_tracks) {
-      const failed = await restoreAudioTracks(parsedBackup.audio_tracks);
-      lines.push(
-        failed.length === 0
-          ? 'Audio tracks: restored'
-          : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`,
-      );
+      const { failed, skipped } = await restoreAudioTracks(parsedBackup.audio_tracks);
+      const line = failed.length === 0
+        ? 'Audio tracks: restored'
+        : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`;
+      lines.push(skipped.length === 0 ? line : `${line}; ${skipped.join(', ')}`);
     }
 
     if (chkMoodMap?.checked && parsedBackup.audio_mood_map) {
