@@ -37,6 +37,18 @@ Control scale - the mistake this project makes most:
 - `.field input` is `width: 100%`. A numeric input holding one to three digits is constrained to its content, not stretched to the card.
 - Before you hand a surface over, walk EVERY control on it - inputs, selects, buttons, labels, sliders - and check each sits at card scale. Do not make the operator find them one at a time.
 
+Control style - no "classic" square buttons (the operator's standing direction, 2026-09-28):
+- His words, from three reviews in one evening: *"the classic square buttons style looks way early 2000s web page ... have some modern sleek style or choice of toggles"*; *"the page design is way too cluttered too many simply ugly square boxes allover"*; and a restyle he rejected because it only *"rounded off some squares"*. Rounding corners, recolouring borders or re-spacing the same boxes is NOT a redesign and reads to him as no change.
+- A choice is drawn as what it IS, never as a row of bordered buttons:
+  - two states (Driving / Stationary): a **sliding pill switch** - a track in `--well`, a raised thumb that moves to the chosen side (`.opmode-grid`, `data/style.css`, #399 slice 6);
+  - an on/off: a **toggle switch**, a track and a knob (`.sleep-switch`);
+  - an ordered level (Quiet .. Awake+): a **level control** whose steps light up to the chosen one (`.mood-grid` / `.mood-btn`), never four separate buttons;
+  - a small set of peers: the segmented bar above, joined, no gaps and no per-option boxes.
+- **Acts by weight.** One prominent act per row or card at most. Secondary acts (calibrate, pulses off, settings) are quiet text actions (`.btn-quiet`, `.link-btn`), not boxed buttons; related acts on one thing (drive / open / close / stop) are ONE joined control (Servos, #399 slice 4).
+- **Readings are tiles, not bordered boxes of text:** a small quiet label, the state as the loudest thing with its Status Color dot, one quiet detail line; soft surfaces separated by space or seams, no 1px frame around every cell (`.readout`, #399 slice 6). Grey for "not heard / not measured" (#402) is correct, not a defect.
+- **Fewer frames.** A page is sections divided by seams; a card inside a card, or a box around every row, is the clutter he rejected on Servos. Put rarely used settings behind a per-row disclosure instead of showing them all at rest.
+- **Before you hand a surface over, compare it yourself:** render it at 1440 px before and after, side by side. If a stranger could mistake one for the other, it is not ready. If you restyle a shared primitive (`.btn`, `.seg`, `.status-item`), list every surface it reaches and check each.
+
 Copy length - the rule is in `docs/ui-copy-voice.md`, and these are the three that get broken:
 - A **subtitle** is a count, a state or a provenance - or a 2-4 word label. Not a sentence.
 - **A third sentence is two notes, or it is too long.**
