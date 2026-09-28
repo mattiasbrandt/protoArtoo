@@ -9,7 +9,8 @@
  * - Factory sequences appear in "Factory sequences" section when no Learned sequences exist
  * - Factory cards show metadata (toggle, suppress, steps) and Factory badge
  * - Tune button on Factory card opens editor with factory sequence data
- * - Capacity display shows only Learned count (not Factory)
+ * - Capacity display shows only Learned count (not Factory), against the cap
+ *   the droid reports in GET /api/identity (FIXTURE=1 answers it)
  * - Section headers appear correctly (Your sequences / Factory sequences)
  */
 
@@ -22,6 +23,11 @@ const HEADLESS = process.env.HEADLESS === "true";
 async function test() {
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  // Offline, the droid's identity (and the cap in it) comes from the fixture.
+  // Its event stream and timers keep the process alive until it is closed.
+  const fixture = process.env.FIXTURE === "1"
+    ? await require("../_lib/fixture_routes").install(page.context())
+    : null;
 
   try {
     // =====================================================================
@@ -157,13 +163,17 @@ async function test() {
     // =====================================================================
     console.log("Test 5: Verifying capacity display");
 
+    // The cap is a board fact the droid reports, not a number of the page's.
+    const cap = await page.evaluate(() => window.PAIdentity?.learned_sequence_cap);
+    assert.ok(Number.isInteger(cap) && cap > 0, `The droid reported no Learned sequence cap: ${cap}`);
+
     const capacityText = await page.evaluate(() =>
       document.querySelector("#seq-capacity-display")?.textContent ?? ""
     );
 
     assert.ok(
-      capacityText.includes("0 / 10") || capacityText.includes("0 / 10 saved"),
-      `Capacity should show 0 / 10 (Learned only), got: "${capacityText}"`
+      capacityText.includes(`0 / ${cap}`),
+      `Capacity should show 0 / ${cap} (Learned only), got: "${capacityText}"`
     );
 
     console.log(`✓ Capacity display correct: "${capacityText}"`);
@@ -309,8 +319,8 @@ async function test() {
     assert.strictEqual(mixedState.factoryCards, 2, "Should have 2 untuned factory cards (DM:TWIRLY, DM:HELLO)");
     assert.strictEqual(mixedState.retrainedBadge, true, "Retrained card should have Retrained badge");
     assert.ok(
-      mixedState.capacityDisplay.includes("1 / 10"),
-      `Capacity should show 1 / 10 (only learned count), got: "${mixedState.capacityDisplay}"`
+      mixedState.capacityDisplay.includes(`1 / ${cap}`),
+      `Capacity should show 1 / ${cap} (only learned count), got: "${mixedState.capacityDisplay}"`
     );
 
     console.log("✓ Mixed Learned + Factory list works correctly");
@@ -329,6 +339,7 @@ async function test() {
     process.exit(1);
   } finally {
     await browser.close();
+    if (fixture) await fixture.close();
   }
 }
 

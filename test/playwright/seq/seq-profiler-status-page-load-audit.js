@@ -5,8 +5,10 @@
  * Asserts that the operator pages backed by those routes load against the
  * controller with zero 404s and render the payloads the routes return.
  *
- * Run against the live controller:
- *   TARGET_HOST=http://10.0.0.22 node test/playwright/seq/seq-profiler-status-page-load-audit.js
+ * Run against a droid, or offline against the fixture server with FIXTURE=1
+ * (test/playwright/README.md). BASE_URL names the target and has no default,
+ * so a run never reaches a droid nobody named:
+ *   BASE_URL=http://<droid> node test/playwright/seq/seq-profiler-status-page-load-audit.js
  *
  * Pace matters. An unpaced multi-page sweep measures the connection admission
  * guard rather than the routes, so each page load is separated by a settle gap.
@@ -15,7 +17,8 @@
 const { chromium } = require('playwright');
 const assert = require('assert');
 
-const TARGET_HOST = process.env.TARGET_HOST || 'http://10.0.0.22';
+const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
+const FIXTURE = process.env.FIXTURE === '1';
 const HEADLESS = process.env.HEADLESS === 'true';
 const SETTLE_MS = Number(process.env.SETTLE_MS || 3000);
 
@@ -30,13 +33,19 @@ function isExpected404(url) {
   return EXPECTED_404.some((pattern) => pattern.test(url));
 }
 
-async function loadPage(browser, path) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+async function loadPage(context, path) {
+  const page = await context.newPage();
   const responses = [];
   const failures = [];
+  // What the list routes answered, so the page can be held to rendering them.
+  const payloads = {};
 
   page.on('response', (response) => {
     responses.push({ url: response.url(), status: response.status() });
+    const route = new URL(response.url()).pathname;
+    if ((route === '/api/seq/list' || route === '/api/seq/builtins') && response.status() === 200) {
+      payloads[route] = response.json().catch(() => null);
+    }
   });
   page.on('requestfailed', (request) => {
     failures.push({ url: request.url(), error: request.failure()?.errorText });
@@ -45,10 +54,10 @@ async function loadPage(browser, path) {
   // Not `networkidle`: these pages hold an open SSE connection to /api/events,
   // so the network is never idle and the wait would always time out. Wait for
   // the document instead, then settle for the deferred fetches the page makes.
-  await page.goto(`${TARGET_HOST}${path}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(SETTLE_MS);
 
-  return { page, responses, failures };
+  return { page, responses, failures, payloads };
 }
 
 function reportPage(path, responses, failures) {
@@ -67,9 +76,9 @@ function reportPage(path, responses, failures) {
   assert.strictEqual(serverErrors.length, 0, `${path} must load with no 5xx responses`);
 }
 
-async function auditSeqPage(browser) {
+async function auditSeqPage(context) {
   console.log('seq.html - sequence routes');
-  const { page, responses, failures } = await loadPage(browser, '/seq.html');
+  const { page, responses, failures, payloads } = await loadPage(context, '/seq.html');
 
   try {
     reportPage('/seq.html', responses, failures);
@@ -77,6 +86,14 @@ async function auditSeqPage(browser) {
     const seqCalls = responses.filter((r) => r.url.includes('/api/seq'));
     assert.ok(seqCalls.length > 0, 'seq.html must call the sequence routes');
     console.log(`  sequence route calls: ${seqCalls.map((r) => `${r.status}`).join(', ')}`);
+
+    const learned = await payloads['/api/seq/list'];
+    const factory = await payloads['/api/seq/builtins'];
+    assert.ok(Array.isArray(learned), '/api/seq/list must answer a list');
+    assert.ok(Array.isArray(factory), '/api/seq/builtins must answer a list');
+    // A factory sequence the builder has retrained is listed as theirs.
+    const learnedNames = new Set(learned.map((seq) => seq.name));
+    const untuned = factory.filter((seq) => !learnedNames.has(seq.name));
 
     // The page must have rendered what the routes returned, not just received it.
     const rendered = await page.evaluate(() => {
@@ -86,8 +103,10 @@ async function auditSeqPage(browser) {
       return {
         mainCard: !!document.querySelector('#seq-main-card'),
         listResolved: visible(populated) || visible(empty),
-        // One Edit button per rendered sequence card.
-        cardCount: document.querySelectorAll('[data-action="edit"][data-seq-name]').length,
+        waiting: document.querySelectorAll('#seq-main-card .seq-section-waiting').length,
+        // One Edit button per Learned card, one Tune button per factory card.
+        learnedCards: document.querySelectorAll('[data-action="edit"][data-seq-name]').length,
+        factoryCards: document.querySelectorAll('[data-action="tune"][data-builtin-name]').length,
       };
     });
 
@@ -97,11 +116,10 @@ async function auditSeqPage(browser) {
       true,
       'seq.html must resolve the list into either its populated or its empty state',
     );
-    console.log(`  rendered sequence cards: ${rendered.cardCount}`);
-    assert.ok(
-      rendered.cardCount > 0,
-      'seq.html must render a card per saved sequence, proving the list payload reached the DOM',
-    );
+    console.log(`  rendered: ${rendered.learnedCards} of ${learned.length} learned, ${rendered.factoryCards} of ${untuned.length} factory`);
+    assert.strictEqual(rendered.waiting, 0, 'seq.html must not still be waiting on a list that answered');
+    assert.strictEqual(rendered.learnedCards, learned.length, 'seq.html must render a card per saved sequence');
+    assert.strictEqual(rendered.factoryCards, untuned.length, 'seq.html must render a card per untuned factory sequence');
 
     await page.screenshot({ path: '/tmp/issue90-seq.png', fullPage: true });
   } finally {
@@ -109,9 +127,9 @@ async function auditSeqPage(browser) {
   }
 }
 
-async function auditSetupPage(browser) {
+async function auditSetupPage(context) {
   console.log('maintenance.html - profiler routes');
-  const { page, responses, failures } = await loadPage(browser, '/maintenance.html');
+  const { page, responses, failures } = await loadPage(context, '/maintenance.html');
 
   try {
     reportPage('/maintenance.html', responses, failures);
@@ -121,9 +139,9 @@ async function auditSetupPage(browser) {
   }
 }
 
-async function auditIndexPage(browser) {
+async function auditIndexPage(context) {
   console.log('index.html - status and shared helper routes');
-  const { page, responses, failures } = await loadPage(browser, '/index.html');
+  const { page, responses, failures } = await loadPage(context, '/index.html');
 
   try {
     reportPage('/index.html', responses, failures);
@@ -154,18 +172,26 @@ async function auditIndexPage(browser) {
 }
 
 async function main() {
+  if (!BASE_URL) {
+    console.error('BASE_URL is not set: name the droid, or the fixture server with FIXTURE=1.');
+    process.exitCode = 2;
+    return;
+  }
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // Offline, the controller routes the fixture server does not answer.
+  const fixture = FIXTURE ? await require('../_lib/fixture_routes.js').install(context) : null;
 
   try {
-    console.log(`Target: ${TARGET_HOST}\n`);
+    console.log(`Target: ${BASE_URL}${FIXTURE ? ' (fixture)' : ''}\n`);
 
-    await auditSeqPage(browser);
+    await auditSeqPage(context);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
-    await auditSetupPage(browser);
+    await auditSetupPage(context);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
-    await auditIndexPage(browser);
+    await auditIndexPage(context);
 
     console.log('\nPASS - all three pages loaded with zero unexpected 404s and rendered their payloads');
   } catch (err) {
@@ -173,6 +199,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     await browser.close();
+    if (fixture) await fixture.close();
   }
 }
 

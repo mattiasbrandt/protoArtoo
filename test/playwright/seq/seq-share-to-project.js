@@ -100,8 +100,11 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
           (c) => c.querySelector('h4')?.textContent === 'DM:MYDANCE'
         );
         const fb = card?.querySelector('.feedback');
-        return !!fb && !fb.classList.contains('hidden') && /clipboard|copy|attach/i.test(fb.textContent || '');
+        // "Sequence copied." on a copy; "Could not copy ... attach the file"
+        // on the fallback.
+        return !!fb && !fb.classList.contains('hidden') && /copied|copy|attach/i.test(fb.textContent || '');
       },
+      null,
       { timeout: 3000 }
     );
   });

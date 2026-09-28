@@ -3,6 +3,11 @@
  *
  * Test the dome SVG panel picker (issue #12, rework).
  * Validates: real dome geometry, panel clicks, pie gating, dropdown sync, unserviced markers.
+ *
+ * This is the built-in MK4 drawing (data/dome_panel_model.js), which the editor
+ * shows when the dome does not answer (tier 3 of the Layout Fallback Hierarchy).
+ * The fixture server serves a dome layout, which would draw the live picker
+ * instead, so the dome is made unreachable here.
  */
 
 const { chromium } = require('playwright');
@@ -30,6 +35,11 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
   const page = await context.newPage();
 
   try {
+    // The dome does not answer: the editor falls back to the built-in drawing.
+    await page.route('**/api/dome/layout', (route) =>
+      route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"dome unreachable"}' })
+    );
+
     // Navigate to seq.html
     await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
     await page.waitForSelector('#seq-main-card', { timeout: 5000 });

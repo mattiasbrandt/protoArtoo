@@ -72,7 +72,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         await page.waitForTimeout(100);
 
         // Click the type chip for this type
-        const typeChip = lastStep.locator(`[data-type="${type}"]`);
+        // The main chip for the type: the dome sub-mode chips share data-type="dome".
+        const typeChip = lastStep.locator(`[data-type="${type}"]:not([data-dome-mode])`);
         await typeChip.click();
         await page.waitForTimeout(100);
 
