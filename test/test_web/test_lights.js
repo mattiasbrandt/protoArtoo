@@ -13,6 +13,11 @@
 //     one, and three iterations of this surface were rejected for doing exactly
 //     that with board labels and "AUX" on screen.
 //
+//   - A WAIT IS MEASURED AGAINST WHAT THE DROID STARTED WITH. An LED count is
+//     read once at start; this page measured "waiting" against its own first
+//     read, so a page opened after a save showed nothing waiting (#364, the
+//     defect #371 fixed on Configuration).
+//
 //   - A LIVE FRAME NEVER TAKES A PICK OUT OF A BUILDER'S HAND. The status
 //     stream repeats itself every few seconds; this page shipped a version that
 //     redrew on every frame, which reset a half-made mode-and-color choice.
@@ -163,4 +168,16 @@ test("a dome light takes a command only where the dome answers to its name", asy
   const sent = env.posts.find((post) => post.path === "/api/dome/cmd");
   assert.ok(sent, "picking asks the dome, with no button to press after it");
   assert.match(sent.body.cmd, /^DL:FPSI:ALARM:/);
+});
+
+// An LED count saved after the droid started, and the page opened after that:
+// its first read already carries the saved count, so only the droid's own
+// report of what it started with can say the strip is still the old length.
+test("an LED count saved before the page opened still waits for a restart", async () => {
+  const answer = droid();
+  Object.assign(answer.outputs[1], { activeLight: "rgb", activeLedCount: 8 });
+  const env = await ready({ answer });
+
+  const state = env.plateFor("dataPanel").querySelector(".light-state")?.textContent;
+  assert.equal(state, "Waiting for a restart", "the droid started with 8, and 16 is saved");
 });

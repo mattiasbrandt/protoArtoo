@@ -38,6 +38,7 @@
 #include "sequence_dispatcher_step.h"
 #include "sequence_engine.h"
 #include "sequence_run_evidence.h"
+#include "servo_task.h"  // servoTaskDrivesOutput() - an undriven Output is passed over (#364)
 
 // Platform definition seam  --  hardware vs native test builds.
 // This is the irreducible guard needed because queue definition must differ:
@@ -219,6 +220,17 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     if (!plan.drive) {
         PA_LOG_INFO(TAG, "output %u not centred - %s", (unsigned)run.nextRow,
                     consoleReasonString(plan.reason));
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        return;
+    }
+    // An Output ServoTask does not drive since boot - a wired tick saved
+    // since, or none at all - would drop the move without a word, and the run
+    // would still spend a Cadence Floor slot waiting on it. Passed over and
+    // counted instead, costing no time (#364). POST /api/servo/centre names
+    // these rows in its answer (servoCentreSkipped(), src/web/api_servo.cpp).
+    if (!servoTaskDrivesOutput(plan.armId)) {
+        PA_LOG_INFO(TAG, "arm%u not centred - not driven since the droid started",
+                    (unsigned)plan.armId + 1);
         sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
         return;
     }

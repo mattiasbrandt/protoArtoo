@@ -607,6 +607,16 @@ Queues servo command.
 - `400` `{"ok":false,"error":"A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"}` (the running board's words; the same sentence names `hold` and `travel`)
 - `400` missing/invalid `positionUs`, with `field`, `reason` and `accepts` (`500..2500`) as in "Refusals from a settings write"
 - `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
+- `409` the Output is not driven since the droid started, whatever the action
+  (pulses off included; for `both`, either of the two). The wired ticks are read
+  once at start (ADR 0027), so an Output ticked since has nothing behind it until
+  a restart. The sentence says what would drive it:
+  `{"ok":false,"error":"Restart the droid to drive ARM2."}` when it is ticked now,
+  `"ARM2 is not wired. Mark it on Wiring."` when it is not, and
+  `"ARM3 carries a light, not a servo."` when its wire carries a light.
+  `GET /api/servo/outputs` `driven` says the same thing ahead of time. The
+  Controller Console's `servo.action.*` rows refuse the same Outputs with
+  `unavailable` / `component-disabled`, and the same sentence as `detail`.
 - `503` `{"ok":false,"error":"Servo command queue full"}`
 
 #### Example request (open, Artoo PCB)
@@ -658,6 +668,11 @@ one press, and the controller paces the sweep itself.
   and is not the middle of its two ends — and not the fixed 1500 µs
   `action=stop` on `POST /api/servo` drives one output to.
 - A row recorded as an LED strip is skipped: a light has no centre to go back to.
+- An output nothing drives since the droid started - wired after boot, not
+  wired at all, or on a driver this build does not carry - is skipped too, at
+  no cost to the pace, and the answer names it in `skipped` (`driven` on
+  `GET /api/servo/outputs` says the same beforehand). The wired ticks are read
+  once at start (ADR 0027), so a restart is what brings one into the sweep.
 - Any estop, Sleep Mode, a running sequence starting, or `POST /api/seq/stop`
   ends the sweep where it has got to. Outputs already sent stay where they were
   sent; nothing is driven anywhere as the sweep ends. An estop also releases
@@ -667,9 +682,12 @@ one press, and the controller paces the sweep itself.
 - The controller refuses to start one under a latched estop or in Sleep Mode.
   The request is still answered `200`; the refusal is in the controller log,
   the same way an ordinary servo command refused under estop is.
-- Success: `200` `{"ok":true}`
+- Success: `200` `{"ok":true,"skipped":[]}`; `skipped` lists the outputs the
+  sweep passes over for want of a drive, by the board's label (`ARM3`), or by
+  Output Address where the board prints none.
 - The same act is on the Controller Console as `servo.action.centre-all`, which
-  takes no arguments either.
+  takes no arguments either, and names the same outputs in a `skipped` field
+  when there are any.
 
 #### Example request
 
@@ -677,10 +695,10 @@ one press, and the controller paces the sweep itself.
 curl -s -X POST http://artoo.local/api/servo/centre
 ```
 
-#### Example response
+#### Example response (ARM3 wired after the droid started)
 
 ```json
-{"ok":true}
+{"ok":true,"skipped":["ARM3"]}
 ```
 
 ### GET /api/servo/outputs
@@ -714,8 +732,21 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     one - the key the status frame reports the Output under. Never shown to a
     builder. Absent for an expander's row.
   - `switchable`: whether the Output has a wired tick. `wired`: whether that
-    tick is on; an Output with no tick - an expander's - reports `true`, since
-    nothing could have switched it off. Read once at start (ADR 0027).
+    tick is on, as saved; an Output with no tick - an expander's - reports
+    `true`, since nothing could have switched it off. The droid reads it once at
+    start (ADR 0027), so a tick saved since waits for a restart.
+  - `activeWired`: the wired tick the droid started with. It differs from
+    `wired` exactly while a saved tick waits for a restart. `true` on an
+    expander's row, like `wired`.
+  - `activeLight`: the Light Type on the wire when the droid started (`rgb`),
+    or `null` where a servo was; `activeLedCount`, beside `ledCount`, the LED
+    count it started with. Both are read once at start, so a saved
+    `component` or `ledCount` that differs waits for a restart. Absent on an
+    expander's row.
+  - `driven`: whether the droid puts servo pulses on this Output since it
+    started - wired at start, no light on the wire at start. `POST /api/servo`
+    refuses every act on an Output this is `false` for, with `409`. `false` on
+    an expander's row: nothing drives one yet.
   - `lightCapable`: whether a Light Type may go on this wire (ADR 0067), and
     `ledCount`, how many LEDs its light has - present exactly where a light can
     go, which is also exactly where it can be saved.
@@ -791,11 +822,11 @@ curl -s http://artoo.local/api/servo/outputs
 #### Example response (an Artoo PCB, fresh, with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 let go with pulses off after a nudge, and ARM5 released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1}]}
 ```
 
 ### POST /api/aux-led/color

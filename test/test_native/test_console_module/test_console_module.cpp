@@ -96,6 +96,7 @@
                                   // test_api_audio_routes.cpp for sound.action.play-track/
                                   // set-volume's own queue stub (#221 remainder)
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
+#include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
                                   // own queue stub (#221 remainder)
 #include "heap_reading_test_hooks.h"  // g_test_heap_* - the health heap keys (#381)
 #include "web_server_test_hooks.h"  // g_test_restart_requests - system.action.reboot's (#225)
@@ -342,6 +343,8 @@ void setUp() {
     g_test_commanded_rc_debug = false;
     g_test_commanded_rc_debug_calls = 0;
     g_test_applied_mood = 0;
+    g_test_servo_wired_at_start_mask = 0xFF;
+    g_test_servo_driven_mask = 0xFF;
 
     // #221 remainder: sound.action.play-track/set-volume and
     // aux.action.led-color/-effect's own queue stubs - reset per test rather
@@ -4395,6 +4398,55 @@ void test_servo_open_accepts_both_as_the_broadcast_target() {
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
 }
 
+// An Output nothing drives since the droid started is refused, never queued
+// (#364): ServoTask drops the command without a word. The detail is the
+// sentence POST /api/servo answers with, so both adapters say the same thing.
+void test_servo_refuses_an_output_nothing_drives_since_boot() {
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    snap.system.enable_aux1 = true;  // ARM3, ticked after the droid started
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 2);
+
+    runQuery("servo.action.hold target=ARM3 position_us=1500");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
+    TEST_ASSERT_EQUAL_STRING("Restart the droid to drive ARM3.", capturedValue("detail"));
+
+    runQuery("servo.action.stop target=ARM3");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
+
+    runQuery("servo.action.open target=ARM1");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+}
+
+// back to centre from the Console names what the sweep passes over because
+// nothing drives it, as POST /api/servo/centre does (#364).
+void test_servo_centre_all_names_an_output_nothing_drives() {
+    {
+        // A fresh table: every board Output has a row with travel.
+        const ConfigWriteWindowForTest window;
+        Preferences prefs;
+        prefs.begin("proto", false);
+        prefs.clear();
+        ServoOutputRepairReport report = {};
+        configLoadServoOutputs(prefs, &report);
+        prefs.end();
+    }
+    g_test_servo_driven_mask = (uint8_t)~(1u << 2);
+
+    runQuery("servo.action.centre-all");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_APPLIED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING("ARM3", capturedValue("skipped"));
+}
+
 void test_servo_close_rejects_an_unknown_target() {
     runQuery("servo.action.close target=aux9");
 
@@ -5895,6 +5947,8 @@ int main(int, char**) {
     RUN_TEST(test_servo_open_takes_the_board_label_typed_with_a_space);
     RUN_TEST(test_servo_refuses_a_word_the_board_does_not_print_and_names_its_words);
     RUN_TEST(test_servo_open_accepts_both_as_the_broadcast_target);
+    RUN_TEST(test_servo_refuses_an_output_nothing_drives_since_boot);
+    RUN_TEST(test_servo_centre_all_names_an_output_nothing_drives);
     RUN_TEST(test_servo_close_rejects_an_unknown_target);
     RUN_TEST(test_servo_set_position_rejects_both_though_open_close_accept_it);
     RUN_TEST(test_servo_set_position_queues_with_a_valid_pulse_width);

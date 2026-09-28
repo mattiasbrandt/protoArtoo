@@ -15,6 +15,7 @@
 #include "api_servo.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>  // strcasecmp()
@@ -22,10 +23,14 @@
 #include "api_helpers.h"
 #include "api_json_response.h"
 #include "board_outputs.h"  // boardOutputForWord(), boardOutputWordList()
+#include "config_cache.h"   // configCacheOutputIsWired(), configCacheReadServoOutputComponent()
 #include "ledc_pwm.h"
 #include "logging.h"
+#include "output_wire.h"    // outputWirePinKeptForLight()
 #include "robot_state.h"
+#include "sequence_bulk_centre.h"  // sequenceBulkCentreHasTravel(), sequenceBodyCentrePlan()
 #include "servo_helpers.h"  // servo_ledc_channel_to_arm_id()
+#include "servo_task.h"     // servoTaskDrivesOutput() - what ServoTask started with
 
 extern QueueHandle_t servoCmdQueue;
 
@@ -64,6 +69,39 @@ ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint
     cmd.timestampMs = millis();
     outcome.ok = (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE);
     return outcome;
+}
+
+namespace {
+
+// One Output's half of servoOutputUndriven(). The saved tick and component are
+// read only to say what a restart would do; whether anything drives it NOW is
+// ServoTask's snapshot alone.
+bool oneOutputUndriven(uint8_t armId, char* reason, size_t reasonSize) {
+    if (servoTaskDrivesOutput(armId)) {
+        return false;
+    }
+    const char* name = armId < BOARD_OUTPUT_COUNT ? boardOutputLabel(BOARD_OUTPUTS[armId]) : "";
+    const OutputWireInputs saved = {
+        configCacheOutputIsWired(armId),
+        configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, servo_arm_id_to_ledc_channel(armId)),
+    };
+    if (outputWirePinKeptForLight(saved, armId)) {
+        snprintf(reason, reasonSize, "%s carries a light, not a servo.", name);
+    } else if (saved.wired) {
+        snprintf(reason, reasonSize, "Restart the droid to drive %s.", name);
+    } else {
+        snprintf(reason, reasonSize, "%s is not wired. Mark it on Wiring.", name);
+    }
+    return true;
+}
+
+}  // namespace
+
+bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize) {
+    if (armId == 255) {
+        return oneOutputUndriven(0, reason, reasonSize) || oneOutputUndriven(1, reason, reasonSize);
+    }
+    return armId >= 0 && oneOutputUndriven((uint8_t)armId, reason, reasonSize);
 }
 
 namespace {
@@ -215,6 +253,16 @@ void handleServoPost(WebRequest& req) {
         positionUs = (uint16_t)parsed;
     }
 
+    // Last, after every check on the request itself: a malformed request is
+    // still told what is wrong with it. ServoTask drops a command for an Output
+    // it does not drive without a word, so this is the only place the caller
+    // can hear it - and a queued command would answer `ok` for nothing (#364).
+    char undriven[96] = {};
+    if (servoOutputUndriven(armId, undriven, sizeof(undriven))) {
+        webSendJsonError(req, 409, undriven);
+        return;
+    }
+
     // Commit Step (ADR 0036 criterion 1, include/api_servo.h): the same
     // servoCmdQueue submission both this handler and the Console's
     // servo.action.* executors now make.
@@ -251,11 +299,48 @@ void handleServoPost(WebRequest& req) {
 // too. This route does not duplicate that judgement, which would put the same
 // rule in two places and let them disagree.
 // =============================================================================
+size_t servoCentreSkipped(void (*visit)(const char* name, void* ctx), void* ctx) {
+    size_t skipped = 0;
+    const uint8_t count = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        ServoOutputRow row = {};
+        if (!configCacheReadServoOutput(i, &row) || !sequenceBulkCentreHasTravel(row)) {
+            continue;  // a light is passed over by design, not for want of a drive
+        }
+        const SeqBodyStepPlan plan = sequenceBodyCentrePlan(row);
+        if (plan.drive && servoTaskDrivesOutput(plan.armId)) {
+            continue;
+        }
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        const char* name = servoOutputAddressName(row.driver, row.channel);
+        if (name[0] == '\0') {
+            servoOutputFormatAddress(address, sizeof(address), row.driver, row.channel);
+            name = address;
+        }
+        if (visit != nullptr) {
+            visit(name, ctx);
+        }
+        ++skipped;
+    }
+    return skipped;
+}
+
 void handleServoCentrePost(WebRequest& req) {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.bulkCentreRequest = SRC_WEB_API;
     taskEXIT_CRITICAL(&robotStateMux);
 
+    // What the sweep will pass over, named now: the Coordinator skips these
+    // rows without spending a slot on them, and this is the one answer the
+    // caller gets (#364).
+    JsonDocument doc;
+    doc["ok"] = true;
+    JsonArray skipped = doc["skipped"].to<JsonArray>();
+    servoCentreSkipped([](const char* name, void* ctx) { static_cast<JsonArray*>(ctx)->add(name); },
+                       &skipped);
+
     PA_LOG_INFO(TAG, "[WEB] back to centre requested");
-    req.send(200, "application/json", "{\"ok\":true}");
+    // A ceiling, not a size: twenty-four rows all skipped, each named by an
+    // eight-character address, is under 300 B.
+    webSendJsonDocument(req, doc, 512, TAG);
 }

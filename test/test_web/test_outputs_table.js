@@ -179,3 +179,22 @@ test("a row shows narrowed ends only while the droid reports them, with the droi
   await env.frame();
   assert.equal(note("ledc:1").hidden, true, "the note goes when the droid stops reporting it");
 });
+
+// An Output the droid does not drive since it started - a wired tick saved
+// after boot (#364) - is refused by POST /api/servo whatever is pressed, so its
+// row offers no act at all: no drive, no calibrate, no pulses off. It says why
+// instead. Its neighbour, driven, keeps every act.
+test("an Output the droid does not drive offers no act on its row, and says why", async () => {
+  const outputs = freshOutputs();
+  Object.assign(outputs[2], { activeWired: false, driven: false, commandedUs: null, targetUs: null });
+  const env = await bootServos({ outputs });
+  const acts = (address) => ({
+    drive: env.row(address).querySelector(".outputs-drive-acts").hidden,
+    calibrate: env.row(address).querySelector(".outputs-calibrate").hidden,
+    off: env.row(address).querySelector(".outputs-off").hidden,
+  });
+
+  assert.deepEqual(acts("ledc:3"), { drive: true, calibrate: true, off: true }, "nothing offered on ARM3");
+  assert.notEqual(env.text("ledc:3", "outputs-drive-note"), "", "and the row says why");
+  assert.deepEqual(acts("ledc:1"), { drive: false, calibrate: false, off: false }, "ARM2 keeps its acts");
+});

@@ -159,6 +159,22 @@ test("the estop holds every move the picture can start, body and dome, and says 
   assert.deepEqual(domePosts(env).map((post) => post.form.cmd), [":OPP1"]);
 });
 
+// An Output the droid does not drive since it started (#364) - wired after
+// boot - is refused by POST /api/servo whatever is pressed. The picture decides
+// that before anything is sent, in the route's own words, and sends nothing.
+test("a Part on an Output nothing drives is offered no Open, and says what drives it", async () => {
+  const outputs = measuredArm1();
+  Object.assign(outputs.find((each) => each.address === "ledc:0"), { driven: false, activeWired: false });
+  const env = await bootParts({ outputs });
+
+  pick(env, "doorFL");
+  assert.equal(actButton(env, "toggle").disabled, true, "the toggle is refused");
+  assert.equal(panelWhy(env), "Restart the droid to drive ARM1.");
+  pressAct(env, "toggle");
+  await sleep(20);
+  assert.equal(servoPosts(env).length, 0, "and nothing reaches the droid");
+});
+
 test("a holoprojector is offered no Open at all, only its facts", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
 

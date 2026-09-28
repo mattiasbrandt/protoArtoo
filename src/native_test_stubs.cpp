@@ -158,6 +158,22 @@ void sequenceDispatcherInit() {
 QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue = nullptr;
 
+// ServoTask's boot snapshot (#364), one bit per armId. The real answer is
+// servoTaskInit()'s; include/servo_task_test_hooks.h says why both default to
+// every Output.
+#include "servo_task.h"
+#include "servo_task_test_hooks.h"  // declares the two masks, defined here
+uint8_t g_test_servo_wired_at_start_mask = 0xFF;
+uint8_t g_test_servo_driven_mask = 0xFF;
+
+bool servoTaskWiredAtStart(uint8_t armId) {
+    return armId < SERVO_ARM_COUNT && (g_test_servo_wired_at_start_mask & (1u << armId)) != 0;
+}
+
+bool servoTaskDrivesOutput(uint8_t armId) {
+    return armId < SERVO_ARM_COUNT && (g_test_servo_driven_mask & (1u << armId)) != 0;
+}
+
 bool g_test_commanded_web_control = false;
 unsigned g_test_web_control_calls = 0;
 unsigned g_test_restart_requests = 0;
@@ -206,6 +222,19 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
 #include "aux_led_test_hooks.h"  // declares g_test_aux_led_queue_ok, defined here
 #include "board_outputs.h"
 bool g_test_aux_led_queue_ok = true;
+bool g_test_aux_led_at_start_set = false;
+ServoComponentType g_test_aux_led_component_at_start[BOARD_OUTPUT_COUNT] = {};
+uint8_t g_test_aux_led_count_at_start[BOARD_OUTPUT_COUNT] = {};
+
+bool auxLedWireAtStart(size_t index, ServoComponentType* component, uint8_t* ledCount) {
+    if (!g_test_aux_led_at_start_set || index >= BOARD_OUTPUT_COUNT || component == nullptr ||
+        ledCount == nullptr) {
+        return false;
+    }
+    *component = g_test_aux_led_component_at_start[index];
+    *ledCount = g_test_aux_led_count_at_start[index];
+    return true;
+}
 
 bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b,
                          CommandSource /*source*/) {
