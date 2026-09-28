@@ -315,9 +315,32 @@ void test_the_heap_keys_publish_their_readings(void) {
     TEST_ASSERT_EQUAL_UINT32(4000000, doc["heapLargest8bit"].as<uint32_t>());
 }
 
+// In ELRS mode the controller reads no receiver (include/robot_state.h,
+// RC_INPUT_ELRS), so rcCh1 and rcCh2 are standby - not the SBUS branches'
+// not_seen, which told a builder on the #355 bench that the droid was waiting
+// for an SBUS frame it will never read. Neither line may name SBUS.
+void test_elrs_mode_rc_channels_are_standby_without_sbus_words(void) {
+    StatusJsonInputs in = widestInputs();
+    in.rcInputMode = RC_INPUT_ELRS;
+    in.lastSbus1Ms = 0;
+    in.lastSbus2Ms = 0;
+    static char body[kUnbounded];
+    TEST_ASSERT_TRUE(formatStatusJson(body, sizeof(body), in));
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(deserializeJson(doc, body) == DeserializationError::Ok);
+    for (const char* key : {"rcCh1", "rcCh2"}) {
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("standby", doc[key]["state"].as<const char*>(), key);
+        const char* detail = doc[key]["detail"].as<const char*>();
+        TEST_ASSERT_NOT_NULL_MESSAGE(detail, key);
+        TEST_ASSERT_NULL_MESSAGE(strstr(detail, "SBUS"), detail);
+    }
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_worst_case_status_document_fits_its_buffer);
     RUN_TEST(test_the_heap_keys_publish_their_readings);
+    RUN_TEST(test_elrs_mode_rc_channels_are_standby_without_sbus_words);
     return UNITY_END();
 }

@@ -27,6 +27,14 @@ namespace {
 // The answer both senders give when the document does not fit.
 const char kStatusOverflowBody[] = "{\"ok\":false,\"error\":\"status payload overflow\"}";
 
+// rcCh1/rcCh2 in ELRS mode. The controller reads no input in that mode
+// (rcInputStepStartupPlan() starts no decoder for it, the RC_INPUT_ELRS
+// comment in include/robot_state.h), so the channel is standby - a
+// channel the mode does not use, as rcCh2 is in single SBUS - never not_seen,
+// which says a receiver we listen to has not been heard (#402). Operator copy,
+// docs/ui-copy-voice.md: the mode and what the droid does in it, nothing more.
+const char kRcElrsDetail[] = "ELRS: the droid reads no sticks from it yet.";
+
 const char* domeTransportLabel(DomeLinkTransport transport) {
     switch (transport) {
         case DOME_LINK_TRANSPORT_UART:
@@ -277,7 +285,10 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             }
         }
         if (in.enableRcCh1 && !(in.rcInputMode == RC_INPUT_SINGLE_SBUS && in.singleSbusUseCh2)) {
-            if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
+            if (in.rcInputMode == RC_INPUT_ELRS) {
+                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "standby", kRcElrsDetail) &&
+                     ok;
+            } else if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
                 ok = appendPeripheralStatus(
                          pos, remaining, "rcCh1", "ready",
                          "Standard PWM input enabled; routing configurable via /api/config") &&
@@ -299,7 +310,10 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             }
         }
         if (in.enableRcCh2) {
-            if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
+            if (in.rcInputMode == RC_INPUT_ELRS) {
+                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "standby", kRcElrsDetail) &&
+                     ok;
+            } else if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
                 ok = appendPeripheralStatus(
                          pos, remaining, "rcCh2", "ready",
                          "Standard PWM input enabled; routing configurable via /api/config") &&
