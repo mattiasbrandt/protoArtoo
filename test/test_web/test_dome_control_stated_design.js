@@ -70,10 +70,13 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
   const header = makeElement("dome-control-header");
   const body = makeElement("dome-control-body");
   const feedback = makeElement("dome-control-feedback");
+  // The card's dome column: the banner and the dome drawing go here.
+  const dome = makeElement("moving-parts-dome");
   card.query = (selector) => {
     if (selector === ".dome-control-header") return header;
     if (selector === ".dome-control-body") return body;
     if (selector === ".dome-control-feedback") return feedback;
+    if (selector === ".moving-parts-dome") return dome;
     return makeElement();
   };
 
@@ -152,6 +155,8 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
   vm.runInContext(read("live_reading.js"), sandbox);
   sandbox.PALiveReading.start();
   if (status) sandbox.PAStatusStream.seed(status);
+  // The estop hold both drawings on the card keep (data/droid_picture.js).
+  vm.runInContext(read("droid_picture.js"), sandbox);
   vm.runInContext(read("dome_control.js"), sandbox);
 
   // A press on the built-in map's panel with this Panel Intent target, the
@@ -168,6 +173,7 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
     card,
     header,
     body,
+    dome,
     feedback,
     posts,
     press,
@@ -179,8 +185,8 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
 async function expanded(options) {
   const page = renderCard(options);
   await page.expand();
-  const picker = page.body.children[page.body.children.length - 1];
-  const banner = page.body.inserted.map((entry) => entry.html).join("");
+  const picker = page.dome.children[page.dome.children.length - 1];
+  const banner = page.dome.inserted.map((entry) => entry.html).join("");
   return { picker: picker ? picker.innerHTML : "", banner };
 }
 
@@ -220,5 +226,113 @@ test("a dome panel press sends nothing while the estop is latched or not yet kno
     clear.posts.map((post) => post.form.cmd),
     [":OP07"],
     "with the estop clear the same press opens the panel"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The body drawing on the same card (#372, operator 2026-09-28): a click on a
+// drawn door opens or closes it, held by the same estop as Parts. Run on the
+// shipped card markup (data/dashboard.html) with the real body view, Outputs,
+// Droid Build and decision (data/droid_picture.js), so "sends nothing" is read
+// off the requests the page actually tried.
+// ---------------------------------------------------------------------------
+async function bodyCard(status) {
+  const { MiniDocument } = await import("./helpers/mini_dom.js");
+  const { servoRow } = await import("./helpers/fake_droid.js");
+  const document = new MiniDocument();
+  const html = read("dashboard.html");
+  const start = html.indexOf('<div class="disclose" id="dome-control-card">');
+  const end = html.indexOf("<!-- The Controller Console");
+  document.body.innerHTML = html.slice(start, end);
+  document.body.dataset.page = "home";
+
+  // ARM1 carries the right body door, its ends measured, standing closed.
+  const outputs = [
+    servoRow("ledc:0", "ARM1", { parts: ["doorFR"], calibrated: true, commandedUs: 1000, targetUs: 1000 }),
+  ];
+  const posts = [];
+  const sandbox = {
+    PAAssetsReady: true,
+    addEventListener() {},
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
+    // No dome on this bench: the dome half answers as unreachable and empty.
+    DomeLayout: {
+      load: () => Promise.resolve(),
+      getModel: () => null,
+      getSource: () => "vendored",
+      onChange() {},
+    },
+    DomeCommandMap: { decodeCommandToElement: () => null },
+    PAApi: {
+      get: (route) =>
+        Promise.resolve({ ok: true, data: route === "/api/servo/outputs" ? { outputs } : [] }),
+      postForm: (route, form) => {
+        posts.push({ route, form });
+        return Promise.resolve({ ok: true, data: {} });
+      },
+      messageFor: (error) => String(error && error.message),
+    },
+    PAUtils: { escapeHtml: (value) => String(value), escapeAttr: (value) => String(value) },
+    document,
+    URLSearchParams,
+    setTimeout,
+    clearTimeout,
+    Promise,
+    console,
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  [
+    "status_stream.js",
+    "live_reading.js",
+    "droid_parts.js",
+    "droid_part_kind.js",
+    "droid_build.js",
+    "body_art.js",
+    "body_view.js",
+    "outputs.js",
+    "parts_mapping.js",
+    "droid_picture.js",
+  ].forEach((file) => vm.runInContext(read(file), sandbox, { filename: file }));
+  sandbox.PALiveReading.start();
+  if (status) sandbox.PAStatusStream.seed(status);
+  sandbox.DroidBuild.adopt({
+    droidBuild: { domeDesign: "mk4", domeVariant: "complex", bodyDesign: "mk4", bodyVariant: "complex", fitted: ["doorFR"] },
+  });
+  await sandbox.PAOutputs.refresh();
+  vm.runInContext(read("dome_control.js"), sandbox, { filename: "dome_control.js" });
+
+  const header = document.getElementById("dome-control-header");
+  await header.fire("click", { target: header });
+  const svg = document.querySelector(".moving-parts-body").querySelector(".bv-svg");
+  const door = svg.querySelectorAll("[data-marker]").find((node) => node.dataset.marker === "doorFR");
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  return {
+    posts,
+    said: () => document.querySelector(".dome-control-feedback").textContent,
+    click: async () => {
+      svg.fire("click", { target: door });
+      await settle();
+    },
+  };
+}
+
+test("a click on a body door on the card sends nothing while the estop is latched or not yet known", async () => {
+  for (const status of [statusFrame({ estop: true }), null]) {
+    const card = await bodyCard(status);
+    await card.click();
+    assert.deepEqual(card.posts, [], `a click went out with the estop ${JSON.stringify(status)}`);
+    assert.match(card.said(), /estop latched|stopped/i, "and the card says why");
+  }
+
+  const clear = await bodyCard(statusFrame());
+  await clear.click();
+  assert.deepEqual(
+    clear.posts.map((post) => [post.route, post.form.arm, post.form.action]),
+    [["/api/servo", "ARM1", "open"]],
+    "with the estop clear the same click opens the door"
   );
 });

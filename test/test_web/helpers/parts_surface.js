@@ -403,6 +403,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
     "/body_view.js": readData("body_view.js"),
     "/outputs.js": readData("outputs.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
+    "/droid_picture.js": readData("droid_picture.js"),
     "/parts.js": readData("parts.js"),
     "/apply_timing.js": readData("apply_timing.js"),
     "/output_settings.js": readData("output_settings.js"),

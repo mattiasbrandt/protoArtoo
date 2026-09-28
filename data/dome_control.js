@@ -1,14 +1,19 @@
 /**
  * data/dome_control.js
  *
- * Live dome control section for the home page.
- * Provides:
- *   - Interactive SVG dome with click-to-toggle panel actuation
- *   - Quick-sequence dropdown + Play/Stop buttons
- *   - Lazy loading on first card expand
- *   - Accessibility: aria-expanded, keyboard support, status announcements
+ * The Dashboard's Moving parts card: the droid's two drawings and nothing else
+ * (operator, 2026-09-28 on #372).
+ *   - The body, Front and Rear (data/body_view.js). A click on a drawn door,
+ *     panel or arm opens or closes it - the Parts picture's decision and
+ *     request, from data/droid_picture.js, not a copy of them.
+ *   - The dome, top-down, from the layout the dome reports or the built-in
+ *     map, with click-to-toggle panel actuation.
+ *   - Both drawn lazily on the first expand.
+ *   - Accessibility: aria-expanded, keyboard support, status announcements.
+ * A refused click sends nothing and says why in the card's feedback line.
  *
- * Reuses: DomeCommandMap, DomeLayout, DomeLayoutRender, PAApi
+ * Reuses: BodyView, PADroidPicture, DomeCommandMap, DomeLayout,
+ * DomeLayoutRender, PAApi
  */
 
 (() => {
@@ -31,8 +36,10 @@
     const headerBtn = cardEl.querySelector('.dome-control-header');
     const bodyEl = cardEl.querySelector('.dome-control-body');
     const feedbackEl = cardEl.querySelector('.dome-control-feedback');
+    const bodyDrawingEl = cardEl.querySelector('.moving-parts-body');
+    const domeEl = cardEl.querySelector('.moving-parts-dome');
 
-    if (!headerBtn || !bodyEl || !feedbackEl) return;
+    if (!headerBtn || !bodyEl || !feedbackEl || !bodyDrawingEl || !domeEl) return;
 
     // State tracking
     let isExpanded = false;
@@ -98,8 +105,8 @@
       }
       const bannerHtml = renderSourceBanner(source, model);
       if (bannerHtml) {
-        bodyEl.insertAdjacentHTML('afterbegin', bannerHtml);
-        bannerEl = bodyEl.firstElementChild;
+        domeEl.insertAdjacentHTML('afterbegin', bannerHtml);
+        bannerEl = domeEl.firstElementChild;
       }
 
       pickerContainer.innerHTML = pickerHtmlFor(model);
@@ -129,8 +136,9 @@
       }
     }
 
-    // Render the dome SVG and attach click handlers
+    // Render both drawings and attach their click handlers
     async function renderDomePanel() {
+      renderBody();
       try {
         // Load the dome layout if available
         if (window.DomeLayout) {
@@ -141,7 +149,7 @@
 
         pickerContainer = document.createElement('div');
         pickerContainer.className = 'dome-svg-container';
-        bodyEl.appendChild(pickerContainer);
+        domeEl.appendChild(pickerContainer);
 
         renderInto(window.DomeLayout?.getModel?.(), window.DomeLayout?.getSource?.() || 'vendored');
 
@@ -151,9 +159,6 @@
             renderInto(window.DomeLayout.getModel(), window.DomeLayout.getSource());
           });
         }
-
-        // Render sequence quick controls
-        await renderSequenceControls(bodyEl);
 
         showFeedback('');
       } catch (error) {
@@ -221,16 +226,63 @@
 
     // The estop holds every servo move a picture of the droid can start
     // (operator, 2026-09-19, #372): a panel press is refused while the estop is
-    // latched, and while the droid has not said whether it is -- before its
-    // first frame, and again once contact with it is lost -- the same hold the
-    // Parts picture keeps. The answer is the Live Reading's
-    // (data/live_reading.js); this page keeps no copy of its own.
-    // Returns the sentence to say instead, or null when the press may go.
+    // latched, and while the droid has not said whether it is. The hold and its
+    // words are data/droid_picture.js's, the same the Parts picture and the
+    // body drawing above keep; the answer is the Live Reading's
+    // (data/live_reading.js). Returns the sentence to say instead, or null
+    // when the press may go.
     function estopHold() {
-      const { estop } = window.PALiveReading.current();
-      if (estop === 'clear') return null;
-      if (estop === 'latched') return 'Estop latched. Nothing moves until it is cleared.';
-      return 'Waiting to hear if the droid is stopped. The dome waits for the answer.';
+      return window.PADroidPicture.estopRefusal(window.PALiveReading.current().estop);
+    }
+
+    // The body drawing: Front and Rear, the Parts this droid carries, each in
+    // the state the droid was last told. A click is the act here, not a pick:
+    // it opens or closes the Part when Parts' own decision allows it, and says
+    // that decision's reason and sends nothing when it does not. The drawing
+    // never writes (data/body_view.js); this is where a click becomes a request.
+    function renderBody() {
+      if (!window.BodyView || !window.PADroidPicture) {
+        // Never swallowed: the card then shows the dome alone, and says why here.
+        console.error('[dome-control] /body_view.js or /droid_picture.js did not load; no body drawing');
+        return;
+      }
+      const drawing = window.BodyView.mountDrawing(bodyDrawingEl, {
+        parts: window.DroidParts.parts,
+        art: window.BodyArt,
+        faces: ['front', 'rear'],
+        onPick: (markerId) => {
+          pressBody(markerId);
+        },
+      });
+      const picture = window.PADroidPicture.caller(drawing);
+
+      const paint = () => {
+        const onPicture = picture.pictureFor();
+        drawing.update({
+          kind: window.BodyView.STATE_KINDS.LIVE,
+          marks: picture.marks(),
+          shown: onPicture.shown,
+          fitted: picture.fittedNow(),
+          domePending: onPicture.domePending,
+        });
+      };
+
+      // openClose() sends only what the decision allows, and otherwise hands
+      // back the decision's reason, so this is the one guard, in shared code.
+      const pressBody = (markerId) => {
+        const decision = picture.decide(markerId, window.PALiveReading.current().estop);
+        picture.openClose(decision).then((result) => {
+          showFeedback(result.text, result.level);
+          paint();
+        });
+      };
+
+      // Painted from the Outputs the Dashboard already reads (data/app.js) and
+      // the Droid Build it already holds; this card asks the droid for nothing
+      // on its own clock.
+      window.PAOutputs.onChange(paint);
+      window.DroidBuild?.onChange?.(paint);
+      paint();
     }
 
     async function togglePanel(elementId, svgElement) {
@@ -325,110 +377,6 @@
 
       const stillSends = elem.severity === 'disabled' || elem.severity === 'inactive';
       return stillSends ? `${clause} The dome may ignore it.` : clause;
-    }
-
-    async function renderSequenceControls(container) {
-      try {
-        // Fetch sequence lists
-        const learnedResult = await PAApi.get('/api/seq/list');
-        const builtinsResult = await PAApi.get('/api/seq/builtins');
-
-        const learned = learnedResult.data || [];
-        const builtins = builtinsResult.data || [];
-
-        // Merge and de-dupe: learned name shadows factory name
-        const merged = [];
-        const seen = new Set();
-
-        // Add learned first (higher priority)
-        learned.forEach((seq) => {
-          merged.push(seq);
-          seen.add(seq.name);
-        });
-
-        // Add builtins not in learned
-        builtins.forEach((seq) => {
-          if (!seen.has(seq.name)) {
-            merged.push(seq);
-          }
-        });
-
-        // Render controls
-        const controlsHtml = `
-          <div class="dome-sequence-row">
-            <select id="dome-seq-selector" class="dome-seq-select" aria-label="Select sequence">
-              <option value="">Choose sequence...</option>
-              ${merged.map((seq) => `<option value="${window.PAUtils.escapeAttr(seq.name)}">${window.PAUtils.escapeHtml(seq.name)}</option>`).join('')}
-            </select>
-            <button id="dome-seq-play" class="btn" title="Send sequence to droid">Play</button>
-            <button id="dome-seq-stop" class="btn" title="Abort sequence">Stop</button>
-          </div>
-        `;
-
-        container.insertAdjacentHTML('beforeend', controlsHtml);
-
-        // Attach event listeners
-        const selector = document.getElementById('dome-seq-selector');
-        const playBtn = document.getElementById('dome-seq-play');
-        const stopBtn = document.getElementById('dome-seq-stop');
-
-        if (playBtn && selector) {
-          playBtn.addEventListener('click', async () => {
-            const seqName = selector.value;
-            if (!seqName) {
-              showFeedback('Choose a sequence first', 'warning');
-              return;
-            }
-
-            playBtn.disabled = true;
-            showFeedback(`Playing ${seqName}...`, 'info');
-
-            try {
-              await PAApi.postJson('/api/seq/test', { name: seqName });
-              showFeedback(`${seqName} dispatched`, 'success');
-            } catch (error) {
-              showFeedback(`Play failed: ${PAApi.messageFor(error)}`, 'error');
-            } finally {
-              playBtn.disabled = false;
-            }
-          });
-        }
-
-        if (stopBtn) {
-          stopBtn.addEventListener('click', async () => {
-            stopBtn.disabled = true;
-            showFeedback('Stopping sequence...', 'info');
-
-            try {
-              await PAApi.postForm('/api/seq/stop', {});
-              showFeedback('Sequence stopped', 'success');
-            } catch (error) {
-              showFeedback(`Stop failed: ${PAApi.messageFor(error)}`, 'error');
-            } finally {
-              stopBtn.disabled = false;
-            }
-          });
-        }
-
-        // Update selector disabled state based on list
-        if (selector) {
-          selector.disabled = merged.length === 0;
-          selector.addEventListener('change', () => {
-            showFeedback('');
-          });
-        }
-
-        // Disable play if no selection
-        if (playBtn && selector) {
-          const updatePlayState = () => {
-            playBtn.disabled = !selector.value;
-          };
-          selector.addEventListener('change', updatePlayState);
-          updatePlayState();
-        }
-      } catch (error) {
-        showFeedback('Failed to load sequences: ' + PAApi.messageFor(error), 'error');
-      }
     }
 
     function renderSourceBanner(source, model) {

@@ -198,6 +198,29 @@
     }),
   });
 
+  // Where a Part is picked, when that is not its whole footprint.
+  //
+  // An arm shaft sits behind its door and runs the door's full height, straight
+  // through the door's centre - the spot a builder aims at to pick the door. A
+  // shaft that took the pointer everywhere it is drawn made the door unpickable
+  // once the arm was fitted (#372, found on the #355 bench: gripArm over
+  // doorFR). So the shaft is still drawn whole, where the operator placed it,
+  // and is picked only BELOW ITS END EFFECTOR: the door keeps its centre, the
+  // end effector keeps its own box, and the shaft keeps its foot. Worked out
+  // from GEOMETRY rather than typed in, so a new placement moves it too.
+  const PICKED_BELOW = Object.freeze({ gripArm: "gripClaw", interArm: "interTool" });
+
+  // The rectangle a pointer picks a body Part through, in the art's viewBox.
+  // Null for a Part with no body placement.
+  const pickRect = (face, id) => {
+    const geom = GEOMETRY[face] ? GEOMETRY[face][id] : null;
+    if (!geom) return null;
+    const tool = PICKED_BELOW[id] ? GEOMETRY[face][PICKED_BELOW[id]] : null;
+    if (!tool) return { x: geom.x, y: geom.y, w: geom.w, h: geom.h };
+    const top = tool.y + tool.h;
+    return { x: geom.x, y: top, w: geom.w, h: geom.y + geom.h - top };
+  };
+
   // Surface details: drawing only, so the picture keeps reading as R2 once the
   // Parts have their own boxes over the art. Never a Part, never selectable,
   // never a state, never in the legend -- and named the way Printed Droid names
@@ -393,13 +416,18 @@
         console.error(`[body-view] ${part.id} is placed on ${faces.join(" and ")}; drawn on ${faces[0]} only`);
       }
       const face = faces[0];
+      const geom = GEOMETRY[face][part.id];
+      const pick = pickRect(face, part.id);
       markers.push({
         id: part.id,
         face,
         half: "body",
         parts: [part.id],
         label: part.name,
-        geom: GEOMETRY[face][part.id],
+        geom,
+        pick,
+        // Picked through less than its footprint: drawn apart (mountDrawing).
+        split: pick.x !== geom.x || pick.y !== geom.y || pick.w !== geom.w || pick.h !== geom.h,
       });
     });
 
@@ -464,6 +492,9 @@
   //   onFace    - called with a face id once the shown face has changed.
   //   onAdd     - called with an ADDITION_GROUPS entry when a builder presses
   //               its Add. The Droid Build is the caller's to change.
+  //   faces     - the face ids to build, in FACES order; absent means all
+  //               three. The Dashboard's card draws the body alone and has
+  //               its own dome drawing beside it.
   // @returns {{update, select, selected, showFace, face, partsOf, markerOf,
   //            markerIds}}
   // ---------------------------------------------------------------------------
@@ -475,20 +506,32 @@
     const onFace = typeof opts.onFace === "function" ? opts.onFace : () => {};
     const onAdd = typeof opts.onAdd === "function" ? opts.onAdd : () => {};
     const byMarker = new Map(markers.map((marker) => [marker.id, marker]));
+    const faces = Array.isArray(opts.faces) ? FACES.filter((face) => opts.faces.indexOf(face.id) !== -1) : FACES;
+    if (faces.length === 0) throw new Error(`[body-view] no face to draw in ${JSON.stringify(opts.faces)}`);
 
     // A footprint is always one shape, and state is carried by its own stroke
     // and fill: a second shape nested inside the first read as clutter wherever
     // it sat (the #408 mock's "extra square" reports). No `id` attribute
     // anywhere -- a document may hold more than one picture, and SVG ids must
     // be unique per document; identity rides on data-marker.
+    //
+    // A Part picked through less than its footprint (PICKED_BELOW) is split in
+    // two. Its footprint is drawn in a group of its own that takes no pointer
+    // and wears the Part's state (update() and paintSelection() paint both),
+    // and the Part's own group holds only an unpainted pick box. It has to be
+    // two groups, not one: a pointer, a test and a builder all aim at the
+    // middle of the group, and an arm's whole footprint shares its middle with
+    // the door it sits behind. Everything a builder sees is still one shape.
+    const footprintRect = ({ x, y, w, h, rx }) =>
+      `<rect class="bv-footprint" x="${x}" y="${y}" width="${w}" height="${h}" ` +
+      `rx="${rx === undefined ? 1.5 : rx}"></rect>`;
+
     const footprintHtml = (marker) => {
-      if (marker.geom) {
-        const { x, y, w, h, rx } = marker.geom;
-        return (
-          `<rect class="bv-footprint" x="${x}" y="${y}" width="${w}" height="${h}" ` +
-          `rx="${rx === undefined ? 1.5 : rx}"></rect>`
-        );
+      if (marker.split) {
+        const { x, y, w, h } = marker.pick;
+        return `<rect class="bv-pick" x="${x}" y="${y}" width="${w}" height="${h}"></rect>`;
       }
+      if (marker.geom) return footprintRect(marker.geom);
       const shape = marker.shape;
       if (shape.tag === "path") return `<path class="bv-footprint" d="${esc(shape.d)}"></path>`;
       if (shape.tag === "circle") {
@@ -504,6 +547,11 @@
     // <title> first: a browser picks up an SVG hover tooltip more reliably as
     // the element's first child than its last.
     const markerHtml = (marker) =>
+      (marker.split
+        ? `<g class="bv-part bv-drawn" data-drawn-for="${esc(marker.id)}" aria-hidden="true">` +
+          footprintRect(marker.geom) +
+          `</g>`
+        : "") +
       `<g class="bv-part" data-marker="${esc(marker.id)}" role="button" tabindex="0" ` +
       `aria-pressed="false" aria-label="${esc(marker.label)}">` +
       `<title>${esc(marker.label)}</title>` +
@@ -551,13 +599,13 @@
       `<p class="bv-stamp" hidden></p>` +
       `<div class="bv-card">` +
       `<div class="bv-tabs">` +
-      FACES.map(
+      faces.map(
         (face) =>
           `<button type="button" class="bv-tab" data-face-tab="${esc(face.id)}" aria-pressed="false">` +
           `${esc(face.label)}</button>`
       ).join("") +
       `</div>` +
-      FACES.map(
+      faces.map(
         (face) =>
           `<div class="bv-face" data-face="${esc(face.id)}" hidden>` +
           (face.id === "dome" ? domeFaceHtml() : bodyFaceHtml(face)) +
@@ -620,13 +668,28 @@
       node,
       detail: SURFACE_DETAILS[node.dataset.decor],
     }));
+    const drawnFor = new Map(all(host, "[data-drawn-for]").map((node) => [node.dataset.drawnFor, node]));
     const nodes = new Map();
     host.querySelectorAll("[data-marker]").forEach((cell) => {
+      const drawn = drawnFor.get(cell.dataset.marker) || null;
       nodes.set(cell.dataset.marker, {
         cell,
+        // Every node that wears this Part's state: its own group, and the
+        // footprint drawn apart from it when it is split.
+        painted: drawn ? [cell, drawn] : [cell],
         title: cell.querySelector("title"),
         marker: byMarker.get(cell.dataset.marker),
       });
+      if (drawn) {
+        // The drawn footprint takes no pointer, so :hover and :focus-visible
+        // never reach it; it is lit while its pick box is pointed at or has
+        // the focus, which is what those two draw on every other Part.
+        const lit = (on) => () => drawn.classList.toggle("is-lit", on);
+        cell.addEventListener("pointerenter", lit(true));
+        cell.addEventListener("pointerleave", lit(false));
+        cell.addEventListener("focus", lit(true));
+        cell.addEventListener("blur", lit(false));
+      }
     });
     const rows = new Map();
     list.querySelectorAll("[data-list-marker]").forEach((row) => {
@@ -634,7 +697,7 @@
     });
     const addRows = new Map(all(list, "[data-add-row]").map((row) => [row.dataset.addRow, row]));
 
-    let currentFace = "front";
+    let currentFace = faces[0].id;
     // One selection per half, so looking at the dome never drops the body Part
     // a builder had picked, and the other way round.
     const selectedIn = { body: null, dome: null };
@@ -645,7 +708,7 @@
     const paintSelection = (markerId, on) => {
       const node = nodes.get(markerId);
       if (node) {
-        node.cell.classList.toggle("is-selected", on);
+        node.painted.forEach((each) => each.classList.toggle("is-selected", on));
         node.cell.setAttribute("aria-pressed", on ? "true" : "false");
       }
       const entry = rows.get(markerId);
@@ -680,7 +743,8 @@
 
     const showFace = (faceId) => {
       const face = faceById(faceId);
-      if (!face) return currentFace;
+      // A face this card was not built with is not a face it can turn to.
+      if (!face || !panels.has(face.id)) return currentFace;
       const changed = face.id !== currentFace;
       currentFace = face.id;
       panels.forEach((panel, id) => {
@@ -729,9 +793,12 @@
       stamp.textContent = state.stamp || "";
       stamp.classList.toggle("is-pending", state.domePending === true);
       pendings.forEach((node) => node.classList.toggle("is-absent", state.domePending !== true));
-      domeNote.hidden = !state.domeNote;
-      domeNote.textContent = state.domeNote || "";
-      domePieces.classList.toggle("is-absent", Boolean(state.domeNote));
+      // Absent when the card was built without its dome face.
+      if (domeNote) {
+        domeNote.hidden = !state.domeNote;
+        domeNote.textContent = state.domeNote || "";
+        domePieces.classList.toggle("is-absent", Boolean(state.domeNote));
+      }
 
       // A surface detail is drawn under the Parts, and it is left out wherever
       // a shown Part's box already covers the same ground, so no dashed line
@@ -750,7 +817,7 @@
       nodes.forEach((node, markerId) => {
         const marker = node.marker;
         const shown = shownIds.has(markerId);
-        node.cell.classList.toggle("is-absent", !shown);
+        node.painted.forEach((each) => each.classList.toggle("is-absent", !shown));
         const mark = marks[markerId] || {};
         if (mark.mark !== undefined && MARK_TOKENS.indexOf(mark.mark) === -1) {
           // Never swallowed: a caller handing this a mark the renderer does not
@@ -763,7 +830,9 @@
         // A holoprojector has no state to draw: it never opens, and a Closed
         // would promise that it could.
         const cls = marker.panTilt && isFitted ? null : markClass(mark, isFitted);
-        STATE_CLASSES.forEach((each) => node.cell.classList.toggle(`is-${each}`, each === cls));
+        node.painted.forEach((each) =>
+          STATE_CLASSES.forEach((state) => each.classList.toggle(`is-${state}`, state === cls))
+        );
         const word = cls === null ? "" : cls === "unknown" ? mark.said || "" : LEGEND_TEXT[cls];
         const describe = word ? `${marker.label} — ${word}` : marker.label;
         node.title.textContent = describe;
@@ -995,11 +1064,13 @@
     KIND_SAID,
     FACES,
     GEOMETRY,
+    PICKED_BELOW,
     SURFACE_DETAILS,
     ADDITION_GROUPS,
     DOME_PIECE_PARTS,
     markClass,
     placementFor,
+    pickRect,
     mountDrawing,
     mountPanel,
   });
