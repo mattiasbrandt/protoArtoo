@@ -113,6 +113,52 @@ test("a dial opened on a limp Output keeps holding it until the droid says it le
   assert.match(env.dialNote(), /take it again/);
 });
 
+// An estop latched and cleared before the dial opened leaves the Output's last
+// limp reason at "estop" - true, that is how it went limp. The reading the dial
+// opens on is still from before its take, whatever reason it carries; a page
+// that read it as the droid letting go of the new take made the builder press
+// twice after every estop (#417, from the #355 bench). The same goes for the
+// follow's read already in flight when the take went out: it answers after the
+// take, and still describes the Output before it.
+test("a dial opened after a cleared estop holds on the first take, whatever reason the Output last went limp for", async () => {
+  const outputs = freshOutputs();
+  outputs[4] = output("ledc:5", "ARM5", { limp: "estop" });
+  const env = await bootServos({ outputs });
+
+  // Hold the next table read: it is asked for now, before the take, and lands
+  // only once the droid has answered the take.
+  const get = env.window.PAApi.get;
+  let land = null;
+  env.window.PAApi.get = (path, opts) => {
+    if (path !== "/api/servo/outputs" || land !== null) return get(path, opts);
+    const asked = get(path, opts);
+    return new Promise((resolve) => {
+      land = () => resolve(asked);
+    });
+  };
+  await env.frame();
+  assert.ok(land, "a read of the table is in flight");
+  env.window.PAApi.get = get;
+
+  env.pressCalibrate("ledc:5");
+  await sleep(20);
+  land();
+  await sleep(20);
+  assert.equal(env.dialOpen(), true);
+  assert.doesNotMatch(env.dialNote(), /take it again/, "the panel does not say the estop let go of a take it never saw");
+
+  const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
+  assert.ok(keepalive, "a keepalive runs while the dial is open");
+  const before = env.holds().length;
+  keepalive.fn();
+  await sleep(20);
+  assert.deepEqual(
+    env.holds().slice(before).map((post) => post.form.refresh),
+    ["1"],
+    "the first take is kept alive, with no second press",
+  );
+});
+
 test("a reason the droid gives for letting go ends the hold even before the dial saw it pulse", async () => {
   const env = await bootServos();
   env.pressCalibrate("ledc:5");
