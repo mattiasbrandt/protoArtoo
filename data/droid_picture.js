@@ -158,11 +158,23 @@
     // The Output a body Part's Open it would go through. POST /api/servo
     // addresses an Output by the name a builder already knows it by, so an
     // expander's unnamed row cannot be reached from here at all - the same bound
-    // the calibration dial keeps.
+    // the calibration dial keeps. Nor can one the droid does not drive since it
+    // started (data/outputs.js `driven`, #364): the route refuses every act on
+    // it, so it is refused here before anything is sent.
     const servoOutputFor = (partId) => {
       const output = answered() ? outputOf(partId) : null;
       if (!output || !hasServoWord(output) || isLightRow(output) || !output.calibrated) return null;
+      if (output.driven === false) return null;
       return output;
+    };
+
+    // Why nothing drives an Output since the droid started, in the words
+    // POST /api/servo refuses it with (servoOutputUndriven(),
+    // src/web/api_servo.cpp), so a picture and a press say the same thing.
+    const undrivenWhy = (output) => {
+      if (output.light) return `${output.name} carries a light, not a servo.`;
+      if (!output.wired) return `${output.name} is not wired. Mark it on Wiring.`;
+      return `Restart the droid to drive ${output.name}.`;
     };
 
     // Whether a marker may be opened or closed right now, and when it may not,
@@ -215,6 +227,8 @@
         why = "No output mapped. Give it one first.";
       } else if (output && isLightRow(output)) {
         why = "A light has no travel. Nothing to open.";
+      } else if (output && hasServoWord(output) && output.driven === false) {
+        why = undrivenWhy(output);
       } else if (output && !output.calibrated) {
         why = "Ends not measured yet. Calibrate its output on Servos.";
       } else if (output && !hasServoWord(output)) {
