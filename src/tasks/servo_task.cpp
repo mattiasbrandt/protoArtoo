@@ -47,6 +47,10 @@ static bool s_dome_enabled = false;
 // lit wires (ADR 0067, #413), which is why this is a mask and not the single
 // slot number it replaced.
 static uint8_t s_lit_arm_mask = 0;
+// Whether LEDC came up at start. Only servoTaskDrivesOutput() reads it: an
+// Output on a timer that never started is driven by nothing, whatever its
+// tick says.
+static bool s_ledc_ready = false;
 
 // -----------------------------------------------------------------------------
 // Where each output is, and the move it is part way through (ADR 0052).
@@ -942,6 +946,7 @@ void servoTaskInit() {
             PA_LOG_ERROR(TAG, "LEDC init failed");
             return;
         }
+        s_ledc_ready = true;
         for (uint8_t armId = 0; armId < kArmCount; ++armId) {
             if (isArmEnabled(armId)) {
                 s_arm[armId].known = false;
@@ -969,6 +974,23 @@ void servoTaskInit() {
     } else {
         PA_LOG_INFO(TAG, "arm/aux outputs disabled");
     }
+}
+
+// -----------------------------------------------------------------------------
+// servoTaskWiredAtStart() / servoTaskDrivesOutput()
+// The boot snapshot above, read by the servo route and the Output rows
+// (include/servo_task.h has the contract and why no lock is taken).
+// -----------------------------------------------------------------------------
+bool servoTaskWiredAtStart(uint8_t armId) {
+    // servo_arm_enabled() with no lit arms is the wired tick alone; 255 is
+    // refused first because it answers for the broadcast, not for an Output.
+    return armId < kArmCount && servo_arm_enabled(armId, s_arm1_enabled, s_arm2_enabled,
+                                                  s_aux1_enabled, s_aux2_enabled, s_aux3_enabled,
+                                                  /*lit_arm_mask=*/0);
+}
+
+bool servoTaskDrivesOutput(uint8_t armId) {
+    return armId < kArmCount && s_ledc_ready && isArmEnabled(armId);
 }
 
 // -----------------------------------------------------------------------------

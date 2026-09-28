@@ -21,6 +21,8 @@
 //   - when each view's answer bites (#370): an in-use tick is read once at
 //     start, so a changed one says it is waiting and one put back does not;
 //     a servo type bounds the next move, so Servos never says it is waiting.
+//     What it waits against is the droid's own report of what it started
+//     with, never the page's first read (#364).
 // =============================================================================
 
 import { test } from "node:test";
@@ -175,4 +177,16 @@ test("an in-use tick waits for the next start until it is put back; a servo type
   env.inUse("ledc:3").fire("click", {});
   await env.flush();
   assert.equal(wiringLine().dataset.pending, "false", "put back, nothing is waiting");
+});
+
+// The #355 bench: ARM1 ticked live, then the page (re)loaded before a restart.
+// Its first read already carried the saved tick, so a wait measured against
+// that read showed nothing waiting, while the droid drove nothing on the wire.
+// The droid reports what it started with, and that is what the line waits on.
+test("a tick saved before the page opened still waits for the next start", async () => {
+  const rows = ROWS();
+  describe(rows, { "ledc:3": { wired: true, activeWired: false, driven: false } });
+  const env = await boot({ rows });
+  const wiringLine = () => env.wiring("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
+  assert.equal(wiringLine().dataset.pending, "true", "the droid did not start with it, so it waits");
 });

@@ -51,6 +51,9 @@
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
 #include "servo_component_helpers.h"
+#include "aux_led.h"  // auxLedWireAtStart() - what each wire carried at start
+#include "output_wire.h"  // outputWirePinKeptForLight() - whether that was a Light Type
+#include "servo_task.h"  // servoTaskWiredAtStart(), servoTaskDrivesOutput() - what the droid started with
 #include "web_server.h"
 
 static const char* TAG = "WebServer";
@@ -1174,6 +1177,36 @@ void handleServoOutputsGet(WebRequest& req) {
         // fall between two of the page's one-second reads. Always a number,
         // even for an Output with no pulse: a count of nothing is 0.
         output["nudgesDone"] = commanded.nudgesDone;
+        // What the droid started with (#364), beside `wired`, which is the tick
+        // as saved: a tick saved since is only read at the next start
+        // (ADR 0027), so the two differ exactly while one waits for a restart -
+        // the `member`/`activeMember` shape GET /api/config uses. `driven`
+        // says whether ServoTask puts servo pulses on it this boot, which is
+        // what POST /api/servo refuses on. Both are ServoTask's boot snapshot
+        // (include/servo_task.h), so no page works either out from config. An
+        // expander's row has no tick and nothing drives it yet.
+        const size_t boardIndex = board != nullptr ? (size_t)(board - BOARD_OUTPUTS) : 0;
+        output["activeWired"] = board == nullptr || servoTaskWiredAtStart((uint8_t)boardIndex);
+        output["driven"] = board != nullptr && servoTaskDrivesOutput((uint8_t)boardIndex);
+        // And what was on the wire, from AuxLedTask's own start (#364): the
+        // Light Type it carried, or null for a servo, and - where a light can
+        // go, beside `ledCount` - its LED count. Both are read at start, so a
+        // page measures a wait against these, never against its first read.
+        // Absent on a row AuxLedTask never read: an expander's, or before it
+        // started.
+        ServoComponentType componentAtStart = SERVO_COMP_NONE;
+        uint8_t ledCountAtStart = 0;
+        if (board != nullptr && auxLedWireAtStart(boardIndex, &componentAtStart, &ledCountAtStart)) {
+            const OutputWireInputs atStart = {false, componentAtStart};
+            if (outputWirePinKeptForLight(atStart, boardIndex)) {
+                output["activeLight"] = servoCompTypeToString(componentAtStart);
+            } else {
+                output["activeLight"] = nullptr;
+            }
+            if (board->lightCapable) {
+                output["activeLedCount"] = ledCountAtStart;
+            }
+        }
     }
     // A sanity ceiling, not a buffer. The largest answer the table can give -
     // twenty-four rows at their longest address holding every Part the catalog
@@ -1190,7 +1223,9 @@ void handleServoOutputsGet(WebRequest& req) {
     // read (ADR 0068, #423): its wired tick, what it can save, its light's LED
     // count and its Motion Profile and boot behaviour took the answer to
     // 9536 B, about 9660 B with those five pairs. Raised to 12288 for that, on
-    // the same reasoning as 8192: a per-request bound, not BSS.
+    // the same reasoning as 8192: a per-request bound, not BSS. What the droid
+    // started with (#364), `activeWired` and `driven`, adds 33-35 B a row -
+    // about 10.4 KB on the twenty-four, still under it.
     //
     // What that worst case is NOT is what this controller sends. Twenty-four
     // rows is the expander nobody has fitted; the five LEDC outputs answer in

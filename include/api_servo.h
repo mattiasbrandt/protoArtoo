@@ -7,6 +7,7 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "robot_state.h"  // ServoCommand, ServoCommandType, CommandSource
@@ -39,6 +40,22 @@ struct ServoSubmitOutcome {
 ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
                                        CommandSource source);
 
+// Whether nothing drives the Output(s) armId names this boot, and if so the
+// sentence to refuse with (#364). A wired tick saved after boot is only read at
+// the next start (ADR 0027), so an Output can be ticked and still have nothing
+// behind it; queueing a command for it would answer `ok` for a move ServoTask
+// drops. The running truth is ServoTask's boot snapshot
+// (servoTaskDrivesOutput(), include/servo_task.h), never the saved tick.
+//
+// armId 255, the ARM1+ARM2 broadcast, is refused when either of the two is not
+// driven, naming that one. The sentence says what would put a servo on it:
+// a restart, where the saved tick and the wire's component would have
+// ServoTask drive it; otherwise that it carries a light, or is not wired.
+// Returns false, and leaves `reason` alone, when every named Output is driven.
+bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize);
+
+// Refuses with 409 and servoOutputUndriven()'s sentence an act on an Output
+// nothing drives this boot; every action is checked, pulses off included.
 void handleServoPost(WebRequest& req);
 
 // POST /api/servo/centre - put every Servo Output back to its recorded centre
@@ -53,4 +70,17 @@ void handleServoPost(WebRequest& req);
 // transient flag and the expansion is the Coordinator's, which is the whole
 // reason the pace cannot be walked around from a browser. The body is empty;
 // there is nothing for a caller to decide.
+//
+// The answer names the Outputs the sweep will pass over because nothing drives
+// them (#364): `{"ok":true,"skipped":["ARM3"]}`, empty when none.
 void handleServoCentrePost(WebRequest& req);
+
+// The Outputs a press of back to centre passes over although they have travel,
+// because nothing moves them this boot - ServoTask does not drive the Output
+// (servoTaskDrivesOutput()), or this image has no driver for its address
+// (sequenceBodyCentrePlan()). The Sequence Coordinator skips exactly these rows
+// (src/tasks/sequence_dispatcher.cpp centreOneOutput()); this is the same two
+// questions asked ahead of the run, so the route and the Console can name them.
+// `visit` is handed each one's name - its board label, else its Output Address
+// - in table order. Returns how many.
+size_t servoCentreSkipped(void (*visit)(const char* name, void* ctx), void* ctx);

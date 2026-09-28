@@ -53,12 +53,12 @@ NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
 
 The surfaces carry `PA:INCLUDE` markers that a plain static server does not
 expand, so use `tools/serve_editor_fixture.py`, not `python3 -m http.server`.
-It listens on 4173 by default; that port is often taken by the plain server,
-so start it on its own port:
+It listens on 4173 by default. Other worktrees may be serving on it too, and
+a browser pointed at a shared port reads whichever worktree bound it first, so
+start it on a port of your own with `PA_FIXTURE_PORT`:
 
 ```sh
-cd tools && python3 -c "import sys; sys.path.insert(0,'.'); \
-  import serve_editor_fixture as s; s.PORT=4186; s.main()" &
+PA_FIXTURE_PORT=4186 python3 tools/serve_editor_fixture.py &
 
 NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
   FIXTURE=1 HEADLESS=true BASE_URL=http://127.0.0.1:4186 \
