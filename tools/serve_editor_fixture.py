@@ -11,7 +11,10 @@ Usage:
   # GET /api/dome/layout -> tests/fixtures/dome_layout_mk4.json
 
 Ports:
-  - :4173 (dev server, matches Vite convention)
+  - :4173 (dev server, matches Vite convention), or PA_FIXTURE_PORT. Two
+    worktrees serving at once must each pick a port of their own: on a shared
+    port the second server fails to bind, and a browser pointed there reads
+    the FIRST worktree's data/ without any error saying so.
 
 Routes:
   - /api/dome/layout -> tests/fixtures/dome_layout_mk4.json
@@ -40,7 +43,7 @@ from urllib.parse import parse_qs
 REPO_ROOT = Path(__file__).parent.parent
 DATA_DIR = REPO_ROOT / "data"
 FIXTURE_FILE = REPO_ROOT / "tests" / "fixtures" / "dome_layout_mk4.json"
-PORT = 4173
+PORT = int(os.environ.get("PA_FIXTURE_PORT", "4173"))
 HOST = "localhost"
 
 # Shaped like what GET /api/logs actually returns: the log ring copied out
