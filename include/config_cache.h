@@ -334,6 +334,17 @@ uint8_t configCacheReadActiveSoundMember();
 // frames are measured (#370).
 uint8_t configCacheReadSoundMember();
 
+// configCacheReadRcMember: the Radio Controller's stored Component Member, as
+// a Component Registry part `value` - the radio the builder picked. Unlike
+// Sound there is no boot latch: nothing on the controller branches on the
+// radio, so the saved choice is the running one. Resolve it with
+// componentResolveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER, ...). One field
+// under the lock, so GET /api/identity/components and the Console's
+// system.api.get-components read the radio the same way without either
+// putting a whole ConfigSnapshot on its frame (the Console task's static chain
+// is a measured constant).
+uint8_t configCacheReadRcMember();
+
 // =============================================================================
 // Log level accessor (lightweight, used by logging.h)
 // =============================================================================

@@ -924,6 +924,37 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
     prefs.end();
 }
 
+// system.api.get-components names the Radio Controller's member the way
+// GET /api/identity/components does (#369, reopened from the #355 bench): the
+// Console answered `-` for the radio a builder had picked, because only Sound
+// had an accessor. rc_radio is not the family default (hotrc_ds650), so a row
+// that fell back to the default, or to `-`, cannot pass.
+void test_system_api_get_components_names_the_radio_member() {
+    const ComponentPartEntry* radio = componentPartById("rc_radio");
+    TEST_ASSERT_NOT_NULL(radio);
+    ConfigSnapshot snap = {};
+    snap.system.rc_member = radio->value;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+
+    runSeqItemQuery("system.api.get-components");
+
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+    const char* row = nullptr;
+    for (int i = 0; i < g_seqItemCap.count; ++i) {
+        if (strncmp(g_seqItemCap.values[i], "category:radio_controller ", 26) == 0) {
+            row = g_seqItemCap.values[i];
+        }
+    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
+    TEST_ASSERT_EQUAL_STRING(
+        "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
+        "activeMember:rc_radio",
+        row);
+}
+
 void test_dome_api_list_sequences_streams_the_real_index_as_items() {
     SeqIndexEntry e = {};
     snprintf(e.name, sizeof(e.name), "%s", "DM:MYSEQ");
@@ -5606,6 +5637,7 @@ int main(int, char**) {
     RUN_TEST(test_scoped_non_motion_actions_are_not_executor_not_ready);
     RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_recorded_rows);
     RUN_TEST(test_servo_api_get_outputs_streams_every_row_as_an_item);
+    RUN_TEST(test_system_api_get_components_names_the_radio_member);
     RUN_TEST(test_action_executor_not_ready_count_report);
 
     RUN_TEST(test_action_zero_param_action_rejects_unknown_argument);
