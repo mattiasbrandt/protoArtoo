@@ -27,7 +27,7 @@ namespace {
 // The answer both senders give when the document does not fit.
 const char kStatusOverflowBody[] = "{\"ok\":false,\"error\":\"status payload overflow\"}";
 
-// rcCh1/rcCh2 in ELRS mode. The controller reads no input in that mode
+// Every RC channel in ELRS mode. The controller reads no input in that mode
 // (rcInputStepStartupPlan() starts no decoder for it, the RC_INPUT_ELRS
 // comment in include/robot_state.h), so the channel is standby - a
 // channel the mode does not use, as rcCh2 is in single SBUS - never not_seen,
@@ -337,38 +337,28 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail) && ok;
             }
         }
-        if (in.enableRcCh3) {
-            snprintf(detail, sizeof(detail),
-                     "CH3 enabled; %s routing is configurable via /api/config",
-                     rcInputModeToString(in.rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh3",
-                                        in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (in.enableRcCh4) {
-            snprintf(detail, sizeof(detail),
-                     "CH4 enabled; %s routing is configurable via /api/config",
-                     rcInputModeToString(in.rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh4",
-                                        in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (in.enableRcCh5) {
-            snprintf(detail, sizeof(detail),
-                     "CH5 enabled; %s routing is configurable via /api/config",
-                     rcInputModeToString(in.rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh5",
-                                        in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
-                 ok;
-        }
-        if (in.enableRcCh6) {
-            snprintf(detail, sizeof(detail),
-                     "CH6 enabled; %s routing is configurable via /api/config",
-                     rcInputModeToString(in.rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, "rcCh6",
+        // rcCh3..rcCh6: further wires of the receiver, read only in PWM mode
+        // (dispatchStandardPwmInputs, src/tasks/rc_input.cpp).
+        const struct {
+            bool enabled;
+            const char* key;
+            unsigned channel;
+        } rcWires[] = {{in.enableRcCh3, "rcCh3", 3},
+                       {in.enableRcCh4, "rcCh4", 4},
+                       {in.enableRcCh5, "rcCh5", 5},
+                       {in.enableRcCh6, "rcCh6", 6}};
+        for (const auto& wire : rcWires) {
+            if (!wire.enabled) {
+                continue;
+            }
+            if (in.rcInputMode == RC_INPUT_ELRS) {
+                ok = appendPeripheralStatus(pos, remaining, wire.key, "standby", kRcElrsDetail) &&
+                     ok;
+                continue;
+            }
+            snprintf(detail, sizeof(detail), "CH%u enabled; %s routing is configurable via /api/config",
+                     wire.channel, rcInputModeToString(in.rcInputMode));
+            ok = appendPeripheralStatus(pos, remaining, wire.key,
                                         in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
                                         detail) &&
                  ok;
