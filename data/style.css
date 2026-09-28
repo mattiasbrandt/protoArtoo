@@ -6672,6 +6672,21 @@ body[data-page="maintenance"] .status-item .hint {
   white-space: nowrap;
 }
 
+/* The row's one act is a word, not a box (operator's control style,
+   2026-09-28): no frame, the accent in its ink, as Servos' Calibrate is. It
+   leaves for Wiring, so it is the only thing on the row that looks pressable. */
+.parts-unused-act .btn {
+  padding: 0 var(--space-sm);
+  border-color: transparent;
+  color: var(--accent-bright);
+}
+
+.parts-unused-act .btn:hover {
+  border-color: transparent;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
 /* A narrow window has no room for a four-column table, so the table scrolls
    sideways under its own sticky first column rather than the surface
    scrolling as a whole. */

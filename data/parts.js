@@ -120,7 +120,7 @@
           `<th scope="row">${partNameHtml(part)}</th>` +
           `<td>${designNameHtml(part)}</td>` +
           `<td>${whereHtml(part)}</td>` +
-          `<td class="parts-unused-act"><button class="btn btn-sm link-btn" type="button" data-wire="${escAttr(part.id)}" ` +
+          `<td class="parts-unused-act"><button class="btn btn-sm btn-quiet" type="button" data-wire="${escAttr(part.id)}" ` +
           `aria-label="${escAttr(`${GIVE_IT_AN_OUTPUT}: ${part.name}`)}">${GIVE_IT_AN_OUTPUT}</button></td></tr>`
       )
       .join("") +
