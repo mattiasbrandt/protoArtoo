@@ -86,6 +86,16 @@ struct LitWire {
 
 static LitWire s_wires[BOARD_OUTPUT_COUNT] = {};
 
+// What each wire carried when the droid started, for auxLedWireAtStart(). Kept
+// apart from s_wires, which readLitWires() fills twice - once here, once from
+// the task - so the reported value is one reading, taken before anything runs.
+struct WireAtStart {
+    ServoComponentType component;
+    uint8_t ledCount;
+};
+static WireAtStart s_atStart[BOARD_OUTPUT_COUNT] = {};
+static bool s_atStartTaken = false;
+
 // Whether this Output carries a light, as the stored config says: a line the
 // board allows a light on, ticked as wired AND with a Light Type on its Servo
 // Output row. include/output_wire.h holds the rule - outputWireStripDriven(),
@@ -241,6 +251,16 @@ bool auxLedTaskInit() {
         return true;
     }
 
+    // First, before anything can fail: what the droid started with is true
+    // whether or not a strip comes up.
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        s_atStart[i].component =
+            configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[i].channel);
+        s_atStart[i].ledCount =
+            configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[i].channel);
+    }
+    s_atStartTaken = true;
+
     s_auxLedQueue = xQueueCreate(AUX_LED_QUEUE_LEN, sizeof(AuxLedCommand));
     if (s_auxLedQueue == nullptr) {
         PA_LOG_ERROR(TAG, "failed to create aux LED command queue");
@@ -257,6 +277,16 @@ bool auxLedTaskInit() {
         // between init and the task's first pass is queued rather than refused.
         setAuxLedStateLocked(i, s_wires[i].lit, 0, 0, 0, AUX_LED_EFFECT_OFF, s_wires[i].lit);
     }
+    return true;
+}
+
+bool auxLedWireAtStart(size_t index, ServoComponentType* component, uint8_t* ledCount) {
+    if (!s_atStartTaken || index >= BOARD_OUTPUT_COUNT || component == nullptr ||
+        ledCount == nullptr) {
+        return false;
+    }
+    *component = s_atStart[index].component;
+    *ledCount = s_atStart[index].ledCount;
     return true;
 }
 

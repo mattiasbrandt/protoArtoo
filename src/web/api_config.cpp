@@ -51,6 +51,8 @@
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
 #include "servo_component_helpers.h"
+#include "aux_led.h"  // auxLedWireAtStart() - what each wire carried at start
+#include "output_wire.h"  // outputWirePinKeptForLight() - whether that was a Light Type
 #include "servo_task.h"  // servoTaskWiredAtStart(), servoTaskDrivesOutput() - what the droid started with
 #include "web_server.h"
 
@@ -1186,6 +1188,25 @@ void handleServoOutputsGet(WebRequest& req) {
         const size_t boardIndex = board != nullptr ? (size_t)(board - BOARD_OUTPUTS) : 0;
         output["activeWired"] = board == nullptr || servoTaskWiredAtStart((uint8_t)boardIndex);
         output["driven"] = board != nullptr && servoTaskDrivesOutput((uint8_t)boardIndex);
+        // And what was on the wire, from AuxLedTask's own start (#364): the
+        // Light Type it carried, or null for a servo, and - where a light can
+        // go, beside `ledCount` - its LED count. Both are read at start, so a
+        // page measures a wait against these, never against its first read.
+        // Absent on a row AuxLedTask never read: an expander's, or before it
+        // started.
+        ServoComponentType componentAtStart = SERVO_COMP_NONE;
+        uint8_t ledCountAtStart = 0;
+        if (board != nullptr && auxLedWireAtStart(boardIndex, &componentAtStart, &ledCountAtStart)) {
+            const OutputWireInputs atStart = {false, componentAtStart};
+            if (outputWirePinKeptForLight(atStart, boardIndex)) {
+                output["activeLight"] = servoCompTypeToString(componentAtStart);
+            } else {
+                output["activeLight"] = nullptr;
+            }
+            if (board->lightCapable) {
+                output["activeLedCount"] = ledCountAtStart;
+            }
+        }
     }
     // A sanity ceiling, not a buffer. The largest answer the table can give -
     // twenty-four rows at their longest address holding every Part the catalog

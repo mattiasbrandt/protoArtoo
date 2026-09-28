@@ -23,6 +23,7 @@
 #include "board_output_enabled.h"
 #include "console_config_fields.h"
 #include "droid_build.h"
+#include "aux_led_test_hooks.h"  // AuxLedTask's start snapshot, which the native build stubs
 #include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
 #include "web_request_test_backend.h"
 #include "../../../test/stubs/config/servo_output_table_writer.h"
@@ -44,6 +45,7 @@ void setUp() {
     configCacheSetActiveWifiRecovery(false);
     g_test_servo_wired_at_start_mask = 0xFF;
     g_test_servo_driven_mask = 0xFF;
+    g_test_aux_led_at_start_set = false;
 }
 
 void tearDown() {
@@ -547,6 +549,57 @@ void test_the_servo_outputs_answer_says_a_tick_saved_since_boot_waits_for_a_rest
     TEST_ASSERT_FALSE(arm1["driven"] | true);
 }
 
+// What was on a wire is read at start too (ADR 0027): a strip put on ARM4 and
+// its LED count saved since both wait for a restart, and the row says what the
+// droid started with beside them, from AuxLedTask's own start (#364). An Output
+// that can carry no light has no count to report.
+void test_the_servo_outputs_answer_says_what_each_wire_carried_at_start() {
+    seedUnwiredServoOutputRows();
+    ServoOutputEdit strip = {};
+    strip.driver = SERVO_DRIVER_LEDC;
+    strip.channel = LEDC_CH_AUX2;
+    strip.fields = (uint16_t)(SERVO_FIELD_COMPONENT | SERVO_FIELD_LED_COUNT);
+    strip.component = SERVO_COMP_RGB;
+    strip.led_count = 12;
+    configCacheApplyServoOutputEdits(&strip, 1);
+
+    g_test_aux_led_at_start_set = true;
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        g_test_aux_led_component_at_start[i] = SERVO_COMP_MG996R;
+        g_test_aux_led_count_at_start[i] = 1;
+    }
+    g_test_aux_led_component_at_start[4] = SERVO_COMP_RGB;  // ARM5 started lit, 8 LEDs
+    g_test_aux_led_count_at_start[4] = 8;
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleServoOutputsGet(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    JsonObject arm4 = doc["outputs"][3];
+    TEST_ASSERT_EQUAL_STRING("ledc:4", arm4["address"] | "");
+    TEST_ASSERT_EQUAL_STRING("rgb", arm4["component"] | "");
+    TEST_ASSERT_EQUAL_UINT8(12, arm4["ledCount"] | 0);
+    // Present and null - a servo was on the wire - which a missing key is not.
+    bool reported = false;
+    for (JsonPair field : arm4) {
+        reported = reported || strcmp(field.key().c_str(), "activeLight") == 0;
+    }
+    TEST_ASSERT_TRUE(reported);
+    TEST_ASSERT_TRUE(arm4["activeLight"].isNull());
+    TEST_ASSERT_EQUAL_UINT8(1, arm4["activeLedCount"] | 0);
+
+    JsonObject arm5 = doc["outputs"][4];
+    TEST_ASSERT_EQUAL_STRING("rgb", arm5["activeLight"] | "");
+    TEST_ASSERT_EQUAL_UINT8(8, arm5["activeLedCount"] | 0);
+
+    JsonObject arm1 = doc["outputs"][0];
+    TEST_ASSERT_TRUE(arm1["activeLight"].isNull());
+    TEST_ASSERT_FALSE(arm1["activeLedCount"].is<uint8_t>());
+}
+
 // What the calibration dial reads off this answer (#364, ADR 0064): the band it
 // opens at and the component that set it, the three widths it captures into,
 // whether anybody has measured them, whether a dial holds the Output, and why
@@ -701,6 +754,7 @@ int main() {
     RUN_TEST(test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band);
     RUN_TEST(test_the_servo_outputs_answer_carries_what_the_dial_edits);
     RUN_TEST(test_the_servo_outputs_answer_says_a_tick_saved_since_boot_waits_for_a_restart);
+    RUN_TEST(test_the_servo_outputs_answer_says_what_each_wire_carried_at_start);
     RUN_TEST(test_a_full_table_of_outputs_fits_under_the_route_ceiling);
     RUN_TEST(test_get_returns_config_json);
     RUN_TEST(test_the_booted_toggles_and_receiver_differ_from_a_staged_save);

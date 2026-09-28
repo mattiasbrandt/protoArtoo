@@ -118,11 +118,12 @@
   // What each Output was first reported with this session: its wired tick,
   // its Light Type and its LED count. All three are read once when the droid
   // starts (ADR 0027, src/tasks/aux_led.cpp), so a later answer that differs
-  // from this is one waiting for a restart. The wired tick is replaced by the
-  // droid's own report of what it started with (`activeWired`, #364) wherever
-  // the row carries one: what a page first read is the saved tick, and a reload
-  // after a save and before a restart took that for the running one and showed
-  // nothing waiting, the defect Configuration had in #371.
+  // from this is one waiting for a restart. Each of the three is replaced by
+  // the droid's own report of what it started with (`activeWired`,
+  // `activeLight`, `activeLedCount`, #364) wherever the row carries it: what a
+  // page first read is the saved value, and a reload after a save and before a
+  // restart took that for the running one and showed nothing waiting, the
+  // defect Configuration had in #371.
   const started = new Map();
   const listeners = new Set();
   // Each Output's live fields, as its row reported them: whether the row
@@ -180,6 +181,10 @@
     // whether it drives a servo on this Output since. null from a firmware
     // that does not say, which nothing reads as a refusal.
     activeWired: typeof row.activeWired === "boolean" ? row.activeWired : null,
+    // The Light Type on the wire at start, null for none; undefined when the
+    // row does not say, which is not the same as "no light".
+    activeLight: "activeLight" in row ? (text(row.activeLight) || null) : undefined,
+    activeLedCount: number(row.activeLedCount),
     driven: typeof row.driven === "boolean" ? row.driven : null,
     // Why there is no pulse, meaningful only while commandedUs is null.
     limp: typeof row.limp === "string" ? row.limp : "off",
@@ -217,7 +222,7 @@
   //                    firmware does not say
   //   parts ...        the rest of its row, read by readRow()
   const outputOf = (row) => {
-    const { printed, wiredTick, lightCapable, reported, limp, activeWired, ...table } = row;
+    const { printed, wiredTick, lightCapable, reported, limp, activeWired, activeLight, activeLedCount, ...table } = row;
     const type = table.component || (lightCapable ? NO_SERVO.id : SERVO_MODELS[0].id);
     const output = {
       ...table,
@@ -242,7 +247,11 @@
       }));
     }
     const first = started.get(output.address) || null;
-    output.started = first && activeWired !== null ? Object.freeze({ ...first, wired: activeWired }) : first;
+    output.started = first && Object.freeze({
+      wired: activeWired !== null ? activeWired : first.wired,
+      light: activeLight !== undefined ? activeLight : first.light,
+      ledCount: activeLedCount !== null ? activeLedCount : first.ledCount,
+    });
     output.parts = Object.freeze(output.parts.slice());
     Object.freeze(output);
     heard.set(output, { reported, limp });

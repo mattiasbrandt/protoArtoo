@@ -31,6 +31,20 @@ constexpr uint8_t AUX_LED_TARGET_ALL = 0xFF;
 bool auxLedTaskInit();
 void auxLedTask(void* pvParameters);
 
+// What one wire carried when the droid started (#364): what was on it - the
+// component its Servo Output row named, which is a Light Type exactly where a
+// strip may go - and its light's LED count. Both are read once at start
+// (ADR 0027), so a value saved since waits for a restart, and GET
+// /api/servo/outputs reports these beside the saved ones so no page measures a
+// wait against its own first read (the defect #371 fixed on Configuration).
+// `index` is the Output's BOARD_OUTPUTS index. Returns false, leaving both
+// outputs alone, for an index past the table or before auxLedTaskInit() ran.
+//
+// Lock-free on purpose: written once, in auxLedTaskInit(), which setup() runs
+// before it starts any task or WiFi - the web server only starts from the
+// WiFi event callback - and never written again.
+bool auxLedWireAtStart(size_t index, ServoComponentType* component, uint8_t* ledCount);
+
 bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b, CommandSource source);
 bool auxLedQueueSetEffect(uint8_t target, AuxLedEffect effect, CommandSource source);
 

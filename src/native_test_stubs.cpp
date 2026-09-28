@@ -222,6 +222,19 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
 #include "aux_led_test_hooks.h"  // declares g_test_aux_led_queue_ok, defined here
 #include "board_outputs.h"
 bool g_test_aux_led_queue_ok = true;
+bool g_test_aux_led_at_start_set = false;
+ServoComponentType g_test_aux_led_component_at_start[BOARD_OUTPUT_COUNT] = {};
+uint8_t g_test_aux_led_count_at_start[BOARD_OUTPUT_COUNT] = {};
+
+bool auxLedWireAtStart(size_t index, ServoComponentType* component, uint8_t* ledCount) {
+    if (!g_test_aux_led_at_start_set || index >= BOARD_OUTPUT_COUNT || component == nullptr ||
+        ledCount == nullptr) {
+        return false;
+    }
+    *component = g_test_aux_led_component_at_start[index];
+    *ledCount = g_test_aux_led_count_at_start[index];
+    return true;
+}
 
 bool auxLedQueueSetColor(uint8_t target, uint8_t r, uint8_t g, uint8_t b,
                          CommandSource /*source*/) {
