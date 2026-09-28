@@ -35,6 +35,15 @@ const char kStatusOverflowBody[] = "{\"ok\":false,\"error\":\"status payload ove
 // docs/ui-copy-voice.md: the mode and what the droid does in it, nothing more.
 const char kRcElrsDetail[] = "ELRS: the droid reads no sticks from it yet.";
 
+// A PWM channel: the droid reads the pulses on that wire. The state is ready,
+// not active - nothing measures whether pulses arrive (data/shell.js shows it
+// as UNMEASURED).
+const char kRcPwmDetail[] = "PWM: the droid reads this wire.";
+
+// rcCh3..rcCh6 in the SBUS modes: every stick comes over the bus, so these
+// wires carry nothing the droid reads.
+const char kRcSbusSpareWireDetail[] = "SBUS: the droid reads nothing on this wire.";
+
 const char* domeTransportLabel(DomeLinkTransport transport) {
     switch (transport) {
         case DOME_LINK_TRANSPORT_UART:
@@ -289,10 +298,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
                 ok = appendPeripheralStatus(pos, remaining, "rcCh1", "standby", kRcElrsDetail) &&
                      ok;
             } else if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
-                ok = appendPeripheralStatus(
-                         pos, remaining, "rcCh1", "ready",
-                         "Standard PWM input enabled; routing configurable via /api/config") &&
-                     ok;
+                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "ready", kRcPwmDetail) && ok;
             } else if (in.lastSbus1Ms == 0) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
                                             "Drive SBUS input waiting for first frame") &&
@@ -314,10 +320,7 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "standby", kRcElrsDetail) &&
                      ok;
             } else if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
-                ok = appendPeripheralStatus(
-                         pos, remaining, "rcCh2", "ready",
-                         "Standard PWM input enabled; routing configurable via /api/config") &&
-                     ok;
+                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "ready", kRcPwmDetail) && ok;
             } else if (in.rcInputMode == RC_INPUT_SINGLE_SBUS && !in.singleSbusUseCh2) {
                 ok = appendPeripheralStatus(
                          pos, remaining, "rcCh2", "standby",
@@ -342,11 +345,10 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
         const struct {
             bool enabled;
             const char* key;
-            unsigned channel;
-        } rcWires[] = {{in.enableRcCh3, "rcCh3", 3},
-                       {in.enableRcCh4, "rcCh4", 4},
-                       {in.enableRcCh5, "rcCh5", 5},
-                       {in.enableRcCh6, "rcCh6", 6}};
+        } rcWires[] = {{in.enableRcCh3, "rcCh3"},
+                       {in.enableRcCh4, "rcCh4"},
+                       {in.enableRcCh5, "rcCh5"},
+                       {in.enableRcCh6, "rcCh6"}};
         for (const auto& wire : rcWires) {
             if (!wire.enabled) {
                 continue;
@@ -356,11 +358,10 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
                      ok;
                 continue;
             }
-            snprintf(detail, sizeof(detail), "CH%u enabled; %s routing is configurable via /api/config",
-                     wire.channel, rcInputModeToString(in.rcInputMode));
-            ok = appendPeripheralStatus(pos, remaining, wire.key,
-                                        in.rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) &&
+            ok = (in.rcInputMode == RC_INPUT_STANDARD_PWM
+                      ? appendPeripheralStatus(pos, remaining, wire.key, "ready", kRcPwmDetail)
+                      : appendPeripheralStatus(pos, remaining, wire.key, "standby",
+                                               kRcSbusSpareWireDetail)) &&
                  ok;
         }
         if (in.enableS1Hoverboard) {
