@@ -120,16 +120,25 @@
 #               A variant may also give its seeds per half, as
 #               `{dome: ..., body: ...}`, each half a list or `TBD`, when one
 #               half is known and the other is not (MK4 Basic, #409).
-#   legacy_ids: on a variant, the ids it was stored under before a rename.
-#               A stored Droid Build names its variant verbatim, so firmware
-#               reads each legacy id as the variant it became rather than
-#               resetting the droid (`simple` became `basic`, #409).
 #               `seeds: TBD` means the complement is not known here and must
 #               not be guessed. It is a scalar rather than a short list on
 #               purpose: a reader expecting a list fails loudly instead of
 #               quietly seeding an empty droid. It generates as `null` — never
 #               as the string "TBD" and never as `[]` — so a consumer reaching
 #               for the complement throws instead of seeding an empty droid.
+#   legacy_ids: on a variant, the ids it was stored under before a rename.
+#               A stored Droid Build names its variant verbatim, so firmware
+#               reads each legacy id as the variant it became rather than
+#               resetting the droid (`simple` became `basic`, #409).
+#   dome_drawn_as:
+#               `{design: ..., variant: ...}`: the design whose dome drawing is
+#               shown for this one's dome, on a design whose dome seeds copy
+#               that design's because its own part list has not been read yet
+#               (MK4.1 is drawn as MK4 Complex, #409). Absent means the design
+#               is drawn as itself, or not at all. It names another supported
+#               dome design, at one of its variants, that is drawn as itself.
+#               Remove it the day the design's own dome list is read, together
+#               with the copied seeds.
 #
 # Field notes:
 #   id:         protoArtoo part id — stable, position-ordered per class
@@ -301,6 +310,10 @@ designs:
       Complex dome because no MK4.1 part list has been read yet — unverified,
       replace it when one is. It is a dome design only, so its body half seeds
       nothing, on purpose.
+    # Drawn as the dome its seeds copy, so the Dashboard's dome card and Parts
+    # show the MK4 Complex drawing for an MK4.1 dome rather than none (#409).
+    # Goes when the seeds below are replaced by MK4.1's own list.
+    dome_drawn_as: {design: mk4, variant: complex}
     seeds:
       dome: [pie1, pie2, pie3, pie4, pie5, pie6,
              panel1, panel2, panel3, panel4, panel5, panel6, panel7,

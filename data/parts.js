@@ -366,15 +366,13 @@
     const shown = markerIds.filter((id) => drawing.markerOf(id).parts.some((partId) => onDroid.has(partId)));
 
     // The dome drawing is the vendored MK4 Complex dome, and it is shown only
-    // where it IS the dome the builder says they built - the same rule the
-    // Dashboard's dome follows (data/dome_layout.js, tier 3). A drawing of
+    // where it IS the dome the builder says they built - the one rule the
+    // Dashboard's dome follows too (DroidBuild.showsBuiltInDome). A drawing of
     // somebody else's dome presented as theirs is worse than none.
     const dome = build.dome;
     const domeComplement = window.DroidBuild.complementFor(dome.design, dome.variant, "dome");
     const domePending = dome.design !== "" && !domeComplement.known;
-    const drawingIsTheirs =
-      dome.design === "" ||
-      (dome.design === window.DOME_PANEL_MAP_DESIGN && dome.variant === window.DOME_PANEL_MAP_VARIANT);
+    const drawingIsTheirs = window.DroidBuild.showsBuiltInDome(dome.design, dome.variant);
     let domeNote = "";
     if (domePending) domeNote = "Dome parts pending. This build does not record which panels that dome carries.";
     else if (!drawingIsTheirs) domeNote = "No drawing of that dome design yet.";

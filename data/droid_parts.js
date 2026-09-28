@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 7ebdb46b9fd737785ace8995e71e5ef1d5f30c2002a1242ead4748cd208f2f2b
+ * Source digest: sha256 7712b0c016cf25be6161a9586f0df734004d10c43b23bf1dcdaf3859f5a780f5
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -37,6 +37,10 @@
  * reaching for it throws instead of quietly seeding an empty droid. `own`
  * carries `seeds: []`, which is a real and deliberate empty complement.
  *
+ * `domeDrawnAs` on a design names the design and variant whose dome drawing
+ * stands in for its own while its dome seeds copy that design's. Its one
+ * reader is DroidBuild.showsBuiltInDome() (data/droid_build.js).
+ *
  * `kind` is the Part Kind - what a Part usually IS, as opposed to what drives
  * it. Branch on this field, never on an id prefix or a name match. It is
  * advisory: it earns a Part its own treatment and lets a surface query a
@@ -54,7 +58,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "7ebdb46b9fd737785ace8995e71e5ef1d5f30c2002a1242ead4748cd208f2f2b",
+    "sourceSha256": "7712b0c016cf25be6161a9586f0df734004d10c43b23bf1dcdaf3859f5a780f5",
     "designs": [
       {
         "id": "mk4",
@@ -149,6 +153,10 @@
         "blurb": "MrBaddeley's latest dome, one shared form close to the MK4 Complex dome. A dome design only \u2014 pick MK4 Basic or Complex for the body.",
         "card": "supported",
         "picture": "mrbaddeley",
+        "domeDrawnAs": {
+          "design": "mk4",
+          "variant": "complex"
+        },
         "halves": [
           "dome"
         ],

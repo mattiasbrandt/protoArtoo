@@ -234,10 +234,10 @@
       ? window.DroidBuild.complementFor(designId, variantId, 'dome')
       : { ids: [], known: false };
 
+    // A stated design can only have come through the seam, so the seam's own
+    // answer decides it; an unstated one keeps the drawing.
     const drawingIsTheirs =
-      designId === '' ||
-      (designId === window.DOME_PANEL_MAP_DESIGN &&
-       variantId === window.DOME_PANEL_MAP_VARIANT);
+      designId === '' || window.DroidBuild.showsBuiltInDome(designId, variantId);
 
     let warning = null;
     if (designId !== '' && !complement.known) {

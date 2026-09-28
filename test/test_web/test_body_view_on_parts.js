@@ -191,6 +191,29 @@ const holdFitted = async (env, fitted) => {
 };
 const configPosts = (env) => env.posts.filter((post) => post.path === "/api/config");
 
+// Parts draws the built-in dome by the same rule as the Dashboard's dome card:
+// MK4.1's dome is drawn as the MK4 Complex dome its seeds copy. Each page once
+// carried its own copy of that rule, and on the #355 bench an MK4.1 dome had
+// no dome pieces on either (#409). A dome the drawing is not of still has none.
+test("a dome drawn as the built-in design keeps its dome pieces, and another dome does not", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+  const domeDrawn = () =>
+    !env.document.querySelector(".bv-dome-pieces").classList.contains("is-absent") &&
+    env.document.querySelector(".bv-dome-note").hidden;
+  const holdDome = async (design, variant) => {
+    env.droidBuild.domeDesign = design;
+    env.droidBuild.domeVariant = variant;
+    await env.window.DroidBuild.load({ refresh: true });
+    await sleep(20);
+  };
+
+  await holdDome("mk41", "");
+  assert.equal(domeDrawn(), true, "an MK4.1 dome is drawn as MK4 Complex");
+
+  await holdDome("own", "");
+  assert.equal(domeDrawn(), false, "a dome the drawing is not of is not drawn as theirs");
+});
+
 test("Drop takes a Part off through the Droid Build alone, and leaves its Output mapped", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
   pick(env, "doorFL");
