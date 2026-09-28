@@ -492,6 +492,9 @@
   //   onFace    - called with a face id once the shown face has changed.
   //   onAdd     - called with an ADDITION_GROUPS entry when a builder presses
   //               its Add. The Droid Build is the caller's to change.
+  //   faces     - the face ids to build, in FACES order; absent means all
+  //               three. The Dashboard's card draws the body alone and has
+  //               its own dome drawing beside it.
   // @returns {{update, select, selected, showFace, face, partsOf, markerOf,
   //            markerIds}}
   // ---------------------------------------------------------------------------
@@ -503,6 +506,8 @@
     const onFace = typeof opts.onFace === "function" ? opts.onFace : () => {};
     const onAdd = typeof opts.onAdd === "function" ? opts.onAdd : () => {};
     const byMarker = new Map(markers.map((marker) => [marker.id, marker]));
+    const faces = Array.isArray(opts.faces) ? FACES.filter((face) => opts.faces.indexOf(face.id) !== -1) : FACES;
+    if (faces.length === 0) throw new Error(`[body-view] no face to draw in ${JSON.stringify(opts.faces)}`);
 
     // A footprint is always one shape, and state is carried by its own stroke
     // and fill: a second shape nested inside the first read as clutter wherever
@@ -594,13 +599,13 @@
       `<p class="bv-stamp" hidden></p>` +
       `<div class="bv-card">` +
       `<div class="bv-tabs">` +
-      FACES.map(
+      faces.map(
         (face) =>
           `<button type="button" class="bv-tab" data-face-tab="${esc(face.id)}" aria-pressed="false">` +
           `${esc(face.label)}</button>`
       ).join("") +
       `</div>` +
-      FACES.map(
+      faces.map(
         (face) =>
           `<div class="bv-face" data-face="${esc(face.id)}" hidden>` +
           (face.id === "dome" ? domeFaceHtml() : bodyFaceHtml(face)) +
@@ -692,7 +697,7 @@
     });
     const addRows = new Map(all(list, "[data-add-row]").map((row) => [row.dataset.addRow, row]));
 
-    let currentFace = "front";
+    let currentFace = faces[0].id;
     // One selection per half, so looking at the dome never drops the body Part
     // a builder had picked, and the other way round.
     const selectedIn = { body: null, dome: null };
@@ -738,7 +743,8 @@
 
     const showFace = (faceId) => {
       const face = faceById(faceId);
-      if (!face) return currentFace;
+      // A face this card was not built with is not a face it can turn to.
+      if (!face || !panels.has(face.id)) return currentFace;
       const changed = face.id !== currentFace;
       currentFace = face.id;
       panels.forEach((panel, id) => {
@@ -787,9 +793,12 @@
       stamp.textContent = state.stamp || "";
       stamp.classList.toggle("is-pending", state.domePending === true);
       pendings.forEach((node) => node.classList.toggle("is-absent", state.domePending !== true));
-      domeNote.hidden = !state.domeNote;
-      domeNote.textContent = state.domeNote || "";
-      domePieces.classList.toggle("is-absent", Boolean(state.domeNote));
+      // Absent when the card was built without its dome face.
+      if (domeNote) {
+        domeNote.hidden = !state.domeNote;
+        domeNote.textContent = state.domeNote || "";
+        domePieces.classList.toggle("is-absent", Boolean(state.domeNote));
+      }
 
       // A surface detail is drawn under the Parts, and it is left out wherever
       // a shown Part's box already covers the same ground, so no dashed line

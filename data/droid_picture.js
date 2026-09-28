@@ -246,13 +246,14 @@
     // Open or close what a decision allows, with the one request each half
     // moves through: a body Part goes to POST /api/servo on its Output, a dome
     // piece to POST /api/dome/cmd as the Panel Intent the vendored map names it
-    // by. Never called for a refused decision - that is the caller's check,
-    // and this refuses again rather than trust it. Resolves to the sentence to
-    // show and whether it went; it never rejects, so no press ends in silence.
+    // by. A refused decision sends nothing and hands back its reason: this is
+    // the guard, so a caller may press straight through it. Resolves to the
+    // sentence to show and whether it went; it never rejects, so no press ends
+    // in silence.
     const openClose = (decision) => {
       const label = decision.marker.label;
       if (!decision.toggle.enabled) {
-        return Promise.resolve({ sent: false, text: decision.why, level: "error" });
+        return Promise.resolve({ sent: false, text: decision.why || `${label} has nothing to open.`, level: "error" });
       }
       const verb = decision.open ? "close" : "open";
       const failed = (error) => ({

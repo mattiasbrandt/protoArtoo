@@ -6011,6 +6011,15 @@ body[data-page="maintenance"] .status-item .hint {
   margin-bottom: var(--space-md);
 }
 
+/* Moving parts: the body drawing and the dome drawing side by side, each in
+   its own column so the feedback line above them never moves either. */
+.moving-parts {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
 .dome-svg-container {
   /* Constrain + centre the dome so it renders at a comfortable size with
      breathing room around the P1-P13 callouts, rather than filling the full
@@ -6042,45 +6051,6 @@ body[data-page="maintenance"] .status-item .hint {
 .dome-svg-container .pp.open {
   fill: var(--panel-open);
   stroke: var(--panel-open-edge);
-}
-
-/* Quick sequence control row */
-.dome-sequence-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.dome-seq-select {
-  flex: 1;
-  min-width: 200px;
-  padding: 10px 12px;
-  background: color-mix(in srgb, var(--lift) 4%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.95rem;
-  min-height: 44px;
-  transition: border-color 0.2s ease;
-}
-
-.dome-seq-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
-}
-
-.dome-seq-select:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.dome-sequence-row .btn {
-  min-width: 90px;
-  padding: 10px 14px;
-  font-size: 0.9rem;
 }
 
 .mt-8 {
