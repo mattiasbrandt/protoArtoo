@@ -170,19 +170,16 @@
     {
       id: "drive",
       label: "Drive",
-      hint: "drive it, turn the dome, make some noise",
       members: ["drive", "dome", "sound", "rc"],
     },
     {
       id: "perform",
       label: "Perform",
-      hint: "author a move and play it back",
       members: ["seq", "sound", "dome"],
     },
     {
       id: "configure",
       label: "Configure",
-      hint: "say what the droid is made of",
       members: [
         // Droid Build heads the group: it is the answer the rest of Configure
         // is shaped by. Dormant until the C3 group (#351 and its siblings)
@@ -206,7 +203,6 @@
     {
       id: "maintain",
       label: "Maintain",
-      hint: "check it over, keep it current",
       members: [
         // The other half of what was one Setup page (#288, #404).
         "maintenance",
@@ -750,7 +746,6 @@
         <div class="nav-group" data-nav-group="${group.id}" role="group" aria-labelledby="${labelId}">
           <p class="nav-group-head" id="${labelId}">
             <span class="nav-group-label">${group.label}</span>
-            <span class="nav-group-hint">${group.hint}</span>
           </p>
           <div class="nav-group-links">${links}</div>
         </div>`;
