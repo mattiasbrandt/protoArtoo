@@ -64,7 +64,8 @@ the patch releases, whose notes live on their own GitHub Release.
   measured yet is amber. Pick one, on the drawing or in the list beside it, to
   see its servo and to open or close it. The arms are off until you add them
   from that list. The dome on the Dashboard and in Sequences is drawn the same
-  way.
+  way. Under the drawing, Unused lists the parts no output claims yet, each
+  with Give it an output.
 - **Open a door from the Dashboard.** Dome panels on the Dashboard is now
   Moving parts: your droid's body and dome, drawn side by side. Click a door,
   panel or arm to open or close it. With the estop latched nothing moves, and
@@ -88,8 +89,8 @@ the patch releases, whose notes live on their own GitHub Release.
   A wire you have not marked wired, or a link that is switched off, is drawn
   dashed grey and says why. Each wire's box names the part on the end of it.
   Under the drawing you mark which outputs are wired and which one carries the
-  LED strip, Power wiring explains the shared supply rather than drawing it,
-  and Unused lists the parts no output claims yet. The outputs are whatever the
+  LED strip, and choose which part is on each output, and Power wiring
+  explains the shared supply rather than drawing it. The outputs are whatever the
   board reports, so a board with other outputs shows its own. Nothing on the
   page is kept by hand, so it cannot go stale against the firmware.
 - **A printable wiring sheet.** Wiring saves one file you can print anywhere,
@@ -248,6 +249,10 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **You put a part on an output in Wiring now.** The list of every part with
+  the output it is on moved from Parts to Wiring, under the outputs it chooses
+  between, and moving a part off one output still asks first. On Parts, Give it
+  an output takes you straight to that part's row there.
 - **A value the droid will not take is said in your words.** Save a setting
   it refuses - on Foot Drive, Dome, Servos, Sound or a restored backup - and the page
   says which setting, and what it takes: "Neutral pulse must be 1000 to 2000
@@ -256,7 +261,7 @@ the patch releases, whose notes live on their own GitHub Release.
   `error`, `warning`, `info` or `debug` from any page or tool, and an ELRS
   receiver set on the droid stays ELRS after a reboot.
 - **A part that will not move, a capture that is not recorded, says why.** Move
-  a part on Parts to an output that is full, or record an end the droid will
+  a part on Wiring to an output that is full, or record an end the droid will
   not take, and the page names the part and the output: "Rear-left body door
   did not move: ARM1 no longer drives it". Each component switch and each
   sound is called one thing on every page - RC channel 1, Dome link, Short
