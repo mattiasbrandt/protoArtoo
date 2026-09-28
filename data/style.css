@@ -1169,9 +1169,9 @@ body[data-page="firmware"] .card > * + * {
 /* ---------------------------------------------------------------------------
    Foot Drive (ADR 0066; redrawn by #399 from the #355 bench, 2026-09-28).
 
-   One drive station: the consent acts across its head, the round pad beside
-   the two meters it moves, then the speed the droid is held to and what the
-   wheel controller says back - one plate divided by seams, not a card per
+   One drive station: the consent acts across its head, then the round pad,
+   the two meters it moves over what the wheel controller says back, and the
+   speed the droid is held to - one plate divided by seams, not a card per
    part. The operator's words for what it replaced: "a row of form buttons".
    --------------------------------------------------------------------------- */
 
@@ -1190,12 +1190,13 @@ body[data-page="firmware"] .card > * + * {
   gap: var(--space-sm);
 }
 
-/* The station's three columns under a seam: the pad, the meters, and the
-   side column. Each column after the first is divided from the one before it
-   by a seam of its own. */
+/* The station's three columns under a seam: the pad, the console (meters
+   over telemetry) and the presets. Each column after the first is divided
+   from the one before it by a seam of its own, and each is filled to the
+   pad's height at rest, so none of them reads as an empty panel. */
 .drive-cockpit {
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) minmax(220px, 280px);
   align-items: stretch;
   padding-top: var(--space-xl);
   border-top: 1px solid var(--border);
@@ -1218,8 +1219,9 @@ body[data-page="firmware"] .card > * + * {
   text-align: center;
 }
 
-/* The pad: a round well the size of the anatomy's dial (240), a bezel ring
-   inside it, and five keys placed by class on the compass points. */
+/* The pad: a round well the size of the anatomy's dial (240), a rim ring just
+   inside its edge, and five keys placed by class on the compass points, all
+   seated inside the ring. */
 .drive-pad {
   position: relative;
   width: 240px;
@@ -1234,8 +1236,8 @@ body[data-page="firmware"] .card > * + * {
 .drive-pad::before {
   content: "";
   position: absolute;
-  inset: 44px;
-  border: 1px dashed var(--border);
+  inset: 6px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-round);
   pointer-events: none;
 }
@@ -1248,7 +1250,7 @@ body[data-page="firmware"] .card > * + * {
   justify-content: center;
   gap: var(--space-2xs);
   padding: 0;
-  color: var(--text-dim);
+  color: var(--text);
   background: var(--surface-alt);
   border: 1px solid var(--border-strong);
   box-shadow: var(--elev-1);
@@ -1263,28 +1265,35 @@ body[data-page="firmware"] .card > * + * {
 }
 
 /* Each key rounds toward the rim it sits against, so the five read as one
-   instrument rather than five buttons dropped on a circle. */
+   instrument rather than five buttons dropped on a circle. 18 px in from the
+   edge puts every corner inside the rim ring (the far corners of a 72 px key
+   sit 108 px from the centre; the ring is at 114). */
 .pad-fwd,
 .pad-rev {
   left: 50%;
-  width: 76px;
-  height: 64px;
+  width: 72px;
+  height: 58px;
   transform: translateX(-50%);
 }
 
-.pad-fwd { top: 10px; border-radius: 38px 38px var(--radius-xs) var(--radius-xs); }
-.pad-rev { bottom: 10px; border-radius: var(--radius-xs) var(--radius-xs) 38px 38px; }
+.pad-fwd { top: 18px; border-radius: 36px 36px var(--radius-xs) var(--radius-xs); }
+.pad-rev { bottom: 18px; border-radius: var(--radius-xs) var(--radius-xs) 36px 36px; }
 
 .pad-lft,
 .pad-rgt {
   top: 50%;
-  width: 64px;
-  height: 76px;
+  width: 58px;
+  height: 72px;
   transform: translateY(-50%);
 }
 
-.pad-lft { left: 10px; border-radius: 38px var(--radius-xs) var(--radius-xs) 38px; }
-.pad-rgt { right: 10px; border-radius: var(--radius-xs) 38px 38px var(--radius-xs); }
+.pad-lft { left: 18px; border-radius: 36px var(--radius-xs) var(--radius-xs) 36px; }
+.pad-rgt { right: 18px; border-radius: var(--radius-xs) 36px 36px var(--radius-xs); }
+
+/* The arrow is the part of a key that is aimed at, so it takes the accent. */
+.pad-key .pad-icon {
+  color: var(--accent-bright);
+}
 
 /* The centre. Red because it is the red act on this pad - it sends zero - but
    it carries no icon: the one stop-circle in this product is the Latching
@@ -1293,13 +1302,13 @@ body[data-page="firmware"] .card > * + * {
 .pad-stop {
   top: 50%;
   left: 50%;
-  width: 68px;
-  height: 68px;
+  width: 64px;
+  height: 64px;
   transform: translate(-50%, -50%);
   border-radius: var(--radius-round);
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, var(--well));
-  border-color: color-mix(in srgb, var(--danger) 60%, var(--border-strong));
+  background: color-mix(in srgb, var(--danger) 14%, var(--well));
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border-strong));
   font-family: var(--font-mono);
   font-size: var(--fs-sect);
   letter-spacing: 0.16em;
@@ -1331,6 +1340,11 @@ body[data-page="firmware"] .card > * + * {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+.pad-key:active .pad-icon,
+.pad-key.active .pad-icon {
+  color: var(--text);
+}
+
 .pad-stop:active,
 .pad-stop.active {
   color: var(--text);
@@ -1339,15 +1353,31 @@ body[data-page="firmware"] .card > * + * {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
-/* pointer-events: none is load-bearing, not a look. drive.js gates the keys
+/* Off (web control off, the estop latched, the radio holding the feet): an
+   empty dashed outline with its word still readable, rather than a faded
+   copy of the live key - a key that cannot be pressed should not look like a
+   dim one that can.
+
+   pointer-events: none is load-bearing, not a look. drive.js gates the keys
    with the disabled attribute, and a disabled key must not start a hold loop
    from a pointerdown - the .btn these keys used to wear carried the same line
    for the same reason. */
 .pad-key:disabled {
-  opacity: 0.4;
+  color: var(--text-dim);
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
   cursor: not-allowed;
   pointer-events: none;
-  box-shadow: none;
+}
+
+.pad-key:disabled .pad-icon {
+  color: var(--text-faint);
+}
+
+.pad-stop:disabled {
+  color: var(--text-dim);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border-strong));
 }
 
 .pad-icon {
@@ -1360,24 +1390,36 @@ body[data-page="firmware"] .card > * + * {
 .pad-up { transform: rotate(-90deg); }
 .pad-down { transform: rotate(90deg); }
 
+/* The console column: the meters over the wheel controller, divided by a
+   seam. */
+.drive-console {
+  display: grid;
+  align-content: space-between;
+  gap: var(--space-xl);
+  min-width: 0;
+}
+
+.drive-console > .drive-side-part {
+  padding-top: var(--space-xl);
+  border-top: 1px solid var(--border);
+}
+
 /* The two meters, side by side. */
 .drive-meters {
   display: grid;
   grid-template-columns: repeat(2, max-content);
-  align-content: center;
-  column-gap: var(--space-xl);
+  column-gap: var(--space-2xl);
   row-gap: var(--space-md);
 }
 
 .drive-meters-hint {
   grid-column: 1 / -1;
-  text-align: center;
 }
 
 .drive-meter {
   display: grid;
-  grid-template-columns: 56px 96px;
-  align-items: end;
+  grid-template-columns: 48px 96px;
+  align-items: center;
   gap: var(--space-lg);
 }
 
@@ -1409,19 +1451,23 @@ body[data-page="firmware"] .card > * + * {
    VSLIDER_TRACK_H and VSLIDER_THUMB_H: the script places the marker and the
    fill in pixels against exactly these, so they are not free numbers the
    ladder may round. The seam is an inset shadow rather than a border so it
-   takes no height from the 160. Ten scale marks, and the zero line at half
-   height where both the throttle and the steer rest. */
+   takes no height from the 160.
+
+   The reading is the fill: a solid bar from the zero line at half height,
+   where both the throttle and the steer rest. The scale is quiet on purpose -
+   ten short marks down the left edge, not lines across the bar - so at rest
+   the meter is an empty well with its zero, and the number beside it. */
 .drive-vslider-track {
   position: relative;
-  width: 56px;
+  width: 48px;
   height: 160px;
   border-radius: var(--radius-xs);
   background:
     repeating-linear-gradient(
       to bottom,
       transparent 0 15px,
-      color-mix(in srgb, var(--border-strong) 70%, transparent) 15px 16px
-    ),
+      color-mix(in srgb, var(--border-strong) 80%, transparent) 15px 16px
+    ) left / 6px 100% no-repeat,
     var(--well);
   box-shadow: inset 0 0 0 1px var(--border-strong);
   overflow: hidden;
@@ -1439,12 +1485,12 @@ body[data-page="firmware"] .card > * + * {
 
 .drive-vslider-fill {
   position: absolute;
-  left: 6px;
-  right: 6px;
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  left: 10px;
+  right: 4px;
+  background: var(--accent);
 }
 
-/* The marker: a bright line across the track at the value, with the 24 px box
+/* The fill's leading edge: a bright line at the value, with the 24 px box
    around it only there so drive.js can centre it. */
 .drive-vslider-thumb {
   position: absolute;
@@ -1457,16 +1503,14 @@ body[data-page="firmware"] .card > * + * {
 .drive-vslider-thumb::before {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 10px;
-  height: 4px;
+  left: 10px;
+  right: 4px;
+  top: 11px;
+  height: 2px;
   background: var(--accent-bright);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-bright) 55%, transparent);
 }
 
-/* The speed the droid is held to, over what the wheel controller says back,
-   divided by a seam. */
+/* The speed the droid is held to. */
 .drive-side {
   display: grid;
   align-content: start;
@@ -1478,12 +1522,6 @@ body[data-page="firmware"] .card > * + * {
   align-content: start;
   gap: var(--space-md);
   min-width: 0;
-}
-
-.drive-side-part + .drive-side-part {
-  margin-top: var(--space-xl);
-  padding-top: var(--space-xl);
-  border-top: 1px solid var(--border);
 }
 
 .drive-side-head {
@@ -1505,15 +1543,21 @@ body[data-page="firmware"] .card > * + * {
   font-size: var(--fs-sect);
 }
 
-/* The three presets as one segmented bar, each carrying the limit it sets.
-   drive.js lights the chosen one through aria-pressed, which the shared .seg
-   rule already draws. */
+/* The three presets as one segmented control stood on end, like the gates of
+   a gearbox: the name on the left, the limit it sets on the right. drive.js
+   lights the chosen one through aria-pressed, which the shared .seg rule
+   already draws. */
+.drive-preset-seg {
+  flex-direction: column;
+}
+
 .drive-preset-seg > button {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: var(--space-sm);
-  min-height: 40px;
+  min-height: 56px;
+  font-size: var(--fs-body);
 }
 
 .drive-preset-seg > button:disabled {
@@ -1524,7 +1568,7 @@ body[data-page="firmware"] .card > * + * {
 .preset-limit-value {
   color: var(--text-faint);
   font-family: var(--font-mono);
-  font-size: var(--fs-hint);
+  font-size: var(--fs-cell);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2401,19 +2445,21 @@ body[data-page="firmware"] .form-grid {
   white-space: nowrap;
 }
 
-/* The gauge: a well with twenty scale marks and the stop line at its centre.
-   dome.js sets the fill's left and width in percent of this track, so the
-   fill grows out of the centre in the direction the dome is turning. */
+/* The gauge: a well with the stop line at its centre and ten short marks
+   along its foot. dome.js sets the fill's left and width in percent of this
+   track, so the reading is a solid bar growing out of the centre in the
+   direction the dome is turning; at rest the gauge is an empty well and its
+   stop line, not a grid of empty cells. */
 .dome-live-track {
   position: relative;
-  height: 40px;
+  height: 32px;
   border-radius: var(--radius-xs);
   background:
     repeating-linear-gradient(
       to right,
-      transparent 0 calc(5% - 1px),
-      color-mix(in srgb, var(--border-strong) 70%, transparent) calc(5% - 1px) 5%
-    ),
+      transparent 0 calc(10% - 1px),
+      color-mix(in srgb, var(--border-strong) 80%, transparent) calc(10% - 1px) 10%
+    ) bottom / 100% 6px no-repeat,
     var(--well);
   box-shadow: inset 0 0 0 1px var(--border-strong);
   overflow: hidden;
@@ -2435,11 +2481,10 @@ body[data-page="firmware"] .form-grid {
 .dome-live-fill {
   position: absolute;
   left: 50%;
-  top: 6px;
-  bottom: 6px;
+  top: 4px;
+  bottom: 4px;
   width: 0%;
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
-  box-shadow: inset 0 0 0 1px var(--accent-bright);
+  background: var(--accent);
   opacity: 0;
   transition: width 0.16s ease, left 0.16s ease, opacity 0.16s ease;
 }

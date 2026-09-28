@@ -34,8 +34,8 @@
     </div>
 
     <!-- The drive station: one plate, the consent acts across its head, then
-         three columns - the pad, the two meters it moves, and the speed the
-         droid is held to over what the wheel controller says back. One
+         three columns - the pad, the two meters it moves over what the wheel
+         controller says back, and the speed the droid is held to. One
          surface for one job, divided by seams rather than by a card per part
          (#399, operator review 2026-09-28).
 
@@ -84,45 +84,34 @@
           <p class="hint">A frozen browser stops the feet after the <b>web control timeout</b> below.</p>
         </div>
 
-        <!-- What the controller is sending the wheels. A readout, never a
-             control: nothing here is draggable, because nothing on this droid
-             reads a wheel back and a meter you could move would promise that
-             it did. -->
-        <div class="drive-meters" id="live-output-card">
-          <div class="drive-meter">
-            <div class="drive-meter-head">
-              <span class="drive-meter-label">Throttle</span>
-              <span class="drive-meter-value" id="throttle-value">0</span>
+        <!-- The meters - what the controller is sending the wheels - and under
+             them what the wheels' own board says back. The meters are a
+             readout, never a control: nothing here is draggable, because
+             nothing on this droid reads a wheel back and a meter you could
+             move would promise that it did. -->
+        <div class="drive-console">
+          <div class="drive-meters" id="live-output-card">
+            <div class="drive-meter">
+              <div class="drive-meter-head">
+                <span class="drive-meter-label">Throttle</span>
+                <span class="drive-meter-value" id="throttle-value">0</span>
+              </div>
+              <div class="drive-vslider-track">
+                <div class="drive-vslider-fill" id="throttle-fill"></div>
+                <div class="drive-vslider-thumb" id="throttle-thumb"></div>
+              </div>
             </div>
-            <div class="drive-vslider-track">
-              <div class="drive-vslider-fill" id="throttle-fill"></div>
-              <div class="drive-vslider-thumb" id="throttle-thumb"></div>
+            <div class="drive-meter">
+              <div class="drive-meter-head">
+                <span class="drive-meter-label">Steer</span>
+                <span class="drive-meter-value" id="steer-value">0</span>
+              </div>
+              <div class="drive-vslider-track">
+                <div class="drive-vslider-fill" id="steer-fill"></div>
+                <div class="drive-vslider-thumb" id="steer-thumb"></div>
+              </div>
             </div>
-          </div>
-          <div class="drive-meter">
-            <div class="drive-meter-head">
-              <span class="drive-meter-label">Steer</span>
-              <span class="drive-meter-value" id="steer-value">0</span>
-            </div>
-            <div class="drive-vslider-track">
-              <div class="drive-vslider-fill" id="steer-fill"></div>
-              <div class="drive-vslider-thumb" id="steer-thumb"></div>
-            </div>
-          </div>
-          <p class="hint drive-meters-hint">A jammed wheel reads the same as a free one.</p>
-        </div>
-
-        <!-- The speed the droid is held to, and what the wheel controller says
-             back: the third column of the station, divided by a seam. -->
-        <div class="drive-side">
-          <div class="drive-side-part">
-            <div class="drive-side-head"><span class="drive-side-label">Speed preset</span><span class="drive-side-state waiting" id="preset-summary"></span></div>
-            <div class="seg drive-preset-seg" role="group" aria-label="Speed preset">
-              <button class="preset-btn" data-speed-preset="slow" type="button" title="Tight spaces, indoors" aria-label="Apply slow speed preset" aria-pressed="false">Slow<span class="preset-limit-value" id="preset-value-slow"></span></button>
-              <button class="preset-btn" data-speed-preset="normal" type="button" title="Everyday pace" aria-label="Apply normal speed preset" aria-pressed="false">Normal<span class="preset-limit-value" id="preset-value-normal"></span></button>
-              <button class="preset-btn" data-speed-preset="turbo" type="button" title="Open floor only" aria-label="Apply turbo speed preset" aria-pressed="false">Turbo<span class="preset-limit-value" id="preset-value-turbo"></span></button>
-            </div>
-            <div id="preset-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+            <p class="hint drive-meters-hint">A jammed wheel reads the same as a free one.</p>
           </div>
 
           <!-- The wheel controller's own telemetry: the hoverboard board, not
@@ -148,6 +137,20 @@
                 <dd id="hb-current">—</dd>
               </div>
             </dl>
+          </div>
+        </div>
+
+        <!-- The speed the droid is held to: the third column of the station,
+             its three presets stacked like the gates of a gearbox. -->
+        <div class="drive-side">
+          <div class="drive-side-part">
+            <div class="drive-side-head"><span class="drive-side-label">Speed preset</span><span class="drive-side-state waiting" id="preset-summary"></span></div>
+            <div class="seg drive-preset-seg" role="group" aria-label="Speed preset">
+              <button class="preset-btn" data-speed-preset="slow" type="button" title="Tight spaces, indoors" aria-label="Apply slow speed preset" aria-pressed="false">Slow<span class="preset-limit-value" id="preset-value-slow"></span></button>
+              <button class="preset-btn" data-speed-preset="normal" type="button" title="Everyday pace" aria-label="Apply normal speed preset" aria-pressed="false">Normal<span class="preset-limit-value" id="preset-value-normal"></span></button>
+              <button class="preset-btn" data-speed-preset="turbo" type="button" title="Open floor only" aria-label="Apply turbo speed preset" aria-pressed="false">Turbo<span class="preset-limit-value" id="preset-value-turbo"></span></button>
+            </div>
+            <div id="preset-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
           </div>
         </div>
       </div>
