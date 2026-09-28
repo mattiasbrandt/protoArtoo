@@ -251,6 +251,10 @@
   // An Output a dial can drive: one with travel, and with a name the servo
   // route takes as its arm.
   const isDriveable = (output) => !isLightRow(output) && hasServoWord(output);
+  // One the droid drives since it started (data/outputs.js `driven`): its acts
+  // are offered. Any other is refused by the route whatever is pressed, so its
+  // row offers none (#364).
+  const isActable = (output) => isDriveable(output) && output.driven !== false;
 
   // Why an Output offers no drive, said the way a builder needs it, or "" when
   // it does. Whether it is wired and what it carries are Wiring's and Servo
@@ -263,6 +267,8 @@
     if (output.light) return `Carries the ${output.light.label}`;
     if (!output.wired) return "Not wired. Mark it on Wiring";
     if (!output.servo) return "No servo set above";
+    // Wired since the droid started: the tick is read at start (#364).
+    if (output.driven === false) return "Restart the droid to drive it";
     return "";
   };
 
@@ -294,8 +300,9 @@
     row.driveNote.textContent = refusal;
     row.driveActs.hidden = refusal !== "";
     const driveable = isDriveable(output);
-    row.calibrate.hidden = !driveable;
-    row.off.hidden = !driveable;
+    const actable = isActable(output);
+    row.calibrate.hidden = !actable;
+    row.off.hidden = !actable;
     paintMotion(row, output, driveable);
     row.node.classList.toggle("is-held", output.held);
     // The droid does not send this Output's pulse at all: the word for a field
@@ -661,7 +668,7 @@
       // so "no spare Output" and "no spare Output with a pulse" need different
       // words: only the second is fixed by driving one.
       const limpSpare = OUTPUTS.list().some(
-        (output) => output.parts.length === 0 && OUTPUTS.live(output).state === "limp" && hasServoWord(output)
+        (output) => output.parts.length === 0 && OUTPUTS.live(output).state === "limp" && isActable(output)
       );
       showFeedback(
         limpSpare
