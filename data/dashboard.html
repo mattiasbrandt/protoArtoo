@@ -46,11 +46,14 @@
 
           <div class="ctl">
             <h3>Mood <span class="now waiting" id="mood-now"></span></h3>
+            <!-- A level, not four answers: each step lights up to the one the
+                 droid is at (the :has() rules under "Mood" in style.css read
+                 aria-pressed, so app.js paints nothing new). -->
             <div class="mood-grid" role="group" aria-label="Mood">
-              <button class="btn mood-btn quiet" id="mood-quiet" type="button" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">Quiet</button>
-              <button class="btn mood-btn mid" id="mood-mid" type="button" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">Mid-Awake</button>
-              <button class="btn mood-btn full" id="mood-full" type="button" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">Full-Awake</button>
-              <button class="btn mood-btn awakeplus" id="mood-awakeplus" type="button" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">Awake+</button>
+              <button class="mood-btn quiet" id="mood-quiet" type="button" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">Quiet</button>
+              <button class="mood-btn mid" id="mood-mid" type="button" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">Mid-Awake</button>
+              <button class="mood-btn full" id="mood-full" type="button" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">Full-Awake</button>
+              <button class="mood-btn awakeplus" id="mood-awakeplus" type="button" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">Awake+</button>
             </div>
             <p class="hint">Each step up adds chatter, then holo movement, then holo lights.</p>
             <div id="mood-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -63,6 +66,10 @@
                  that entrance and not here (ADR 0059). What survives the cut is
                  the half a builder has to know - a sleeping droid can still be
                  driven and can still be stopped. -->
+            <!-- The switch shows the state and does not take a press: it follows
+                 body.sleep-mode-active, which app.js setSleepUi() already sets
+                 from the droid's frame, so there is no second reader of it. -->
+            <div class="sleep-switch" aria-hidden="true"><span class="sleep-switch-knob"></span></div>
             <p class="hint">Lights, panels and chatter rest. Drive and the estop stay awake.</p>
           </div>
         </div>
@@ -114,7 +121,7 @@
          does). The id keeps its old name; app.js fills it. -->
     <div class="card hidden" id="component-status-card">
       <div class="sect"><h2>Readouts</h2><span class="sub" id="component-summary"></span></div>
-      <div id="component-status-grid" class="status-grid"></div>
+      <div id="component-status-grid"></div>
     </div>
 
     <!-- Moving parts (Collapsible): the droid's two drawings, the body and the
