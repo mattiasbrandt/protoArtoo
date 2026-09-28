@@ -478,7 +478,7 @@
     // capture an end, reverse an Output.
     movePart: { word: "this part", refused: "is not one this droid models" },
     movePartFrom: {
-      word: "the output it was on", subject: true, clash: "no longer has it", refused: OFF_THE_DROID,
+      word: "the output it was on", subject: true, clash: "no longer has that part", refused: OFF_THE_DROID,
     },
     movePartTo: {
       word: "the output it goes to", subject: true,

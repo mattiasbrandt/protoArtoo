@@ -192,7 +192,7 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
     const uint16_t commandedUs =
         configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, channel, pulseUs, &component);
     if (commandedUs != pulseUs) {
-        PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - driving %d us instead",
+        PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - sending %d us instead",
                     armId + 1, pulseUs, servoCompTypeToString(component), commandedUs);
     }
 
@@ -970,7 +970,7 @@ void servoTaskInit() {
     }
 
     if (anyServo) {
-        PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 limp until driven)");
+        PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 limp until moved)");
     } else {
         PA_LOG_INFO(TAG, "arm/aux outputs disabled");
     }

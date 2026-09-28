@@ -229,7 +229,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     // counted instead, costing no time (#364). POST /api/servo/centre names
     // these rows in its answer (servoCentreSkipped(), src/web/api_servo.cpp).
     if (!servoTaskDrivesOutput(plan.armId)) {
-        PA_LOG_INFO(TAG, "arm%u not centred - not driven since the droid started",
+        PA_LOG_INFO(TAG, "arm%u not centred - restart the droid to use it",
                     (unsigned)plan.armId + 1);
         sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
         return;

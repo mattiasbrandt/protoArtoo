@@ -171,7 +171,7 @@ test("a Part on an Output nothing drives is offered no Open, and says what drive
 
   pick(env, "doorFL");
   assert.equal(actButton(env, "toggle").disabled, true, "the toggle is refused");
-  assert.equal(panelWhy(env), "Restart the droid to drive ARM1.");
+  assert.equal(panelWhy(env), "Restart the droid to use ARM1.");
   pressAct(env, "toggle");
   await sleep(20);
   assert.equal(servoPosts(env).length, 0, "and nothing reaches the droid");

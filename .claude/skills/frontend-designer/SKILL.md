@@ -24,18 +24,30 @@ Implementation guidance:
 - Ensure API latency or device unavailability has visible, actionable messaging.
 - Keep backend/dev-only detail out of primary copy; expose it via optional tooltips or secondary help text.
 - Use pill-style context/status boxes for concise state and mode communication.
-- NEVER an emoji on an operator surface. ADR 0066 retired it and `tools/check_surface_anatomy.py` fails the build on one. Where a glyph earns its place it is an icon from the project's own SVG sprite, inheriting the text colour, with its label still beside it.
+- NEVER an emoji on an operator surface. ADR 0066 retired it and `tools/check_surface_anatomy.py` fails the build on one. Where a glyph earns its place it is an icon from the project's own SVG sprite, inheriting the text color, with its label still beside it.
 - Prefer modern segmented/chip/radio-card option selectors over classic dropdowns when choices are small and known. Sized by how many there are:
   - up to about five: a segmented bar (`segmented()`, `data/output_settings.js`);
   - more than that: small pills that WRAP onto two or three lines, never a wider bar and never a menu;
-  - a colour: SWATCHES showing the colour itself, named once beneath the picked one. A colour named in a menu is a word doing a swatch's job.
-  - A token with no colour of its own (`DEFAULT`) gets a neutral dot. Never invent one for it.
+  - a color: SWATCHES showing the color itself, named once beneath the picked one. A color named in a menu is a word doing a swatch's job.
+  - A token with no color of its own (`DEFAULT`) gets a neutral dot. Never invent one for it.
 
 Control scale - the mistake this project makes most:
 - `.btn` and `.field` are PAGE- and FORM-scale house classes. Dropped on a card they are always too big, and this has been caught by the operator on three separate reviews.
 - On a card: `.btn.btn-sm`, `.btn.btn-quiet` for a secondary act, `.btn.link-btn` for navigation to another surface. A page-level primary `.btn` belongs to the page, not to a card.
 - `.field input` is `width: 100%`. A numeric input holding one to three digits is constrained to its content, not stretched to the card.
 - Before you hand a surface over, walk EVERY control on it - inputs, selects, buttons, labels, sliders - and check each sits at card scale. Do not make the operator find them one at a time.
+
+Control style - no "classic" square buttons (the operator's standing direction, 2026-09-28):
+- His words, from three reviews in one evening: *"the classic square buttons style looks way early 2000s web page ... have some modern sleek style or choice of toggles"*; *"the page design is way too cluttered too many simply ugly square boxes allover"*; and a restyle he rejected because it only *"rounded off some squares"*. Rounding corners, recoloring borders or re-spacing the same boxes is NOT a redesign and reads to him as no change.
+- A choice is drawn as what it IS, never as a row of bordered buttons:
+  - two states (Driving / Stationary): a **sliding pill switch** - a track in `--well`, a raised thumb that moves to the chosen side (`.opmode-grid`, `data/style.css`, #399 slice 6);
+  - an on/off: a **toggle switch**, a track and a knob (`.sleep-switch`);
+  - an ordered level (Quiet .. Awake+): a **level control** whose steps light up to the chosen one (`.mood-grid` / `.mood-btn`), never four separate buttons;
+  - a small set of peers: the segmented bar above, joined, no gaps and no per-option boxes.
+- **Acts by weight.** One prominent act per row or card at most. Secondary acts (calibrate, pulses off, settings) are quiet text actions (`.btn-quiet`, `.link-btn`), not boxed buttons; related acts on one thing (drive / open / close / stop) are ONE joined control (Servos, #399 slice 4).
+- **Readings are tiles, not bordered boxes of text:** a small quiet label, the state as the loudest thing with its Status Color dot, one quiet detail line; soft surfaces separated by space or seams, no 1px frame around every cell (`.readout`, #399 slice 6). Grey for "not heard / not measured" (#402) is correct, not a defect.
+- **Fewer frames.** A page is sections divided by seams; a card inside a card, or a box around every row, is the clutter he rejected on Servos. Put rarely used settings behind a per-row disclosure instead of showing them all at rest.
+- **Before you hand a surface over, compare it yourself:** render it at 1440 px before and after, side by side. If a stranger could mistake one for the other, it is not ready. If you restyle a shared primitive (`.btn`, `.seg`, `.status-item`), list every surface it reaches and check each.
 
 Copy length - the rule is in `docs/ui-copy-voice.md`, and these are the three that get broken:
 - A **subtitle** is a count, a state or a provenance - or a 2-4 word label. Not a sentence.

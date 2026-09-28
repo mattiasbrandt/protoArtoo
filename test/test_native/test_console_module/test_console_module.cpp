@@ -4416,7 +4416,7 @@ void test_servo_refuses_an_output_nothing_drives_since_boot() {
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_COMPONENT_DISABLED, g_cap.reason);
-    TEST_ASSERT_EQUAL_STRING("Restart the droid to drive ARM3.", capturedValue("detail"));
+    TEST_ASSERT_EQUAL_STRING("Restart the droid to use ARM3.", capturedValue("detail"));
 
     runQuery("servo.action.stop target=ARM3");
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_UNAVAILABLE, g_cap.outcome);
