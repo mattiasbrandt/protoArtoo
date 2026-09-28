@@ -7612,6 +7612,18 @@ body[data-page="wiring"] .card > * + * {
   pointer-events: all;
 }
 
+/* An arm shaft is drawn whole but picked only through its .bv-pick box, so
+   the door it sits behind keeps its centre (data/body_view.js PICKED_BELOW). */
+.bv-footprint.is-drawn-only {
+  pointer-events: none;
+}
+
+.bv-pick {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+
 /* On the dome the pieces ARE the drawing, so they take the line ink. */
 .bv-svg-dome .bv-footprint {
   stroke: var(--text-faint);

@@ -198,6 +198,29 @@
     }),
   });
 
+  // Where a Part is picked, when that is not its whole footprint.
+  //
+  // An arm shaft sits behind its door and runs the door's full height, straight
+  // through the door's centre - the spot a builder aims at to pick the door. A
+  // shaft that took the pointer everywhere it is drawn made the door unpickable
+  // once the arm was fitted (#372, found on the #355 bench: gripArm over
+  // doorFR). So the shaft is still drawn whole, where the operator placed it,
+  // and is picked only BELOW ITS END EFFECTOR: the door keeps its centre, the
+  // end effector keeps its own box, and the shaft keeps its foot. Worked out
+  // from GEOMETRY rather than typed in, so a new placement moves it too.
+  const PICKED_BELOW = Object.freeze({ gripArm: "gripClaw", interArm: "interTool" });
+
+  // The rectangle a pointer picks a body Part through, in the art's viewBox.
+  // Null for a Part with no body placement.
+  const pickRect = (face, id) => {
+    const geom = GEOMETRY[face] ? GEOMETRY[face][id] : null;
+    if (!geom) return null;
+    const tool = PICKED_BELOW[id] ? GEOMETRY[face][PICKED_BELOW[id]] : null;
+    if (!tool) return { x: geom.x, y: geom.y, w: geom.w, h: geom.h };
+    const top = tool.y + tool.h;
+    return { x: geom.x, y: top, w: geom.w, h: geom.y + geom.h - top };
+  };
+
   // Surface details: drawing only, so the picture keeps reading as R2 once the
   // Parts have their own boxes over the art. Never a Part, never selectable,
   // never a state, never in the legend -- and named the way Printed Droid names
@@ -400,6 +423,7 @@
         parts: [part.id],
         label: part.name,
         geom: GEOMETRY[face][part.id],
+        pick: pickRect(face, part.id),
       });
     });
 
@@ -481,12 +505,22 @@
     // it sat (the #408 mock's "extra square" reports). No `id` attribute
     // anywhere -- a document may hold more than one picture, and SVG ids must
     // be unique per document; identity rides on data-marker.
+    //
+    // A Part picked through less than its footprint (PICKED_BELOW) draws that
+    // footprint without taking the pointer, and adds an unpainted pick box
+    // after it. The box is never seen and carries no state, so the one-shape
+    // rule above still holds for everything a builder sees.
     const footprintHtml = (marker) => {
       if (marker.geom) {
         const { x, y, w, h, rx } = marker.geom;
+        const { pick } = marker;
+        const whole = pick.x === x && pick.y === y && pick.w === w && pick.h === h;
         return (
-          `<rect class="bv-footprint" x="${x}" y="${y}" width="${w}" height="${h}" ` +
-          `rx="${rx === undefined ? 1.5 : rx}"></rect>`
+          `<rect class="bv-footprint${whole ? "" : " is-drawn-only"}" x="${x}" y="${y}" width="${w}" height="${h}" ` +
+          `rx="${rx === undefined ? 1.5 : rx}"></rect>` +
+          (whole
+            ? ""
+            : `<rect class="bv-pick" x="${pick.x}" y="${pick.y}" width="${pick.w}" height="${pick.h}"></rect>`)
         );
       }
       const shape = marker.shape;
@@ -995,11 +1029,13 @@
     KIND_SAID,
     FACES,
     GEOMETRY,
+    PICKED_BELOW,
     SURFACE_DETAILS,
     ADDITION_GROUPS,
     DOME_PIECE_PARTS,
     markClass,
     placementFor,
+    pickRect,
     mountDrawing,
     mountPanel,
   });
