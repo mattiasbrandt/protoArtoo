@@ -5056,7 +5056,10 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: 0;
 }
 
-.seq-section-empty {
+/* A list that has not answered yet holds its place with the waiting dots,
+   spaced like the line that says it is empty. */
+.seq-section-empty,
+.seq-section-waiting {
   margin-bottom: var(--space-lg);
 }
 
