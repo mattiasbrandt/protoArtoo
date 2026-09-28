@@ -240,7 +240,7 @@
     if (lastStatus) renderComponentStatus(lastStatus);
   };
 
-  // What one row of the Components card says. protoR2link and the sound link
+  // What one row of the Readouts card says. protoR2link and the sound link
   // are the health-signal model's word, the same one the Health card, the
   // Status Plate, Maintenance and Sound show (data/health_signals.js, #422),
   // and carry no line of their own beneath it: the firmware's detail there
@@ -953,7 +953,7 @@
     renderLogLevelPill(level);
   };
 
-  // The Outputs' names for the Components card: the servo table alone, read
+  // The Outputs' names for the Readouts card: the servo table alone, read
   // through data/outputs.js (#415).
   const loadOutputNames = async ({ handle = null } = {}) => {
     adoptOutputLabels(await window.PAOutputs.refresh({ handle: handle ?? window.PAApi }));
