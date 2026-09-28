@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 9c9e8bef09fc69bc41f0965750417882099903ad2b965ab7eb53860dd0b4304b
+// Source digest: sha256 7712b0c016cf25be6161a9586f0df734004d10c43b23bf1dcdaf3859f5a780f5
 //
 // The Droid Parts Catalog's id vocabulary, and only that. A Part is
 // identity; an Output Address is only wiring, so there is no parts table
