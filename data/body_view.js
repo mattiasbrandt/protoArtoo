@@ -416,14 +416,18 @@
         console.error(`[body-view] ${part.id} is placed on ${faces.join(" and ")}; drawn on ${faces[0]} only`);
       }
       const face = faces[0];
+      const geom = GEOMETRY[face][part.id];
+      const pick = pickRect(face, part.id);
       markers.push({
         id: part.id,
         face,
         half: "body",
         parts: [part.id],
         label: part.name,
-        geom: GEOMETRY[face][part.id],
-        pick: pickRect(face, part.id),
+        geom,
+        pick,
+        // Picked through less than its footprint: drawn apart (mountDrawing).
+        split: pick.x !== geom.x || pick.y !== geom.y || pick.w !== geom.w || pick.h !== geom.h,
       });
     });
 
@@ -506,23 +510,23 @@
     // anywhere -- a document may hold more than one picture, and SVG ids must
     // be unique per document; identity rides on data-marker.
     //
-    // A Part picked through less than its footprint (PICKED_BELOW) draws that
-    // footprint without taking the pointer, and adds an unpainted pick box
-    // after it. The box is never seen and carries no state, so the one-shape
-    // rule above still holds for everything a builder sees.
+    // A Part picked through less than its footprint (PICKED_BELOW) is split in
+    // two. Its footprint is drawn in a group of its own that takes no pointer
+    // and wears the Part's state (update() and paintSelection() paint both),
+    // and the Part's own group holds only an unpainted pick box. It has to be
+    // two groups, not one: a pointer, a test and a builder all aim at the
+    // middle of the group, and an arm's whole footprint shares its middle with
+    // the door it sits behind. Everything a builder sees is still one shape.
+    const footprintRect = ({ x, y, w, h, rx }) =>
+      `<rect class="bv-footprint" x="${x}" y="${y}" width="${w}" height="${h}" ` +
+      `rx="${rx === undefined ? 1.5 : rx}"></rect>`;
+
     const footprintHtml = (marker) => {
-      if (marker.geom) {
-        const { x, y, w, h, rx } = marker.geom;
-        const { pick } = marker;
-        const whole = pick.x === x && pick.y === y && pick.w === w && pick.h === h;
-        return (
-          `<rect class="bv-footprint${whole ? "" : " is-drawn-only"}" x="${x}" y="${y}" width="${w}" height="${h}" ` +
-          `rx="${rx === undefined ? 1.5 : rx}"></rect>` +
-          (whole
-            ? ""
-            : `<rect class="bv-pick" x="${pick.x}" y="${pick.y}" width="${pick.w}" height="${pick.h}"></rect>`)
-        );
+      if (marker.split) {
+        const { x, y, w, h } = marker.pick;
+        return `<rect class="bv-pick" x="${x}" y="${y}" width="${w}" height="${h}"></rect>`;
       }
+      if (marker.geom) return footprintRect(marker.geom);
       const shape = marker.shape;
       if (shape.tag === "path") return `<path class="bv-footprint" d="${esc(shape.d)}"></path>`;
       if (shape.tag === "circle") {
@@ -538,6 +542,11 @@
     // <title> first: a browser picks up an SVG hover tooltip more reliably as
     // the element's first child than its last.
     const markerHtml = (marker) =>
+      (marker.split
+        ? `<g class="bv-part bv-drawn" data-drawn-for="${esc(marker.id)}" aria-hidden="true">` +
+          footprintRect(marker.geom) +
+          `</g>`
+        : "") +
       `<g class="bv-part" data-marker="${esc(marker.id)}" role="button" tabindex="0" ` +
       `aria-pressed="false" aria-label="${esc(marker.label)}">` +
       `<title>${esc(marker.label)}</title>` +
@@ -654,13 +663,28 @@
       node,
       detail: SURFACE_DETAILS[node.dataset.decor],
     }));
+    const drawnFor = new Map(all(host, "[data-drawn-for]").map((node) => [node.dataset.drawnFor, node]));
     const nodes = new Map();
     host.querySelectorAll("[data-marker]").forEach((cell) => {
+      const drawn = drawnFor.get(cell.dataset.marker) || null;
       nodes.set(cell.dataset.marker, {
         cell,
+        // Every node that wears this Part's state: its own group, and the
+        // footprint drawn apart from it when it is split.
+        painted: drawn ? [cell, drawn] : [cell],
         title: cell.querySelector("title"),
         marker: byMarker.get(cell.dataset.marker),
       });
+      if (drawn) {
+        // The drawn footprint takes no pointer, so :hover and :focus-visible
+        // never reach it; it is lit while its pick box is pointed at or has
+        // the focus, which is what those two draw on every other Part.
+        const lit = (on) => () => drawn.classList.toggle("is-lit", on);
+        cell.addEventListener("pointerenter", lit(true));
+        cell.addEventListener("pointerleave", lit(false));
+        cell.addEventListener("focus", lit(true));
+        cell.addEventListener("blur", lit(false));
+      }
     });
     const rows = new Map();
     list.querySelectorAll("[data-list-marker]").forEach((row) => {
@@ -679,7 +703,7 @@
     const paintSelection = (markerId, on) => {
       const node = nodes.get(markerId);
       if (node) {
-        node.cell.classList.toggle("is-selected", on);
+        node.painted.forEach((each) => each.classList.toggle("is-selected", on));
         node.cell.setAttribute("aria-pressed", on ? "true" : "false");
       }
       const entry = rows.get(markerId);
@@ -784,7 +808,7 @@
       nodes.forEach((node, markerId) => {
         const marker = node.marker;
         const shown = shownIds.has(markerId);
-        node.cell.classList.toggle("is-absent", !shown);
+        node.painted.forEach((each) => each.classList.toggle("is-absent", !shown));
         const mark = marks[markerId] || {};
         if (mark.mark !== undefined && MARK_TOKENS.indexOf(mark.mark) === -1) {
           // Never swallowed: a caller handing this a mark the renderer does not
@@ -797,7 +821,9 @@
         // A holoprojector has no state to draw: it never opens, and a Closed
         // would promise that it could.
         const cls = marker.panTilt && isFitted ? null : markClass(mark, isFitted);
-        STATE_CLASSES.forEach((each) => node.cell.classList.toggle(`is-${each}`, each === cls));
+        node.painted.forEach((each) =>
+          STATE_CLASSES.forEach((state) => each.classList.toggle(`is-${state}`, state === cls))
+        );
         const word = cls === null ? "" : cls === "unknown" ? mark.said || "" : LEGEND_TEXT[cls];
         const describe = word ? `${marker.label} — ${word}` : marker.label;
         node.title.textContent = describe;

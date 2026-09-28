@@ -7613,8 +7613,9 @@ body[data-page="wiring"] .card > * + * {
 }
 
 /* An arm shaft is drawn whole but picked only through its .bv-pick box, so
-   the door it sits behind keeps its centre (data/body_view.js PICKED_BELOW). */
-.bv-footprint.is-drawn-only {
+   the door it sits behind keeps its centre (data/body_view.js PICKED_BELOW).
+   The drawn shaft is lit by script while its pick box is hovered or focused. */
+.bv-drawn .bv-footprint {
   pointer-events: none;
 }
 
@@ -7631,7 +7632,8 @@ body[data-page="wiring"] .card > * + * {
 }
 
 .bv-part:hover .bv-footprint,
-.bv-part:focus-visible .bv-footprint {
+.bv-part:focus-visible .bv-footprint,
+.bv-part.is-lit .bv-footprint {
   stroke: var(--text);
   stroke-width: 1.5;
 }
@@ -7657,7 +7659,9 @@ body[data-page="wiring"] .card > * + * {
 .bv-part.is-unfitted:not(.is-selected):hover .bv-footprint,
 .bv-part.is-unfitted:not(.is-selected):focus-visible .bv-footprint,
 .bv-part.is-limp:not(.is-selected):hover .bv-footprint,
-.bv-part.is-limp:not(.is-selected):focus-visible .bv-footprint {
+.bv-part.is-limp:not(.is-selected):focus-visible .bv-footprint,
+.bv-part.is-unfitted.is-lit:not(.is-selected) .bv-footprint,
+.bv-part.is-limp.is-lit:not(.is-selected) .bv-footprint {
   stroke: var(--text-dim);
   stroke-width: 1.5;
   opacity: 0.85;
