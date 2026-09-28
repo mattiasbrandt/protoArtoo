@@ -174,7 +174,7 @@
     const undrivenWhy = (output) => {
       if (output.light) return `${output.name} carries a light, not a servo.`;
       if (!output.wired) return `${output.name} is not wired. Mark it on Wiring.`;
-      return `Restart the droid to drive ${output.name}.`;
+      return `Restart the droid to use ${output.name}.`;
     };
 
     // Whether a marker may be opened or closed right now, and when it may not,
@@ -220,7 +220,7 @@
       } else if (!isFitted) {
         why = "Not on your droid. Add it to your build first.";
       } else if (!answered() && !marker.target) {
-        why = "Waiting for the droid to say what drives it.";
+        why = "Waiting for the droid to say which output it is on.";
       } else if (estopRefusal(estop)) {
         why = estopRefusal(estop);
       } else if (!output && !marker.target) {
@@ -232,7 +232,7 @@
       } else if (output && !output.calibrated) {
         why = "Ends not measured yet. Calibrate its output on Servos.";
       } else if (output && !hasServoWord(output)) {
-        why = "Its output has no name this page can send to. Drive it from its row on Servos.";
+        why = "Its output has no name this page can send to. Move it from its row on Servos.";
       }
 
       return {

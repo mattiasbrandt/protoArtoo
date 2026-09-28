@@ -108,7 +108,7 @@ test("a firmware that reports no position is not shown as an Output with no puls
 
   assert.equal(env.text("ledc:3", "outputs-us"), "Unknown");
   assert.equal(env.tier("switched-off"), "Wired but switched off — 0 outputs");
-  assert.equal(env.tier("driving"), "Driving parts — 1 output");
+  assert.equal(env.tier("driving"), "Moving a part — 1 output");
 });
 
 // How an Output moves is set on its row (ADR 0052, #414), and an Output nobody

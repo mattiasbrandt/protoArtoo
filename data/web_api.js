@@ -362,7 +362,7 @@
   // An act's field names an Output by the address the page sent, never by a
   // word of the droid's (R16):
   //   subject - the refused value IS an Output, and the Output is what the
-  //            sentence is about: "ARM3 already drives as many parts as it can"
+  //            sentence is about: "ARM3 already has as many parts as it can take"
   //   on     - the field whose sent value is the Output this one is about:
   //            "GPIO 49's captured width must be 500 to 2500 µs"
   const MS = " ms";
@@ -478,11 +478,11 @@
     // capture an end, reverse an Output.
     movePart: { word: "this part", refused: "is not one this droid models" },
     movePartFrom: {
-      word: "the output it was on", subject: true, clash: "no longer drives it", refused: OFF_THE_DROID,
+      word: "the output it was on", subject: true, clash: "no longer has that part", refused: OFF_THE_DROID,
     },
     movePartTo: {
       word: "the output it goes to", subject: true,
-      clash: "already drives as many parts as it can", refused: OFF_THE_DROID,
+      clash: "already has as many parts as it can take", refused: OFF_THE_DROID,
     },
     captureOutput: { word: "this output", subject: true, refused: OFF_THE_DROID },
     captureEnd: { word: "end to set", on: "captureOutput" },

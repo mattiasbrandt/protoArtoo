@@ -607,11 +607,11 @@ Queues servo command.
 - `400` `{"ok":false,"error":"A nudge moves one output. Use ARM1, ARM2, ARM3, ARM4, ARM5"}` (the running board's words; the same sentence names `hold` and `travel`)
 - `400` missing/invalid `positionUs`, with `field`, `reason` and `accepts` (`500..2500`) as in "Refusals from a settings write"
 - `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
-- `409` the Output is not driven since the droid started, whatever the action
+- `409` the droid has not used the Output since it started, whatever the action
   (pulses off included; for `both`, either of the two). The wired ticks are read
   once at start (ADR 0027), so an Output ticked since has nothing behind it until
-  a restart. The sentence says what would drive it:
-  `{"ok":false,"error":"Restart the droid to drive ARM2."}` when it is ticked now,
+  a restart. The sentence says what would let it be used:
+  `{"ok":false,"error":"Restart the droid to use ARM2."}` when it is ticked now,
   `"ARM2 is not wired. Mark it on Wiring."` when it is not, and
   `"ARM3 carries a light, not a servo."` when its wire carries a light.
   `GET /api/servo/outputs` `driven` says the same thing ahead of time. The
@@ -1741,8 +1741,8 @@ Updates supported config fields and persists to NVS.
   `movePartFrom` is the Output the Part is on **now** and `movePartTo` the one
   it is going to, each an Output Address exactly as `GET /api/servo/outputs`
   spells it (`ledc:3`) or `none`. A Part is on at most one Output, so a move
-  takes it off the one it was on; an Output may drive several Parts, so the
-  destination keeps whatever it already drives. Naming the origin is required
+  takes it off the one it was on; an Output may move several Parts, so the
+  destination keeps the Parts already on it. Naming the origin is required
   on purpose: a surface can only take a Part off an Output it has read the Part
   on, which is the moment it must tell the builder so before sending (#347). A
   move that changes nothing — the Part is already there — succeeds. A shape
@@ -1782,7 +1782,7 @@ Updates supported config fields and persists to NVS.
 - `409` when a Part move cannot land on the table as it stands, with `field`
   and `reason` beside `error` as in "Refusals from a settings write": the Part
   is not on `movePartFrom` (`field` `movePartFrom`, `reason` `conflict`), the
-  destination already drives as many Parts as it can (`movePartTo`,
+  destination already has as many Parts as it can take (`movePartTo`,
   `conflict`), no Output is addressed at `movePartTo` (`movePartTo`,
   `out-of-range`), or the Part is not one this build models (`movePart`,
   `out-of-range`). **Nothing in the request was applied**, including any other

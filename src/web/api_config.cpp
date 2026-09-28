@@ -623,7 +623,7 @@ bool refusePartMove(ServoPartMoveOutcome outcome, ConfigCommitOutcome* commit) {
             commit->refusalReason = ApplyRefusalReason::Conflict;
             return true;
         case SERVO_PART_OUTPUT_FULL:
-            commit->refusal = "that Output already drives as many Parts as it can - move one off it "
+            commit->refusal = "that Output already has as many Parts as it can take - move one off it "
                               "first";
             commit->refusalField = "movePartTo";
             commit->refusalReason = ApplyRefusalReason::Conflict;
