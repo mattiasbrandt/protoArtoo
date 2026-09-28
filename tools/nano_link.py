@@ -20,9 +20,23 @@
 # inherits [env:artoo_esp32]'s extra_scripts through `extends`, and linking the
 # ESP32-P4 image against nano while its libs were built for full newlib would
 # be a silent change to the other board.
+#
+# The nano link also needs the ROM's memset/memcpy/memmove/memcmp, measured on
+# the #355 bench (2026-09-28): the #430 image panicked on every boot with
+# "Cache disabled but cached memory region accessed", in esp_flash_read_chip_id
+# -> memset. sections.ld places those four in IRAM only from an archive named
+# *libc.a; with nano they come from libc_nano.a, match nothing, and land in
+# flash, which the flash driver calls with the cache off. pioarduino's
+# flags/ld_scripts omits esp32.rom.libc-funcs.ld, which ESP-IDF itself links
+# on an ESP32 without CONFIG_SPIRAM_CACHE_WORKAROUND
+# (framework-espidf/components/esp_rom/CMakeLists.txt, "Regular app build"),
+# and this envelope has no SPIRAM. The script binds the ROM's pure string and
+# memory functions only, no printf, so it does not undo nano. Appended once,
+# for the same reason as the specs flag.
 Import("env")  # noqa: F821 - provided by SCons
 
 NANO_KCONFIG = "CONFIG_LIBC_NEWLIB_NANO_FORMAT=y"
+ROM_LIBC_SCRIPT = "esp32.rom.libc-funcs.ld"
 
 
 def _sdkconfig_wants_nano() -> bool:
@@ -34,3 +48,5 @@ if _sdkconfig_wants_nano():
     flags = " ".join(str(f) for f in env.get("LINKFLAGS", []))  # noqa: F821
     if "nano.specs" not in flags:
         env.Append(LINKFLAGS=["--specs=nano.specs"])  # noqa: F821
+    if ROM_LIBC_SCRIPT not in flags:
+        env.Append(LINKFLAGS=["-T", ROM_LIBC_SCRIPT])  # noqa: F821
