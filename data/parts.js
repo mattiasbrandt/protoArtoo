@@ -1,183 +1,187 @@
 // =============================================================================
 // data/parts.js
 //
-// Parts (ADR 0050, #347, #362): every Part on the droid, grouped the way a
-// builder thinks about them, and the Output that drives each one - the
-// part-first projection of the one mapping GET /api/servo/outputs answers -
-// with the droid picture at its head. The output-first projection, *centre
-// all*, Find by Moving and the calibration dial live on Servos (CONTEXT.md
-// "Parts", "Servos"; operator, 2026-09-19 on #412), which reads the same answer
-// and moves a Part through the same request (data/parts_mapping.js), so the two
-// ends cannot disagree.
+// Parts (ADR 0050, #347, #362): the droid's parts - the droid picture at the
+// head of the surface, and the Parts no Output claims under it. Which Output a
+// Part is on is chosen on Wiring, in the part-first picker (data/parts_mapping.js
+// picker()), and on Servos from the Output's end (CONTEXT.md "Servos";
+// operator, 2026-09-28 on #411: the mapping "is weird to have in a page called
+// 'parts'"). Every act here that would put a Part on an Output routes there
+// instead of carrying a picker of its own (PAParts.routeToOutput()), so there
+// is one picker, one move question and one request.
 //
-// Three rules shape this file.
+// No row is ever hidden. The Unused list is every Part this image could move
+// that no Output claims, and the Parts it could never move are counted beside
+// it rather than dropped (#296).
 //
-// No row is ever hidden. A fresh droid shows every catalog Part reading
-// "- not wired -", which is the honest state of a build in progress, and hiding
-// a row is how an operator loses an output (#296). The groups are disjoint and
-// together cover the catalog: a Part no group names lands in a last group
-// rather than off the page.
-//
-// The table is built once and repainted in place. A repaint writes
-// textContent, value, disabled and classList on nodes that already exist, and
-// leaves the control the builder is holding alone until they let go of it
-// (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-table.js:171-173).
-//
-// A move is announced before it happens (#347): data/parts_mapping.js holds the
-// question and the one request both surfaces move a Part through. What each
-// Output is, and which Part is on it, is data/outputs.js's answer (#415).
+// What each Output is, and which Part is on it, is data/outputs.js's answer
+// (#415), and which Parts no Output claims is data/parts_mapping.js's
+// (unclaimed()), in the one place that rule lives.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
-  const kinds = window.DroidPartKind;
   const P = window.PAParts;
   const OUTPUTS = window.PAOutputs;
 
-  const {
-    NOT_WIRED,
-    NO_OUTPUT,
-    groupParts,
-    partById,
-    partLabel,
-    listParts,
-    optionText,
-  } = P;
+  const { partById, partLabel } = P;
 
-  // The Output a Part is on, as the droid last answered.
-  const outputOf = (partId) => OUTPUTS.forPart(partId);
   // Whether the droid has answered with its Outputs yet.
   const answered = () => OUTPUTS.known().table;
 
-  const groupHeading = (group) => {
-    const [one, many] = group.unit || ["part", "parts"];
-    const count = group.parts.length;
-    return `${group.label} — ${count} ${count === 1 ? one : many}`;
-  };
-
-  const tableRegion = document.getElementById("parts-table");
-  const summary = document.getElementById("parts-summary");
+  const unusedRegion = document.getElementById("parts-unused");
+  const unusedSummary = document.getElementById("parts-unused-summary");
   const feedback = document.getElementById("parts-feedback");
-  const dialog = document.getElementById("parts-move-dialog");
-  if (!tableRegion || !summary || !dialog) return;
+  if (!unusedRegion || !unusedSummary) return;
 
   if (!partById.size) {
-    // A table with no rows reads as a droid with no parts. Say what broke.
-    summary.textContent = "The parts list did not load, so there is nothing to show. Reload the page to try again.";
+    // A list with no rows reads as a droid with every part on an output. Say
+    // what broke.
+    unusedSummary.textContent = "The parts list did not load, so there is nothing to show. Reload the page to try again.";
     console.error("[parts] window.DroidParts is missing; /droid_parts.js did not load");
     return;
   }
 
   const esc = (value) => window.PAUtils.escapeHtml(String(value));
+  const escAttr = (value) => window.PAUtils.escapeAttr?.(value) ?? esc(value);
   const showFeedback = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
+  const plural = (count, [one, many]) => `${count} ${count === 1 ? one : many}`;
 
-  // Until the table answers, the summary says so in the one word for it
+  // The act that puts a Part on an Output, named once: the droid picture's
+  // panel offers it and every Unused row offers it, and both are the same
+  // route (giveItAnOutput() below).
+  const GIVE_IT_AN_OUTPUT = "Give it an output";
+
+  // Until the Outputs answer, the summary says so in the one word for it
   // (data/outputs.js live()), which a slot shows as the waiting dots.
-  summary.classList.add("waiting");
-  summary.textContent = window.PALiveReading.slotText(OUTPUTS.live(null).word);
+  unusedSummary.classList.add("waiting");
+  unusedSummary.textContent = window.PALiveReading.slotText(OUTPUTS.live(null).word);
 
   // ---------------------------------------------------------------------------
-  // Built once
+  // The route to the picker
+  //
+  // A route, not a write: the picker on the Part's own row on Wiring is where
+  // an Output is chosen or taken off. `off` is a Part off the droid that still
+  // has an Output, where the question is whether its wire came off too.
   // ---------------------------------------------------------------------------
-  const rowHtml = (part) => {
-    const kind = kinds ? kinds.treatmentClass(part) : "";
-    const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
-    const light = kinds?.isLight(part) ? `<span class="parts-kind">light</span>` : "";
-    return (
-      `<tr class="parts-row${kind ? ` ${kind}` : ""}" data-part="${esc(part.id)}">` +
-      `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
-      `<span class="parts-gang"></span></th>` +
-      `<td><select class="parts-output" aria-label="${esc(`Output that drives ${part.name}`)}" disabled>` +
-      `<option value="${NO_OUTPUT}">${esc(OUTPUTS.live(null).word)}</option></select></td></tr>`
-    );
+  const giveItAnOutput = (partId, off = false) => {
+    if (!partById.has(partId)) return;
+    P.routeToOutput(partId, { off });
   };
 
-  tableRegion.innerHTML =
-    `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Driven by</th></tr></thead>` +
-    groupParts(catalog.parts)
+  // ---------------------------------------------------------------------------
+  // Unused: the Parts no Output claims
+  //
+  // Moved here from Wiring (operator, 2026-09-28 on #411: "the 'unused'
+  // section there makes more sense to have in the parts page"), with its
+  // Availability Reason on each row so a reader does not re-derive it. Each
+  // row acts rather than pointing: its next move is the route above.
+  // ---------------------------------------------------------------------------
+  // A part's design name, and the three things that field can say. `cadName`
+  // absent is a name nobody has read out of the design files yet; `cadName`
+  // null is a part the design does not carry at all, which is what marks a
+  // Common Addition (data/droid_parts.js). This list bridges the two naming
+  // systems (CONTEXT.md "Part"), so neither case prints as a blank cell a
+  // builder would read as a missing row.
+  const designNameHtml = (part) => {
+    if (typeof part.cadName === "string" && part.cadName !== "") {
+      return `<span class="parts-unused-cad">${esc(part.cadName)}</span>`;
+    }
+    if (part.cadName === null) {
+      return '<span class="parts-unused-dim">a common addition, no design name</span>';
+    }
+    return '<span class="parts-unused-dim">not read out of the design files yet</span>';
+  };
+
+  const whereHtml = (part) => {
+    const position = part.position ? esc(part.position) : "";
+    const bearing = typeof part.bearingDeg === "number" ? `${part.bearingDeg}&deg;` : "";
+    if (position && bearing) return `${position} · ${bearing}`;
+    return position || bearing || '<span class="parts-unused-dim">wherever you wired it</span>';
+  };
+
+  const partNameHtml = (part) => {
+    const shorthand = part.shorthand
+      ? ` <span class="parts-unused-shorthand">${esc(part.shorthand)}</span>`
+      : "";
+    const kind = part.kind ? ` <span class="parts-unused-kind">${esc(part.kind)}</span>` : "";
+    return `${esc(part.name)}${shorthand}${kind}`;
+  };
+
+  // A part, its design name, where it sits on the droid, and the act. No
+  // Output column - every row in it has none.
+  const unusedTableHtml = (parts) =>
+    '<table class="parts-unused-table"><thead><tr>' +
+    '<th scope="col">Part</th><th scope="col">Design name</th><th scope="col">Where</th><th scope="col"></th>' +
+    "</tr></thead><tbody>" +
+    parts
       .map(
-        (group) =>
-          `<tbody data-group="${group.id}"><tr class="parts-group"><th colspan="2" scope="colgroup">` +
-          `${esc(groupHeading(group))}</th></tr>${group.parts.map(rowHtml).join("")}</tbody>`
+        (part) =>
+          `<tr class="parts-unused-row" data-tier="${P.UNCLAIMED}" data-part="${escAttr(part.id)}">` +
+          `<th scope="row">${partNameHtml(part)}</th>` +
+          `<td>${designNameHtml(part)}</td>` +
+          `<td>${whereHtml(part)}</td>` +
+          `<td class="parts-unused-act"><button class="btn btn-sm link-btn" type="button" data-wire="${escAttr(part.id)}" ` +
+          `aria-label="${escAttr(`${GIVE_IT_AN_OUTPUT}: ${part.name}`)}">${GIVE_IT_AN_OUTPUT}</button></td></tr>`
       )
       .join("") +
-    `</table>`;
+    "</tbody></table>";
 
-  const rows = new Map();
-  tableRegion.querySelectorAll("[data-part]").forEach((node) => {
-    rows.set(node.dataset.part, {
-      node,
-      select: node.querySelector("select"),
-      gang: node.querySelector(".parts-gang"),
-      addresses: null,
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Repainted in place
-  // ---------------------------------------------------------------------------
-  // The Live Reading's three-valued estop (data/live_reading.js): "latched",
-  // "clear", or "waiting" until the droid has said and whenever contact
-  // with it is lost.
-  let estop = "waiting";
-
-  const mover = P.mover({
-    dialog,
-    say: showFeedback,
-    reload: () => loadOutputs(),
-    repaint: () => paint(),
-    onSending: (partId) => {
-      const row = rows.get(partId);
-      if (row) row.select.disabled = true;
-    },
-  });
-
-  // The control the builder has hold of: the one focused, or the one whose move
-  // is being asked about or is on its way. Its value and its options are theirs
-  // until they let go.
-  const held = (id, select) => id === mover.pending() || document.activeElement === select;
-
-  const paintRow = (id, row, outputs, addresses) => {
-    const output = outputOf(id);
-    row.node.classList.toggle("is-wired", output !== null);
-    const gang = output ? output.parts.filter((other) => other !== id) : [];
-    row.gang.textContent = gang.length ? ` moves with ${listParts(gang)}` : "";
-    if (held(id, row.select)) return;
-    // The only rebuild, and only of a control nobody is holding: the set of
-    // Outputs is fixed from boot, so this runs once per page in practice.
-    if (row.addresses !== addresses) {
-      row.select.innerHTML =
-        `<option value="${NO_OUTPUT}">${NOT_WIRED}</option>` +
-        outputs.map((each) => `<option value="${esc(each.address)}"></option>`).join("");
-      row.addresses = addresses;
-    }
-    const options = row.select.querySelectorAll("option");
-    outputs.forEach((each, index) => {
-      const text = optionText(each);
-      if (options[index + 1].textContent !== text) options[index + 1].textContent = text;
-    });
-    row.select.value = output ? output.address : NO_OUTPUT;
-    row.select.disabled = false;
+  // The bound, said out loud: the Parts this image never moves are named and
+  // counted rather than filtered away in silence. It carries no act, because
+  // there is nothing for a builder to do about it - a settled no (CONTEXT.md
+  // "Availability Family").
+  const boundHtml = () => {
+    const outside = catalog.parts.filter((part) => !P.thisImageMoves(part));
+    if (outside.length === 0) return "";
+    const domeLink = outside.filter((part) => part.control === "dome-link").length;
+    const noPath = outside.length - domeLink;
+    const clauses = [];
+    if (domeLink > 0) clauses.push(`${plural(domeLink, ["part", "parts"])} the Dome Controller moves over the dome link`);
+    if (noPath > 0) clauses.push(`${plural(noPath, ["part", "parts"])} nothing on this droid moves at all`);
+    return `<p class="hint parts-unused-bound">Not in this list: ${clauses.join(" and ")}. This image sends them no signal.</p>`;
   };
+
+  // What the list means, and - when any row carries one - what a design name
+  // is. A line for a column the list does not show is never written.
+  const footnoteHtml = (parts) => {
+    if (parts.length === 0) return "";
+    const lines = ["<li><b>Unused</b>: no output claims the part. Moves you author for it wait until one does.</li>"];
+    if (parts.some((part) => typeof part.cadName === "string" && part.cadName !== "")) {
+      lines.push(
+        "<li><b>Design name</b> is the part's name in the files you printed it from, the " +
+          "same one your slicer shows. Label the wire with it.</li>"
+      );
+    }
+    return `<ul class="parts-unused-footnote">${lines.join("")}</ul>`;
+  };
+
+  // Rebuilt only when the list itself changes. The Outputs are read once a
+  // second here (the bench feed below), and a list rebuilt on every read
+  // would take the act out from under a builder's pointer and focus.
+  let unusedKey = null;
+  const paintUnused = () => {
+    const unused = P.unclaimed(catalog.parts, OUTPUTS.list());
+    unusedSummary.textContent = plural(unused.length, ["part", "parts"]);
+    const key = unused.map((part) => part.id).join(",");
+    if (key === unusedKey) return;
+    unusedKey = key;
+    unusedRegion.innerHTML =
+      (unused.length ? unusedTableHtml(unused) : '<p class="hint">Every part is on an output.</p>') +
+      boundHtml() +
+      footnoteHtml(unused);
+  };
+
+  unusedRegion.addEventListener("click", (event) => {
+    const id = event.target?.closest?.("[data-wire]")?.dataset.wire;
+    if (id) giveItAnOutput(id);
+  });
 
   const paint = () => {
     if (!answered()) return;
-    const outputs = OUTPUTS.list();
-    const addresses = outputs.map((output) => output.address).join(",");
-    rows.forEach((row, id) => paintRow(id, row, outputs, addresses));
-
-    const wired = catalog.parts.filter((part) => outputOf(part.id) !== null).length;
-    const idle = outputs.filter((output) => output.parts.length === 0).length;
-    let text = `${wired} of ${catalog.parts.length} parts on an output · ${idle} of ${outputs.length} outputs driving nothing`;
-    // A Part the droid drives and this page has no row for would otherwise be
-    // invisible, which is the one thing this table must never be.
-    const unknown = outputs.flatMap((output) => output.parts).filter((id) => !partById.has(id));
-    if (unknown.length) {
-      text += ` · also drives ${unknown.join(", ")}, unknown to this page - upload the matching web UI`;
-    }
-    summary.textContent = text;
+    paintUnused();
     // And the picture at the head of the surface, from the same one answer the
-    // table was just painted from: a body view that read the droid on its own
-    // clock could show a part open while the row below it said closed.
+    // list was just painted from: a body view that read the droid on its own
+    // clock could show a part open while the list below it said otherwise.
     paintBody();
   };
 
@@ -186,11 +190,6 @@
   const loadOutputs = async ({ handle = null } = {}) => {
     await OUTPUTS.refresh({ handle });
   };
-
-  const refresh = () =>
-    loadOutputs().catch((error) => {
-      console.warn("[parts] reading the outputs failed:", error);
-    });
 
   // Every act here is started from a click handler and finishes later, so
   // nothing awaits it; a rejection nobody handles is a control that did nothing
@@ -201,17 +200,10 @@
       showFeedback(`Something went wrong on this page: ${error && error.message ? error.message : error}`, "error");
     });
 
-  tableRegion.addEventListener("change", (event) => {
-    const select = event.target;
-    const id = select?.closest?.("[data-part]")?.dataset.part;
-    if (!id || !answered()) return;
-    mover.request(P.moveFor(OUTPUTS.list(), id, select.value), select);
-  });
-
-  // A control that was held catches up with whatever arrived while it was.
-  tableRegion.addEventListener("focusout", () => paint());
-
-  // The estop gates the picture's Open it; the answer is the Live Reading's.
+  // The Live Reading's three-valued estop (data/live_reading.js): "latched",
+  // "clear", or "waiting" until the droid has said and whenever contact
+  // with it is lost. It gates the picture's Open it.
+  let estop = "waiting";
   window.PALiveReading.subscribe((reading) => {
     estop = reading.estop;
   });
@@ -220,12 +212,11 @@
   // The droid picture (#352, #372, ADR 0063 as amended 2026-09-19)
   //
   // A picture of the droid at the head of this surface, showing many parts at
-  // once - the one thing the two tables below cannot do, however honest each
-  // row is. One card, three faces: Front, Rear and Dome (Top).
+  // once - the one thing a list cannot do, however honest each row is. One card, three faces: Front, Rear and Dome (Top).
   // data/body_view.js draws it and this file is its caller, and the seam
   // between the two is the whole design: the renderer reports "this marker was
   // picked" and knows nothing else, while everything about what a pick MEANS
-  // lives here, where the Output rows are.
+  // lives here, with the Outputs the droid answered.
   //
   // THE VIEW NEVER WRITES. Every request below is made from this file, by an
   // act the builder pressed by name in the panel, or by an Add in the Parts
@@ -256,14 +247,15 @@
   //                       and routes to its picker rather than unmapping it.
   //                       A Common Addition comes off as the group the Parts
   //                       list fits it as: an arm takes its claw or tool.
-  //   Give it an output   routes to this Part's row in the part-first table
-  //                       and puts the cursor in its picker. Deliberately NOT a
-  //                       third picker of its own: the mapping has two
-  //                       projections of one table on this page and a third
-  //                       would be a surface that can disagree with them
-  //                       (CONTEXT.md "Parts"). Offered where nothing is mapped
-  //                       yet, and as Change its output on a Part off the droid
-  //                       that still has an Output mapped.
+  //   Give it an output   routes to this Part's row in the part-first picker
+  //                       on Wiring and puts the cursor in it
+  //                       (giveItAnOutput()). Deliberately NOT a picker of its
+  //                       own: the mapping has two projections of one table,
+  //                       Wiring's and Servos', and a third would be a surface
+  //                       that can disagree with them (operator, 2026-09-28 on
+  //                       #411). Offered where nothing is mapped yet, and as
+  //                       Change its output on a Part off the droid that still
+  //                       has an Output mapped.
   //
   // No Non-RC Control consent is asked for any of them - that flag has never
   // reached POST /api/servo (ADR 0064).
@@ -275,7 +267,7 @@
   const ACTS = [
     { id: "toggle", label: "Open it" },
     { id: "fit", label: "Drop from build" },
-    { id: "wire", label: "Give it an output" },
+    { id: "wire", label: GIVE_IT_AN_OUTPUT },
   ];
 
   let drawing = null;
@@ -327,8 +319,8 @@
         },
         wire: {
           shown: offButMapped || (!marker.panTilt && !marker.target && unwired.length > 0),
-          label: offButMapped ? "Change its output" : "Give it an output",
-          enabled: parts.some((id) => rows.has(id)),
+          label: offButMapped ? "Change its output" : GIVE_IT_AN_OUTPUT,
+          enabled: parts.some((id) => partById.has(id)),
         },
       },
     };
@@ -422,7 +414,7 @@
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
         showFeedback(
           mapped.length
-            ? `${off} Still mapped to ${mapped.join(", ")}. Change its output below if the wire came off too.`
+            ? `${off} Still mapped to ${mapped.join(", ")}. Change its output on Wiring if the wire came off too.`
             : off,
           mapped.length ? "warning" : "success"
         );
@@ -453,19 +445,7 @@
       return;
     }
     if (actId === "wire") {
-      // A route, not a write: the picker on this Part's own row is where an
-      // Output is chosen or taken off, and it is the same control either
-      // table uses.
-      const target = pick.offButMapped ? pick.wiredPart : pick.unwired[0] || pick.marker.parts[0];
-      const row = rows.get(target);
-      if (!row) return;
-      row.node.scrollIntoView?.({ block: "center" });
-      row.select.focus();
-      showFeedback(
-        pick.offButMapped
-          ? `Pick ${NOT_WIRED} in ${partLabel(target)}'s row below if the wire came off too.`
-          : `Choose the output that moves ${partLabel(target)} in its row below.`
-      );
+      giveItAnOutput(pick.offButMapped ? pick.wiredPart : pick.unwired[0] || pick.marker.parts[0], pick.offButMapped);
       return;
     }
     if (actId !== "toggle" || !pick.acts.toggle.enabled) return;
@@ -524,15 +504,15 @@
       "/droid_parts.js": "parts list",
       "/droid_part_kind.js": "parts list",
       "/outputs.js": "the outputs",
-      "/parts.js": "parts table",
+      "/parts.js": "the parts",
     });
-    window.PABootstrap.registerSection("parts-outputs", loadOutputs, { label: "what drives each part and output" });
+    window.PABootstrap.registerSection("parts-outputs", loadOutputs, { label: "which part is on each output" });
   } else {
     loadOutputs().catch((error) => console.warn("[parts] outputs unavailable:", error));
   }
 
   // The bench feed (#318): data/outputs.js's follow of the table repaints the
-  // table and the picture - any Part another client or the Console moved, and
+  // Unused list and the picture - any Part another client or the Console moved, and
   // what every part was last told. It is this surface's, so the shell stops it
   // when the operator leaves Parts and starts it on the way back (#360).
   OUTPUTS.follow().start();

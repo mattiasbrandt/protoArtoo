@@ -266,8 +266,11 @@ const boot = async ({
     "/status_stream.js": readData("status_stream.js"),
     "/live_reading.js": readData("live_reading.js"),
     "/droid_parts.js": readData("droid_parts.js"),
+    "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
     "/output_settings.js": readData("output_settings.js"),
+    // The part-first picker the screen mounts under the sheet (#411).
+    "/parts_mapping.js": readData("parts_mapping.js"),
     "/wiring.js": readData("wiring.js"),
     // The picker's lookup and frame, which name and picture the board.
     "/apply_timing.js": readData("apply_timing.js"),
@@ -292,17 +295,14 @@ const boot = async ({
   env.wires = () => document.querySelectorAll(".wd-link");
   env.wire = (key) => env.wires().find((node) => node.dataset.wire === key);
   env.isLive = (key) => env.wire(key).classList.contains("is-live");
-  env.unusedRows = () => document.getElementById("wiring-unused").querySelectorAll(".wiring-row");
   env.diagrams = () => document.querySelectorAll(".wd");
-  env.footnote = () => document.getElementById("wiring-footnote").textContent;
   env.summary = () => document.getElementById("wiring-wires-summary").textContent;
   env.promise = () => document.getElementById("wiring-promise").textContent;
   env.rail = () => document.getElementById("wiring-rail").textContent;
-  env.bound = () => document.querySelector(".wiring-bound")?.textContent ?? "";
   // Everything a builder can read on the mounted surface, chrome included.
   env.surfaceText = () => document.querySelector("[data-surface]").textContent;
   // The shell leaves this surface and comes back to it, which is what the
-  // sheet has to survive: a Part moved on Parts and then read here.
+  // sheet has to survive: a Part moved on Servos and then read here.
   env.leaveAndReturn = async () => {
     windowMock.location.hash = "#home";
     await sleep(60);
@@ -341,11 +341,6 @@ test("switching an output off dashes its wire and keeps it on the sheet", async 
   });
   assert.equal(off.isLive("ledc:0"), false, "a wire nobody marked wired is drawn not wired");
   assert.match(off.wire("ledc:0").textContent, /Upper utility arm/, "and still says what is on its end");
-  assert.equal(
-    off.unusedRows().find((row) => row.dataset.part === "utilUp"),
-    undefined,
-    "a part on an output is not Unused, whether or not the output is wired",
-  );
 });
 
 // Every "no" names the builder's next move, and a wrong destination is the
@@ -385,8 +380,8 @@ test("a wire carrying a light says so, and one carrying a servo says that", asyn
 });
 
 // A latched estop takes the pulse off every output, and that is not a fact
-// about anybody's wiring. The output-first table on Parts reads switched-off
-// off the pulse (data/parts.js), which would draw the whole droid not wired
+// about anybody's wiring. The output-first table on Servos reads switched-off
+// off the pulse (data/servo.js), which would draw the whole droid not wired
 // the moment the estop latches; this sheet reads the Component Toggle instead,
 // so a latched droid reads exactly as it read a moment before.
 test("a latched estop does not rewrite the sheet", async () => {
@@ -424,9 +419,11 @@ test("a latched estop does not rewrite the sheet", async () => {
 
 // The bench copy and the screen copy are "the same document from one
 // generator" (CONTEXT.md "Wiring"): the file a builder saves and prints must
-// carry exactly the tiers, rows and counts the surface is showing. And it is
-// opened at a bench, often with no droid in reach, so it must ask for nothing
-// when it opens - no script, no stylesheet, no image (#366).
+// carry exactly the wires the surface is showing, and none of what writes -
+// the part-first picker mounted under the sheet is the screen's, never the
+// generator's (#411). And it is opened at a bench, often with no droid in
+// reach, so it must ask for nothing when it opens - no script, no stylesheet,
+// no image (#366).
 test("the saved sheet is the sheet on the screen, and loads nothing when it opens", async () => {
   const { MiniDOMParser } = await import("./helpers/mini_dom.js");
   const rows = [
@@ -447,15 +444,16 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
 
   const sheetOf = (root) => ({
     wires: root.querySelectorAll(".wd-link").map((wire) => `${wire.dataset.wire}:${wire.classList.contains("is-live")}`),
-    unused: root.querySelectorAll(".wiring-row").map((row) => row.dataset.part),
+    pickers: root.querySelectorAll("select").length,
   });
   const onScreen = sheetOf(env.document);
   assert.ok(onScreen.wires.some((wire) => wire.endsWith(":true")), "the fixture draws a wired wire");
   assert.ok(onScreen.wires.some((wire) => wire.endsWith(":false")), "and one not wired");
-  assert.ok(onScreen.unused.length > 0, "and Unused parts");
-  // The bench copy is the wires and their power; Unused stays on the screen
-  // only (operator, 2026-09-19 on #411).
-  assert.deepEqual(sheetOf(saved), { ...onScreen, unused: [] });
+  assert.ok(onScreen.pickers > 0, "and the screen carries the part-first picker");
+  // The bench copy is the wires and their power, and it writes nothing
+  // (operator, 2026-09-19 on #411).
+  assert.deepEqual(sheetOf(saved), { ...onScreen, pickers: 0 });
+  assert.doesNotMatch(file, /<(select|button|dialog|form)\b/i, "nothing in the saved file can be pressed");
   assert.equal(saved.querySelectorAll(".wd").length, env.diagrams().length);
 
   assert.doesNotMatch(file, /<(script|style|img|iframe|object)\b/i);

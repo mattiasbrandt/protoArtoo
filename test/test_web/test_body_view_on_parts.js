@@ -7,7 +7,9 @@
 //
 // The renderer's own contract is held by test_body_view.js. What these hold
 // is the thing that only exists once a caller is wired up: that the picture is
-// painted from the SAME answer the two tables are painted from, that a click
+// painted from the SAME answer the Unused list and Servos are painted from,
+// that "Give it an output" and each Unused row reach the one picker on Wiring
+// (#411), that a click
 // sends nothing, that a press sends exactly one command and no width, that the
 // estop holds every move the picture can start, that a holoprojector is never
 // offered one, and that every refusal names the builder's next move.
@@ -186,16 +188,66 @@ test("a holoprojector is offered no Open at all, only its facts", async () => {
   assert.equal(domePosts(env).length, 0);
 });
 
-test("Give it an output routes to the row's own picker and writes nothing", async () => {
+// The one picker is Wiring's (operator, 2026-09-28 on #411). A Part asked
+// for from Parts arrives with the cursor in its own row there, and the route
+// itself asks the droid to change nothing.
+const landsOnPicker = async (env, partId) => {
+  const deadline = Date.now() + 3000;
+  const select = () => env.partsRegion()?.querySelectorAll("[data-part]").find((row) => row.dataset.part === partId)?.querySelector("select");
+  while (env.document.activeElement !== select() || !select()) {
+    if (Date.now() > deadline) break;
+    await sleep(5);
+  }
+  assert.equal(env.window.location.hash, "#wiring", "the route goes to Wiring");
+  assert.ok(select(), `Wiring's picker has a row for ${partId}`);
+  assert.strictEqual(env.document.activeElement, select(), "the cursor is in that Part's own row");
+};
+
+test("Give it an output routes to the Part's row in the picker on Wiring and writes nothing", async () => {
   const env = await bootParts({ outputs: measuredArm1() });
   const before = env.posts.length;
 
   pick(env, "smallDoor");
   pressAct(env, "wire");
+  await landsOnPicker(env, "smallDoor");
 
   assert.equal(env.posts.length, before, "a route is not a write");
-  assert.strictEqual(env.document.activeElement, env.partRow("smallDoor").querySelector("select"));
-  assert.match(env.feedback(), /Choose the output that moves Small long door/);
+  assert.match(env.wiringFeedback(), /Choose the output that moves Small long door/);
+});
+
+// ---------------------------------------------------------------------------
+// Unused: the Parts no Output claims (moved here from Wiring, #411)
+// ---------------------------------------------------------------------------
+
+// Whether an Output is wired is a fact about the droid's wiring, and whether a
+// Part is on one is the mapping's: a Part on an Output nobody has marked wired
+// is still claimed. The Availability Reason rides each row.
+test("a part on an output is not Unused, whether or not the output is wired", async () => {
+  const outputs = withParts({ "ledc:0": ["doorFL"], "ledc:1": ["utilUp"] }, [
+    output("ledc:0", "ARM1", { commandedUs: 1500, targetUs: 1500 }),
+    output("ledc:1", "ARM2", { commandedUs: 1500, targetUs: 1500 }),
+  ]);
+  const env = await bootParts({ outputs, say: { "ledc:1": { wired: false } } });
+  const unused = env.unusedRows().map((row) => row.dataset.part);
+
+  assert.ok(!unused.includes("doorFL"), "a part on a wired output is claimed");
+  assert.ok(!unused.includes("utilUp"), "and so is one on an output not wired");
+  const row = env.unusedRows().find((each) => each.dataset.part === "smallDoor");
+  assert.ok(row, "a part on no output is Unused");
+  assert.equal(row.dataset.tier, "part-not-assigned", "with the reason the droid reports for it");
+});
+
+// Each row acts rather than pointing, and it is the picture's act: the same
+// route, to the same row of the same picker.
+test("an Unused row's act routes to the Part's row in the picker on Wiring and writes nothing", async () => {
+  const env = await bootParts({ outputs: measuredArm1() });
+  const before = env.posts.length;
+
+  env.pressUnused("smallDoor");
+  await landsOnPicker(env, "smallDoor");
+
+  assert.equal(env.posts.length, before, "a route is not a write");
+  assert.match(env.wiringFeedback(), /Choose the output that moves Small long door/);
 });
 
 // What the droid holds as its Droid Build, changed the way a builder elsewhere

@@ -2,9 +2,11 @@
 // test/test_web/helpers/parts_surface.js
 //
 // Boots the shipped Operator Shell with the shipped Parts or Servos surface
-// against a fake droid - Parts carries the part-first table and the droid
-// picture, Servos the output-first table, Find by Moving, the calibration dial
-// and back to centre (CONTEXT.md "Parts", "Servos"; #412) - and adds what a
+// against a fake droid - Parts carries the droid picture and the Unused list,
+// Servos the output-first table, Find by Moving, the calibration dial and back
+// to centre (CONTEXT.md "Parts", "Servos"; #412) - and serves Wiring as well,
+// because Parts' "Give it an output" routes to the part-first picker there
+// (operator, 2026-09-28 on #411). It adds what a
 // Find by Moving run needs the droid to answer: a nudgesDone count
 // on every Output, POST /api/servo, a status stream the test can push an estop
 // onto, and a PAApi.gateControls the shipped one's shape. The droid picture
@@ -390,7 +392,9 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // Every script data/parts.html and data/servo.html declare, because that is
   // what a browser loads: a map that left one out would run these suites
   // against a page the device never serves. #352 added the Droid Build and the
-  // body view to the chain; #412 moved the output-first table to Servos.
+  // body view to the chain; #412 moved the output-first table to Servos; #411
+  // moved the part-first picker to Wiring, whose sheet script mounts it (its
+  // board picture's scripts are left out: the picker does not read them).
   const REAL_SCRIPTS = {
     "/shell.js": readData("shell.js"),
     "/status_stream.js": readData("status_stream.js"),
@@ -408,6 +412,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
     "/apply_timing.js": readData("apply_timing.js"),
     "/output_settings.js": readData("output_settings.js"),
     "/servo.js": readData("servo.js"),
+    "/wiring.js": readData("wiring.js"),
   };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
@@ -422,8 +427,16 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   vm.runInNewContext(part3Src, context, { filename: "page_bootstrap.part3.js" });
   env.window = windowMock;
 
-  env.partsRegion = () => document.getElementById("parts-table");
+  // The part-first picker, on Wiring.
+  env.partsRegion = () => document.getElementById("wiring-parts-table");
   env.partRow = (id) => env.partsRegion().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
+  // Parts' Unused list: its rows, and a press on one row's act.
+  env.unusedRows = () => document.getElementById("parts-unused").querySelectorAll("[data-part]");
+  env.pressUnused = (id) => {
+    const button = env.unusedRows().find((row) => row.dataset.part === id).querySelector("[data-wire]");
+    document.getElementById("parts-unused").fire("click", { target: button });
+  };
+  env.wiringFeedback = () => document.getElementById("wiring-parts-feedback").textContent;
   // Find by moving sits over Servos' rows: one button, which opens the Parts
   // nothing drives as pills, and pressing one of those starts the run.
   env.findTray = () => document.getElementById("outputs-find-tray");
@@ -550,7 +563,7 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   const painted = () =>
     surface === "servo"
       ? env.region() && env.rows().length > 0
-      : env.partsRegion()?.querySelector("select")?.disabled === false;
+      : /^\d+ parts?$/.test(document.getElementById("parts-unused-summary")?.textContent ?? "");
   const deadline = Date.now() + 3000;
   while (!painted()) {
     if (Date.now() > deadline) assert.fail(`the ${surface} surface never mounted and painted its rows`);
@@ -563,7 +576,9 @@ const bootSurface = async (surface, { outputs = freshOutputs(), estop = false, f
   // A browser's <dialog>; mini_dom has none. Only show() is given: a
   // showModal() would make the shell's STOP inert (#359), so a call to it
   // throws here rather than quietly passing.
-  const dialog = document.getElementById(surface === "servo" ? "outputs-move-dialog" : "parts-move-dialog");
+  // Parts has none: its acts route to the one on Wiring.
+  const dialog = surface === "servo" ? document.getElementById("outputs-move-dialog") : null;
+  if (!dialog) return env;
   dialog.open = false;
   dialog.show = () => {
     dialog.open = true;

@@ -1,12 +1,17 @@
 // =============================================================================
 // test/test_web/test_parts_table.js
 //
-// Parts (#347, ADR 0050): the part-first table, run for real. The shipped
+// The part-first table (#347, ADR 0050), run for real. It lived on Parts and
+// moved to Wiring's Outputs section with its move question (operator,
+// 2026-09-28 on #411); these tests moved with it, and the file keeps its name
+// so the history of the table stays in one place. The shipped
 // page_bootstrap.js boots the shipped shell.js, which fetches the shipped
-// parts.html and runs its own chain -- droid_parts.js, droid_part_kind.js and
-// parts.js -- against a fake droid that answers GET /api/servo/outputs and
-// applies a POST /api/config move the way the firmware does. What is asserted
-// is what a builder sees and what the page asked the droid for.
+// wiring.html and runs its chain -- droid_parts.js, droid_part_kind.js,
+// outputs.js, parts_mapping.js and wiring.js, which mounts the picker --
+// against a fake droid that answers GET /api/servo/outputs and applies a POST
+// /api/config move the way the firmware does. What is asserted is what a
+// builder sees and what the page asked the droid for. The last test holds the
+// other half of the move: Parts carries no picker of its own.
 // =============================================================================
 
 import { test } from "node:test";
@@ -62,7 +67,7 @@ const shippedWords = () => {
   return window.PAApi;
 };
 
-const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("droid_parts.js") } = {}) => {
+const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("droid_parts.js") } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -126,6 +131,9 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
         if (path === "/api/identity") return { data: IDENTITY };
         if (path === "/api/status") return { data: { estop: false } };
         if (path === "/api/servo/outputs") return { data: { outputs: structuredClone(env.outputs) } };
+        // Wiring's sheet reads the config with the table; nothing here
+        // switches a Board Lane.
+        if (path === "/api/config") return { data: { components: {} } };
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
         throw new Error(`unexpected request ${path}`);
       },
@@ -146,9 +154,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
       },
       messageFor: words.messageFor,
       // The shipped shape (data/web_api.js): disabled plus aria-disabled, which
-      // is what the shell's ignored-input notice looks for on a press. Every
-      // control on Parts that asks the droid to move something is gated through
-      // it, so a host without it is not the host the page ships against.
+      // is what the shell's ignored-input notice looks for on a press.
       gateControls: (elements, enabled) => {
         elements.forEach((el) => {
           if (!el) return;
@@ -240,7 +246,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
-    "/parts.js": readData("parts.js"),
+    "/wiring.js": readData("wiring.js"),
   };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
@@ -255,7 +261,7 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
   vm.runInNewContext(part3Src, context, { filename: "page_bootstrap.part3.js" });
   env.window = windowMock;
 
-  env.table = () => document.getElementById("parts-table");
+  env.table = () => document.getElementById("wiring-parts-table");
   env.row = (id) => env.table().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
   env.select = (id) => env.row(id)?.querySelector("select");
   env.optionTexts = (id) => env.select(id).querySelectorAll("option").map((option) => option.textContent);
@@ -271,18 +277,18 @@ const bootParts = async ({ outputs = freshOutputs(), catalogSource = readData("d
   };
   env.click = (id) => document.getElementById(id).fire("click", {});
 
-  windowMock.location.hash = "#parts";
+  windowMock.location.hash = "#wiring";
   // Mounted, and painted from the droid's first answer.
   const deadline = Date.now() + 3000;
   while (!(env.table() && env.select("doorFL") && env.select("doorFL").disabled === false)) {
-    if (Date.now() > deadline) assert.fail("the Parts surface never mounted and painted");
+    if (Date.now() > deadline) assert.fail("the picker on Wiring never mounted and painted");
     await sleep(5);
   }
 
   // A browser's <dialog>; mini_dom has none. Only show() is given: a
   // showModal() would make the shell's STOP inert (#359), so a call to it
   // throws here rather than quietly passing.
-  const dialog = document.getElementById("parts-move-dialog");
+  const dialog = document.getElementById("wiring-move-dialog");
   dialog.open = false;
   dialog.show = () => {
     dialog.open = true;
@@ -311,34 +317,34 @@ const inertOnPath = (node) => {
 // ---------------------------------------------------------------------------
 
 test("taking a Part off one Output for another is asked first, then sends where it was", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL", "doorFR"], "ledc:3": ["utilUp"] }) });
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL", "doorFR"], "ledc:3": ["utilUp"] }) });
 
   env.pick("doorFL", "ledc:3");
   assert.equal(env.posts.length, 0, "nothing reaches the droid before the builder answers");
   assert.equal(env.dialog.open, true);
-  assert.equal(env.text("parts-move-title"), "Part already wired");
+  assert.equal(env.text("wiring-move-title"), "Part already wired");
   assert.equal(
-    env.text("parts-move-body"),
+    env.text("wiring-move-body"),
     "Left body door is on ARM1. Move it to ARM3 and unwire it from ARM1? " +
-      "ARM1 keeps driving Right body door. Upper utility arm is on ARM3 too — they will move together.",
+      "ARM1 keeps Right body door. Upper utility arm is on ARM3 too — they will move together.",
   );
-  assert.equal(env.text("parts-move-confirm"), "Move it", "the button that agrees is the verb");
+  assert.equal(env.text("wiring-move-confirm"), "Move it", "the button that agrees is the verb");
 
-  env.click("parts-move-confirm");
+  env.click("wiring-move-confirm");
   await sleep(20);
   assert.deepEqual(env.posts, [
     { path: "/api/config", form: { movePart: "doorFL", movePartFrom: "ledc:0", movePartTo: "ledc:3" } },
   ]);
   assert.equal(env.dialog.open, false);
   assert.equal(env.select("doorFL").value, "ledc:3", "the table repaints from what the droid now says");
-  assert.equal(env.select("doorFR").value, "ledc:0", "the Part left behind is still driven");
-  assert.equal(env.text("parts-feedback"), "Left body door is on ARM3.");
+  assert.equal(env.select("doorFR").value, "ledc:0", "the Part left behind is still on its output");
+  assert.equal(env.text("wiring-parts-feedback"), "Left body door is on ARM3.");
 });
 
 test("the move question leaves STOP live and holds only the surface behind it", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
   assert.ok(env.estop, "the shell drew its STOP");
-  assert.ok(env.surface, "Parts is mounted in a .surface");
+  assert.ok(env.surface, "Wiring is mounted in a .surface");
 
   env.pick("doorFL", "ledc:4");
   assert.equal(env.dialog.open, true, "the question is up");
@@ -348,13 +354,13 @@ test("the move question leaves STOP live and holds only the surface behind it", 
   assert.deepEqual(inertOnPath(env.dialog), [], "the question itself can be answered");
   assert.ok(inertOnPath(env.table()).length > 0, "the table behind the question takes no press");
 
-  env.click("parts-move-cancel");
+  env.click("wiring-move-cancel");
   await sleep(20);
   assert.deepEqual(inertOnPath(env.table()), [], "answering gives the surface back");
 });
 
 test("Escape cancels the move question", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
 
   env.pick("doorFL", "ledc:4");
   assert.equal(env.dialog.open, true);
@@ -367,14 +373,14 @@ test("Escape cancels the move question", async () => {
 });
 
 test("cancelling the question sends nothing and puts the control back", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
 
   env.pick("doorFL", "ledc:4");
   assert.equal(
-    env.text("parts-move-body"),
-    "Left body door is on ARM1. Move it to ARM4 and unwire it from ARM1? ARM1 will drive nothing.",
+    env.text("wiring-move-body"),
+    "Left body door is on ARM1. Move it to ARM4 and unwire it from ARM1? ARM1 will have nothing on it.",
   );
-  env.click("parts-move-cancel");
+  env.click("wiring-move-cancel");
   await sleep(20);
   assert.equal(env.posts.length, 0);
   assert.equal(env.dialog.open, false);
@@ -385,7 +391,7 @@ test("a Part renamed in the catalog keeps its id on the row and on the wire", as
   const original = readData("droid_parts.js");
   const renamed = original.replace('"name": "Left body door"', '"name": "Front-left breadpan door"');
   assert.notEqual(renamed, original, "the rename reached the catalog source");
-  const env = await bootParts({ catalogSource: renamed });
+  const env = await bootPicker({ catalogSource: renamed });
 
   assert.equal(env.row("doorFL").querySelector(".parts-name").textContent, "Front-left breadpan door");
   env.pick("doorFL", "ledc:3");
@@ -398,22 +404,37 @@ test("a Part renamed in the catalog keeps its id on the row and on the wire", as
 // the decoy here: the builder reads the refusal worded from its field and
 // reason, naming the Part and the Output the move was about, and none of it.
 test("a move the droid refuses is said in the builder's words and shows the table as it is", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["doorRL"] }) });
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorRL"] }) });
   const sentence = "that Part is not on the Output movePartFrom names - read the outputs again, then move it";
   env.refusal = { error: sentence, field: "movePartFrom", reason: "conflict" };
 
   env.pick("doorRL", "ledc:3");
-  env.click("parts-move-confirm");
+  env.click("wiring-move-confirm");
   await sleep(20);
-  const said = env.text("parts-feedback");
+  const said = env.text("wiring-parts-feedback");
   assert.ok(!said.includes(sentence) && !said.includes("movePartFrom"), `the droid's sentence reached the page: ${said}`);
   assert.match(said, /^Rear-left body door did not move: ARM1 /, "it names the Part and the Output it was on");
   assert.equal(env.select("doorRL").value, "ledc:0", "the table shows where the droid still has it");
 });
 
-test("a Part the droid drives and the page does not know is named, never dropped", async () => {
-  const env = await bootParts({ outputs: withParts({ "ledc:0": ["domeEye"] }) });
-  assert.match(env.text("parts-summary"), /also drives domeEye/);
+test("a Part on an output that the page does not know is named, never dropped", async () => {
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["domeEye"] }) });
+  assert.match(env.text("wiring-parts-summary"), /domeEye on an output too/);
+});
+
+// The sheet above the picker names the Part on the end of each wire, so a Part
+// moved in the picker is on its new wire the moment the droid has taken it -
+// not on the next visit.
+test("a Part moved in the picker is on its new wire in the sheet at once", async () => {
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  const wire = (address) => env.document.querySelectorAll(".wd-link").find((node) => node.dataset.wire === address);
+  assert.match(wire("ledc:0").textContent, /Left body door/);
+
+  env.pick("doorFL", "ledc:4");
+  env.click("wiring-move-confirm");
+  await sleep(40);
+  assert.match(wire("ledc:4").textContent, /Left body door/, "the wire it now hangs off names it");
+  assert.doesNotMatch(wire("ledc:0").textContent, /Left body door/, "and the wire it left does not");
 });
 
 // The output-first table, back to centre, Find by moving and the calibration
@@ -438,4 +459,19 @@ test("Parts carries none of the Output pieces that moved to Servos", async () =>
     [],
     "and nothing on it asks the droid to move a servo",
   );
+});
+
+// The part-first picker and its question moved to Wiring, and were deleted
+// from Parts rather than hidden (operator, 2026-09-28 on #411): one picker,
+// one question, one request. With Parts on screen - and Wiring never visited -
+// nothing in the document picks an Output for a Part, and no move is sent.
+test("Parts carries no picker and no move question of its own", async () => {
+  const env = await bootPartsSurface();
+  await env.frame();
+  await wait(20);
+
+  assert.equal(env.window.location.hash, "#parts");
+  assert.equal(env.document.querySelectorAll("select").length, 0, "no Output picker on Parts");
+  assert.equal(env.document.querySelectorAll("dialog").length, 0, "and no move question");
+  assert.deepStrictEqual(env.moves().filter((post) => "movePart" in post.form), [], "and no move leaves it");
 });
