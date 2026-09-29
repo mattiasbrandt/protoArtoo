@@ -4,8 +4,8 @@
 include/config.h refuses to compile without -DPA_BOARD=... (its pin map and
 capability ladders select on it), so an env that overrides `build_flags`
 without carrying the flag builds nothing. The first v1.1.0 release run found
-exactly that: the three sound-backend release envs (artoo_esp32_chirp,
-artoo_esp32_mp3trigger, artoo_esp32_dysv5w) had re-declared `build_flags` for
+exactly that: the three per-sound-module release envs it had then (CHIRP,
+MP3 Trigger and DY-SV5W, since retired) had re-declared `build_flags` for
 their PA_AUDIO_DRIVER and never carried PA_BOARD, and neither the verification
 workflow nor the slice gate builds them, so the defect surfaced at tag time.
 

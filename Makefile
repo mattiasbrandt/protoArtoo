@@ -9,7 +9,7 @@
 # Variables (CLI or user.mk):
 #   make ota OTA_IP=192.168.4.1
 #   make flash UPLOAD_PORT=/dev/ttyACM0   (required when two boards are attached)
-#   make ota BUILD_ENV=artoo_esp32_chirp
+#   make ota BUILD_ENV=artoo_esp32_profiler
 #   make ota OTA_HOST_PORT=32000   (only if 32320 is taken; firewall it instead if you can)
 # =============================================================================
 
@@ -87,7 +87,7 @@ endif
 PIO_CORE_DIR = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_CORE_DIR_ARTOO))
 
 # Use $(PIO) for BUILD_ENV-parameterised firmware targets. Targets that hard-code
-# an artoo-esp32 env (chirp, mp3trigger, dysv5w, check*) keep bare `pio` on
+# an artoo-esp32 env (`check`) keep bare `pio` on
 # purpose: they must stay on the artoo-esp32 core dir even when BUILD_ENV points
 # at P4.
 PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) $(FLOCK) pio
@@ -104,10 +104,7 @@ FLOCK := python3 tools/pio_lock.py
 -include user.mk
 
 .PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
-        flash-chirp ota-chirp ota-mp3trigger \
-        flash-dysv5w ota-dysv5w \
-        flash-monitor flash-chirp-monitor \
-        check-chirp check-mp3trigger \
+        flash-monitor \
         setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
 # Default target — launches the interactive wizard
@@ -246,55 +243,13 @@ uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB, port resolved
 	  python3 tools/ota_upload.py --env $(UPLOADFS_ENV) --spiffs --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT); \
 	fi
 
-# ── Flash: CHIRP audio module ────────────────────────────────────────────────
-
-flash-chirp: test ## Flash CHIRP build via USB
-	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
-	  echo "==> flashing artoo_esp32_chirp to $$port" && \
-	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port
+# ── Flash: boot log ──────────────────────────────────────────────────────────
 
 flash-monitor: test ## Flash default build via USB then capture boot log
 	@port=$$($(RESOLVE_PORT) --env $(BUILD_ENV)) && \
 	  echo "==> flashing $(BUILD_ENV) to $$port" && \
 	  PLATFORMIO_UPLOAD_PORT=$$port $(PIO) run -e $(BUILD_ENV) -t upload --upload-port $$port && \
 	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
-
-flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
-	@port=$$($(RESOLVE_PORT) --env artoo_esp32_chirp) && \
-	  echo "==> flashing artoo_esp32_chirp to $$port" && \
-	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_chirp -t upload --upload-port $$port && \
-	  python3 tools/console_client.py --port $$port --until "init complete" --timeout 30
-
-ota-chirp: test ## Flash CHIRP build via OTA
-	$(FLOCK) pio run -e artoo_esp32_chirp_ota
-	python3 tools/ota_upload.py --env artoo_esp32_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
-
-# ── Flash: MP3 Trigger ───────────────────────────────────────────────────────
-
-ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
-	$(FLOCK) pio run -e artoo_esp32_mp3trigger_ota
-	python3 tools/ota_upload.py --env artoo_esp32_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
-
-# ── Flash: DY-SV5W (named env) ───────────────────────────────────────────────
-# Same driver as the default artoo_esp32 env — these targets exist so DY-SV5W
-# has the same explicit, discoverable build/flash surface as CHIRP and MP3 Trigger.
-
-flash-dysv5w: test ## Flash DY-SV5W build via USB
-	@port=$$($(RESOLVE_PORT) --env artoo_esp32_dysv5w) && \
-	  echo "==> flashing artoo_esp32_dysv5w to $$port" && \
-	  PLATFORMIO_UPLOAD_PORT=$$port $(FLOCK) pio run -e artoo_esp32_dysv5w -t upload --upload-port $$port
-
-ota-dysv5w: test ## Flash DY-SV5W build via OTA
-	$(FLOCK) pio run -e artoo_esp32_dysv5w_ota
-	python3 tools/ota_upload.py --env artoo_esp32_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT) --host-port $(OTA_HOST_PORT)
-
-# ── Compile-check only ───────────────────────────────────────────────────────
-
-check-chirp: ## Compile-check CHIRP backend  (no flash)
-	$(FLOCK) pio run -e artoo_esp32_chirp_check
-
-check-mp3trigger: ## Compile-check MP3Trigger backend  (no flash)
-	$(FLOCK) pio run -e artoo_esp32_mp3trigger_check
 
 # ── Setup & tools ────────────────────────────────────────────────────────────
 

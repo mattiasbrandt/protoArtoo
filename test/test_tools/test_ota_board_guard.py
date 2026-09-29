@@ -96,7 +96,7 @@ class EnvToBoardMappingTest(unittest.TestCase):
         # default; membership-against-the-registry must not do that either.
         self.assertEqual(
             GUARD.BOARD_ARTOO_ESP32,
-            GUARD.expected_board_for_env("artoo_esp32_chirp_ota", self.budgets_path),
+            GUARD.expected_board_for_env("artoo_esp32_profiler_ota", self.budgets_path),
         )
 
     def test_the_real_registry_classifies_both_boards_this_repo_ships(self):

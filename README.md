@@ -185,9 +185,7 @@ setup flow (first boot, choosing a WiFi mode, and recovery).
 
 ```bash
 make build            # Compile only (no flash)
-make ota              # Run tests + OTA flash — default audio module and IP
-make ota-chirp        # Run tests + OTA flash — CHIRP module
-make ota-mp3trigger   # Run tests + OTA flash — MP3 Trigger module
+make ota              # Run tests + OTA flash — default IP
 make flash            # Run tests + USB flash
 make uploadfs         # Upload web UI only (OTA; P4 envs go over USB) — no test gate
 make test             # Run native unit tests

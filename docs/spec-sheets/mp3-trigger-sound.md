@@ -838,9 +838,10 @@ Every image carries this driver -- `included` is the literal `1` on the row and
 there is no Board Capability Gate, because all three Sound modules bolt to
 `PIN_AUDIO_TX` and no board narrows the set (ADR 0042:174-178). `PA_AUDIO_DRIVER
 = AUDIO_MP3TRIGGER` no longer selects what the image can drive; it only names
-what a controller **that has never been told** starts with. The dedicated envs
-(`artoo_esp32_mp3trigger`, `..._ota`, `..._check`) and `make ota-mp3trigger` still
-exist and are the way to ship a board that boots straight onto this module.
+what a controller **that has never been told** starts with. There is no
+dedicated build for this module: there is one build per board, and the builder
+picks it on Configuration (Hardware components -> Sound); it takes effect at the
+next start.
 
 Selecting the member is `POST /api/config soundMember=mp3_trigger`. Setup's
 Audio control is an enable toggle plus the live driver name; it does not POST

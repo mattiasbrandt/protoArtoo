@@ -32,7 +32,7 @@ GDB_DIR="$HOME/.platformio/packages/tool-xtensa-esp-elf-gdb/bin"
 PATH="$GDB_DIR:$PATH" ~/.platformio/penv/bin/esp-coredump \
   --chip esp32 \
   info_corefile --core coredump.elf --core-format raw \
-  .pio/build/artoo_esp32_chirp/firmware.elf
+  .pio/build/artoo_esp32/firmware.elf
 
 # 4. After analysing, clear it so the NEXT crash is captured.
 curl -s -X POST http://artoo.local/api/coredump/erase
@@ -335,11 +335,13 @@ esptool reports *"Download mode detected, but no sync reply / TX path seems
 down"* (`tasks/lessons.md:549`). USB serial monitoring is a separate read path
 and remains available as described below.
 
-- **Seated → use OTA** (`make ota-chirp OTA_IP=...`) and **HTTP** for all evidence
+- **Seated → use OTA** (`make ota OTA_IP=...`) and **HTTP** for all evidence
   (`/api/coredump`, `/api/profiler`, `/api/logs`, `/api/status`). This is the
   normal path and why the coredump/profiler evidence is exposed over HTTP.
 - **USB flash → unseat the ESP32**, then
-  `make flash BUILD_ENV=artoo_esp32_chirp UPLOAD_PORT=/dev/ttyUSB0`, then reseat.
+  `make flash UPLOAD_PORT=/dev/ttyUSB0`, then reseat. The sound module is not a
+  build choice: pick it on Configuration (Hardware components -> Sound); it takes
+  effect at the next start.
   A partition-table change (e.g. the
   coredump partition) needs this full USB flash + `uploadfs`; OTA does not rewrite
   the partition table.
