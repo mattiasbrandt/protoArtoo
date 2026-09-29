@@ -422,7 +422,7 @@
     },
     domeEscRndMoveMs: { applies: "immediate", word: "move duration", unit: MS, path: "domeEsc.rndMoveMs" },
     protoR2linkWifiPeerIp: {
-      applies: "immediate",
+      label: "Dome IP address", applies: "immediate",
       word: "dome's IP address", path: "protoR2link.wifiPeerIp",
       refused: "must be empty or an address like 192.168.4.2",
     },

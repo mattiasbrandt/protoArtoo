@@ -3,8 +3,9 @@
 //
 // DomeLinkTask  --  bidirectional Marcduino serial link to the dome controller.
 //
-// Physical link: UART_PORT_DOME (Serial2), 9600 baud 8N1, on PIN_DOME_TX /
-// PIN_DOME_RX. Both are per Board Variant (include/config.h); on artoo-esp32
+// Physical link: UART_PORT_DOME (Serial2), 9600 baud 8N1 (kBoardLaneWire_protor2link,
+// include/board_lane_wire.h, which GET /api/identity reports), on PIN_DOME_TX /
+// PIN_DOME_RX. The pins are per Board Variant (include/config.h); on artoo-esp32
 // that is PCB header S3 ("Dome Control"), GPIO 33 TX / GPIO 34 RX. Connected
 // over slip ring to AstroPixelsPlus.
 //

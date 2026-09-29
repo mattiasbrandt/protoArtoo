@@ -204,6 +204,22 @@
             <span class="toggle-status" id="status-protor2link">Off</span>
           </label>
         </div>
+        <!-- protoR2link's own settings, shown while the Dome Controller is
+             fitted (#369). The slip ring's facts are the firmware's per-board
+             answer (GET /api/identity board_lanes.protor2link), written in by
+             data/configuration.js; nothing here is a copy of them. -->
+        <div class="setting-rows protor2link-settings" id="protor2link-settings" hidden>
+          <label class="setting-row">
+            <span class="setting-name"><span data-setting-label="protoR2linkWifiPeerIp"></span><span class="hint">WiFi fallback. Empty, found by name.</span></span>
+            <input id="protor2link-wifi-peer-ip" class="number-cell ip-cell" name="protoR2linkWifiPeerIp" type="text"
+                   inputmode="decimal" maxlength="15" autocomplete="off" spellcheck="false" placeholder="192.168.4.2">
+          </label>
+          <div class="setting-row" id="protor2link-slip-ring" hidden>
+            <span class="setting-name">Slip ring<span class="hint">Fixed on this board.</span></span>
+            <span class="setting-fact" id="protor2link-slip-ring-facts"></span>
+          </div>
+          <p class="feedback" id="protor2link-feedback" role="status" aria-live="polite"></p>
+        </div>
 
         </div>
         <div data-setup-step="sound">

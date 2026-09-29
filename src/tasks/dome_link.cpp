@@ -39,6 +39,7 @@
 #include <freertos/queue.h>
 
 #include "audio_task.h"
+#include "board_lane_wire.h"  // kBoardLaneWire_protor2link: the baud GET /api/identity reports
 #include "config.h"
 #include "config_cache.h"
 #include "dome_cue_handler.h"
@@ -167,7 +168,7 @@ static bool acquireDomeUart() {
     }
 
     s_domeSerial.end();
-    s_domeSerial.begin(9600, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
+    s_domeSerial.begin(kBoardLaneWire_protor2link.baud, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
     s_uartOwned = true;
     domeUartAcquire(DOME_UART_DOME);
 

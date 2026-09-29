@@ -8,6 +8,7 @@
 
 #include "api_identity.h"
 
+#include "board_lane_wire.h"  // kBoardLaneWire_<lane>, joined to each lane below
 #include "component_registry.h"
 #include "config.h"
 #include "seq_store_util.h"  // SEQ_STORE_CAP
@@ -52,6 +53,19 @@ private:
     bool valid_;
 };
 
+// One Board Lane: where it is routed, then the wire contract spoken on it when
+// the lane fixes one (include/board_lane_wire.h). A lane whose contract is a
+// Component Member's reports its pins alone, so the object only ever grows.
+void appendBoardLane(IdentityJsonWriter& writer, bool first, const char* name, unsigned uart,
+                     unsigned tx, unsigned rx, const BoardLaneWire& wire) {
+    writer.append("%s\"%s\":{\"uart\":%u,\"tx\":%u,\"rx\":%u", first ? "" : ",", name, uart, tx,
+                  rx);
+    if (wire.protocol != nullptr) {
+        writer.append(",\"baud\":%lu,\"protocol\":\"%s\"", (unsigned long)wire.baud, wire.protocol);
+    }
+    writer.append("}");
+}
+
 constexpr const char* boardVariantId() {
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
     return "artoo_esp32";
@@ -92,9 +106,9 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
     // rather than keeping its own copy of one board's wiring.
     writer.append("},\"board_lanes\":{");
     first = true;
-#define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin)                                    \
-    writer.append("%s\"%s\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}", first ? "" : ",", #name,  \
-                  (unsigned)(uart_port), (unsigned)(tx_pin), (unsigned)(rx_pin));         \
+#define PA_BOARD_LANE(name, uart_port, tx_pin, rx_pin)                                   \
+    appendBoardLane(writer, first, #name, (unsigned)(uart_port), (unsigned)(tx_pin),     \
+                    (unsigned)(rx_pin), kBoardLaneWire_##name);                          \
     first = false;
 #include "board_lanes.inc"
 #undef PA_BOARD_LANE
@@ -120,7 +134,7 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 // no name to put in front of a builder.
 //
 // It gets its own route rather than a key in GET /api/identity: that payload is
-// bounded at IDENTITY_JSON_MAX_BYTES (512 B) with ~24 B of headroom, and the
+// bounded at IDENTITY_JSON_MAX_BYTES (576 B) with 53 B of headroom, and the
 // lineup is roughly 3 KB. Written by offset through JsonSliceWriter for the
 // same reason GET /api/actions is, so no backend holds the body whole.
 // -----------------------------------------------------------------------------
