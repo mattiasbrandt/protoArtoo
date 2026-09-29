@@ -279,7 +279,10 @@ settle time per page is the pace.
 HTTP_BASE=http://<board-ip> IMAGE=artoo|shipping` (`tools/bench_auto.py`). It
 runs the sheet's agent-runnable rows, `console-sweep.js`, every droid script and
 every fixture script (on a fixture server of its own), headed, and orders the
-droid scripts by the estop state each declares. Each script's `// bench-auto:`
+droid scripts by the estop state each declares, latching or clearing the estop
+before each to match (the run must begin clear; after that it clears any latch
+a clear-needing script meets, since the droid cannot say who set it). Its
+report ends with the estop state it left the board in. Each script's `// bench-auto:`
 line decides where it runs (`test/playwright/README.md`); never pick scripts by
 grepping their URLs. Run it in a Herdr pane; its report, samples and logs land
 in `output/bench-auto/<image>-<time>/`.

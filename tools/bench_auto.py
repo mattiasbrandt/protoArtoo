@@ -38,10 +38,13 @@ SELFTEST* are stripped from the environment it inherits.
 The estop. Three droid scripts need it clear and then latch it, and two need it
 latched. Order alone cannot serve all of them, so before each droid script the
 runner reads the estop and, if it is not what the script declares, puts it
-there: it latches one through POST /api/estop, and it clears one through
-POST /api/estop/clear ONLY when this run's own steps latched it. A latch that
-was already standing when the run began is the operator's, and a run that
-would need it cleared is refused before it starts instead.
+there: POST /api/estop to latch it, POST /api/estop/clear to clear it. This is
+a Bench-Mode session - a controller on USB with nothing connected - and the
+estop there is not a safety question (operator, 2026-09-29, #435). The run
+must BEGIN clear, or it is refused; after that, a latch standing before a step
+that needs it clear is cleared, whoever set it. The droid cannot say who
+latched it: /api/status carries only `estop`. The report ends with the state
+the estop was left in.
 
 Status fields are read through tools/soak.py's schemas and the compiled
 admission floor through its resolve_admission_floor(), never restated here.
@@ -655,7 +658,7 @@ def read_estop(client: soak.BenchClient) -> tuple[Optional[bool], str]:
 
 
 def ensure_estop(client: soak.BenchClient, need: Optional[str], step: str,
-                 may_clear: bool) -> Optional[str]:
+                 run_began_clear: bool) -> Optional[str]:
     """Put the estop where `step` declares it must be. Returns what was done,
     in words, or None when nothing was needed. Never raises: a droid that
     cannot be read or moved here is reported, and the script's own
@@ -668,9 +671,9 @@ def ensure_estop(client: soak.BenchClient, need: Optional[str], step: str,
     if need == "latched" and not latched:
         path = ESTOP_PATH
     elif need == "clear" and latched:
-        if not may_clear:
-            return (f"before {step}: the estop is latched and was latched before this run began; "
-                    "the runner clears only a latch its own steps set, so it was left latched")
+        if not run_began_clear:
+            return (f"before {step}: the estop is latched and the run did not begin clear, "
+                    "so it was left latched")
         path = ESTOP_CLEAR_PATH
     else:
         return None
@@ -854,7 +857,7 @@ def main(argv: list[str]) -> int:
         needs_clear = [s.name for s in steps if s.estop == "clear"]
         if latched and needs_clear:
             return refuse("the estop is LATCHED, and these scripts need it clear: "
-                          f"{', '.join(needs_clear)}. The runner clears only a latch its own steps set. "
+                          f"{', '.join(needs_clear)}. A run must begin clear. "
                           "Clear it on Foot Drive or the Dashboard, then run again.")
         started_clear = not latched
 
@@ -945,7 +948,7 @@ def main(argv: list[str]) -> int:
 
         for step in steps:
             if droid_client is not None:
-                action = ensure_estop(droid_client, step.estop, step.name, may_clear=started_clear)
+                action = ensure_estop(droid_client, step.estop, step.name, run_began_clear=started_clear)
                 if action:
                     estop_actions.append(action)
                     print(f"[bench_auto] {action}", flush=True)

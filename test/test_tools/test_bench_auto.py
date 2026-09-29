@@ -213,14 +213,14 @@ class TheLastFailedAllocation(unittest.TestCase):
         self.assertEqual([s["status"] for s in log.samples], ["ok", "ok"])
 
 
-class TheRunnerNeverClearsALatchItDidNotSet(unittest.TestCase):
-    def test_a_latch_standing_before_the_run_is_left_alone(self):
+class ARunThatDidNotBeginClearClearsNothing(unittest.TestCase):
+    def test_a_latch_standing_when_the_run_began_is_left_alone(self):
         server, thread = soak._start_fixture_server(dict(soak.FIXTURE_ARTOO_STATUS_BODY, estop=True))
         try:
             client = soak.BenchClient("127.0.0.1", server.server_address[1], connect_timeout_s=5)
-            said = bench_auto.ensure_estop(client, "clear", "shell/stop-every-surface.js", may_clear=False)
+            said = bench_auto.ensure_estop(client, "clear", "shell/stop-every-surface.js", run_began_clear=False)
             self.assertEqual(server.post_count, 0)
-            self.assertIn("left latched", said)
+            self.assertIn("did not begin clear", said)
         finally:
             soak._stop_fixture_server(server, thread)
 

@@ -44,10 +44,12 @@
 //        taking hold went out: the keepalive only refreshes.
 //   Then "done" closes the dial, which sends one release.
 //
-// THE CLEAR BETWEEN THE PARTS IS THE OPERATOR'S. This script never releases
-// the estop (ADR 0048). Before Part 2, while the estop reads latched, it says
-// what to do and watches the droid - never stdin - for up to CLEAR_WAIT_S
-// (120 s). Still latched: Part 2 is NOT ASSESSED; run PART=2 once it is clear.
+// THE CLEAR BETWEEN THE PARTS IS THE OPERATOR'S, OR THE BENCH RUNNER'S. This
+// script never releases the estop (ADR 0048). Before Part 2, while the estop
+// reads latched, it says what to do and watches the droid - never stdin - for
+// up to CLEAR_WAIT_S (120 s). Still latched: Part 2 is NOT ASSESSED; run
+// PART=2 once it is clear. In a Bench-Mode session tools/bench_auto.py runs
+// PART=1 and PART=2 as two steps and clears the estop between them.
 //
 // HOW THE TAB IS HIDDEN. document.visibilityState and document.hidden are
 // overridden on the page and visibilitychange is dispatched - to every script

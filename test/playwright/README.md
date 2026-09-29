@@ -38,7 +38,10 @@ a droid, or offline against the fixture server.
   bench session) reads it rather than guessing from the URLs in the file.
   `// bench-auto: droid` runs against the droid with `BASE_URL`, and
   `estop=clear` or `estop=latched` names the estop state its precondition
-  needs, so the runner can order it; `parts=1,2` runs it once per `PART`.
+  needs: the runner orders by it and, before the script, latches or clears
+  the estop to match (a Bench-Mode session begins clear; a latch standing
+  before a script that needs it clear is cleared, whoever set it).
+  `parts=1,2` runs it once per `PART`.
   `// bench-auto: fixture <page>.html` runs it on the runner's own fixture
   server with `FIXTURE=1` and `TARGET_URL` at that page. A new script
   without one stops the runner before it starts.

@@ -404,7 +404,10 @@ The automated half of a bench session - these rows, the console sweep and
 every Playwright script, with a memory log beside them - is one command,
 `make bench-auto` (`tools/bench_auto.py`). It replays the sheet with
 `--skip-manual` exactly as above, then reports what each step did to the
-controller's heap:
+controller's heap. It is for a Bench-Mode session: the run must begin with the
+estop clear, and the runner then latches or clears it before each browser
+script to match the state that script declares, so the report ends with the
+state the estop was left in:
 
 ```bash
 make bench-auto BENCH_ROWS=tools/bench_rows/artoo_esp32.txt HTTP_BASE=http://10.0.0.22 IMAGE=artoo
