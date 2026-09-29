@@ -143,14 +143,12 @@ def run_cmd(args: list[str]) -> int:
     return proc.returncode
 
 
-# ── Build matrix ──────────────────────────────────────────────────────────────
+# ── Build ─────────────────────────────────────────────────────────────────────
 
-# (display label, env for USB/build, env for OTA)
-AUDIO_MODULES: list[tuple[str, str, str]] = [
-    ("🔊  DY-SV5W  (default)",  "artoo_esp32",           "artoo_esp32_ota"),
-    ("🎵  CHIRP",               "artoo_esp32_chirp",      "artoo_esp32_chirp_ota"),
-    ("🎙  MP3 Trigger",         "artoo_esp32_mp3trigger", "artoo_esp32_mp3trigger_ota"),
-]
+# One build per board. The sound module is not a build choice: it is picked on
+# Configuration (Hardware components -> Sound) and takes effect at the next start.
+ENV_USB = "artoo_esp32"
+ENV_OTA = "artoo_esp32_ota"
 
 ACTIONS: list[tuple[str, str]] = [
     ("📡  Flash via OTA   (WiFi — no cables needed)",  "ota"),
@@ -200,25 +198,9 @@ def main() -> int:
         return 1
     action = dict(ACTIONS)[action_label]
 
-    # ── Q2: Audio module (skip for test-only) ──
-    env_usb = env_ota = "artoo_esp32"
-    if action != "test":
-        current_env  = _user_mk("BUILD_ENV", "artoo_esp32")
-        default_audio = next(
-            (a[0] for a in AUDIO_MODULES if a[1] == current_env),
-            AUDIO_MODULES[0][0],
-        )
-        audio_label = _select(
-            "Audio module:",
-            choices=[a[0] for a in AUDIO_MODULES],
-            default=default_audio,
-        )
-        if audio_label is None:
-            print(dim("\nCancelled."))
-            return 1
-        _, env_usb, env_ota = next(a for a in AUDIO_MODULES if a[0] == audio_label)
+    env_usb, env_ota = ENV_USB, ENV_OTA
 
-    # ── Q3: Connection details ──
+    # ── Q2: Connection details ──
     ota_ip     = _user_mk("OTA_IP",      "artoo.local")
     upload_port = _user_mk("UPLOAD_PORT", "/dev/ttyUSB0")
     ota_host_port = _user_mk("OTA_HOST_PORT", OTA_HOST_PORT_DEFAULT)
@@ -229,7 +211,7 @@ def main() -> int:
     if action == "usb":
         upload_port = _text("USB port:", default=upload_port) or upload_port
 
-    # ── Q4: Gate tests before flash? ──
+    # ── Q3: Gate tests before flash? ──
     run_tests = False
     if action in ("ota", "usb"):
         print()

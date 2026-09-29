@@ -23,8 +23,8 @@ BROWSER_COLLECTOR = REPO_ROOT / "tools" / "issue65_browser_capture.js"
 RUNTIME_COORDINATOR = REPO_ROOT / "tools" / "issue65_live_ab_runtime.py"
 DEFAULT_CONTROLLER = "10.0.0.22"
 DEFAULT_SERIAL_PORT = "/dev/ttyUSB0"
-PRODUCTION_ENV = "artoo_esp32_chirp"
-OTA_ENV = "artoo_esp32_chirp_ota"
+PRODUCTION_ENV = "artoo_esp32"
+OTA_ENV = "artoo_esp32_ota"
 VERSION_FILES = ("data/fw-version.json", "data/fs-version.json")
 FAILED_ALLOC_CONTRACT_URL = (
     "https://github.com/mattiasbrandt/protoArtoo/issues/65"
