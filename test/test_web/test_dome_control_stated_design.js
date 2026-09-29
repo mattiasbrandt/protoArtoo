@@ -65,16 +65,17 @@ function makeElement(className) {
 
 // Build the page the card lives on, run data/dome_control.js against it, and
 // hand back the pieces a test drives it through.
-function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
+//
+// underShell mounts it the way the Operator Shell does after the page's first
+// surface: assets long since ready, and the bootstrap's section events still to
+// come. The window listeners and the dome layout reads are kept so a test can
+// see when the read starts.
+function renderCard({ domeDesign, domeVariant, complementKnown, status, underShell = false }) {
   const card = makeElement("dome-control-card");
-  const header = makeElement("dome-control-header");
-  const body = makeElement("dome-control-body");
   const feedback = makeElement("dome-control-feedback");
   // The card's dome column: the banner and the dome drawing go here.
   const dome = makeElement("moving-parts-dome");
   card.query = (selector) => {
-    if (selector === ".dome-control-header") return header;
-    if (selector === ".dome-control-body") return body;
     if (selector === ".dome-control-feedback") return feedback;
     if (selector === ".moving-parts-dome") return dome;
     return makeElement();
@@ -113,12 +114,23 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
   // `window` IS the global in a browser, so the sandbox is its own window -
   // the module reaches PAApi and PAUtils bare as well as through window., and
   // a harness that split the two would answer a question the page never asks.
+  const windowListeners = [];
+  let layoutReads = 0;
   const sandbox = {
     PAAssetsReady: true,
-    addEventListener() {},
+    addEventListener(type, handler) {
+      windowListeners.push({ type, handler });
+    },
+    removeEventListener(type, handler) {
+      const at = windowListeners.findIndex((entry) => entry.type === type && entry.handler === handler);
+      if (at >= 0) windowListeners.splice(at, 1);
+    },
     DOME_PANEL_MAP_SVG: '<svg class="vendored-mk4"></svg>',
     DomeLayout: {
-      load: () => Promise.resolve(),
+      load: () => {
+        layoutReads += 1;
+        return Promise.resolve();
+      },
       getModel: () => model,
       getSource: () => model.source,
       onChange() {},
@@ -146,6 +158,7 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
     Promise,
     console,
   };
+  if (underShell) sandbox.PABootstrap = {};
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   // The chain every document loads ahead of a surface: the stream and the
@@ -171,36 +184,59 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
 
   return {
     card,
-    header,
-    body,
     dome,
     feedback,
     posts,
     press,
-    expand: () => header.listeners.click[0]({ target: header }),
+    // The drawings are drawn when the module runs, and every step of that is
+    // async: one turn of the event loop lets it finish.
+    drawn: () => new Promise((resolve) => setTimeout(resolve, 0)),
+    layoutReads: () => layoutReads,
+    // Delivers a window event to the handlers registered for it right now.
+    emit: (type, event) =>
+      windowListeners.filter((entry) => entry.type === type).forEach(({ handler }) => handler(event)),
   };
 }
 
-// The card renders lazily on first expand, and every step of that is async.
-async function expanded(options) {
+async function drawn(options) {
   const page = renderCard(options);
-  await page.expand();
+  await page.drawn();
   const picker = page.dome.children[page.dome.children.length - 1];
   const banner = page.dome.inserted.map((entry) => entry.html).join("");
   return { picker: picker ? picker.innerHTML : "", banner };
 }
 
 test("the built-in drawing is shown to the builder whose dome it is", async () => {
-  const view = await expanded({ domeDesign: "mk4", domeVariant: "complex" });
+  const view = await drawn({ domeDesign: "mk4", domeVariant: "complex" });
   assert.match(view.picker, /vendored-mk4/);
   assert.match(view.banner, /Showing the built-in MK4 map/);
 });
 
 test("a builder on another design is not shown a drawing of somebody else's droid", async () => {
-  const view = await expanded({ domeDesign: "own", domeVariant: "", complementKnown: true });
+  const view = await drawn({ domeDesign: "own", domeVariant: "", complementKnown: true });
   assert.doesNotMatch(view.picker, /vendored-mk4/, "the MK4 drawing was shown as theirs");
   // And the card says why, rather than leaving an empty space.
   assert.match(view.banner, /No built-in map for your dome design/);
+});
+
+// Under the Operator Shell the Dashboard's scripts run while it mounts, before
+// app.js has read the config. The dome's layout read reads the Droid Build
+// first (data/dome_layout.js -> data/droid_build.js load()), so started then it
+// opened a second GET /api/config beside app.js's, on a controller that sheds
+// connections under load (#399). It waits for the Dashboard's sections.
+test("under the Operator Shell the dome's layout read waits until the Dashboard's sections settle", async () => {
+  const page = renderCard({ domeDesign: "mk4", domeVariant: "complex", underShell: true });
+  await page.drawn();
+  assert.equal(page.layoutReads(), 0, "the dome read its layout before the Dashboard had read its config");
+
+  page.emit("pa:bootstrap-change", { detail: { sectionsStable: false } });
+  await page.drawn();
+  assert.equal(page.layoutReads(), 0, "it read while the Dashboard's sections were still loading");
+
+  page.emit("pa:bootstrap-change", { detail: { sectionsStable: true } });
+  page.emit("pa:bootstrap-change", { detail: { sectionsStable: true } });
+  await page.drawn();
+  assert.equal(page.layoutReads(), 1, "the dome is drawn once, when the sections settle");
 });
 
 // The estop holds every servo move a picture of the droid can start (operator,
@@ -213,14 +249,14 @@ test("a dome panel press sends nothing while the estop is latched or not yet kno
   // which is not a droid saying it is clear (#419).
   for (const status of [statusFrame({ estop: true }), null, withoutEstop]) {
     const page = renderCard({ domeDesign: "mk4", domeVariant: "complex", status });
-    await page.expand();
+    await page.drawn();
     await page.press("07");
     assert.deepEqual(page.posts, [], `a press went out with the estop ${JSON.stringify(status)}`);
     assert.match(page.feedback.textContent, /estop latched|stopped/i, "and the card says why");
   }
 
   const clear = renderCard({ domeDesign: "mk4", domeVariant: "complex", status: statusFrame() });
-  await clear.expand();
+  await clear.drawn();
   await clear.press("07");
   assert.deepEqual(
     clear.posts.map((post) => post.form.cmd),
@@ -241,8 +277,8 @@ async function bodyCard(status) {
   const { servoRow } = await import("./helpers/fake_droid.js");
   const document = new MiniDocument();
   const html = read("dashboard.html");
-  const start = html.indexOf('<div class="disclose" id="dome-control-card">');
-  const end = html.indexOf("<!-- The Controller Console");
+  const start = html.indexOf('<div class="moving-parts-bay" id="dome-control-card">');
+  const end = html.indexOf("</section>", start);
   document.body.innerHTML = html.slice(start, end);
   document.body.dataset.page = "home";
 
@@ -304,9 +340,10 @@ async function bodyCard(status) {
   });
   await sandbox.PAOutputs.refresh();
   vm.runInContext(read("dome_control.js"), sandbox, { filename: "dome_control.js" });
+  // The drawings are drawn when the module runs; let that finish first, as a
+  // page does before anyone can click.
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
-  const header = document.getElementById("dome-control-header");
-  await header.fire("click", { target: header });
   const svg = document.querySelector(".moving-parts-body").querySelector(".bv-svg");
   const door = svg.querySelectorAll("[data-marker]").find((node) => node.dataset.marker === "doorFR");
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));

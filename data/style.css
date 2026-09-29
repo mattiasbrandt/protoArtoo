@@ -866,8 +866,7 @@ nav > a {
   margin-bottom: var(--space-lg);
 }
 
-.disclose > summary,
-.disclose > .dome-control-header {
+.disclose > summary {
   display: flex;
   align-items: center;
   gap: var(--space-md);
@@ -882,8 +881,7 @@ nav > a {
 }
 
 .disclose > summary h2,
-.disclose > summary h3,
-.disclose > .dome-control-header h2 {
+.disclose > summary h3 {
   margin: 0;
   color: var(--text-faint);
   font-family: var(--font-mono);
@@ -894,22 +892,19 @@ nav > a {
   text-transform: uppercase;
 }
 
-.disclose > summary .sub,
-.disclose > .dome-control-header .sub {
+.disclose > summary .sub {
   margin-left: auto;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--fs-sect);
 }
 
-.disclose > summary svg.i,
-.disclose > .dome-control-header svg.i {
+.disclose > summary svg.i {
   color: var(--text-faint);
   transition: transform 0.15s ease;
 }
 
-.disclose[open] > summary svg.i.chev,
-.disclose > .dome-control-header[aria-expanded="true"] svg.i.chev {
+.disclose[open] > summary svg.i.chev {
   transform: rotate(90deg);
 }
 
@@ -4856,15 +4851,15 @@ body[data-page="maintenance"] .status-item .hint {
 /* ---------------------------------------------------------------------------
    Dashboard (ADR 0066).
 
-   What the droid is doing first - the three controls in one bay - then the
-   health signals, the components' readouts, the dome and the controller's
-   log. What the droid is and its telemetry close the page, in This droid:
-   detail a builder looks up rather than watches (#399, operator review
-   2026-09-28).
+   What the droid is doing first - the three controls in one bay, with the
+   droid's two drawings under them - then the controller's log, open, then
+   the health signals and the components' readouts. What the droid is and its
+   telemetry close the page, in Build, closed: detail a builder looks up
+   rather than watches (#399, operator reviews 2026-09-28 and 2026-09-29).
    --------------------------------------------------------------------------- */
 
 /* The three controls side by side, divided by seams rather than by cards of
-   their own. Sleep is a readout with a cue, so it takes the narrow column. */
+   their own. Sleep is one switch and a cue, so it takes the narrow column. */
 .ctl-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
@@ -4910,7 +4905,24 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
-/* ---- Readouts and This droid: instrument tiles ----
+/* Moving parts: the drawings under the three controls, in the same bay and
+   divided from them by a seam rather than by a card of their own. The label
+   takes the controls' own heading voice. */
+.moving-parts-bay {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+.moving-parts-bay > h3 {
+  margin-bottom: var(--space-md);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* ---- Readouts and Build: instrument tiles ----
    Both sections are rows of tiles on the card's plate: a soft face with no
    frame of its own, told apart by the air between them. Inside a tile the
    label is small and quiet, the value is the loudest thing, and the detail is
@@ -4928,7 +4940,7 @@ body[data-page="maintenance"] .status-item .hint {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
-/* This droid: five facts in one row. No picture - data/dashboard.html has
+/* Build: five facts in one row. No picture - data/dashboard.html has
    never held one, and CONTEXT.md "Body View" puts a recognisable droid
    silhouette in its _Avoid_ list, because the real drawing of the droid is an
    arrangement and not a likeness (#317, ADR 0063). The Body View is C4's. */
@@ -4970,7 +4982,7 @@ body[data-page="maintenance"] .status-item .hint {
 /* The state is a component's reading, so it carries the lamp that says how
    that reading is doing (CONTEXT.md "Status Color"): the same droid LED the
    Health rows light, set by app.js from COMPONENT_STATE_LIGHTS. Never blue:
-   blue is interaction. This droid's facts are identity and numbers, not
+   blue is interaction. Build's facts are identity and numbers, not
    health, and take no lamp. */
 .readout dd {
   display: flex;
@@ -5193,18 +5205,31 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* ---- Sleep ----
-   A switch that shows the state and takes no press: the Sleep act is in the
-   topbar (ADR 0059). It reads body.sleep-mode-active, which setSleepUi()
-   sets from the droid's frame. On is the interaction blue, as a chosen
+   A switch that takes a press: the same act as the topbar's Sleep button
+   (ADR 0059; operator, 2026-09-29). It is on from aria-checked, which
+   setSleepUi() sets from the droid's frame, so it moves when the droid says
+   so and not on the press alone. On is the interaction blue, as a chosen
    posture takes no Status Color. */
 .sleep-switch {
   position: relative;
+  display: block;
   width: 52px;
   height: 28px;
+  padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: var(--well);
+  cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.sleep-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sleep-switch:disabled {
+  cursor: progress;
 }
 
 .sleep-switch-knob {
@@ -5219,12 +5244,12 @@ body[data-page="maintenance"] .status-item .hint {
   transition: transform 0.22s cubic-bezier(0.3, 0.7, 0.2, 1), background 0.2s ease;
 }
 
-body.sleep-mode-active .sleep-switch {
+.sleep-switch[aria-checked="true"] {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 30%, var(--well));
 }
 
-body.sleep-mode-active .sleep-switch-knob {
+.sleep-switch[aria-checked="true"] .sleep-switch-knob {
   transform: translateX(24px);
   background: var(--text);
 }
@@ -6422,35 +6447,7 @@ body.sleep-mode-active .sleep-switch-knob {
   min-width: 200px;
 }
 
-/* Dome Control Card (Home Page) */
-/* The Dome Control disclosure is a <div> with a <button>, not a <details>,
-   because dome_control.js renders the dome drawing lazily on the first expand
-   and owns this header's aria-expanded. The shape is the anatomy's disclosure
-   (above); what is left here is the reset that keeps a <button> from being
-   dressed as one. */
-.dome-control-header {
-  width: 100%;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  color: inherit;
-}
-
-.dome-control-header:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.dome-control-body {
-  margin-top: 0;
-  padding-top: var(--space-lg);
-}
-
-.dome-control-body.hidden {
-  display: none;
-}
-
+/* Moving parts (Dashboard, in Controls) */
 .dome-control-feedback {
   margin-bottom: 12px;
 }
@@ -7626,7 +7623,7 @@ body.sleep-mode-active .sleep-switch-knob {
 /* ---------------------------------------------------------------------------
    The frame's breakpoints (ADR 0066).
 
-   1100 px: the rail becomes a top strip and the Dashboard's This droid wraps
+   1100 px: the rail becomes a top strip and the Dashboard's Build wraps
    to two rows. 900 px: the bays and the Dashboard's controls stack and the
    Status Plate folds to two rows of four. 1440 and 820 - the two widths
    #399 asks every surface to render at - both land inside a stable layout
@@ -7698,7 +7695,7 @@ body.sleep-mode-active .sleep-switch-knob {
     display: none;
   }
 
-  /* This droid's five tiles wrap to three and two. */
+  /* Build's five tiles wrap to three and two. */
   .build {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -7740,7 +7737,7 @@ body.sleep-mode-active .sleep-switch-knob {
   }
 
   /* The controls stack, each divided from the next by a seam along its top
-     instead of its left; This droid's tiles stack with the air between them. */
+     instead of its left; Build's tiles stack with the air between them. */
   .ctl-row,
   .build {
     grid-template-columns: minmax(0, 1fr);
