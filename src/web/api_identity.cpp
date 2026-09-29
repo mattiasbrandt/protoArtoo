@@ -33,19 +33,23 @@ namespace {
 
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // Fixed buffer for identity JSON serialization including the manifest.
-    // IDENTITY_JSON_MAX_BYTES = 512 B; usable JSON is 511 B (1 byte for NUL).
+    // IDENTITY_JSON_MAX_BYTES = 576 B; usable JSON is 575 B (1 byte for NUL).
     // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (false is 5 chars, true is 4). With today's
-    // manifest -- 4 capabilities, 3 flags, 3 Board Lanes, and the Learned
-    // Sequence cap -- that worst case is 487 B of JSON on firebeetle2, leaving
-    // 511 - 487 = 24 B of headroom; the artoo-esp32 is one byte shorter, its cap
-    // being one digit (5) where firebeetle2's is two (10). Every lane's UART
-    // index is one digit and every lane pin is two on both boards.
+    // manifest -- 4 capabilities, 3 flags, 3 Board Lanes (protoR2link's with its
+    // baud and protocol), and the Learned Sequence cap -- that worst case is
+    // 522 B of JSON on firebeetle2, leaving 575 - 522 = 53 B of headroom; the
+    // artoo-esp32 is one byte shorter, its cap being one digit (5) where
+    // firebeetle2's is two (10). Every lane's UART index is one digit and every
+    // lane pin is two on both boards.
     // A capability or flag row emits ,"<name>":false, so it costs name_len + 9
     // bytes at worst (name_len + 8 for the first row in an object, which has no
     // leading comma). A Board Lane row emits
     // ,"<name>":{"uart":N,"tx":NN,"rx":NN} and costs name_len + 29 at worst,
-    // one more for each extra digit in a pin or controller index.
+    // one more for each extra digit in a pin or controller index. A lane that
+    // carries its wire contract (include/board_lane_wire.h) adds
+    // ,"baud":NNNN,"protocol":"<word>": 22 B plus the baud's digits and the
+    // word, 35 B for protoR2link's 9600 and "marcduino".
     // Every capability, flag or lane added grows this payload toward the ceiling.
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {

@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "api_identity.h"
+#include "board_lane_wire.h"
 #include "component_registry.h"
 #include "config.h"
 #include "config_cache.h"
@@ -43,11 +44,13 @@ void buildAvailabilitySuffix(char* out, size_t outSize) {
              "%s,\"board_lanes\":{"
              "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u},"
              "\"audio\":{\"uart\":%u,\"tx\":%u,\"rx\":%u},"
-             "\"protor2link\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}}%s",
+             "\"protor2link\":{\"uart\":%u,\"tx\":%u,\"rx\":%u,"
+             "\"baud\":%lu,\"protocol\":\"%s\"}}%s",
              kCapabilities,
              (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX,
              (unsigned)UART_PORT_AUDIO, (unsigned)PIN_AUDIO_TX, (unsigned)PIN_AUDIO_RX,
              (unsigned)UART_PORT_DOME, (unsigned)PIN_DOME_TX, (unsigned)PIN_DOME_RX,
+             (unsigned long)kBoardLaneWire_protor2link.baud, kBoardLaneWire_protor2link.protocol,
              kBuildFlags);
 }
 
@@ -176,7 +179,8 @@ void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
 // 85 bytes that arithmetic had; the three Board Lanes (#339) then spent 127 of
 // what a 512 B budget carries, leaving 50, and the Learned Sequence cap
 // (#426) spent 26 of those, leaving 24 on firebeetle2 (25 on the artoo-esp32,
-// whose cap is one digit). Assert the worst case directly: the
+// whose cap is one digit). protoR2link's baud and protocol (#369) cost 35,
+// so the bound went to 576 B, leaving 53. Assert the worst case directly: the
 // next manifest row must not be able to overflow at 32 characters while a
 // short name still fits.
 void test_identity_manifest_fits_with_longest_droid_name() {
@@ -191,8 +195,8 @@ void test_identity_manifest_fits_with_longest_droid_name() {
     // manifest row is the real one. This build reports three manifest values
     // true (NATIVE_WIFI, DRIVE_BACKEND_HOVERBOARD, ADMISSION_TRACE), each a byte
     // shorter than false, so it is 3 B under that comment's all-false worst
-    // case of 486 B for the artoo-esp32.
-    TEST_ASSERT_EQUAL_UINT(483, strlen(body));
+    // case of 521 B for the artoo-esp32.
+    TEST_ASSERT_EQUAL_UINT(518, strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"PA_CAP_DEDICATED_AUDIO_UART\":false"));
     // The last Board Lane row is the first thing an overflow would eat, and a
     // truncated payload must not reach the browser as a shorter valid one.
@@ -212,6 +216,31 @@ void test_identity_reports_the_drive_lane_from_the_pin_map() {
     snprintf(lane, sizeof(lane), "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
              (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX);
     TEST_ASSERT_NOT_NULL(strstr(body, lane));
+}
+
+// protoR2link's fixed facts reach the page from the firmware (#369): the lane
+// carries the baud the dome link opens its UART with and the protocol it
+// speaks, from the one row both read (include/board_lane_wire.h). A lane whose
+// contract is its Component Member's must not carry one, or the page would
+// state a second, possibly stale, answer for the drive or the sound module.
+void test_identity_protor2link_lane_carries_its_wire_contract() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "artoo", false));
+
+    char lane[128] = {};
+    snprintf(lane, sizeof(lane),
+             "\"protor2link\":{\"uart\":%u,\"tx\":%u,\"rx\":%u,\"baud\":9600,\"protocol\":\"marcduino\"}",
+             (unsigned)UART_PORT_DOME, (unsigned)PIN_DOME_TX, (unsigned)PIN_DOME_RX);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(body, lane), body);
+
+    char drive[64] = {};
+    snprintf(drive, sizeof(drive), "\"drive\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
+             (unsigned)UART_PORT_DRIVE, (unsigned)PIN_DRIVE_TX, (unsigned)PIN_DRIVE_RX);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(body, drive), body);
+    char audio[64] = {};
+    snprintf(audio, sizeof(audio), "\"audio\":{\"uart\":%u,\"tx\":%u,\"rx\":%u}",
+             (unsigned)UART_PORT_AUDIO, (unsigned)PIN_AUDIO_TX, (unsigned)PIN_AUDIO_RX);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(body, audio), body);
 }
 
 // -----------------------------------------------------------------------------
@@ -301,6 +330,7 @@ int main() {
     RUN_TEST(test_identity_manifest_fits_fixed_budget_and_overflow_fails);
     RUN_TEST(test_identity_manifest_fits_with_longest_droid_name);
     RUN_TEST(test_identity_reports_the_drive_lane_from_the_pin_map);
+    RUN_TEST(test_identity_protor2link_lane_carries_its_wire_contract);
     RUN_TEST(test_components_payload_carries_every_row_with_its_name);
     RUN_TEST(test_components_payload_separates_status_from_what_the_image_carries);
     RUN_TEST(test_components_payload_reports_the_member_setting_and_active_member);

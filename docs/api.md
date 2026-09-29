@@ -156,6 +156,11 @@ routes each signal over.
     The `audio` lane shares its controller with `protor2link` wherever
     `PA_CAP_DEDICATED_AUDIO_UART` is false, and on such a board only its RX
     rides that controller - read the lane and the capability together.
+    A lane whose wire contract is the lane's own also carries `baud` and
+    `protocol` (`include/board_lane_wire.h`): today only `protor2link`, at
+    `9600` and `"marcduino"`, which Configuration's Dome Controller card
+    states. `drive` and `audio` carry neither, because their contract is the
+    fitted Component Member's.
   - `build_flags`: an object containing every Build Feature Flag from
     `include/build_flags.inc`, with boolean values
 - Errors: `500` on response build overflow
@@ -169,7 +174,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34,"baud":9600,"protocol":"marcduino"}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity

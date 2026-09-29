@@ -27,7 +27,10 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 
 // One fixed upper bound shared by the handler and its native contract test.
 // Manifest additions that outgrow it fail serialization instead of allocating.
-constexpr size_t IDENTITY_JSON_MAX_BYTES = 512;
+// 576 since protoR2link's baud and protocol joined its Board Lane (#369): 35 B
+// against the 24 B the 512 B bound had left. The arithmetic is at the handler
+// (src/web/api_identity.cpp); the buffer is on the httpd task's 8 KB stack.
+constexpr size_t IDENTITY_JSON_MAX_BYTES = 576;
 
 // Commit Step (ADR 0036 criterion 1): publishes `working` (already carrying
 // the caller's validated droid_name/mdns_use_name - normalizeDroidName() and
@@ -62,7 +65,7 @@ void handleIdentityPost(WebRequest& req);
 // It is identity's payload -- firmware is the runtime source of the lineup and
 // the `data/` copy is only a fallback (ADR 0042 as amended 2026-09-09) -- but
 // not identity's response: the manifest above is bounded at
-// IDENTITY_JSON_MAX_BYTES with roughly 24 B spare, and the lineup runs to
+// IDENTITY_JSON_MAX_BYTES with 53 B spare at worst, and the lineup runs to
 // around 3 KB. It streams by offset instead, so no backend holds it whole.
 // -----------------------------------------------------------------------------
 
