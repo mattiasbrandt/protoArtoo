@@ -143,12 +143,15 @@
   const wireSlot = (place) => String((place % WIRE_PALETTE) + 1);
 
   const WIRED = "Wired";
-  const NOT_WIRED = "Not wired";
 
   // Wiring's plate: the Output as it sits on the board - its printed name, the
   // three-pin header its wire plugs onto, whether it is wired - and, on an
   // Output that can carry one, whether it carries a servo or a light.
-  // The whole head is the press. The plate wears its wire's color
+  // The whole head is the press, and it is drawn as what it is: a switch
+  // labelled Wired, so a builder can see that pressing a plate marks the wire
+  // and does not put a Part on it - that is the table under the plates
+  // (operator, 2026-09-29 on #411: "clicking a output to actually activate is
+  // not very clear or intuitive"). The plate wears its wire's color
   // (its data-wire, from wireSlot()), the same color that wire is drawn in on
   // the sheet above, so a plate and its line on the diagram are found by eye (operator, 2026-09-19 on #411: the Outputs
   // section "looks to basic and boring"). An Output the droid names no save
@@ -166,9 +169,21 @@
     ["signal", "power", "ground"].forEach((pin) => header.appendChild(element("span", `output-wire-pin is-${pin}`)));
     press.appendChild(header);
     press.appendChild(element("span", "toggle-label output-wire-name", output.name));
-    press.appendChild(element("span", "toggle-status", output.wired ? WIRED : NOT_WIRED));
+    // An Output with no switch says it is wired in words; the switch is only
+    // drawn where a press flips it.
+    if (!output.switchable) {
+      press.appendChild(element("span", "toggle-status", WIRED));
+      plate.appendChild(press);
+      return plate;
+    }
+    const state = element("span", "toggle-status output-wire-state");
+    const track = element("span", "output-wire-switch");
+    track.setAttribute("aria-hidden", "true");
+    track.appendChild(element("span", "output-wire-knob"));
+    state.appendChild(track);
+    state.appendChild(element("span", "output-wire-state-word", WIRED));
+    press.appendChild(state);
     plate.appendChild(press);
-    if (!output.switchable) return plate;
     press.type = "button";
     press.setAttribute("aria-pressed", output.wired ? "true" : "false");
     press.addEventListener("click", () => change(output.address, { wired: !output.wired }));

@@ -9,7 +9,10 @@
 //   1 "One row per Part, grouped by class, with counts in the headings"
 //     (history: #347): every group heading reads "<label> - <n> <unit>" and <n>
 //     is the number of rows under it; every Part in the served catalog
-//     (window.DroidParts) has exactly one row.
+//     (window.DroidParts) that sits on the body has exactly one row with an
+//     Output select, and every dome Part (half "dome", whatever its control)
+//     has one row in the Dome Controller group with no select, and its command
+//     or "No command yet" instead (history: #411, operator 2026-09-29).
 //   2 "A Part with no Output reads - not wired -" (history: #347): every Part no
 //     row of GET /api/servo/outputs carries shows "- not wired -" (en dashes) as
 //     its chosen Output and is not marked wired; every Part an Output carries
@@ -54,7 +57,10 @@
 // Self-tests, each must FAIL its rule: SELFTEST=hide hides one row once
 // answered (3); SELFTEST=notwired rewords one unwired row's "- not wired -"
 // (2); SELFTEST=unlight takes partkind-light off one light row (4);
-// SELFTEST=position gives one light row a position cell (4).
+// SELFTEST=position gives one light row a position cell (4); SELFTEST=domeselect
+// puts a select on one Dome Controller row (1c).
+//   Rule 4 reads a light Part's row in either group: a dome light sits in the
+//   Dome Controller group and keeps its treatment there.
 const lib = require('../_lib/checks.js');
 
 const ARTIFACTS = 'output/playwright/wiring';
@@ -82,7 +88,7 @@ lib.runCheck({
   rule: 'Every Part has one row in the picker on Wiring',
   artifactDir: ARTIFACTS,
   fixture: { droid: 'bench' },
-  selftests: ['hide', 'notwired', 'unlight', 'position'],
+  selftests: ['hide', 'notwired', 'unlight', 'position', 'domeselect'],
   run: async ({ page, report, writes, selftest }) => {
     // The droid's own answer, so the rows are checked against what the droid
     // said rather than against a copy made here.
@@ -141,12 +147,23 @@ lib.runCheck({
       }, ROWS);
     }
 
+    if (selftest === 'domeselect') {
+      await page.evaluate(() => {
+        document.querySelector('#wiring-parts-table [data-dome-part] td').appendChild(document.createElement('select'));
+      });
+    }
     const groups = await page.evaluate(() => ({
-      catalog: window.DroidParts.parts.map((part) => part.id),
+      catalog: window.DroidParts.parts.filter((part) => part.half !== 'dome').map((part) => part.id),
+      domeLink: window.DroidParts.parts.filter((part) => part.half === 'dome').map((part) => part.id),
       rows: [...document.querySelectorAll('#wiring-parts-table [data-part]')].map((row) => row.dataset.part),
+      domeRows: [...document.querySelectorAll('#wiring-parts-table [data-dome-part]')].map((row) => ({
+        id: row.dataset.domePart,
+        select: row.querySelector('select') !== null,
+        command: row.querySelector('.parts-command')?.textContent || '',
+      })),
       groups: [...document.querySelectorAll('#wiring-parts-table tbody[data-group]')].map((body) => ({
         heading: body.querySelector('.parts-group th').textContent,
-        rows: body.querySelectorAll('[data-part]').length,
+        rows: body.querySelectorAll('[data-part], [data-dome-part]').length,
       })),
     }));
     const badHeadings = groups.groups.filter((group) => {
@@ -166,9 +183,21 @@ lib.runCheck({
     const doubled = groups.rows.filter((id, index) => groups.rows.indexOf(id) !== index);
     report.add(
       '1b',
-      'one row per catalog Part',
+      'one row with an Output select per body Part',
       lib.verdict(missing.length === 0 && doubled.length === 0 && groups.rows.length === groups.catalog.length),
       `${groups.rows.length} rows for ${groups.catalog.length} Parts${missing.length ? `, missing ${missing.join(', ')}` : ''}${doubled.length ? `, doubled ${doubled.join(', ')}` : ''}`,
+    );
+
+    const domeWrong = groups.domeLink.filter((id) => {
+      const row = groups.domeRows.find((each) => each.id === id);
+      return !row || row.select || row.command === '';
+    });
+    report.add(
+      '1c',
+      'every dome Part has a Dome Controller row with its command and no Output select',
+      lib.verdict(groups.domeLink.length > 0 && domeWrong.length === 0 && groups.domeRows.length === groups.domeLink.length),
+      `${groups.domeRows.length} rows for ${groups.domeLink.length} dome Parts${domeWrong.length ? `; wrong: ${domeWrong.join(', ')}` : ''}` +
+        ` (${groups.domeRows.slice(0, 2).map((row) => `${row.id} "${row.command}"`).join(', ')})`,
     );
 
     // "- not wired -", against the droid's own answer.
@@ -236,9 +265,9 @@ lib.runCheck({
       const headers = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
       const lightIds = window.DroidParts.parts.filter((part) => part.kind === 'light').map((part) => part.id);
       const drawnAway = '.outputs-bar, .outputs-now, .outputs-tick, .outputs-us, .outputs-width, .outputs-release, .outputs-throw, .outputs-motion';
-      const rows = [...table.querySelectorAll('tr[data-part]')].map((row) => ({
-        id: row.dataset.part,
-        light: lightIds.includes(row.dataset.part),
+      const rows = [...table.querySelectorAll('tr[data-part], tr[data-dome-part]')].map((row) => ({
+        id: row.dataset.part || row.dataset.domePart,
+        light: lightIds.includes(row.dataset.part || row.dataset.domePart),
         classed: row.classList.contains('partkind-light'),
         tag: row.querySelector('.parts-kind')?.textContent.trim() || '',
         cells: row.children.length,

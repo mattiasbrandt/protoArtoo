@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/parts_mapping.js,/wiring.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/parts_mapping.js,/wiring.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -68,10 +68,13 @@
     </div>
 
     <!-- The Outputs, and the parts on them: what writes on this surface.
-         Which Outputs are wired and which one carries the LED strip
-         (operator, 2026-09-18 on #369) is drawn by data/output_settings.js;
-         which Part is on which Output (operator, 2026-09-28 on #411: the
-         mapping moved here from Parts) is the part-first picker,
+         Two acts on the same Outputs, each under a heading that names it
+         (operator, 2026-09-29 on #411: "what is the difference between
+         clicking a output and defining an output in the table"). The plates
+         mark which Outputs are wired and which one carries the LED strip
+         (operator, 2026-09-18 on #369), drawn by data/output_settings.js; the
+         table puts a Part on an Output (operator, 2026-09-28 on #411: the
+         mapping moved here from Parts), the part-first picker,
          data/parts_mapping.js picker(), with its move question below. Both
          are mounted by data/wiring.js from data/outputs.js's answer. Each
          Output is named by what the board prints beside it, and there is no
@@ -81,10 +84,14 @@
     <div class="card">
       <div class="sect">
         <h2>Outputs</h2>
-        <span class="sub waiting" id="wiring-parts-summary" role="status" aria-live="polite"></span>
       </div>
+      <div class="sect wiring-act"><h3>Mark what is wired</h3></div>
       <div id="wiring-outputs-body"></div>
       <div id="wiring-outputs-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="sect wiring-act">
+        <h3>Put parts on outputs</h3>
+        <span class="sub waiting" id="wiring-parts-summary" role="status" aria-live="polite"></span>
+      </div>
       <div class="parts-table-wrap" id="wiring-parts-table"></div>
       <p class="feedback" id="wiring-parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>

@@ -110,11 +110,9 @@
 
   const plural = (count, [one, many]) => `${count} ${count === 1 ? one : many}`;
 
-  // Where an Output is marked wired: on this surface, under the sheet
-  // (data/output_settings.js, #369), and where a Board Lane is switched on.
-  // Named in words: a wire's note is picture text, which carries no link, and
-  // the saved bench copy has no page under it either.
-  const OUTPUTS_PLATE = "Outputs";
+  // Where a Board Lane is switched on. Named in words: a wire's note is
+  // picture text, which carries no link, and the saved bench copy has no page
+  // under it either.
   const SWITCHES_PLACE = "Configuration";
 
   // ---------------------------------------------------------------------------
@@ -243,15 +241,18 @@
   //
   // A wire is told apart from its neighbours the way a real loom's are: by its
   // own color (CONTEXT.md "Status Color", the Wiring exception, operator
-  // 2026-09-19 on #411). The color NAMES a wire and carries no state; a wire
-  // to something not wired takes the one grey instead, and is dashed.
+  // 2026-09-19 on #411). The color NAMES a wire and carries no state. A Board
+  // Lane switched off takes the one grey instead, and is dashed; an Output not
+  // marked wired is not drawn at all (sheetWires()).
   //
-  // Which color is picked by the wire's place in one order - the Outputs in
-  // data/outputs.js's order, then the Board Lanes as the identity lists them -
-  // from the numbered palette --wire-1..--wire-8 in data/style.css, round
-  // again past eight. Nothing here knows which wires a board has: the order is
-  // the firmware's answer, and data/output_settings.js picks an Output plate's
-  // color by its place in the same list, so a plate and its line match.
+  // Which color is picked by the wire's place in one order - EVERY Output in
+  // data/outputs.js's order, drawn or not, then the Board Lanes as the
+  // identity lists them - from the numbered palette --wire-1..--wire-8 in
+  // data/style.css, round again past eight. Nothing here knows which wires a
+  // board has: the order is the firmware's answer, and data/output_settings.js
+  // picks an Output plate's color by its place in the same list, so a plate
+  // and its line match. That is why an Output left off the drawing still holds
+  // its place in the order: marking ARM2 wired must not recolor ARM3.
   //
   // The colors live in the stylesheet only. This file writes a token's name
   // and never a value, painted as an inline style so it beats nothing and
@@ -370,9 +371,9 @@
   };
 
   // One wire: out of the board's edge to the thing on the end of it, in its
-  // own color. A wire that is not wired is grey and dashed AND says why on
-  // its row, because a dashed line on its own is a convention a builder has to
-  // be taught.
+  // own color. A Board Lane that is switched off is grey and dashed AND says
+  // why on its row, because a dashed line on its own is a convention a builder
+  // has to be taught.
   //
   // The line type says what the wire carries. A Board Lane is a serial link,
   // TX and RX - two conductors and a signal both ways - so it is drawn as a
@@ -482,26 +483,22 @@
 
   // An Output's wire is named first by what the board prints beside its pin,
   // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
-  // Address"), then by its address. Whether it is wired is data/outputs.js's
-  // one rule: an Output the config reports nothing for - an expander channel -
-  // has no switch anybody could have turned off, so it reads as wired.
+  // Address"), then by its address. Only a wired Output gets one (sheetWires()).
   const outputWire = (output, { parts, order }) => {
     const address = output.address;
-    const live = output.wired;
     const onIt = partNames(parts, output.parts);
-    let note = "signal on the pin, ground to the board's own ground";
-    if (!live) note = `not marked wired - nothing moves. Mark it under ${OUTPUTS_PLATE}`;
-    else if (onIt.length === 0) note = "a spare: it gets a pulse, and nothing is recorded on the end";
     return {
       key: address,
-      live,
+      live: true,
       ink: wireInk(order, address),
       pair: false,
       silk: output.label,
       detail: address,
       name: onIt.length ? onIt.join(" + ") : "Nothing recorded",
       role: outputRole(output),
-      note,
+      note: onIt.length
+        ? "signal on the pin, ground to the board's own ground"
+        : "a spare: it gets a pulse, and nothing is recorded on the end",
     };
   };
 
@@ -526,11 +523,18 @@
       ? "shares its UART with the dome link, RX only"
       : "TX to the far end's RX, RX to its TX, and ground";
 
+  // Only the wires a builder has run are drawn (operator, 2026-09-29 on #411:
+  // "the drawing should only draw the actaul lines (wires) currently
+  // assigned/wired in"). Whether an Output is wired is data/outputs.js's one
+  // rule: an Output the config reports nothing for - an expander channel - has
+  // no switch anybody could have turned off, so it reads as wired. An Output
+  // not marked wired has its plate under Outputs and no line here, and the
+  // printed sheet, from this same list, leaves it out too.
   const sheetWires = (model = {}) => {
     const { parts = [], outputs = [] } = model;
     const order = wireOrder(model);
     return [
-      ...outputs.map((output) => outputWire(output, { parts, order })),
+      ...outputs.filter((output) => output.wired).map((output) => outputWire(output, { parts, order })),
       ...loomRows(model).map((lane) => laneWire(lane, order)),
     ];
   };
@@ -598,7 +602,9 @@
     const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
     const made = { droidName, stamp };
     const wires = sheetWires(model);
-    const idle = wires.filter((wire) => !wire.live).length;
+    // The count says what is drawn, and what is not: an Output left off the
+    // drawing is named in the count so a missing line reads as a choice.
+    const unwired = (model.outputs || []).filter((output) => !output.wired).length;
 
     return {
       promise: PROMISE,
@@ -611,10 +617,12 @@
       stamp,
       fileName: sheetFileName(droidName, stamp),
       wires,
-      wiresSummary: `${plural(wires.length, ["wire", "wires"])} · ${idle} not wired`,
+      wiresSummary:
+        `${plural(wires.length, ["wire", "wires"])}` +
+        (unwired ? ` · ${plural(unwired, ["output", "outputs"])} not wired` : ""),
       wiresHtml: wires.length
         ? wiresDiagramHtml(wires, made, boardName)
-        : '<p class="hint">This image reports no wires to draw.</p>',
+        : `<p class="hint">${unwired ? "No output is marked wired yet." : "This image reports no wires to draw."}</p>`,
     };
   };
 
@@ -822,7 +830,7 @@
   // a file on the computer in front of you. The sheet it saves is made from the
   // same read the screen is showing, and the screen is repainted with that
   // very sheet in the same moment, so the page you are looking at and the file
-  // you just saved carry the same minute, the same tiers and the same counts.
+  // you just saved carry the same minute, the same wires and the same counts.
   //
   // It is a real link rather than a button that fakes one: the file is put on
   // the link as the press is handled, and the browser's own download does the
@@ -904,6 +912,7 @@
       "/outputs.js": "the outputs",
       "/wiring.js": "the wiring sheet",
       "/output_settings.js": "the outputs",
+      "/dome_command_map.js": "the dome's commands",
       "/parts_mapping.js": "the parts on each output",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {
