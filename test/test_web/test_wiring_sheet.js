@@ -270,6 +270,7 @@ const boot = async ({
     "/outputs.js": readData("outputs.js"),
     "/output_settings.js": readData("output_settings.js"),
     // The part-first picker the screen mounts under the sheet (#411).
+    "/dome_command_map.js": readData("dome_command_map.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/wiring.js": readData("wiring.js"),
     // The picker's lookup and frame, which name and picture the board.
@@ -328,32 +329,41 @@ const boot = async ({
 // The tier token, and the why
 // ---------------------------------------------------------------------------
 
-test("switching an output off dashes its wire and keeps it on the sheet", async () => {
-  const wired = [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })];
-  const on = await boot({
-    outputs: structuredClone(wired),
-    say: { "ledc:0": { wired: true } },
-  });
-  assert.equal(on.isLive("ledc:0"), true);
+// The drawing is the wires a builder has run, and nothing else (operator,
+// 2026-09-29 on #411: "the drawing should only draw the actaul lines (wires)
+// currently assigned/wired in"). An Output not marked wired has its plate
+// under the sheet and no line on it - on the screen, and in the printed sheet,
+// which is the same generator's.
+test("an output not marked wired draws no line, on the screen or in the saved sheet", async () => {
+  const rows = [
+    output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
+    output("ledc:1", "ARM2", { parts: ["utilLo"], component: "mg996r" }),
+  ];
+  const env = await boot({ outputs: rows, say: { "ledc:0": { wired: true } } });
+  assert.equal(env.isLive("ledc:0"), true, "the wired Output is drawn");
+  assert.equal(env.wire("ledc:1"), undefined, "the Output nobody marked wired is not");
+  assert.ok(
+    env.document.getElementById("wiring-outputs-body").querySelectorAll("[data-output]").find((plate) => plate.dataset.output === "ledc:1"),
+    "and it keeps its plate, where it is marked wired",
+  );
 
-  const off = await boot({
-    outputs: structuredClone(wired),
-  });
-  assert.equal(off.isLive("ledc:0"), false, "a wire nobody marked wired is drawn not wired");
-  assert.match(off.wire("ledc:0").textContent, /Upper utility arm/, "and still says what is on its end");
+  const link = env.document.getElementById("wiring-save");
+  link.fire("click", {});
+  const file = await env.files.get(link.getAttribute("href")).text();
+  assert.match(file, /data-wire="ledc:0"/);
+  assert.doesNotMatch(file, /data-wire="ledc:1"/, "the printed sheet leaves it out too");
 });
 
 // Every "no" names the builder's next move, and a wrong destination is the
 // defect CONTEXT.md "Availability Family" records (16 strings once named a
-// place a builder could not reach). An Output is marked wired on this surface
-// now (#369), not on Configuration, so that is where its wire sends them - in
-// words, because a picture carries no link and the saved copy has no page.
-test("an output not wired names where it is marked wired, and not Configuration", async () => {
-  const rows = [output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" })];
-  const off = await boot({ outputs: rows });
-  const text = off.wire("ledc:0").textContent;
-  assert.match(text, /Mark it under Outputs/, "the wire names the control on this surface");
-  assert.doesNotMatch(text, /Configuration/, "and no longer the page the control left");
+// place a builder could not reach). A serial link is switched on where its
+// Component Toggle is, on Configuration, so a switched-off link's wire sends
+// the builder there - in words, because a picture carries no link and the
+// saved copy has no page.
+test("a serial link switched off is drawn idle and names where it is switched on", async () => {
+  const env = await boot({ lanes: { drive: { enabled: false, label: "S1" } } });
+  assert.equal(env.isLive("drive"), false, "a switched-off link is not drawn as a live wire");
+  assert.match(env.wire("drive").textContent, /switched off in Configuration/);
 });
 
 // What is on a wire is ONE answer in two vocabularies (ADR 0067): a servo's
@@ -448,7 +458,7 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
   });
   const onScreen = sheetOf(env.document);
   assert.ok(onScreen.wires.some((wire) => wire.endsWith(":true")), "the fixture draws a wired wire");
-  assert.ok(onScreen.wires.some((wire) => wire.endsWith(":false")), "and one not wired");
+  assert.ok(onScreen.wires.some((wire) => wire.endsWith(":false")), "and one switched off");
   assert.ok(onScreen.pickers > 0, "and the screen carries the part-first picker");
   // The bench copy is the wires and their power, and it writes nothing
   // (operator, 2026-09-19 on #411).
@@ -471,7 +481,8 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
 // Outputs are one list in data/outputs.js's order (#415), which is the order
 // the Outputs plates below take their colors from too. Each wire takes the
 // palette color at its place (--wire-n), from the stylesheet and never a
-// literal, and a wire to something not wired takes --wire-off.
+// literal. An Output not marked wired is not drawn but keeps its place, so
+// the lines after it keep the colors their plates wear.
 test("the wires are the Outputs the firmware reports, named as the board prints them, colored by place", async () => {
   const rows = [
     output("ledc:0", "GPIO 49", { parts: ["utilUp"], component: "mg996r" }),
@@ -489,15 +500,13 @@ test("the wires are the Outputs the firmware reports, named as the board prints 
   });
   assert.deepEqual(
     env.wires().map((wire) => wire.dataset.wire),
-    ["ledc:0", "ledc:3", "pca:0", "drive", "audio", "protor2link"],
+    ["ledc:0", "pca:0", "drive", "audio", "protor2link"],
   );
   const silk = (key) => env.wire(key).querySelector(".wd-silk")?.textContent ?? "";
   assert.equal(silk("ledc:0"), "GPIO 49");
-  assert.equal(silk("ledc:3"), "GPIO 4");
   const ink = (key) => env.wire(key).querySelector(".wd-line").getAttribute("style");
   assert.equal(ink("ledc:0"), "stroke:var(--wire-1)");
-  assert.equal(ink("ledc:3"), "stroke:var(--wire-off)", "not marked wired");
-  assert.equal(ink("pca:0"), "stroke:var(--wire-3)", "no tick anybody could turn off, so it is wired");
+  assert.equal(ink("pca:0"), "stroke:var(--wire-3)", "no tick anybody could turn off, so it is wired, at its own place");
   assert.equal(ink("drive"), "stroke:var(--wire-4)");
   assert.equal(ink("protor2link"), "stroke:var(--wire-6)");
 });
