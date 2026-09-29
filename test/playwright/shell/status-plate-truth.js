@@ -766,7 +766,7 @@ const readPartsToggle = (page) =>
   console.log(`\n=== Status Plate truth: ${total - failed}/${total} PASS ===`);
   console.log(`Screenshots under ${ARTIFACT_DIR}`);
   if (latchedByScript) {
-    console.log('\nThe estop is LATCHED on the droid: this script latched it from outside the browser (check g). It does not release it: release it on Foot Drive or the Dashboard when you are ready.');
+    console.log('\nThe estop is LATCHED on the droid: this script latched it from outside the browser (check g). It does not release it: STOP (lit) releases it when you are ready.');
   }
   if (failed || walk.length === 0 || report.rows.length < 20) process.exitCode = 1;
 })();

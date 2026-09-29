@@ -7,7 +7,8 @@
 //
 // PRECONDITION: GET /api/status says the estop is LATCHED (NOT ASSESSED
 // otherwise). The script never releases it - a release is a deliberate
-// operator act on Foot Drive or the Dashboard (ADR 0048). Writes nothing: the
+// operator press on STOP, lit while the latch holds (ADR 0048, 2026-09-29
+// amendment). It LEAVES THE ESTOP LATCHED, as it found it. Writes nothing: the
 // guard records every write the page tries and blocks it, so "sends nothing"
 // below is read off what the page TRIED.
 //
@@ -15,9 +16,10 @@
 //   a  Servos: "find by moving" is refused (disabled + aria-disabled,
 //      data/servo.js gateActs). Three quick presses on it raise the shell's
 //      notice once - "That control is switched off right now. The estop is
-//      latched." with its route "Open Foot Drive, where that is changed"
-//      (data/shell.js showNotice) - and three more after the 1.5 s burst
-//      window raise it once more. No POST /api/servo.
+//      latched. Press STOP to release it." with no route link, because the
+//      release is STOP on this same screen (data/shell.js showNotice) - and
+//      three more after the 1.5 s burst window raise it once more. No POST
+//      /api/servo.
 //   b  Parts: a fitted body Part, picked, says "Estop latched. Nothing moves
 //      until it is cleared." beside a refused "Open it"; pressing it sends no
 //      POST /api/servo or /api/dome/cmd (data/parts.js describePick).
@@ -45,8 +47,7 @@
 const lib = require('../_lib/checks.js');
 
 const ARTIFACTS = 'output/playwright/shell';
-const NOTICE = 'That control is switched off right now. The estop is latched.';
-const NOTICE_ROUTE = 'Open Foot Drive, where that is changed';
+const NOTICE = 'That control is switched off right now. The estop is latched. Press STOP to release it.';
 const HELD = 'Estop latched. Nothing moves until it is cleared.';
 const MOVES = ['/api/servo', '/api/dome/cmd', '/api/servo/centre'];
 
@@ -95,7 +96,7 @@ lib.runCheck({
     const notice = await page.evaluate(() => ({
       shown: document.getElementById('ignored-input-notice').checkVisibility({ checkVisibilityCSS: true }),
       text: document.getElementById('ignored-input-text').textContent,
-      route: document.getElementById('ignored-input-route').textContent,
+      routeShown: document.getElementById('ignored-input-route').checkVisibility({ checkVisibilityCSS: true }),
     }));
     await page.screenshot({ path: `${ARTIFACTS}/estop-find-by-moving.png` });
     await page.waitForTimeout(2000);
@@ -103,11 +104,11 @@ lib.runCheck({
     const reasonsA = [];
     if (!refused.disabled || refused.aria !== 'true') reasonsA.push(`not refused (disabled ${refused.disabled}, aria-disabled ${refused.aria})`);
     if (!notice.shown || notice.text !== NOTICE) reasonsA.push(`the notice ${notice.shown ? `reads "${notice.text}"` : 'is not on screen'}`);
-    if (notice.route !== NOTICE_ROUTE) reasonsA.push(`its route reads "${notice.route}"`);
+    if (notice.routeShown) reasonsA.push('it shows a route link, which would send the operator away from STOP');
     if (first !== 1 || second !== 1) reasonsA.push(`notices per burst: ${first}, then ${second} (want 1 and 1)`);
     moves(sinceFind).forEach((entry) => reasonsA.push(`tried ${lib.describeWrite(entry)}`));
     report.add('a', 'Servos: find by moving refused, one notice per burst, nothing sent', lib.verdict(reasonsA.length === 0),
-      reasonsA.join('; ') || `refused; "${notice.text}" + "${notice.route}"; one notice per burst of three`);
+      reasonsA.join('; ') || `refused; "${notice.text}", no route link; one notice per burst of three`);
     await lib.step('Find by moving checked.');
 
     // b, c: the Parts picture --------------------------------------------------
@@ -191,6 +192,6 @@ lib.runCheck({
     await page.screenshot({ path: `${ARTIFACTS}/estop-dashboard-dome.png` });
     report.add('d', 'Dashboard dome: a panel press says the estop holds it, and sends nothing', lib.verdict(said === HELD && tried.length === 0),
       `"${said}"${tried.length ? `; tried ${tried.map(lib.describeWrite).join(' | ')}` : '; nothing sent'}`);
-    console.log(`\nThe estop line reads "${await page.textContent('#shell-estop-state')}". Nothing was released: clear it on Foot Drive or the Dashboard when you are ready.`);
+    console.log(`\nThe estop line reads "${await page.textContent('#shell-estop-state')}". The droid is left LATCHED, as the script found it: STOP (lit) releases it when you are ready.`);
   },
 });
