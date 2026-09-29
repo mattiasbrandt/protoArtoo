@@ -275,6 +275,15 @@ So: **give the run a pace a person can follow.** A sweep that blinks through
 every surface in twenty seconds is not a session he can take part in; the
 settle time per page is the pace.
 
+**Phase 1 is one command**, `make bench-auto BENCH_ROWS=tools/bench_rows/<board>.txt
+HTTP_BASE=http://<board-ip> IMAGE=artoo|shipping` (`tools/bench_auto.py`). It
+runs the sheet's agent-runnable rows, `console-sweep.js`, every droid script and
+every fixture script (on a fixture server of its own), headed, and orders the
+droid scripts by the estop state each declares. Each script's `// bench-auto:`
+line decides where it runs (`test/playwright/README.md`); never pick scripts by
+grepping their URLs. Run it in a Herdr pane; its report, samples and logs land
+in `output/bench-auto/<image>-<time>/`.
+
 **Headed is a window, not a wait.** An agent runs the automated pass headed and
 unattended in phase 1. What must stay out of that run is anything that blocks
 on a key: `STEP=1` (Enter between pages) and any `pause` only the operator can
@@ -312,7 +321,14 @@ open on the real controller:**
 
 - **Performance.** Navigation timing per surface, and whether anything reloads or
   re-renders in a loop. The sweep's resource-error column is a free read on
-  wasted requests and 404s.
+  wasted requests and 404s. **Memory is read from the runner's memory log, not
+  from a green exit code**: on 2026-09-29 the sheet exited 0 and the sweep found
+  0 errors while the controller failed 11 allocations and `heapMin` fell to
+  280 B, and no 1 Hz sample saw either dip. The runner's table charges each
+  step with how far `failedAllocs`, the refusal counters and `heapMin` moved
+  inside it, and flags an advance, a reset, an unanswered poll or a Buffer
+  Reading under the compiled floor; on a `_profiler` build it also keeps each
+  step's `lastFail`. Any flag makes its exit code non-zero.
 - **Regression.** Re-run the per-surface scripts the epic did not touch. A script
   that passed last wave and fails now is the cheapest regression signal available
   and nobody has to have predicted it.

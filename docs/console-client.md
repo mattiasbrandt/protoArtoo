@@ -400,6 +400,16 @@ A name that is not in the sheet is refused with the list of names that are:
 ERROR: --rows: unknown row name(s) nope; available: detach-replug, discovery, ...
 ```
 
+The automated half of a bench session - these rows, the console sweep and
+every Playwright script, with a memory log beside them - is one command,
+`make bench-auto` (`tools/bench_auto.py`). It replays the sheet with
+`--skip-manual` exactly as above, then reports what each step did to the
+controller's heap:
+
+```bash
+make bench-auto BENCH_ROWS=tools/bench_rows/artoo_esp32.txt HTTP_BASE=http://10.0.0.22 IMAGE=artoo
+```
+
 A sheet carries **commands only**. What a row is expected to answer stays on the
 runbook ticket, deliberately - there is no `expect` directive, and a reviewer
 reads the transcript against the ticket. The same holds for `http` steps: a

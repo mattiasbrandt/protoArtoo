@@ -108,7 +108,7 @@ FLOCK := python3 tools/pio_lock.py
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
         check-chirp check-mp3trigger \
-        setup setup-wifi clean monitor console bench-rows check-deps
+        setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
 # Default target — launches the interactive wizard
 all:
@@ -346,6 +346,24 @@ bench-rows: ## Replay a Console bench sheet  (BENCH_ROWS=tools/bench_rows/<board
 	  --script $(BENCH_ROWS) $(if $(ROWS),--rows $(ROWS)) $(if $(SKIP_MANUAL),--skip-manual) \
 	  $(if $(HTTP_BASE),--http-base $(HTTP_BASE)) $(if $(RUN_DIR),--run-dir $(RUN_DIR)) \
 	  $(if $(NO_HTTP),--no-http)
+
+# The automated half of a bench session (phase 1 of the bench-verification
+# skill): the sheet's agent-runnable rows, the console sweep and every
+# Playwright script, with a memory log polled the whole way through and a
+# table at the end of what each step did to the heap. The Console goes over the
+# resolved serial port, exactly as bench-rows. IMAGE is the product image on the
+# board (artoo or shipping, as tools/soak.py names it); it is declared, never
+# guessed from the payload. Reference: the header of tools/bench_auto.py.
+IMAGE       ?=
+
+bench-auto: ## Run a bench session's automated half with a memory log  (BENCH_ROWS=... HTTP_BASE=http://<droid> IMAGE=artoo|shipping [ROWS=a,b] [RUN_DIR=dir])
+	@if [ -z "$(BENCH_ROWS)" ] || [ -z "$(HTTP_BASE)" ] || [ -z "$(IMAGE)" ]; then \
+	  echo "BENCH_ROWS, HTTP_BASE and IMAGE are required: the board, the droid and its image are never guessed."; \
+	  echo "  make bench-auto BENCH_ROWS=tools/bench_rows/artoo_esp32.txt HTTP_BASE=http://10.0.0.22 IMAGE=artoo"; \
+	  exit 1; \
+	fi
+	@port=$$($(RESOLVE_PORT)) && python3 tools/bench_auto.py --port $$port --sheet $(BENCH_ROWS) \
+	  --droid $(HTTP_BASE) --image $(IMAGE) $(if $(ROWS),--rows $(ROWS)) $(if $(RUN_DIR),--run-dir $(RUN_DIR))
 
 check-deps: ## Check required OS commands and Python packages are installed
 	@command -v python3 >/dev/null 2>&1 || { \
