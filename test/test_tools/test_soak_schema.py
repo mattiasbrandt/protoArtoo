@@ -958,7 +958,8 @@ class AdmissionCountersMatchTheFirmware(unittest.TestCase):
             for field in (schema.refused_heap_floor_field,
                           schema.refused_heap_floor_diag_field,
                           schema.accept_min_largest_block_field,
-                          schema.heap_free_field, schema.heap_min_field):
+                          schema.heap_free_field, schema.heap_min_field,
+                          schema.heap_largest_block_field, schema.failed_allocs_field):
                 with self.subTest(image=schema.name, field=field):
                     self.assertIn(f'\\"{field}\\":', STATUS_BUILDER_CPP,
                                   f"{field!r} is no longer emitted by buildStatusJson()")
