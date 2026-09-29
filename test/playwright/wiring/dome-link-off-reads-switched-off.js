@@ -1,16 +1,19 @@
 // bench-auto: droid
-// On Wiring, a dome link that is switched off reads "switched off" on its
-// lane, drawn idle - never as a live wire. Introduced by #350 (the lane is
-// joined to its Component Toggle by name, case-folded: data/wiring.js
-// componentIndex, laneWire).
+// On Wiring, a dome link that is switched off draws no line: it rides no wire,
+// as a free Output draws none (operator, 2026-09-29 on #411: "foot drive is
+// now set to "not fitted" so why is then wiring drawing still listing it as
+// wired?"). The lane is joined to its Component Toggle by name, case-folded
+// (#350, data/wiring.js componentIndex, sheetWires). The filename is the
+// rule's history: it read "switched off", drawn idle, until #411.
 //
 // PRECONDITION: the droid reports a protor2link Board Lane (GET /api/identity
 // board_lanes) and its dome link is switched OFF (GET /api/config
 // components.protoR2link.enabled false). NOT ASSESSED otherwise - the rule is
 // about the switched-off lane. Writes nothing.
 //
-// WHAT IT PROVES. The lane's wire in the sheet, .wd-link[data-wire="protor2link"],
-// is drawn idle (.is-idle) and its role reads exactly "switched off".
+// WHAT IT PROVES. Once the sheet has painted (#wiring-wires-summary carries
+// its count), there is no .wd-link[data-wire="protor2link"] in it, and no
+// pin for it in the used/free strip.
 //
 // WHY A REAL BROWSER. The sheet is generated from three live reads.
 //
@@ -20,16 +23,16 @@
 //   BASE_URL=http://<board>   (default http://10.0.0.22)   HEADLESS=true   no window
 // Offline proof: FIXTURE=1 BASE_URL=http://127.0.0.1:<port> HEADLESS=true
 // against tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js).
-// Self-test: SELFTEST=live rewrites the lane's role as a live one; the row
-// must FAIL.
+// Self-test: SELFTEST=drawn puts a line for the lane back into the sheet; the
+// row must FAIL.
 const lib = require('../_lib/checks.js');
 
 const ARTIFACTS = 'output/playwright/wiring';
 
 lib.runCheck({
-  rule: 'Wiring: a dome link switched off reads "switched off"',
+  rule: 'Wiring: a dome link switched off draws no line',
   artifactDir: ARTIFACTS,
-  selftests: ['live'],
+  selftests: ['drawn'],
   precondition: async ({ page }) => {
     const lanes = (await lib.readJson(page, '/api/identity')).json?.board_lanes || {};
     if (!lanes.protor2link) return 'this board reports no protor2link lane';
@@ -39,14 +42,22 @@ lib.runCheck({
   },
   run: async ({ page, report, selftest }) => {
     await lib.loadSurface(page, 'wiring');
-    await page.waitForSelector('.wd-link[data-wire="protor2link"]', { timeout: 15000 });
-    if (selftest === 'live') await page.evaluate(() => { document.querySelector('.wd-link[data-wire="protor2link"] .wd-role').textContent = 'serial, both ways'; });
-    const lane = await page.evaluate(() => {
-      const link = document.querySelector('.wd-link[data-wire="protor2link"]');
-      return { role: link.querySelector('.wd-role')?.textContent, note: link.querySelector('.wd-note')?.textContent, idle: link.classList.contains('is-idle') };
-    });
+    await page.waitForFunction(() => /wire/.test(document.querySelector('#wiring-wires-summary')?.textContent || ''), null, { timeout: 15000 });
+    if (selftest === 'drawn') {
+      await page.evaluate(() => {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        line.setAttribute('class', 'wd-link');
+        line.setAttribute('data-wire', 'protor2link');
+        document.querySelector('#wiring-wires').appendChild(line);
+      });
+    }
+    const lane = await page.evaluate(() => ({
+      line: document.querySelectorAll('.wd-link[data-wire="protor2link"]').length,
+      pin: document.querySelectorAll('.wd-pin[data-pin="lane:protor2link"]').length,
+      summary: document.querySelector('#wiring-wires-summary').textContent,
+    }));
     await page.locator('#wiring-wires').screenshot({ path: `${ARTIFACTS}/wires.png` });
-    report.add('a', 'The dome link lane reads "switched off", drawn idle', lib.verdict(lane.role === 'switched off' && lane.idle),
-      `role "${lane.role}", note "${lane.note}", ${lane.idle ? 'idle' : 'drawn LIVE'}`);
+    report.add('a', 'The switched-off dome link has no line and no pin', lib.verdict(lane.line === 0 && lane.pin === 0),
+      `${lane.line} line(s), ${lane.pin} pin(s); summary "${lane.summary}"`);
   },
 });

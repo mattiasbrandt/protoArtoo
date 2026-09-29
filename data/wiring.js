@@ -6,9 +6,9 @@
 // to, and which part will it move?" The sheet is a reference, not a control
 // surface: it writes nothing, and no act on it reaches the droid. What writes
 // is under it, mounted by the screen caller below and never part of the
-// sheet: the Outputs plates (data/output_settings.js), and the part-first
-// picker that puts a Part on an Output, with its move question
-// (data/parts_mapping.js picker(); operator, 2026-09-28 on #411).
+// sheet: the part-first picker that puts a Part on an Output and says what is
+// on its wire, with its move question (data/parts_mapping.js picker();
+// operator, 2026-09-28 and 2026-09-29 on #411).
 //
 // EVERYTHING ON IT IS GENERATED. The wires come from the Board Lanes the
 // running firmware reports (GET /api/identity), the Outputs from
@@ -109,11 +109,6 @@
   const escAttr = (value) => window.PAUtils?.escapeAttr?.(value) ?? String(value ?? "");
 
   const plural = (count, [one, many]) => `${count} ${count === 1 ? one : many}`;
-
-  // Where a Board Lane is switched on. Named in words: a wire's note is
-  // picture text, which carries no link, and the saved bench copy has no page
-  // under it either.
-  const SWITCHES_PLACE = "Configuration";
 
   // ---------------------------------------------------------------------------
   // Finding a signal's Component Toggle
@@ -231,7 +226,6 @@
   const INK = "var(--text,#111111)";
   const INK_DIM = "var(--text-dim,#111111)";
   const INK_FAINT = "var(--text-faint,#111111)";
-  const SEAM = "var(--border,#999999)";
   const SEAM_STRONG = "var(--border-strong,#999999)";
   const PLATE = "var(--surface,#ffffff)";
   const PLATE_RAISED = "var(--surface-alt,#ffffff)";
@@ -241,18 +235,17 @@
   //
   // A wire is told apart from its neighbours the way a real loom's are: by its
   // own color (CONTEXT.md "Status Color", the Wiring exception, operator
-  // 2026-09-19 on #411). The color NAMES a wire and carries no state. A Board
-  // Lane switched off takes the one grey instead, and is dashed; an Output not
-  // marked wired is not drawn at all (sheetWires()).
+  // 2026-09-19 on #411). The color NAMES a wire and carries no state. Only the
+  // wires a builder has run are drawn at all (sheetWires()).
   //
   // Which color is picked by the wire's place in one order - EVERY Output in
-  // data/outputs.js's order, drawn or not, then the Board Lanes as the
+  // data/outputs.js's order, drawn or not, then EVERY Board Lane as the
   // identity lists them - from the numbered palette --wire-1..--wire-8 in
   // data/style.css, round again past eight. Nothing here knows which wires a
-  // board has: the order is the firmware's answer, and data/output_settings.js
-  // picks an Output plate's color by its place in the same list, so a plate
-  // and its line match. That is why an Output left off the drawing still holds
-  // its place in the order: marking ARM2 wired must not recolor ARM3.
+  // board has: the order is the firmware's answer. A wire left off the drawing
+  // still holds its place, so a wire keeps its color as others come and go:
+  // putting a Part on ARM2 must not recolor ARM3, and the pin strip under the
+  // drawing (pinsHtml()) marks each Output in the color its line wears.
   //
   // The colors live in the stylesheet only. This file writes a token's name
   // and never a value, painted as an inline style so it beats nothing and
@@ -260,17 +253,18 @@
   // resolved into it as it is saved (inkedForFile()).
   // ---------------------------------------------------------------------------
   const WIRE_PALETTE = 8;
-  const WIRE_OFF = "var(--wire-off)";
 
   const wireOrder = ({ lanes = {}, outputs = [] } = {}) => [
     ...outputs.map((output) => output.address),
     ...Object.keys(lanes).map((key) => `lane:${key}`),
   ];
 
-  const wireInk = (order, key) => {
+  // The palette slot a wire takes: 1..WIRE_PALETTE.
+  const wireSlot = (order, key) => {
     const at = order.indexOf(key);
-    return `var(--wire-${((at < 0 ? order.length : at) % WIRE_PALETTE) + 1})`;
+    return ((at < 0 ? order.length : at) % WIRE_PALETTE) + 1;
   };
+  const wireInk = (order, key) => `var(--wire-${wireSlot(order, key)})`;
 
   // Sizes in the picture's own units, matching the type tokens the stylesheet
   // gives the same classes (--fs-hint 10, --fs-sect 11, --fs-cell 13).
@@ -371,21 +365,17 @@
   };
 
   // One wire: out of the board's edge to the thing on the end of it, in its
-  // own color. A Board Lane that is switched off is grey and dashed AND says
-  // why on its row, because a dashed line on its own is a convention a builder
-  // has to be taught.
+  // own color.
   //
   // The line type says what the wire carries. A Board Lane is a serial link,
   // TX and RX - two conductors and a signal both ways - so it is drawn as a
   // pair with an arrow at each end. A servo wire's signal is one conductor
   // running out to the part, so it is one line with one arrow.
-  const svgLink = (index, { key, live, ink: own, pair, silk, detail, name, role, note }) => {
+  const svgLink = (index, { key, ink, pair, silk, detail, name, role, note }) => {
     const y = TOP + index * ROW_H + ROW_H / 2;
-    const ink = live ? own : WIRE_OFF;
     const from = BOARD_X + BOARD_W;
     const to = BOX_X;
-    const dash = live ? "" : ' stroke-dasharray="6 4"';
-    const stroke = `fill="none" style="stroke:${ink}" stroke-width="${pair ? 1.6 : 2.2}"${dash}`;
+    const stroke = `fill="none" style="stroke:${ink}" stroke-width="${pair ? 1.6 : 2.2}"`;
     const line = pair
       ? `<path class="wd-line" d="M${from + 10} ${y - 2.5} H ${to - 10} ` +
         `M${from + 10} ${y + 2.5} H ${to - 10}" ${stroke}/>`
@@ -395,18 +385,15 @@
       `<path class="wd-arrow" d="M${tip - dir * 11} ${y - 5} L${tip} ${y} ` +
       `L${tip - dir * 11} ${y + 5} Z" style="fill:${ink}"/>`;
     return (
-      `<g class="wd-link ${live ? "is-live" : "is-idle"}" data-wire="${escAttr(key)}">` +
+      `<g class="wd-link" data-wire="${escAttr(key)}">` +
       line +
       arrow(to - 1, 1) +
       (pair ? arrow(from + 1, -1) : "") +
       svgWireName(y, { silk, detail, ink }) +
       svgText("wd-note", WIRE_TEXT_X, y + 18, note, 60, SMALL) +
       `<rect class="wd-box" x="${BOX_X}" y="${y - BOX_H / 2}" width="${BOX_W}" ` +
-      `height="${BOX_H}" rx="2" fill="${PLATE}" ` +
-      (live ? `style="stroke:${ink}"` : `stroke="${SEAM}"`) +
-      ` stroke-width="1.2"/>` +
-      svgText("wd-name", BOX_X + 12, y - 3, name, 36,
-        `fill="${live ? INK : INK_DIM}" font-size="12" font-weight="600"`) +
+      `height="${BOX_H}" rx="2" fill="${PLATE}" style="stroke:${ink}" stroke-width="1.2"/>` +
+      svgText("wd-name", BOX_X + 12, y - 3, name, 36, `fill="${INK}" font-size="12" font-weight="600"`) +
       svgText("wd-role", BOX_X + 12, y + 12, role, 42, SMALL) +
       `</g>`
     );
@@ -477,43 +464,34 @@
   // something, a servo's model where it drives a servo. The stored token is the
   // same field either way, and data/outputs.js names it (#413).
   const outputRole = (output) => {
-    if (output.wired && output.light) return `the ${output.light.label}`;
+    if (output.light) return `the ${output.light.label}`;
     return output.component && output.component !== "none" ? output.component : "a servo";
   };
 
   // An Output's wire is named first by what the board prints beside its pin,
   // ARM3 on the Artoo PCB and GPIO 4 on the FireBeetle 2 (CONTEXT.md "Output
-  // Address"), then by its address. Only a wired Output gets one (sheetWires()).
-  const outputWire = (output, { parts, order }) => {
-    const address = output.address;
-    const onIt = partNames(parts, output.parts);
-    return {
-      key: address,
-      live: true,
-      ink: wireInk(order, address),
-      pair: false,
-      silk: output.label,
-      detail: address,
-      name: onIt.length ? onIt.join(" + ") : "Nothing recorded",
-      role: outputRole(output),
-      note: onIt.length
-        ? "signal on the pin, ground to the board's own ground"
-        : "a spare: it gets a pulse, and nothing is recorded on the end",
-    };
-  };
+  // Address"), then by its address. Only an Output with a Part on it gets one
+  // (sheetWires()), so the box names what is on the end.
+  const outputWire = (output, { parts, order }) => ({
+    key: output.address,
+    ink: wireInk(order, output.address),
+    pair: false,
+    silk: output.label,
+    detail: output.address,
+    name: partNames(parts, output.parts).join(" + "),
+    role: outputRole(output),
+    note: "signal on the pin, ground to the board's own ground",
+  });
 
   const laneWire = (lane, order) => ({
     key: lane.key,
-    live: lane.on,
     ink: wireInk(order, `lane:${lane.key}`),
     pair: true,
     silk: lane.label,
     detail: `UART ${lane.uart} - TX ${lane.tx} / RX ${lane.rx}`,
     name: lane.name,
-    role: lane.on ? "serial, both ways" : "switched off",
-    note: lane.on
-      ? laneNote(lane)
-      : `switched off in ${SWITCHES_PLACE} - nothing rides this wire`,
+    role: "serial, both ways",
+    note: laneNote(lane),
   });
 
   // A UART is crossed: this board's TX lands on the far end's RX (docs/pin_map.md,
@@ -525,18 +503,54 @@
 
   // Only the wires a builder has run are drawn (operator, 2026-09-29 on #411:
   // "the drawing should only draw the actaul lines (wires) currently
-  // assigned/wired in"). Whether an Output is wired is data/outputs.js's one
-  // rule: an Output the config reports nothing for - an expander channel - has
-  // no switch anybody could have turned off, so it reads as wired. An Output
-  // not marked wired has its plate under Outputs and no line here, and the
-  // printed sheet, from this same list, leaves it out too.
+  // assigned/wired in"). An Output is wired when a Part is on it and free when
+  // none is (CONTEXT.md "Wiring"), whatever drives it - a board pin or an
+  // expander's channel alike. A serial link is wired while its component is
+  // switched on in Configuration; one Not fitted or switched off rides no wire
+  // (operator, 2026-09-29: "foot drive is now set to "not fitted" so why is
+  // then wiring drawing still listing it as wired?"). The printed sheet, from
+  // this same list, leaves both out too.
+  const hasPart = (output) => output.parts.length > 0;
+
   const sheetWires = (model = {}) => {
     const { parts = [], outputs = [] } = model;
     const order = wireOrder(model);
     return [
-      ...outputs.filter((output) => output.wired).map((output) => outputWire(output, { parts, order })),
-      ...loomRows(model).map((lane) => laneWire(lane, order)),
+      ...outputs.filter(hasPart).map((output) => outputWire(output, { parts, order })),
+      ...loomRows(model).filter((lane) => lane.on).map((lane) => laneWire(lane, order)),
     ];
+  };
+
+  // ---------------------------------------------------------------------------
+  // Used and free, at a glance
+  //
+  // Every Output the firmware reports, by what its board prints beside it, and
+  // what is on it or that it is free; then every serial link that is wired,
+  // by its printed pins (operator, 2026-09-29 on #411: "present somehow the
+  // current status of what GPIO we have used and have left"). From the same
+  // answer the drawing is, never a list of this file's: an expander's channels
+  // are more Outputs in it, called by their address. A used Output carries
+  // its line's palette slot (data-wire), which the stylesheet maps to the same
+  // --wire-* color its line wears, so a pin here and its wire above are found
+  // by eye.
+  // ---------------------------------------------------------------------------
+  const FREE = "free";
+
+  const pinsHtml = (model = {}) => {
+    const { parts = [], outputs = [] } = model;
+    const order = wireOrder(model);
+    const pin = (key, printed, what, used) =>
+      `<li class="wd-pin${used ? " is-used" : ""}" data-pin="${escAttr(key)}"` +
+      (used ? ` data-wire="${wireSlot(order, key)}"` : "") +
+      `><span class="wd-pin-name">${esc(printed)}</span><span class="wd-pin-what">${esc(what)}</span></li>`;
+    const items = [
+      ...outputs.map((output) =>
+        pin(output.address, output.name || output.address,
+          hasPart(output) ? partNames(parts, output.parts).join(" + ") : FREE, hasPart(output))),
+      ...loomRows(model).filter((lane) => lane.on).map((lane) =>
+        pin(`lane:${lane.key}`, lane.label || `UART ${lane.uart}`, lane.name, true)),
+    ];
+    return items.length ? `<ul class="wd-pins">${items.join("")}</ul>` : "";
   };
 
   // Titled with the board it draws, by the product name the lineup gives it
@@ -602,9 +616,8 @@
     const stamp = typeof model.stamp === "string" ? model.stamp : sheetStamp();
     const made = { droidName, stamp };
     const wires = sheetWires(model);
-    // The count says what is drawn, and what is not: an Output left off the
-    // drawing is named in the count so a missing line reads as a choice.
-    const unwired = (model.outputs || []).filter((output) => !output.wired).length;
+    // The count is the lines drawn, and the Outputs left free beside it.
+    const free = (model.outputs || []).filter((output) => !hasPart(output)).length;
 
     return {
       promise: PROMISE,
@@ -619,10 +632,10 @@
       wires,
       wiresSummary:
         `${plural(wires.length, ["wire", "wires"])}` +
-        (unwired ? ` · ${plural(unwired, ["output", "outputs"])} not wired` : ""),
-      wiresHtml: wires.length
-        ? wiresDiagramHtml(wires, made, boardName)
-        : `<p class="hint">${unwired ? "No output is marked wired yet." : "This image reports no wires to draw."}</p>`,
+        (free ? ` · ${plural(free, ["output", "outputs"])} ${FREE}` : ""),
+      wiresHtml:
+        (wires.length ? wiresDiagramHtml(wires, made, boardName) : `<p class="hint">Nothing is wired yet.</p>`) +
+        pinsHtml(model),
     };
   };
 
@@ -644,9 +657,8 @@
   // droid: the Unused list's links to Parts were the last, and that list is
   // Parts' own now (#411).
   //
-  // WHAT IT LEAVES OUT: everything that writes - the Outputs plates and the
-  // part-first picker are the screen's, mounted beside the sheet and never
-  // made by the generator. The bench copy is the wires and their power
+  // WHAT IT LEAVES OUT: everything that writes - the part-first picker is
+  // the screen's, mounted beside the sheet and never made by the generator. The bench copy is the wires and their power
   // (operator, 2026-09-19 on #411).
   //
   // `boardArt` is the one thing the file is handed besides the sheet: the
@@ -735,22 +747,16 @@
   write("wiring-wires-heading", esc(PLATES.wires));
   write("wiring-rail-heading", esc(PLATES.rail));
 
-  // The Outputs plates under the sheet, drawn and saved by
-  // data/output_settings.js from the answer the sheet reads.
-  window.PAOutputSettings?.mount("wired", {
-    body: document.getElementById("wiring-outputs-body"),
-    feedback: document.getElementById("wiring-outputs-feedback"),
-  });
-
-  // And under them the part-first picker, where a Part is put on an Output,
-  // moved with the question first, or taken off (data/parts_mapping.js
-  // picker(), #347). Mounted here and never made by wiringDocument(): the
+  // And under the sheet the part-first picker, where a Part is put on an
+  // Output, moved with the question first, or taken off, and what is on its
+  // wire is chosen (data/parts_mapping.js picker(), #347, #411). Mounted here and never made by wiringDocument(): the
   // printed sheet stays a reference that writes nothing (CONTEXT.md "Wiring").
   window.PAParts?.picker({
     table: document.getElementById("wiring-parts-table"),
     summary: document.getElementById("wiring-parts-summary"),
     feedback: document.getElementById("wiring-parts-feedback"),
     dialog: document.getElementById("wiring-move-dialog"),
+    timing: document.getElementById("wiring-parts-timing"),
   });
 
   // ---------------------------------------------------------------------------
@@ -883,7 +889,7 @@
   // and toggles it did not would say a wire is live when it is switched off --
   // so both reads are in the one section run (data/outputs.js load()) and
   // either one failing is the section failing, which is what the Page Recovery
-  // View is for. The same read draws the Outputs plates: GET /api/config is
+  // View is for. The same read paints the part-first picker: GET /api/config is
   // asked once.
   const loadSheet = async ({ handle = null } = {}) => {
     const { config } = await window.PAOutputs.load({ handle });

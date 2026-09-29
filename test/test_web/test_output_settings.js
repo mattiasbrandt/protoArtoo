@@ -1,28 +1,20 @@
 // =============================================================================
 // test/test_web/test_output_settings.js
 //
-// The Outputs' plates (#369, data/output_settings.js): which are in use and
-// what each carries - a servo, or a light - set on Wiring; which servo model,
-// set on Servos. One answer drawn on two surfaces, run here as the browser runs
-// it - data/outputs.js holding the droid's answer (#415), the plates file
-// drawing both views of it - on a real node tree, against the one fake droid
-// (helpers/fake_droid.js).
+// Servos' servo picks (#369, #399, data/output_settings.js): which servo model
+// each Output carries, picked on the Output's own row, run here as the browser
+// runs it - data/outputs.js holding the droid's answer (#415) - on a real node
+// tree, against the one fake droid (helpers/fake_droid.js).
 //
-// Three invariants earn their place:
-//   - one answer, two views: what Wiring changes, Servos shows, and the save
-//     carries the field the firmware named for what changed and nothing a
-//     builder did not touch, so a save from one surface cannot reset what the
-//     other set;
-//   - each wire is its own answer (#413, ADR 0067): a droid may have several
-//     lit Parts, so giving one Output a Light Type must NOT take it off
-//     another, and the save must carry no droid-wide light field at all. This
-//     test used to assert the opposite, because the firmware could light one
-//     wire; the exclusion it asserted is now the defect;
-//   - when each view's answer bites (#370): an in-use tick is read once at
-//     start, so a changed one says it is waiting and one put back does not;
-//     a servo type bounds the next move, so Servos never says it is waiting.
-//     What it waits against is the droid's own report of what it started
-//     with, never the page's first read (#364).
+// Wiring's Output plates, the other view this file drew, are gone: Wiring is
+// part-first, and what is on a wire is picked on a Part's row there (#411).
+// Their invariants - each wire is its own answer, and a wire change waits for
+// the next start - moved with them to test_parts_table.js.
+//
+// The one invariant here: a pick saves the field the firmware named for what
+// changed and nothing a builder did not touch, so a save cannot reset what
+// another surface set; and a servo type bounds the next move, so it never
+// says it is waiting (#370).
 // =============================================================================
 
 import { test } from "node:test";
@@ -59,7 +51,7 @@ const CONFIG = () => ({ drive: { speedLimitMax: 300 } });
 // Servos' picks each in the slot its host keeps on that Output's row.
 const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
   const document = new MiniDocument();
-  for (const id of ["wiring-outputs-body", "wiring-outputs-feedback", "servo-types-body", "servo-types-timing", "servo-types-feedback"]) {
+  for (const id of ["servo-types-body", "servo-types-timing", "servo-types-feedback"]) {
     const node = document.createElement("div");
     node.id = id;
     document.body.appendChild(node);
@@ -96,10 +88,6 @@ const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
   for (const file of ["live_reading.js", "apply_timing.js", "outputs.js", "output_settings.js"]) {
     vm.runInNewContext(readFileSync(join(dataDir, file), "utf8"), context, { filename: file });
   }
-  window.PAOutputSettings.mount("wired", {
-    body: document.getElementById("wiring-outputs-body"),
-    feedback: document.getElementById("wiring-outputs-feedback"),
-  });
   // Servos' rows, as data/servo.js keeps them: one slot per Output.
   const slots = new Map();
   const slot = (address) => {
@@ -128,78 +116,29 @@ const boot = async ({ rows = ROWS(), config = CONFIG() } = {}) => {
       timers.splice(0).forEach((fn) => fn());
       for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
     },
-    wiring: (address) => plate("wiring-outputs-body", address),
-    wiringPlates: () => document.getElementById("wiring-outputs-body").querySelectorAll("[data-output]"),
     servos: (address) => plate("servo-types-body", address),
     servosLine: () => document.getElementById("servo-types-timing"),
-    // Wiring's in-use press is the plate's head button.
-    inUse: (address) => plate("wiring-outputs-body", address).querySelector("[aria-pressed]"),
     option: (root, value) => root.querySelectorAll("[data-value]").find((node) => node.getAttribute("data-value") === value),
     // What the fake droid's row for an Output now holds.
     row: (address) => rows.find((each) => each.address === address),
   };
 };
 
-test("what Wiring marks in use, Servos shows at once, and the save carries only what changed", async () => {
+test("a servo picked on Servos is drawn at once, saves only its own field, and never waits", async () => {
   const env = await boot();
-  assert.equal(env.servos("ledc:3").classList.contains("is-on"), false);
+  assert.equal(env.servos("ledc:0").classList.contains("is-on"), true, "a wired Output's row reads on");
+  assert.equal(env.servos("ledc:1").classList.contains("is-on"), false, "and one not wired reads off");
 
-  env.inUse("ledc:3").fire("click", {});
-  assert.equal(env.inUse("ledc:3").getAttribute("aria-pressed"), "true", "Wiring shows the line in use");
-  assert.equal(env.servos("ledc:3").classList.contains("is-on"), true, "and Servos shows the same answer");
+  env.option(env.servos("ledc:0"), "mg90s").fire("click", {});
+  assert.equal(env.option(env.servos("ledc:0"), "mg90s").classList.contains("active"), true, "drawn before the droid answers");
 
   await env.flush();
   assert.equal(env.posts.length, 1);
   assert.equal(env.posts[0].path, "/api/config");
-  assert.deepEqual(env.posts[0].json, { outputs: [{ address: "ledc:3", wired: true }] },
+  assert.deepEqual(env.posts[0].json, { outputs: [{ address: "ledc:0", component: "mg90s" }] },
     "the one setting the builder changed, on its Output's row, and nothing else");
-  assert.equal(env.servos("ledc:3").classList.contains("is-on"), true, "the droid's answer keeps it in use");
-});
-
-// A droid may have several lit body Parts, each on its own wire (ADR 0067).
-// Until #413 the controller could light exactly one, and this module took a
-// Light Type off every other Output the moment one was given a light. That
-// exclusion would now silently unwire a builder's second strip, so its absence
-// is the invariant - and the save carries no droid-wide light field to
-// disagree with the types either.
-test("a second wire can carry a light without taking it off the first", async () => {
-  const env = await boot();
-  assert.equal(env.option(env.wiring("ledc:4"), "rgb").classList.contains("active"), true);
-
-  env.option(env.wiring("ledc:5"), "rgb").fire("click", {});
-  await env.flush();
-
-  assert.deepEqual(env.posts.at(-1).json, { outputs: [{ address: "ledc:5", component: "rgb" }] },
-    "the wire the builder just gave a light carries one, and no other wire is sent anything");
-  assert.equal(env.row("ledc:4").component, "rgb", "and the one that already did still does");
-  assert.equal(env.option(env.wiring("ledc:4"), "rgb").classList.contains("active"), true);
-});
-
-test("an in-use tick waits for the next start until it is put back; a servo type never waits", async () => {
-  const env = await boot();
-  const wiringLine = () => env.wiring("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
-  assert.equal(wiringLine().dataset.pending, "false", "nothing is waiting on a fresh read");
-
-  env.inUse("ledc:3").fire("click", {});
-  await env.flush();
-  assert.equal(wiringLine().dataset.pending, "true", "the droid still runs the outputs it started with");
-  // Servos' answer is used at once, and an immediate answer says nothing at
-  // all (operator, 2026-09-19 on #412).
+  assert.equal(env.row("ledc:0").component, "mg90s");
+  // A servo type bounds the very next move, and an immediate answer says
+  // nothing at all (operator, 2026-09-19 on #412).
   assert.equal(env.servosLine().textContent, "", "Servos' answer is used at once, so it carries no line");
-
-  env.inUse("ledc:3").fire("click", {});
-  await env.flush();
-  assert.equal(wiringLine().dataset.pending, "false", "put back, nothing is waiting");
-});
-
-// The #355 bench: ARM1 ticked live, then the page (re)loaded before a restart.
-// Its first read already carried the saved tick, so a wait measured against
-// that read showed nothing waiting, while the droid drove nothing on the wire.
-// The droid reports what it started with, and that is what the line waits on.
-test("a tick saved before the page opened still waits for the next start", async () => {
-  const rows = ROWS();
-  describe(rows, { "ledc:3": { wired: true, activeWired: false, driven: false } });
-  const env = await boot({ rows });
-  const wiringLine = () => env.wiring("ledc:3").parentElement.parentElement.querySelector(".apply-timing");
-  assert.equal(wiringLine().dataset.pending, "true", "the droid did not start with it, so it waits");
 });

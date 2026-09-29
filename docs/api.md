@@ -738,8 +738,9 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     builder. Absent for an expander's row.
   - `switchable`: whether the Output has a wired tick. `wired`: whether that
     tick is on, as saved; an Output with no tick - an expander's - reports
-    `true`, since nothing could have switched it off. The droid reads it once at
-    start (ADR 0027), so a tick saved since waits for a restart.
+    `true`, since nothing could have switched it off. A Part move writes it
+    (on while a Part is on the Output, `movePart` below). The droid reads it
+    once at start (ADR 0027), so a tick saved since waits for a restart.
   - `activeWired`: the wired tick the droid started with. It differs from
     `wired` exactly while a saved tick waits for a restart. `true` on an
     expander's row, like `wired`.
@@ -755,6 +756,11 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   - `lightCapable`: whether a Light Type may go on this wire (ADR 0067), and
     `ledCount`, how many LEDs its light has - present exactly where a light can
     go, which is also exactly where it can be saved.
+  - `suggestedPart`: the Part id this Output usually carries on this board
+    (`utilUp` on ARM1 / GPIO 49, `utilLo` on ARM2 / GPIO 50), declared beside
+    `lightCapable` in `include/board_outputs.h`. A suggestion only: nothing
+    refuses another Part there. Absent where the board suggests none, and on
+    an expander's row.
   - `throwMs`, `accelMs`, `ease`: its **Motion Profile** (ADR 0052, #414) -
     time to full throw, time to get up to speed, and `none`, `soft` or
     `overshoot`. `ease` is the builder's choice as stored: an Output that is not
@@ -1750,7 +1756,11 @@ Updates supported config fields and persists to NVS.
   destination keeps the Parts already on it. Naming the origin is required
   on purpose: a surface can only take a Part off an Output it has read the Part
   on, which is the moment it must tell the builder so before sending (#347). A
-  move that changes nothing — the Part is already there — succeeds. A shape
+  move that changes nothing — the Part is already there — succeeds. A move
+  that lands also writes the `wired` tick of each board Output it touched, from
+  the Parts that Output holds now: on for one with a Part, off for one left
+  with none (an Output with a Part on it is wired, #411). The tick is read at
+  start, so a Part put on a free Output moves from the next start. A shape
   error is `400` `{"ok":false,"error":"movePart, movePartFrom and movePartTo must
   be sent together: a Part this build models, and each end an Output Address or
   none"}`.

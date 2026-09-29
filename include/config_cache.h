@@ -148,6 +148,12 @@ ServoOutputRepairReport configCacheApplyServoOutputEdits(const ServoOutputEdit* 
 // Step and from nowhere else, for the same reason as the edits door above.
 ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& move);
 
+// configCacheServoOutputPartCountAt: how many Parts the live row addressed
+// there holds, or 0 where no live row is addressed. A count and not a row, so
+// the Commit Step can ask it after a move without a 70 B row on the Console
+// config-write chain the stack recipe measures.
+uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel);
+
 // The Records - the Droid Build and guided Setup's record - are not here:
 // each Record's module keeps its own live copy, filled on the boot path and
 // changed at runtime only by the Commit Step (include/config_records.h).

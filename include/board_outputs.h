@@ -98,14 +98,24 @@ struct BoardOutput {
     // check under this name (ADR 0068); every other setting of an Output is a
     // field of its row and has no form name.
     const char* enabledField;
+    // The Part this Output usually carries, by its Droid Parts Catalog id, or
+    // nullptr where the board has no usual one. A board fact like
+    // `lightCapable`, and only a suggestion: Wiring marks it in the Part's
+    // Output picker and never refuses another Part (operator, 2026-09-29 on
+    // #411: "either we limit what you can define in the wiring page or give
+    // recommendations" - both). ARM1/GPIO 49 is the upper utility arm and
+    // ARM2/GPIO 50 the lower on both boards (docs/pin_map.md, "GPIO Assignment
+    // Summary" for each board). It records nothing: which Part a wire moves is
+    // still the row's answer once a builder says so (include/ledc_pwm.h).
+    const char* suggestedPart;
 };
 
 inline constexpr BoardOutput BOARD_OUTPUTS[] = {
-    {"arm1", "enable_arm1", LEDC_CH_ARM1, false, "enableArm1"},
-    {"arm2", "enable_arm2", LEDC_CH_ARM2, false, "enableArm2"},
-    {"aux1", "enable_aux1", LEDC_CH_AUX1, true, "enableAux1"},
-    {"aux2", "enable_aux2", LEDC_CH_AUX2, true, "enableAux2"},
-    {"aux3", "enable_aux3", LEDC_CH_AUX3, true, "enableAux3"},
+    {"arm1", "enable_arm1", LEDC_CH_ARM1, false, "enableArm1", "utilUp"},
+    {"arm2", "enable_arm2", LEDC_CH_ARM2, false, "enableArm2", "utilLo"},
+    {"aux1", "enable_aux1", LEDC_CH_AUX1, true, "enableAux1", nullptr},
+    {"aux2", "enable_aux2", LEDC_CH_AUX2, true, "enableAux2", nullptr},
+    {"aux3", "enable_aux3", LEDC_CH_AUX3, true, "enableAux3", nullptr},
 };
 
 inline constexpr size_t BOARD_OUTPUT_COUNT = sizeof(BOARD_OUTPUTS) / sizeof(BOARD_OUTPUTS[0]);

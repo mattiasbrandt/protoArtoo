@@ -748,6 +748,40 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     seedUnwiredServoOutputRows();
 }
 
+// The Part a board suggests for an Output rides that Output's row, where
+// Wiring reads it for the picker's *suggested* mark (#411), and it names a Part
+// the catalog models: a suggestion no Part answers to marks nothing, and the
+// page would carry a dead word it cannot check. Every other row is silent.
+void test_each_output_row_carries_the_part_its_board_suggests_and_no_other() {
+    seedUnwiredServoOutputRows();
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleServoOutputsGet(req);
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    JsonDocument rows;
+    TEST_ASSERT_FALSE(deserializeJson(rows, backend.sentBody));
+
+    size_t suggested = 0;
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
+        servoOutputFormatAddress(address, sizeof(address), SERVO_DRIVER_LEDC, output.channel);
+        JsonObject row;
+        for (JsonObject each : rows["outputs"].as<JsonArray>()) {
+            if (strcmp(each["address"] | "", address) == 0) row = each;
+        }
+        TEST_ASSERT_FALSE_MESSAGE(row.isNull(), address);
+        if (output.suggestedPart == nullptr) {
+            TEST_ASSERT_FALSE_MESSAGE(row["suggestedPart"].is<const char*>(), address);
+            continue;
+        }
+        TEST_ASSERT_TRUE_MESSAGE(droidPartIdIsKnown(output.suggestedPart), output.suggestedPart);
+        TEST_ASSERT_EQUAL_STRING(output.suggestedPart, row["suggestedPart"] | "");
+        ++suggested;
+    }
+    // The two utility arms, on both boards (docs/pin_map.md).
+    TEST_ASSERT_EQUAL_UINT(2u, suggested);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_servo_outputs_answer_lists_every_row_and_all_its_parts);
@@ -760,6 +794,7 @@ int main() {
     RUN_TEST(test_the_booted_toggles_and_receiver_differ_from_a_staged_save);
     RUN_TEST(test_pending_apply_is_false_when_staged_matches_active);
     RUN_TEST(test_every_output_is_read_whole_from_its_row_and_not_from_the_config);
+    RUN_TEST(test_each_output_row_carries_the_part_its_board_suggests_and_no_other);
     RUN_TEST(test_pending_apply_is_true_when_staged_differs_from_active);
     RUN_TEST(test_worst_case_config_fits_the_response_buffer);
     RUN_TEST(test_the_droid_build_reaches_the_config_payload);

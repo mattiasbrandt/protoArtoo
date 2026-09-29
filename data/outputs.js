@@ -20,10 +20,14 @@
 // board label of its own (operator, 2026-09-19 on #411: "the outputs is
 // supposed to be dynamic").
 //
-// ONE WIRED RULE. An Output with a wired tick is wired when its tick says so.
-// An Output with none - an expander's channel - has no tick anybody could have
-// turned off, so it reads as wired, has no wired switch, and is called by its
-// address (operator, 2026-09-23 on #415).
+// ONE WIRED RULE. `wired` is the droid's tick: an Output with a wired tick is
+// wired when its tick says so, and one with none - an expander's channel - has
+// no tick anybody could have turned off, so it reads as wired and is called by
+// its address (operator, 2026-09-23 on #415). The tick follows the Part: a
+// Part move writes it (docs/api.md, `movePart`), because an Output with a Part
+// on it is wired and one with none is free (CONTEXT.md "Wiring", #411). It is
+// what the droid reads at start, so a page says whether a wire is used or free
+// from its Parts, and uses the tick only to say what waits for a restart.
 //
 // WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (CONTEXT.md "Output",
 // ADR 0067): a servo's model where the wire drives a servo, a Light Type where
@@ -144,6 +148,10 @@
     switchable: row.switchable === true,
     wiredTick: row.wired === true,
     lightCapable: row.lightCapable === true,
+    // The Part this Output usually carries on its board, or "" where the board
+    // suggests none (include/board_outputs.h): Wiring marks it in a Part's
+    // Output picker, and nothing refuses another Part.
+    suggestedPart: text(row.suggestedPart),
     ledCount: number(row.ledCount),
     throwMs: number(row.throwMs),
     accelMs: number(row.accelMs),
@@ -205,6 +213,7 @@
   //   switchable       it has a wired tick, so a page may offer one
   //   wired            the one wired rule (header)
   //   canLight         a Light Type may go on this wire at all
+  //   suggestedPart    the Part its board says it usually carries, or ""
   //   type             the stored token: a servo model or a Light Type
   //   light, servo     that token as a Light Type or as a servo model, or null
   //   ledCount         how many LEDs its light has

@@ -82,3 +82,33 @@ inline void boardOutputTickAdoptedLight(const ServoOutputRepairReport& report,
     }
     system->*BOARD_OUTPUT_ENABLED[report.litOutput].enabled = true;
 }
+
+// -----------------------------------------------------------------------------
+// boardOutputTickFollowsParts()
+// An Output with a Part on it is wired, and one with none is free: there is no
+// separate wired switch any more (CONTEXT.md "Wiring"; operator, 2026-09-29 on
+// #411: "it was meant to define and wire a body part/panel to a output").
+//
+// The tick stays the stored answer every consumer already reads - ServoTask and
+// AuxLedTask at start, the RC mapper, the status frame - so rather than each of
+// them learning to count Parts, a Part move writes the tick of every Output it
+// touched, from how many Parts that Output holds once the move has landed
+// (configCommitApplied()). Every door that moves a Part - Wiring, the Console,
+// guided Setup - reaches that commit, so none of them leaves a tick behind. It
+// is still read at start, so a Part put on a free Output moves from the next
+// start (ADR 0027).
+//
+// `output` is one of BOARD_OUTPUTS, or nullptr for an Output the board does not
+// declare - an expander's channel, which has no tick and is left alone.
+// -----------------------------------------------------------------------------
+inline void boardOutputTickFollowsParts(SystemConfig* system, const BoardOutput* output,
+                                        uint8_t partCount) {
+    if (system == nullptr || output == nullptr) {
+        return;
+    }
+    const size_t index = (size_t)(output - BOARD_OUTPUTS);
+    if (index >= BOARD_OUTPUT_COUNT) {
+        return;
+    }
+    system->*BOARD_OUTPUT_ENABLED[index].enabled = partCount > 0;
+}

@@ -643,6 +643,25 @@ bool refusePartMove(ServoPartMoveOutcome outcome, ConfigCommitOutcome* commit) {
 }
 
 // -----------------------------------------------------------------------------
+// tickFollowsMove()
+// The wired tick of each end of a landed Part move, from the Parts that end
+// holds now (include/board_output_enabled.h boardOutputTickFollowsParts()). An
+// end that is "none", or an Output the board does not declare, has no tick.
+// -----------------------------------------------------------------------------
+void tickFollowsEnd(bool isOutput, ServoOutputDriver driver, uint8_t channel, SystemConfig* system) {
+    if (!isOutput || driver != SERVO_DRIVER_LEDC) {
+        return;
+    }
+    boardOutputTickFollowsParts(system, boardOutputOnChannel(channel),
+                                configCacheServoOutputPartCountAt(driver, channel));
+}
+
+void tickFollowsMove(const ServoOutputPartMove& move, SystemConfig* system) {
+    tickFollowsEnd(move.fromOutput, move.fromDriver, move.fromChannel, system);
+    tickFollowsEnd(move.toOutput, move.toDriver, move.toChannel, system);
+}
+
+// -----------------------------------------------------------------------------
 // addRecordFields()
 // Every Record, each under its own key and in its own module's words
 // (include/config_records.h). Out here with the others because a Record lives
@@ -783,10 +802,18 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // lock across this call, so no other writer can move the Part between this
     // answer and the write.
     if (result.partMove.requested) {
-        if (refusePartMove(configCacheMoveServoOutputPart(result.partMove.move), &outcome)) {
+        const ServoPartMoveOutcome moved = configCacheMoveServoOutputPart(result.partMove.move);
+        if (refusePartMove(moved, &outcome)) {
             PA_LOG_WARN(TAG, "movePart %s refused: %s", result.partMove.move.part,
                         outcome.refusal);
             return outcome;
+        }
+        // An Output with a Part on it is wired and one with none is free
+        // (boardOutputTickFollowsParts()): each Output the move touched takes
+        // its tick from the Parts it holds now, onto `working`, which this
+        // commit applies and saves below with everything else.
+        if (moved == SERVO_PART_MOVED) {
+            tickFollowsMove(result.partMove.move, &working->system);
         }
     }
 
@@ -1083,6 +1110,12 @@ void handleServoOutputsGet(WebRequest& req) {
         // Whether a Light Type may go on this wire (ADR 0067): its LED count is
         // a Setting exactly there.
         output["lightCapable"] = board != nullptr && board->lightCapable;
+        // The Part this Output usually carries, where the board has one
+        // (include/board_outputs.h): Wiring marks it in a Part's Output picker.
+        // Absent elsewhere, so a row that suggests nothing costs nothing.
+        if (board != nullptr && board->suggestedPart != nullptr) {
+            output["suggestedPart"] = board->suggestedPart;
+        }
 
         // Every Setting of an Output, each by its declaration
         // (include/config_settings.h), in the shape POST /api/config takes it
