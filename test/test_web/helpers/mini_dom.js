@@ -14,6 +14,17 @@
 // than a plausible answer, so a test cannot pass by accident.
 // =============================================================================
 
+// A node's links back UP the tree - its parent and its document - are kept
+// non-enumerable. A failing assertion prints its actual value with
+// node:util's inspect, which walks enumerable properties and ignores
+// util.inspect.custom, so a node that enumerated its ownerDocument printed the
+// whole page. On 2026-09-29 one assert.equal(node, undefined) against a
+// loaded Wiring page grew memory at about 1 GB/s until systemd-oomd killed the
+// terminal holding every agent session (#411). Reads and writes are unchanged;
+// only enumeration skips them.
+const backLink = (node, name, value) =>
+  Object.defineProperty(node, name, { value, writable: true, configurable: true, enumerable: false });
+
 const VOID_ELEMENTS = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input",
   "link", "meta", "param", "source", "track", "wbr",
@@ -26,7 +37,7 @@ class MiniText {
   constructor(text) {
     this.nodeType = 3;
     this.data = text;
-    this.parentNode = null;
+    backLink(this, "parentNode", null);
   }
   get textContent() {
     return this.data;
@@ -37,10 +48,10 @@ class MiniElement {
   constructor(tagName, ownerDocument) {
     this.nodeType = 1;
     this.tagName = String(tagName).toUpperCase();
-    this.ownerDocument = ownerDocument;
+    backLink(this, "ownerDocument", ownerDocument);
     this.attributes = new Map();
     this.childNodes = [];
-    this.parentNode = null;
+    backLink(this, "parentNode", null);
     this.listeners = [];
     // <template> keeps its children out of the tree, the way the real one does.
     if (this.tagName === "TEMPLATE") this.content = new MiniFragment(ownerDocument);
@@ -240,9 +251,9 @@ class MiniElement {
 class MiniFragment {
   constructor(ownerDocument) {
     this.nodeType = 11;
-    this.ownerDocument = ownerDocument;
+    backLink(this, "ownerDocument", ownerDocument);
     this.childNodes = [];
-    this.parentNode = null;
+    backLink(this, "parentNode", null);
   }
   get children() {
     return this.childNodes.filter((node) => node.nodeType === 1);
@@ -452,7 +463,7 @@ export class MiniDocument {
 
 export class MiniDOMParser {
   constructor(ownerDocument) {
-    this.ownerDocument = ownerDocument;
+    backLink(this, "ownerDocument", ownerDocument);
   }
   parseFromString(html) {
     const parsed = new MiniDocument();
