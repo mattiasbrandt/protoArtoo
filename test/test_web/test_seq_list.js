@@ -114,9 +114,9 @@ function newPage(answer) {
     }
     return elements.get(id);
   };
-  // The markup's initial classes (data/seq.html): the populated list starts
-  // hidden, the empty state does not.
+  // The markup's initial classes (data/seq.html): both states start hidden.
   elementById("seq-populated-state").classList.add("hidden");
+  elementById("seq-empty-state").classList.add("hidden");
   emptyStateShown = false;
 
   const get = (url) => {
@@ -196,6 +196,15 @@ const FACTORY = [{ name: "DM:HELLO", stepCount: 8, suppressMs: 5000, toggleGroup
 // The controller turning a request away in the opening burst: 503 with a
 // Retry-After, which the section machinery waits out and retries.
 const shed = () => Object.assign(new Error("busy"), { kind: "http", status: 503, retryAfterMs: 60 });
+
+// Right after a boot the page is painted from its markup for a second or more
+// before data/seq.js runs its first render, so the markup itself must not say
+// "Nothing learned yet" (measured on artoo at c2573944: shown +1.5 s, gone +2.5 s).
+test("the served page starts with the empty state hidden, so a boot never shows it before the lists answer", () => {
+  const tag = read("seq.html").match(/<[a-z]+\b[^>]*\bid="seq-empty-state"[^>]*>/);
+  assert.ok(tag, "data/seq.html has no #seq-empty-state");
+  assert.match(tag[0], /\bclass="[^"]*\bhidden\b[^"]*"/, "the empty state is visible before data/seq.js runs");
+});
 
 test("a factory read shed in the opening burst is retried and ends on the page, beside the Learned list", async () => {
   let duringTheWait = null;
