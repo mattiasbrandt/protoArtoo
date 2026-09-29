@@ -407,9 +407,9 @@ reached `main` and stopped there (#285).
 | Tier | Tag shape | Release notes | Artifacts |
 |---|---|---|---|
 | **Patch** | `vX.Y.Z` with `Z > 0` | Generated from the commit subjects in the range. Terse and clearly machine-written. | None. The source tag only. |
-| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | All eight firmware and filesystem images plus `SHA256SUMS.txt`. |
+| **Minor / major** | `vX.Y.0` | The curated `CHANGELOG.md` section, in maker voice. | A firmware and a filesystem image per board plus `SHA256SUMS.txt`. |
 
-A fix should reach people quickly, and rebuilding four environments for a
+A fix should reach people quickly, and rebuilding every board's image for a
 one-line change should not gate that. A patch release therefore carries no
 binaries, and its notes say so in as many words — an empty release otherwise
 reads as a broken one. The tier is decided by the tag alone: semver says a

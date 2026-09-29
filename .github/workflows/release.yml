@@ -21,10 +21,10 @@ jobs:
   #
   #   patch — release notes generated from the commit subjects in the range,
   #           and the source tag. No firmware images: a fix should reach people
-  #           quickly, and rebuilding four environments for a one-line change
+  #           quickly, and rebuilding every board's image for a one-line change
   #           should not gate that.
-  #   full  — the curated CHANGELOG.md section as notes, plus all eight
-  #           firmware and filesystem images and SHA256SUMS.txt, as v1.2.0 did.
+  #   full  — the curated CHANGELOG.md section as notes, plus a firmware and a
+  #           filesystem image per board and SHA256SUMS.txt.
   #
   # Decided by semver alone: a patch release is the only kind whose Z is
   # non-zero, so vX.Y.Z with Z > 0 is a patch and Z == 0 is a minor or major.
