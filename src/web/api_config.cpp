@@ -1083,6 +1083,12 @@ void handleServoOutputsGet(WebRequest& req) {
         // Whether a Light Type may go on this wire (ADR 0067): its LED count is
         // a Setting exactly there.
         output["lightCapable"] = board != nullptr && board->lightCapable;
+        // The Part this Output usually carries, where the board has one
+        // (include/board_outputs.h): Wiring marks it in a Part's Output picker.
+        // Absent elsewhere, so a row that suggests nothing costs nothing.
+        if (board != nullptr && board->suggestedPart != nullptr) {
+            output["suggestedPart"] = board->suggestedPart;
+        }
 
         // Every Setting of an Output, each by its declaration
         // (include/config_settings.h), in the shape POST /api/config takes it

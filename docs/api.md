@@ -750,6 +750,11 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   - `lightCapable`: whether a Light Type may go on this wire (ADR 0067), and
     `ledCount`, how many LEDs its light has - present exactly where a light can
     go, which is also exactly where it can be saved.
+  - `suggestedPart`: the Part id this Output usually carries on this board
+    (`utilUp` on ARM1 / GPIO 49, `utilLo` on ARM2 / GPIO 50), declared beside
+    `lightCapable` in `include/board_outputs.h`. A suggestion only: nothing
+    refuses another Part there. Absent where the board suggests none, and on
+    an expander's row.
   - `throwMs`, `accelMs`, `ease`: its **Motion Profile** (ADR 0052, #414) -
     time to full throw, time to get up to speed, and `none`, `soft` or
     `overshoot`. `ease` is the builder's choice as stored: an Output that is not
