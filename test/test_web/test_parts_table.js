@@ -23,7 +23,7 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { bootParts as bootPartsSurface, sleep as wait } from "./helpers/parts_surface.js";
-import { freshOutputs, withParts } from "./helpers/fake_droid.js";
+import { freshOutputs, withParts, describe, applyRowSave, servoRow } from "./helpers/fake_droid.js";
 
 // mini_dom has no CSSStyleDeclaration, and since #362 this page's output-first
 // table paints its position marks through element.style. A plain object per
@@ -138,7 +138,9 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
         throw new Error(`unexpected request ${path}`);
       },
       // The firmware's move, as the fake droid applies it: off whatever Output
-      // had the Part, onto the one named. A refusal changes nothing.
+      // had the Part, onto the one named, and each board Output it touched
+      // takes its wired tick from the Parts it holds now (src/web/api_config.cpp
+      // tickFollowsMove()). A refusal changes nothing.
       postForm: async (path, form) => {
         env.posts.push({ path, form: { ...form } });
         if (env.refusal) {
@@ -149,9 +151,21 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
         env.outputs.forEach((output) => {
           output.parts = output.parts.filter((id) => id !== form.movePart);
         });
-        env.outputs.find((output) => output.address === form.movePartTo)?.parts.push(form.movePart);
+        const from = env.outputs.find((output) => output.address === form.movePartFrom);
+        const to = env.outputs.find((output) => output.address === form.movePartTo);
+        to?.parts.push(form.movePart);
+        [from, to].forEach((output) => {
+          if (output?.switchable) output.wired = output.parts.length > 0;
+        });
         return { ok: true, status: 200, data: {} };
       },
+      // An Output row save (POST /api/config `outputs`), as the firmware takes it.
+      postJson: async (path, body) => {
+        env.posts.push({ path, body: structuredClone(body) });
+        applyRowSave(env.outputs, body);
+        return { ok: true, status: 200, data: {} };
+      },
+      rowTimingOf: words.rowTimingOf,
       messageFor: words.messageFor,
       // The shipped shape (data/web_api.js): disabled plus aria-disabled, which
       // is what the shell's ignored-input notice looks for on a press.
@@ -245,6 +259,8 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
+    "/apply_timing.js": readData("apply_timing.js"),
+    "/output_settings.js": readData("output_settings.js"),
     "/dome_command_map.js": readData("dome_command_map.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/wiring.js": readData("wiring.js"),
@@ -423,9 +439,6 @@ test("a Part on an output that the page does not know is named, never dropped", 
   assert.match(env.text("wiring-parts-summary"), /domeEye on an output too/);
 });
 
-// The sheet above the picker names the Part on the end of each wire, so a Part
-// moved in the picker is on its new wire the moment the droid has taken it -
-// not on the next visit.
 // A dome Part is not this board's to wire (operator, 2026-09-29 on #411:
 // "Dome wiring is all handled and managed by the dome controller"), whatever
 // the catalog's `control` says: a holoprojector or a fixed side panel reads
@@ -455,6 +468,12 @@ test("every dome Part gets no Output select, and shows its command or that it ha
   assert.equal(domeRow("pie1").querySelector("select"), null);
 });
 
+// The sheet above the picker names the Part on the end of each wire, so a Part
+// moved in the picker is on its new wire the moment the droid has taken it -
+// not on the next visit.
+// The Output it left has no Part on it now, so it is free and draws no line
+// (operator, 2026-09-29 on #411: "the drawing should only draw the actaul
+// lines (wires) currently assigned/wired in").
 test("a Part moved in the picker is on its new wire in the sheet at once", async () => {
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
   const wire = (address) => env.document.querySelectorAll(".wd-link").find((node) => node.dataset.wire === address);
@@ -464,7 +483,88 @@ test("a Part moved in the picker is on its new wire in the sheet at once", async
   env.click("wiring-move-confirm");
   await sleep(40);
   assert.match(wire("ledc:4").textContent, /Left body door/, "the wire it now hangs off names it");
-  assert.doesNotMatch(wire("ledc:0").textContent, /Left body door/, "and the wire it left does not");
+  assert.equal(wire("ledc:0"), undefined, "and the wire it left, free now, is not drawn");
+});
+
+// The limit and the recommendation (operator, 2026-09-29 on #411: "either we
+// limit what you can define in the wiring page or give recommendations" -
+// both). A light Part is never offered an Output a light cannot go on: its
+// firmware would refuse the Light Type, and the builder would have wired a
+// Part to a line that cannot light it. Which Outputs can, and which Part an
+// Output usually takes, are the rows' own answer - here a mixed set, the
+// board's LEDC Outputs and an expander's channel, so nothing assumes GPIO.
+test("a light Part is offered only the Outputs a light can go on, and a board's suggestion is marked", async () => {
+  const outputs = describe([...freshOutputs(), servoRow("pca:0", "")], {
+    "ledc:0": { suggestedPart: "utilUp" },
+    "ledc:1": { suggestedPart: "utilLo" },
+    "ledc:3": { lightCapable: true },
+    "ledc:4": { lightCapable: true },
+    "ledc:5": { lightCapable: true },
+  });
+  const env = await bootPicker({ outputs });
+  const offered = (id) => env.select(id).querySelectorAll("option").map((option) => option.getAttribute("value")).slice(1);
+
+  assert.deepEqual(offered("dataPanel"), ["ledc:3", "ledc:4", "ledc:5"], "a light Part: only the lines a light can go on");
+  assert.deepEqual(offered("utilUp"), ["ledc:0", "ledc:1", "ledc:3", "ledc:4", "ledc:5", "pca:0"],
+    "a servo Part: every Output the droid reports, the expander's channel too");
+  const suggested = (id) => env.optionTexts(id).filter((text) => /suggested$/.test(text));
+  assert.deepEqual(suggested("utilUp"), ["ARM1 · free · suggested"]);
+  assert.deepEqual(suggested("utilLo"), ["ARM2 · free · suggested"]);
+  assert.deepEqual(suggested("doorFL"), [], "a Part no Output is suggested for sees no mark");
+});
+
+// Each wire is its own answer (#413, ADR 0067): a droid may have several lit
+// Parts, so giving one light Part's wire a Light Type must not take it off
+// another's, and the save carries that one Output's row and nothing else.
+test("a light Part's Light Type is saved on its own wire and leaves another lit wire alone", async () => {
+  const outputs = describe(withParts({ "ledc:4": ["cbi"], "ledc:5": ["dataPanel"] }), {
+    "ledc:4": { lightCapable: true, type: "rgb" },
+    "ledc:5": { lightCapable: true, type: "none" },
+  });
+  const env = await bootPicker({ outputs });
+  const lightOn = (id) =>
+    env.row(id).querySelector(".parts-carries").querySelectorAll("[data-value]").find((node) => node.dataset.value === "rgb");
+  assert.equal(lightOn("cbi").classList.contains("active"), true);
+  assert.equal(lightOn("dataPanel").classList.contains("active"), false);
+  assert.equal(env.row("doorFL").querySelector(".parts-carries").children.length, 0, "a Part on no Output has nothing to pick");
+
+  lightOn("dataPanel").fire("click", {});
+  await sleep(40);
+  assert.deepEqual(env.posts.filter((post) => post.body).map((post) => post.body),
+    [{ outputs: [{ address: "ledc:5", component: "rgb" }] }]);
+  assert.equal(env.outputs.find((output) => output.address === "ledc:4").component, "rgb", "the other lit wire still is");
+  assert.equal(lightOn("dataPanel").classList.contains("active"), true, "drawn from the droid's answer");
+});
+
+// An Output with a Part on it is wired, and the droid reads that at its next
+// start (#370, ADR 0027). A Part put on a free Output therefore waits, and the
+// page says so beside the act; taken off again, nothing waits.
+test("a Part put on a free Output waits for the next start and says so, until it is taken off", async () => {
+  const outputs = describe(freshOutputs(), { "ledc:3": { wired: false, activeWired: false } });
+  const env = await bootPicker({ outputs });
+  const line = env.document.getElementById("wiring-parts-timing");
+  assert.equal(line.classList.contains("hidden"), true, "nothing waits on a fresh read");
+
+  env.pick("doorFL", "ledc:3");
+  await sleep(40);
+  assert.equal(line.dataset.pending, "true", "the droid still runs the wires it started with");
+  assert.equal(line.classList.contains("hidden"), false);
+
+  env.pick("doorFL", "none");
+  await sleep(40);
+  assert.equal(line.classList.contains("hidden"), true, "taken off again, nothing waits");
+});
+
+// The #355 bench (#364): ARM1 ticked live, then the page (re)loaded before a
+// restart. Its first read already carried the saved tick, so a wait measured
+// against that read showed nothing waiting while the droid drove nothing on
+// the wire. The droid reports what it started with, and that is what the line
+// waits on.
+test("a Part put on before the page opened still waits for the next start", async () => {
+  const env = await bootPicker({
+    outputs: describe(withParts({ "ledc:3": ["doorFL"] }), { "ledc:3": { wired: true, activeWired: false } }),
+  });
+  assert.equal(env.document.getElementById("wiring-parts-timing").dataset.pending, "true");
 });
 
 // The output-first table, back to centre, Find by moving and the calibration

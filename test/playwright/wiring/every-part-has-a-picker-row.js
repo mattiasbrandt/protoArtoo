@@ -26,7 +26,7 @@
 //     "light" has a row carrying partkind-light and the "light" tag, and no
 //     other row carries the class; the treatment is DRAWN (the row heading's
 //     left border computes to dashed, data/style.css); and a light row has
-//     exactly the table's header columns and no position or release cell.
+//     spans exactly the table's header columns and no position or release cell.
 //   5 "Wiring sends no write of its own on a visit" (history: #347).
 //
 // WHY A REAL BROWSER. mini_dom (test/test_web/helpers/mini_dom.js) has no CSS
@@ -242,7 +242,7 @@ lib.runCheck({
     const outputs = lastOutputs?.outputs || [];
     const expectSummary =
       `${groups.catalog.filter((id) => onOutput.has(id)).length} of ${groups.catalog.length} parts on an output · ` +
-      `${outputs.filter((output) => (output.parts || []).length === 0).length} of ${outputs.length} outputs with nothing on them`;
+      `${outputs.filter((output) => (output.parts || []).length === 0).length} of ${outputs.length} outputs free`;
     const summary = await page.textContent(SUMMARY);
     report.add('2c', 'the summary counts match the droid\'s answer', lib.verdict(summary.startsWith(expectSummary)), `"${summary}"`);
 
@@ -270,7 +270,9 @@ lib.runCheck({
         light: lightIds.includes(row.dataset.part || row.dataset.domePart),
         classed: row.classList.contains('partkind-light'),
         tag: row.querySelector('.parts-kind')?.textContent.trim() || '',
-        cells: row.children.length,
+        // Columns spanned, not cells: a dome row's command spans the Output
+        // and Type columns (data/parts_mapping.js domeRowHtml()).
+        cells: [...row.children].reduce((spanned, cell) => spanned + (cell.colSpan || 1), 0),
         drawn: row.querySelector(drawnAway) !== null,
         micro: /µs/.test(row.querySelector('th').textContent),
         border: getComputedStyle(row.querySelector('th')).borderLeftStyle,

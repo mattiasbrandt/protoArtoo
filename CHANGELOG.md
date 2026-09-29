@@ -89,12 +89,16 @@ the patch releases, whose notes live on their own GitHub Release.
   every wire that leaves it: each output and each serial link, in its own
   color, named first by what is printed on the board (ARM1-ARM5 and S1-S3 on
   the Artoo PCB, GPIO 49 and the like on the FireBeetle 2), then by its pins.
-  Only the outputs you have marked wired get a line, and a link that is
-  switched off is drawn dashed grey and says why. Each wire's box names the
-  part on the end of it. Under the drawing you mark which outputs are wired,
-  with a switch on each, and which one carries the LED strip, and choose which
-  part is on each output; the dome's parts show the command the dome
-  controller opens and closes them with instead. Power wiring
+  Only the wires you have run get a line: an output with a part on it, and a
+  serial link that is switched on. Each wire's box names the part on the end
+  of it, and under the drawing every output reads what is on it or free, by
+  what the board prints. Below that, one table puts each part on an output
+  and, on the same row, picks its servo or its LED strip. An output with a
+  part on it is wired, with no separate switch, and the page says when that
+  waits for the droid's next start. A light part is only offered the outputs
+  that can light it, and the usual output for each utility arm is marked
+  suggested. The dome's parts show the command the dome controller answers
+  to instead of an output. Power wiring
   explains the shared supply rather than drawing it. The outputs are whatever the
   board reports, so a board with other outputs shows its own. Nothing on the
   page is kept by hand, so it cannot go stale against the firmware.

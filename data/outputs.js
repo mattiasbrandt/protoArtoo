@@ -144,6 +144,10 @@
     switchable: row.switchable === true,
     wiredTick: row.wired === true,
     lightCapable: row.lightCapable === true,
+    // The Part this Output usually carries on its board, or "" where the board
+    // suggests none (include/board_outputs.h): Wiring marks it in a Part's
+    // Output picker, and nothing refuses another Part.
+    suggestedPart: text(row.suggestedPart),
     ledCount: number(row.ledCount),
     throwMs: number(row.throwMs),
     accelMs: number(row.accelMs),
@@ -205,6 +209,7 @@
   //   switchable       it has a wired tick, so a page may offer one
   //   wired            the one wired rule (header)
   //   canLight         a Light Type may go on this wire at all
+  //   suggestedPart    the Part its board says it usually carries, or ""
   //   type             the stored token: a servo model or a Light Type
   //   light, servo     that token as a Light Type or as a servo model, or null
   //   ledCount         how many LEDs its light has
