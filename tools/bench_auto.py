@@ -33,9 +33,11 @@ A script's target is what the script declares, never a guess from the URLs in
 its source: guessing by grepping for 127.0.0.1:4173 got it wrong both ways on
 2026-09-29 (test/playwright/README.md, "`// bench-auto:` target line").
 
-Playwright stays HEADED (the operator watches; SKILL.md section 5) and nothing
-here waits on a key: every child gets stdin /dev/null and a timeout, and STEP /
-SELFTEST* are stripped from the environment it inherits.
+Playwright runs HEADLESS here (operator, 2026-09-29): this is the unattended
+automated half, and the report is what gets read. An agent's own interactive
+Playwright session stays headed so the operator can watch along (SKILL.md
+section 5). Nothing here waits on a key: every child gets stdin /dev/null and
+a timeout, and STEP / SELFTEST* are stripped from the environment it inherits.
 
 The estop. Three droid scripts need it clear and then latch it, and two need it
 latched. Order alone cannot serve all of them, so before each droid script the
@@ -595,7 +597,7 @@ def run_process(cmd: list[str], env: dict[str, str], timeout_s: float,
                 log_path: Path) -> tuple[Optional[int], bool]:
     """Run one child to completion or timeout, its output copied line by line
     to this terminal and to log_path. (exit code, timed out). The child gets
-    its own process group, so a timeout takes a headed browser down with the
+    its own process group, so a timeout takes the browser down with the
     script that opened it."""
     with log_path.open("wb") as log:
         log.write(f"$ {' '.join(cmd)}\n".encode())
@@ -1048,7 +1050,7 @@ def main(argv: list[str]) -> int:
 
         sweep = StepResult("console-sweep.js", "droid")
         run_step(sweep, [node, str(SWEEP_SCRIPT)],
-                 child_env({"BASE": droid, "HEADED": "1", **fixture_flag}, node_path),
+                 child_env({"BASE": droid, **fixture_flag}, node_path),
                  args.sweep_timeout_s, playwright=True)
         results.append(sweep)
         advance("console-sweep.js")
@@ -1060,7 +1062,7 @@ def main(argv: list[str]) -> int:
                     estop_actions.append(action)
                     print(f"[bench_auto] {action}", flush=True)
             result = StepResult(step.name, "droid")
-            env = {"BASE_URL": droid, "HEADLESS": "false", **dict(step.env), **fixture_flag}
+            env = {"BASE_URL": droid, "HEADLESS": "true", **dict(step.env), **fixture_flag}
             run_step(result, [node, str(REPO_ROOT / step.script)], child_env(env, node_path),
                      args.script_timeout_s, playwright=True)
             results.append(result)
@@ -1072,7 +1074,7 @@ def main(argv: list[str]) -> int:
             for d in fixtures:
                 name = f"fixture: {d.script.removeprefix('test/playwright/')}"
                 result = StepResult(name, "fixture")
-                env = {"FIXTURE": "1", "HEADLESS": "false", "BASE_URL": server.base,
+                env = {"FIXTURE": "1", "HEADLESS": "true", "BASE_URL": server.base,
                        "TARGET_URL": f"{server.base}/{d.page}"}
                 run_step(result, [node, str(REPO_ROOT / d.script)], child_env(env, node_path),
                          args.script_timeout_s, playwright=True)

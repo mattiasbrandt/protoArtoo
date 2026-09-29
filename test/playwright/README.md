@@ -21,7 +21,9 @@ a droid, or offline against the fixture server.
 
 ## Conventions
 
-- **Headed by default**, so the operator watches. `HEADLESS=true` for no window.
+- **Headed by default**, so the operator watches when an agent runs a script.
+  `HEADLESS=true` for no window. `make bench-auto` runs every script with
+  `HEADLESS=true` and the sweep without `HEADED` (operator, 2026-09-29).
 - **`STEP=1`** waits for Enter between steps; nothing else reads stdin.
 - **`BASE_URL`** is the droid (default `http://10.0.0.22`, trailing slash
   dropped). `console-sweep.js` alone takes `BASE` and is headless unless
