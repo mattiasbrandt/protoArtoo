@@ -18,7 +18,7 @@ def print_decision(decision: str, reason: str) -> None:
 
 
 # `make flash`, `make ota`, `make uploadfs` and their `-<variant>` targets
-# (`flash-monitor`, `ota-chirp`, ...), with optional VAR=value words first.
+# (`flash-monitor`, ...), with optional VAR=value words first.
 _MAKE_UPLOAD = re.compile(r"\bmake\b(?:\s+\S+=\S*)*\s+(flash|ota|uploadfs)(?:-[\w-]+)?(?=\s|$)")
 
 

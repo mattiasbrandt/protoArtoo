@@ -3,6 +3,8 @@
 Status: accepted (2026-09-08, issue #325). Describes the **target** model.
 Nothing in it ships today.
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience` (B2a-d), and amended the same day: STOP is one toggle (#359).
+
 ## Context
 
 The nav is ten `href`s to ten documents (`data/shell.js:25-34`), so every change

@@ -7,6 +7,8 @@ the default set carries the photographs (#316) and the legacy set carries twenty
 drawings as one inlined sprite (`9b66f0ce`). The Setup board picture draws from them
 (#382); the Component Picker's cards (#369) are still to come.
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience`, including the Component Picker cards (#369).
+
 ## Context
 
 One LittleFS image is built for both boards. `tools/gzip_fsdata.py` stages the same

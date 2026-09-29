@@ -259,6 +259,11 @@ the patch releases, whose notes live on their own GitHub Release.
   carry them (ADR 0065).
 
 ### Changed
+- **One firmware per board, whatever sound module you fitted.** A release now
+  carries one firmware and one filesystem image for each board, not one per
+  sound module, and there is no special build to flash for CHIRP Audio Trigger
+  or MP3 Trigger. Pick the module on Configuration (Hardware components ->
+  Sound); it takes effect at the next start.
 - **You put a part on an output in Wiring now.** The list of every part with
   the output it is on moved from Parts to Wiring, under the outputs it chooses
   between, and moving a part off one output still asks first. On Parts, Give it

@@ -3,6 +3,8 @@
 Status: accepted (2026-09-08, issue #319). Describes the **target** model.
 Nothing in it ships today.
 
+**Status as of 2026-09-29 (#175 audit): partly built.** The Body Step and its three words ship (D3 #349). Still unbuilt: the flutter does not oscillate (`src/tasks/sequence_dispatcher.cpp:92-100`), and the Cadence Floor is the 450 ms dome stand-in, bounding generated expansions only.
+
 ## Context
 
 **A Learned Sequence cannot move a body part.** There are nine step types and

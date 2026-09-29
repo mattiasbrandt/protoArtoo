@@ -179,7 +179,7 @@ jobs:
               if [ "$TIER" = "patch" ]; then
                 echo "A patch release: generated notes and the source tag, no images."
               else
-                echo "A full release: the curated CHANGELOG section and all eight images."
+                echo "A full release: the curated CHANGELOG section and each board's images."
               fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"

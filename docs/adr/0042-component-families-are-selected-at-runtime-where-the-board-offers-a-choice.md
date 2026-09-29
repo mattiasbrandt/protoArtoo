@@ -5,6 +5,8 @@ Status: accepted (2026-09-07, issue #302), amended 2026-09-09. Describes the
 none of it yet. **Read the 2026-09-09 amendment at the foot with the Decision:
 it retracts one sentence and moves three of the answers above.**
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience` - the Component Registry, runtime Component Members, and sound picked at runtime (`25718f5b`; the per-module builds retired in #340).
+
 ## Context
 
 The config model has three tiers and no answer to "which part is it".

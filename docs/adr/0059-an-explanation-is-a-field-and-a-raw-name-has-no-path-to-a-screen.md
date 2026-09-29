@@ -3,6 +3,8 @@
 Status: accepted (2026-09-09, issue #334). Describes the **target** model; none of
 it is implemented yet.
 
+**Status as of 2026-09-29 (#175 audit): partly built.** Setting and row words (`data/web_api.js`), `check_setting_words.py` and `check_vocabulary_drift.py` ship. Still unbuilt: `explanation` fields on the action registry params (0 today) and a checker that requires them.
+
 ## Context
 
 `docs/ui-copy-voice.md` has existed throughout, with seven good rules and a review

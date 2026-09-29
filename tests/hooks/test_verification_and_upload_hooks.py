@@ -40,7 +40,7 @@ class BackendVerificationTrackerTests(unittest.TestCase):
 
     def test_other_envs_and_neighbouring_targets_do_not_count(self):
         self.assertEqual(self.classify("make build BUILD_ENV=firebeetle2"), "")
-        self.assertEqual(self.classify("make build BUILD_ENV=artoo_esp32_chirp"), "")
+        self.assertEqual(self.classify("make build BUILD_ENV=artoo_esp32_profiler"), "")
         self.assertEqual(self.classify("make test-web"), "")
         self.assertEqual(self.classify("make check-action-drift"), "")
 
@@ -63,7 +63,7 @@ class PreUploadGuardTests(unittest.TestCase):
             ("make flash UPLOAD_PORT=/dev/ttyUSB0", "USB firmware upload"),
             ("make flash-monitor", "USB firmware upload"),
             ("make ota OTA_IP=artoo.local", "OTA firmware upload"),
-            ("make BUILD_ENV=artoo_esp32_chirp ota-chirp", "OTA firmware upload"),
+            ("make BUILD_ENV=artoo_esp32_profiler ota", "OTA firmware upload"),
             ("make uploadfs", "UploadFS"),
         ):
             with self.subTest(command=command):

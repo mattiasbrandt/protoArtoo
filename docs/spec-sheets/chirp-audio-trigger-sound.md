@@ -44,7 +44,7 @@ test that would settle them.
 > own heading. CONTEXT.md's Flagged Ambiguities records the resolution
 > (operator, 2026-09-08): **always qualify the audio module in operator copy and
 > in any lineup, never bare.** Internal identifiers (`chirpVol`, `audio_chirp`,
-> `make ota-chirp`, the `chr_*` NVS keys) keep the short form -- they are
+> the `chr_*` NVS keys) keep the short form -- they are
 > unambiguous inside their own subject.
 
 > [!CAUTION]
@@ -352,8 +352,7 @@ interface designed for its competitor -- which is a compliment to the interface.
 | Build default token | `PA_AUDIO_DRIVER = AUDIO_CHIRP` (value 4) | `include/audio_driver.h:50` |
 | NVS member value | `chirp` under key `snd_member` | ADR 0042 |
 | Driver binding | `src/tasks/audio_sound_member.cpp:38-52` | -- |
-| PlatformIO envs | `artoo_esp32_chirp`, `..._chirp_ota`, `..._chirp_check` | `platformio.ini` |
-| Make targets | `flash-chirp`, `flash-chirp-monitor`, `ota-chirp`, `check-chirp` | `Makefile:213-256` |
+| Build | **none of its own** -- one build per board; pick it on Configuration (Hardware components -> Sound), it takes effect at the next start | `platformio.ini` |
 | Operator doc | `docs/sound_playback.md` Section 2.2 | -- |
 
 The sound member is chosen **at runtime and staged at reboot** (ADR 0042). Every
