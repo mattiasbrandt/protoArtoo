@@ -1,16 +1,18 @@
 /**
  * data/dome_control.js
  *
- * The Dashboard's Moving parts card: the droid's two drawings and nothing else
- * (operator, 2026-09-28 on #372).
+ * The Dashboard's Moving parts, under the three controls in Controls: the
+ * droid's two drawings and nothing else (operator, 2026-09-28 on #372; moved
+ * into Controls 2026-09-29 on #399).
  *   - The body, Front and Rear (data/body_view.js). A click on a drawn door,
  *     panel or arm opens or closes it - the Parts picture's decision and
  *     request, from data/droid_picture.js, not a copy of them.
  *   - The dome, top-down, from the layout the dome reports or the built-in
  *     map, with click-to-toggle panel actuation.
- *   - Both drawn lazily on the first expand.
- *   - Accessibility: aria-expanded, keyboard support, status announcements.
- * A refused click sends nothing and says why in the card's feedback line.
+ *   - Both drawn once, when the Dashboard mounts: they are not behind a
+ *     disclosure any more, so there is no first expand to wait for.
+ *   - Accessibility: keyboard support, status announcements.
+ * A refused click sends nothing and says why in the drawings' feedback line.
  *
  * Reuses: BodyView, PADroidPicture, DomeCommandMap, DomeLayout,
  * DomeLayoutRender, PAApi
@@ -22,53 +24,44 @@
   // Only initialize on home page
   if (document.body.dataset.page !== 'home') return;
 
-  // Wait for assets to be loaded
+  // Wait for assets to be loaded. Already loaded means the Operator Shell is
+  // mounting this surface after the page's first one (ADR 0048).
   if (!window.PAAssetsReady) {
-    window.addEventListener('pa:assets-ready', initDomeControl);
+    window.addEventListener('pa:assets-ready', () => initDomeControl(false));
   } else {
-    initDomeControl();
+    initDomeControl(true);
   }
 
-  function initDomeControl() {
+  // Runs `draw` once the Dashboard's own sections have settled - done, or
+  // failed and waiting to retry. On a first page load this script starts from
+  // pa:assets-ready, which fires only after that, so it draws at once. Under
+  // the Operator Shell it runs while the surface is still mounting, before
+  // app.js has declared its sections, so it waits for the next stable change,
+  // the pattern data/wifi.js already uses.
+  function afterSectionsSettle(mountedLate, draw) {
+    if (!mountedLate || !window.PABootstrap) {
+      draw();
+      return;
+    }
+    const onChange = (event) => {
+      if (!event.detail?.sectionsStable) return;
+      window.removeEventListener('pa:bootstrap-change', onChange);
+      draw();
+    };
+    window.addEventListener('pa:bootstrap-change', onChange);
+  }
+
+  function initDomeControl(mountedLate) {
     const cardEl = document.getElementById('dome-control-card');
     if (!cardEl) return;
 
-    const headerBtn = cardEl.querySelector('.dome-control-header');
-    const bodyEl = cardEl.querySelector('.dome-control-body');
     const feedbackEl = cardEl.querySelector('.dome-control-feedback');
     const bodyDrawingEl = cardEl.querySelector('.moving-parts-body');
     const domeEl = cardEl.querySelector('.moving-parts-dome');
 
-    if (!headerBtn || !bodyEl || !feedbackEl || !bodyDrawingEl || !domeEl) return;
+    if (!feedbackEl || !bodyDrawingEl || !domeEl) return;
 
-    // State tracking
-    let isExpanded = false;
-    let isRendered = false;
     const openPanels = new Set(); // Track which panels are currently open
-
-    // Keyboard and click to toggle expand
-    const toggleExpand = async (e) => {
-      // Ignore if target is an interactive element inside the body
-      if (isExpanded && bodyEl.contains(e.target) && e.target !== headerBtn) {
-        return;
-      }
-
-      isExpanded = !isExpanded;
-      headerBtn.setAttribute('aria-expanded', isExpanded);
-
-      if (isExpanded && !isRendered) {
-        // Lazy render on first expand
-        await renderDomePanel();
-        isRendered = true;
-      }
-
-      bodyEl.classList.toggle('hidden', !isExpanded);
-    };
-
-    // Header is a native <button>, so Enter/Space already fire a click — a
-    // separate keydown handler would double-toggle (Space activates on keyup
-    // after the keydown handler already ran). Rely on the click event alone.
-    headerBtn.addEventListener('click', toggleExpand);
 
     let bannerEl = null;
     let pickerContainer = null;
@@ -136,9 +129,8 @@
       }
     }
 
-    // Render both drawings and attach their click handlers
-    async function renderDomePanel() {
-      renderBody();
+    // Render the dome drawing and attach its click handlers
+    async function renderDome() {
       try {
         // Load the dome layout if available
         if (window.DomeLayout) {
@@ -412,5 +404,16 @@
       feedbackEl.className = level ? `dome-control-feedback feedback ${level}` : 'dome-control-feedback feedback';
       feedbackEl.classList.toggle('hidden', !text);
     }
+
+    // Drawn once, on mount, rather than on a first expand: the drawings sit
+    // open in Controls. The body asks the droid for nothing, so it is drawn at
+    // once. The dome's layout read first joins the Droid Build this page reads
+    // with its log level (data/droid_build.js load()), so it waits for the
+    // Dashboard's sections: started before app.js had read the config, it
+    // opened a second GET /api/config beside that one, on a controller that
+    // sheds connections under load. renderDome() reports its own failure in
+    // the feedback line.
+    renderBody();
+    afterSectionsSettle(mountedLate, renderDome);
   }
 })();

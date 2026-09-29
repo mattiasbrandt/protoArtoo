@@ -48,6 +48,9 @@
   const componentSummary = document.getElementById("component-summary");
   const consoleDisclosure = document.getElementById("console-disclosure");
   const sleepToggleLabel = document.getElementById("sleep-toggle-label");
+  // The Sleep switch in Controls: a second entrance to the topbar's one Sleep
+  // act, never a second act (operator, 2026-09-29, #399).
+  const sleepSwitch = document.getElementById("sleep-switch");
 
   // The identity plate and the two readouts the Status Plate leaves off. Every
   // value here comes out of the /api/status frame this surface already reads
@@ -130,7 +133,7 @@
 
   const setSleepPending = (pending) => {
     sleepPending = pending;
-    [sleepToggle, sleepOverlayWake].forEach((el) => {
+    [sleepToggle, sleepSwitch, sleepOverlayWake].forEach((el) => {
       if (!el) return;
       el.disabled = pending;
       el.classList.toggle("is-pending", pending);
@@ -153,6 +156,9 @@
       sleepToggle.classList.toggle("accent", isSleeping);
       sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
     }
+    // The switch is on only when the droid says it is asleep: a press moves it
+    // through this, from the frame, and not on the press alone.
+    sleepSwitch?.setAttribute("aria-checked", isSleeping.toString());
     if (sleepOverlay) {
       sleepOverlay.classList.toggle("active", isSleeping);
       sleepOverlay.setAttribute("aria-hidden", (!isSleeping).toString());
@@ -370,7 +376,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // This droid, and the two readouts the Status Plate leaves off
+  // Build, and the two readouts the Status Plate leaves off
   //
   // Both render from the /api/status frame this surface already has. Nothing
   // here asks the controller for anything of its own: the plate's rule is that
@@ -1421,11 +1427,16 @@
     });
   });
 
-  // The Console is a disclosure and starts closed, so while it is closed the
-  // log has no layout at all and scrollHeight is 0 - every stick-to-bottom
-  // while it was shut left scrollTop at 0. Opening it therefore has to put the
-  // newest line back under the operator's eye, which is the whole reason the
-  // log sticks to the bottom in the first place.
+  // ---- Sleep switch (Controls) ----
+  // It presses the same act as the topbar button, through the same function
+  // and its sleepPending guard, so the two can never send twice.
+  sleepSwitch?.addEventListener("click", () => toggleSleepWake(false));
+
+  // The Console is a disclosure. It starts open, but an operator can shut it,
+  // and while it is shut the log has no layout at all and scrollHeight is 0 -
+  // every stick-to-bottom while it was shut left scrollTop at 0. Opening it
+  // again therefore has to put the newest line back under the operator's eye,
+  // which is the whole reason the log sticks to the bottom in the first place.
   consoleDisclosure?.addEventListener("toggle", () => {
     if (!consoleDisclosure.open || !logConsole) return;
     if (hasActiveLogSelection()) return;

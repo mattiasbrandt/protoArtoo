@@ -24,8 +24,9 @@
     </div>
 
     <!-- What the droid is doing, first: the three controls that change it,
-         side by side in one bay and divided by seams. What the droid is and
-         its telemetry sit at the foot of the page, in This droid. -->
+         side by side in one bay and divided by seams, and under them the
+         droid's two drawings, which change it too. What the droid is and its
+         telemetry sit at the foot of the page, in Build. -->
     <div class="bay dash-controls">
       <section>
         <div class="sect">
@@ -61,20 +62,66 @@
 
           <div class="ctl">
             <h3>Sleep <span class="now waiting" id="sleep-now"></span></h3>
-            <!-- A readout, not a control: the Sleep act is in the topbar with the
-                 other two that act on the droid, so its explanation belongs at
-                 that entrance and not here (ADR 0059). What survives the cut is
-                 the half a builder has to know - a sleeping droid can still be
-                 driven and can still be stopped. -->
-            <!-- The switch shows the state and does not take a press: it follows
-                 body.sleep-mode-active, which app.js setSleepUi() already sets
-                 from the droid's frame, so there is no second reader of it. -->
-            <div class="sleep-switch" aria-hidden="true"><span class="sleep-switch-knob"></span></div>
+            <!-- The Sleep act's home is the topbar, with the other two that act
+                 on the droid, so its explanation belongs at that entrance and
+                 not here (ADR 0059). What survives the cut is the half a
+                 builder has to know - a sleeping droid can still be driven and
+                 can still be stopped. -->
+            <!-- The switch takes a press as well (operator, 2026-09-29, #399:
+                 it looked like a control and did not act like one). It is the
+                 same act as the topbar button - app.js toggleSleepWake(), with
+                 its one pending guard - never a second request. Its state is
+                 what app.js setSleepUi() reads from the droid's frame, so a
+                 press moves it only when the droid says it slept. Asleep, the
+                 sleep overlay covers it and Wake is the overlay's. -->
+            <button class="sleep-switch" id="sleep-switch" type="button" role="switch" aria-checked="false" aria-label="Sleep"><span class="sleep-switch-knob"></span></button>
             <p class="hint">Lights, panels and chatter rest. Drive and the estop stay awake.</p>
+          </div>
+        </div>
+
+        <!-- Moving parts: the droid's two drawings, the body and the dome, under
+             the three controls (operator, 2026-09-29, #399). A click on a drawn
+             door, panel or arm opens or closes it, held by the same estop and
+             the same refusals as Parts (data/droid_picture.js); a refused click
+             sends nothing and says why (#372, operator 2026-09-28). The ids keep
+             their old dome-control names: data/dome_control.js finds the
+             drawings by them and draws both once, when the Dashboard mounts. -->
+        <div class="moving-parts-bay" id="dome-control-card">
+          <h3>Moving parts</h3>
+          <div class="dome-control-feedback feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div class="moving-parts">
+            <!-- The body drawing (data/body_view.js, Front and Rear) -->
+            <div class="moving-parts-body"></div>
+            <!-- The dome drawing and where it came from -->
+            <div class="moving-parts-dome"></div>
           </div>
         </div>
       </section>
     </div>
+
+    <!-- The Controller Console: one name per concept - it is the same Console
+         the serial adapter and tools/console_client.py talk to
+         (docs/console-client.md), and calling it "Live Logs" here made it read
+         as a second thing. The heading says Console alone because the operator
+         asked for it (2026-09-29, #399); the concept keeps its full name
+         everywhere else. Open by default, directly under Controls. -->
+    <details class="disclose" id="console-disclosure" open>
+      <summary>
+        <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
+        <h2>Console</h2>
+        <span class="sub">
+          <button type="button" id="log-level-pill" class="status-pill status-pill-compact pill-info" title="Log level: loading... - click to change" aria-label="Log level: loading. Click to change.">...</button>
+          <span class="log-paused" id="log-paused">Auto-scroll paused</span>
+        </span>
+      </summary>
+      <div class="disclose-body">
+        <div class="log-wrap">
+          <pre id="log-console" class="log-console"></pre>
+          <input id="log-command-input" class="log-command-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="> type a command and press Enter">
+        </div>
+        <p class="hint">Type <b>help</b> for the list.</p>
+      </div>
+    </details>
 
     <div class="card">
       <div class="sect"><h2>Health</h2><span class="sub" id="health-summary">7 signals</span></div>
@@ -124,96 +171,51 @@
       <div id="component-status-grid"></div>
     </div>
 
-    <!-- Moving parts (Collapsible): the droid's two drawings, the body and the
-         dome, and nothing else. A click on a drawn door, panel or arm opens or
-         closes it, held by the same estop and the same refusals as Parts
-         (data/droid_picture.js); a refused click sends nothing and says why
-         (#372, operator 2026-09-28). The ids keep their old dome-control
-         names: data/dome_control.js and the browser scripts reach the card
-         by them.
-
-         Its own disclosure rather than a <details>: dome_control.js renders the
-         drawings lazily on the first expand and owns this header's
-         aria-expanded, so the button and the hidden body are part of how it
-         works and not a dressing choice. It is drawn as a disclosure like the
-         one below it. -->
-    <div class="disclose" id="dome-control-card">
-      <button id="dome-control-header" class="dome-control-header" aria-expanded="false" aria-controls="dome-control-body">
-        <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
-        <h2>Moving parts</h2>
-        <span class="sub">open and close</span>
-      </button>
-      <div id="dome-control-body" class="dome-control-body disclose-body hidden">
-        <div class="dome-control-feedback feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-        <div class="moving-parts">
-          <!-- The body drawing (data/body_view.js, Front and Rear) -->
-          <div class="moving-parts-body"></div>
-          <!-- The dome drawing and where it came from -->
-          <div class="moving-parts-dome"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- The Controller Console: one name per concept - it is the same Console
-         the serial adapter and tools/console_client.py talk to
-         (docs/console-client.md), and calling it "Live Logs" here made it read
-         as a second thing. -->
-    <details class="disclose" id="console-disclosure">
+    <!-- Build: what this droid is and how it is running - identity, then the
+         two numbers the Status Plate deliberately leaves off (#324). Detail a
+         builder looks up rather than watches, so it sits at the foot of the
+         page (#399, operator review 2026-09-28) and starts closed (operator,
+         2026-09-29). The id keeps its old name. -->
+    <details class="disclose" id="this-droid-card">
       <summary>
         <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
-        <h2>Controller Console</h2>
-        <span class="sub">
-          <button type="button" id="log-level-pill" class="status-pill status-pill-compact pill-info" title="Log level: loading... - click to change" aria-label="Log level: loading. Click to change.">...</button>
-          <span class="log-paused" id="log-paused">Auto-scroll paused</span>
-        </span>
+        <h2>Build</h2>
+        <span class="sub">read from the running Body Controller</span>
       </summary>
       <div class="disclose-body">
-        <div class="log-wrap">
-          <pre id="log-console" class="log-console"></pre>
-          <input id="log-command-input" class="log-command-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="> type a command and press Enter">
-        </div>
-        <p class="hint">Type <b>help</b> for the list.</p>
+        <!-- No picture here: the droid is drawn once on this surface, in
+             Controls above (data/body_view.js, ADR 0063 as amended 2026-09-19),
+             and a second drawing on the identity plate would be a second thing
+             to keep in step with it. -->
+        <dl class="build">
+          <div>
+            <dt>Droid Build</dt>
+            <dd><span class="waiting" id="build-design"></span><span class="hint" id="build-design-detail"></span></dd>
+          </div>
+          <div>
+            <dt>Firmware</dt>
+            <dd><span class="waiting" id="build-firmware"></span><span class="hint" id="build-firmware-detail"></span></dd>
+          </div>
+          <div>
+            <dt>Uptime</dt>
+            <dd><span class="waiting" id="build-uptime"></span><span class="hint" id="build-uptime-detail"></span></dd>
+          </div>
+          <!-- app.js writes these two values with innerHTML (a number and its
+               unit), so their cue is a sibling of the dd rather than inside it,
+               where the write would wipe it. -->
+          <div>
+            <dt>Memory free</dt>
+            <dd class="waiting" id="readout-heap"></dd>
+            <span class="hint" id="readout-heap-detail"></span>
+          </div>
+          <div>
+            <dt>WiFi signal</dt>
+            <dd class="waiting" id="readout-wifi"></dd>
+            <span class="hint" id="readout-wifi-detail"></span>
+          </div>
+        </dl>
       </div>
     </details>
-
-    <!-- What this droid is and how it is running: identity, then the two
-         numbers the Status Plate deliberately leaves off (#324). Detail a
-         builder looks up rather than watches, so it sits at the foot of the
-         page (#399, operator review 2026-09-28). -->
-    <div class="card" id="this-droid-card">
-      <div class="sect"><h2>This droid</h2><span class="sub">read from the running Body Controller</span></div>
-      <!-- No picture here: the droid is drawn once on this surface, in the
-           Moving parts card above (data/body_view.js, ADR 0063 as amended
-           2026-09-19), and a second drawing on the identity plate would be a
-           second thing to keep in step with it. -->
-      <dl class="build">
-        <div>
-          <dt>Droid Build</dt>
-          <dd><span class="waiting" id="build-design"></span><span class="hint" id="build-design-detail"></span></dd>
-        </div>
-        <div>
-          <dt>Firmware</dt>
-          <dd><span class="waiting" id="build-firmware"></span><span class="hint" id="build-firmware-detail"></span></dd>
-        </div>
-        <div>
-          <dt>Uptime</dt>
-          <dd><span class="waiting" id="build-uptime"></span><span class="hint" id="build-uptime-detail"></span></dd>
-        </div>
-        <!-- app.js writes these two values with innerHTML (a number and its
-             unit), so their cue is a sibling of the dd rather than inside it,
-             where the write would wipe it. -->
-        <div>
-          <dt>Memory free</dt>
-          <dd class="waiting" id="readout-heap"></dd>
-          <span class="hint" id="readout-heap-detail"></span>
-        </div>
-        <div>
-          <dt>WiFi signal</dt>
-          <dd class="waiting" id="readout-wifi"></dd>
-          <span class="hint" id="readout-wifi-detail"></span>
-        </div>
-      </dl>
-    </div>
 
     <!-- The Dashboard's topbar actions (#344). Both act on the DROID - park
          it, restart the controller - rather than on anything this surface
