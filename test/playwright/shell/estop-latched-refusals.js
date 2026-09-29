@@ -171,10 +171,9 @@ lib.runCheck({
 
     // d: the Dashboard's dome ---------------------------------------------------
     await lib.openSurface(page, 'home');
-    await page.click('#dome-control-header');
     const panel = '.dome-svg-container svg [data-element-id][data-selectable="true"], .dome-svg-container svg [data-target]';
     if (!(await page.waitForSelector(panel, { timeout: 10000 }).then(() => true, () => false))) {
-      const body = (await page.textContent('#dome-control-body').catch(() => '')).trim();
+      const body = (await page.textContent('#dome-control-card').catch(() => '')).trim();
       report.add('d', 'Dashboard dome: a panel press says the estop holds it, and sends nothing', lib.NOT_ASSESSED, `no pressable panel in the dome drawing (${body.slice(0, 120)})`);
       return;
     }
