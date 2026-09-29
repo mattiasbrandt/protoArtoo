@@ -243,6 +243,17 @@ VERIFICATION (software-verified cap)
   `python3 tools/mutation_verify.py <patches>` runs are for authoring only.
   A test that fails only by hanging or timing out is not coverage. A green
   run alone, or a hand-written mutation table, will be rejected.
+- A red run against old code happens in a THROWAWAY checkout, never by
+  writing old files over your worktree: `git worktree add --detach
+  /tmp/red-<n> <base>`, copy your test files in, run there, then `git
+  worktree remove --force` it. Wrap every hand-run test in `timeout 60`.
+  On 2026-09-29 a red run wrote old files in place, the test ran away at
+  about 1 GB/s, and the `; git checkout` restore chained after it never ran:
+  systemd-oomd killed the terminal holding every agent session, twice. Your
+  pane is memory-capped, so a runaway now kills only its own process - if a
+  command of yours dies with no message, check `journalctl --user --since
+  -5min | grep -i oom` before running it again, and never run it again
+  unchanged.
 - If the ticket's pinned comment provides a verification harness, run it and
   paste its output verbatim; do not substitute your own summary of it.
 
