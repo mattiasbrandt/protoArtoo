@@ -130,6 +130,19 @@ from the epic's coordination section rather than from memory.
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.
+- **Start every worker memory-capped:** `python3 tools/herdr_capped_agent.py
+  --pane <id> --name <agent> [-- --resume <session-id>]`, never a bare
+  `herdr agent start`. It puts the pane's shell in its own systemd scope
+  (MemoryMax 10G, no swap, OOMPolicy=continue) and refuses to start the agent
+  if the cap is not in place. **Why:** on 2026-09-29 one worker's test grew
+  memory at about 1 GB/s with nothing bounding it; systemd-oomd killed the
+  terminal's whole cgroup - the Herdr server and every agent - twice. Capped,
+  the same runaway kills one `node` process and nothing else (measured).
+- **An agent interrupted from outside is diagnosed before it is resumed.**
+  Read `journalctl --user --since <when> | grep -iE 'oom|killed'` and the
+  agent's last command first. The second kill that evening happened because
+  the coordinator told the worker to "re-run the interrupted step" - which
+  was the command that had blown up memory.
 - Compose the worker prompt from [worker-brief.md](worker-brief.md) plus the
   sub-issue number. Ticket-specific knowledge lives in the ticket, not the
   prompt - the brief's first step sends the worker to the issue body and the
