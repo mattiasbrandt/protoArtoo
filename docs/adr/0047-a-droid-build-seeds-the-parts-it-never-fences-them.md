@@ -3,6 +3,8 @@
 Status: accepted (2026-09-08, issue #333). Describes the **target** model.
 Nothing in it ships today.
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience` (A5 #343, C3b #368). "Click an unfitted part to add it" was replaced by ADR 0063.
+
 ## Context
 
 protoArtoo does not know what droid it is bolted into, and has never been asked.

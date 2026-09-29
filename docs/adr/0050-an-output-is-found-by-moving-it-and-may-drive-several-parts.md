@@ -3,6 +3,8 @@
 Status: accepted (2026-09-08, issue #296). Describes the **target** model.
 Nothing in it ships today.
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience` (C1c #363: Find by Moving, `parts[]`, `servoOutputTableEnforcePartOwnership`).
+
 ## Context
 
 A builder rewires constantly: a linkage gets reprinted, a servo burns out and

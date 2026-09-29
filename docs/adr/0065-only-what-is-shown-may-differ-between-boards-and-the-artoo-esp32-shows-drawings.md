@@ -7,6 +7,8 @@ thing that is not code: the sixteen line drawings the legacy set carries, which 
 guided Setup on every board. Both set directories are therefore still absent, and
 staging is a measured no-op until they exist.
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience`, including the Component Picker cards (#369).
+
 ## Context
 
 One LittleFS image is built for both boards. `tools/gzip_fsdata.py` stages the same
