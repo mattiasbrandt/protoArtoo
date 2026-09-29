@@ -830,7 +830,7 @@
   // a file on the computer in front of you. The sheet it saves is made from the
   // same read the screen is showing, and the screen is repainted with that
   // very sheet in the same moment, so the page you are looking at and the file
-  // you just saved carry the same minute, the same tiers and the same counts.
+  // you just saved carry the same minute, the same wires and the same counts.
   //
   // It is a real link rather than a button that fakes one: the file is put on
   // the link as the press is handled, and the browser's own download does the
