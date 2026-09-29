@@ -80,6 +80,15 @@ enum RcInputMode : uint8_t {
     // stays on DriveTask's own zero frames and the failsafe layers are those of
     // a droid with no radio.
     RC_INPUT_ELRS,
+    // No Radio Controller is fitted: a droid driven from the web alone
+    // (CONTEXT.md "Radio Controller", operator 2026-09-29 on #369). The same
+    // shape as ELRS above - rcInputStepStartupPlan() starts no decoder and no
+    // RC task - so the two radio Failsafe Layers never trigger and the stale
+    // web drive command and the estop hold the feet. configApply() makes it
+    // one answer: storing it clears the radio and every RC channel. Appended
+    // last, because the number is what NVS stores and the four before it must
+    // not move.
+    RC_INPUT_NOT_FITTED,
 };
 
 // The RC receiver modes' words - the one home for them (ADR 0068, amended
@@ -95,6 +104,8 @@ inline const char* rcInputModeName(uint8_t mode) {
             return "dual_sbus";
         case RC_INPUT_ELRS:
             return "elrs";
+        case RC_INPUT_NOT_FITTED:
+            return "not_fitted";
         default:
             return nullptr;
     }
