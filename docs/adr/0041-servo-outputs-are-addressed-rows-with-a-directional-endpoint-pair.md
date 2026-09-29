@@ -3,6 +3,8 @@
 Status: accepted (2026-09-07, issue #286). Describes the **target** model; it
 lands incrementally, and the code at `6441966e` implements none of it yet.
 
+**Status as of 2026-09-29 (#175 lost-in-transit audit): partly built** on `epic/operator-experience` - addressed rows, the Endpoint Pair, the ServoTask ramp and Part-addressed Body Steps. Still unbuilt: RC bindings still address Outputs (`SERVO_ACTION_ARM1_TOGGLE..AUX3`, `include/rc_action_types.h:28-32`), and there is no expander driver yet (#306).
+
 ## Context
 
 At `6441966e` a servo output is two numbers on a fixed NVS key set:

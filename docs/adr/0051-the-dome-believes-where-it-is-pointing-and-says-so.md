@@ -4,6 +4,8 @@ Status: accepted (2026-09-08, issue #322), amended 2026-09-09. Describes the
 **target** model. Nothing in it ships today. **The 2026-09-09 amendment at the
 foot withdraws the fixed-map half of one answer; the moving marker stands.**
 
+**Status as of 2026-09-29 (#175 audit): not built.** The operator dropped the map rotation of the 2026-09-09 amendment on 2026-09-29: *"not that important either, top view we have is what makes most sense"*. The Dome Bearing itself is minted as a build ticket under #322.
+
 ## Context
 
 Dome position is a performance instrument. A builder wants the dome to face

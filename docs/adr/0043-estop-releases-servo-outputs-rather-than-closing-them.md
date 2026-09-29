@@ -3,6 +3,8 @@
 Status: accepted (2026-09-07, issue #300). Describes the **target** behaviour; it
 lands incrementally, and the code at `939ed705` implements none of it yet.
 
+**Status as of 2026-09-29 (#175 audit): partly built.** Estop and Sleep release every output (C1d #364: `ledcPwmRelease`, `releaseArm()`, the halt-edge release). Still unbuilt: the timed Output Release - `release_ms` is stored and read by no code (`src/tasks/servo_task.cpp:731`).
+
 ## Context
 
 At `939ed705` estop and Sleep Mode take the same path in `ServoTask`

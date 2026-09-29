@@ -12,6 +12,8 @@ state and add-by-clicking, **Common Addition** vocabulary, and the
 reconciliation surface for a dome whose reported layout disagrees with the
 stated design.
 
+**Status as of 2026-09-29 (#175 audit): built** on `epic/operator-experience` (A5 #343, C3b #368). "Click an unfitted part to add it" was replaced by ADR 0063.
+
 ## Context
 
 protoArtoo does not know what droid it is bolted into, and has never been asked.

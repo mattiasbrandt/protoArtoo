@@ -3,6 +3,8 @@
 Status: accepted (2026-09-09, issue #291). Describes the **target** model; none of
 it is implemented yet.
 
+**Status as of 2026-09-29 (#175 audit): built** (C1d #364, C1f #400), except *"Output Release suppressed while held"*, which waits for the timed release of ADR 0043.
+
 ## Context
 
 #291's grill settled the calibration dial on 2026-09-09 and left two things
