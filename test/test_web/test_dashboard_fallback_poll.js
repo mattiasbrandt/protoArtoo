@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 test("with no stream the Dashboard polls nothing itself, and the shell's one poll feeds it one read at a time", async () => {
   const callLog = [];
   const statusDelay = 400; // Slow enough that overlapping reads are measurable
-  let latched = false;
+  let asleep = false;
 
   const env = loadPageModule("app.js", {
     respond: (path) => {
@@ -35,7 +35,7 @@ test("with no stream the Dashboard polls nothing itself, and the shell's one pol
       return new Promise((resolve) => {
         setTimeout(() => {
           callLog[id].end = Date.now();
-          resolve({ data: statusFrame({ estop: latched }) });
+          resolve({ data: statusFrame({ sleepMode: asleep }) });
         }, statusDelay);
       });
     },
@@ -48,7 +48,7 @@ test("with no stream the Dashboard polls nothing itself, and the shell's one pol
 
   // Three ticks while a slow read is still out: the poll must wait for its own
   // answer rather than stacking reads on the controller.
-  latched = true;
+  asleep = true;
   for (let i = 0; i < 3; i += 1) {
     poll.fn();
     await sleep(100);
@@ -62,9 +62,11 @@ test("with no stream the Dashboard polls nothing itself, and the shell's one pol
   }
   assert.equal(maxConcurrent, 1, `one status read in flight at a time. Call log: ${JSON.stringify(callLog)}`);
 
+  // The Dashboard's own estop release went when STOP became one toggle
+  // (#359), so what the poll heard is read off the Sleep control instead.
   assert.equal(
-    env.element("estop-clear").disabled,
-    false,
-    "the latch the poll heard is the one the Dashboard offers to release",
+    env.element("sleep-toggle-label").textContent,
+    "Wake",
+    "the sleep the poll heard is the one the Dashboard shows",
   );
 });
