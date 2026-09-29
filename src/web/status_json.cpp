@@ -35,6 +35,26 @@ const char kStatusOverflowBody[] = "{\"ok\":false,\"error\":\"status payload ove
 // docs/ui-copy-voice.md: the mode and what the droid does in it, nothing more.
 const char kRcElrsDetail[] = "ELRS: the droid reads no sticks from it yet.";
 
+// Every RC channel with no Radio Controller fitted: the same standby as ELRS,
+// for the same reason (the RC_INPUT_NOT_FITTED comment in
+// include/robot_state.h). Only reached if a channel is switched on after the
+// Not fitted answer turned them all off.
+const char kRcNotFittedDetail[] = "No radio fitted: the droid reads no sticks.";
+
+// The line every RC channel carries in a mode that reads no input at all, or
+// nullptr for a mode that reads one. Checked ahead of the PWM and SBUS
+// branches, which would otherwise describe a wire nothing listens to.
+const char* rcReadsNothingDetail(RcInputMode mode) {
+    switch (mode) {
+        case RC_INPUT_ELRS:
+            return kRcElrsDetail;
+        case RC_INPUT_NOT_FITTED:
+            return kRcNotFittedDetail;
+        default:
+            return nullptr;
+    }
+}
+
 // A PWM channel: the droid reads the pulses on that wire. The state is ready,
 // not active - nothing measures whether pulses arrive (data/shell.js shows it
 // as UNMEASURED).
@@ -294,9 +314,8 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             }
         }
         if (in.enableRcCh1 && !(in.rcInputMode == RC_INPUT_SINGLE_SBUS && in.singleSbusUseCh2)) {
-            if (in.rcInputMode == RC_INPUT_ELRS) {
-                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "standby", kRcElrsDetail) &&
-                     ok;
+            if (const char* idle = rcReadsNothingDetail(in.rcInputMode)) {
+                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "standby", idle) && ok;
             } else if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh1", "ready", kRcPwmDetail) && ok;
             } else if (in.lastSbus1Ms == 0) {
@@ -316,9 +335,8 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             }
         }
         if (in.enableRcCh2) {
-            if (in.rcInputMode == RC_INPUT_ELRS) {
-                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "standby", kRcElrsDetail) &&
-                     ok;
+            if (const char* idle = rcReadsNothingDetail(in.rcInputMode)) {
+                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "standby", idle) && ok;
             } else if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "ready", kRcPwmDetail) && ok;
             } else if (in.rcInputMode == RC_INPUT_SINGLE_SBUS && !in.singleSbusUseCh2) {
@@ -353,9 +371,8 @@ bool formatStatusJson(char* buffer, size_t bufferSize, const StatusJsonInputs& i
             if (!wire.enabled) {
                 continue;
             }
-            if (in.rcInputMode == RC_INPUT_ELRS) {
-                ok = appendPeripheralStatus(pos, remaining, wire.key, "standby", kRcElrsDetail) &&
-                     ok;
+            if (const char* idle = rcReadsNothingDetail(in.rcInputMode)) {
+                ok = appendPeripheralStatus(pos, remaining, wire.key, "standby", idle) && ok;
                 continue;
             }
             ok = (in.rcInputMode == RC_INPUT_STANDARD_PWM

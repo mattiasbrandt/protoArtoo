@@ -14,6 +14,7 @@
 
 #include "api_helpers.h"
 #include "board_outputs.h"
+#include "component_registry.h"  // COMPONENT_MEMBER_NONE - the radio a Not fitted answer stores
 #include "config.h"
 #include "config_settings.h"  // every Setting's declaration - the scalar half loops over them
 #include "dome_math.h"  // domePulsesInOrder() - the one order rule for the ESC pulse set
@@ -721,6 +722,35 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] %s updated to %s", setting.form,
                       text[0] != '\0' ? text : "(none)");
         result->changed = true;
+    }
+
+    // No Radio Controller fitted is one answer, not three (CONTEXT.md "Radio
+    // Controller", operator 2026-09-29 on #369): storing it also clears the
+    // radio and turns off every RC channel the same request did not state, so
+    // the Console's bare rc.config.mode and a page's Not fitted card leave the
+    // droid in one state. What the request did state stands, so a backup
+    // posted back as GET read it comes back whole. Only when the request sent
+    // the mode: a radio picked afterwards, before its receiver, is the builder
+    // fitting one again.
+    if (configParamHas(params, "rcInputMode") &&
+        working->system.rc_input_mode == RC_INPUT_NOT_FITTED) {
+        SystemConfig& system = working->system;
+        if (!configParamHas(params, "rcMember")) {
+            system.rc_member = COMPONENT_MEMBER_NONE;
+        }
+        const struct {
+            const char* form;
+            bool* on;
+        } channels[] = {{"enableRcCh1", &system.enable_rc_ch1}, {"enableRcCh2", &system.enable_rc_ch2},
+                        {"enableRcCh3", &system.enable_rc_ch3}, {"enableRcCh4", &system.enable_rc_ch4},
+                        {"enableRcCh5", &system.enable_rc_ch5}, {"enableRcCh6", &system.enable_rc_ch6}};
+        for (const auto& channel : channels) {
+            if (!configParamHas(params, channel.form)) {
+                *channel.on = false;
+            }
+        }
+        appendApplied(&result->applied,
+                      "[CFG] no radio fitted: radio and RC channels not stated are cleared");
     }
 
     // The three speed presets must differ, judged with the values they will be

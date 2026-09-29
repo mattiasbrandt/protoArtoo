@@ -14,7 +14,8 @@
 //
 // The radio and receiver cards say "not known yet" until the droid has
 // answered both reads they come from - the lineup and the config - and never
-// "none picked" in the meantime (the #360 false-state class).
+// "none picked" in the meantime (the #360 false-state class); nor once it has
+// answered that no radio is fitted (#369).
 // =============================================================================
 
 import { test } from "node:test";
@@ -29,6 +30,20 @@ import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 const pickerAwaitingLineup = () => {
   const context = {
     window: { PAApi: { get: () => new Promise(() => {}) } },
+    document: { getElementById: () => null, createElement: () => ({ setAttribute() {}, appendChild() {} }) },
+    console,
+  };
+  context.globalThis = context;
+  for (const file of ["apply_timing.js", "product_art.js", "component_picker.js"]) {
+    vm.runInNewContext(readFileSync(new URL(`../../data/${file}`, import.meta.url), "utf8"), context, { filename: file });
+  }
+  return context.window.ComponentPicker;
+};
+
+// The shipped Component Picker once the droid has answered its lineup read.
+const pickerWithLineup = () => {
+  const context = {
+    window: { PAApi: { get: async () => ({ data: { categories: [], parts: [] } }) } },
     document: { getElementById: () => null, createElement: () => ({ setAttribute() {}, appendChild() {} }) },
     console,
   };
@@ -88,6 +103,24 @@ test("before the droid has answered, the radio and receiver cards never say noth
     const said = env.element(id).innerHTML;
     assert.doesNotMatch(said, /picked yet/, `${id} must not claim nothing is picked before the droid has said`);
     assert.match(said, /<p class="hint waiting"><\/p>/, `${id} shows the waiting dots`);
+  }
+});
+
+// A droid with no radio fitted has answered (CONTEXT.md "Radio Controller",
+// #369): the cards say so, never that a radio is still to be picked.
+test("a droid with no radio fitted is shown as Not fitted, never as nothing picked yet", async () => {
+  const notFitted = (path) => (path === "/api/config"
+    ? { data: { rc: { inputMode: "not_fitted", sbus: { recvCh2: false } }, components: {} } }
+    : respond(path));
+  const env = loadPageModule("rc.js", { respond: notFitted, overrides: { ComponentPicker: pickerWithLineup() } });
+  await env.settle();
+  await env.runSection("rc-mode-mapping");
+  await env.settle();
+
+  for (const id of ["rc-radio-card", "rc-receiver-card"]) {
+    const said = env.element(id).innerHTML;
+    assert.doesNotMatch(said, /picked yet/, `${id} must not ask for a pick the builder already answered`);
+    assert.match(said, /Not fitted/, `${id} says no radio is fitted`);
   }
 });
 

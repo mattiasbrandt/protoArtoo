@@ -119,7 +119,7 @@ void test_configApply_rcInputMode_enum_reject(void) {
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus or elrs",
+    TEST_ASSERT_EQUAL_STRING("rcInputMode must be standard_pwm, single_sbus, dual_sbus, elrs or not_fitted",
                              result.error.message);
 }
 
@@ -155,6 +155,38 @@ void test_configApply_rcInputMode_accepts_elrs(void) {
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
     TEST_ASSERT_EQUAL_UINT8(RC_INPUT_ELRS, snap.system.rc_input_mode);
+}
+
+// No radio fitted is one answer (CONTEXT.md "Radio Controller", #369): the
+// mode alone - the Console's rc.config.mode - clears the radio and every RC
+// channel. A field the same request states stands (a backup posted back comes
+// back whole; test_api_config_write proves the round trip). A radio picked
+// afterwards on its own is the builder fitting one again, and stands.
+void test_configApply_rcInputMode_not_fitted_clears_the_radio_and_every_channel(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.rc_member = componentPartById("rc_radio")->value;
+    bool* const channels[] = {&snap.system.enable_rc_ch1, &snap.system.enable_rc_ch2,
+                              &snap.system.enable_rc_ch3, &snap.system.enable_rc_ch4,
+                              &snap.system.enable_rc_ch5, &snap.system.enable_rc_ch6};
+    for (bool* on : channels) {
+        *on = true;
+    }
+
+    std::map<std::string, std::string> m = {{"rcInputMode", "not_fitted"}};
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(RC_INPUT_NOT_FITTED, snap.system.rc_input_mode);
+    TEST_ASSERT_EQUAL_UINT8(COMPONENT_MEMBER_NONE, snap.system.rc_member);
+    for (bool* on : channels) {
+        TEST_ASSERT_FALSE(*on);
+    }
+
+    std::map<std::string, std::string> refit = {{"rcMember", "hotrc_ds650"}};
+    ConfigApplyResult refitResult;
+    configApply(makeSource(&refit), &snap, false, &refitResult);
+    TEST_ASSERT_FALSE(refitResult.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(componentPartById("hotrc_ds650")->value, snap.system.rc_member);
 }
 
 void test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject(void) {
@@ -884,6 +916,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_rcInputMode_enum_reject);
     RUN_TEST(test_configApply_rcMember_takes_a_radio_and_refuses_anything_else);
     RUN_TEST(test_configApply_rcInputMode_accepts_elrs);
+    RUN_TEST(test_configApply_rcInputMode_not_fitted_clears_the_radio_and_every_channel);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
     RUN_TEST(test_configApply_servoType_named_value_updates);

@@ -320,22 +320,27 @@ void test_the_heap_keys_publish_their_readings(void) {
 // not_seen, which told a builder on the #355 bench that the droid was waiting
 // for an SBUS frame it will never read. All six say the one ELRS line: rcCh3..6
 // said "elrs routing is configurable via /api/config" before.
-void test_elrs_mode_rc_channels_are_standby_without_sbus_words(void) {
-    StatusJsonInputs in = widestInputs();
-    in.rcInputMode = RC_INPUT_ELRS;
-    in.lastSbus1Ms = 0;
-    in.lastSbus2Ms = 0;
-    static char body[kUnbounded];
-    TEST_ASSERT_TRUE(formatStatusJson(body, sizeof(body), in));
+void test_modes_that_read_nothing_have_rc_channels_standby_without_sbus_words(void) {
+    // ELRS, and no radio fitted at all: neither mode reads a wire, so a
+    // channel left switched on is standby - never "waiting for first frame",
+    // which says a receiver we listen to has not been heard (#402).
+    for (RcInputMode mode : {RC_INPUT_ELRS, RC_INPUT_NOT_FITTED}) {
+        StatusJsonInputs in = widestInputs();
+        in.rcInputMode = mode;
+        in.lastSbus1Ms = 0;
+        in.lastSbus2Ms = 0;
+        static char body[kUnbounded];
+        TEST_ASSERT_TRUE(formatStatusJson(body, sizeof(body), in));
 
-    JsonDocument doc;
-    TEST_ASSERT_TRUE(deserializeJson(doc, body) == DeserializationError::Ok);
-    const char* elrsDetail = doc["rcCh1"]["detail"].as<const char*>();
-    TEST_ASSERT_NOT_NULL(elrsDetail);
-    TEST_ASSERT_NULL_MESSAGE(strstr(elrsDetail, "SBUS"), elrsDetail);
-    for (const char* key : {"rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"}) {
-        TEST_ASSERT_EQUAL_STRING_MESSAGE("standby", doc[key]["state"].as<const char*>(), key);
-        TEST_ASSERT_EQUAL_STRING_MESSAGE(elrsDetail, doc[key]["detail"].as<const char*>(), key);
+        JsonDocument doc;
+        TEST_ASSERT_TRUE(deserializeJson(doc, body) == DeserializationError::Ok);
+        const char* idleDetail = doc["rcCh1"]["detail"].as<const char*>();
+        TEST_ASSERT_NOT_NULL(idleDetail);
+        TEST_ASSERT_NULL_MESSAGE(strstr(idleDetail, "SBUS"), idleDetail);
+        for (const char* key : {"rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"}) {
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("standby", doc[key]["state"].as<const char*>(), key);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(idleDetail, doc[key]["detail"].as<const char*>(), key);
+        }
     }
 }
 
@@ -343,6 +348,6 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_the_worst_case_status_document_fits_its_buffer);
     RUN_TEST(test_the_heap_keys_publish_their_readings);
-    RUN_TEST(test_elrs_mode_rc_channels_are_standby_without_sbus_words);
+    RUN_TEST(test_modes_that_read_nothing_have_rc_channels_standby_without_sbus_words);
     return UNITY_END();
 }

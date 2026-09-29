@@ -956,6 +956,26 @@ void test_system_api_get_components_names_the_radio_member() {
         "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
         "activeMember:rc_radio",
         row);
+
+    // No radio fitted (#369): the Console names none, as HTTP does, and never
+    // the family default in its place.
+    snap.system.rc_member = COMPONENT_MEMBER_NONE;
+    {
+        const ConfigWriteWindowForTest seed;
+        configCacheReplace(snap);
+    }
+    runSeqItemQuery("system.api.get-components");
+    row = nullptr;
+    for (int i = 0; i < g_seqItemCap.count; ++i) {
+        if (strncmp(g_seqItemCap.values[i], "category:radio_controller ", 26) == 0) {
+            row = g_seqItemCap.values[i];
+        }
+    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(row, "no radio_controller category row");
+    TEST_ASSERT_EQUAL_STRING(
+        "category:radio_controller name:Radio Controller selectable:5 memberKey:rc_member "
+        "activeMember:-",
+        row);
 }
 
 void test_dome_api_list_sequences_streams_the_real_index_as_items() {

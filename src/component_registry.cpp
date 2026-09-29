@@ -48,7 +48,9 @@ static_assert(sizeof(COMPONENT_CATEGORIES) / sizeof(COMPONENT_CATEGORIES[0]) ==
 #define PA_COMPONENT_PART(value, id, name, category, protocol, status, capabilities, gate, included) \
     static_assert((status) != COMPONENT_STATUS_ROADMAP || (included) == 0,                           \
                   "roadmap row " id " declares a driver; drivers are carried only for "              \
-                  "supported parts");
+                  "supported parts");                                                         \
+    static_assert((value) != COMPONENT_MEMBER_NONE,                                                  \
+                  "row " id " takes the value that means no member is stored");
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
 #undef PA_COMPONENT_CATEGORY
@@ -125,4 +127,11 @@ const ComponentPartEntry* componentResolveMember(ComponentCategoryId category, u
         return part;
     }
     return componentPartByValue(componentCategoryDefaultMember(category));
+}
+
+const ComponentPartEntry* componentResolveRadio(uint8_t stored) {
+    if (stored == COMPONENT_MEMBER_NONE) {
+        return nullptr;
+    }
+    return componentResolveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER, stored);
 }

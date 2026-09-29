@@ -37,7 +37,7 @@ test("Configuration's save carries the components and nothing of the LED strip",
   const env = await ready();
 
   // A Component Picker pick, which is what makes this page save.
-  env.window.PAConfiguration.applyComponentPick({ toggleId: "enable-drive", enabled: false });
+  env.window.PAConfiguration.applyComponentPick({ toggleIds: ["enable-drive"], enabled: false });
   await env.settle();
 
   const save = env.posts.find((post) => post.path === "/api/config");

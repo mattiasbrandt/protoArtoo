@@ -1293,7 +1293,7 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
             if (cat.id == COMPONENT_CATEGORY_SOUND) {
                 active = componentPartByValue(configCacheReadActiveSoundMember());
             } else if (cat.id == COMPONENT_CATEGORY_RADIO_CONTROLLER) {
-                active = componentResolveMember(cat.id, configCacheReadRcMember());
+                active = componentResolveRadio(configCacheReadRcMember());
             }
             snprintf(itemBuf, sizeof(itemBuf),
                      "category:%s name:%s selectable:%u memberKey:%s activeMember:%s", cat.token,

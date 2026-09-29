@@ -313,6 +313,10 @@ the patch releases, whose notes live on their own GitHub Release.
   waits for the droid's next start or a restart carries a line saying so.
 - **The RC page shows your radio and receiver.** RC input and Receiver type each
   show the product you picked in Configuration, with its picture.
+- **Drive from the web with no radio at all.** Radio Controller in Configuration
+  has a Not fitted card. Pick it and the droid forgets the radio and switches
+  every RC channel off. After a restart it no longer waits for a radio signal
+  before the feet will move: the web controls and the emergency stop hold them.
 - **MP3 Trigger volume uses the range you can actually hear.** The slider used
   to be stretched across the module's whole 0–255 register, most of which is
   silent, and the shipped default sat at the edge of audibility. It now maps

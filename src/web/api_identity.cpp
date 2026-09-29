@@ -105,11 +105,11 @@ void handleComponentsGet(WebRequest& req) {
     componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_SOUND,
                                          configCacheReadActiveSoundMember());
     // The radio member drives nothing on the controller, so there is no boot
-    // latch to report: the saved choice is the active one.
-    const ComponentPartEntry* radio =
-        componentResolveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER, configCacheReadRcMember());
+    // latch to report: the saved choice is the active one. No radio fitted
+    // pins none, which reads as active_member null.
+    const ComponentPartEntry* radio = componentResolveRadio(configCacheReadRcMember());
     componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_RADIO_CONTROLLER,
-                                         radio != nullptr ? radio->value : 0);
+                                         radio != nullptr ? radio->value : COMPONENT_MEMBER_NONE);
 
     if (!req.sendChunked("application/json", fillComponentRegistryJson)) {
         webSendJsonError(req, 500, "response alloc failed");

@@ -48,7 +48,7 @@ const char* componentName(uint8_t value) {
 const char* easingName(uint8_t value) { return servoEasingToString((ServoEasing)value); }
 const char* bootName(uint8_t value) { return servoBootBehaviourToString((ServoBootBehaviour)value); }
 
-constexpr SettingWords kRcInputModeWords = {RC_INPUT_STANDARD_PWM, 4, rcInputModeName};
+constexpr SettingWords kRcInputModeWords = {RC_INPUT_STANDARD_PWM, 5, rcInputModeName};
 constexpr SettingWords kLogLevelWords = {PA_LOG_LEVEL_ERROR, 4, logLevelName};
 constexpr SettingWords kComponentWords = {SERVO_COMP_NONE, 4, componentName};
 constexpr SettingWords kEasingWords = {SERVO_EASE_NONE, SERVO_EASE_COUNT, easingName};

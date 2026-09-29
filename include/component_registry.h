@@ -63,6 +63,12 @@ struct ComponentCategoryEntry {
     const char* memberKey;   // NVS key of this family's Component Member, or nullptr
 };
 
+// The stored member value that names no product. No row takes it (asserted per
+// row in src/component_registry.cpp), and componentCategoryDefaultMember()
+// already answers it for a family with nothing selectable. The Radio
+// Controller stores it on purpose: a droid with no radio fitted (#369).
+constexpr uint8_t COMPONENT_MEMBER_NONE = 0;
+
 struct ComponentPartEntry {
     uint8_t value;               // stable numeric id -- what a Component Member persists
     const char* id;              // stable JSON token, e.g. "chirp"
@@ -217,3 +223,14 @@ uint8_t componentCategoryDefaultMember(ComponentCategoryId category);
 // carried across firmware builds degrades to a working module rather than to
 // silence.
 const ComponentPartEntry* componentResolveMember(ComponentCategoryId category, uint8_t stored);
+
+// The radio a stored Radio Controller member names, or nullptr when the builder
+// said no radio is fitted (COMPONENT_MEMBER_NONE, stored by configApply()'s
+// Not fitted answer, #369). The one deliberate exception to the fall-back
+// above: for Sound a stored value that names nothing is damage to repair, but
+// for the radio "none" is an answer, and reporting the default radio in its
+// place would say the droid has a radio the builder took away. Any other
+// value resolves as componentResolveMember() does. GET
+// /api/identity/components and the Console's system.api.get-components both
+// read the radio through this, so they cannot disagree.
+const ComponentPartEntry* componentResolveRadio(uint8_t stored);

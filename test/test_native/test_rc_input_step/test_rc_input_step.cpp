@@ -15,6 +15,9 @@
 // include/robot_state.h RC_INPUT_ELRS: an ELRS receiver is fitted and the
 // controller reads no input from it yet (#369).
 #define RC_INPUT_ELRS 3
+// include/robot_state.h RC_INPUT_NOT_FITTED: no Radio Controller at all, a
+// droid driven from the web alone (#369).
+#define RC_INPUT_NOT_FITTED 4
 
 void setUp() {}
 void tearDown() {}
@@ -104,6 +107,32 @@ void test_elrs_plans_no_input_whatever_is_switched_on() {
         TEST_ASSERT_FALSE(plan.domeSbusEnabled);
         TEST_ASSERT_TRUE(plan.driveWatchdogSource == DriveWatchdogSource::NONE);
     }
+}
+
+// No Radio Controller fitted (#369, CONTEXT.md "Failsafe Layer"): the two
+// radio layers stand down, so the plan must start nothing - no RC task, no
+// SBUS decoder, no drive watchdog source, whatever channel is switched on -
+// and main.cpp's boot SBUS lock, which fires only for a watchdog source, stays
+// off. The same droid with a radio fitted keeps the lock: dual SBUS with CH1
+// on, the fresh-NVS default, still plans the SBUS1 watchdog.
+void test_not_fitted_plans_no_input_and_a_fitted_radio_keeps_its_boot_lock() {
+    for (int route = 0; route < 2; ++route) {
+        RcInputActiveConfig in = makeActiveRc(RC_INPUT_NOT_FITTED, route == 1, true, true, true,
+                                               true, true, true);
+        const RcInputStartupPlan plan = rcInputStepStartupPlan(in);
+
+        TEST_ASSERT_FALSE(plan.taskEnabled);
+        TEST_ASSERT_FALSE(plan.driveSbusEnabled);
+        TEST_ASSERT_FALSE(plan.domeSbusEnabled);
+        TEST_ASSERT_TRUE(plan.driveWatchdogSource == DriveWatchdogSource::NONE);
+    }
+
+    const RcInputStartupPlan fitted = rcInputStepStartupPlan(
+        makeActiveRc(RC_INPUT_DUAL_SBUS, false, true, true, false, false, false, false));
+    TEST_ASSERT_TRUE(fitted.taskEnabled);
+    TEST_ASSERT_TRUE(fitted.driveSbusEnabled);
+    TEST_ASSERT_TRUE(fitted.domeSbusEnabled);
+    TEST_ASSERT_TRUE(fitted.driveWatchdogSource == DriveWatchdogSource::SBUS1);
 }
 
 void test_single_sbus_parks_when_only_unselected_receiver_is_on() {
@@ -964,6 +993,7 @@ int main(void) {
 
     RUN_TEST(test_task_disabled_at_boot_when_all_rc_components_off);
     RUN_TEST(test_elrs_plans_no_input_whatever_is_switched_on);
+    RUN_TEST(test_not_fitted_plans_no_input_and_a_fitted_radio_keeps_its_boot_lock);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_1_is_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_2_is_on);
     RUN_TEST(test_task_enabled_at_boot_when_rc_component_3_is_on);
