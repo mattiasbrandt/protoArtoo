@@ -20,10 +20,14 @@
 // board label of its own (operator, 2026-09-19 on #411: "the outputs is
 // supposed to be dynamic").
 //
-// ONE WIRED RULE. An Output with a wired tick is wired when its tick says so.
-// An Output with none - an expander's channel - has no tick anybody could have
-// turned off, so it reads as wired, has no wired switch, and is called by its
-// address (operator, 2026-09-23 on #415).
+// ONE WIRED RULE. `wired` is the droid's tick: an Output with a wired tick is
+// wired when its tick says so, and one with none - an expander's channel - has
+// no tick anybody could have turned off, so it reads as wired and is called by
+// its address (operator, 2026-09-23 on #415). The tick follows the Part: a
+// Part move writes it (docs/api.md, `movePart`), because an Output with a Part
+// on it is wired and one with none is free (CONTEXT.md "Wiring", #411). It is
+// what the droid reads at start, so a page says whether a wire is used or free
+// from its Parts, and uses the tick only to say what waits for a restart.
 //
 // WHAT IS ON THE WIRE IS ONE ANSWER IN TWO VOCABULARIES (CONTEXT.md "Output",
 // ADR 0067): a servo's model where the wire drives a servo, a Light Type where
