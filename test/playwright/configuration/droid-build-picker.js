@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Configuration's Droid Build names MK4 as the default, shows a design's
 // Design Variants only under the design shown, and draws a roadmap design as
 // words, never as a button. Introduced by #368.

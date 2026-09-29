@@ -1,3 +1,4 @@
+// bench-auto: droid estop=clear
 // STOP can be pressed from every surface, in every state a page can be in.
 //
 // THE RULES IT HOLDS. Each is a standing rule of the Operator Shell; the

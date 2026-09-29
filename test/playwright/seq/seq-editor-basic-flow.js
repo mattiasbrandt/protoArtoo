@@ -1,3 +1,4 @@
+// bench-auto: fixture seq.html
 /**
  * test/playwright/seq/seq-editor-basic-flow.js
  *

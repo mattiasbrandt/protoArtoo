@@ -1,3 +1,4 @@
+// bench-auto: droid
 // The Parts surface's standing rules, read in a real browser. History: #347
 // built Parts and shipped no script; this is it.
 //

@@ -1,3 +1,4 @@
+// bench-auto: droid
 // The Body Controller's picture on Configuration is still there after the
 // operator leaves the surface and comes back, and coming back asks the droid
 // for no picture again. Introduced by #404 (the artoo drawing vanished after

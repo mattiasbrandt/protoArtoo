@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Opening Configuration on a droid that is already configured draws no guided
 // Setup and writes nothing - by its own address or by the old /#setup one.
 // Introduced by #351 (guided Setup) and #404 (Setup drawn over Configuration).

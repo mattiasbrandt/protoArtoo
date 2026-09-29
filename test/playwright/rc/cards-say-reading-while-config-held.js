@@ -1,3 +1,4 @@
+// bench-auto: droid
 // RC's radio and receiver cards show the waiting dots until the droid has
 // answered - never "not picked" for a choice nobody has read yet.
 // Introduced by #412 (data/rc.js paintProductCards).

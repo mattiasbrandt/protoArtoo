@@ -1,3 +1,4 @@
+// bench-auto: droid
 // A droid on WiFi Client Mode reads as joined - posture, network, name and
 // address, with a staged change named as waiting for a reboot - and a Save
 // with both password boxes left blank keeps the saved passwords: the page

@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Opening a surface asks the droid for its config at most once: Wiring,
 // Lights, Servos, Parts and the Dashboard each GET /api/config no more than
 // once on their first mount. Every read spends one of the controller's few

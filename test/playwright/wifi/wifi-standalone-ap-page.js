@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Each network posture reads as itself - Standalone AP Mode, WiFi
 // Provisioning, and a client that has not joined its network are three
 // different things on the page - and a switch from a joined client to

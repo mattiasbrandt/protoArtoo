@@ -1,3 +1,4 @@
+// bench-auto: fixture index.html
 // Focus containment + restoration check for the Page Recovery View (issue #115).
 //
 // The recovery panel auto-hides once sections stabilise, so a SECTION failure

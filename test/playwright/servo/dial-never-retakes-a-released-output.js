@@ -1,3 +1,4 @@
+// bench-auto: droid estop=clear parts=1,2
 // SAFETY. The calibration dial holds its Output while the builder looks, stops
 // asking the moment the estop latches or the tab is hidden, and never takes
 // back an Output the droid has let go: the droid's own bounds decide when a

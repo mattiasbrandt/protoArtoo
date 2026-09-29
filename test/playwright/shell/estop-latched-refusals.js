@@ -1,3 +1,4 @@
+// bench-auto: droid estop=latched
 // With the estop latched, a control that would move something is refused,
 // says why, and sends nothing: Servos' "find by moving", the Parts picture's
 // "Open it" on a body Part and on a dome piece, and a panel press on the

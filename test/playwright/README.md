@@ -33,6 +33,15 @@ a droid, or offline against the fixture server.
 - **Write guard**: every write a page attempts is recorded, and anything the
   script does not allow is aborted before it leaves the browser. What it
   stopped is listed after the table.
+- **`// bench-auto:` target line**: every script under a surface folder
+  carries exactly one, and `tools/bench_auto.py` (the automated half of a
+  bench session) reads it rather than guessing from the URLs in the file.
+  `// bench-auto: droid` runs against the droid with `BASE_URL`, and
+  `estop=clear` or `estop=latched` names the estop state its precondition
+  needs, so the runner can order it; `parts=1,2` runs it once per `PART`.
+  `// bench-auto: fixture <page>.html` runs it on the runner's own fixture
+  server with `FIXTURE=1` and `TARGET_URL` at that page. A new script
+  without one stops the runner before it starts.
 - **Precondition and exit codes**: a script reads the droid first and refuses
   to run when its rule means nothing in that state.
   `0` every row PASS (NOT ASSESSED beside a PASS allowed),

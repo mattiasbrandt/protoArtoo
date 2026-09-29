@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// bench-auto: fixture seq.html
 /**
  * Regression: adding a step to a Factory-derived sequence must keep the
  * Sequence End step last. Otherwise the editor immediately reports

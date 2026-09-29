@@ -1,3 +1,4 @@
+// bench-auto: fixture seq.html
 /**
  * test/playwright/seq/seq-step-type-conditional-fields.js
  *

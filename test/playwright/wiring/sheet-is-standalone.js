@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Wiring's printable sheet is one file that stands alone: named for the droid
 // and the minute it was made, stamped with the same minute in every picture,
 // opening with no network request and no stylesheet, and carrying its promise

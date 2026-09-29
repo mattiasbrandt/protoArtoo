@@ -1,3 +1,4 @@
+// bench-auto: fixture seq.html
 const { chromium } = require('playwright');
 const assert = require('assert');
 

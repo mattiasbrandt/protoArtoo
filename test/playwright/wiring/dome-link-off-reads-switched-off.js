@@ -1,3 +1,4 @@
+// bench-auto: droid
 // On Wiring, a dome link that is switched off reads "switched off" on its
 // lane, drawn idle - never as a live wire. Introduced by #350 (the lane is
 // joined to its Component Toggle by name, case-folded: data/wiring.js

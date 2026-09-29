@@ -1,3 +1,4 @@
+// bench-auto: droid
 // The Dashboard's log-level pill renders even when the droid's servo table
 // cannot be read: it reads the config alone, and a failed Outputs read cannot
 // take it down. Introduced by #422 and #423 (data/app.js loadLogLevel and

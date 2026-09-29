@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Availability Family treatments, read from a real browser (#341).
 //
 // test/test_web/test_style_token_layer.js reads the stylesheet; this reads what

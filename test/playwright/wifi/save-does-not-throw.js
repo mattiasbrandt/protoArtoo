@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Pressing "Save settings" on WiFi runs the save: the page does not throw.
 // Introduced by #344 (WiFi mounted inside the Operator Shell).
 //

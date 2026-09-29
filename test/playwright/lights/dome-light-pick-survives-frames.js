@@ -1,3 +1,4 @@
+// bench-auto: droid
 // On Lights, a mode and a color picked for a dome light stay marked while the
 // droid keeps reporting: a status frame redraws what the droid says, never
 // what the builder asked for. Introduced by #410 (data/lights.js keeps each
