@@ -1350,13 +1350,14 @@ same pin at the same baud. If it wants `BUSY`, that is a spare GPIO and an
 optional capability, not a gate.
 
 **Component Member.** Sound is the family that **already has** a member, with
-three entries. This adds a fourth. Under ADR 0042 the remaining question is
-build-time versus runtime, and #303 already flags it: the three current members
-are chosen by which firmware you flash (`artoo_esp32_chirp`,
-`artoo_esp32_mp3trigger_check`), which is exactly what `not-in-this-build` exists
-to describe. **Adding a DFPlayer does not change that question, but it does make
-it more pressing**, because four build variants for one pin is the point at which
-the build matrix argues for a runtime member.
+three entries. This adds a fourth. Under ADR 0042 the remaining question was
+build-time versus runtime, and #303 flagged it: the three members were then
+chosen by which firmware you flashed, which is exactly what `not-in-this-build`
+exists to describe. That is settled now -- every image carries every supported
+Sound driver, there is one build per board, and the builder picks the fitted
+module on Configuration (Hardware components -> Sound); it takes effect at the
+next start (#340). **Adding a DFPlayer is therefore one more member, not one
+more build.**
 
 ### 14.6 Costs to state plainly
 
@@ -1371,7 +1372,8 @@ the build matrix argues for a runtime member.
 - **Unsolicited frames must be tolerated**, and on artoo-esp32 must not be relied
   upon.
 - **No status is free on artoo-esp32** without a `BUSY` wire.
-- **Sound gains a fourth build variant** unless the member becomes runtime.
+- **Sound gains a fourth member, not a fourth build**: the member is picked at
+  runtime and there is one build per board (#340).
 - **It is the cheapest sound member by a wide margin**, single-stream, with a
   3 W amplifier included -- which is the whole reason it is on the lineup.
 

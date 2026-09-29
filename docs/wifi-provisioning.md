@@ -10,10 +10,11 @@ rationale and [api.md](api.md) for the underlying `/api/wifi` and
 
 ## Release artifacts stay WiFi-mode-free
 
-Public release binaries are published one per **sound backend**
-(`artoo_esp32_chirp`, `artoo_esp32_mp3trigger`, `artoo_esp32_dysv5w` —
-`<env>-firmware.bin` + `<env>-filesystem.bin`), matching whichever audio
-module you have wired. There is no separate "AP build" or "client build" —
+Public release binaries are published one per **board** (`artoo_esp32`,
+`firebeetle2` — `<env>-firmware.bin` + `<env>-filesystem.bin`). The sound
+module is not a build choice either: pick it on Configuration (Hardware
+components -> Sound); it takes effect at the next start. There is no separate
+"AP build" or "client build" —
 every release binary boots the same way and lets you choose WiFi Client Mode
 or Standalone AP Mode after flashing, from the browser.
 
