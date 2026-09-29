@@ -217,20 +217,14 @@
       </div>
     </details>
 
-    <!-- The Dashboard's topbar actions (#344). All three act on the DROID -
-         park it, release the latch, restart the controller - rather than on
-         anything this surface shows, so they sit in the chrome beside the estop
-         and the shell moves them there when this surface mounts. -->
+    <!-- The Dashboard's topbar actions (#344). Both act on the DROID - park
+         it, restart the controller - rather than on anything this surface
+         shows, so they sit in the chrome beside the estop and the shell moves
+         them there when this surface mounts. Releasing the latch is not here:
+         the shell's STOP is one toggle and the only estop control, on every
+         screen (ADR 0048, 2026-09-29 amendment). -->
     <template id="topbar-actions-template">
       <div class="index-top-actions">
-        <!-- Clearing only. Stopping the droid is the Operator Shell's, on
-             every screen; the direction that lets a latched droid move again
-             stays on the two surfaces an operator went to on purpose
-             (ADR 0048). Enabled only while the latch is actually set. -->
-        <div class="top-action">
-          <button class="btn top-action-button" id="estop-clear" type="button" title="Let the droid move again. Only while the estop is latched." aria-label="Clear the latched estop" disabled>Clear estop</button>
-          <div id="estop-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        </div>
         <div class="top-action">
           <button class="btn power-toggle top-action-button" id="sleep-toggle" type="button" title="Rest lights, panels and chatter. Drive stays awake." aria-label="Toggle sleep mode" aria-pressed="false">
             <svg class="i" aria-hidden="true" focusable="false"><use href="#i-power-sleep"/></svg><span id="sleep-toggle-label">Sleep</span>

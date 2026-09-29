@@ -473,6 +473,15 @@
     latched: "latched",
   };
 
+  // What a press on STOP does, in its two directions: the line beside the
+  // button and the button's accessible name. Both names open with the word on
+  // the face, STOP (WCAG 2.5.3 Label in Name), and the release names itself as
+  // one, so a clear can never be read as a stop.
+  const ESTOP_PRESS = {
+    stop: { label: "STOP - cuts all movement.", line: "Cuts all movement" },
+    clear: { label: "STOP - latched. Press to release the estop.", line: "Press to release" },
+  };
+
   // ---------------------------------------------------------------------------
   // The Status Plate: what the droid is doing, in eight fixed positions
   //
@@ -784,13 +793,17 @@
         <div class="topbar-actions" id="shell-top-actions"></div>
         <div class="topbar-right">
           <!-- The estop is chrome, not a surface's control: it is written here,
-               once, so every screen is shown beneath the same one. The action
-               line and the line under it are FIXED - they say what a press
-               does, which the state line cannot, because the state line says
-               what the droid is doing (the reference's fixed-title discipline,
+               once, so every screen is shown beneath the same one. The line
+               under the state line says what a press DOES, which the state
+               line cannot, because the state line says what the droid is doing
+               (the reference's fixed-title discipline,
                src/js/maestro/hw-ui.js:227, as visible text rather than a title
                because a title carries no affordance on a bench tablet,
-               docs/ui-copy-voice.md rule 12 / ADR 0059).
+               docs/ui-copy-voice.md rule 12 / ADR 0059). The button is one
+               toggle (ADR 0048, 2026-09-29 amendment), so that line has two
+               values - one per thing a press can do - and renderEstopState
+               below picks it from the same reading that decides the press, so
+               it cannot say "stop" over a press that clears.
 
                The two lines sit beside the button rather than inside it: the
                topbar has the width for them, and a button whose face is three
@@ -801,12 +814,12 @@
                  they can see (WCAG 2.5.3 Label in Name) - the one control
                  where being unable to say "press STOP" would matter most. -->
             <button id="shell-estop-button" class="btn danger shell-estop-button" type="button"
-                    aria-label="STOP - cuts all movement.">
+                    aria-pressed="false" aria-label="${ESTOP_PRESS.stop.label}">
               ${icon("stop-circle-outline")}<span class="shell-estop-action">STOP</span>
             </button>
             <div class="shell-estop-lines">
               <div class="shell-estop-state" id="shell-estop-state" role="status" aria-live="polite">Estop: <span class="waiting" id="shell-estop-value">${ESTOP_STATE_TEXT.waiting}</span></div>
-              <div class="shell-estop-consequence">Cuts all movement</div>
+              <div class="shell-estop-consequence" id="shell-estop-consequence">${ESTOP_PRESS.stop.line}</div>
               <div class="shell-estop-feedback feedback compact-feedback" id="shell-estop-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             </div>
           </div>
@@ -940,29 +953,46 @@
   // bench clock follows the board being connected rather than which workspace
   // is open (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-host.js:341).
   //
-  // Latching only. Releasing a latched estop stays on Drive and Dashboard,
-  // where an operator went on purpose, because the direction that lets a droid
-  // move again must not be one press from every screen (ADR 0048).
+  // One toggle, and the only estop control on any surface (ADR 0048,
+  // 2026-09-29 amendment, the operator's overrule): a press on a droid heard
+  // latched releases it, and every other press stops it. The release used to
+  // live on Drive and Dashboard only; the operator tried that split on the
+  // bench and chose the toggle, accepting a release one press from every
+  // screen. The firmware's latch is untouched -- only where the browser offers
+  // the clear moved.
   // ---------------------------------------------------------------------------
 
   const estopButton = document.getElementById("shell-estop-button");
   const estopStateLine = document.getElementById("shell-estop-state");
   const estopStateValue = document.getElementById("shell-estop-value");
+  const estopConsequence = document.getElementById("shell-estop-consequence");
   const estopFeedback = document.getElementById("shell-estop-feedback");
 
   // Three answers, three texts: see ESTOP_STATE_TEXT above for why there is no
   // blank one. The answer is the Live Reading's, so a frame that never
-  // mentioned the estop cannot print "Estop: clear" beside a release control
-  // that same frame has disabled (#346), and a lost link says it is waiting
-  // rather than repeating what the droid said before it went quiet.
+  // mentioned the estop cannot print "Estop: clear" (#346), and a lost link
+  // says it is waiting rather than repeating what the droid said before it
+  // went quiet.
+  //
+  // The button's highlight is set HERE and nowhere else: it follows the latch
+  // as the droid reports it, whoever set it -- this button, the Controller
+  // Console, RC, a fault -- and never the click. A highlight painted on the
+  // press would claim a latch the droid had not confirmed (ADR 0048
+  // amendment).
   const renderEstopState = (reading) => {
     if (!estopStateLine || !estopStateValue) return;
     estopStateValue.textContent = ESTOP_STATE_TEXT[reading.estop];
     // Red is "something is stopped or refused" and nothing else colors for
-    // state (#327), so the state line takes it only while the latch is set.
-    // The button's own face is red at all times: that is the control's
-    // identity, not a readout.
+    // state (#327). A set latch is exactly that, so the state line AND the
+    // button light while it holds; the button's red outline at rest is the
+    // control's identity, not a readout.
     estopStateLine.classList.toggle("is-latched", reading.estopLatched);
+    if (!estopButton) return;
+    const press = reading.estopLatched ? ESTOP_PRESS.clear : ESTOP_PRESS.stop;
+    estopButton.classList.toggle("is-latched", reading.estopLatched);
+    estopButton.setAttribute("aria-pressed", reading.estopLatched ? "true" : "false");
+    estopButton.setAttribute("aria-label", press.label);
+    if (estopConsequence) estopConsequence.textContent = press.line;
   };
 
   const showEstopFeedback = (message, level = "") => {
@@ -992,42 +1022,98 @@
     await LIVE.read({ handle });
   };
 
-  // Deliberately unguarded against a second press while the first is in
-  // flight. POST /api/estop is idempotent in the firmware -- failsafeTrigger()
-  // sets a bit it may already hold (src/failsafe_gate.cpp) -- and
-  // estopPostForm bypasses the request slot and never retries, so a second
-  // press cannot queue behind the first. A pending guard here would swallow
-  // exactly the press an operator makes because the first looked like it did
-  // nothing.
+  // What is in flight: stops (a count, because a stop is never refused and
+  // two can overlap) and a release.
+  let stopsInFlight = 0;
+  let clearPending = false;
+
+  // A stop is deliberately unguarded against a second press while the first
+  // is in flight. POST /api/estop is idempotent in the firmware --
+  // failsafeTrigger() sets a bit it may already hold (src/failsafe_gate.cpp)
+  // -- and estopPostForm bypasses the request slot and never retries, so a
+  // second press cannot queue behind the first. A guard that swallowed it
+  // would swallow exactly the press an operator makes because the first
+  // looked like it did nothing.
   //
   // One function, two entrances: the STOP button in the topbar and the plate's
   // ESTOP chip at the foot of the page both call it. Two copies of a stop
   // could drift, and the one control where that matters most is this one.
+  // The chip only ever stops; it never releases.
   const requestStop = async () => {
     if (!window.PAApi) return;
-    showEstopFeedback("Stopping the droid...");
+    stopsInFlight += 1;
     try {
-      await window.PAApi.estopPostForm("/api/estop", {}, { timeoutMs: 3000 });
-    } catch (error) {
-      // A stop that did not reach the droid has to say so in its own line:
-      // the state line still reports what the droid last told us, which is
-      // not the same thing and must not be overwritten with a guess.
-      showEstopFeedback(`Stop failed: ${window.PAApi.messageFor(error)} - press again`, "error");
-      return;
-    }
-    showEstopFeedback("Stop sent", "success");
-    try {
-      await LIVE.read();
-    } catch (error) {
-      // The stop already succeeded; only the confirmation read failed. The
-      // firmware broadcasts the new status itself, so the state line catches
-      // up on the stream a moment later.
-      console.warn("[shell] status read after stop failed:", error);
+      showEstopFeedback("Stopping the droid...");
+      try {
+        await window.PAApi.estopPostForm("/api/estop", {}, { timeoutMs: 3000 });
+      } catch (error) {
+        // A stop that did not reach the droid has to say so in its own line:
+        // the state line still reports what the droid last told us, which is
+        // not the same thing and must not be overwritten with a guess.
+        showEstopFeedback(`Stop failed: ${window.PAApi.messageFor(error)} - press again`, "error");
+        return;
+      }
+      showEstopFeedback("Stop sent", "success");
+      try {
+        await LIVE.read();
+      } catch (error) {
+        // The stop already succeeded; only the confirmation read failed. The
+        // firmware broadcasts the new status itself, so the state line
+        // catches up on the stream a moment later.
+        console.warn("[shell] status read after stop failed:", error);
+      }
+    } finally {
+      stopsInFlight -= 1;
     }
   };
 
+  // The release keeps the priority lane the stop has: it skips the request
+  // slot and is never retried, because an operator command about drive safety
+  // must not wait behind page work and must not be replayed (CONTEXT.md,
+  // Browser Request Priority).
+  const requestClear = async () => {
+    if (!window.PAApi) return;
+    clearPending = true;
+    estopButton?.classList.add("is-pending");
+    showEstopFeedback("Releasing the estop...");
+    try {
+      await window.PAApi.estopPostForm("/api/estop/clear", {}, { timeoutMs: 3000 });
+      showEstopFeedback("Estop released", "success");
+      try {
+        await LIVE.read();
+      } catch (error) {
+        // Released; only the confirmation read failed, and the stream
+        // carries the new status a moment later, as it does after a stop.
+        console.warn("[shell] status read after release failed:", error);
+      }
+    } catch (error) {
+      showEstopFeedback(`Release failed: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      clearPending = false;
+      estopButton?.classList.remove("is-pending");
+    }
+  };
+
+  // The press is decided from the Live Reading at the moment of the press,
+  // never from a flag this file keeps: only a heard latched estop makes it a
+  // release, and clear, Waiting and Unknown all make it a stop, so a droid the
+  // page cannot hear is never released (ADR 0048 amendment).
+  //
+  // Two double presses are closed off:
+  // - A press while a release is in flight does nothing, so a double press
+  //   cannot send a release and then a stop behind it.
+  // - A press while a stop is still in flight is another stop, even if the
+  //   stream has already said latched: the second half of a nervous double
+  //   press on a moving droid must not be the release of the latch the first
+  //   half just set.
+  const pressEstop = () => {
+    if (clearPending) return undefined;
+    if (stopsInFlight === 0 && LIVE.current().estopLatched) return requestClear();
+    return requestStop();
+  };
+
   if (estopButton) {
-    estopButton.addEventListener("click", requestStop);
+    estopButton.addEventListener("click", pressEstop);
     // Pushed or fetched, a status reaches the control by this one path.
     LIVE.subscribe(renderEstopState);
   }
@@ -1119,18 +1205,19 @@
   // and each row routes where its Status Plate chip routes -- so the notice
   // says WHAT and the chip says WHERE, to one destination rather than two.
   //
-  // Two rows carry a `page` of their own and say why: the estop's chip acts in
-  // place and so has no destination, while the release does (Foot Drive and
-  // Dashboard); and Stationary Mode earns no chip under #324's admission rule
+  // Two rows differ, and say why. The estop's row routes nowhere: the release
+  // is the STOP toggle in the chrome, on the screen the operator is already
+  // on (ADR 0048, 2026-09-29 amendment), so it names that press instead of a
+  // destination. Stationary Mode earns no chip under #324's admission rule
   // but is still a real refusal -- POST /api/drive rejects on it
-  // (src/web/api_drive.cpp) -- so it names the surface its Commanded Mode
-  // buttons live on.
+  // (src/web/api_drive.cpp) -- so it carries a `page` of its own, the surface
+  // its Commanded Mode buttons live on.
   const IGNORED_INPUT_CAUSES = [
     {
       id: "estop",
       chip: "estop",
-      page: "drive",
       says: "The estop is latched",
+      act: "Press STOP to release it",
       // The Live Reading's answer, so a lost link does not name a latch
       // nobody has heard since.
       active: (_status, reading) => reading.estopLatched,
@@ -1186,7 +1273,12 @@
     if (!noticeNode || !noticeText || !noticeRoute) return;
     const page = noticePageFor(cause);
     const destination = surfaceByPage.get(page);
-    noticeText.textContent = `That control is switched off right now. ${cause.says}.`;
+    // A cause changed right here names the press, and the route goes: a link
+    // to another surface would send the operator away from the control.
+    noticeText.textContent = cause.act
+      ? `That control is switched off right now. ${cause.says}. ${cause.act}.`
+      : `That control is switched off right now. ${cause.says}.`;
+    noticeRoute.classList.toggle("hidden", Boolean(cause.act));
     noticeRoute.textContent = `Open ${destination ? destination.name : page}, where that is changed`;
     noticeRoute.setAttribute("href", `#${page}`);
     noticeNode.classList.remove("hidden");

@@ -155,7 +155,7 @@ const estopMustBe = (latched) => async ({ page }) => {
   const estop = await readEstop(page);
   if (!estop.known) return `the estop state could not be read: ${estop.why}`;
   if (latched && !estop.latched) return 'the estop is CLEAR and this rule is about a latched one. Latch it (STOP on any surface), then run this again.';
-  if (!latched && estop.latched) return 'the estop is LATCHED. Clear it on Foot Drive or the Dashboard, then run this again.';
+  if (!latched && estop.latched) return 'the estop is LATCHED. Release it with STOP (lit while latched), then run this again.';
   return null;
 };
 

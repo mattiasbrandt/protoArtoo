@@ -2892,10 +2892,14 @@ textarea:disabled {
    not lower - a floor on this one control rather than a constraint on any
    layout (#327).
 
-   The button's face is red at all times. That is the control's identity, not
-   a state readout: what the droid is actually doing is .shell-estop-state's
-   job, and a button that changed color to say "not stopping anything" would
-   be coloring for state, which #327 reserves for a latch that is set. */
+   The button's outline is red at all times. That is the control's identity,
+   not a state readout: a button that changed color to say "not stopping
+   anything" would be coloring for state, which #327 reserves for a latch that
+   is set. A set latch is exactly that, so while the droid reports one the
+   button LIGHTS - filled red, with a ring - because it is one toggle and a
+   press on it now releases (ADR 0048, 2026-09-29 amendment). The light
+   follows the droid's reading, never the click: data/shell.js sets
+   .is-latched from the stream only. */
 .topbar-right {
   display: flex;
   align-items: center;
@@ -2940,6 +2944,18 @@ textarea:disabled {
   font-family: var(--font-mono);
   font-weight: 600;
   letter-spacing: 0.12em;
+}
+
+/* Lit: the droid reports the latch set. Solid red with the page's own ground
+   as the ink, and a ring the same shape as the held drive-pad Stop, so the
+   two read as one family. */
+.shell-estop-button.is-latched,
+.shell-estop-button.is-latched:hover {
+  background: var(--danger);
+  color: var(--bg);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent),
+    0 0 14px color-mix(in srgb, var(--danger) 45%, transparent);
 }
 
 .shell-estop-button svg.i {

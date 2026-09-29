@@ -39,9 +39,9 @@
          surface for one job, divided by seams rather than by a card per part
          (#399, operator review 2026-09-28).
 
-         Stopping the droid is the Operator Shell's and is on every screen
-         (ADR 0048); what stays here is the release, and the consent that lets
-         a browser drive at all. The failsafe reading is the head's subtitle,
+         Stopping the droid and releasing the latch are the Operator Shell's
+         STOP, one toggle on every screen (ADR 0048, 2026-09-29 amendment);
+         what stays here is the consent that lets a browser drive at all. The failsafe reading is the head's subtitle,
          because a section head carries a state rather than appearing bare
          (docs/ui-copy-voice.md rule 8). -->
     <div class="card drive-station">
@@ -51,7 +51,6 @@
         <div class="drive-consent-acts">
           <button id="enable-web-control-button" class="btn btn-sm accent" type="button">Enable web control</button>
           <button id="disable-web-control-button" class="btn btn-sm btn-quiet" type="button">Disable web control</button>
-          <button id="clear-estop-button" class="btn btn-sm btn-quiet" type="button">Clear estop</button>
         </div>
         <p class="hint">Off, the pad below sends nothing. The radio drives either way.</p>
       </div>

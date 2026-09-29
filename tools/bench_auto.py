@@ -39,8 +39,9 @@ Playwright session stays headed so the operator can watch along (SKILL.md
 section 5). Nothing here waits on a key: every child gets stdin /dev/null and
 a timeout, and STEP / SELFTEST* are stripped from the environment it inherits.
 
-The estop. Three droid scripts need it clear and then latch it, and two need it
-latched. Order alone cannot serve all of them, so before each droid script the
+The estop. Three droid scripts need it clear and latch it on the way (one,
+shell/stop-every-surface.js, releases it again with STOP before it ends), and
+two need it latched. Order alone cannot serve all of them, so before each droid script the
 runner reads the estop and, if it is not what the script declares, puts it
 there: POST /api/estop to latch it, POST /api/estop/clear to clear it. This is
 a Bench-Mode session - a controller on USB with nothing connected - and the
@@ -963,7 +964,7 @@ def main(argv: list[str]) -> int:
         if latched and needs_clear:
             return refuse("the estop is LATCHED, and these scripts need it clear: "
                           f"{', '.join(needs_clear)}. A run must begin clear. "
-                          "Clear it on Foot Drive or the Dashboard, then run again.")
+                          "Release it with STOP (lit while latched), then run again.")
         started_clear = not latched
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

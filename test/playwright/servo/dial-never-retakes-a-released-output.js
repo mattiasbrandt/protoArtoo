@@ -106,7 +106,7 @@ lib.runCheck({
   precondition: async ({ page }) => {
     const estop = await lib.readEstop(page);
     if (!estop.known) return estop.why;
-    if (estop.latched && PART !== '2') return 'the estop is LATCHED. Clear it on Foot Drive or the Dashboard, then run this again.';
+    if (estop.latched && PART !== '2') return 'the estop is LATCHED. Release it with STOP (lit while latched), then run this again.';
     const table = (await lib.readJson(page, '/api/servo/outputs')).json?.outputs || [];
     // Which Parts are lights is data/droid_part_kind.js's answer over the
     // catalog the droid serves, run here rather than kept as a list.
@@ -198,7 +198,7 @@ lib.runCheck({
       if (fixture) {
         fixture.clearEstop(); // the operator's clear, which this script never makes on a droid
       } else {
-        console.log(`\nThe estop is LATCHED. Part 2 needs it clear: clear it on Foot Drive or the Dashboard, in this window or another. Watching for up to ${CLEAR_WAIT_S} s...`);
+        console.log(`\nThe estop is LATCHED. Part 2 needs it clear: release it with STOP, in this window or another. Watching for up to ${CLEAR_WAIT_S} s...`);
         const deadline = Date.now() + CLEAR_WAIT_S * 1000;
         while (Date.now() < deadline && estop.known && estop.latched) {
           await page.waitForTimeout(2000);

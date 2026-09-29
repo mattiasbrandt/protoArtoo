@@ -1,32 +1,44 @@
 // bench-auto: droid estop=clear
-// STOP can be pressed from every surface, in every state a page can be in.
+// STOP can be pressed from every surface, in every state a page can be in,
+// and it is one toggle: a press on a droid heard latched releases it, any
+// other press stops it (ADR 0048, 2026-09-29 amendment). Every STOP press
+// below is held to the direction the button showed before it: lit
+// (aria-pressed="true") means the press must send POST /api/estop/clear, say
+// "Estop released", read "Estop: clear" and go out; unlit means POST
+// /api/estop, "Stop sent", "Estop: latched" and lit. The ESTOP chip only ever
+// stops.
 //
 // THE RULES IT HOLDS. Each is a standing rule of the Operator Shell; the
 // ticket or fix that introduced it is history, in brackets. The numbers are
 // also the run order.
 //   1. A refused control answers a press. Pressing a disabled control with a
 //      real pointer raises the Ignored Input Notice, and its link routes to
-//      the surface it names (history: #346). Read on the Dashboard's "Clear
-//      estop" (#estop-clear), which is refused while no latch is reported
-//      (data/app.js renderEstopClear): pressed by page.mouse at its centre -
-//      a scripted click would wait for an enabled button - the notice
-//      (#ignored-input-notice) must read "That control is switched off right
-//      now. <cause>." (data/shell.js showNotice), and its link must open the
-//      surface in its href. It needs the estop clear, so it runs first.
+//      the surface it names (history: #346). Read on Foot Drive's forward pad
+//      key (.pad-fwd), which is refused while web control is off or anything
+//      holds the feet (data/drive.js updateDriveControlsEnabled): pressed by
+//      page.mouse at its centre - a scripted click would wait for an enabled
+//      button - the notice (#ignored-input-notice) must read "That control is
+//      switched off right now. <cause>." (data/shell.js showNotice), and its
+//      link must open the surface in its href (which may be Foot Drive
+//      itself: the feet and web control are both changed there). It needs
+//      the estop clear, or the cause is the latch, which names STOP and has
+//      no link, so it runs first.
 //   2. A posture the droid is in never covers the estop (history: #330, #359,
 //      fix 11a30d27). Sleep is asked for through the Dashboard's own Sleep
 //      button (POST /api/sleep); with the overlay up (.sleep-overlay.active,
 //      data/dashboard.html) the topbar STOP and the plate's ESTOP chip
 //      (#chip-estop) must each be the topmost thing at its own centre
-//      (document.elementFromPoint), and a press of each must land
-//      (POST /api/estop answered, feedback "Stop sent"). The first press
-//      LATCHES the estop. The overlay's "Wake Droid" is then pressed
+//      (document.elementFromPoint), and a press of each must land. STOP is
+//      unlit, so its press LATCHES the estop; the chip's press on the now
+//      latched droid must still be a stop (POST /api/estop, "Stop sent"),
+//      never a release. The overlay's "Wake Droid" is then pressed
 //      (POST /api/wake) and the overlay must come down.
 //   3. A dialog is never a keyboard trap: STOP is reachable by Tab from inside
 //      one and a key press on it stops the droid (history: #359). With the
 //      Sequences "Restore backup" dialog open (data/seq.js showModal), Tab
 //      from the dialog's first control must reach STOP, and Enter and then
-//      Space on it must each send a stop. Shift+Tab is walked and reported.
+//      Space on it must each land: the droid is latched from rule 2, so Enter
+//      releases and Space stops again. Shift+Tab is walked and reported.
 //   4. The Page Recovery View covers the work area and never the chrome
 //      (ADR 0048; history: #359, fix aa63f311). On two surfaces not yet
 //      mounted, the surface's document (its SURFACES `doc`, e.g. /dome.html)
@@ -34,38 +46,49 @@
 //      reading "Loading page resources" - and (b) aborted by page.route - a
 //      fault, the view in its retry state. In each, with body.recovery-active
 //      set, STOP and the ESTOP chip must be topmost and a STOP press must
-//      land. The route is then lifted and "Retry now" pressed, so the surface
-//      loads for the walk below.
+//      land, in whichever direction the button showed. The route is then
+//      lifted and "Retry now" pressed, so the surface loads for the walk below.
 //   5. STOP is on top and takes a press on every surface, its dialog open
 //      where it has one (ADR 0048; history: #359). Every surface the served
 //      shell.js lists in SURFACES is opened through the nav, and of STOP:
 //        - visible and enabled; computed pointer-events not `none`;
 //        - topmost at its own centre (a dialog, backdrop or overlay painted
 //          over the chrome fails here and nowhere else);
-//        - a real pointer press lands: feedback "Stopping the droid..." then
-//          "Stop sent", and the state line reaches "Estop: latched".
+//        - a real pointer press lands in the direction the button showed, so
+//          the walk alternates: a stop ("Stopping the droid..." then "Stop
+//          sent", "Estop: latched", lit) on one surface and a release
+//          ("Releasing the estop..." then "Estop released", "Estop: clear",
+//          unlit) on the next. Both directions are proved on every kind of
+//          surface the walk meets. If the walk ends released, one more STOP
+//          press latches it for rule 6.
 //   6. Navigation never clears a latch (ADR 0048; history: #359). Every
 //      surface AGAIN, pressing nothing: the state line must read
 //      "Estop: latched" on every surface, an observer fails any other text it
-//      takes on the way, and no POST /api/estop may be sent.
-//   7. A new browser reads the latch the droid holds, and offers its release
+//      takes on the way, and no POST /api/estop or /api/estop/clear may be
+//      sent.
+//   7. A new browser reads the latch the droid holds, and shows STOP lit
 //      (history: #346 admission edge, #359 seeded-frame race). A NEW browser
 //      context (no cache, no session) opens /#home. Its state line must
 //      settle on "Estop: latched" - never "Estop: clear" at any moment, and
-//      not stuck on the waiting dots - and the Dashboard's "Clear estop"
-//      must be enabled, read twice 3 s apart (data/app.js:1499-1510 is the
-//      order that race lived in). It is NOT pressed.
+//      not stuck on the waiting dots - and its STOP must be lit
+//      (.is-latched, aria-pressed="true"), read twice 3 s apart, so a later
+//      repaint that puts it out is caught. It is NOT pressed.
 //
 // PRECONDITION: the estop is CLEAR and the droid is NOT in Sleep Mode. The
 // script reads GET /api/status first and refuses to run otherwise, because
-// rules 1 and 2 mean nothing on a droid already latched or asleep. It LEAVES
-// THE ESTOP LATCHED (see WHAT IT DOES NOT DO).
+// rules 1 and 2 mean nothing on a droid already latched or asleep.
+//
+// IT LEAVES THE ESTOP CLEAR. Its last act is one more STOP press in the first
+// browser, which releases the latch rule 6 needed, and the closing line says
+// which state the droid is in. A run that stops half way says so too: then
+// the droid may be left latched, and STOP (lit) releases it.
 //
 // NOTHING BUT STOP AND SLEEP REACH THE DROID AS WRITES. Some surfaces write on
 // a plain visit - guided Setup, drawn over Configuration on a droid that is
 // not set up, saves which questions it has shown (data/setup.js saveVisited,
 // POST /api/config). A browser-side guard lets through only GETs, POST
-// /api/estop, the Dashboard console's read-only `operations`/`help`, RC's
+// /api/estop and /api/estop/clear, the Dashboard console's read-only
+// `operations`/`help`, RC's
 // verbose-log toggle (POST /api/rc/debug, runtime only), and - during rule 2
 // only - POST /api/sleep and POST /api/wake. It aborts every other write
 // before it leaves the browser; what it stopped is listed after the table, a
@@ -99,15 +122,12 @@
 //           row is NOT ASSESSED with that reason (never PASS). The guard aborts
 //           any write regardless.
 //
-// WHAT IT DOES NOT DO. It never releases the estop: release is a deliberate
-// operator act on Foot Drive or the Dashboard (ADR 0048), and the closing line
-// says so. It writes no configuration, moves nothing and needs nothing wired
-// but USB (Bench-Mode); the move question needs a Part on an Output in the
-// droid's mapping, which is configuration, not a wire. Pressing STOP latches
-// the real estop; that is the point, and POST /api/estop is idempotent
-// (src/failsafe_gate.cpp). Once the first press has latched it, "reaches
-// Estop: latched" on later surfaces is already true - the press on those is
-// proved by the POST and its feedback.
+// WHAT IT DOES NOT DO. It writes no configuration, moves nothing and needs
+// nothing wired but USB (Bench-Mode); the move question needs a Part on an
+// Output in the droid's mapping, which is configuration, not a wire. Pressing
+// STOP latches and releases the real estop; that is the point. POST /api/estop
+// is idempotent (src/failsafe_gate.cpp), and a release on the bench board lets
+// nothing move, because nothing is connected.
 // Sleep is entered and left again; if the wake press fails the script says
 // so and the droid is left asleep for the operator to wake on the Dashboard.
 //
@@ -126,7 +146,7 @@
 //   SELFTEST_UNLATCH=1   (FIXTURE=1 only) the fixture's droid answers "not
 //                        latched" after the second navigation of the latch
 //                        walk (6), which must FAIL from there;
-//   SELFTEST_NONOTICE=1  marks "Clear estop" busy (.is-pending) before the
+//   SELFTEST_NONOTICE=1  marks the pad key busy (.is-pending) before the
 //                        press, which the shell deliberately does not report:
 //                        rule 1 must FAIL;
 //   SELFTEST_OLDSTACK=1  puts back the stacking and recovery rules the two
@@ -158,6 +178,9 @@ const ARTIFACT_DIR = 'output/playwright/issue-359';
 const STOP = '#shell-estop-button';
 const CHIP = '#chip-estop';
 const LATCHED = 'Estop: latched';
+const CLEAR = 'Estop: clear';
+// The refused control rule 1 presses.
+const REFUSED = '.pad-fwd';
 
 // The rules 11a30d27 and aa63f311 removed, put back for SELFTEST_OLDSTACK: the
 // chrome unranked, the work area no longer a stacking context (so its overlays
@@ -303,23 +326,23 @@ const readControl = (page, selector) =>
   }, selector);
 const readStop = (page) => readControl(page, STOP);
 
-// A press of `selector` - by pointer, or by `key` on the focused control - and
-// whether it reached the droid: a POST /api/estop answered 2xx and the
-// feedback line saying "Stop sent". Both entrances call the one requestStop()
-// (data/shell.js), so both are held to the same outcome. Returns the reasons
-// it did not land, empty when it did.
-// How many stops the droid answered in this run, for the closing line.
+// The path a response answered, without its query.
+const pathOf = (response) => new URL(response.url()).pathname;
+const isEstopPost = (response) => response.request().method() === 'POST' && pathOf(response).startsWith('/api/estop');
+
+// A press of the ESTOP chip, which only ever stops: whether it reached the
+// droid as a stop - a POST /api/estop, never /api/estop/clear, answered 2xx and
+// the feedback line saying "Stop sent". Returns the reasons it did not land,
+// empty when it did.
+// How many stops and releases the droid answered in this run.
 let stopsAnswered = 0;
+let releasesAnswered = 0;
 const pressLands = async (page, selector, { key = null } = {}) => {
   const reasons = [];
   await page.evaluate(() => {
     window.__stopFeedback = [];
   });
-  const posted = page
-    .waitForResponse((response) => response.url().includes('/api/estop') && response.request().method() === 'POST', {
-      timeout: 8000,
-    })
-    .catch(() => null);
+  const posted = page.waitForResponse(isEstopPost, { timeout: 8000 }).catch(() => null);
   try {
     if (key) await page.keyboard.press(key);
     else await page.locator(selector).click({ timeout: 4000 });
@@ -329,6 +352,7 @@ const pressLands = async (page, selector, { key = null } = {}) => {
   }
   const response = await posted;
   if (!response) reasons.push('no POST /api/estop followed the press');
+  else if (pathOf(response) !== '/api/estop') reasons.push(`the press sent POST ${pathOf(response)}, where a stop was the only thing it may send`);
   else if (!response.ok()) reasons.push(`POST /api/estop answered ${response.status()}`);
   else stopsAnswered += 1;
   const sent = await page
@@ -336,6 +360,63 @@ const pressLands = async (page, selector, { key = null } = {}) => {
     .then(() => true, () => false);
   if (!sent) reasons.push(`feedback never said "Stop sent": ${JSON.stringify(await page.evaluate(() => window.__stopFeedback.slice()))}`);
   return reasons;
+};
+
+// Whether STOP is lit: the droid reported a latch (data/shell.js
+// renderEstopState).
+const stopLit = (page) =>
+  page.evaluate((sel) => {
+    const button = document.querySelector(sel);
+    return Boolean(button && button.classList.contains('is-latched') && button.getAttribute('aria-pressed') === 'true');
+  }, STOP);
+
+// A press of STOP - by pointer, or by `key` on the focused button - held to
+// the direction the button showed before it (header). Waits for the press's
+// own confirmation read (GET /api/status) as well, because a press that
+// follows a stop before that read is back is deliberately another stop
+// (data/shell.js pressEstop), so a quicker next press would test the guard
+// rather than the toggle. Returns { reasons, did } - `did` is "stop" or
+// "release", the direction it was held to.
+const pressToggles = async (page, { key = null } = {}) => {
+  const reasons = [];
+  const lit = await stopLit(page);
+  const want = lit
+    ? { did: 'release', path: '/api/estop/clear', first: 'Releasing the estop...', said: 'Estop released', line: CLEAR, lit: false }
+    : { did: 'stop', path: '/api/estop', first: 'Stopping the droid...', said: 'Stop sent', line: LATCHED, lit: true };
+  await page.evaluate(() => {
+    window.__stopFeedback = [];
+  });
+  const posted = page.waitForResponse(isEstopPost, { timeout: 8000 }).catch(() => null);
+  const confirmed = page
+    .waitForResponse((response) => response.request().method() === 'GET' && pathOf(response) === '/api/status', { timeout: 8000 })
+    .catch(() => null);
+  try {
+    if (key) await page.keyboard.press(key);
+    else await page.locator(STOP).click({ timeout: 4000 });
+  } catch (error) {
+    reasons.push(`the press did not land: ${String(error.message).split('\n')[0]}`);
+    return { reasons, did: want.did };
+  }
+  const response = await posted;
+  if (!response) reasons.push(`no POST ${want.path} followed the press`);
+  else if (pathOf(response) !== want.path) reasons.push(`STOP was ${lit ? 'lit' : 'unlit'}, so the press should send POST ${want.path}; it sent POST ${pathOf(response)}`);
+  else if (!response.ok()) reasons.push(`POST ${want.path} answered ${response.status()}`);
+  else if (want.did === 'stop') stopsAnswered += 1;
+  else releasesAnswered += 1;
+  const said = await page
+    .waitForFunction((text) => window.__stopFeedback.includes(text), want.said, { timeout: 8000 })
+    .then(() => true, () => false);
+  const trail = await page.evaluate(() => window.__stopFeedback.slice());
+  if (!said) reasons.push(`feedback never said "${want.said}": ${JSON.stringify(trail)}`);
+  else if (trail[0] !== want.first) reasons.push(`feedback did not start at "${want.first}": ${JSON.stringify(trail)}`);
+  const reached = await page
+    .waitForFunction((text) => document.getElementById('shell-estop-state').textContent === text, want.line, { timeout: 10000 })
+    .then(() => true, () => false);
+  if (!reached) reasons.push(`state line never read "${want.line}" (it says "${await page.textContent('#shell-estop-state')}")`);
+  else if ((await stopLit(page)) !== want.lit) reasons.push(`the state line reads "${want.line}" but STOP is ${want.lit ? 'not lit' : 'still lit'}`);
+  await confirmed;
+  await page.waitForTimeout(250);
+  return { reasons, did: want.did };
 };
 
 // STOP and the ESTOP chip, each topmost at its own centre and not inert.
@@ -396,7 +477,7 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
     const writes = await lib.installGuard(
       page,
       (entry) =>
-        (entry.method === 'POST' && entry.path === '/api/estop') ||
+        (entry.method === 'POST' && (entry.path === '/api/estop' || entry.path === '/api/estop/clear')) ||
         lib.isRcDebugToggle(entry) ||
         lib.isConsoleCatalogLoad(entry) ||
         (allowSleep && entry.method === 'POST' && (entry.path === '/api/sleep' || entry.path === '/api/wake')),
@@ -440,20 +521,21 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
       const reasons = [];
       let detail = '';
       try {
-        await page.waitForSelector('#estop-clear', { state: 'attached', timeout: 20000 });
-        // The Dashboard has painted a reading (plate live), so the notice has
+        await openSurface(page, 'drive', (reason) => reasons.push(reason));
+        mounted.add('drive');
+        // Foot Drive has painted a reading (plate live), so the notice has
         // a cause to name.
         await page.waitForFunction(() => document.getElementById('status-plate-region').dataset.freshness === 'live', null, { timeout: 20000 });
         await page.waitForTimeout(SETTLE_MS);
-        const clear = await page.evaluate(() => {
-          const button = document.getElementById('estop-clear');
-          return { disabled: button.disabled, aria: button.getAttribute('aria-disabled') };
-        });
-        if (!clear.disabled || clear.aria !== 'true') {
-          reasons.push(`"Clear estop" is not refused on a clear droid (disabled=${clear.disabled}, aria-disabled=${clear.aria}), so there is nothing to press`);
+        const key = await page.evaluate((sel) => {
+          const button = document.querySelector(sel);
+          return button ? { disabled: button.disabled, aria: button.getAttribute('aria-disabled') } : null;
+        }, REFUSED);
+        if (!key || !key.disabled || key.aria !== 'true') {
+          reasons.push(`the forward pad key is not refused (${JSON.stringify(key)}), so there is nothing to press - switch web control off and run again`);
         } else {
-          if (SELFTEST_NONOTICE) await page.evaluate(() => document.getElementById('estop-clear').classList.add('is-pending'));
-          const box = await page.locator('#estop-clear').boundingBox();
+          if (SELFTEST_NONOTICE) await page.evaluate((sel) => document.querySelector(sel).classList.add('is-pending'), REFUSED);
+          const box = await page.locator(REFUSED).boundingBox();
           await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
           const shown = await page
             .waitForSelector('#ignored-input-notice:not(.hidden)', { state: 'visible', timeout: 3000 })
@@ -507,8 +589,9 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         await page.waitForTimeout(600);
         reasons.push(...(await reachReasons(page)));
         await page.screenshot({ path: `${ARTIFACT_DIR}/sleep-overlay.png` });
-        const stopPress = await pressLands(page, STOP);
-        reasons.push(...stopPress.map((reason) => `STOP: ${reason}`));
+        const stopPress = await pressToggles(page);
+        if (stopPress.did !== 'stop') reasons.push('STOP was lit on a droid the precondition read as clear');
+        reasons.push(...stopPress.reasons.map((reason) => `STOP: ${reason}`));
         const chipPress = await pressLands(page, CHIP);
         reasons.push(...chipPress.map((reason) => `ESTOP chip: ${reason}`));
         const latched = await page
@@ -539,7 +622,7 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         }
         allowSleep = false;
       }
-      check('2', 'sleep overlay: STOP and ESTOP chip topmost, both presses land', reasons);
+      check('2', 'sleep overlay: STOP and ESTOP chip topmost, STOP latches, the chip only stops', reasons);
     }
 
     // -----------------------------------------------------------------------
@@ -580,13 +663,14 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         if (forward.presses === null) reasons.push(`Tab from the dialog (${forward.start}) never reached STOP in 60 presses`);
         else {
           // Focus is on STOP, the dialog still up behind it.
-          const enter = await pressLands(page, STOP, { key: 'Enter' });
-          reasons.push(...enter.map((reason) => `Enter: ${reason}`));
+          const enter = await pressToggles(page, { key: 'Enter' });
+          reasons.push(...enter.reasons.map((reason) => `Enter (${enter.did}): ${reason}`));
           if (!(await focused()).stop) {
             await walk('Tab');
           }
-          const space = await pressLands(page, STOP, { key: 'Space' });
-          reasons.push(...space.map((reason) => `Space: ${reason}`));
+          const space = await pressToggles(page, { key: 'Space' });
+          reasons.push(...space.reasons.map((reason) => `Space (${space.did}): ${reason}`));
+          detail += `; Enter ${enter.did}, Space ${space.did}`;
         }
         await page.screenshot({ path: `${ARTIFACT_DIR}/keyboard-stop-seq.png` });
       } catch (error) {
@@ -595,7 +679,7 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         await page.evaluate((sel) => document.querySelector(sel)?.removeAttribute('tabindex'), STOP).catch(() => {});
         await DIALOGS.seq.close(page).catch((error) => reasons.push(`dialog did not close: ${error.message}`));
       }
-      check('3', 'keyboard: Tab from the Sequences dialog reaches STOP; Enter and Space press it', reasons, detail);
+      check('3', 'keyboard: Tab from the Sequences dialog reaches STOP; Enter and Space each toggle it', reasons, detail);
     }
 
     // -----------------------------------------------------------------------
@@ -647,8 +731,9 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         else {
           reasons.push(...(await reachReasons(page)));
           await page.screenshot({ path: `${ARTIFACT_DIR}/recovery-${mode.replace(' ', '-')}.png` });
-          const press = await pressLands(page, STOP);
-          reasons.push(...press.map((reason) => `STOP: ${reason}`));
+          const press = await pressToggles(page);
+          reasons.push(...press.reasons.map((reason) => `STOP (${press.did}): ${reason}`));
+          detail += `; the press was a ${press.did}`;
           const stillUp = await page.evaluate(() => document.body.classList.contains('recovery-active'));
           if (!stillUp) reasons.push('recovery-active was gone by the time the press was read, so the press was not proved behind it');
         }
@@ -711,45 +796,14 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
 
         await page.screenshot({ path: `${ARTIFACT_DIR}/stop-${surface}.png` });
 
-        // The press itself. A covered button fails Playwright's own
-        // actionability check, which is the operator's press not landing.
-        await page.evaluate(() => {
-          window.__stopFeedback = [];
-        });
-        const posted = page
-          .waitForResponse((response) => response.url().includes('/api/estop') && response.request().method() === 'POST', {
-            timeout: 8000,
-          })
-          .catch(() => null);
-        try {
-          await stop.click({ timeout: 4000 });
-          row.pressed = true;
-        } catch (error) {
-          row.pressed = false;
-          fail(`the press did not land: ${String(error.message).split('\n')[0]}`);
-        }
-        if (row.pressed) {
-          const response = await posted;
-          if (!response) fail('no POST /api/estop followed the press');
-          else if (!response.ok()) fail(`POST /api/estop answered ${response.status()}`);
-          else stopsAnswered += 1;
-          const sent = await page
-            .waitForFunction(() => window.__stopFeedback.includes('Stop sent'), null, { timeout: 8000 })
-            .then(() => true, () => false);
-          const trail = await page.evaluate(() => window.__stopFeedback.slice());
-          row.stopSent = sent;
-          if (!sent) fail(`feedback never said "Stop sent": ${JSON.stringify(trail)}`);
-          else if (trail[0] !== 'Stopping the droid...') fail(`feedback did not start at "Stopping the droid...": ${JSON.stringify(trail)}`);
-          row.latched = await page
-            .waitForFunction((text) => document.getElementById('shell-estop-state').textContent === text, LATCHED, {
-              timeout: 10000,
-            })
-            .then(() => true, () => false);
-          if (!row.latched) {
-            const said = await page.textContent('#shell-estop-state');
-            fail(`state line never read "${LATCHED}" (it says "${said}")`);
-          }
-        }
+        // The press itself, in whichever direction STOP showed. A covered
+        // button fails Playwright's own actionability check, which is the
+        // operator's press not landing.
+        const press = await pressToggles(page);
+        row.did = press.did;
+        row.pressed = !press.reasons.some((reason) => reason.startsWith('the press did not land'));
+        row.landed = press.reasons.length === 0;
+        press.reasons.forEach(fail);
       } catch (error) {
         fail(`could not run: ${String(error.message).split('\n')[0]}`);
       } finally {
@@ -776,6 +830,12 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
     // between - an observer records each text the line takes during the walk,
     // so a flicker to "clear" between two checks fails too (ADR 0048, #359).
     // -----------------------------------------------------------------------
+    // The walk alternates, so it may have ended on a release. Rule 6 needs a
+    // latch, and a STOP press is how an operator makes one.
+    if ((await page.textContent('#shell-estop-state')) !== LATCHED && (await stopLit(page)) === false) {
+      const relatch = await pressToggles(page);
+      if (relatch.reasons.length) console.log(`The STOP press that latches for the latch walk did not land: ${relatch.reasons.join('; ')}`);
+    }
     const latchedAtStart = (await page.textContent('#shell-estop-state')) === LATCHED;
     if (!latchedAtStart) {
       latchWalk.precondition = `the state line reads "${await page.textContent('#shell-estop-state')}" before the walk, so the estop was never latched and the walk proves nothing`;
@@ -811,7 +871,7 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
           const seen = await page.evaluate(() => window.__estopLine.splice(0));
           const other = seen.filter((entry) => entry.text !== 'Estop: latched');
           if (other.length) fail(`state line left "latched" on the way: ${[...new Set(other.map((entry) => `"${entry.text}" on ${entry.page}`))].join(', ')}`);
-          if (presses !== pressesBefore) fail('a POST /api/estop was sent during this step of a walk that presses nothing');
+          if (presses !== pressesBefore) fail('a POST /api/estop or /api/estop/clear was sent during this step of a walk that presses nothing');
         } catch (error) {
           fail(`could not run: ${String(error.message).split('\n')[0]}`);
         }
@@ -822,8 +882,6 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         await lib.step(`${surface}: latch ${row.result}.`);
       }
     }
-
-    finalLine = await page.textContent('#shell-estop-state');
 
     // -----------------------------------------------------------------------
     // 7. A fresh browser meets the latch
@@ -874,28 +932,23 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         const readAfter = Date.now() - opened;
         if (!settled) reasons.push(`the state line was still "${line}" 20 s after opening`);
         else if (line !== LATCHED) reasons.push(`the state line reads "${line}"`);
-        // Clear estop, twice: once the Dashboard has mounted and painted, and
-        // again 3 s later, so a later repaint that disables it is caught.
-        const clearOnce = async () =>
-          second
-            .waitForFunction(() => {
-              const button = document.getElementById('estop-clear');
-              return Boolean(button && !button.disabled && button.getAttribute('aria-disabled') === 'false');
-            }, null, { timeout: 15000 })
-            .then(() => true, () => false);
-        const firstRead = await clearOnce();
+        // STOP lit, twice: once the Dashboard has mounted and painted, and
+        // again 3 s later, so a later repaint that puts it out is caught.
+        const firstRead = await second
+          .waitForFunction((sel) => {
+            const button = document.querySelector(sel);
+            return Boolean(button && button.classList.contains('is-latched') && button.getAttribute('aria-pressed') === 'true');
+          }, STOP, { timeout: 15000 })
+          .then(() => true, () => false);
         await second.waitForTimeout(3000);
-        const secondRead = await second.evaluate(() => {
-          const button = document.getElementById('estop-clear');
-          return Boolean(button && !button.disabled && button.getAttribute('aria-disabled') === 'false');
-        });
-        if (!firstRead) reasons.push('"Clear estop" was never enabled');
-        else if (!secondRead) reasons.push('"Clear estop" was enabled, then disabled again');
+        const secondRead = await stopLit(second);
+        if (!firstRead) reasons.push('STOP was never lit');
+        else if (!secondRead) reasons.push('STOP was lit, then went out again');
         const trail = await second.evaluate(() => window.__estopTrail.slice());
         if (trail.includes('Estop: clear')) reasons.push(`the state line read "Estop: clear" on the way: ${JSON.stringify(trail)}`);
         const freshBlocked = lib.blockedWrites(freshWrites);
         detail =
-          `"${line}" after ${readAfter} ms; trail ${JSON.stringify(trail)}; Clear estop enabled: ${firstRead && secondRead ? 'yes, both reads' : 'no'} (not pressed)` +
+          `"${line}" after ${readAfter} ms; trail ${JSON.stringify(trail)}; STOP lit: ${firstRead && secondRead ? 'yes, both reads' : 'no'} (not pressed)` +
           (freshBlocked.length ? `; writes the guard stopped: ${[...new Set(freshBlocked)].join(' | ')}` : '');
         await second.screenshot({ path: `${ARTIFACT_DIR}/fresh-context-latched.png` });
       } catch (error) {
@@ -903,8 +956,16 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
       } finally {
         await fresh.close();
       }
-      check('7', 'a fresh browser reads the latch and offers Clear estop', reasons, detail);
+      check('7', 'a fresh browser reads the latch and shows STOP lit', reasons, detail);
     }
+
+    // The droid is left clear (header): one more STOP press releases the
+    // latch rule 6 walked with.
+    if (await stopLit(page)) {
+      const release = await pressToggles(page);
+      if (release.reasons.length) console.log(`The closing STOP press did not release the latch: ${release.reasons.join('; ')}`);
+    }
+    finalLine = await page.textContent('#shell-estop-state');
 
     if (blockedBySurface.length) {
       console.log('\nWrites the guard stopped before they reached the droid (a surface writing on a visit, not a STOP failure):');
@@ -928,8 +989,8 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
   }
 
   const yes = (value) => (value === undefined ? '-' : value ? 'yes' : 'NO');
-  console.log('\nsurface        dialog          visible enabled ptr-events topmost pressed stop-sent latched result');
-  console.log('-------------- --------------- ------- ------- ---------- ------- ------- --------- ------- ------');
+  console.log('\nsurface        dialog          visible enabled ptr-events topmost pressed did     landed  result');
+  console.log('-------------- --------------- ------- ------- ---------- ------- ------- ------- ------- ------');
   for (const row of rows) {
     console.log(
       [
@@ -940,8 +1001,8 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
         String(row.pointerEvents ?? '-').padEnd(10),
         yes(row.topmost).padEnd(7),
         yes(row.pressed).padEnd(7),
-        yes(row.stopSent).padEnd(9),
-        yes(row.latched).padEnd(7),
+        String(row.did ?? '-').padEnd(7),
+        yes(row.landed).padEnd(7),
         row.result,
       ].join(' '),
     );
@@ -970,10 +1031,13 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
   if (leftAsleep) {
     console.log('\nThe droid was put in Sleep Mode and did NOT wake on "Wake Droid". Wake it on the Dashboard.');
   }
-  if (finalLine === LATCHED) {
-    console.log('\nThe estop is LATCHED on the droid. This script does not release it: release it on Foot Drive or the Dashboard when you are ready.');
+  console.log(`\nSTOP presses the droid answered: ${stopsAnswered} stops, ${releasesAnswered} releases.`);
+  if (finalLine === CLEAR) {
+    console.log('The droid is left with the estop CLEAR: the closing STOP press released it.');
+  } else if (finalLine === LATCHED) {
+    console.log('The droid is left with the estop LATCHED: the closing release did not land. STOP (lit) releases it.');
   } else if (stopsAnswered > 0) {
-    console.log(`\nThe estop was latched during this run, and the state line now reads "${finalLine ?? 'unknown'}". This script released nothing: check the droid on Foot Drive or the Dashboard.`);
+    console.log(`The estop was latched during this run, and the state line now reads "${finalLine ?? 'unknown'}". Check the droid: STOP is lit while it is latched, and a press releases it.`);
   }
   if (failed.length || rows.length === 0 || latchFailed || latchTotal === 0 || checksFailed || report.rows.length < 6) process.exitCode = 1;
 })();
