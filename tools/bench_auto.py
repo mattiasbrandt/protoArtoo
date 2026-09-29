@@ -631,7 +631,7 @@ class FixtureServer:
             try:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                os.kill(self.process.pid, signal.SIGKILL)
+                self.process.kill()
                 self.process.wait(timeout=5)
             print(f"[bench_auto] fixture server pid {self.process.pid} stopped", flush=True)
         if self._log is not None:
