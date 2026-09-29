@@ -67,14 +67,10 @@ function makeElement(className) {
 // hand back the pieces a test drives it through.
 function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
   const card = makeElement("dome-control-card");
-  const header = makeElement("dome-control-header");
-  const body = makeElement("dome-control-body");
   const feedback = makeElement("dome-control-feedback");
   // The card's dome column: the banner and the dome drawing go here.
   const dome = makeElement("moving-parts-dome");
   card.query = (selector) => {
-    if (selector === ".dome-control-header") return header;
-    if (selector === ".dome-control-body") return body;
     if (selector === ".dome-control-feedback") return feedback;
     if (selector === ".moving-parts-dome") return dome;
     return makeElement();
@@ -171,33 +167,32 @@ function renderCard({ domeDesign, domeVariant, complementKnown, status }) {
 
   return {
     card,
-    header,
-    body,
     dome,
     feedback,
     posts,
     press,
-    expand: () => header.listeners.click[0]({ target: header }),
+    // The drawings are drawn when the module runs, and every step of that is
+    // async: one turn of the event loop lets it finish.
+    drawn: () => new Promise((resolve) => setTimeout(resolve, 0)),
   };
 }
 
-// The card renders lazily on first expand, and every step of that is async.
-async function expanded(options) {
+async function drawn(options) {
   const page = renderCard(options);
-  await page.expand();
+  await page.drawn();
   const picker = page.dome.children[page.dome.children.length - 1];
   const banner = page.dome.inserted.map((entry) => entry.html).join("");
   return { picker: picker ? picker.innerHTML : "", banner };
 }
 
 test("the built-in drawing is shown to the builder whose dome it is", async () => {
-  const view = await expanded({ domeDesign: "mk4", domeVariant: "complex" });
+  const view = await drawn({ domeDesign: "mk4", domeVariant: "complex" });
   assert.match(view.picker, /vendored-mk4/);
   assert.match(view.banner, /Showing the built-in MK4 map/);
 });
 
 test("a builder on another design is not shown a drawing of somebody else's droid", async () => {
-  const view = await expanded({ domeDesign: "own", domeVariant: "", complementKnown: true });
+  const view = await drawn({ domeDesign: "own", domeVariant: "", complementKnown: true });
   assert.doesNotMatch(view.picker, /vendored-mk4/, "the MK4 drawing was shown as theirs");
   // And the card says why, rather than leaving an empty space.
   assert.match(view.banner, /No built-in map for your dome design/);
@@ -213,14 +208,14 @@ test("a dome panel press sends nothing while the estop is latched or not yet kno
   // which is not a droid saying it is clear (#419).
   for (const status of [statusFrame({ estop: true }), null, withoutEstop]) {
     const page = renderCard({ domeDesign: "mk4", domeVariant: "complex", status });
-    await page.expand();
+    await page.drawn();
     await page.press("07");
     assert.deepEqual(page.posts, [], `a press went out with the estop ${JSON.stringify(status)}`);
     assert.match(page.feedback.textContent, /estop latched|stopped/i, "and the card says why");
   }
 
   const clear = renderCard({ domeDesign: "mk4", domeVariant: "complex", status: statusFrame() });
-  await clear.expand();
+  await clear.drawn();
   await clear.press("07");
   assert.deepEqual(
     clear.posts.map((post) => post.form.cmd),
@@ -241,8 +236,8 @@ async function bodyCard(status) {
   const { servoRow } = await import("./helpers/fake_droid.js");
   const document = new MiniDocument();
   const html = read("dashboard.html");
-  const start = html.indexOf('<div class="disclose" id="dome-control-card">');
-  const end = html.indexOf("<!-- The Controller Console");
+  const start = html.indexOf('<div class="moving-parts-bay" id="dome-control-card">');
+  const end = html.indexOf("</section>", start);
   document.body.innerHTML = html.slice(start, end);
   document.body.dataset.page = "home";
 
@@ -304,9 +299,10 @@ async function bodyCard(status) {
   });
   await sandbox.PAOutputs.refresh();
   vm.runInContext(read("dome_control.js"), sandbox, { filename: "dome_control.js" });
+  // The drawings are drawn when the module runs; let that finish first, as a
+  // page does before anyone can click.
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
-  const header = document.getElementById("dome-control-header");
-  await header.fire("click", { target: header });
   const svg = document.querySelector(".moving-parts-body").querySelector(".bv-svg");
   const door = svg.querySelectorAll("[data-marker]").find((node) => node.dataset.marker === "doorFR");
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
