@@ -94,6 +94,18 @@ Concrete forms this rationing takes. Each has caused a real defect here:
   because the work is real.
 - **Never skip verification because it takes time.** The build, the real run,
   the re-read of the diff — the slow check is the one that catches the defect.
+- **Work a regression from the last good build, and read what changed upstream.**
+  When something that worked now fails, name the last known-good commit or
+  binary first, then split the difference on hardware: flash the last-good
+  release binary (`gh release download`) and the last-good source built today,
+  before forming any theory about code paths. When a dependency moved (a
+  component, framework, platform or a pool rebuild that re-resolved one), read
+  its changelog **and the full source diff between the two versions** (registry
+  archives, `diff -ru`), then check which upstream release that version was
+  written against. A one-line changelog entry is a prompt to read the diff,
+  never a summary of it. Measured cost, #437 (2026-09-29): hours of hypotheses
+  about `esp_wifi_remote` 1.6.5 that one `diff -ru` of the two releases and one
+  last-good binary flash answered.
 
 If you are about to write or think *"given token limits"*, *"to be efficient"*,
 *"for brevity"*, *"for now"*, or *"a simplified version"*, treat that phrase as
