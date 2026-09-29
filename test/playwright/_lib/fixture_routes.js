@@ -47,10 +47,11 @@
 // exact thing status-plate-truth.js measures. So /api/events is continued to a
 // small real SSE server started here, which holds the connection open.
 //
-// The same small server also takes POST /api/estop, so a script can latch the
-// estop from OUTSIDE the browser the way a second client or the Console would
-// on the bench: page.route never sees a request made with Playwright's own
-// request API, so that write has to reach something that is not a route.
+// The same small server also takes POST /api/estop and /api/estop/clear, so a
+// script can latch or release the estop from OUTSIDE the browser the way a
+// second client or the Console would on the bench: page.route never sees a
+// request made with Playwright's own request API, so that write has to reach
+// something that is not a route.
 //
 // One droid, many browsers: install() routes the first context and hands back
 // addContext(), which routes another context against the SAME state and the
@@ -76,6 +77,9 @@
 //     wired tick on a row that carries no light (isArmEnabled's lit mask). A
 //     status is pushed on the first trigger only (src/failsafe_gate.cpp
 //     failsafeTrigger, requestStatusBroadcastNow); a repeat is idempotent.
+//   - POST /api/estop/clear releases the latch and pushes a status only when
+//     it was set (src/failsafe_gate.cpp failsafeClearEstop); the Outputs the
+//     latch let go stay limp until something takes them again.
 //   - A hold under a latched estop is answered 200 and changes nothing: the
 //     route queues it and ServoTask refuses it (src/web/api_servo.cpp).
 //   - POST /api/config with `outputs` rows saves a row's ledCount and answers
@@ -433,20 +437,28 @@ const install = async (context, options = {}) => {
   const frameText = () => `event: status\ndata: ${JSON.stringify(status())}\n\n`;
   const push = () => clients.forEach((res) => res.write(frameText()));
 
-  // The latch, from a page or from outside the browser (header).
+  // The latch and its release, from a page or from outside the browser
+  // (header). Each pushes a status on an actual edge only.
   const latch = () => {
     const was = state.estop;
     state.estop = true;
     releaseAll('estop');
     if (!was) push();
   };
+  const unlatch = () => {
+    const was = state.estop;
+    state.estop = false;
+    if (was) push();
+  };
 
   const server = http.createServer((req, res) => {
-    // The latch from outside the browser (header). Answered the way
-    // src/web/api_estop.cpp answers it.
-    if (req.method === 'POST' && req.url.startsWith('/api/estop')) {
+    // The latch or its release from outside the browser (header). Answered
+    // the way src/web/api_estop.cpp answers them.
+    const estopRoute = req.url.split('?')[0];
+    if (req.method === 'POST' && (estopRoute === '/api/estop' || estopRoute === '/api/estop/clear')) {
       req.resume();
-      latch();
+      if (estopRoute === '/api/estop') latch();
+      else unlatch();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{"ok":true}');
       return;
@@ -629,6 +641,10 @@ const install = async (context, options = {}) => {
       latch();
       return json(route, { ok: true });
     }
+    if (method === 'POST' && apiPath === '/api/estop/clear') {
+      unlatch();
+      return json(route, { ok: true });
+    }
     if (method === 'POST' && apiPath === '/api/sleep') return setSleep(route, true);
     if (method === 'POST' && apiPath === '/api/wake') return setSleep(route, false);
     if (method === 'POST' && apiPath === '/api/servo') return servoPost(route, body);
@@ -650,8 +666,8 @@ const install = async (context, options = {}) => {
     // Sends every open stream the current status, as a state change on the
     // droid would; a self-test that changes `state` calls it.
     push,
-    // The operator clearing the latch on Foot Drive or the Dashboard, which
-    // these scripts never do themselves.
+    // The operator releasing the latch with STOP in another window, for a
+    // script that needs it released and does not press STOP itself.
     clearEstop: () => {
       state.estop = false;
       push();
