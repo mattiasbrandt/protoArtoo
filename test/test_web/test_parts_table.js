@@ -245,6 +245,7 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
+    "/dome_command_map.js": readData("dome_command_map.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/wiring.js": readData("wiring.js"),
   };
@@ -425,6 +426,29 @@ test("a Part on an output that the page does not know is named, never dropped", 
 // The sheet above the picker names the Part on the end of each wire, so a Part
 // moved in the picker is on its new wire the moment the droid has taken it -
 // not on the next visit.
+// A Part the Dome Controller moves is not this board's to wire (operator,
+// 2026-09-29 on #411: "Dome wiring is all handled and managed by the dome
+// controller"). It gets no Output to choose - an Output select on it would
+// offer a write that means nothing - and shows the command that moves it
+// instead. The rule is the one that keeps it out of Unused
+// (PAParts.thisImageMoves()). A dome Part a builder recorded on a body Output
+// anyway is still named with it, so a Part on a wire is never invisible.
+test("a Part the Dome Controller moves gets no Output select, and shows its command", async () => {
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["panel1"] }) });
+  const catalog = env.window.DroidParts.parts;
+  const domeLink = catalog.filter((part) => part.control === "dome-link");
+  assert.ok(domeLink.length > 0, "the catalog has dome-link Parts");
+  domeLink.forEach((part) => assert.equal(env.row(part.id), undefined, `${part.id} has an Output select`));
+  catalog
+    .filter((part) => env.window.PAParts.thisImageMoves(part))
+    .forEach((part) => assert.ok(env.select(part.id), `${part.id} lost its Output select`));
+
+  const domeRow = (id) => env.table().querySelectorAll("[data-dome-part]").find((node) => node.dataset.domePart === id);
+  assert.equal(domeRow("pie1").querySelector(".parts-command").textContent, "Open :OPP1 · Close :CLP1");
+  assert.match(domeRow("panel1").textContent, /on ARM1 too/);
+  assert.equal(domeRow("pie1").querySelector("select"), null);
+});
+
 test("a Part moved in the picker is on its new wire in the sheet at once", async () => {
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
   const wire = (address) => env.document.querySelectorAll(".wd-link").find((node) => node.dataset.wire === address);
