@@ -41,6 +41,43 @@ def flags_by_step(flags):
     return out
 
 
+def serve(testcase, answers):
+    """A droid that answers each path as `answers` says, counting paths and
+    client sockets; stopped at the test's cleanup."""
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            self.server.asked.append(self.path)
+            self.server.peers.add(self.client_address)
+            code, body = answers(self.path)
+            data = body.encode()
+            self.send_response(code)
+            self.send_header("Content-Length", str(len(data)))
+            if self.server.close_after:
+                self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(data)
+            # A droid that drops the session without a Connection: close.
+            self.close_connection = self.server.close_after or self.server.drop_silently
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.asked = []
+    server.peers = set()
+    server.close_after = False
+    server.drop_silently = False
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    testcase.addCleanup(lambda: (server.shutdown(), server.server_close()))
+    return server
+
+
 class WhatEachStepIsChargedWith(unittest.TestCase):
     STEPS = ["idle", "console-sweep.js", "configuration/component-picker-lineup.js",
              "wifi/wifi-standalone-ap-page.js", "shell/nav-has-no-setup-entry.js"]
@@ -174,40 +211,17 @@ class TheLastFailedAllocation(unittest.TestCase):
     build serves it (src/web/api_profiler.cpp:518-529), and a 404 recorded
     once as a property of the image, never as a failure, never re-asked."""
 
-    def serve(self, answers):
-        import http.server
-        import threading
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_GET(self):
-                self.server.asked.append(self.path)
-                code, body = answers(self.path)
-                data = body.encode()
-                self.send_response(code)
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        server.asked = []
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
-        return server
-
     def log_for(self, server, run_dir):
-        client = soak.BenchClient("127.0.0.1", server.server_address[1], connect_timeout_s=5)
-        return bench_auto.MemoryLog(client, ARTOO, run_dir, interval_s=60)
+        connection = bench_auto.DroidConnection(f"http://127.0.0.1:{server.server_address[1]}", 5)
+        self.addCleanup(connection.close)
+        return bench_auto.MemoryLog(connection, ARTOO, run_dir, interval_s=60)
 
     def test_a_profiler_build_s_last_failed_allocation_is_kept_per_step(self):
         import json
         import tempfile
         status = json.dumps(dict(soak.FIXTURE_ARTOO_STATUS_BODY, failedAllocs=7))
         profiler = '{"heapFree":1,"failedAllocs":7,"lastFail":{"size":4096,"caps":6144,"bt":["0x400d1234","0x400d5678"]}}'
-        server = self.serve(lambda path: (200, profiler if path == "/api/profiler" else status))
+        server = serve(self, lambda path: (200, profiler if path == "/api/profiler" else status))
         with tempfile.TemporaryDirectory() as run_dir:
             log = self.log_for(server, Path(run_dir))
             log.close_step("console-sweep.js", "next")
@@ -222,7 +236,7 @@ class TheLastFailedAllocation(unittest.TestCase):
         import json
         import tempfile
         status = json.dumps(soak.FIXTURE_ARTOO_STATUS_BODY)
-        server = self.serve(lambda path: (404, "Not Found") if path == "/api/profiler" else (200, status))
+        server = serve(self, lambda path: (404, "Not Found") if path == "/api/profiler" else (200, status))
         with tempfile.TemporaryDirectory() as run_dir:
             log = self.log_for(server, Path(run_dir))
             log.close_step("a", "b")
@@ -233,12 +247,69 @@ class TheLastFailedAllocation(unittest.TestCase):
         self.assertEqual([s["status"] for s in log.samples], ["ok", "ok"])
 
 
+class ThePollerDoesNotChurnConnections(unittest.TestCase):
+    """A socket per poll is the heap pressure ADR 0023 measured and refreshes
+    the admission guard's heap sample on every accept; the log must hold one."""
+
+    def test_every_poll_and_profiler_read_share_one_connection(self):
+        import json
+        import tempfile
+        status = json.dumps(soak.FIXTURE_ARTOO_STATUS_BODY)
+        server = serve(self, lambda path: (200, status) if path == "/api/status" else (404, "no"))
+        with tempfile.TemporaryDirectory() as run_dir:
+            connection = bench_auto.DroidConnection(f"http://127.0.0.1:{server.server_address[1]}", 5)
+            self.addCleanup(connection.close)
+            log = bench_auto.MemoryLog(connection, ARTOO, Path(run_dir), interval_s=60)
+            log.start("a")
+            for step, following in (("a", "b"), ("b", "c"), ("c", "c")):
+                log.close_step(step, following)
+            log.stop()
+        self.assertEqual(len(server.asked), 5)
+        self.assertEqual(len(server.peers), 1)
+        self.assertEqual((log.connection.requests, log.connection.opened), (5, 1))
+
+    def test_a_connection_the_droid_closed_is_opened_again_and_counted(self):
+        import json
+        status = json.dumps(soak.FIXTURE_ARTOO_STATUS_BODY)
+        server = serve(self, lambda path: (200, status))
+        server.close_after = True
+        connection = bench_auto.DroidConnection(f"http://127.0.0.1:{server.server_address[1]}", 5)
+        for _ in range(3):
+            self.assertEqual(connection.request("GET", "/api/status")[0], 200)
+        connection.close()
+        self.assertEqual((connection.requests, connection.opened), (3, 3))
+
+
+    def test_a_session_dropped_without_notice_is_retried_once_on_a_new_connection(self):
+        import json
+        import time
+        status = json.dumps(soak.FIXTURE_ARTOO_STATUS_BODY)
+        server = serve(self, lambda path: (200, status))
+        server.drop_silently = True
+        connection = bench_auto.DroidConnection(f"http://127.0.0.1:{server.server_address[1]}", 5)
+        self.addCleanup(connection.close)
+        for _ in range(3):
+            self.assertEqual(connection.request("GET", "/api/status")[0], 200)
+            time.sleep(0.05)
+        self.assertEqual((connection.requests, connection.opened), (3, 3))
+
+
+class TheBoardAsLeft(unittest.TestCase):
+    def test_the_report_names_the_state_and_the_step_it_was_first_read_in(self):
+        samples = [dict(sample("sweep"), estop=False), dict(sample("stop-every-surface.js"), estop=True),
+                   dict(sample("estop-latched-refusals.js"), estop=True)]
+        self.assertEqual(bench_auto.estop_story(samples, True),
+                         "Estop at end: latched (first read latched during stop-every-surface.js)")
+        self.assertIn("UNKNOWN", bench_auto.estop_story(samples, None, "timed out"))
+
+
 class ARunThatDidNotBeginClearClearsNothing(unittest.TestCase):
     def test_a_latch_standing_when_the_run_began_is_left_alone(self):
         server, thread = soak._start_fixture_server(dict(soak.FIXTURE_ARTOO_STATUS_BODY, estop=True))
         try:
-            client = soak.BenchClient("127.0.0.1", server.server_address[1], connect_timeout_s=5)
-            said = bench_auto.ensure_estop(client, "clear", "shell/stop-every-surface.js", run_began_clear=False)
+            connection = bench_auto.DroidConnection(f"http://127.0.0.1:{server.server_address[1]}", 5)
+            said = bench_auto.ensure_estop(connection, "clear", "shell/stop-every-surface.js", run_began_clear=False)
+            connection.close()
             self.assertEqual(server.post_count, 0)
             self.assertIn("did not begin clear", said)
         finally:

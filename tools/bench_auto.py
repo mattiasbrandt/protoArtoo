@@ -4,8 +4,10 @@
 Phase 1 of a bench session (.claude/skills/bench-verification/SKILL.md) is the
 agents' half: the Console sheet's agent-runnable rows, the console sweep, and
 every per-surface Playwright script. This runs all of it, in that order, and
-beside it polls GET /api/status once a second, so that at the end it can say
-which step did what to the controller's heap.
+beside it polls GET /api/status once a second over one keep-alive connection
+(DroidConnection says why not a socket per poll), so that at the end it can say
+which step did what to the controller's heap, and what state it left the
+estop in.
 
 Why the memory log is not optional (operator, 2026-09-29, #435): the round
 that morning read green - the sheet exited 0, the sweep found 0 errors on 16
@@ -234,33 +236,80 @@ def wall_clock() -> str:
     return datetime.datetime.now().astimezone().isoformat(timespec="milliseconds")
 
 
-def get_json(client: soak.BenchClient, path: str) -> tuple[int, Optional[dict], str]:
-    """(status, JSON object or None, first 200 characters of the body).
-
-    soak.BenchClient.get_json() parses before it returns, so a 404 or 503
-    answered with a plain-text body would surface as a JSON error and the
-    status code - the part that matters here - would be lost. Transport
-    faults still raise, exactly as BenchClient's do."""
-    connection = http.client.HTTPConnection(client.device, client.port, timeout=client.connect_timeout_s)
-    try:
-        connection.request("GET", path)
-        response = connection.getresponse()
-        raw = response.read()
-    finally:
-        connection.close()
-    text = raw.decode("utf-8", errors="replace")
-    try:
-        parsed = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        parsed = None
-    return response.status, (parsed if isinstance(parsed, dict) else None), text[:200]
+# A reused connection the droid had already closed fails on the next request
+# with one of these, before any byte of an answer. Only these are retried, and
+# only once, on a fresh connection: a timeout is the droid not answering, and
+# retrying it would double the silence before it is recorded.
+PEER_CLOSED = (http.client.RemoteDisconnected, BrokenPipeError, ConnectionResetError,
+               ConnectionAbortedError)
 
 
-def client_for(base_url: str, timeout_s: float) -> soak.BenchClient:
-    parts = urlsplit(base_url)
-    if parts.scheme != "http" or not parts.hostname:
-        raise ValueError(f"{base_url!r} is not an http://host[:port] base URL")
-    return soak.BenchClient(parts.hostname, parts.port or 80, connect_timeout_s=timeout_s)
+class DroidConnection:
+    """Every request this runner makes to the droid, over ONE HTTP/1.1
+    keep-alive connection, opened again only after a transport fault.
+
+    Not soak.BenchClient, which opens and closes a socket per request (its
+    drivers rely on that). A 1 Hz poller doing that would change what it
+    measures, twice over: connection churn is the heap pressure ADR 0023
+    measured (close-per-response took the largest free block to 3188 B
+    against 7412 B for keep-alive, platformio.ini's esp_http_server note), and
+    the Connection Admission guard refreshes its cached heap sample only when
+    a socket is accepted (src/web/web_admission.cpp:335), so a new socket a
+    second keeps that sample fresh all run. esp_http_server keeps a session
+    open until the client closes it, so one connection serves the whole run.
+
+    Thread-safe: the poller, the boundary polls, the profiler read and the
+    estop moves share it. `opened` counts connections, so the report can say
+    how many it took.
+    """
+
+    def __init__(self, base_url: str, timeout_s: float) -> None:
+        parts = urlsplit(base_url)
+        if parts.scheme != "http" or not parts.hostname:
+            raise ValueError(f"{base_url!r} is not an http://host[:port] base URL")
+        self.base_url = base_url
+        self.timeout_s = timeout_s
+        self._connection = http.client.HTTPConnection(parts.hostname, parts.port or 80,
+                                                      timeout=timeout_s)
+        self._lock = threading.Lock()
+        self.opened = 0
+        self.requests = 0
+
+    def request(self, method: str, path: str) -> tuple[int, Optional[dict], str]:
+        """(status, JSON object or None, first 200 characters of the body).
+
+        The status comes first because a 404 or 503 with a plain-text body is
+        an answer, not a JSON error. Transport faults raise."""
+        with self._lock:
+            for attempt in (1, 2):
+                fresh = self._connection.sock is None
+                try:
+                    if fresh:
+                        self._connection.connect()
+                        self.opened += 1
+                    self._connection.request(method, path)
+                    response = self._connection.getresponse()
+                    raw = response.read()
+                except PEER_CLOSED:
+                    self._connection.close()
+                    if fresh or attempt == 2:
+                        raise
+                    continue
+                except BaseException:
+                    self._connection.close()
+                    raise
+                break
+            self.requests += 1
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(text) if text else None
+        except json.JSONDecodeError:
+            parsed = None
+        return response.status, (parsed if isinstance(parsed, dict) else None), text[:200]
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
 
 
 class MemoryLog:
@@ -278,9 +327,9 @@ class MemoryLog:
     "this image has no profiler", and the route is not asked again.
     """
 
-    def __init__(self, client: soak.BenchClient, schema: soak.StatusSchema,
+    def __init__(self, connection: DroidConnection, schema: soak.StatusSchema,
                  run_dir: Path, interval_s: float) -> None:
-        self.client = client
+        self.connection = connection
         self.schema = schema
         self.interval_s = interval_s
         self.samples: list[dict] = []
@@ -307,7 +356,7 @@ class MemoryLog:
         with self._lock:
             sample: dict = {"t": wall_clock(), "step": step or self._step, "kind": kind}
             try:
-                status, body, text = get_json(self.client, soak.DEFAULT_STATUS_PATH)
+                status, body, text = self.connection.request("GET", soak.DEFAULT_STATUS_PATH)
             except soak.TRANSPORT_EXCEPTIONS as fault:
                 sample.update(status="unanswered", error=f"{type(fault).__name__}: {fault}")
             else:
@@ -343,7 +392,7 @@ class MemoryLog:
             return
         entry: dict = {"t": wall_clock(), "step": step}
         try:
-            status, body, text = get_json(self.client, PROFILER_PATH)
+            status, body, text = self.connection.request("GET", PROFILER_PATH)
         except soak.TRANSPORT_EXCEPTIONS as fault:
             entry["error"] = f"{type(fault).__name__}: {fault}"
         else:
@@ -367,7 +416,7 @@ class MemoryLog:
     def stop(self) -> None:
         self._stop.set()
         if self._thread.is_alive():
-            self._thread.join(timeout=self.client.connect_timeout_s + self.interval_s + 5)
+            self._thread.join(timeout=2 * self.connection.timeout_s + self.interval_s + 5)
         self._samples_file.close()
         self._profiler_file.close()
 
@@ -664,9 +713,9 @@ class FixtureServer:
 # The estop
 # ---------------------------------------------------------------------------
 
-def read_estop(client: soak.BenchClient) -> tuple[Optional[bool], str]:
+def read_estop(connection: DroidConnection) -> tuple[Optional[bool], str]:
     try:
-        status, body, _ = get_json(client, soak.DEFAULT_STATUS_PATH)
+        status, body, _ = connection.request("GET", soak.DEFAULT_STATUS_PATH)
     except soak.TRANSPORT_EXCEPTIONS as fault:
         return None, f"{type(fault).__name__}: {fault}"
     estop = body.get("estop") if body is not None else None
@@ -675,7 +724,7 @@ def read_estop(client: soak.BenchClient) -> tuple[Optional[bool], str]:
     return estop, ""
 
 
-def ensure_estop(client: soak.BenchClient, need: Optional[str], step: str,
+def ensure_estop(connection: DroidConnection, need: Optional[str], step: str,
                  run_began_clear: bool) -> Optional[str]:
     """Put the estop where `step` declares it must be. Returns what was done,
     in words, or None when nothing was needed. Never raises: a droid that
@@ -683,7 +732,7 @@ def ensure_estop(client: soak.BenchClient, need: Optional[str], step: str,
     precondition then says NOT ASSESSED for itself."""
     if need is None:
         return None
-    latched, why = read_estop(client)
+    latched, why = read_estop(connection)
     if latched is None:
         return f"before {step}: the estop could not be read ({why}); left as it was"
     if need == "latched" and not latched:
@@ -696,14 +745,32 @@ def ensure_estop(client: soak.BenchClient, need: Optional[str], step: str,
     else:
         return None
     try:
-        status, _ = client.post_json(path)
-    except (*soak.TRANSPORT_EXCEPTIONS, json.JSONDecodeError) as fault:
+        status, _, _ = connection.request("POST", path)
+    except soak.TRANSPORT_EXCEPTIONS as fault:
         return f"before {step}: POST {path} failed ({type(fault).__name__}: {fault})"
-    now, why = read_estop(client)
+    now, why = read_estop(connection)
     reached = (now is True) if need == "latched" else (now is False)
     return (f"before {step} (needs it {need}): POST {path} answered {status}; the estop now reads "
             f"{'latched' if now else 'clear' if now is False else 'UNKNOWN (' + why + ')'}"
             f"{'' if reached else ' - NOT where the script needs it'}")
+
+
+def estop_story(samples: list[dict], latched: Optional[bool], why: str = "") -> str:
+    """The estop state the run left the board in, read after the last step,
+    and the step during which it came to be so, from the polled samples."""
+    if latched is None:
+        return f"Estop at end: UNKNOWN ({why})"
+    final = "latched" if latched else "clear"
+    seen = [s for s in samples if s.get("status") == "ok" and isinstance(s.get("estop"), bool)]
+    changed_at = None
+    for before, after in zip(seen, seen[1:]):
+        if before["estop"] != latched and after["estop"] == latched:
+            changed_at = after["step"]
+    if changed_at is not None:
+        return f"Estop at end: {final} (first read {final} during {changed_at})"
+    if seen and seen[0]["estop"] == latched:
+        return f"Estop at end: {final} (as it was when the run began)"
+    return f"Estop at end: {final}"
 
 
 # ---------------------------------------------------------------------------
@@ -716,7 +783,8 @@ def _cell(value: Any) -> str:
 
 def render_report(results: list[StepResult], memory: list[StepMemory], flags: list[Flag],
                   profiler: list[dict], profiler_absent: Optional[str], estop_actions: list[str],
-                  schema: soak.StatusSchema, floor: soak.AdmissionFloor, header: list[str]) -> str:
+                  schema: soak.StatusSchema, floor: soak.AdmissionFloor, header: list[str],
+                  estop_at_end: str) -> str:
     by_step = {row.step: row for row in memory}
     out = list(header)
     for section, title in (("droid", "On the droid"), ("fixture", "Fixture scripts (own fixture server; the droid idle)")):
@@ -769,6 +837,7 @@ def render_report(results: list[StepResult], memory: list[StepMemory], flags: li
     out += [f"- {r.name} (log {r.log})" for r in unassessed] or ["- none"]
     out += ["", f"Admission floor judged against: {floor.ordinary_bytes} B ordinary "
                 f"({floor.env}, {floor.sources[soak.ADMISSION_FLOOR_MACRO]})."]
+    out += ["", f"**{estop_at_end}**"]
     return "\n".join(out) + "\n"
 
 
@@ -868,11 +937,11 @@ def main(argv: list[str]) -> int:
 
     status_base = (args.status_base or args.droid).rstrip("/")
     try:
-        status_client = client_for(status_base, args.poll_timeout_s)
+        status_connection = DroidConnection(status_base, args.poll_timeout_s)
     except ValueError as bad:
         return refuse(str(bad))
     try:
-        code, body, text = get_json(status_client, soak.DEFAULT_STATUS_PATH)
+        code, body, text = status_connection.request("GET", soak.DEFAULT_STATUS_PATH)
     except soak.TRANSPORT_EXCEPTIONS as fault:
         return refuse(f"GET {status_base}/api/status failed: {fault}")
     if code != 200 or body is None:
@@ -917,10 +986,11 @@ def main(argv: list[str]) -> int:
 
     results: list[StepResult] = []
     estop_actions: list[str] = []
-    log = MemoryLog(status_client, schema, run_dir, args.poll_interval_s)
+    log = MemoryLog(status_connection, schema, run_dir, args.poll_interval_s)
     server = FixtureServer(run_dir)
     interrupted = False
     plan: list[str] = []
+    droid_connection: Optional[DroidConnection] = None
 
     def run_step(result: StepResult, cmd: list[str], env: dict[str, str], timeout_s: float,
                  playwright: bool) -> None:
@@ -944,7 +1014,10 @@ def main(argv: list[str]) -> int:
         if args.offline:
             server.start()
         droid = server.base if args.offline else args.droid.rstrip("/")
-        droid_client = None if args.offline else client_for(droid, args.poll_timeout_s)
+        # The estop is moved on the droid; that is the poller's own connection
+        # unless --status-base names a different host.
+        droid_connection = None if args.offline else (
+            status_connection if droid == status_base else DroidConnection(droid, args.poll_timeout_s))
         fixture_flag = {"FIXTURE": "1"} if args.offline else {}
 
         plan = (["idle"] if args.idle_s > 0 else []) + ["sheet", "console-sweep.js"]
@@ -981,8 +1054,8 @@ def main(argv: list[str]) -> int:
         advance("console-sweep.js")
 
         for step in steps:
-            if droid_client is not None:
-                action = ensure_estop(droid_client, step.estop, step.name, run_began_clear=started_clear)
+            if droid_connection is not None:
+                action = ensure_estop(droid_connection, step.estop, step.name, run_began_clear=started_clear)
                 if action:
                     estop_actions.append(action)
                     print(f"[bench_auto] {action}", flush=True)
@@ -1015,14 +1088,34 @@ def main(argv: list[str]) -> int:
         server.stop()
         log.stop()
 
+    # The board as left: read from the droid after the last step, not assumed.
+    if droid_connection is None:
+        estop_at_end = ("Estop at end: not managed (--offline: every droid script met its own "
+                        "fixture droid, which carries its own estop)")
+    else:
+        latched, why = read_estop(droid_connection)
+        estop_at_end = estop_story(log.samples, latched, why)
+        if droid_connection is not status_connection:
+            droid_connection.close()
+    status_connection.close()
+
     # Every step that ran or was running, in plan order: an interrupted step
     # has samples and no result, and its samples still count.
     sampled = {sample["step"] for sample in log.samples}
     ran = {r.name for r in results}
     memory, flags = summarize_memory(log.samples, [n for n in plan if n in ran or n in sampled],
                                      schema, floor)
+    header = header + [
+        f"- status polls: {status_connection.requests} requests over {status_connection.opened} "
+        f"keep-alive connection(s) ({max(0, status_connection.opened - 1)} reconnects after a "
+        "transport fault or a server close)",
+        "- not comparable one-to-one with the 2026-09-29 hand-run figures in #435, which polled "
+        "with a new connection per second (curl): that adds connection churn (ADR 0023) and "
+        "refreshes the admission guard's heap sample on every accept "
+        "(src/web/web_admission.cpp:335)",
+    ]
     report = render_report(results, memory, flags, log.profiler, log.profiler_absent_note,
-                           estop_actions, schema, floor, header)
+                           estop_actions, schema, floor, header, estop_at_end)
     (run_dir / "report.md").write_text(report, encoding="utf-8")
     (run_dir / "summary.json").write_text(json.dumps({
         "image": args.image, "buildEnv": build_env, "admissionFloor": floor.report(),
@@ -1031,6 +1124,9 @@ def main(argv: list[str]) -> int:
         "flags": [dataclasses.asdict(f) for f in flags],
         "profilerAbsent": log.profiler_absent_note,
         "estopActions": estop_actions,
+        "estopAtEnd": estop_at_end,
+        "statusPolls": {"requests": status_connection.requests,
+                        "connections": status_connection.opened},
         "interrupted": interrupted,
     }, indent=2) + "\n", encoding="utf-8")
     print("\n" + report, flush=True)
