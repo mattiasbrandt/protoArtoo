@@ -327,6 +327,15 @@ the patch releases, whose notes live on their own GitHub Release.
   plays every one, and saves a new one once you have deleted down to four. If
   you have saved more than ten, the controller lists the first ten it finds,
   so export the ones you want to keep before you update.
+- **An artoo-esp32 no longer runs short of memory while pages load.** Opening
+  pages quickly one after another used to leave its WiFi taking memory faster
+  than it gave it back. It now keeps a limit on what it holds at once, so pages
+  load a little slower, about a tenth of a second each.
+
+### Fixed
+- **Sequences no longer says "Nothing learned yet" while it is still loading.**
+  Right after the droid starts, the page shows the waiting dots until your
+  sequences arrive.
 
 ## [1.3.0] - 2026-09-11
 
