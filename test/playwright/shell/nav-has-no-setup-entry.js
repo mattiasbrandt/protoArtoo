@@ -1,3 +1,4 @@
+// bench-auto: droid
 // The Operator Shell's nav has no Setup entry: guided Setup is drawn over
 // Configuration while a droid is not set up, and is never a destination of its
 // own. Introduced by #404 (and #371, "Setup leaves the nav").

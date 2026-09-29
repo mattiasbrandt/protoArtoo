@@ -1,3 +1,4 @@
+// bench-auto: droid
 // On Maintenance a light goes amber only for memory, and nothing on the
 // surface calls a reading "stale": a link the droid has not reported is grey,
 // never amber, and how old the readings are is the Status Plate's to say.

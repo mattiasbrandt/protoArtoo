@@ -1,3 +1,4 @@
+// bench-auto: droid
 // !!! WRITES CONFIGURATION TO THE DROID - and puts it back !!!
 //
 // A lit wire's LED count, typed on Lights, is saved exactly once, carrying the

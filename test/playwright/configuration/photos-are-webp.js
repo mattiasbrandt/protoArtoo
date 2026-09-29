@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Every photograph Configuration asks for is answered as image/webp and decodes:
 // the product pictures on the Component Picker's cards and the design
 // pictures on the Droid Build's. Introduced by #369 (ADR 0065).

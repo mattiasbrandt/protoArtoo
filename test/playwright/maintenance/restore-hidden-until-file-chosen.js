@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Maintenance offers "Restore the ticked parts" only once a backup file has
 // been chosen: before that the act and its ticks are not on screen at all.
 // Introduced by #399 (the act was on screen, enabled, and did nothing).

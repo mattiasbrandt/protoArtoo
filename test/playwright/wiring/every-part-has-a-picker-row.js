@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Every Part has one row in the part-first picker on Wiring, and each row reads
 // what the droid answered. History: #347 built the picker on Parts and its
 // rules were held by test/playwright/parts/parts-surface.js; #411 moved the

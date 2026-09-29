@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Network Recovery Mode reads as recovery - never as WiFi Provisioning or a
 // client that failed to join - although the droid's settings still read as
 // provisioned, and the saved settings recovery left untouched are repaired

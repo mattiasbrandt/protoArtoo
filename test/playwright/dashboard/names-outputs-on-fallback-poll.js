@@ -1,3 +1,4 @@
+// bench-auto: droid
 // The Dashboard's Components card names every Output the droid reports, by
 // the name its board prints, even when the browser has no event stream and
 // the status arrives on the fallback poll. Introduced by #412 (#415 moved the

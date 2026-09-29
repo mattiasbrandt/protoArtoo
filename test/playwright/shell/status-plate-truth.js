@@ -1,3 +1,4 @@
+// bench-auto: droid estop=clear
 // The Status Plate is mounted once, tells the truth about how fresh it is,
 // and the droid's live state reaches every surface by one path.
 //

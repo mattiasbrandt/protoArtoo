@@ -1759,6 +1759,14 @@ class StatusSchema:
     sse_refused_cap_field: Optional[str] = None
     sse_evicted_field: Optional[str] = None
     sse_clients_peak_field: Optional[str] = None
+    # Recorded only, for the same reason and with the same None convention as
+    # the progress-line fields above: no soak verdict reads them, so they stay
+    # out of fields_read(). tools/bench_auto.py's memory log reads them through
+    # memory_reading() below. heap_largest_block_field is the Internal Data
+    # Heap's largest free block, beside heap_field's Buffer Reading;
+    # failed_allocs_field counts failed allocations since boot.
+    heap_largest_block_field: Optional[str] = None
+    failed_allocs_field: Optional[str] = None
     ladder_container: Optional[str] = None
     ladder_fields: dict[str, str] = {}
     # False on an image built for a board with no ESP-Hosted link supervisor:
@@ -1870,6 +1878,42 @@ class StatusSchema:
                 row[key] = value
             rows.append(row)
         return rows
+
+    def memory_fields(self) -> list[str]:
+        """The payload names of every heap, allocation, refusal and restart
+        reading this image publishes, in a fixed order. A field the image does
+        not publish is left out, never listed as a placeholder."""
+        admission = (
+            (self.refused_heap_floor_field, self.refused_heap_floor_diag_field)
+            if self.enforces_admission_floor else ()
+        )
+        candidates = (
+            self.heap_free_field, self.heap_min_field, self.heap_largest_block_field,
+            self.heap_field, self.failed_allocs_field, *admission, self.restart_field,
+        )
+        return [field for field in candidates if field]
+
+    def memory_reading(self, body: dict, anomalies: list[str]) -> dict:
+        """{payload name: value} for one poll, over memory_fields().
+
+        The per-poll read for a caller that logs every sample as it arrives
+        rather than collecting a series first (tools/bench_auto.py). Same rule as
+        collect_heap_series(): a field this image publishes that the sample is
+        missing or mistypes is an anomaly and is left out of the result -- an
+        absent key is recoverable, an invented zero is not."""
+        reading: dict = {}
+        for field in self.memory_fields():
+            if field not in body:
+                anomalies.append(f"missing field {field!r}")
+                continue
+            value = body[field]
+            if _type_mismatch(value, int):
+                anomalies.append(
+                    f"field {field!r} has type {type(value).__name__}, expected int"
+                )
+                continue
+            reading[field] = value
+        return reading
 
     def admission(self, body: dict, context: str) -> Optional[AdmissionReading]:
         """One admission-counter sample, or None on an image that compiles no
@@ -2158,6 +2202,13 @@ class ProductImageStatusSchema(StatusSchema):
     sse_refused_cap_field = "refusedSseCap"
     sse_evicted_field = "sseEvicted"
     sse_clients_peak_field = "sseClientsPeak"
+    # Recorded only (see StatusSchema), from the same unconditional snprintf
+    # (src/web/status_json.cpp:138): heapLargestBlock is the Internal Data
+    # Heap's largest block (captureStatusHeapReadings(), :100) and failedAllocs
+    # the always-compiled tracker's count since boot (web_server.cpp:261). The
+    # bench image publishes neither.
+    heap_largest_block_field = "heapLargestBlock"
+    failed_allocs_field = "failedAllocs"
     # No bootCount, so the restart evidence is uptimeMs (millis(),
     # web_server.cpp:360) stepping backwards -- see restart_detected().
     restart_field = "uptimeMs"
@@ -4948,6 +4999,7 @@ FIXTURE_SHIPPING_STATUS_BODY = {
     "heapMin": 240000,
     "heapLargestBlock": 150000,
     "heapLargest8bit": 123456,
+    "failedAllocs": 0,
     "sseClients": 1,
     "sseClientsPeak": 3,
     # The admission evidence, from the same unconditional snprintf

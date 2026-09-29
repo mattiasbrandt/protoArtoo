@@ -1,3 +1,4 @@
+// bench-auto: droid
 /**
  * Page-load audit for the routes on the ADR 0021 seam: the sequence surface,
  * the profiler surface, and the status/helper routes.

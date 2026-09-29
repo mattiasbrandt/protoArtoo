@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// bench-auto: fixture seq.html
 /**
  * test/playwright/seq/seq-tune-factory-banner.js
  *

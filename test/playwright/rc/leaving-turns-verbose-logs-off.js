@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Leaving RC Control for another surface turns the droid's verbose RC logs
 // back off: the page asks for them on arrival (POST /api/rc/debug
 // {"enabled":true}) and must ask for {"enabled":false} when the operator

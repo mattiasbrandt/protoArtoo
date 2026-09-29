@@ -1,3 +1,4 @@
+// bench-auto: droid
 // On the Dashboard's Health card a signal goes amber only for memory, and no
 // row calls a reading "stale": unknown, never asked and not fitted read grey,
 // and how old the readings are is the Status Plate's to say. Introduced by

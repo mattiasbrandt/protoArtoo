@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Configuration's Component Picker draws every product the droid's lineup
 // lists, exactly once, in its family - and a roadmap product is greyed words,
 // never a button. Introduced by #369.

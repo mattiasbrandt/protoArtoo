@@ -1,3 +1,4 @@
+// bench-auto: droid estop=latched
 // A latched estop has let go of every enabled Output: the droid reports each
 // one with no pulse and "estop" as the reason, and Servos says "Limp - the
 // estop let go" on its row. Introduced by #364 and #421 (ADR 0043: a stop

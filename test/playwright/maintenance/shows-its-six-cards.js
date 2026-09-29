@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Maintenance shows exactly its six cards: Serial links, Diagnostics, Memory
 // profiler, Backup, Guided Setup and Restart. Introduced by #404 (Setup split
 // into Configuration and Maintenance).

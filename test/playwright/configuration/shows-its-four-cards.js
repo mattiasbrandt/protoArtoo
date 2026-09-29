@@ -1,3 +1,4 @@
+// bench-auto: droid
 // Configuration, on a droid whose guided Setup is not running, shows exactly
 // its four cards: Body Controller, Droid Build, Hardware components and Droid
 // identity. Introduced by #404 (Setup split into Configuration and

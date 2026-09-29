@@ -1,3 +1,4 @@
+// bench-auto: droid
 // The RC Receiver's channel ticks on Configuration fit their words at desktop
 // width: nothing in a channel plate runs past its own box. Introduced by #370
 // (the fix 40c4d3ca sized the column for "CH 6" and "OFF").
