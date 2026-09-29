@@ -42,12 +42,13 @@
   // A Common Addition is a Part the base design does not carry (`cadName:
   // null` in the catalog), and it gets its own group so a builder can tell the
   // arms they added from the ones the design came with (CONTEXT.md "Parts").
+  // `dome: true` marks the groups that sit on the dome (isDomePart()).
   const GROUPS = [
-    { id: "dome-pies", label: "Dome pie panels", sections: ["dome_pies"] },
-    { id: "dome-panels", label: "Dome side panels", sections: ["dome_panels"] },
-    { id: "dome-lights", label: "Dome lights", sections: ["dome_lights"] },
-    { id: "holos", label: "Holoprojectors", sections: ["holoprojectors"] },
-    { id: "dome-buttons", label: "Dome buttons", sections: ["dome_fixtures"] },
+    { id: "dome-pies", label: "Dome pie panels", sections: ["dome_pies"], dome: true },
+    { id: "dome-panels", label: "Dome side panels", sections: ["dome_panels"], dome: true },
+    { id: "dome-lights", label: "Dome lights", sections: ["dome_lights"], dome: true },
+    { id: "holos", label: "Holoprojectors", sections: ["holoprojectors"], dome: true },
+    { id: "dome-buttons", label: "Dome buttons", sections: ["dome_fixtures"], dome: true },
     { id: "body", label: "Body doors & arms", sections: ["body_doors", "body_arms"] },
     { id: "additions", label: "Common additions", sections: [] },
     { id: "other", label: "Other (not on the model)", sections: ["other_slots"], unit: ["placeholder", "placeholders"] },
@@ -58,6 +59,14 @@
     if (part.cadName === null) return GROUPS.find((group) => group.id === "additions");
     return GROUPS.find((group) => group.sections.includes(part.section)) || GROUPS[GROUPS.length - 1];
   };
+
+  // A dome Part is one that sits on the dome: its group says so, whatever its
+  // catalog `control` path. Dome wiring is the Dome Controller's, so the
+  // part-first picker offers no body Output for any of them (operator,
+  // 2026-09-29 on #411: "Dome wiring is all handled and managed by the dome
+  // controller"). This is where a Part sits, not what this image can move:
+  // Unused on Parts asks the second question, with thisImageMoves().
+  const isDomePart = (part) => groupFor(part).dome === true;
 
   // Every Part in exactly one group, in catalog order, and a group with no
   // Parts is not drawn at all -- an empty heading is not a row.
@@ -285,6 +294,28 @@
   const unclaimed = (parts, outputs) =>
     parts.filter((part) => thisImageMoves(part) && !window.PAOutputs.forPart(part.id, outputs));
 
+  // What moves a dome Part: the Dome Controller, told by a command over the
+  // dome link, never a wire from this board (operator, 2026-09-29 on #411:
+  // "what would make sense is to list the actual action/command instead of the
+  // wire mapping"). The command is the one the dome is sent for that panel,
+  // from the body's own map (data/dome_command_map.js, ADR 0009), which is
+  // keyed by the catalog's shorthand (data/dome_layout.js). A Part the map has
+  // no command for says so rather than guessing one: a panel's number on the
+  // dome is a declared unknown (docs/droid-parts.yaml `dome_link_panel: TBD`),
+  // and the map carries no light, holoprojector or button at all.
+  const DOME_ACTS = [
+    { capability: "open", word: "Open" },
+    { capability: "close", word: "Close" },
+  ];
+  const domeCommandText = (part) => {
+    const resolve = window.DomeCommandMap?.resolvePanelCommand;
+    const said = DOME_ACTS.map(({ capability, word }) => {
+      const command = resolve && part.shorthand ? resolve(part.shorthand, capability) : null;
+      return command ? `${word} ${command}` : null;
+    }).filter(Boolean);
+    return said.length ? said.join(" · ") : "No command yet";
+  };
+
   // ---------------------------------------------------------------------------
   // The route to the picker
   //
@@ -307,13 +338,19 @@
   };
 
   /**
-   * The part-first picker: one row per Part, grouped the way a builder thinks
-   * about them, each choosing the Output the Part is on. Moved here from Parts
-   * with its question (#347) when the mapping moved to Wiring.
+   * The part-first picker: one row per body Part, grouped the way a builder
+   * thinks about them, each choosing the Output the Part is on.
+   * Moved here from Parts with its question (#347) when the mapping moved to
+   * Wiring.
    *
-   * No row is ever hidden. A fresh droid shows every catalog Part reading
+   * No such row is ever hidden. A fresh droid shows every one reading
    * "- not wired -", which is the honest state of a build in progress, and
    * hiding a row is how an operator loses an output (#296).
+   *
+   * A dome Part gets no Output to choose (isDomePart()). Every one of them is
+   * a row of one group after the rest, the Dome Controller's, showing the
+   * command that moves it or "No command yet" (domeCommandText()), so no dome
+   * Part vanishes from the page.
    *
    * The table is built once and repainted in place. A repaint writes
    * textContent, value, disabled and classList on nodes that already exist,
@@ -354,6 +391,9 @@
       return `${group.label} — ${count} ${count === 1 ? one : many}`;
     };
 
+    const body = catalog.parts.filter((part) => !isDomePart(part));
+    const dome = catalog.parts.filter(isDomePart);
+
     const rowHtml = (part) => {
       const kind = kinds ? kinds.treatmentClass(part) : "";
       const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
@@ -367,15 +407,34 @@
       );
     };
 
+    // A dome Part's row: its command where an Output select would be, and no
+    // control at all. It keeps its Part Kind's treatment, a light's included.
+    // Its `.parts-gang` names a body Output it sits on anyway, which a builder
+    // can record, so a Part on a wire is never invisible here.
+    const domeRowHtml = (part) => {
+      const kind = kinds ? kinds.treatmentClass(part) : "";
+      const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
+      const light = kinds?.isLight(part) ? `<span class="parts-kind">light</span>` : "";
+      return (
+        `<tr class="parts-row parts-dome-row${kind ? ` ${kind}` : ""}" data-dome-part="${esc(part.id)}">` +
+        `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
+        `<span class="parts-gang"></span></th>` +
+        `<td class="parts-command">${esc(domeCommandText(part))}</td></tr>`
+      );
+    };
+
+    const groupBody = (id, heading, rowsHtml) =>
+      `<tbody data-group="${id}"><tr class="parts-group"><th colspan="2" scope="colgroup">` +
+      `${esc(heading)}</th></tr>${rowsHtml}</tbody>`;
+
     table.innerHTML =
       `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Output</th></tr></thead>` +
-      groupParts(catalog.parts)
-        .map(
-          (group) =>
-            `<tbody data-group="${group.id}"><tr class="parts-group"><th colspan="2" scope="colgroup">` +
-            `${esc(groupHeading(group))}</th></tr>${group.parts.map(rowHtml).join("")}</tbody>`
-        )
+      groupParts(body)
+        .map((group) => groupBody(group.id, groupHeading(group), group.parts.map(rowHtml).join("")))
         .join("") +
+      (dome.length
+        ? groupBody("dome-controller", groupHeading({ label: "Dome Controller", parts: dome }), dome.map(domeRowHtml).join(""))
+        : "") +
       `</table>`;
 
     const rows = new Map();
@@ -386,6 +445,10 @@
         gang: node.querySelector(".parts-gang"),
         addresses: null,
       });
+    });
+    const domeRows = new Map();
+    table.querySelectorAll("[data-dome-part]").forEach((node) => {
+      domeRows.set(node.dataset.domePart, node.querySelector(".parts-gang"));
     });
 
     // Declared before the mover, which is handed a way to repaint.
@@ -437,7 +500,10 @@
       const { part, off } = wanted;
       wanted = null;
       const row = rows.get(part);
-      if (!row) return;
+      if (!row) {
+        if (domeRows.has(part)) say(`The Dome Controller moves ${partLabel(part)}, not an output.`);
+        return;
+      }
       row.node.scrollIntoView?.({ block: "center" });
       row.select.focus();
       say(
@@ -452,10 +518,14 @@
       const outputs = OUTPUTS.list();
       const addresses = outputs.map((output) => output.address).join(",");
       rows.forEach((row, id) => paintRow(id, row, outputs, addresses));
+      domeRows.forEach((gang, id) => {
+        const output = outputOf(id);
+        gang.textContent = output ? ` on ${output.name} too` : "";
+      });
 
-      const on = catalog.parts.filter((part) => outputOf(part.id) !== null).length;
+      const on = body.filter((part) => outputOf(part.id) !== null).length;
       const empty = outputs.filter((output) => output.parts.length === 0).length;
-      let text = `${on} of ${catalog.parts.length} parts on an output · ${empty} of ${outputs.length} outputs with nothing on them`;
+      let text = `${on} of ${body.length} parts on an output · ${empty} of ${outputs.length} outputs with nothing on them`;
       // A Part on an Output that this page has no row for would otherwise be
       // invisible, which is the one thing this table must never be.
       const unknown = outputs.flatMap((output) => output.parts).filter((id) => !partById.has(id));
@@ -500,6 +570,7 @@
     mover,
     UNCLAIMED,
     thisImageMoves,
+    isDomePart,
     unclaimed,
     routeToOutput,
     picker,

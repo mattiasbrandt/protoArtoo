@@ -245,6 +245,7 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
     "/droid_parts.js": catalogSource,
     "/droid_part_kind.js": readData("droid_part_kind.js"),
     "/outputs.js": readData("outputs.js"),
+    "/dome_command_map.js": readData("dome_command_map.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/wiring.js": readData("wiring.js"),
   };
@@ -425,6 +426,35 @@ test("a Part on an output that the page does not know is named, never dropped", 
 // The sheet above the picker names the Part on the end of each wire, so a Part
 // moved in the picker is on its new wire the moment the droid has taken it -
 // not on the next visit.
+// A dome Part is not this board's to wire (operator, 2026-09-29 on #411:
+// "Dome wiring is all handled and managed by the dome controller"), whatever
+// the catalog's `control` says: a holoprojector or a fixed side panel reads
+// `control: none`, and it sits on the dome all the same. It gets no Output to
+// choose - an Output select on it would offer a write that means nothing - and
+// shows the command that moves it, or says it has none. Every one keeps a row,
+// so no dome Part vanishes from the page. A dome Part a builder recorded on a
+// body Output anyway is still named with it, so a Part on a wire is never
+// invisible.
+test("every dome Part gets no Output select, and shows its command or that it has none", async () => {
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["panel1"] }) });
+  const catalog = env.window.DroidParts.parts;
+  const dome = catalog.filter((part) => part.half === "dome");
+  assert.ok(dome.some((part) => part.control === "none"), "the catalog has a dome Part whose control is none");
+  const domeRow = (id) => env.table().querySelectorAll("[data-dome-part]").find((node) => node.dataset.domePart === id);
+  dome.forEach((part) => {
+    assert.equal(env.row(part.id), undefined, `${part.id} (control ${part.control}) has an Output select`);
+    assert.ok(domeRow(part.id), `${part.id} has no row`);
+  });
+  catalog
+    .filter((part) => part.half !== "dome")
+    .forEach((part) => assert.ok(env.select(part.id), `${part.id} lost its Output select`));
+
+  assert.equal(domeRow("pie1").querySelector(".parts-command").textContent, "Open :OPP1 · Close :CLP1");
+  assert.equal(domeRow("hp1Pan").querySelector(".parts-command").textContent, "No command yet");
+  assert.match(domeRow("panel1").textContent, /on ARM1 too/);
+  assert.equal(domeRow("pie1").querySelector("select"), null);
+});
+
 test("a Part moved in the picker is on its new wire in the sheet at once", async () => {
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
   const wire = (address) => env.document.querySelectorAll(".wd-link").find((node) => node.dataset.wire === address);
