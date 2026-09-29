@@ -66,10 +66,13 @@ the patch releases, whose notes live on their own GitHub Release.
   from that list. The dome on the Dashboard and in Sequences is drawn the same
   way. Under the drawing, Unused lists the parts no output claims yet, each
   with Give it an output.
-- **Open a door from the Dashboard.** Dome panels on the Dashboard is now
-  Moving parts: your droid's body and dome, drawn side by side. Click a door,
-  panel or arm to open or close it. With the estop latched nothing moves, and
-  the card says so. Play a sequence from Sequences.
+- **Open a door from the Dashboard.** Your droid's body and dome are drawn
+  side by side under the Dashboard's controls. Click a door, panel or arm to
+  open or close it. With the estop latched nothing moves, and the Dashboard
+  says so. Play a sequence from Sequences.
+- **Sleep from the Dashboard's switch.** The Sleep switch under Controls now
+  puts the droid to sleep, the same as Sleep in the top bar. The Console sits
+  open under Controls, and Build folds away at the foot of the page.
 - **Every answer says when it takes effect.** Each Setup question and each
   Configuration setting carries one line beside it: used at once, used from the
   droid's next start, or saved and needing a restart. Once you change something
