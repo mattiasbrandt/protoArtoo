@@ -86,6 +86,13 @@ const BOARD_LABELS = {
   const identityActions = document.getElementById("identity-actions");
   const identityDiagnosis = document.getElementById("identity-diagnosis");
   const mdnsApplyTiming = document.getElementById("mdns-apply-timing");
+  // protoR2link's settings on the Dome Controller host (#369): the dome's IP,
+  // a declared Setting, and the slip ring's fixed facts.
+  const linkSettings = document.getElementById("protor2link-settings");
+  const linkPeerIpInput = document.getElementById("protor2link-wifi-peer-ip");
+  const linkSlipRing = document.getElementById("protor2link-slip-ring");
+  const linkSlipRingFacts = document.getElementById("protor2link-slip-ring-facts");
+  const linkFeedback = document.getElementById("protor2link-feedback");
 
   let saveInFlight = false;
   let saveQueued = false;
@@ -153,6 +160,32 @@ const BOARD_LABELS = {
     setFeedbackState(featureFeedback, message, variant);
   };
 
+  // What a builder calls the protocol the firmware names on a lane. A word
+  // this table does not know is shown as the firmware sent it.
+  const PROTOCOL_WORDS = { marcduino: "Marcduino" };
+
+  // The slip ring's facts, from the firmware's own answer for this board
+  // (board_lanes.protor2link, include/board_lane_wire.h) and never a copy
+  // here. A firmware that does not report the baud and protocol shows no
+  // row rather than half of one.
+  const paintSlipRing = (identity) => {
+    const lane = identity?.board_lanes?.protor2link;
+    const known = Boolean(lane) && [lane.uart, lane.tx, lane.rx, lane.baud].every(Number.isInteger)
+      && typeof lane.protocol === "string" && lane.protocol !== "";
+    if (linkSlipRing) linkSlipRing.hidden = !known;
+    if (!known || !linkSlipRingFacts) return;
+    const protocol = PROTOCOL_WORDS[lane.protocol] || lane.protocol;
+    linkSlipRingFacts.textContent =
+      `UART ${lane.uart} · TX ${lane.tx} · RX ${lane.rx} · ${lane.baud} baud · ${protocol}`;
+  };
+
+  // The link's settings are the Dome Controller's answer, so they show only
+  // while that answer is fitted and this image can offer it.
+  const paintLinkSettings = () => {
+    const toggle = featureToggles.protoR2link;
+    if (linkSettings) linkSettings.hidden = !(toggle?.input?.checked && toggle.available);
+  };
+
   const normalizeIdentityInput = (value) => String(value || "")
     .toLowerCase()
     .replace(/\s+/g, "")
@@ -183,6 +216,7 @@ const BOARD_LABELS = {
   // to hear and publish; this surface only shows the name and says it arrived.
   const receiveIdentity = (identity) => {
     renderIdentity(identity);
+    paintSlipRing(identity);
     noteMdnsUseName(identity);
     setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
@@ -326,6 +360,27 @@ const BOARD_LABELS = {
     }
   };
 
+  // The dome's IP is saved on its own, as the declared Setting it is: its
+  // words, its timing and its refusal all come from its entry (data/web_api.js),
+  // and a refused address stays in the box beside the reason. It does not ride
+  // the component save, so a bad address never holds back a toggle.
+  const saveLinkPeerIp = async () => {
+    if (!window.PAApi || !linkPeerIpInput) return;
+    const sent = { protoR2linkWifiPeerIp: linkPeerIpInput.value.trim() };
+    linkPeerIpInput.value = sent.protoR2linkWifiPeerIp;
+    setFeedbackState(linkFeedback, "Saving...");
+    try {
+      const result = await window.PAApi.postForm("/api/config", sent, { timeoutMs: 5000 });
+      const stored = result.data?.protoR2link?.wifiPeerIp;
+      if (typeof stored === "string") linkPeerIpInput.value = stored;
+      setFeedbackState(linkFeedback, TIMING.saved(window.PAApi.timingOf("protoR2linkWifiPeerIp"),
+        new Date().toLocaleTimeString()), "success");
+    } catch (error) {
+      console.error("[configuration] saveLinkPeerIp failed:", error);
+      setFeedbackState(linkFeedback, window.PAApi.messageFor(error, sent), "error");
+    }
+  };
+
   // Whether a component change is still on its way to the controller: from the
   // moment it is made, through the debounce, until the save that carries it has
   // answered. Published because the Restart that would cut it off now lives on
@@ -430,6 +485,7 @@ const BOARD_LABELS = {
         reason.hidden = toggle.available;
       }
     }
+    if (key === "protoR2link") paintLinkSettings();
   };
 
   const updateAllToggleStatuses = () => {
@@ -456,6 +512,11 @@ const BOARD_LABELS = {
     readBootActiveState(payload);
     lastSaved = payload || null;
     if (typeof payload?.rc?.inputMode === "string") savedRcMode = payload.rc.inputMode;
+    // The dome's IP as the droid holds it, unless the builder is typing one.
+    const peerIp = payload?.protoR2link?.wifiPeerIp;
+    if (linkPeerIpInput && typeof peerIp === "string" && document.activeElement !== linkPeerIpInput) {
+      linkPeerIpInput.value = peerIp;
+    }
 
     Object.entries(featureToggles).forEach(([key, toggle]) => {
       const enabled = components[key]?.enabled;
@@ -769,6 +830,14 @@ const BOARD_LABELS = {
 
   if (identitySaveButton) {
     identitySaveButton.addEventListener("click", saveIdentity);
+  }
+
+  // Saved when the builder leaves the box or presses Enter. The IP is the one
+  // text box in the component form, so Enter would otherwise submit the form
+  // and reload the page (implicit submission).
+  if (linkPeerIpInput) {
+    linkPeerIpInput.addEventListener("change", saveLinkPeerIp);
+    document.getElementById("feature-form")?.addEventListener("submit", (event) => event.preventDefault());
   }
 
 

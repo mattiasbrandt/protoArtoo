@@ -9528,6 +9528,34 @@ button.output-setting-head:focus-visible {
   }
 }
 
+/* protoR2link's settings on the Dome Controller host (#369): the dome's IP,
+   then the slip ring's fixed facts as a reading, in the setting-row anatomy
+   Foot Drive and Dome use. */
+.protor2link-settings {
+  margin-top: var(--space-md);
+}
+
+/* The rows' own display: grid would beat the hidden attribute, and the block
+   would stay on screen with the Dome Controller not fitted. */
+.protor2link-settings[hidden],
+.protor2link-settings [hidden] {
+  display: none;
+}
+
+/* An IPv4 address is fifteen characters: the number box, that wide, read
+   left to right. */
+.ip-cell {
+  width: calc(15ch + 2 * var(--space-sm) + 2px);
+  text-align: left;
+}
+
+.setting-fact {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------------------
    Lights (#410, ADR 0067): one list of the droid's light Parts, grouped by
    where they sit. The plate language of #368/#369/#411 - a plate per light,

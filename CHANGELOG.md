@@ -26,6 +26,11 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Point the body at the dome's WiFi from Configuration.** With a Dome
+  Controller fitted, its card now takes the dome's IP address for the WiFi
+  fallback (leave it empty and the dome is found by name), and states what the
+  slip ring runs on: the UART, the two pins, 9600 baud and Marcduino, as the
+  board itself reports them.
 - **Set how each servo moves.** Every row on Servos now takes a time to full
   throw, a time to get up to speed and an ease: `none` stops dead on the
   number, `soft` lets a heavy panel ease into motion, and `overshoot` swings a

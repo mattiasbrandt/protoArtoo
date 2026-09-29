@@ -318,7 +318,7 @@ const identityOf = (droid) => {
     board_lanes: {
       drive: { uart: 1, tx: 16, rx: 17 },
       audio: { uart: 2, tx: 26, rx: 35 },
-      protor2link: { uart: 2, tx: 33, rx: 34 },
+      protor2link: { uart: 2, tx: 33, rx: 34, baud: 9600, protocol: 'marcduino' },
     },
     build_flags: { PA_HEAP_PROFILE: false, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
   };
