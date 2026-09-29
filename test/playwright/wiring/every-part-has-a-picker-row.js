@@ -267,7 +267,7 @@ lib.runCheck({
       const drawnAway = '.outputs-bar, .outputs-now, .outputs-tick, .outputs-us, .outputs-width, .outputs-release, .outputs-throw, .outputs-motion';
       const rows = [...table.querySelectorAll('tr[data-part], tr[data-dome-part]')].map((row) => ({
         id: row.dataset.part || row.dataset.domePart,
-        light: lightIds.includes(row.dataset.part),
+        light: lightIds.includes(row.dataset.part || row.dataset.domePart),
         classed: row.classList.contains('partkind-light'),
         tag: row.querySelector('.parts-kind')?.textContent.trim() || '',
         cells: row.children.length,
