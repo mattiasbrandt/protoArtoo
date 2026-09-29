@@ -158,25 +158,28 @@ void test_configApply_rcInputMode_accepts_elrs(void) {
 }
 
 // No radio fitted is one answer (CONTEXT.md "Radio Controller", #369): the
-// mode clears the radio and every RC channel, even ones the same request sent
-// on, so no door leaves a channel on under it. A radio picked afterwards on its
-// own is the builder fitting one again, and stands.
+// mode alone - the Console's rc.config.mode - clears the radio and every RC
+// channel. A field the same request states stands (a backup posted back comes
+// back whole; test_api_config_write proves the round trip). A radio picked
+// afterwards on its own is the builder fitting one again, and stands.
 void test_configApply_rcInputMode_not_fitted_clears_the_radio_and_every_channel(void) {
-    std::map<std::string, std::string> m = {
-        {"rcInputMode", "not_fitted"}, {"rcMember", "rc_radio"}, {"enableRcCh1", "true"},
-        {"enableRcCh2", "true"},       {"enableRcCh3", "true"},  {"enableRcCh4", "true"},
-        {"enableRcCh5", "true"},       {"enableRcCh6", "true"}};
     ConfigSnapshot snap = makeDefaultSnap();
+    snap.system.rc_member = componentPartById("rc_radio")->value;
+    bool* const channels[] = {&snap.system.enable_rc_ch1, &snap.system.enable_rc_ch2,
+                              &snap.system.enable_rc_ch3, &snap.system.enable_rc_ch4,
+                              &snap.system.enable_rc_ch5, &snap.system.enable_rc_ch6};
+    for (bool* on : channels) {
+        *on = true;
+    }
+
+    std::map<std::string, std::string> m = {{"rcInputMode", "not_fitted"}};
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_FALSE(result.error.hasError);
     TEST_ASSERT_EQUAL_UINT8(RC_INPUT_NOT_FITTED, snap.system.rc_input_mode);
     TEST_ASSERT_EQUAL_UINT8(COMPONENT_MEMBER_NONE, snap.system.rc_member);
-    const bool channels[] = {snap.system.enable_rc_ch1, snap.system.enable_rc_ch2,
-                             snap.system.enable_rc_ch3, snap.system.enable_rc_ch4,
-                             snap.system.enable_rc_ch5, snap.system.enable_rc_ch6};
-    for (bool on : channels) {
-        TEST_ASSERT_FALSE(on);
+    for (bool* on : channels) {
+        TEST_ASSERT_FALSE(*on);
     }
 
     std::map<std::string, std::string> refit = {{"rcMember", "hotrc_ds650"}};
