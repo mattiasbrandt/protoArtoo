@@ -359,6 +359,17 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
     return outcome;
 }
 
+uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel) {
+    uint8_t count = 0;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        count = servoOutputPartCount(servoOutputCache.rows[index]);
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return count;
+}
+
 // -----------------------------------------------------------------------------
 // The three questions the servo drive path asks of a row  --  answered as
 // values, never as a row.

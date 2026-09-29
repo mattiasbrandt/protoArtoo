@@ -1294,6 +1294,40 @@ void test_a_part_move_takes_it_off_one_output_and_is_committed() {
     TEST_ASSERT_EQUAL_UINT(broadcastsBefore + 1, g_test_status_broadcast_count);
 }
 
+// An Output with a Part on it is wired and one with none is free, with no
+// separate switch (CONTEXT.md "Wiring", #411). The tick is what ServoTask
+// reads at start, so a move writes it: on for the Output the Part lands on,
+// off for the one it leaves empty, and left on for one that keeps a Part.
+void test_a_part_move_writes_the_wired_tick_of_each_output_it_touches() {
+    seedUnwiredServoOutputRows();
+    TEST_ASSERT_FALSE(readSnapshot().system.enable_arm1);
+
+    WebRequestTestBackend onArm1;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "none", "ledc:0", &onArm1));
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_arm1);
+    WebRequestTestBackend alsoArm1;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFR", "none", "ledc:0", &alsoArm1));
+
+    WebRequestTestBackend toAux1;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFL", "ledc:0", "ledc:3", &toAux1));
+    TEST_ASSERT_TRUE_MESSAGE(readSnapshot().system.enable_arm1, "ARM1 still carries doorFR");
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_aux1);
+
+    WebRequestTestBackend offAll;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFR", "ledc:0", "none", &offAll));
+    TEST_ASSERT_FALSE_MESSAGE(readSnapshot().system.enable_arm1, "ARM1 has no Part left");
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_aux1);
+
+    // Saved with the move, so it is what the next start reads.
+    Preferences prefs;
+    prefs.begin("proto", true);
+    ConfigSnapshot stored = {};
+    configLoad(prefs, &stored);
+    prefs.end();
+    TEST_ASSERT_FALSE(stored.system.enable_arm1);
+    TEST_ASSERT_TRUE(stored.system.enable_aux1);
+}
+
 // The steal nobody announced. The request says the door is on nothing, the
 // table says ARM1: the whole request is refused, the field riding beside the
 // move included, and nothing reaches storage.
@@ -1330,6 +1364,7 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_a_part_move_takes_it_off_one_output_and_is_committed);
     RUN_TEST(test_a_move_from_an_output_the_part_is_not_on_changes_nothing);
+    RUN_TEST(test_a_part_move_writes_the_wired_tick_of_each_output_it_touches);
     RUN_TEST(test_a_part_a_row_states_comes_off_the_output_it_was_on);
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);
