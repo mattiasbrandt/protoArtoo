@@ -89,10 +89,12 @@ the patch releases, whose notes live on their own GitHub Release.
   every wire that leaves it: each output and each serial link, in its own
   color, named first by what is printed on the board (ARM1-ARM5 and S1-S3 on
   the Artoo PCB, GPIO 49 and the like on the FireBeetle 2), then by its pins.
-  A wire you have not marked wired, or a link that is switched off, is drawn
-  dashed grey and says why. Each wire's box names the part on the end of it.
-  Under the drawing you mark which outputs are wired and which one carries the
-  LED strip, and choose which part is on each output, and Power wiring
+  Only the outputs you have marked wired get a line, and a link that is
+  switched off is drawn dashed grey and says why. Each wire's box names the
+  part on the end of it. Under the drawing you mark which outputs are wired,
+  with a switch on each, and which one carries the LED strip, and choose which
+  part is on each output; the dome's parts show the command the dome
+  controller opens and closes them with instead. Power wiring
   explains the shared supply rather than drawing it. The outputs are whatever the
   board reports, so a board with other outputs shows its own. Nothing on the
   page is kept by hand, so it cannot go stale against the firmware.
