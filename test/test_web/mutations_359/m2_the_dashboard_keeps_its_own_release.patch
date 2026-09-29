@@ -1,0 +1,12 @@
+diff --git i/data/app.js w/data/app.js
+index b9f5ecce..662822e6 100644
+--- i/data/app.js
++++ w/data/app.js
+@@ -1433,6 +1433,7 @@
+     logPaused?.classList.remove("visible");
+   });
+ 
++  document.getElementById("estop-clear")?.addEventListener("click", () => window.PAApi.estopPostForm("/api/estop/clear", {}, { timeoutMs: 3000 }));
+   sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
+   sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
+   topbarReboot?.addEventListener("click", rebootController);

@@ -9,9 +9,9 @@
 // still there, still says the same thing, and nobody asked the droid to clear
 // it" is observed on the live document rather than reasoned about.
 //
-// Part 2 runs the shipped app.js and drive.js on their own, to check the half
-// of the decision that is deliberately NOT on the chrome: releasing a latched
-// estop stays on Dashboard and Drive.
+// Part 2 runs the shipped app.js and drive.js on their own, to check that
+// neither carries an estop control of its own any more: STOP on the chrome is
+// one toggle, and the only one (ADR 0048, 2026-09-29 amendment).
 // =============================================================================
 
 import { test } from "node:test";
@@ -50,8 +50,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Boots the shell the way test_operator_shell.js does, plus the two things
 // an estop needs and a router does not: a /api/status answer, and a transport
-// that records POSTs and can be made to refuse one.
-const boot = async ({ estop = false, statusHangs = false, statusFails = false, estopPostFails = false } = {}) => {
+// that records POSTs and can be made to refuse one, or to hold one in flight
+// until the test lets it go (env.letEstopPostsGo).
+const boot = async ({ estop = false, statusHangs = false, statusFails = false, estopPostFails = false, estopPostsHeld = false } = {}) => {
   const document = new MiniDocument();
   const indexHtml = readData("index.html");
   const parsedIndex = new MiniDOMParser().parseFromString(indexHtml);
@@ -69,7 +70,9 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
     statusHangs,
     statusFails,
     estopPostFails,
+    heldEstopPosts: [],
   };
+  env.letEstopPostsGo = () => env.heldEstopPosts.splice(0).forEach((go) => go());
 
   const windowListeners = new Map();
   const windowMock = {
@@ -136,6 +139,7 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
       },
       estopPostForm: async (path) => {
         env.posts.push({ path, via: "estopPostForm" });
+        if (estopPostsHeld) await new Promise((go) => env.heldEstopPosts.push(go));
         if (env.estopPostFails) throw new Error("no route to device");
         if (path === "/api/estop") env.status = { ...env.status, estop: true };
         if (path === "/api/estop/clear") env.status = { ...env.status, estop: false };
@@ -195,9 +199,11 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
   context.globalThis = context;
 
   env.streamsOpened = [];
+  env.streams = [];
   context.EventSource = class {
     constructor(url) {
       env.streamsOpened.push(url);
+      env.streams.push(this);
       this.url = url;
     }
     addEventListener() {}
@@ -230,6 +236,12 @@ const boot = async ({ estop = false, statusHangs = false, statusFails = false, e
   };
   env.estopFeedbackText = () => document.getElementById("shell-estop-feedback")?.textContent;
   env.press = () => env.estopButton().fire("click", { type: "click" });
+  env.estopLit = () => {
+    const button = env.estopButton();
+    return button.classList.contains("is-latched") && button.getAttribute("aria-pressed") === "true";
+  };
+  // The stream drops, the way status_stream.js hears it from the browser.
+  env.dropStream = () => env.streams.at(-1).onerror();
 
   await sleep(160);
   return env;
@@ -356,6 +368,85 @@ test("a second press goes out rather than being swallowed while the first is in 
   );
 });
 
+// STOP is one toggle (ADR 0048, 2026-09-29 amendment): only a latch the droid
+// is HEARD reporting makes a press a release. Anything else -- clear, Waiting
+// before the first frame, Waiting after the link dropped -- makes it a stop,
+// because a droid the page cannot hear must never be released.
+test("a press on a droid the page cannot hear is a stop, never a release", async () => {
+  const neverHeard = await boot({ statusHangs: true });
+  assert.ok(neverHeard.estopWaits(), "nothing has arrived yet");
+  neverHeard.press();
+  await sleep(60);
+  assert.deepEqual(neverHeard.posts.map((post) => post.path), ["/api/estop"], "before the first frame, a press stops");
+
+  const lost = await boot({ estop: true });
+  assert.equal(lost.estopStateText(), "Estop: latched");
+  lost.dropStream();
+  assert.ok(lost.estopWaits(), "the link dropped, so the latch is not known any more");
+  lost.press();
+  await sleep(60);
+  assert.deepEqual(
+    lost.posts.map((post) => post.path),
+    ["/api/estop"],
+    "the last frame said latched, but a press on a droid nobody hears is a stop",
+  );
+});
+
+test("a press on a heard latch releases it, off the request queue", async () => {
+  const env = await boot({ estop: true });
+  env.press();
+  await sleep(60);
+
+  assert.deepEqual(
+    env.posts,
+    [{ path: "/api/estop/clear", via: "estopPostForm" }],
+    "one release, carried by the estop path that skips the request slot and is never retried",
+  );
+  assert.equal(env.estopStateText(), "Estop: clear", "and the control reports what the droid now says");
+});
+
+test("STOP is lit by what the droid reports, never by the press", async () => {
+  const env = await boot({ estop: false, estopPostFails: true });
+  assert.equal(env.estopLit(), false, "a clear droid leaves it unlit");
+
+  env.press();
+  await sleep(60);
+  assert.equal(env.estopLit(), false, "a stop that never reached the droid lights nothing");
+
+  // A latch made somewhere else -- the Console, RC, a fault -- arriving on
+  // the stream.
+  env.window.PAStatusStream.seed(statusFrame({ estop: true }));
+  assert.equal(env.estopLit(), true, "a latch the droid reports lights it, whoever set it");
+
+  env.window.PAStatusStream.seed(statusFrame({ estop: false }));
+  assert.equal(env.estopLit(), false, "and a clear it reports puts it out");
+});
+
+test("a double press cannot turn a stop into a release, or put a stop behind a release", async () => {
+  const stopping = await boot({ estop: false, estopPostsHeld: true });
+  stopping.press();
+  // The stream says latched while the first stop is still in flight: the
+  // second half of a nervous double press must not release it.
+  stopping.window.PAStatusStream.seed(statusFrame({ estop: true }));
+  stopping.press();
+  stopping.letEstopPostsGo();
+  await sleep(60);
+  stopping.letEstopPostsGo();
+  await sleep(60);
+  assert.deepEqual(stopping.posts.map((post) => post.path), ["/api/estop", "/api/estop"]);
+
+  const releasing = await boot({ estop: true, estopPostsHeld: true });
+  releasing.press();
+  releasing.press();
+  releasing.letEstopPostsGo();
+  await sleep(60);
+  assert.deepEqual(
+    releasing.posts.map((post) => post.path),
+    ["/api/estop/clear"],
+    "a press while a release is in flight sends nothing",
+  );
+});
+
 test("the session reads status once at boot, and hands it to the stream so nobody reads it twice", async () => {
   const env = await boot({ estop: true });
 
@@ -430,66 +521,24 @@ const loadStatusStream = () => {
   return context.window.PAStatusStream;
 };
 
-test("the Dashboard's Clear is live when the session's status already says latched", async () => {
-  // The Operator Shell does one /api/status read at boot and hands it to the
-  // stream (ADR 0048). A droid that is already stopped when the operator opens
-  // the Dashboard is that read's answer.
-  const stream = loadStatusStream();
-  stream.seed(statusFrame({ estop: true }));
-
-  const calls = [];
-  const env = loadPageModule("app.js", {
-    overrides: { PAApi: apiFor(calls, statusFrame({ estop: true })), PAStatusStream: stream },
-  });
-  await env.settle();
-
-  assert.equal(
-    env.element("estop-clear").disabled,
-    false,
-    "the droid is latched and this is one of the two screens that can release it",
-  );
-
-  // And nothing was going to repair it later: the Dashboard reads no status of
-  // its own, and the droid pushes one only when something changes -- which a
-  // stopped droid nobody is touching never does.
-  assert.deepEqual(
-    calls.filter((call) => call.path === "/api/status"),
-    [],
-    "the seeded frame is the only status this session gets until something moves",
-  );
-});
-
-test("the Dashboard keeps the release, and its button is dead while there is no latch to release", async () => {
-  const calls = [];
-  const status = statusFrame();
-  const env = loadPageModule("app.js", { overrides: { PAApi: apiFor(calls, status) } });
-  const button = env.element("estop-clear");
-
-  assert.throws(
-    () => env.emitOn("estop-toggle", "click"),
-    /registered no "click" listener/,
-    "the Dashboard's own latch-or-release toggle is gone; latching is the shell's",
-  );
-
-  assert.equal(button.disabled, true, "there is nothing to release yet");
-  env.emitOn("estop-clear", "click");
-  await env.settle();
-  assert.deepEqual(calls, [], "and pressing it asks the droid for nothing");
-
-  // The droid says it is latched, in the answer to the session's status read.
-  status.estop = true;
-  await env.window.PALiveReading.read();
-  await env.settle();
-  assert.equal(button.disabled, false, "now there is something to release");
-
-  calls.length = 0;
-  env.emitOn("estop-clear", "click");
-  await env.settle();
-  assert.deepEqual(
-    calls.filter((call) => call.path.startsWith("/api/estop")),
-    [{ path: "/api/estop/clear", via: "estopPostForm" }],
-    "one release, carried off the request queue, and never a latch",
-  );
+test("Dashboard and Foot Drive carry no estop control of their own", async () => {
+  // The two page-level releases went when STOP became the one toggle. Asked
+  // through the page's own listeners, so an element the harness would hand
+  // out for any id cannot answer for a control that is gone.
+  for (const [file, ids] of [["app.js", ["estop-clear", "estop-toggle"]], ["drive.js", ["clear-estop-button", "estop-button"]]]) {
+    const calls = [];
+    const env = loadPageModule(file, { overrides: { PAApi: apiFor(calls, statusFrame({ estop: true })) } });
+    await env.window.PALiveReading.read();
+    await env.settle();
+    for (const id of ids) {
+      assert.throws(() => env.emitOn(id, "click"), /registered no "click" listener/, `${file}: #${id} is not wired`);
+    }
+    assert.deepEqual(
+      calls.filter((call) => call.path.startsWith("/api/estop")),
+      [],
+      `${file}: a latched droid is not released from the page`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -519,34 +568,6 @@ test("the chrome reads a latch only from a whole frame, and only from `true`", a
   for (const { frame, says } of LATCH_FRAMES) {
     env.window.PAStatusStream.seed(frame);
     assert.equal(env.estopStateText(), says, `${JSON.stringify(frame)} must read "${says}"`);
-  }
-});
-
-test("Foot Drive and the Dashboard follow the Live Reading, not the field", async () => {
-  // The frame the droid last sent says LATCHED, and then the droid stops
-  // answering. A reader deciding from the field would keep offering Clear; the
-  // Live Reading says nobody knows the estop any more, so neither may.
-  const latched = statusFrame({ estop: true });
-  for (const [file, button] of [["app.js", "estop-clear"], ["drive.js", "clear-estop-button"]]) {
-    let answering = true;
-    const env = loadPageModule(file, {
-      respond: (path) => {
-        if (path === "/api/status" && !answering) throw new Error("no response from the droid");
-        return { data: path === "/api/status" ? latched : {} };
-      },
-    });
-    await env.window.PALiveReading.read();
-    await env.settle();
-    assert.equal(env.element(button).disabled, false, `${file}: a heard latch offers its release`);
-
-    answering = false;
-    env.intervals.forEach((timer) => timer.fn());
-    await env.settle();
-    assert.equal(
-      env.element(button).disabled,
-      true,
-      `${file}: once contact is lost the latch is not known, whatever the last frame said`,
-    );
   }
 });
 
@@ -581,26 +602,6 @@ test("the sleep overlay does not paint over the one control it says stays active
     estop > overlay,
     `the estop (${estop}) must stack above the sleep overlay (${overlay}) -- the overlay is a full-viewport`
       + " scrim that takes pointer events, and its own panel says drive and safety controls remain active",
-  );
-});
-
-test("Drive keeps the release, sends it off the request queue, and no longer latches", async () => {
-  const calls = [];
-  const env = loadPageModule("drive.js", { overrides: { PAApi: apiFor(calls, statusFrame({ estop: true })) } });
-
-  assert.throws(
-    () => env.emitOn("estop-button", "click"),
-    /registered no "click" listener/,
-    "the Drive surface no longer carries a latch of its own",
-  );
-
-  calls.length = 0;
-  env.emitOn("clear-estop-button", "click");
-  await env.settle();
-  assert.deepEqual(
-    calls,
-    [{ path: "/api/estop/clear", via: "estopPostForm" }],
-    "the release is still here, and still skips the request slot",
   );
 });
 
