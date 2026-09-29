@@ -62,8 +62,9 @@ backtraces. Endpoints: see [api.md](api.md) (System and OTA).
   `git checkout` that commit and rebuild.
 
 If you cannot run GDB at all, `/api/profiler` (profiler build) reports
-`lastFail.bt` (raw PCs) which you can decode statically with
-`xtensa-esp32-elf-addr2line -e <firmware.elf> <pc...>`.
+`lastFail.bt` (raw PCs), which you can decode statically. See
+[Decoding a `lastFail` backtrace](#decoding-a-lastfail-backtrace): the PCs need
+their top two bits replaced before `addr2line` will resolve them.
 
 If `/api/coredump/status` returns `{"present":false}` after a crash: either the
 crash predates the coredump partition (added 2026-06-19, issue #8), or the reset
@@ -84,7 +85,9 @@ class on this board is **internal-heap exhaustion** → failed allocation →
 ```bash
 curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest8bit|sseClients|tcpAcceptRejectHeap|tcpAcceptRejectRate|resetReason)":[^,}]*'
 ```
-- `heapMin` is the all-time low-water. A floor below ~10-20 KB is unsafe.
+- `heapMin` is the low-water mark since boot on a shipping build. A floor below
+  ~10-20 KB is unsafe. **On a profiler build it is not:** see
+  [Deep read](#deep-read-profiler-build).
 - `heapLargest8bit` is the number that matters: the largest allocatable DRAM
   block. Healthy rest is ~20 KB on a fresh boot and ~12-14 KB after any heavy
   connection churn (a bounded one-time warm-up, not a leak). The admission
@@ -189,20 +192,113 @@ session](#console-interactive-session) below and
 means unseating the controller. The replayable bench row for this case is
 `@row 225 survival-path` in `tools/bench_rows/artoo_esp32.txt`.
 
+### Watching memory through a test run: `make bench-auto`
+
+To see what a run of tests does to the heap, do not poll `/api/status` with
+`curl` in a loop. **Each `curl` opens and closes a socket**, and that is two
+pressures of its own:
+
+- connection churn is the heap pressure ADR 0023 measured;
+- the admission guard refreshes its cached heap sample on every accept
+  (`src/web/web_admission.cpp:335`).
+
+Measured on artoo `f0c4d037`, 2026-09-29 (#355):
+
+| Probe | `console-sweep.js` | Whole round |
+|---|---|---|
+| `curl` once a second | `heapMin` 540 B, 7 failed allocations | 280 B, 11 failed |
+| one keep-alive connection | `heapMin` 10,552 B, 0 failed | 1,848 B, 2 failed |
+
+`make bench-auto` (`tools/bench_auto.py`, [console-client.md](console-client.md))
+runs a bench session's automated half and polls once a second over **one**
+keep-alive connection. It charges each counter move to the step it happened in
+and flags failed allocations, heap-floor refusals, resets and a Buffer Reading
+below the admission floor. On a profiler build it also records `lastFail` at
+each step's end.
+
+```bash
+make bench-auto BENCH_ROWS=tools/bench_rows/artoo_esp32.txt HTTP_BASE=http://10.0.0.22 IMAGE=artoo
+```
+
+**The 1 Hz samples will not show the dip itself.** On 2026-09-29 no sample went
+below 15,860 B while `heapMin` fell to 1,848. The dips last well under a second.
+Read `failedAllocs` and `heapMin` as counters that moved inside a step, not as a
+series.
+
 ### Deep read (profiler build)
 
-Flash `artoo_esp32_profiler` (CHIRP + `PA_HEAP_PROFILE`; same code as
-`artoo_esp32_chirp` plus instrumentation). `GET /api/profiler` adds: per-task stack
-high-water marks, a failed-allocation **counter + `lastFail`** (size, caps, and a
-backtrace of raw PCs — decode with `xtensa-esp32-elf-addr2line -e <firmware.elf>
-<pc...>`), mode-scoped low-water snapshots (`boot`, `rc_linked`, `audio_play`),
-and largest-block/frag. Watch over **minutes**, not one snapshot — `heapMin`/
-`failedAllocs` evolve.
+Flash `artoo_esp32_profiler`: the product image plus `PA_HEAP_PROFILE=1`, logging
+at Debug (`PA_LOG_LEVEL=4`). Its `PA_AUDIO_DRIVER=AUDIO_CHIRP` names only the
+factory-default sound module (ADR 0042), so a board that already has a sound
+member keeps it. `GET /api/profiler` adds:
+- per-task stack high-water marks
+- a failed-allocation **counter + `lastFail`**: size, caps, and a backtrace of raw
+  PCs; see [below](#decoding-a-lastfail-backtrace)
+- mode-scoped low-water snapshots
+- largest block and fragmentation
+
+Two things make this build different from the one you ship, so use it to learn
+**what** fails, never **how much**:
+
+- **Debug logging** sends more over the live-log stream, so more WiFi TX, so
+  more heap pressure than a shipping build under the same load.
+- **`heapMin` is a window, not a boot-long mark.** The profiler keeps an IDF
+  local-minimum monitor open all the time
+  (`heap_caps_monitor_local_minimum_free_size_start`, `src/web/api_profiler.cpp`),
+  and while one is open every minimum reading, `/api/status` `heapMin` included,
+  is that window's (`esp_heap_caps.h`). A new window opens on every dome, RC,
+  audio or live-update stream connect and disconnect
+  (`src/tasks/safety.cpp:152,158`, `src/web/api_profiler.cpp:341,347`), so in
+  practice on nearly every page load. `heapMin` can go **up** between two
+  readings.
 
 ```bash
 curl -s http://artoo.local/api/profiler | grep -oE '"(heapFree|heapMin|heapLargest|fragRatio|failedAllocs)":[0-9.]*'
 curl -s http://artoo.local/api/profiler | grep -oE '"lastFail":\{[^]]*\]\}'   # size/caps + bt PCs
 ```
+
+#### Decoding a `lastFail` backtrace
+
+The hook stores raw Xtensa return addresses, whose top two bits hold the call
+window size, e.g. `0x801bbc38`. `addr2line` resolves none of them as they are
+(`?? ??:0`). Replace the top two bits with `0x40000000`, as IDF's own panic
+handler does (`esp_cpu_process_stack_pc`), and use the **profiler build's** ELF,
+from the same commit as the board:
+
+```bash
+~/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line -pfiaC \
+  -e .pio/build/artoo_esp32_profiler/firmware.elf \
+  $(python3 -c "import sys; print(' '.join(hex((int(p,16)&0x3fffffff)|0x40000000) for p in sys.argv[1:]))" \
+    0x800826f0 0x801bbc38 0x801b9a30)
+```
+
+(Command substitution rather than a variable: zsh does not word-split an
+unquoted `$VAR`, so a variable holding the list reaches `addr2line` as a single
+argument.)
+
+The first two frames are always the hook's own (`heap_caps_alloc_failed`,
+`heap_caps_malloc`). The frame after them is the caller that failed. Frames
+inside the WiFi blob name a function but no file (`esf_buf_alloc_dynamic at ??:?`).
+
+#### Failed allocations in a page-load burst: the WiFi driver's packet buffers
+
+Seen on artoo on 2026-09-29 (#355, #381 row 46): `failedAllocs` climbs during
+page loads, yet nothing visibly breaks. Every decoded `lastFail` was the WiFi
+driver's own dynamic packet buffer:
+
+| Direction | Size, caps | Decoded path |
+|---|---|---|
+| RX | 1,696 B, `0x1800` | `esf_buf_alloc_dynamic` ← `esf_buf_alloc` ← `ppTask` |
+| TX | 1,622 B, `0x80c` | `esf_buf_alloc_dynamic` ← `ieee80211_alloc_tx_buf` ← `esp_wifi_internal_tx` ← `low_level_output` (`wlanif.c:92`) |
+
+The driver allocates these per packet from the same internal heap as everything
+else (`CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER`, up to 32 TX and 32 RX), so a burst of
+page-load traffic drains it for a moment. A failed TX buffer hands lwIP a memory
+error and TCP resends, which is why no page fails. The admission guard does not
+see these allocations: they are not web-handler memory.
+
+The artoo configuration that bounds the burst is #436, and its rationale is in
+`platformio.ini` under `[artoo_envelope]`.
 
 > **Heap-hook safety (learned the hard way, #8):** the alloc-failed hook runs IN
 > the failing allocation's context, on that task's stack. It must be

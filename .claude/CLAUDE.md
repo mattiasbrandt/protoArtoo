@@ -149,6 +149,12 @@ none.
   (`make console`), and a scripted mode that drives either Console Adapter and replays the
   `tools/bench_rows/` sheets (`make bench-rows`). Use it instead of ad-hoc pyserial snippets;
   the reference is [docs/console-client.md](../docs/console-client.md).
+- A bench session's automated half is one command, `make bench-auto BENCH_ROWS=<sheet>
+  HTTP_BASE=http://<droid> IMAGE=artoo|shipping` ([tools/bench_auto.py](../tools/bench_auto.py)):
+  the sheet's agent-runnable rows, the console sweep and every Playwright script, with a memory
+  log per step. Never poll `/api/status` in a `curl` loop to watch memory. A socket per poll adds
+  the churn it is measuring ([docs/troubleshooting.md](../docs/troubleshooting.md), "Watching
+  memory through a test run").
 - After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.
 - The HTTP server (`initPsychicWebServer()`, via `startHttpServerOnce()`) must be started from the WiFi event callback path, not directly in `setup()`.

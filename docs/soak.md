@@ -19,6 +19,12 @@ on it, and it will read that image's `/api/status` correctly or refuse to run.
 configuration. The one write it makes at all is `POST /api/c6/reset` on the
 bench image, which is the whole point of the driver that makes it.
 
+**A soak is not a memory log of a test run.** To see what the bench's own tests
+do to the heap step by step, use `make bench-auto` (`tools/bench_auto.py`,
+[console-client.md](console-client.md)). It generates no load of its own and
+reads `/api/status` through this tool's image schemas and admission-floor
+resolution.
+
 ---
 
 ## Contents
