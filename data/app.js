@@ -20,8 +20,6 @@
 
   const moodFeedback = document.getElementById("mood-feedback");
 
-  const estopClear = document.getElementById("estop-clear");
-  const estopFeedback = document.getElementById("estop-feedback");
   const sleepToggle = document.getElementById("sleep-toggle");
   const sleepOverlay = document.getElementById("sleep-overlay");
   const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
@@ -69,10 +67,8 @@
   let lastStatus = null;
   let modePending = false;
   let moodPending = false;
-  let estopClearPending = false;
   let sleepPending = false;
   let isSleeping = false;
-  let isEstopLatched = false;
   let rebootPending = false;
 
   const INDICATOR_TEXT = {
@@ -130,23 +126,6 @@
     }
     el.textContent = message;
     el.className = level ? `${el.dataset.baseClass} ${level}` : el.dataset.baseClass;
-  };
-
-  // Clearing the latch, and only that: stopping the droid is the Operator
-  // Shell's control and is on every surface (ADR 0048). The button is live
-  // only while the latch is actually set, so pressing it always does
-  // something -- the same shape the Drive surface's recovery row already has.
-  const renderEstopClear = () => {
-    if (!estopClear) return;
-    const enabled = isEstopLatched && !estopClearPending;
-    estopClear.disabled = !enabled;
-    estopClear.classList.toggle("is-pending", estopClearPending);
-    estopClear.setAttribute("aria-disabled", enabled ? "false" : "true");
-  };
-
-  const setEstopUi = (latched) => {
-    isEstopLatched = !!latched;
-    renderEstopClear();
   };
 
   const setSleepPending = (pending) => {
@@ -521,10 +500,6 @@
   const applyReading = (reading) => {
     const payload = reading.status;
     lastStatus = payload;
-    // The Clear control is live only on a latch the droid has reported: the
-    // Live Reading's answer, so a lost link or a frame that never mentioned
-    // the estop cannot offer to release one (#346, #359, #419).
-    setEstopUi(reading.estopLatched);
     if (payload === null) {
       WAITING_READOUTS.forEach((node) => setText(node, window.PALiveReading.slotText(window.PALiveReading.WAITING)));
       return;
@@ -563,29 +538,6 @@
       if (lastStatus) setSleepUi(!!lastStatus.sleepMode);
     } finally {
       setSleepPending(false);
-    }
-  };
-
-  const clearEstop = async () => {
-    if (!window.PAApi || estopClearPending || !isEstopLatched) return;
-    estopClearPending = true;
-    renderEstopClear();
-    showFeedback(estopFeedback, "Clearing estop...");
-
-    try {
-      // Clearing skips the request slot and is never retried for the same
-      // reason latching does: an operator command about drive safety must not
-      // wait behind page work, and must not be replayed (CONTEXT.md, Browser
-      // Request Priority).
-      await window.PAApi.estopPostForm("/api/estop/clear", {}, { timeoutMs: 3000 });
-      await refreshStatusOnce();
-      showFeedback(estopFeedback, "Estop clear", "success");
-    } catch (error) {
-      showFeedback(estopFeedback, `Clearing estop failed: ${window.PAApi.messageFor(error)}`, "error");
-      setEstopUi(window.PALiveReading.current().estopLatched);
-    } finally {
-      estopClearPending = false;
-      renderEstopClear();
     }
   };
 
@@ -1481,7 +1433,6 @@
     logPaused?.classList.remove("visible");
   });
 
-  estopClear?.addEventListener("click", clearEstop);
   sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
   sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
   topbarReboot?.addEventListener("click", rebootController);
@@ -1533,12 +1484,10 @@
   // The state to paint before the droid has said anything. It has to be
   // written BEFORE the subscribe below: the Live Reading hands a new
   // subscriber the reading it already holds, synchronously, and the Operator
-  // Shell seeds that from its own boot read (ADR 0048). Running these two after
-  // the subscription overwrote a seeded LATCHED with "clear", which disabled
-  // Clear on a droid that was stopped -- and nothing repaired it until the
-  // droid emitted a status, which a quiet latched droid never does. The
-  // shell's own copy sends the operator here to clear it.
-  setEstopUi(false);
+  // Shell seeds that from its own boot read (ADR 0048). Run after the
+  // subscription, it would overwrite a seeded frame -- which once left the
+  // Dashboard disabling its estop release on a latched droid until the droid
+  // emitted a status, which a quiet latched droid never does (#359).
   setSleepUi(false);
 
   startPageLoad();
