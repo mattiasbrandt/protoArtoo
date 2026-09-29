@@ -710,18 +710,23 @@ const BOARD_LABELS = {
   };
 
   // A Component Picker pick (data/component_picker.js). Picking is applying:
-  // the toggle behind the family is set, and the save goes now, carrying any
+  // the toggles behind the family are set - one for most families, every RC
+  // channel for the radio's Not fitted - and the save goes now, carrying any
   // member field with it, through the same save every toggle on this page uses.
-  const applyComponentPick = ({ toggleId = "", enabled = true, params = {} } = {}) => {
-    const key = Object.keys(featureToggles).find((name) => featureToggles[name].input?.id === toggleId);
-    if (key) {
+  const applyComponentPick = ({ toggleIds = [], enabled = true, params = {} } = {}) => {
+    const keys = Object.keys(featureToggles).filter((name) => toggleIds.includes(featureToggles[name].input?.id));
+    keys.forEach((key) => {
       featureToggles[key].input.checked = enabled;
       updateToggleStatus(key);
-      updateEnabledSummary();
-    }
+    });
+    if (keys.length > 0) updateEnabledSummary();
     Object.assign(pendingPickParams, params);
     featureEditGeneration += 1;
-    if (Object.hasOwn(params, "rcInputMode")) rcChangeGeneration += 1;
+    // The receiver type and the channel ticks are the restart-required RC
+    // answer; a pick that changes either is an RC change.
+    if (Object.hasOwn(params, "rcInputMode") || keys.some((key) => rcToggleKeys().has(key))) {
+      rcChangeGeneration += 1;
+    }
     setSavePending(true);
     clearTimeout(saveTimeout);
     saveTimeout = null;

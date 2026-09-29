@@ -23,11 +23,15 @@
 //   - a Body Controller this image was not built for says how to get it - an
 //     upload of its own build, with the route to Firmware - where it used to
 //     sit greyed with nothing to do about it (operator, 2026-09-19 on #371).
+//   - the Radio Controller's Not fitted is one answer: no receiver and every
+//     RC channel off, and no later save from this page turns a channel back on
+//     from a tick it still held; a droid holding it reads Not fitted in both
+//     homes (CONTEXT.md "Radio Controller", operator 2026-09-29 on #369).
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { ready } from "./helpers/configuration_surface.js";
+import { ready, configured } from "./helpers/configuration_surface.js";
 
 test("a roadmap card is not a control, and pressing it reaches the droid never", async () => {
   const env = await ready();
@@ -105,4 +109,29 @@ test("a Body Controller this image was not built for carries the route to its ow
     assert.equal(route(plateOf(other))?.getAttribute("href"), "#firmware", `${board}: the other board says where to upload`);
     assert.equal(route(plateOf(running)), null, `${board}: the board it runs on has nothing to switch to`);
   }
+});
+
+test("the Radio Controller's Not fitted turns every channel off, and no later save turns one back on", async () => {
+  const env = await ready();
+  const channels = [1, 2, 3, 4, 5, 6].map((n) => `enableRcCh${n}`);
+  env.press(env.plate("radio_controller", "not-fitted")).fire("click", {});
+  assert.equal(env.posts.length, 1, "the pick was sent without waiting");
+  assert.equal(env.posts[0].get("rcInputMode"), "not_fitted");
+  channels.forEach((field) => assert.equal(env.posts[0].get(field), "false", `${field} goes off with it`));
+  await env.settle();
+
+  // Every save sends every tick this page holds: one it still held on would
+  // switch a channel back on under a droid with no radio.
+  env.press(env.plate("dome_controller", "not-fitted")).fire("click", {});
+  await env.settle();
+  channels.forEach((field) => assert.equal(env.posts.at(-1).get(field), "false", `${field} stays off`));
+});
+
+test("a droid with no radio fitted reads Not fitted in both homes", async () => {
+  const config = configured();
+  config.rc = { inputMode: "not_fitted", sbus: { recvCh2: false } };
+  const env = await ready({ config });
+  assert.ok(env.plate("radio_controller", "not-fitted").classList.contains("is-chosen"));
+  assert.equal(env.plate("radio_controller", "hotrc_ds650").classList.contains("is-chosen"), false);
+  assert.equal(env.railAnswer("rc"), "Not fitted");
 });

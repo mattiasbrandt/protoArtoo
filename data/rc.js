@@ -355,6 +355,8 @@
     // An ELRS receiver the controller reads nothing from yet (#369): no
     // channel arrives, so there is none to map.
     elrs: [],
+    // No Radio Controller fitted: nothing arrives at all.
+    not_fitted: [],
   };
 
   const channelKeyOf = (source, channel) => `${source}:${Number(channel)}`;
@@ -527,6 +529,7 @@
     single_sbus: "Single SBUS",
     dual_sbus: "Dual SBUS",
     elrs: "ELRS, not read yet",
+    not_fitted: "Not fitted",
   };
 
   const modeLabel = (mode) => MODE_LABEL[mode] || mode;
@@ -1231,14 +1234,18 @@
   // only on Configuration; a family with nothing picked says where to pick it.
   // Until the droid has answered both the lineup and the config, a card shows
   // the waiting dots: a null then means "not known yet", never "none picked",
-  // and saying the second would be a false state for one load cycle.
+  // and saying the second would be a false state for one load cycle. A droid
+  // with no radio fitted has answered, and is not "not picked yet" either.
   const paintProductCards = () => {
     const picker = window.ComponentPicker;
     if (!picker) return;
+    const notFitted = picker.answered() && picker.isRadioNotFitted();
     const show = (host, part, missing) => {
       if (!host) return;
       if (!picker.answered()) {
         host.innerHTML = '<p class="hint waiting"></p>';
+      } else if (notFitted) {
+        host.innerHTML = '<p class="hint">Not fitted. Change it in <a class="setup-link" href="#configuration">Configuration</a>.</p>';
       } else if (part) {
         host.replaceChildren(picker.shownCard(part));
       } else {

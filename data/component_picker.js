@@ -80,6 +80,12 @@
     heading: "RC Receiver",
     param: "rcInputMode",
     saved: (config) => config?.rc?.inputMode,
+    // The Radio Controller's Not fitted answer: no radio and no receiver, a
+    // droid driven from the web alone (CONTEXT.md "Radio Controller"). The
+    // droid stores it as a receiver type and, in the same save, clears the
+    // radio and every RC channel (configApply()); this page unticks the
+    // channels too, because a save sends every tick it holds.
+    notFitted: "not_fitted",
     wires: {
       standard_pwm: { short: "PWM", modes: ["standard_pwm"] },
       sbus: { short: "SBUS", modes: ["single_sbus", "dual_sbus"] },
@@ -165,6 +171,25 @@
 
   const toggleFor = (entry) => (entry.toggleId ? document.getElementById(entry.toggleId) : null);
 
+  // The Radio Controller has no Component Toggle: its Not fitted answer is the
+  // receiver type above, with no radio stored beside it. A radio stored while
+  // the receiver still says not fitted is a builder fitting one again - the
+  // radio is picked and its RC Receiver is the next answer - so the radio
+  // wins and Not fitted is not lit.
+  const RADIO_FAMILY = "radio_controller";
+  const radioNotFitted = () =>
+    RC_RECEIVER.saved(config) === RC_RECEIVER.notFitted && !MEMBER_FIELDS[RADIO_FAMILY].saved(config);
+
+  // Whether a family offers the Not fitted card: its toggle going off, or the
+  // radio's own answer.
+  const offersNotFitted = (entry) => Boolean(entry.toggleId) || entry.family === RADIO_FAMILY;
+
+  // The channel ticks the radio's Not fitted answer turns off, by their input
+  // ids: the rows Configuration declared in the block the host names.
+  const channelToggleIds = (entry) => [...(entry.receiverChannels?.querySelectorAll("[data-feature-entry]") || [])]
+    .map((row) => row.querySelector("input")?.id)
+    .filter(Boolean);
+
   // A family is CHOSEN on this page when a pick writes something: its Component
   // Toggle, its Component Member, or both. A family with neither is shown, not
   // asked - the Body Controller is the board this image runs on.
@@ -175,6 +200,7 @@
     if (!config || !isChoosable(entry)) return null;
     const toggle = toggleFor(entry);
     if (toggle && !toggle.checked) return NOT_FITTED;
+    if (entry.family === RADIO_FAMILY && radioNotFitted()) return NOT_FITTED;
     const member = MEMBER_FIELDS[entry.family];
     if (member) return member.saved(config) || null;
     // A toggle and no member: the family has one product this image drives,
@@ -464,7 +490,7 @@
         state,
       };
     });
-    if (entry.toggleId) {
+    if (offersNotFitted(entry)) {
       options.push({
         kind: KIND_NOT_FITTED,
         id: NOT_FITTED,
@@ -518,8 +544,12 @@
     if (settled?.length === 1 && wireOfMode(RC_RECEIVER.saved(config)) !== settled[0]) {
       params[RC_RECEIVER.param] = RC_RECEIVER.wires[settled[0]].modes[0];
     }
+    // The radio's Not fitted is one answer: no receiver, and every channel off.
+    const radioDeclined = entry.family === RADIO_FAMILY && optionId === NOT_FITTED;
+    if (radioDeclined) params[RC_RECEIVER.param] = RC_RECEIVER.notFitted;
+    const toggleIds = radioDeclined ? channelToggleIds(entry) : [entry.toggleId].filter(Boolean);
     window.PAConfiguration.applyComponentPick({
-      toggleId: entry.toggleId || "",
+      toggleIds,
       enabled: optionId !== NOT_FITTED,
       params,
     });
@@ -624,6 +654,10 @@
     return partsOf(family).find((part) => part.id === member) || null;
   };
 
+  // Whether the droid holds the Radio Controller's Not fitted answer, which is
+  // an answer rather than "none picked yet" - ask answered() first.
+  const isRadioNotFitted = () => Boolean(config) && radioNotFitted();
+
   // The RC Receiver the controller reads, found by the wire its rcInputMode
   // speaks, or null.
   const chosenReceiverPart = () => {
@@ -655,6 +689,7 @@
     answered,
     chosenPart,
     chosenReceiverPart,
+    isRadioNotFitted,
     shownCard,
   };
 })();

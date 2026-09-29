@@ -384,7 +384,7 @@
       applies: "restart-required",
       word: "receiver type",
       path: "rc.inputMode",
-      values: { standard_pwm: "PWM", single_sbus: "one SBUS", dual_sbus: "two SBUS", elrs: "ELRS" },
+      values: { standard_pwm: "PWM", single_sbus: "one SBUS", dual_sbus: "two SBUS", elrs: "ELRS", not_fitted: "not fitted" },
     },
     sbusTimeoutMs: { applies: "immediate", word: "signal-lost timeout", unit: MS, path: "rc.sbusTimeoutMs" },
     rcMember: { applies: "immediate", word: "radio", path: "rc.member", refused: NOT_LISTED },

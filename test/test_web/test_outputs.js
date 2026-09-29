@@ -183,7 +183,7 @@ test("a refused Setting reaches the page in the builder's words, never its wire 
   const refusals = [
     { field: "speedLimitMax", reason: "out-of-range", accepts: "0..600", says: "0 to 600" },
     { field: "rc.sbusTimeoutMs", reason: "out-of-range", accepts: "50..5000", says: "50 to 5000 ms" },
-    { field: "rcInputMode", reason: "out-of-range", accepts: "standard_pwm,single_sbus,dual_sbus,elrs",
+    { field: "rcInputMode", reason: "out-of-range", accepts: "standard_pwm,single_sbus,dual_sbus,elrs,not_fitted",
       says: "two SBUS" },
     { field: "ledc:4.throwMs", reason: "out-of-range", accepts: "20..10000", says: "GPIO 5" },
     { field: "speedPresetSlow", reason: "conflict", accepts: null, says: "slow preset" },
