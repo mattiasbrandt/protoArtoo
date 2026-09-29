@@ -53,7 +53,9 @@ beneath it.
 droid view in the frame. The shell carries what the droid is *doing*, never a
 picture of it.
 
-**The estop is on every surface. Clearing the latch is not.** Releasing a latched
+**The estop is on every surface. Clearing the latch is not.** *(Overruled by the
+operator on 2026-09-29: STOP is one toggle in the shell. See the amendment
+below.)* Releasing a latched
 estop stays on Drive and Dashboard, where it is today, because the direction that
 lets a droid move again should stay somewhere an operator went on purpose. The
 asymmetry already exists in the firmware and in **Browser Request Priority**,
@@ -123,7 +125,8 @@ decision preventing.
 deep links and a status strip. Rejected: it answers the ticket's own capability
 question with no, and leaves the estop on two surfaces.
 
-**Both estop directions in the shell.** Symmetric, simplest to explain. Rejected:
+**Both estop directions in the shell.** Symmetric, simplest to explain. Rejected
+here, then chosen by the operator on 2026-09-29 (amendment below):
 it puts the control that lets a latched droid move again one press from every
 screen, including the ones where nobody is watching the feet.
 
@@ -180,3 +183,33 @@ while the shell loads is handled there exactly as before (ADR 0019). The build
 refuses a delegate that includes the kernel (`tools/gzip_fsdata.py`, keyed on
 `window.PAShellDelegate = true`), and `test/test_web/test_page_markup.js` checks
 the same rule from source, so the copies cannot return.
+
+## Amendment (2026-09-29, #359): STOP is one toggle, and clearing rides the shell
+
+The operator overruled *"Clearing the latch is not"* after using it in phase 2 of
+the Closing Ticket (#355):
+
+> *"if that is from a ADR then I overrule that, cause I dont like the result, I
+> want it as a single red buttons as we have, clicking it once should highlight
+> it as active and set the estop to latched. clicking the same again should then
+> remove the highlight and clear the estop"*
+
+**The shell's red STOP is the only estop control, on every surface.** A press on
+a clear droid latches the estop. A press on a latched droid clears it, with a
+plain press: no confirm and no hold. The dedicated clear buttons on Dashboard
+and Foot Drive are removed. This is the option rejected above as *both estop
+directions in the shell*, now chosen.
+
+**The button shows the droid's latch as heard on the stream, never the click.**
+It is highlighted while the droid reports the estop latched, whoever latched it
+(the shell, the **Controller Console**, RC or a fault), and plain once
+the droid reports it clear. The press is decided from that same reading: only a
+heard latched estop makes a press a clear. Every other reading, clear, Waiting or
+Unknown, makes it a stop, so a droid the page cannot hear is never released.
+
+**What does not move.** The **Latching Estop** itself is unchanged: the droid
+stays latched until an operator clears it through `POST /api/estop/clear`, a
+failsafe layer still holds the droid whatever the button does, and a TWDT reset
+still boots latched. Only where the browser offers the clear moves. The
+concern the rejection named, a release one press from screens where nobody is
+watching the feet, is accepted by the operator rather than answered.
