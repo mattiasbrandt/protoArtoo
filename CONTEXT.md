@@ -718,7 +718,7 @@ The board that hosts protoArtoo and coordinates every other part in the body —
 _Avoid_: controller (unqualified, anywhere in operator copy), main controller, brain, board for another controller's hardware
 
 **Radio Controller**:
-The RC gear a builder drives the droid with, and the lineup category naming which one reaches the **Body Controller**. "Radio" is the word a droid builder already brings — the same reason the Flagged Ambiguities entry below rejected "radio module" for the **WiFi Module**.
+The RC gear a builder drives the droid with, and the lineup category naming which one reaches the **Body Controller**. "Radio" is the word a droid builder already brings — the same reason the Flagged Ambiguities entry below rejected "radio module" for the **WiFi Module**. It can be **not fitted**: a droid controlled from the web alone, with no radio chosen and no RC Receiver or channel enabled. That is one answer, not two - one Not fitted card clears the radio and turns off the receiver and every RC channel (operator, 2026-09-29 on #369).
 _Avoid_: controller (unqualified), RC controller (says radio twice), radio module (that names the WiFi Module)
 
 **RC Transmitter**:
@@ -818,7 +818,7 @@ The property that estop, once set, stays set across the condition ending and acr
 _Avoid_: auto-clearing estop, momentary estop, transient stop
 
 **Failsafe Layer**:
-One named cause that can independently hold the droid out of drive. Layers are tracked as a bitmask, not a single state, so several may be active at once and the droid stays out of drive until every one has cleared. Today: receiver hardware failsafe, SBUS timeout, stale web drive command, watchdog-reset boot recovery, and operator estop.
+One named cause that can independently hold the droid out of drive. Layers are tracked as a bitmask, not a single state, so several may be active at once and the droid stays out of drive until every one has cleared. Today: receiver hardware failsafe, SBUS timeout, stale web drive command, watchdog-reset boot recovery, and operator estop. The two radio layers - receiver hardware failsafe and SBUS timeout - apply only while a **Radio Controller** is fitted. With none fitted they stand down, and the feet are held by the stale web drive command and the estop, so a web-only droid can drive (operator, 2026-09-29 on #369).
 _Avoid_: failsafe mode, failsafe state, safety flag
 
 **Watchdog Reset**:
