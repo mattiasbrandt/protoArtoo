@@ -55,7 +55,11 @@ enum class ApplyRefusalReason : uint8_t {
 };
 
 constexpr size_t APPLY_REFUSAL_FIELD_MAX = 32;
-constexpr size_t APPLY_REFUSAL_ACCEPTS_MAX = 48;
+// The longest word list a refusal names, with its terminator. rcInputMode's
+// five receiver words joined with commas are 50 characters (#369), which 48
+// cut short; test_config_settings builds the expected list wider than this, so
+// the next word list that outgrows it fails there rather than being cut.
+constexpr size_t APPLY_REFUSAL_ACCEPTS_MAX = 64;
 
 struct ApplyRefusal {
     ApplyRefusalReason reason = ApplyRefusalReason::None;

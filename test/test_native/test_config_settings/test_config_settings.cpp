@@ -205,7 +205,10 @@ void test_every_setting_refuses_a_value_it_does_not_take_with_field_reason_and_a
     for (size_t i = 0; i < everySettingCount(); ++i) {
         const ConfigSetting& setting = everySettingAt(i);
         char bad[24] = {};
-        char accepts[APPLY_REFUSAL_ACCEPTS_MAX] = {};
+        // Wider than the refusal's own buffer on purpose: built in the same
+        // size, a list that did not fit was cut the same way on both sides
+        // and matched (a fifth receiver word, #369).
+        char accepts[4 * APPLY_REFUSAL_ACCEPTS_MAX] = {};
         switch (setting.rule) {
             case SettingRule::Range:
                 snprintf(bad, sizeof(bad), "%ld", (long)setting.hi + 1);
