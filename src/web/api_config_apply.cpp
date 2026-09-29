@@ -14,6 +14,7 @@
 
 #include "api_helpers.h"
 #include "board_outputs.h"
+#include "component_registry.h"  // COMPONENT_MEMBER_NONE - the radio a Not fitted answer stores
 #include "config.h"
 #include "config_settings.h"  // every Setting's declaration - the scalar half loops over them
 #include "dome_math.h"  // domePulsesInOrder() - the one order rule for the ESC pulse set
@@ -721,6 +722,26 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         appendApplied(&result->applied, "[CFG] %s updated to %s", setting.form,
                       text[0] != '\0' ? text : "(none)");
         result->changed = true;
+    }
+
+    // No Radio Controller fitted is one answer, not three (CONTEXT.md "Radio
+    // Controller", operator 2026-09-29 on #369): storing it also clears the
+    // radio and turns off every RC channel, whatever else the request said, so
+    // the Console's rc.config.mode and a page's Not fitted card leave the droid
+    // in the same state. Only when the request sent the mode: a radio picked
+    // afterwards, before its receiver, is the builder fitting one again.
+    const char* rcModeSent = configParamGet(params, "rcInputMode");
+    if (rcModeSent != nullptr && working->system.rc_input_mode == RC_INPUT_NOT_FITTED) {
+        SystemConfig& system = working->system;
+        system.rc_member = COMPONENT_MEMBER_NONE;
+        bool* const channels[] = {&system.enable_rc_ch1, &system.enable_rc_ch2,
+                                  &system.enable_rc_ch3, &system.enable_rc_ch4,
+                                  &system.enable_rc_ch5, &system.enable_rc_ch6};
+        for (bool* channel : channels) {
+            *channel = false;
+        }
+        appendApplied(&result->applied,
+                      "[CFG] no radio fitted: rcMember cleared, RC channels 1-6 off");
     }
 
     // The three speed presets must differ, judged with the values they will be

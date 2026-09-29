@@ -157,6 +157,35 @@ void test_configApply_rcInputMode_accepts_elrs(void) {
     TEST_ASSERT_EQUAL_UINT8(RC_INPUT_ELRS, snap.system.rc_input_mode);
 }
 
+// No radio fitted is one answer (CONTEXT.md "Radio Controller", #369): the
+// mode clears the radio and every RC channel, even ones the same request sent
+// on, so no door leaves a channel on under it. A radio picked afterwards on its
+// own is the builder fitting one again, and stands.
+void test_configApply_rcInputMode_not_fitted_clears_the_radio_and_every_channel(void) {
+    std::map<std::string, std::string> m = {
+        {"rcInputMode", "not_fitted"}, {"rcMember", "rc_radio"}, {"enableRcCh1", "true"},
+        {"enableRcCh2", "true"},       {"enableRcCh3", "true"},  {"enableRcCh4", "true"},
+        {"enableRcCh5", "true"},       {"enableRcCh6", "true"}};
+    ConfigSnapshot snap = makeDefaultSnap();
+    ConfigApplyResult result;
+    configApply(makeSource(&m), &snap, false, &result);
+    TEST_ASSERT_FALSE(result.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(RC_INPUT_NOT_FITTED, snap.system.rc_input_mode);
+    TEST_ASSERT_EQUAL_UINT8(COMPONENT_MEMBER_NONE, snap.system.rc_member);
+    const bool channels[] = {snap.system.enable_rc_ch1, snap.system.enable_rc_ch2,
+                             snap.system.enable_rc_ch3, snap.system.enable_rc_ch4,
+                             snap.system.enable_rc_ch5, snap.system.enable_rc_ch6};
+    for (bool on : channels) {
+        TEST_ASSERT_FALSE(on);
+    }
+
+    std::map<std::string, std::string> refit = {{"rcMember", "hotrc_ds650"}};
+    ConfigApplyResult refitResult;
+    configApply(makeSource(&refit), &snap, false, &refitResult);
+    TEST_ASSERT_FALSE(refitResult.error.hasError);
+    TEST_ASSERT_EQUAL_UINT8(componentPartById("hotrc_ds650")->value, snap.system.rc_member);
+}
+
 void test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject(void) {
     std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", "not.an.ip"}};
     ConfigSnapshot snap = makeDefaultSnap();
@@ -884,6 +913,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_rcInputMode_enum_reject);
     RUN_TEST(test_configApply_rcMember_takes_a_radio_and_refuses_anything_else);
     RUN_TEST(test_configApply_rcInputMode_accepts_elrs);
+    RUN_TEST(test_configApply_rcInputMode_not_fitted_clears_the_radio_and_every_channel);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
     RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
     RUN_TEST(test_configApply_servoType_named_value_updates);
