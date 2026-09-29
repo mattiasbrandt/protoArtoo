@@ -116,6 +116,26 @@ class WhatEachStepIsChargedWith(unittest.TestCase):
         _, flags = bench_auto.summarize_memory(below, ["a"], ARTOO, FLOOR)
         self.assertEqual([f.kind for f in flags], ["floor"])
 
+    def test_a_counter_missing_from_a_poll_is_an_evidence_flag_not_a_flat_line(self):
+        gap = sample("b")
+        del gap["reading"]["failedAllocs"]
+        samples = [sample("a", failedAllocs=5), gap, sample("b", failedAllocs=8)]
+        rows, flags = bench_auto.summarize_memory(samples, ["a", "b"], ARTOO, FLOOR)
+        self.assertEqual(rows[1].missing, {"failedAllocs": 1})
+        # The hole does not hide the move across it.
+        self.assertEqual(rows[1].advanced, {"failedAllocs": 3})
+        self.assertEqual(sorted(flags_by_step(flags)["b"]), ["evidence", "failedAllocs"])
+
+    def test_a_payload_without_a_field_the_log_reads_cannot_start_a_run(self):
+        whole = dict(soak.FIXTURE_ARTOO_STATUS_BODY)
+        self.assertIsNone(bench_auto.payload_refusal(ARTOO, whole))
+        for field in ARTOO.memory_fields():
+            with self.subTest(field=field):
+                body = dict(whole)
+                body.pop(field)
+                self.assertIn(field, bench_auto.payload_refusal(ARTOO, body))
+        self.assertIn("failedAllocs", bench_auto.payload_refusal(ARTOO, dict(whole, failedAllocs="7")))
+
     def test_a_refusal_at_the_heap_floor_is_flagged(self):
         samples = [sample("a"), sample("b", refusedHeapFloorDiag=1)]
         _, flags = bench_auto.summarize_memory(samples, ["a", "b"], ARTOO, FLOOR)

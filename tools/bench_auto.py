@@ -389,6 +389,9 @@ class StepMemory:
     advanced: dict = dataclasses.field(default_factory=dict)
     resets: list = dataclasses.field(default_factory=list)
     new_heap_min_low: Optional[int] = None
+    # {payload name: answered polls that did not carry it (or carried it as
+    # something other than an int)}. Any entry is an `evidence` flag.
+    missing: dict = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -421,13 +424,20 @@ def summarize_memory(samples: list[dict], steps: list[str], schema: soak.StatusS
     number judged is the lowest Buffer Reading (schema.heap_field), against
     the ordinary admission floor this build refuses page loads at - the same
     rule as tools/soak.py's heap verdict.
+
+    Every field in schema.memory_fields() feeds a figure or a flag, so an
+    answered poll that lacks one is an `evidence` flag, never a clean row:
+    a counter nobody read cannot be said to have stayed flat. Each field is
+    compared with the last poll that DID carry it, so a hole in one sample
+    does not hide a move across it.
     """
     counters = [field for field in (schema.failed_allocs_field, schema.refused_heap_floor_field,
                                     schema.refused_heap_floor_diag_field) if field]
     restart = schema.restart_field
     rows = {name: StepMemory(name) for name in steps}
     flags: list[Flag] = []
-    previous: Optional[dict] = None
+    fields = schema.memory_fields()
+    last_seen: dict = {}
     boot_low: Optional[int] = None
 
     for sample in samples:
@@ -439,18 +449,19 @@ def summarize_memory(samples: list[dict], steps: list[str], schema: soak.StatusS
             row.unanswered += 1
             continue
         reading = sample["reading"]
-        reset = (previous is not None and restart in previous and restart in reading
-                 and reading[restart] < previous[restart])
+        for field in fields:
+            if field not in reading:
+                row.missing[field] = row.missing.get(field, 0) + 1
+        reset = restart in reading and restart in last_seen and reading[restart] < last_seen[restart]
         if reset:
-            row.resets.append({"from": previous[restart], "to": reading[restart],
+            row.resets.append({"from": last_seen[restart], "to": reading[restart],
                                "resetReason": sample.get("resetReason")})
             boot_low = None
-        if previous is not None:
-            for field in counters:
-                if field in reading and field in previous:
-                    moved = reading[field] if reset else max(0, reading[field] - previous[field])
-                    if moved:
-                        row.advanced[field] = row.advanced.get(field, 0) + moved
+        for field in counters:
+            if field in reading and field in last_seen:
+                moved = reading[field] if reset else max(0, reading[field] - last_seen[field])
+                if moved:
+                    row.advanced[field] = row.advanced.get(field, 0) + moved
         heap_min = reading.get(schema.heap_min_field) if schema.heap_min_field else None
         if heap_min is not None:
             if boot_low is None:
@@ -466,7 +477,7 @@ def summarize_memory(samples: list[dict], steps: list[str], schema: soak.StatusS
         row.min_buffer_reading = _minimum(row.min_buffer_reading, reading.get(schema.heap_field))
         if schema.failed_allocs_field and schema.failed_allocs_field in reading:
             row.failed_allocs_end = reading[schema.failed_allocs_field]
-        previous = reading
+        last_seen.update(reading)
 
     labels = {
         schema.failed_allocs_field: "failed allocations",
@@ -483,6 +494,13 @@ def summarize_memory(samples: list[dict], steps: list[str], schema: soak.StatusS
             flags.append(Flag(name, "reset", f"{restart} went backwards ({reset['from']} -> "
                                               f"{reset['to']}): the controller restarted, reset reason "
                                               f"{reset['resetReason'] or 'UNKNOWN'}"))
+        if row.missing:
+            answered = row.polls - row.unanswered
+            gaps = ", ".join(f"{field} missing from {count} of {answered}"
+                             for field, count in row.missing.items())
+            flags.append(Flag(name, "evidence", (
+                f"answered polls lacked fields this image publishes ({gaps}); this step's "
+                "figures and flags rest on incomplete readings")))
         if row.unanswered:
             flags.append(Flag(name, "unanswered", f"{row.unanswered} of {row.polls} polls of "
                                                    f"{soak.DEFAULT_STATUS_PATH} went unanswered"))
@@ -792,6 +810,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def payload_refusal(schema: soak.StatusSchema, body: dict) -> Optional[str]:
+    """Why this /api/status payload cannot start a run, or None. Two checks:
+    it is the declared image (soak's structural markers), and it carries every
+    field the memory log reads, as an int. The second is not implied by the
+    first - failedAllocs, heapLargestBlock and heapMin are not structural
+    markers - and a run that starts without one would report it flat."""
+    mismatches = schema.structural_mismatches(body)
+    if mismatches:
+        likely = soak.identify_schema(body)
+        return (f"the payload is not the declared {schema.name} image"
+                f"{f' (it reads as {likely.name})' if likely else ''}: " + "; ".join(mismatches))
+    gaps: list[str] = []
+    schema.memory_reading(body, gaps)
+    if gaps:
+        return f"the {schema.name} payload lacks what the memory log reads: " + "; ".join(gaps)
+    return None
+
+
 def refuse(message: str) -> int:
     print(f"REFUSED: {message}", file=sys.stderr)
     return EXIT_REFUSED
@@ -841,11 +877,9 @@ def main(argv: list[str]) -> int:
         return refuse(f"GET {status_base}/api/status failed: {fault}")
     if code != 200 or body is None:
         return refuse(f"GET {status_base}/api/status answered {code}: {text[:80]!r}")
-    mismatches = schema.structural_mismatches(body)
-    if mismatches:
-        likely = soak.identify_schema(body)
-        return refuse(f"the payload is not the declared {args.image} image"
-                      f"{f' (it reads as {likely.name})' if likely else ''}: " + "; ".join(mismatches))
+    refusal = payload_refusal(schema, body)
+    if refusal:
+        return refuse(refusal)
 
     steps = droid_steps(declarations)
     fixtures = fixture_declarations(declarations)
