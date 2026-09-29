@@ -61,12 +61,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Flashable, user-relevant envs only: one artoo-esp32 image per sound
-        # backend, and the FireBeetle 2 image (its default DY-SV5W backend).
-        # Adding a future backend or board is one entry here — do not
+        # Flashable, user-relevant envs only: one image per board. Every image
+        # carries every supported sound driver and the builder picks the
+        # fitted module on Configuration, so there is no per-sound-module
+        # image. Adding a future board is one entry here — do not
         # hand-roll more jobs. Excluded on purpose: artoo_esp32_prod
-        # (self-build-only), *_check (compile-only), *_profiler* (dev
-        # tooling), *_bench (not the firmware), *_ota
+        # (self-build-only), *_profiler* (dev tooling), *_closeconn (a
+        # retained comparison arm), *_bench (not the firmware), *_ota
         # (identical firmware.bin to its non-OTA counterpart, just a
         # different upload_protocol).
         #
@@ -76,13 +77,7 @@ jobs:
         # version) in ~/.platformio-p4. `pool` names the cache, `core_dir`
         # the directory under $HOME.
         include:
-          - env: artoo_esp32_chirp
-            pool: classic
-            core_dir: .platformio
-          - env: artoo_esp32_mp3trigger
-            pool: classic
-            core_dir: .platformio
-          - env: artoo_esp32_dysv5w
+          - env: artoo_esp32
             pool: classic
             core_dir: .platformio
           - env: firebeetle2
