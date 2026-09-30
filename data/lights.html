@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/seq_protocol_check.js,/outputs.js,/lights.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/seq_protocol_check.js,/outputs.js,/lights.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,7 +13,9 @@
 
     <!-- What lights this droid has, how each one is lit, and what it can be
          told to do (CONTEXT.md "Lights", ADR 0067). Every Part whose Part Kind
-         is a light, grouped by where it sits.
+         is a light and is on this droid, grouped by where it sits: a body light
+         once it is on an Output, a dome light while the Dome Controller is
+         fitted (operator, 2026-09-29 on #411).
 
          The lists are written by data/lights.js from data/droid_parts.js, so
          no light is named in this file: a row added to docs/droid-parts.yaml
@@ -41,9 +43,10 @@
       <div id="lights-dome"></div>
     </div>
 
-    <!-- The body's lights. Each is lit by the wire it is on and takes that
-         wire's Light Type; one on no lit wire reads NOT LIT and offers the way
-         to Wiring. The note is drawn only when a lit wire is lighting nothing
+    <!-- The body's lights on an Output. Each is lit by the wire it is on and
+         takes that wire's Light Type; one whose wire carries no Light Type yet
+         reads NOT LIT and offers the way to Wiring. With no light on the droid
+         at all, one line here routes to Wiring. The note is drawn only when a lit wire is lighting nothing
          declared, which is a state worth saying rather than an explanation. -->
     <div class="card">
       <div class="sect"><h2>Body</h2><span class="sub waiting" id="lights-body-count"></span></div>

@@ -9442,15 +9442,6 @@ button.droid-build-card:disabled {
   letter-spacing: 0.08em;
 }
 
-/* A Part the builder has not fitted still shows, and says so. Dimmed rather
-   than colored: not being fitted is a fact about the droid, not a fault. */
-.light-fitted {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: var(--fs-hint);
-  font-style: italic;
-}
-
 /* The dome's two pickers, stacked (operator, 2026-09-20: the drop-downs "look
    way too big"). Nine modes are too many for one segmented bar, so they are
    pills that wrap; the colors are the swatches themselves rather than their
