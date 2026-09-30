@@ -29,6 +29,7 @@
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
 #include "failsafe_gate.h"
+#include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
 #include "robot_state.h"
 #include "servo_output_row.h"
 #include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
@@ -170,7 +171,7 @@ void setUp() {
     g_test_commanded_web_control = false;
     g_test_web_control_calls = 0;
     g_test_status_broadcast_count = 0;
-    g_test_marcduino_calls = 0;
+    marcduinoTestHooksReset();  // zeroes g_test_marcduino_calls with the rest
     g_test_applied_mood = 0;
     g_test_restart_requests = 0;
     g_test_speed_preset_persist_ok = true;
@@ -711,6 +712,95 @@ void test_manual_command_intercepts_mood_commands() {
     TEST_ASSERT_NOT_EQUAL(0, g_test_applied_mood);
     // Intercepted before the Marcduino router, which would discard it.
     TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+}
+
+// -----------------------------------------------------------------------------
+// Command Ownership (ADR 0055, #449): the body answers the lines naming things
+// it models and forwards the rest. Before it, every ':' and '#' line reached
+// the body parser and was answered success whether anything happened or not.
+// -----------------------------------------------------------------------------
+
+// The 23 commands the dome fork implements and the body used to swallow: each
+// is handed to the dome verbatim, and the body is never given it.
+void test_manual_command_forwards_lines_the_body_does_not_own_verbatim() {
+    const char* const kSwallowedBefore[] = {
+        ":SE00", ":SE12", ":SE50", ":SE51", ":SE52", ":SE53", ":SE54", ":SE55",
+        ":SE56", ":SE57", ":SE58", ":OP06", ":OP07", ":OP08", ":OP09", ":OP10",
+        ":OP11", ":OP12", ":CL06", ":CL07", ":CL08", ":CL09", ":CL10",
+    };
+    for (const char* line : kSwallowedBefore) {
+        marcduinoTestHooksReset();
+        assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(line));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(line, g_test_dome_last_tx, line);
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_marcduino_calls, line);
+    }
+
+    // A '#' line the body does not act on goes the same way; the three it
+    // does act on stay (test_manual_command_routes_marcduino_by_prefix...).
+    marcduinoTestHooksReset();
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand("#MD01"));
+    TEST_ASSERT_EQUAL_STRING("#MD01", g_test_dome_last_tx);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+}
+
+// :OF is recognised: a number the body maps as it maps :OP/:CL is the body's,
+// every other number is the dome's.
+void test_manual_command_flutter_is_the_body_s_on_its_outputs_and_the_dome_s_otherwise() {
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand(":OF01"));
+    TEST_ASSERT_EQUAL_STRING(":OF01", g_test_marcduino_last_line);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+
+    marcduinoTestHooksReset();
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(":OF14"));
+    TEST_ASSERT_EQUAL_STRING(":OF14", g_test_dome_last_tx);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+}
+
+// A full-droid sequence typed as text runs its body half AND reaches the dome,
+// as the RC droid_seq_* tokens always have; :SE16 included (operator decision).
+void test_manual_command_full_droid_sequence_runs_body_half_and_forwards() {
+    const char* const kFullDroid[] = {":SE01", ":SE05", ":SE09", ":SE15", ":SE16"};
+    for (const char* line : kFullDroid) {
+        marcduinoTestHooksReset();
+        assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(line));
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(line, g_test_marcduino_last_line, line);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(line, g_test_dome_last_tx, line);
+    }
+}
+
+// A line the body owns and refuses is not forwarded - :OP01 is dome panel 1 to
+// the fork, so forwarding a refused body arm would move something else - and
+// it is not answered success.
+void test_manual_command_owned_line_the_body_refuses_is_neither_forwarded_nor_ok() {
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::BlockedByEstop;
+    assertManualCommand(ManualCommandResult::BlockedByEstop, executeManualCommand(":OP01"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+
+    // Nothing drives ARM1 this boot: refused before the body is handed it,
+    // because ServoTask would drop it without a word (#364).
+    marcduinoTestHooksReset();
+    g_test_servo_driven_mask = 0xFE;
+    assertManualCommand(ManualCommandResult::OutputUndriven, executeManualCommand(":CL01"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+}
+
+// A forward that could not be queued is not success - on the routed ':' path
+// and on the raw families that were always forwarded (ADR 0045).
+void test_manual_command_forward_that_was_not_queued_is_not_ok() {
+    g_test_dome_connected = false;
+    assertManualCommand(ManualCommandResult::DomeLinkDown, executeManualCommand(":SE52"));
+    assertManualCommand(ManualCommandResult::DomeLinkDown, executeManualCommand("*ST00"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+
+    marcduinoTestHooksReset();
+    g_test_dome_tx_ok = false;
+    assertManualCommand(ManualCommandResult::DomeQueueFull, executeManualCommand(":OP07"));
+    assertManualCommand(ManualCommandResult::DomeQueueFull, executeManualCommand("@0T1"));
+
+    marcduinoTestHooksReset();
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand("@0T1"));
+    TEST_ASSERT_EQUAL_STRING("@0T1", g_test_dome_last_tx);
 }
 
 void test_manual_command_longer_than_any_keyword_is_unknown_not_truncated() {
@@ -1504,6 +1594,11 @@ int main(int, char**) {
     RUN_TEST(test_manual_command_routes_marcduino_by_prefix_without_case_folding);
     RUN_TEST(test_manual_command_hash_mode_keywords_are_shadowed_by_marcduino_routing);
     RUN_TEST(test_manual_command_intercepts_mood_commands);
+    RUN_TEST(test_manual_command_forwards_lines_the_body_does_not_own_verbatim);
+    RUN_TEST(test_manual_command_flutter_is_the_body_s_on_its_outputs_and_the_dome_s_otherwise);
+    RUN_TEST(test_manual_command_full_droid_sequence_runs_body_half_and_forwards);
+    RUN_TEST(test_manual_command_owned_line_the_body_refuses_is_neither_forwarded_nor_ok);
+    RUN_TEST(test_manual_command_forward_that_was_not_queued_is_not_ok);
     RUN_TEST(test_manual_command_longer_than_any_keyword_is_unknown_not_truncated);
 
     RUN_TEST(test_dome_speed_rejects_out_of_range);

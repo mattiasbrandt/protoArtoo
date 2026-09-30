@@ -35,12 +35,11 @@
 #include "config_cache.h"
 #include "config_store.h"  // saveConfigToNvs()
 #include "dome_link.h"
-#include "dome_rx_parser.h"
 #include "drive_arbiter.h"
 #include "drive_speed_preset.h"
 #include "failsafe_gate.h"
 #include "logging.h"
-#include "mood.h"
+#include "marcduino_router.h"  // routeMarcduinoLine(), marcduinoForwardToDome()
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "sequence_dispatcher.h"
@@ -239,6 +238,31 @@ bool saveCommandedMode() {
 }
 
 
+// A routed Marcduino line's outcome, in this dispatcher's vocabulary. NotRun is
+// a line the body owns but cannot run - an :MV with no value - which is what
+// Unsupported already answers for a command nothing here will execute.
+static ManualCommandResult manualCommandResultFor(MarcduinoRouteOutcome outcome) {
+    switch (outcome) {
+        case MarcduinoRouteOutcome::Applied:
+            return ManualCommandResult::Applied;
+        case MarcduinoRouteOutcome::Forwarded:
+            return ManualCommandResult::Forwarded;
+        case MarcduinoRouteOutcome::DomeLinkDown:
+            return ManualCommandResult::DomeLinkDown;
+        case MarcduinoRouteOutcome::DomeQueueFull:
+            return ManualCommandResult::DomeQueueFull;
+        case MarcduinoRouteOutcome::BlockedByEstop:
+            return ManualCommandResult::BlockedByEstop;
+        case MarcduinoRouteOutcome::OutputUndriven:
+            return ManualCommandResult::OutputUndriven;
+        case MarcduinoRouteOutcome::QueueFull:
+            return ManualCommandResult::QueueFull;
+        case MarcduinoRouteOutcome::NotRun:
+            break;
+    }
+    return ManualCommandResult::Unsupported;
+}
+
 ManualCommandResult executeManualCommand(const char* raw) {
     if (raw == nullptr || raw[0] == '\0') {
         return ManualCommandResult::Unsupported;
@@ -270,24 +294,17 @@ ManualCommandResult executeManualCommand(const char* raw) {
         return ManualCommandResult::ShadowedModeKeyword;
     }
 
-    // : and # - body-processed Marcduino: servo sequences, panel cmds, config
+    // : and # - Command Ownership (ADR 0055): the body runs the lines naming
+    // things it models, a Mood included, and forwards the rest to the dome
+    // (include/marcduino_router.h). Prefix no longer decides who answers.
     if (prefix == ':' || prefix == '#') {
-        // Mood commands (:SE10/11/13/14) are not valid body sequences so
-        // parseMarcduinoCommand() would silently discard them. Intercept first.
-        uint8_t moodId = moodIdFromSeCommand(raw);
-        if (moodId != 0) {
-            applyMood(moodId);
-            return ManualCommandResult::Applied;
-        }
-        parseMarcduinoCommand(raw);
-        // Always accept - body handles or discards per routing table
-        return ManualCommandResult::Applied;
+        return manualCommandResultFor(routeMarcduinoLine(raw, MarcduinoMoodPolicy::Apply));
     }
 
-    // * @ % & ! - dome-bound Marcduino: forward to dome TX queue
+    // * @ % & ! - dome-bound Marcduino, forwarded uninterpreted (ADR 0045) and
+    // answered with what the forward did, never plain success.
     if (prefix == '*' || prefix == '@' || prefix == '%' || prefix == '&' || prefix == '!') {
-        domeQueueTx(raw);
-        return ManualCommandResult::Applied;
+        return manualCommandResultFor(marcduinoForwardToDome(raw));
     }
 
     // Keyword commands (estop, reboot, etc.) - case-insensitive. Only build the
@@ -470,9 +487,10 @@ void handleDrivePost(WebRequest& req) {
 }
 
 // POST /api/dome/cmd - forward a raw Marcduino command verbatim to the dome
-// over the dome link TX queue (UART2 or WiFi/UDP), bypassing the body's
-// Marcduino prefix router. Use this for dome-native prefixes (:, *, @, etc.)
-// that the body would otherwise consume or reject.
+// over the dome link TX queue (UART2 or WiFi/UDP), bypassing Command Ownership
+// (include/marcduino_router.h). Use this for a line the body owns that is meant
+// for the dome instead - :OP01 is body arm 1 on the manual-command route and
+// dome panel 1 here (ADR 0055).
 void handleDomeCmdPost(WebRequest& req) {
     // Borrowed rather than copied: the length limit below is the contract this
     // endpoint enforces, and a copy-out buffer would silently enforce its own

@@ -142,9 +142,11 @@ inline bool rcPayloadValidForMarcduinoCommand(const char* payload) {
     if (payload == nullptr || payload[0] == '\0') {
         return false;
     }
-    // Accept only body-owned prefixes per topology contract
-    // Allowed: : (panel), $ (sound), # (config)
-    // Rejected: * (holo), @ (logic), % (pass-through), ! (alt), & (I2C)
+    // Allowed: : (panels, sequences), $ (sound), # (config). A ':' or '#'
+    // line is routed by Command Ownership once it fires - the body runs what
+    // it owns and forwards the rest to the dome (include/marcduino_router.h).
+    // Rejected: * (holo), @ (logic), % (pass-through), ! (alt), & (I2C) - the
+    // light families on a binding are a binding-surface question (#320)
     char prefix = payload[0];
     return prefix == ':' || prefix == '$' || prefix == '#';
 }

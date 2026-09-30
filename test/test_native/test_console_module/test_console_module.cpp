@@ -97,6 +97,7 @@
                                   // set-volume's own queue stub (#221 remainder)
 #include "aux_led_test_hooks.h"  // g_test_aux_led_queue_ok - aux.action.led-color/-effect's
 #include "servo_task_test_hooks.h"  // ServoTask's boot snapshot, which the native build stubs
+#include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
                                   // own queue stub (#221 remainder)
 #include "heap_reading_test_hooks.h"  // g_test_heap_* - the health heap keys (#381)
 #include "web_server_test_hooks.h"  // g_test_restart_requests - system.action.reboot's (#225)
@@ -2015,6 +2016,41 @@ void test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping() {
 
     runQuery("dome.action.send-command command=*ST00");
 
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+}
+
+// A line the body does not own is forwarded, and a forward answers queued -
+// handed on - never applied: the body cannot say what the dome did with it
+// (ADR 0055, #449). One the body owns and refuses is not ok.
+void test_action_send_command_forward_answers_queued_and_a_refusal_is_not_ok() {
+    marcduinoTestHooksReset();
+
+    runQuery("dome.action.send-command command=:OP07");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_QUEUED, g_cap.outcome);
+    TEST_ASSERT_EQUAL_STRING(":OP07", g_test_dome_last_tx);
+
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::BlockedByEstop;
+    runQuery("dome.action.send-command command=:OP01");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
+    TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
+    marcduinoTestHooksReset();
+}
+
+// A dome.action.marcduino-command line the body owns and refused answers why,
+// not queue-full - which is what the dispatch core said for every line it
+// swallowed before #449.
+void test_action_marcduino_command_refused_by_estop_answers_blocked() {
+    robotState.webControlEnabled = true;
+    g_test_dispatch_outcome = RcDispatchOutcome::kBlockedByEstop;
+
+    runQuery("dome.action.marcduino-command value=:OP01");
+
+    TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_BLOCKED, g_cap.outcome);
     TEST_ASSERT_EQUAL(CONSOLE_REASON_BLOCKED_BY_STATE, g_cap.reason);
 }
@@ -5762,6 +5798,8 @@ int main(int, char**) {
     RUN_TEST(test_action_send_command_unsupported_keyword_answers_out_of_range);
     RUN_TEST(test_action_send_command_shadowed_mode_keyword_is_refused);
     RUN_TEST(test_action_send_command_dome_forward_prefix_is_blocked_while_sleeping);
+    RUN_TEST(test_action_send_command_forward_answers_queued_and_a_refusal_is_not_ok);
+    RUN_TEST(test_action_marcduino_command_refused_by_estop_answers_blocked);
     RUN_TEST(test_action_send_command_keyword_is_not_blocked_by_sleep);
     RUN_TEST(test_action_send_command_estop_keyword_dispatches_through_the_real_core);
     RUN_TEST(test_action_sequence_stop_rejects_any_argument);

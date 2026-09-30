@@ -10,6 +10,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdlib.h>  // atoi
+#include <string.h>  // strcmp, strlen, strncmp
 
 #include "ledc_pwm.h"  // SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US
 
@@ -70,6 +72,53 @@ inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
         default:
             return 254;  // invalid (includes 0 and 99  --  no broadcast for MV)
     }
+}
+
+// -----------------------------------------------------------------------------
+// marcduino_panel_command_arm_id()
+// The Output a panel-family line (:OPnn, :CLnn, :OFnn, :MVnn...) names, read
+// the one way both the body handler and the ownership resolver read it
+// (include/marcduino_ownership.h). Two readings of one number is how a line
+// the resolver calls the body's could reach a handler that refuses it.
+//
+//   :OP/:CL/:OF  atoi() of everything after the head, via
+//                marcduino_panel_to_arm_id() (1-5, and 0/99 broadcast)
+//   :MV          exactly two digits after the head, via
+//                marcduino_panel_to_arm_id_mv() (1-5, no broadcast)
+//
+// Returns 254 for a line shorter than five characters, a head that is not one
+// of the four, or a number no Output answers to. The value after an :MV
+// number is not read here; the handler refuses an :MV with none.
+// -----------------------------------------------------------------------------
+inline uint8_t marcduino_panel_command_arm_id(const char* line) {
+    if (line == nullptr || line[0] != ':' || strlen(line) < 5) {
+        return 254;
+    }
+    if (strncmp(line, ":OP", 3) == 0 || strncmp(line, ":CL", 3) == 0 ||
+        strncmp(line, ":OF", 3) == 0) {
+        return marcduino_panel_to_arm_id(atoi(line + 3));
+    }
+    if (strncmp(line, ":MV", 3) == 0) {
+        if (line[3] < '0' || line[3] > '9' || line[4] < '0' || line[4] > '9') {
+            return 254;
+        }
+        return marcduino_panel_to_arm_id_mv(((line[3] - '0') * 10) + (line[4] - '0'));
+    }
+    return 254;
+}
+
+// -----------------------------------------------------------------------------
+// marcduino_is_body_hash_command()
+// The '#' lines the body acts on: the dome's sleep and wake sync, and the
+// body's own heartbeat echoed back. Every other '#' line is the dome's.
+//
+// One home for the three, read by the body handler and the ownership resolver
+// alike, so the list the body answers and the list it executes cannot differ.
+// -----------------------------------------------------------------------------
+inline bool marcduino_is_body_hash_command(const char* line) {
+    return line != nullptr &&
+           (strcmp(line, "#APSL") == 0 || strcmp(line, "#APWU") == 0 ||
+            strcmp(line, "#PAHB") == 0);
 }
 
 // -----------------------------------------------------------------------------

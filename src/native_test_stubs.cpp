@@ -75,7 +75,15 @@ void domeUartRelease(DomeUartOwner requester) {
         g_test_dome_uart_owner = DOME_UART_NONE;
     }
 }
-bool domeConnected() { return true; }
+#include "marcduino_test_hooks.h"  // declares the dome link and body handler seams
+bool g_test_dome_connected = true;
+bool g_test_dome_tx_ok = true;
+unsigned g_test_dome_tx_calls = 0;
+char g_test_dome_last_tx[64] = {};
+MarcduinoBodyOutcome g_test_marcduino_body_outcome = MarcduinoBodyOutcome::Applied;
+char g_test_marcduino_last_line[32] = {};
+
+bool domeConnected() { return g_test_dome_connected; }
 
 // sequence_dispatcher.cpp needs domeQueueTx.
 // No-op stub: routing tests use sequenceLookup() directly and do not need
@@ -84,7 +92,14 @@ bool domeConnected() { return true; }
 // sibling audio command queue stubs, #258 - it used to be this unconditional
 // no-op, which left g_test_audio_dollar_calls/g_test_audio_last_dollar
 // declared but never written by anything.
-bool domeQueueTx(const char* /*cmd*/) { return true; }
+bool domeQueueTx(const char* cmd) {
+    if (!g_test_dome_tx_ok) {
+        return false;
+    }
+    g_test_dome_tx_calls++;
+    snprintf(g_test_dome_last_tx, sizeof(g_test_dome_last_tx), "%s", cmd != nullptr ? cmd : "");
+    return true;
+}
 
 #include "audio_task.h"
 
@@ -190,9 +205,28 @@ void requestSystemRestart(uint32_t /*delayMs*/) {
 }
 
 #include "dome_rx_parser.h"
-bool parseMarcduinoCommand(const char* /*line*/) {
+bool parseMarcduinoCommand(const char* line) {
     g_test_marcduino_calls++;
+    snprintf(g_test_marcduino_last_line, sizeof(g_test_marcduino_last_line), "%s",
+             line != nullptr ? line : "");
     return true;
+}
+
+MarcduinoBodyOutcome executeMarcduinoBodyCommand(const char* line) {
+    g_test_marcduino_calls++;
+    snprintf(g_test_marcduino_last_line, sizeof(g_test_marcduino_last_line), "%s",
+             line != nullptr ? line : "");
+    return g_test_marcduino_body_outcome;
+}
+
+void marcduinoTestHooksReset() {
+    g_test_dome_connected = true;
+    g_test_dome_tx_ok = true;
+    g_test_dome_tx_calls = 0;
+    g_test_dome_last_tx[0] = '\0';
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::Applied;
+    g_test_marcduino_last_line[0] = '\0';
+    g_test_marcduino_calls = 0;
 }
 
 #include "mood.h"

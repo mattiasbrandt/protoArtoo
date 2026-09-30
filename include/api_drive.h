@@ -64,20 +64,37 @@ void handleDomeSpeedPost(WebRequest& req);
 // (they are the evidence of what the refusal refuses) and because the answer
 // is then already right rather than discarded -- see the comment on them in
 // src/web/api_drive.cpp.
+//
+// The rest are the answers Command Ownership gives a Marcduino line (ADR 0055,
+// #449; include/marcduino_router.h). Forwarded is its own answer and never
+// Applied: the line was handed to the dome and the body cannot say what the
+// dome did with it. Each "no" names what stopped it, so a caller can say why.
 enum class ManualCommandResult : uint8_t {
     Unsupported,          // not a command this dispatcher owns -- nothing happened
     Applied,              // executed; either nothing to persist, or the save landed
     SaveFailed,           // executed, but the config save did not reach flash
     ShadowedModeKeyword,  // "#st"/"#sm": refused, because the Marcduino '#'
                           // routing claims the line and no mode can change
+    Forwarded,            // queued for the dome verbatim; what it does there is the dome's
+    DomeLinkDown,         // for the dome, and protoR2link is not connected: not queued
+    DomeQueueFull,        // for the dome, and the dome TX queue refused it: not queued
+    BlockedByEstop,       // the body's, refused while estop is latched
+    OutputUndriven,       // the body's, and nothing drives the Output it names this boot
+                          // (servoOutputUndriven(), include/api_servo.h, says why)
+    QueueFull,            // the body's, and the queue that runs it refused it
 };
 
-// Execute one manual command: a Marcduino line routed by its prefix, or one of
-// the keyword commands (estop, reboot, ...). Answers Unsupported for an
-// unrecognized keyword; Marcduino lines are always accepted, since the routing
-// table decides whether the body handles or discards them. The two exceptions
-// are "#st"/"#sm", which look like keywords but are Marcduino lines the body
-// discards -- ShadowedModeKeyword, nothing executed.
+// Execute one manual command: a Marcduino line, or one of the keyword commands
+// (estop, reboot, ...). Answers Unsupported for an unrecognized keyword.
+//
+// A ':' or '#' line goes where Command Ownership sends it: the body runs the
+// lines naming things it models and forwards the rest to the dome, and a
+// full-droid sequence (:SE01-:SE09, :SE15, :SE16) does both
+// (include/marcduino_router.h). The raw families '*', '@', '%', '&' and '!' are
+// forwarded uninterpreted (ADR 0045). Neither kind is answered Applied unless
+// the body acted; a forward that could not be queued is not answered success.
+// "#st"/"#sm" look like keywords but are refused ahead of all of it --
+// ShadowedModeKeyword, nothing executed.
 //
 // Takes a plain C string rather than an Arduino String so the one cross-file
 // caller (POST /api/manual-command, api_system.cpp) can hand over a borrowed
