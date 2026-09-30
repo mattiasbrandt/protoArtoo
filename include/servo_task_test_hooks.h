@@ -17,3 +17,7 @@
 
 extern uint8_t g_test_servo_wired_at_start_mask;
 extern uint8_t g_test_servo_driven_mask;
+// Which Outputs ServoTask kept LEDC off at start for a light, one bit per
+// armId; none by default. servoTaskMayTakeForRun() reads it with the two masks
+// above and the live cache, through the one rule (include/servo_run.h).
+extern uint8_t g_test_servo_lit_at_start_mask;

@@ -44,3 +44,11 @@ bool servoTaskWiredAtStart(uint8_t armId);
 // boot - wired at start, no light on its wire at start, and LEDC came up. An
 // Output this answers false for is one every servo command is dropped for.
 bool servoTaskDrivesOutput(uint8_t armId);
+
+// servoTaskMayTakeForRun(): a Find by Moving run may take this Output now - a
+// free servo Output, one nothing drives, no Part is on and no light is on the
+// wire of (include/servo_run.h servoRunMayTake(), #411). The servo route and
+// the Console admit a nudge and a release on it for that reason, and ServoTask
+// asks the same question before it takes one. Reads the boot snapshot above
+// and the live config cache, so it is current as of the call.
+bool servoTaskMayTakeForRun(uint8_t armId);

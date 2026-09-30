@@ -162,7 +162,11 @@ QueueHandle_t domeCmdQueue = nullptr;
 // servoTaskInit()'s; include/servo_task_test_hooks.h says why both default to
 // every Output.
 #include "servo_task.h"
-#include "servo_task_test_hooks.h"  // declares the two masks, defined here
+#include "servo_task_test_hooks.h"  // declares the three masks, defined here
+#include "config_cache.h"     // the live row facts servoTaskMayTakeForRun() reads
+#include "output_wire.h"      // outputWirePinKeptForLight() - a light may be on the pin
+#include "servo_helpers.h"    // servo_arm_id_to_ledc_channel()
+#include "servo_run.h"        // servoRunMayTake() - the one rule
 uint8_t g_test_servo_wired_at_start_mask = 0xFF;
 uint8_t g_test_servo_driven_mask = 0xFF;
 
@@ -172,6 +176,26 @@ bool servoTaskWiredAtStart(uint8_t armId) {
 
 bool servoTaskDrivesOutput(uint8_t armId) {
     return armId < SERVO_ARM_COUNT && (g_test_servo_driven_mask & (1u << armId)) != 0;
+}
+
+uint8_t g_test_servo_lit_at_start_mask = 0;
+
+// The same inputs servo_task.cpp assembles, from the masks above and the live
+// cache, through the one rule.
+bool servoTaskMayTakeForRun(uint8_t armId) {
+    if (armId >= SERVO_ARM_COUNT) {
+        return false;
+    }
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+    ServoRunTakeInputs in = {};
+    in.drivenNow = servoTaskDrivesOutput(armId);
+    in.wiredAtStart = servoTaskWiredAtStart(armId);
+    in.litAtStart = (g_test_servo_lit_at_start_mask & (1u << armId)) != 0;
+    in.lightNow = outputWirePinKeptForLight(
+        {false, configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, channel)}, armId);
+    in.partCount = configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, channel);
+    in.ledcReady = true;
+    return servoRunMayTake(in);
 }
 
 bool g_test_commanded_web_control = false;

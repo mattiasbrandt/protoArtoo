@@ -29,6 +29,7 @@
 #include "servo_motion_ramp.h"  // a move planned in time from the Output's profile (ADR 0052)
 #include "servo_nudge.h"        // the bounded pair a Find by Moving nudge visits (ADR 0050)
 #include "servo_output_row.h"  // the addressed rows an endpoint lives on (ADR 0041)
+#include "servo_run.h"         // a Find by Moving run's hold on a free Output (#411)
 #include "servo_travel.h"      // the recorded ends a body view's press visits (ADR 0063)
 
 static const char* TAG = "SERVO";
@@ -61,7 +62,11 @@ static bool s_ledc_ready = false;
 //
 // `hold` is the calibration dial's hold on the output (ADR 0064, #364): while
 // it stands the pulse stays on until one of its two bounds fires, the builder
-// lets go, or the halt edge releases it. `limp` is why there is no pulse, read
+// lets go, or the halt edge releases it. `runHeld` says the hold is a Find by
+// Moving run's on a FREE Output instead (include/servo_run.h, #411): nothing
+// drives that Output this boot, so while the run holds it this task drives it
+// anyway, the same two bounds let it go, and the flag is what lets a halt, a
+// release and a bound reach an Output isArmEnabled() says no to. `limp` is why there is no pulse, read
 // only while `known` is false, so a surface can say "pulses off" and "the
 // estop let go" differently.
 //
@@ -103,6 +108,7 @@ static struct {
     bool known;
     bool moving;
     ServoHoldState hold;
+    bool runHeld;              // `hold` is a Find by Moving run's on a free Output
     ServoLimpReason limp;
     ServoMotionRamp ramp;
     uint8_t legNo;             // 1..kLegCount while an out-and-back is in progress, else 0
@@ -157,9 +163,45 @@ static bool isArmEnabled(uint8_t armId) {
 }
 
 // -----------------------------------------------------------------------------
+// isArmLive()
+// Whether this task drives the arm right now: enabled since start, or a free
+// Output a Find by Moving run has taken (#411). What writes a pulse and what
+// takes one off both ask this, so a run's Output is driven and let go by the
+// same paths as any other - the estop's release included.
+// -----------------------------------------------------------------------------
+static bool isArmLive(uint8_t armId) {
+    return servoRunArmLive(isArmEnabled(armId), armId < kArmCount && s_arm[armId].runHeld);
+}
+
+// -----------------------------------------------------------------------------
+// runTakeInputs()
+// What decides whether a Find by Moving run may take this Output, each read
+// where it lives: the boot snapshot for what this task drives and what it kept
+// LEDC off for, the live cache for the Parts on the row and what its wire
+// carries now. Values only, no row copy: this runs on the command path of the
+// Core 1 loop, whose chain is a measured constant (ADR 0040).
+// -----------------------------------------------------------------------------
+static ServoRunTakeInputs runTakeInputs(uint8_t armId) {
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+    ServoRunTakeInputs in = {};
+    in.drivenNow = s_ledc_ready && isArmEnabled(armId);
+    in.wiredAtStart = servoTaskWiredAtStart(armId);
+    in.litAtStart = (s_lit_arm_mask & (uint8_t)(1u << armId)) != 0;
+    in.lightNow = outputWirePinKeptForLight(
+        {false, configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, channel)}, armId);
+    in.partCount = configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, channel);
+    in.ledcReady = s_ledc_ready;
+    return in;
+}
+
+static bool mayTakeForRun(uint8_t armId) {
+    return armId < kArmCount && servoRunMayTake(runTakeInputs(armId));
+}
+
+// -----------------------------------------------------------------------------
 // resolveArmPulse()
 // Which channel an arm is on, and the pulse width it may actually be driven to.
-// Returns false (no log, nothing to write) if the arm is disabled.
+// Returns false (no log, nothing to write) if the arm is not live (isArmLive()).
 // Per ADR 0027, disabled channels never PWM-commanded and never update robotState.
 //
 // The pulse width is bounded by what the fitted component takes before it
@@ -175,7 +217,7 @@ static bool isArmEnabled(uint8_t armId) {
 // -----------------------------------------------------------------------------
 static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut,
                             uint16_t* commandedOut) {
-    if (!isArmEnabled(armId)) {
+    if (!isArmLive(armId)) {
         return false;
     }
 
@@ -228,7 +270,9 @@ static void publishCommanded(uint8_t armId) {
         s_arm[armId].moving ? s_arm[armId].ramp.settleUs : s_arm[armId].commandedUs,
         s_arm[armId].known,
         s_arm[armId].nudgesDone,
-        s_arm[armId].hold.held,
+        // `held` is the dial's (GET /api/servo/outputs): a run's hold on a free
+        // Output is not a dial holding it.
+        s_arm[armId].hold.held && !s_arm[armId].runHeld,
         s_arm[armId].limp,
         s_arm[armId].moving,
     };
@@ -420,6 +464,45 @@ static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
     publishCommanded(armId);
 }
 
+// -----------------------------------------------------------------------------
+// takeForRun()
+// A nudge has named a free Output (#411): the run holds it, or refreshes the
+// hold it already has (servo_run.h - a nudge is the arrival, and not even one
+// moves the ceiling). Taking it attaches its channel with no pulse and puts the
+// Output's recorded centre on the pin, through the component clamp, so the
+// nudge has a width to be about. A free servo has never been driven, so that
+// first width is a jump, as every first move after boot is (#364). False, with
+// nothing driven, when the run may not take it or LEDC will not attach it.
+// -----------------------------------------------------------------------------
+static bool takeForRun(uint8_t armId, CommandSource source) {
+    if (s_arm[armId].runHeld) {
+        servoHoldCommand(&s_arm[armId].hold, millis(), SERVO_HOLD_ASK_TAKE);
+        return true;
+    }
+    if (!mayTakeForRun(armId)) {
+        return false;
+    }
+    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+    if (channel >= LEDC_CH_MAX || !ledcPwmAttach(channel)) {
+        PA_LOG_WARN(TAG, "[%s] Arm%d not taken for the run - its channel would not attach",
+                    commandSourceToString(source), armId + 1);
+        return false;
+    }
+    uint16_t centreUs = SERVO_PULSE_NEUTRAL_US;
+    configCacheReadServoOutputCentre(SERVO_DRIVER_LEDC, channel, &centreUs);
+    servoHoldCommand(&s_arm[armId].hold, millis(), SERVO_HOLD_ASK_TAKE);
+    s_arm[armId].runHeld = true;
+    uint8_t resolvedChannel = 0;
+    uint16_t commandedUs = 0;
+    if (resolveArmPulse(armId, centreUs, &resolvedChannel, &commandedUs)) {
+        endMove(armId);
+        writeArmPulse(armId, resolvedChannel, commandedUs);
+    }
+    PA_LOG_INFO(TAG, "[%s] Arm%d taken for a Find by Moving run at %u us",
+                commandSourceToString(source), armId + 1, (unsigned)commandedUs);
+    return true;
+}
+
 // A SERVO_CMD_NUDGE that got past processCommand()'s gates. Refused, with
 // nothing moved and the count still bumped so a run waiting on it steps on,
 // when there is no width on the pin to nudge about or that width is outside
@@ -431,6 +514,15 @@ static void beginNudge(uint8_t armId, CommandSource source) {
     if (armId >= kArmCount) {
         PA_LOG_WARN(TAG, "[%s] Nudge rejected - takes one arm, not %d", commandSourceToString(source),
                     armId);
+        return;
+    }
+    // A free Output is taken for the run first (#411); an enabled one is driven
+    // already and is nudged about where it is.
+    if (!isArmEnabled(armId) && !takeForRun(armId, source)) {
+        PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - it is not free for a run",
+                    commandSourceToString(source), armId + 1);
+        s_arm[armId].nudgesDone++;
+        publishCommanded(armId);
         return;
     }
     ServoNudgePlan plan = {};
@@ -674,7 +766,7 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 // nobody can vouch for, so it snaps, exactly as the first move after boot does.
 // -----------------------------------------------------------------------------
 static void releaseArm(uint8_t armId, ServoLimpReason reason) {
-    if (armId >= kArmCount || !isArmEnabled(armId)) {
+    if (armId >= kArmCount || !isArmLive(armId)) {
         return;
     }
     const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
@@ -683,6 +775,10 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason) {
     }
     endMove(armId);
     servoHoldEnd(&s_arm[armId].hold);
+    // A run's Output is free again: nothing drives it until a run takes it once
+    // more. Its channel stays attached with no pulse, which is what the gates
+    // above read rather than the channel.
+    s_arm[armId].runHeld = false;
     ledcPwmRelease(channel);
     s_arm[armId].known = false;
     s_arm[armId].limp = reason;
@@ -699,7 +795,8 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason) {
 //
 // Every enabled output, not only the ones a move was in progress on: a door
 // somebody opened by hand a minute ago is being driven just as much as one a
-// routine was closing, and the stop has to reach it too.
+// routine was closing, and the stop has to reach it too - and so does a free
+// Output a Find by Moving run is driving (releaseArm() asks isArmLive()).
 // -----------------------------------------------------------------------------
 static void releaseAllOutputs(ServoLimpReason reason) {
     for (uint8_t armId = 0; armId < kArmCount; ++armId) {
@@ -770,7 +867,9 @@ static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source, Se
 // One frame of the dial's two bounds (ADR 0064): an output whose hold commands
 // have stopped arriving, or that has been held for the most a dial may, is
 // released here and the reason recorded, so the surface can say which one it
-// was and offer to take the output again.
+// was and offer to take the output again. A Find by Moving run's hold on a
+// free Output is bounded here by the same two numbers, its nudges being its
+// arrivals, and goes back to limp-since-start (servoRunLimpReason(), #411).
 // -----------------------------------------------------------------------------
 static void expireHolds() {
     const uint32_t now = millis();
@@ -781,9 +880,15 @@ static void expireHolds() {
             continue;
         }
         const bool ceiling = bound == SERVO_HOLD_BOUND_CEILING;
-        releaseArm(armId, ceiling ? SERVO_LIMP_CEILING : SERVO_LIMP_EXPIRED);
-        PA_LOG_WARN(TAG, "Arm%d released - %s", armId + 1,
-                    ceiling ? "held for the most a dial may" : "the dial's commands stopped arriving");
+        const bool run = s_arm[armId].runHeld;
+        releaseArm(armId, servoRunLimpReason(run, bound));
+        if (run) {
+            PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1,
+                        ceiling ? "held for the most a run may" : "the run's nudges moved on");
+        } else {
+            PA_LOG_WARN(TAG, "Arm%d released - %s", armId + 1,
+                        ceiling ? "held for the most a dial may" : "the dial's commands stopped arriving");
+        }
     }
 }
 
@@ -812,8 +917,15 @@ static void processCommand(const ServoCommand& cmd) {
         return;
     }
 
-    // Feature toggle: reject arm commands for disabled or AUX-LED-reserved subsystems.
-    if (!isArmEnabled(cmd.armId)) {
+    // Feature toggle: reject arm commands for disabled or AUX-LED-reserved
+    // subsystems. Two exceptions, both a Find by Moving run's on a free Output
+    // (#411): a nudge may take one, and a release lets go of one a run holds.
+    // Nothing else reaches an Output this task does not drive.
+    const bool runNudge = cmd.type == SERVO_CMD_NUDGE && cmd.armId < kArmCount &&
+                          (s_arm[cmd.armId].runHeld || mayTakeForRun(cmd.armId));
+    const bool runRelease = cmd.type == SERVO_CMD_RELEASE && cmd.armId < kArmCount &&
+                            s_arm[cmd.armId].runHeld;
+    if (!isArmEnabled(cmd.armId) && !runNudge && !runRelease) {
         PA_LOG_DEBUG(TAG, "[%s] Command rejected - arm%d disabled or reserved",
                      commandSourceToString(cmd.source), cmd.armId);
         return;
@@ -926,9 +1038,12 @@ void servoTaskInit() {
     s_lit_arm_mask = litArmMask(cfg.system);
 
     bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;
-    bool anyLedc = anyServo || s_dome_enabled;
 
-    if (anyLedc) {
+    // LEDC comes up whatever is wired: its timer is what a Find by Moving run
+    // attaches a free Output's channel to (ledcPwmAttach(), #411), and a droid
+    // with no Part on any Output is exactly the one a run is for. A mask of 0
+    // configures the timer and no channel.
+    {
         // Build enabled-channels mask using the helper from servo_helpers.h.
         uint8_t ledcMask = servo_enabled_ledc_mask(s_arm1_enabled, s_arm2_enabled, s_aux1_enabled,
                                                    s_aux2_enabled, s_aux3_enabled, s_dome_enabled,
@@ -965,8 +1080,6 @@ void servoTaskInit() {
                         output != nullptr ? boardOutputLabel(*output) : "an output",
                         (unsigned)getChannelGpio(channel));
         }
-    } else {
-        PA_LOG_INFO(TAG, "all LEDC outputs disabled - skipping LEDC init");
     }
 
     if (anyServo) {
@@ -993,6 +1106,12 @@ bool servoTaskDrivesOutput(uint8_t armId) {
     return armId < kArmCount && s_ledc_ready && isArmEnabled(armId);
 }
 
+// Read from Core 0 (the servo route, the Console): the boot snapshot is
+// written once before either starts, and the cache reads take its own lock.
+bool servoTaskMayTakeForRun(uint8_t armId) {
+    return mayTakeForRun(armId);
+}
+
 // -----------------------------------------------------------------------------
 // servoTask()
 // Main servo task loop.
@@ -1006,16 +1125,10 @@ void servoTask(void* pvParameters) {
     esp_task_wdt_add(NULL);
     esp_task_wdt_reset();
 
-    // Feature toggle: if no arm/aux outputs are enabled, ServoTask has no
-    // channels to drive. Idle here feeding TWDT only  --  no queue processing,
-    // no sequence updates.
-    if (!configCacheServoAnyEnabled()) {
-        PA_LOG_DEBUG("ServoTask", "all arm/aux outputs disabled - task idle");
-        for (;;) {
-            esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(20));
-        }
-    }
+    // No idle branch for a droid with nothing wired: a Find by Moving run
+    // takes free Outputs through this loop (#411), and with nothing wired every
+    // Output is free. A frame with no command and no move costs the queue poll
+    // and three empty loops.
 
     ServoCommand cmd;
     bool hwmLogged = false;

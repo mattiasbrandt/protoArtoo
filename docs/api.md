@@ -566,10 +566,21 @@ Queues servo command.
   the controller computes the pair from the width on the pin, keeps both
   sides inside the cautious 1000–2000 µs band by shifting the pair inward,
   and runs the whole out-and-back itself, so the output returns even if the
-  browser that asked has gone. Each side rests about 0.6 s. An output with no
-  pulse on it, or sitting outside that band, is not nudged, and an estop ends
-  a nudge where it is. `arm=both` is refused. `GET /api/servo/outputs`'s
-  `nudgesDone` says when a nudge has ended.
+  browser that asked has gone. Each side rests about 0.6 s. An output sitting
+  outside that band is not nudged, and an estop ends a nudge where it is.
+  `arm=both` is refused. `GET /api/servo/outputs`'s `nudgesDone` says when a
+  nudge has ended.
+  A nudge may name a **free** output - no Part on it, nothing on its wire that
+  is a light's, and nothing driving it since the droid started (#411). A Find
+  by Moving run is how a free output is found, so the controller takes it for
+  the run: it puts the output's recorded centre on the pin (a first width on a
+  servo nobody has driven, so a jump), nudges about it, and lets it go again
+  with no pulse - by `action=release`, by any estop or Sleep Mode, or on its
+  own a few seconds after nudges for it stop arriving, and in any case within
+  ten minutes of taking it (the calibration dial's two bounds, ADR 0064). The
+  page cannot extend either. Nothing is saved: the output's wired tick still
+  follows its Parts, and while the run holds it `held` stays `false`, which is
+  the dial's.
 - `action=travel` (a body view's press, ADR 0063): run the Part on this
   output through its recorded travel and back — out to the end recorded as
   **open**, across to the end recorded as **close**, and back to the width the
@@ -622,7 +633,8 @@ Queues servo command.
 - `400` missing/invalid `positionUs`, with `field`, `reason` and `accepts` (`500..2500`) as in "Refusals from a settings write"
 - `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
 - `409` the droid has not used the Output since it started, whatever the action
-  (pulses off included; for `both`, either of the two). The wired ticks are read
+  (pulses off included; for `both`, either of the two) - except a nudge or a
+  release on a free output, which a Find by Moving run takes (`action=nudge`). The wired ticks are read
   once at start (ADR 0027), so an Output ticked since has nothing behind it until
   a restart. The sentence says what would let it be used:
   `{"ok":false,"error":"Restart the droid to use ARM2."}` when it is ticked now,

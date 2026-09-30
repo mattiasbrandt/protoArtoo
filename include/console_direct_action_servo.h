@@ -132,7 +132,11 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
         positionUs = (uint16_t)parsed;
     }
 
-    if (consoleRefusedWhileUndriven(requestId, operationName, armId, sink)) {
+    // A Find by Moving run's nudge or release on a free Output is not refused
+    // for being undriven: ServoTask takes that Output for the run (#411), the
+    // same exception POST /api/servo makes.
+    if (!servoCommandIsARunsOnAFreeOutput(armId, type) &&
+        consoleRefusedWhileUndriven(requestId, operationName, armId, sink)) {
         return;
     }
 

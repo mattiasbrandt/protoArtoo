@@ -24,6 +24,7 @@
 #include <Preferences.h>  // the NVS double: per namespace, as the store's own save sees it
 
 #include "config_cache.h"
+#include "config_nvsio.h"  // PrefsWriter - seeding a table
 #include "config_store.h"  // configLoadServoOutputs(), to seed a fresh Output table
 #include "dome_link.h"
 #include "dome_link_transport.h"
@@ -37,6 +38,7 @@
 #include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
 #include "config_write_window_check.h"  // the holder check this suite arms (#418)
 #include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
+#include "../../../test/stubs/config/servo_output_table_writer.h"  // a table seeded with Parts and a light
                                      // raw declaration into a shared header, now that
                                      // test_console_module.cpp needs it too
                                      // (include/web_server_test_hooks.h's own comment)
@@ -1114,6 +1116,66 @@ void test_servo_refuses_an_output_nothing_drives_since_boot() {
     TEST_ASSERT_NOT_NULL(strstr(unwired.sentBody, "ARM2 has no Part on it. Put one on it on Wiring."));
 }
 
+// A Find by Moving run drives a FREE Output for its length (#411): the route
+// lets a nudge and a release through for one - ServoTask takes it for the run -
+// and nothing else. A light's wire and an Output a Part is on are never free,
+// and neither is an Output ServoTask drives already. Letting a run's command
+// through writes nothing: the wired ticks still follow the Parts.
+void test_servo_lets_a_run_nudge_a_free_output_and_nothing_else() {
+    {
+        const ConfigWriteWindowForTest window;
+        ServoOutputTable table = {};
+        servoOutputTableDefaults(&table);
+        TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "doorFL"));  // ARM4: a Part's Output
+        table.rows[4].component = SERVO_COMP_RGB;                         // ARM5: a light's wire
+        Preferences prefs;
+        prefs.begin("proto", false);
+        prefs.clear();
+        PrefsWriter writer(prefs);
+        TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
+        ServoOutputRepairReport report = {};
+        configLoadServoOutputs(prefs, &report);
+        prefs.end();
+    }
+    // ServoTask started driving ARM1 and ARM2 only: ARM3..ARM5 are not driven,
+    // and ARM4's tick followed its Part since, so it waits for a restart.
+    g_test_servo_driven_mask = 0x03;
+    g_test_servo_wired_at_start_mask = 0x03;
+    ConfigSnapshot before = {};
+    configCacheRead(&before);
+
+    const auto post = [](const char* arm, const char* action, WebRequestTestBackend& backend) {
+        const WebRequestTestParam params[] = {{"arm", arm}, {"action", action}, {"positionUs", "1500"}};
+        backend.params = params;
+        backend.paramCount = 3;
+        WebRequest req(&backend);
+        handleServoPost(req);
+    };
+
+    WebRequestTestBackend nudge;
+    post("ARM3", "nudge", nudge);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, nudge.sentCode, "a free Output takes a run's nudge");
+    WebRequestTestBackend release;
+    post("ARM3", "release", release);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, release.sentCode, "and the run's release");
+    WebRequestTestBackend hold;
+    post("ARM3", "hold", hold);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, hold.sentCode, "a run nudges; it does not hold or drive");
+
+    WebRequestTestBackend parted;
+    post("ARM4", "nudge", parted);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, parted.sentCode, "an Output a Part is on moves through its Part");
+    WebRequestTestBackend lit;
+    post("ARM5", "nudge", lit);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, lit.sentCode, "a light's wire is never a servo's");
+    TEST_ASSERT_NOT_NULL(strstr(lit.sentBody, "ARM5 carries a light"));
+
+    ConfigSnapshot after = {};
+    configCacheRead(&after);
+    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&before.system, &after.system, sizeof(before.system),
+                                     "a run writes no tick and no Setting");
+}
+
 // A dial stands on one row, so the `both` broadcast is refused the same way
 // a nudge's is - and the refusal names the action the caller asked for.
 void test_servo_hold_refuses_the_broadcast_arm() {
@@ -1530,6 +1592,7 @@ int main(int, char**) {
     RUN_TEST(test_servo_hold_without_a_width_is_rejected);
     RUN_TEST(test_servo_hold_refuses_the_broadcast_arm);
     RUN_TEST(test_servo_refuses_an_output_nothing_drives_since_boot);
+    RUN_TEST(test_servo_lets_a_run_nudge_a_free_output_and_nothing_else);
     RUN_TEST(test_servo_hold_out_of_range_is_rejected);
     RUN_TEST(test_servo_hold_refresh_takes_only_the_one_spelling);
     RUN_TEST(test_servo_release_takes_an_arm_and_no_width);
