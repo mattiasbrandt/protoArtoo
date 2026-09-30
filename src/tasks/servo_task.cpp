@@ -919,7 +919,7 @@ static void expireHolds() {
 }
 
 // -----------------------------------------------------------------------------
-// letGoIfTheRunsOutputIsTaken()
+// letGoIfTheRunsOutputIsNoLongerFree()
 // A config commit can put a Part or a Light Type on the Output a run holds
 // between two of its nudges - the Part's own picker, "That one", another tab.
 // That Output is not free any more: a Part's Output moves through its Part,
@@ -929,7 +929,7 @@ static void expireHolds() {
 // the expiry. Two cache reads under configCacheMux, a critical section, and
 // only while a run holds something: no heap and no blocking on Core 1.
 // -----------------------------------------------------------------------------
-static void letGoIfTheRunsOutputIsTaken() {
+static void letGoIfTheRunsOutputIsNoLongerFree() {
     const uint8_t armId = s_runArm;
     if (armId == SERVO_RUN_NONE || mayTakeForRun(armId)) {
         return;
@@ -1226,7 +1226,7 @@ void servoTask(void* pvParameters) {
         expireHolds();
 
         // And a run's Output that a commit took from it since the last frame.
-        letGoIfTheRunsOutputIsTaken();
+        letGoIfTheRunsOutputIsNoLongerFree();
 
         // Feed watchdog
         esp_task_wdt_reset();
