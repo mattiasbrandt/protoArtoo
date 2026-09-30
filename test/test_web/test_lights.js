@@ -37,6 +37,13 @@ const ready = async (options) => {
   return env;
 };
 
+// The same droid with its Dome Controller fitted: the dome link switched on,
+// which is when the dome's lights are on the droid (CONTEXT.md "Lights").
+const withDome = (answer = droid()) => {
+  answer.config.components.protoR2link = { enabled: true, label: "S3" };
+  return answer;
+};
+
 test("Lights names no Output the firmware reported, and no pin, label or address", async () => {
   const answer = droid();
   const env = await ready({ answer });
@@ -60,7 +67,7 @@ test("Lights names no Output the firmware reported, and no pin, label or address
 });
 
 test("a status frame does not take a half-made pick out of a builder's hand", async () => {
-  const env = await ready();
+  const env = await ready({ answer: withDome() });
   const plate = env.plateFor("psiFront");
   assert.ok(plate, "the dome's Front PSI is on the page");
 
@@ -154,7 +161,7 @@ test("a command from one Part's plate names that Part's wire", async () => {
 // either file looking wrong on its own. The Magic Panel is the case that keeps
 // it honest: it is a dome light the dome has no DL: target for.
 test("a dome light takes a command only where the dome answers to its name", async () => {
-  const env = await ready();
+  const env = await ready({ answer: withDome() });
   const chips = (partId) => env.plateFor(partId).querySelectorAll(".light-mode");
 
   assert.ok(chips("psiFront").length > 0, "the Front PSI is a DL: target, so it takes a command");
@@ -198,4 +205,38 @@ test("a lit wire with no Part on it sends the builder to Wiring to put one on", 
   assert.equal(note.classList.contains("hidden"), false, "the fixture has a lit wire lighting nothing");
   assert.match(note.textContent, /on Wiring\.$/);
   assert.doesNotMatch(note.textContent, /Parts/);
+});
+
+// Lights lists only lights on the droid (operator, 2026-09-29 on #411: "we
+// have hardcoded listing of these two lights even when there is no such things
+// defined in the wiring config"; CONTEXT.md "Lights"): a body light once a
+// Part-first row on Wiring puts it on an Output, and the dome's lights while
+// the Dome Controller is fitted. A light on neither is not a plate at all.
+test("a body light is listed only on an Output, and dome lights only with the Dome Controller fitted", async () => {
+  const listed = (env) => env.parsed.querySelectorAll(".light-plate").map((node) => node.dataset.part);
+
+  const bare = await ready();
+  assert.deepEqual(listed(bare), ["dataPanel"], "the one body light on an Output, and no dome light without the controller");
+
+  const fitted = await ready({ answer: withDome() });
+  const dome = fitted.window.DroidParts.parts
+    .filter((part) => part.half === "dome" && fitted.window.DroidPartKind.isLight(part))
+    .map((part) => part.id);
+  assert.ok(dome.length > 0, "the catalog has dome lights");
+  assert.deepEqual(listed(fitted).sort(), [...dome, "dataPanel"].sort(), "and every dome light once it is fitted");
+});
+
+// With no light on the droid at all, the page is one line, and it sends the
+// builder to where a light is put on the droid.
+test("with no light on the droid, one line routes to Wiring", async () => {
+  const answer = droid();
+  answer.outputs.forEach((row) => {
+    row.parts = row.parts.filter((id) => id !== "dataPanel");
+  });
+  const env = await ready({ answer });
+
+  assert.equal(env.parsed.querySelectorAll(".light-plate").length, 0);
+  const line = env.parsed.getElementById("lights-body").querySelector(".lights-none");
+  assert.ok(line, "the page says so");
+  assert.equal(line.querySelector("a").getAttribute("href"), "#wiring");
 });

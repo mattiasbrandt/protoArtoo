@@ -6985,9 +6985,10 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-faint);
 }
 
+/* A Servos row is headed by the Part(s) on it, then the pin its board prints
+   (.outputs-address), on one line. */
 .outputs-parts {
-  display: block;
-  margin-bottom: var(--space-2xs);
+  display: inline;
 }
 
 .outputs-row:not(.is-wired) .outputs-parts {
@@ -7134,31 +7135,7 @@ body[data-page="maintenance"] .status-item .hint {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Which servo the Output carries (data/output_settings.js draws it): the
-   shared segmented bar at caption size, sized to its words. An Output that is
-   not wired keeps its pick, which still saves, drawn quieter: there is
-   nothing on the wire for it to drive yet. */
-.outputs-model:not(:empty) {
-  margin-top: var(--space-sm);
-}
-
-.outputs-model .seg {
-  display: inline-flex;
-}
-
-.outputs-model .seg > button {
-  flex: 0 0 auto;
-  min-height: 24px;
-  padding: 0 var(--space-sm);
-  font-size: var(--fs-hint);
-}
-
-.outputs-model:not(.is-on) .seg {
-  opacity: 0.7;
-}
-
 .outputs-table .outputs-drives {
-  min-width: 18ch;
   color: var(--text);
 }
 
@@ -7875,6 +7852,18 @@ body[data-page="maintenance"] .status-item .hint {
   details.disclose > .disclose-body {
     display: block !important;
   }
+
+  /* Wiring's printed sheet (#411): a page break never lands inside a picture
+     of the wires or a pin chip, so no wire is split across two pages, and
+     each wire's tick box - hidden on screen - is on the paper. */
+  .wd,
+  .wd-pin {
+    break-inside: avoid;
+  }
+
+  .wd .wd-tick {
+    display: inline;
+  }
 }
 
 /* A product shown rather than picked (#412): the RC page's radio and receiver,
@@ -8210,6 +8199,12 @@ body[data-page="wiring"] .card > * + * {
    the wire. */
 .wd-box {
   stroke-width: 1.2;
+}
+
+/* A wire's tick box is the printed sheet's: nothing is ticked on a screen
+   (data/wiring.js svgTick(), shown again under @media print). */
+.wd-tick {
+  display: none;
 }
 
 /* Used and free, at a glance (operator, 2026-09-29 on #411): one chip per
@@ -9484,15 +9479,6 @@ button.droid-build-card:disabled {
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
   letter-spacing: 0.08em;
-}
-
-/* A Part the builder has not fitted still shows, and says so. Dimmed rather
-   than colored: not being fitted is a fact about the droid, not a fault. */
-.light-fitted {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: var(--fs-hint);
-  font-style: italic;
 }
 
 /* The dome's two pickers, stacked (operator, 2026-09-20: the drop-downs "look

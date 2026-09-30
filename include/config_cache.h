@@ -154,6 +154,13 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
 // config-write chain the stack recipe measures.
 uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel);
 
+// configCacheTicksFollowParts: every board Output's wired tick in `system`, set
+// from the Parts its live row holds (boardOutputTickFollowsParts()). Called at
+// start, before the snapshot is taken into the cache, and by the Commit Step
+// after a request's Parts have moved, so an Output with a Part on it is wired
+// and one with none is free whatever wrote the tick before.
+void configCacheTicksFollowParts(SystemConfig* system);
+
 // The Records - the Droid Build and guided Setup's record - are not here:
 // each Record's module keeps its own live copy, filled on the boot path and
 // changed at runtime only by the Commit Step (include/config_records.h).

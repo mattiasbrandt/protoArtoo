@@ -18,7 +18,6 @@
 #include "audio_sound_member.h"
 #include "audio_task.h"
 #include "aux_led.h"
-#include "board_output_enabled.h"  // boardOutputTickAdoptedLight() - the wire main lit
 #include "config_store.h"
 #include "component_registry.h"
 #include "config_cache.h"
@@ -344,9 +343,14 @@ void loadConfigToState() {
                     (unsigned)servoOutputRepair.firstRow, note);
     }
 
-    // The wire `main` lit from its retired slot is ticked wired, or its strip
-    // would go dark: see boardOutputTickAdoptedLight().
-    boardOutputTickAdoptedLight(servoOutputRepair, &snap.system);
+    // Every board Output's wired tick from the Parts on its row, before
+    // anything reads it: an Output with a Part on it is wired and one with none
+    // is free (CONTEXT.md "Wiring", #411). Every start, and idempotent: it
+    // clears a tick stored with no Part - one saved before the tick followed
+    // the Parts, or the wire `main` lit from its retired slot, which now waits
+    // for a light Part on Wiring - and ticks an Output a Part is on. The rows
+    // are already in the cache (configLoadServoOutputs() above).
+    configCacheTicksFollowParts(&snap.system);
 
     // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
     // All validation and clamping is now performed within configLoad()

@@ -8,7 +8,7 @@
 #include "config_cache.h"
 
 #include "audio_dollar_parser.h"
-#include "board_output_enabled.h"  // boardOutputIsWired() - configCacheOutputIsWired()
+#include "board_output_enabled.h"  // boardOutputIsWired(), boardOutputTickFollowsParts() - the wired ticks
 #include "config.h"
 #include "config_serializer.h"
 #include "config_settings.h"  // every Setting's default
@@ -357,6 +357,13 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
     const ServoPartMoveOutcome outcome = servoOutputTableMovePart(&servoOutputCache, move);
     taskEXIT_CRITICAL(&configCacheMux);
     return outcome;
+}
+
+void configCacheTicksFollowParts(SystemConfig* system) {
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        boardOutputTickFollowsParts(
+            system, &output, configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, output.channel));
+    }
 }
 
 uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel) {

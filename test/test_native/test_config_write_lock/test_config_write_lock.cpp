@@ -90,7 +90,7 @@ static const char* kConsoleWriteApplied = "result status=ok outcome=staged-until
 
 // The staged preemption for the interleaving test below.
 static void nestedSerialConsoleWrite() {
-    runConsole(CONSOLE_SOURCE_SERIAL, "system.config.enable_arm1 value=true");
+    runConsole(CONSOLE_SOURCE_SERIAL, "system.config.enable_drive value=true");
 }
 
 static ConfigSnapshot readSnapshot() {
@@ -133,9 +133,9 @@ void tearDown(void) {
  * reported success and is not there is the silent revert.
  *
  * Take the lock out of handleConfigPost and this goes red exactly that way -
- * the Console write takes an uncontended lock, applies enable_arm1, answers
+ * the Console write takes an uncontended lock, applies enable_drive, answers
  * "ok", and the POST's write-back of a snapshot read before it puts
- * enable_arm1 straight back to false.
+ * enable_drive straight back to false.
  */
 void test_a_console_write_interleaved_into_a_rest_write_is_never_silently_reverted(void) {
     const WebRequestTestParam params[] = {{"speedLimitMax", "80"}};
@@ -153,7 +153,7 @@ void test_a_console_write_interleaved_into_a_rest_write_is_never_silently_revert
     const ConfigSnapshot after = readSnapshot();
     const bool consoleAnsweredOk = (strcmp(g_consoleLastRecord, kConsoleWriteApplied) == 0);
 
-    TEST_ASSERT_EQUAL_MESSAGE(consoleAnsweredOk, after.system.enable_arm1,
+    TEST_ASSERT_EQUAL_MESSAGE(consoleAnsweredOk, after.system.enable_drive,
                               "the Console write's answer and the config cache disagree - a write "
                               "that reported success was silently reverted, or one that reported "
                               "busy was applied anyway");
@@ -243,13 +243,13 @@ void test_alternating_rest_and_console_writes_both_land_with_balanced_locking(vo
     handleConfigPost(req);
     TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, "the REST write did not apply");
 
-    runConsole(CONSOLE_SOURCE_WEB, "system.config.enable_arm2 value=true");
+    runConsole(CONSOLE_SOURCE_WEB, "system.config.enable_audio value=true");
     TEST_ASSERT_EQUAL_STRING_MESSAGE(kConsoleWriteApplied, g_consoleLastRecord,
                                      "the Console write did not apply");
 
     const ConfigSnapshot after = readSnapshot();
     TEST_ASSERT_EQUAL_INT_MESSAGE(80, after.drive.speedLimitMax, "the REST write was lost");
-    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm2, "the Console write was lost");
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_audio, "the Console write was lost");
 
     struct PaStubMutex* m = paStubMutexStorage();
     TEST_ASSERT_EQUAL_INT_MESSAGE(2, m->takeCount,
@@ -530,7 +530,7 @@ void test_every_write_window_writes_inside_its_window(void) {
     const WebRequestTestParam mode[] = {{"mode", "stationary"}};
     TEST_ASSERT_EQUAL_INT_MESSAGE(200, postRequest(handleModePost, mode, 1), "mode");
 
-    runConsole(CONSOLE_SOURCE_SERIAL, "system.config.enable_arm1 value=true");
+    runConsole(CONSOLE_SOURCE_SERIAL, "system.config.enable_drive value=true");
     TEST_ASSERT_EQUAL_STRING_MESSAGE(kConsoleWriteApplied, g_consoleLastRecord, "Console config");
     runConsole(CONSOLE_SOURCE_SERIAL,
                "sound.action.set-category-range lo_key=snd_cat_gen_lo hi_key=snd_cat_gen_hi lo=11 hi=21");
@@ -546,7 +546,7 @@ void test_every_write_window_writes_inside_its_window(void) {
     TEST_ASSERT_EQUAL_UINT16(3, after.audio.snd_scream);
     TEST_ASSERT_EQUAL_UINT16(11, after.audio.snd_cat_gen_lo);
     TEST_ASSERT_EQUAL_UINT16(5, after.audio.snd_moodcat_quiet);
-    TEST_ASSERT_TRUE(after.system.enable_arm1);
+    TEST_ASSERT_TRUE(after.system.enable_drive);
 
     struct PaStubMutex* m = paStubMutexStorage();
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, m->held, "a Write Window was left held");
