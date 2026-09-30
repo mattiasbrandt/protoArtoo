@@ -146,10 +146,123 @@ static const char* slotToString(uint8_t slot) {
 }
 
 // -----------------------------------------------------------------------------
+// Wide reads that saturate rather than wrap
+//
+// A value past what its field can store is saturated to the field's own
+// maximum, which every bound in protocolCheckTempo() refuses -- so an
+// out-of-range number is refused with the same words as one just past the
+// bound, and never wraps into a plausible value on the way there. A negative
+// saturates the same way, because no field here can mean less than zero.
+// -----------------------------------------------------------------------------
+static uint32_t saturateU32(long long v) {
+    return (v < 0 || v > 0xFFFFFFFFLL) ? 0xFFFFFFFFu : (uint32_t)v;
+}
+static uint16_t saturateU16(long long v) {
+    return (v < 0 || v > 0xFFFFLL) ? (uint16_t)0xFFFFu : (uint16_t)v;
+}
+static uint8_t saturateU8(long long v) {
+    return (v < 0 || v > 0xFFLL) ? (uint8_t)0xFFu : (uint8_t)v;
+}
+// A number scaled to an integer unit (tenths of a BPM, thousandths of a
+// confidence), rounded half up and saturated like the three above.
+static uint16_t scaledU16(double v, double scale) {
+    const double scaled = v * scale + 0.5;
+    return (scaled < 0.0 || scaled >= 65536.0) ? (uint16_t)0xFFFFu : (uint16_t)scaled;
+}
+
+// A whole number on the wire, or refused. A beat is an index, so 1.5 is not
+// one; the browser writes whole numbers and nothing else produces a beat.
+static bool wholeNumber(JsonVariantConst v, long long& out) {
+    if (!v.is<long long>()) return false;
+    out = v.as<long long>();
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// The tempo block (ADR 0058), or absent. `present` says which: a sequence
+// saved before tempos existed has none and parses exactly as it always did.
+// A block that is present is judged whole by protocolCheckTempo() before any
+// beat is resolved against it.
+// -----------------------------------------------------------------------------
+static ProtocolCheckResult parseTempo(JsonVariantConst v, SeqTempo& tempo, bool& present) {
+    memset(&tempo, 0, sizeof(tempo));
+    present = false;
+    if (v.isNull()) {
+        return pcOk();
+    }
+    if (!v.is<JsonObjectConst>()) {
+        return pcFail("tempo", "tempo must be an object");
+    }
+    present = true;
+    JsonObjectConst obj = v.as<JsonObjectConst>();
+
+    JsonVariantConst bpm = obj["bpm"];
+    if (!bpm.is<double>()) {
+        return pcFail("tempo.bpm", "bpm must be a number");
+    }
+    tempo.bpmTenths = scaledU16(bpm.as<double>(), 10.0);
+
+    long long whole = 0;
+    JsonVariantConst phase = obj["phase"];
+    if (!phase.isNull()) {
+        if (!wholeNumber(phase, whole)) return pcFail("tempo.phase", "phase must be whole ms");
+        tempo.phaseMs = saturateU32(whole);
+    }
+    tempo.barLen = SEQ_TEMPO_BAR_LEN_DEFAULT;
+    JsonVariantConst barLen = obj["barLen"];
+    if (!barLen.isNull()) {
+        if (!wholeNumber(barLen, whole)) return pcFail("tempo.barLen", "barLen must be whole beats");
+        tempo.barLen = saturateU8(whole);
+    }
+    JsonVariantConst barPhase = obj["barPhase"];
+    if (!barPhase.isNull()) {
+        if (!wholeNumber(barPhase, whole)) return pcFail("tempo.barPhase", "barPhase must be a whole beat");
+        tempo.barPhase = saturateU8(whole);
+    }
+    JsonVariantConst duration = obj["duration"];
+    if (!duration.isNull()) {
+        if (!wholeNumber(duration, whole)) return pcFail("tempo.duration", "duration must be whole ms");
+        tempo.durationMs = saturateU32(whole);
+    }
+
+    const char* source = obj["source"] | (const char*)nullptr;
+    if (source == nullptr || !seqTempoSourceFromString(source, tempo.source)) {
+        return pcFail("tempo.source", "source must be typed, tapped or analysed");
+    }
+
+    JsonVariantConst confidence = obj["confidence"];
+    if (!confidence.is<double>()) {
+        return pcFail("tempo.confidence", "confidence must be a number");
+    }
+    tempo.confidencePermille = scaledU16(confidence.as<double>(), 1000.0);
+
+    // The hash is not kept: firmware never compares it, because the droid
+    // never holds the file it was taken from (ADR 0046). Its form is checked
+    // so a stored one is something the browser can compare against a dropped
+    // copy -- lowercase hex -- and that it came from the analysed route.
+    JsonVariantConst hash = obj["hash"];
+    if (!hash.isNull()) {
+        const char* h = hash.as<const char*>();
+        const size_t len = (h != nullptr) ? strnlen(h, SEQ_TEMPO_HASH_MAX_LEN + 1) : 0;
+        if (h == nullptr || len == 0 || len > SEQ_TEMPO_HASH_MAX_LEN) {
+            return pcFail("tempo.hash", "hash must be 1..64 hex characters");
+        }
+        for (size_t i = 0; i < len; ++i) {
+            const char c = h[i];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                return pcFail("tempo.hash", "hash must be lowercase hex");
+            }
+        }
+        tempo.hasHash = true;
+    }
+    return protocolCheckTempo(tempo);
+}
+
+// -----------------------------------------------------------------------------
 // Parse one step object into `s`. `idx` is for error fields.
 // -----------------------------------------------------------------------------
-static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
-                                     uint8_t idx, SeqStep& s) {
+static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst obj,
+                                           uint8_t idx, SeqStep& s) {
     memset(&s, 0, sizeof(s));
     s.effectClass = FX_NONE;  // Protocol Check stamps this
 
@@ -313,17 +426,92 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
     return pcFailAt(label, idx, "type", "unknown step type");
 }
 
+// -----------------------------------------------------------------------------
+// A step's beat and its span in beats (ADR 0058, ADR 0060), resolved into the
+// milliseconds the engine runs. The beat is what the builder meant and the
+// millisecond is what runs, so when a step carries both the beat wins: the
+// browser writes `t` resolved from the beat beside it, and a tempo edited
+// since is exactly the case where the two disagree and the beat is right.
+//
+// `tempo` is nullptr when the sequence has none, and a beat without a tempo
+// has nothing to count in. `inLoopBody` is whether this step is timed from a
+// loop pass rather than from the sequence start: a beat there would count
+// from a moment the grid knows nothing about, so it is refused and the loop
+// itself goes on the beat instead.
+// -----------------------------------------------------------------------------
+static ProtocolCheckResult parseStepBeats(const char* label, JsonObjectConst obj,
+                                          uint8_t idx, const SeqTempo* tempo,
+                                          bool inLoopBody, SeqStep& s) {
+    long long whole = 0;
+    JsonVariantConst beat = obj["beat"];
+    if (!beat.isNull()) {
+        if (tempo == nullptr) {
+            return pcFailAt(label, idx, "beat", "a beat needs a tempo");
+        }
+        if (inLoopBody) {
+            return pcFailAt(label, idx, "beat", "a step in a loop is timed from its pass");
+        }
+        if (!wholeNumber(beat, whole) || whole < 0 || whole > (long long)SEQ_TEMPO_BEAT_MAX) {
+            return pcFailAt(label, idx, "beat", "beat must be a whole 0..1200");
+        }
+        s.tMs = seqTempoBeatMs(*tempo, (uint32_t)whole);
+    }
+
+    JsonVariantConst span = obj["spanBeats"];
+    if (!span.isNull()) {
+        if (tempo == nullptr) {
+            return pcFailAt(label, idx, "spanBeats", "a span in beats needs a tempo");
+        }
+        if (!wholeNumber(span, whole) || whole < 1 || whole > (long long)SEQ_TEMPO_BEAT_MAX) {
+            return pcFailAt(label, idx, "spanBeats", "spanBeats must be a whole 1..1200");
+        }
+        const uint32_t ms = seqTempoSpanMs(*tempo, (uint32_t)whole);
+        // A span replaces the one duration the step already has; the bounds on
+        // that duration are Protocol Check's, applied to the resolved value
+        // exactly as they would be to a typed one.
+        if (s.type == STEP_DOME_ROTATE) {
+            if (s.params.speedPct == 0) {
+                return pcFailAt(label, idx, "spanBeats", "a turn with a span needs a speed");
+            }
+            s.params.durationMs = ms;
+        } else if (s.type == STEP_BODY && s.params.shape == BODY_SHAPE_FLUTTER) {
+            s.params.flutterMs = (ms > 0xFFFFu) ? (uint16_t)0xFFFFu : (uint16_t)ms;
+        } else {
+            return pcFailAt(label, idx, "spanBeats", "only a turn or a flutter lasts a span");
+        }
+    }
+    return pcOk();
+}
+
+static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj, uint8_t idx,
+                                     const SeqTempo* tempo, bool inLoopBody, SeqStep& s) {
+    ProtocolCheckResult r = parseStepFields(label, obj, idx, s);
+    if (!r.ok) return r;
+    return parseStepBeats(label, obj, idx, tempo, inLoopBody, s);
+}
+
 // Parse a JSON steps array into a SeqStep buffer. Sets *outCount.
 static ProtocolCheckResult parseBranch(const char* label, JsonArrayConst arr,
                                        SeqStep* buf, uint8_t cap,
-                                       uint8_t* outCount) {
+                                       const SeqTempo* tempo, uint8_t* outCount) {
     uint8_t n = 0;
+    // How many of the steps still to come sit inside the last loop header's
+    // body. Counted here, as the steps arrive, because this is where a beat
+    // inside a loop pass has to be told apart from one on the sequence.
+    uint16_t loopBodyLeft = 0;
     for (JsonVariantConst v : arr) {
         if (n >= cap) {
             return pcFail(label, "too many steps");
         }
-        ProtocolCheckResult r = parseStep(label, v.as<JsonObjectConst>(), n, buf[n]);
+        const bool inLoopBody = loopBodyLeft > 0;
+        ProtocolCheckResult r =
+            parseStep(label, v.as<JsonObjectConst>(), n, tempo, inLoopBody, buf[n]);
         if (!r.ok) return r;
+        if (inLoopBody) {
+            --loopBodyLeft;
+        } else if (buf[n].type == STEP_LOOP) {
+            loopBodyLeft = buf[n].params.bodyCount;
+        }
         ++n;
     }
     *outCount = n;
@@ -358,12 +546,19 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
     }
     out.toggleGroup = grp;
 
+    // The tempo goes first: every beat below counts in it.
+    SeqTempo tempo;
+    bool hasTempo = false;
+    ProtocolCheckResult r = parseTempo(root["tempo"], tempo, hasTempo);
+    if (!r.ok) return r;
+    const SeqTempo* tempoIn = hasTempo ? &tempo : nullptr;
+
     if (!root["steps"].is<JsonArrayConst>()) {
         return pcFail("steps", "missing steps array");
     }
     uint8_t stepCount = 0;
-    ProtocolCheckResult r = parseBranch("steps", root["steps"].as<JsonArrayConst>(),
-                                        stepBuf, stepCap, &stepCount);
+    r = parseBranch("steps", root["steps"].as<JsonArrayConst>(),
+                    stepBuf, stepCap, tempoIn, &stepCount);
     if (!r.ok) return r;
     out.steps = stepBuf;
     out.stepCount = stepCount;
@@ -374,7 +569,7 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
         JsonArrayConst carr = root["closeSteps"].as<JsonArrayConst>();
         if (carr.size() > 0) {
             uint8_t closeCount = 0;
-            r = parseBranch("closeSteps", carr, closeBuf, closeCap, &closeCount);
+            r = parseBranch("closeSteps", carr, closeBuf, closeCap, tempoIn, &closeCount);
             if (!r.ok) return r;
             out.closeSteps = closeBuf;
             out.closeStepCount = closeCount;

@@ -42,6 +42,12 @@
 //                           generates, so hand-written overlaps are advised on.
 //   part-left-open          ADR 0049: the engine undoes nothing a body step did.
 //   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
+//   tempo-confidence        ADR 0058: the analyser read Cantina's ~200 BPM as
+//                           127.8; a tempo that says how unsure it is must say
+//                           so where the builder looks.
+//   tempo-hash              ADR 0058: a sound is named as a role, so the track
+//                           behind a tempo can change with the sequence
+//                           untouched.
 //
 // One computation behind three appearances (#287 specific 6): the figures in
 // the editor, the full list at save and at clone, and a badge beside a run.
@@ -661,6 +667,45 @@
   };
 
   // ---------------------------------------------------------------------------
+  // The tempo (ADR 0058). Two warnings, neither a refusal: a tempo is advisory
+  // and always editable, and the builder can know what no analyser can.
+  // ---------------------------------------------------------------------------
+
+  // Below this a tempo is called a guess. Every figure ADR 0058 has came from
+  // synthesised click tracks, so this is a stated stand-in awaiting a real
+  // track, not a measurement: an analysed tempo whose best lag barely beats the
+  // average one reads 0.5, and so do taps whose spacing wanders by a tenth of
+  // a beat.
+  const TEMPO_CONFIDENCE_LOW = 0.5;
+
+  const tempoConfidence = (seq) => {
+    const tempo = seq?.tempo;
+    if (!tempo || typeof tempo.confidence !== "number" || tempo.confidence >= TEMPO_CONFIDENCE_LOW) return [];
+    const why =
+      tempo.source === "tapped"
+        ? "The taps were uneven, so this tempo is a rough guess."
+        : "The track has no steady beat to lock onto, so this tempo is a guess.";
+    return [finding("warning", "tempo-confidence", why, "Tap along to the track on the droid, or type the tempo.")];
+  };
+
+  // The hash can only be compared when the builder drops a copy of the track in
+  // again: the browser never holds the droid's audio, and no route fetches it.
+  // `context.trackHash` is that copy's, when there is one.
+  const tempoHash = (seq, context) => {
+    const stored = seq?.tempo?.hash;
+    const dropped = context?.trackHash;
+    if (typeof stored !== "string" || typeof dropped !== "string" || stored === dropped) return [];
+    return [
+      finding(
+        "warning",
+        "tempo-hash",
+        "The track you dropped in is not the one this tempo was measured from.",
+        "Analyse this track again, or tap along to it.",
+      ),
+    ];
+  };
+
+  // ---------------------------------------------------------------------------
   // The figures (#287 second pass, specific 9): each one true, no headline.
   // ---------------------------------------------------------------------------
   // The bytes POST /api/seq sends: the JSON data/web_api.js stringifies, as
@@ -706,9 +751,14 @@
   //   config     GET /api/config (its `components`)
   //   layout     the connected dome's layout model (data/dome_layout.js)
   //   maxBytes   the droid's per-file cap (GET /api/identity)
+  //   trackHash  the fingerprint of a track the builder dropped in, if any
+  //
+  // The steps are read as the droid runs them, every beat at the millisecond
+  // it resolves to (data/seq_protocol_check.js resolveBeats()).
   // ---------------------------------------------------------------------------
   const rehearse = (seq, context = {}) => {
-    const steps = Array.isArray(seq?.steps) ? seq.steps : [];
+    const run = window.SeqProtocolCheck?.resolveBeats ? window.SeqProtocolCheck.resolveBeats(seq) : seq;
+    const steps = Array.isArray(run?.steps) ? run.steps : [];
     const events = expand(steps);
     const findings = [
       ...dispatchSpacing(events),
@@ -722,6 +772,8 @@
       ...bodyOverlap(events),
       ...partLeftOpen(events),
       ...audioOutlivesShow(events),
+      ...tempoConfidence(seq),
+      ...tempoHash(seq, context),
     ];
 
     // What could not be judged, by step: a panel move's timing is the dome's, a

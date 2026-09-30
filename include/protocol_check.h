@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "seq_tempo.h"        // SeqTempo - the optional tempo block (ADR 0058)
 #include "sequence_engine.h"  // SeqStep, SeqStepParams, SeqToggleGroup, SeqEffectClass
 
 // -----------------------------------------------------------------------------
@@ -124,6 +125,15 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
 // field paths in errors ("steps" or "closeSteps").
 ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                                         uint8_t count);
+
+// Validate a sequence's tempo block (ADR 0058): a BPM inside the range a beat
+// period may have, a bar that holds its own downbeat, a confidence on 0..1,
+// and a hash only where the analysed route produced one. Form only -- a LOW
+// confidence and a hash that no longer matches the track are the Rehearsal's
+// warnings and never refuse a save. The wire codec asks this before it
+// resolves a single beat against the tempo, because a beat is only a
+// millisecond once the tempo it counts in is known to be well formed.
+ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo);
 
 // Convenience: full check of a draft (meta + main branch + close branch when
 // present). Stamps effectClass on both branches. Returns the first failure.

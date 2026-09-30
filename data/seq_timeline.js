@@ -23,10 +23,14 @@
 // Rehearsal's dome-timing Gap -- so a panel move is drawn as the instant it is
 // sent and never as though its time were measured.
 //
-// NO BEAT GRID. A grid comes only from a tempo stored on the sequence, and the
-// saved format carries none (src/seq_json.cpp, format 1), so there is no grid
-// at all today. The view never infers a tempo from step spacing and never
-// holds one of its own (ADR 0062).
+// NO BEAT GRID YET. A grid comes only from a tempo stored on the sequence
+// (ADR 0058: the optional `tempo` block at format 1, include/seq_tempo.h),
+// and drawing it is the timeline editor's (#441), not this view's. What this
+// view does read is where the droid runs each step: a step placed on a beat is
+// drawn at the millisecond its beat resolves to (data/seq_protocol_check.js
+// resolveBeats()), the same resolution the firmware makes at parse. The view
+// never infers a tempo from step spacing and never holds one of its own
+// (ADR 0062).
 //
 // WHAT THE END DOES is the engine's, not a guess at it (src/tasks/
 // sequence_engine.cpp beginFinish()): ring panels the run left open close one
@@ -140,7 +144,8 @@
   const build = (seq, context = {}) => {
     const rehearsal = window.SeqRehearsal;
     const motion = window.ServoMotion;
-    const steps = Array.isArray(seq?.steps) ? seq.steps : [];
+    const run = window.SeqProtocolCheck?.resolveBeats ? window.SeqProtocolCheck.resolveBeats(seq) : seq;
+    const steps = Array.isArray(run?.steps) ? run.steps : [];
     const endIndex = steps.findIndex((step) => step && step.type === "end");
     // The engine stops at the end step, so a step written after it never runs.
     const events = (rehearsal ? rehearsal.expand(steps) : []).filter(

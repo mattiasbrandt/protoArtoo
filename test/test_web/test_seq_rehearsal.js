@@ -360,3 +360,26 @@ test("a step aimed at hardware switched off on this droid is one finding per swi
   assert.equal(off.find((item) => !item.part).n, 2);
   assert.equal(off.find((item) => item.part).part, "doorFL");
 });
+
+// A tempo is advisory and always editable (ADR 0058): a weak one, and one whose
+// track has changed underneath it, are warnings the builder reads, and neither
+// is ever a reason the droid refuses the save.
+test("a weak or stale tempo is warned about and never refused", () => {
+  const guessed = {
+    ...seq([
+      { t: 0, beat: 0, type: "audio", cmd: "$H" },
+      { t: 1846, beat: 4, type: "end" },
+    ]),
+    tempo: { bpm: 130, phase: 0, barLen: 4, barPhase: 0, source: "analysed", confidence: 0.3, hash: "0a1b2c3d" },
+  };
+  const report = R.rehearse(guessed, { trackHash: "ffffffff" });
+  assert.equal(byCode(report, "tempo-confidence").length, 1);
+  assert.equal(byCode(report, "tempo-confidence")[0].level, "warning");
+  assert.equal(byCode(report, "tempo-hash").length, 1);
+  assert.equal(W.SeqProtocolCheck.validateSequence(guessed).ok, true, "a weak tempo was refused");
+
+  const sure = { ...guessed, tempo: { ...guessed.tempo, confidence: 0.9 } };
+  const matched = R.rehearse(sure, { trackHash: "0a1b2c3d" });
+  assert.equal(byCode(matched, "tempo-confidence").length, 0);
+  assert.equal(byCode(matched, "tempo-hash").length, 0);
+});

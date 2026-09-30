@@ -1485,6 +1485,38 @@
     fieldsContainer.innerHTML = groupedHtml + helpHtml;
   };
 
+  // Where the tempo came from, as the field beside it says it (ADR 0058).
+  const TEMPO_SOURCE_LABELS = { typed: "Typed", tapped: "Tapped", analysed: "Analysed" };
+  const tempoSourceLabel = (tempo) => (tempo ? TEMPO_SOURCE_LABELS[tempo.source] || "" : "");
+
+  // A typed BPM is stored as typed, whatever it replaced: the number no longer
+  // came from the taps or the analyser, so their confidence and the analysed
+  // track's fingerprint go with them. Where beat 1 sits and the bar the
+  // builder set stay. Every step on a beat then moves to where its beat now
+  // falls, and every step placed in milliseconds stays put (ADR 0058). An
+  // empty field removes the tempo; a step still on a beat then fails the
+  // check until it is placed again.
+  const applyTypedBpm = (value) => {
+    const seq = editorState.current;
+    if (value === "" || value === null) {
+      delete seq.tempo;
+    } else {
+      const bpm = Math.round(Number(value) * 10) / 10;
+      if (!Number.isFinite(bpm)) return;
+      const kept = seq.tempo || {};
+      seq.tempo = {
+        bpm,
+        phase: kept.phase ?? 0,
+        barLen: kept.barLen ?? 4,
+        barPhase: kept.barPhase ?? 0,
+        ...(kept.duration ? { duration: kept.duration } : {}),
+        source: "typed",
+        confidence: 1,
+      };
+    }
+    editorState.current = SeqProtocolCheck.resolveBeats(seq);
+  };
+
   const renderEditorView = (seq) => {
     // isNew must be set by the caller before calling renderEditorView
     editorState.original = JSON.parse(JSON.stringify(seq));
@@ -1543,6 +1575,14 @@
                 <option value="low" ${seq.toggleGroup === "low" ? "selected" : ""}>low</option>
                 <option value="all" ${seq.toggleGroup === "all" ? "selected" : ""}>all</option>
               </select>
+            </div>
+
+            <div class="seq-editor-field">
+              <label for="seq-editor-bpm">Tempo (BPM)</label>
+              <div class="seq-editor-slider-row">
+                <input id="seq-editor-bpm" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
+                <span class="seq-editor-slider-value" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
+              </div>
             </div>
           </div>
 
@@ -1726,6 +1766,16 @@
       delete step.speed;
     }
 
+    // The step is rebuilt from the form, which has no field for a beat, so a
+    // beat-placed step keeps its beat through an edit of anything else. Typing
+    // a new time is choosing a millisecond instead, and the beat goes; a span
+    // in beats goes the same way when its duration is typed over (ADR 0058).
+    const prev = editorState.current.steps[stepIdx] || {};
+    if (prev.beat !== undefined && step.t === prev.t) step.beat = prev.beat;
+    if (prev.spanBeats !== undefined && step.type === prev.type && step.durationMs === prev.durationMs) {
+      step.spanBeats = prev.spanBeats;
+    }
+
     // Validate
     const validation = SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
     const errorDiv = row.querySelector(".step-row-error") || document.createElement("div");
@@ -1790,6 +1840,17 @@
     if (toggleSelect) {
       toggleSelect.addEventListener("change", () => {
         editorState.current.toggleGroup = toggleSelect.value;
+        updateValidationSummary();
+      });
+    }
+
+    const bpmInput = document.getElementById("seq-editor-bpm");
+    if (bpmInput) {
+      bpmInput.addEventListener("change", () => {
+        applyTypedBpm(bpmInput.value);
+        const sourceEl = document.getElementById("seq-editor-tempo-source");
+        if (sourceEl) sourceEl.textContent = tempoSourceLabel(editorState.current.tempo);
+        rerenderStepTable();
         updateValidationSummary();
       });
     }

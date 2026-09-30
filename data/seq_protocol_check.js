@@ -26,6 +26,50 @@
     "whistle",
   ];
   const RANDOM_SETS  = ["ring", "pie", "all", "hold"];
+
+  // A Sequence Tempo (ADR 0058). Bounds mirror include/seq_tempo.h, where each
+  // is derived: a beat lasts 100..60000 ms (the loop period bounds), so a tempo
+  // runs 1..600 BPM, and the longest sequence at the fastest tempo is 1200
+  // beats. The BPM is stored to one decimal and counted in tenths, so a beat
+  // resolves to the same whole millisecond here as on the droid.
+  const TEMPO_SOURCES = ["typed", "tapped", "analysed"];
+  const TEMPO_BPM_TENTHS_MIN = 10;
+  const TEMPO_BPM_TENTHS_MAX = 6000;
+  const TEMPO_BEAT_MAX = 1200;
+  const TEMPO_BAR_LEN_MAX = 16;
+  const TEMPO_PHASE_MAX_MS = 120000;
+  const TEMPO_DURATION_MAX_MS = 3600000;
+  const TEMPO_HASH = /^[0-9a-f]{1,64}$/;
+
+  const isWhole = (value) => Number.isInteger(value);
+  const bpmTenths = (tempo) => Math.round(Number(tempo?.bpm) * 10);
+
+  // seqTempoSpanMs() / seqTempoBeatMs(): round(beats * 60000 / bpm), in the
+  // same integer steps the firmware takes.
+  const tempoSpanMs = (tempo, beats) => {
+    const tenths = bpmTenths(tempo);
+    if (!(tenths > 0)) return 0;
+    return Math.floor((2 * beats * 600000 + tenths) / (2 * tenths));
+  };
+  const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
+
+  // The indices of steps inside a loop body: timed from the loop pass, so a
+  // beat there counts from nothing the grid knows.
+  const loopBodyIndices = (steps) => {
+    const body = new Set();
+    let j = 0;
+    while (j < steps.length) {
+      const s = steps[j];
+      if (s && s.type === "loop" && typeof s.body === "number" && s.body > 0) {
+        const count = Math.min(s.body, steps.length - j - 1);
+        for (let k = 1; k <= count; k++) body.add(j + k);
+        j += count + 1;
+      } else {
+        j++;
+      }
+    }
+    return body;
+  };
   const RANDOM_MODES = ["flutter", "open", "close"];
 
   // audioCat "fallback" is a NAMED SLOT (the clip played when the chosen category
@@ -906,6 +950,133 @@
     },
 
     /**
+     * The tempo block's form (protocolCheckTempo(), src/protocol_check.cpp, and
+     * the wire rules in src/seq_json.cpp parseTempo()). A low confidence or a
+     * stale hash is the Rehearsal's, never this gate's.
+     * @param {object} tempo
+     * @returns {{ok: boolean, field?: string, error?: string}}
+     */
+    validateTempo(tempo) {
+      const fail = (field, error) => ({ ok: false, field: `tempo.${field}`, error });
+      if (!tempo || typeof tempo !== "object" || Array.isArray(tempo)) {
+        return { ok: false, field: "tempo", error: "The tempo is missing its details" };
+      }
+      const tenths = bpmTenths(tempo);
+      if (typeof tempo.bpm !== "number" || !(tenths >= TEMPO_BPM_TENTHS_MIN && tenths <= TEMPO_BPM_TENTHS_MAX)) {
+        return fail("bpm", "The tempo must be between 1 and 600 BPM");
+      }
+      const phase = tempo.phase ?? 0;
+      if (!isWhole(phase) || phase < 0 || phase > TEMPO_PHASE_MAX_MS) {
+        return fail("phase", "Beat 1 must sit within the first 120000 ms");
+      }
+      const barLen = tempo.barLen ?? 4;
+      if (!isWhole(barLen) || barLen < 1 || barLen > TEMPO_BAR_LEN_MAX) {
+        return fail("barLen", "A bar is 1 to 16 beats");
+      }
+      const barPhase = tempo.barPhase ?? 0;
+      if (!isWhole(barPhase) || barPhase < 0 || barPhase >= barLen) {
+        return fail("barPhase", "The downbeat must be a beat of the bar");
+      }
+      const duration = tempo.duration ?? 0;
+      if (!isWhole(duration) || duration < 0 || duration > TEMPO_DURATION_MAX_MS) {
+        return fail("duration", "The track length must be under an hour");
+      }
+      if (!TEMPO_SOURCES.includes(tempo.source)) {
+        return fail("source", "The tempo must say whether it was typed, tapped or analysed");
+      }
+      const confidence = Math.round(Number(tempo.confidence) * 1000);
+      if (typeof tempo.confidence !== "number" || !(confidence >= 0 && confidence <= 1000)) {
+        return fail("confidence", "The tempo's confidence must be between 0 and 1");
+      }
+      if (tempo.hash !== undefined) {
+        if (typeof tempo.hash !== "string" || !TEMPO_HASH.test(tempo.hash)) {
+          return fail("hash", "The track fingerprint is damaged");
+        }
+        if (tempo.source !== "analysed") {
+          return fail("hash", "Only an analysed tempo carries a track fingerprint");
+        }
+      }
+      return { ok: true };
+    },
+
+    /** Where beat `beat` falls, in ms, on this tempo (seqTempoBeatMs()). */
+    tempoBeatMs,
+    /** How long `beats` beats last, in ms, on this tempo (seqTempoSpanMs()). */
+    tempoSpanMs,
+
+    /**
+     * The sequence as the droid will run it: every step placed on a beat at
+     * the millisecond its beat resolves to, and every span in beats as the
+     * duration it resolves to (src/seq_json.cpp parseStepBeats()). Returns a
+     * copy; the builder's own object, beats and all, is never rewritten.
+     * A sequence with no valid tempo comes back as it went in.
+     * @param {object} seq
+     * @returns {object}
+     */
+    resolveBeats(seq) {
+      if (!seq || !Array.isArray(seq.steps) || seq.tempo === undefined) return seq;
+      if (!this.validateTempo(seq.tempo).ok) return seq;
+      const tempo = seq.tempo;
+      const resolveBranch = (steps) =>
+        steps.map((step) => {
+          if (!step || typeof step !== "object") return step;
+          const out = { ...step };
+          if (isWhole(step.beat)) out.t = tempoBeatMs(tempo, step.beat);
+          if (isWhole(step.spanBeats)) {
+            const ms = tempoSpanMs(tempo, step.spanBeats);
+            if (step.type === "domeRotate") out.durationMs = ms;
+            else if (step.type === "body" && step.shape === "flutter") out.flutterMs = ms;
+          }
+          return out;
+        });
+      const out = { ...seq, steps: resolveBranch(seq.steps) };
+      if (Array.isArray(seq.closeSteps)) out.closeSteps = resolveBranch(seq.closeSteps);
+      return out;
+    },
+
+    /**
+     * The beat rules on each step (src/seq_json.cpp parseStepBeats()): a beat
+     * or a span needs a tempo, a step in a loop body carries no beat, a beat
+     * is a whole 0..1200 and a span a whole 1..1200 on a step that has a
+     * duration to set.
+     */
+    _validateBeats(steps, tempo) {
+      const inLoop = loopBodyIndices(steps);
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i] || {};
+        if (step.beat !== undefined) {
+          if (tempo === undefined) {
+            return { ok: false, field: `steps[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
+          }
+          if (inLoop.has(i)) {
+            return {
+              ok: false,
+              field: `steps[${i}].beat`,
+              error: "A step inside a repeat is timed from the repeat. Put the repeat on the beat instead.",
+            };
+          }
+          if (!isWhole(step.beat) || step.beat < 0 || step.beat > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `steps[${i}].beat`, error: "Pick a beat on the grid" };
+          }
+        }
+        if (step.spanBeats !== undefined) {
+          if (tempo === undefined) {
+            return { ok: false, field: `steps[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
+          }
+          if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `steps[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
+          }
+          const turns = step.type === "domeRotate" && Number(step.speedPct) !== 0;
+          const flutters = step.type === "body" && step.shape === "flutter";
+          if (!turns && !flutters) {
+            return { ok: false, field: `steps[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
+          }
+        }
+      }
+      return { ok: true };
+    },
+
+    /**
      * Validate entire sequence.
      * @param {object} seq
      * @returns {{ok: boolean, field?: string, error?: string}}
@@ -915,7 +1086,17 @@
         return { ok: false, error: "This sequence is missing its details" };
       }
 
-      const { name, suppressMs, toggleGroup, steps } = seq;
+      // The tempo and the beats first, as the droid parses them: every rule
+      // below reads the steps at the milliseconds their beats resolve to.
+      if (seq.tempo !== undefined) {
+        const tempoVal = this.validateTempo(seq.tempo);
+        if (!tempoVal.ok) return tempoVal;
+      }
+      if (Array.isArray(seq.steps)) {
+        const beatVal = this._validateBeats(seq.steps, seq.tempo);
+        if (!beatVal.ok) return beatVal;
+      }
+      const { name, suppressMs, toggleGroup, steps } = this.resolveBeats(seq);
 
       // Name
       const nameVal = this.validateName(name);

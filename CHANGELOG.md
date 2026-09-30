@@ -26,6 +26,10 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **A sequence can have a tempo.** Type the BPM in the editor, and a step
+  placed on a beat stays on it: change the tempo and every step on a beat moves
+  with it, while steps placed in milliseconds stay put. A tempo that is only a
+  guess is flagged, never refused.
 - **Read a sequence as time.** Timeline, on any sequence card, draws the
   routine with a lane per part: each move as long as it takes, and whatever the
   routine leaves open running on to the end. Move the marker to any moment and

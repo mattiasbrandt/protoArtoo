@@ -797,6 +797,53 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
 }
 
 // -----------------------------------------------------------------------------
+// Tempo (ADR 0058)
+// -----------------------------------------------------------------------------
+
+// seq_tempo.h is pure and restates these by value; this is where the two are
+// held together, so moving a loop or suppress bound without the tempo bounds
+// that were derived from it is a build failure rather than a silent drift.
+static_assert(SEQ_TEMPO_BPM_TENTHS_MIN == 600000u / PC_LOOP_PERIOD_MAX,
+              "the slowest tempo is one beat per the longest loop period");
+static_assert(SEQ_TEMPO_BPM_TENTHS_MAX == 600000u / PC_LOOP_PERIOD_MIN,
+              "the fastest tempo is one beat per the shortest loop period");
+static_assert(SEQ_TEMPO_BEAT_MAX == PC_SUPPRESS_MAX_MS / PC_LOOP_PERIOD_MIN,
+              "the last beat is the longest sequence at the fastest tempo");
+static_assert(SEQ_TEMPO_PHASE_MAX_MS == PC_SUPPRESS_MAX_MS,
+              "beat 0 can sit no later than the longest sequence runs");
+
+ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo) {
+    if (tempo.bpmTenths < SEQ_TEMPO_BPM_TENTHS_MIN || tempo.bpmTenths > SEQ_TEMPO_BPM_TENTHS_MAX) {
+        return pcFail("tempo.bpm", "bpm must be 1..600");
+    }
+    if (tempo.phaseMs > SEQ_TEMPO_PHASE_MAX_MS) {
+        return pcFail("tempo.phase", "phase must be 0..120000 ms");
+    }
+    if (tempo.barLen < 1 || tempo.barLen > SEQ_TEMPO_BAR_LEN_MAX) {
+        return pcFail("tempo.barLen", "barLen must be 1..16 beats");
+    }
+    // The downbeat is a beat of the bar it starts, so it is one of barLen.
+    if (tempo.barPhase >= tempo.barLen) {
+        return pcFail("tempo.barPhase", "barPhase must be a beat of the bar");
+    }
+    if (tempo.durationMs > SEQ_TEMPO_DURATION_MAX_MS) {
+        return pcFail("tempo.duration", "duration must be 0..3600000 ms");
+    }
+    if (tempo.source >= SEQ_TEMPO_SOURCE_COUNT) {
+        return pcFail("tempo.source", "source must be typed, tapped or analysed");
+    }
+    if (tempo.confidencePermille > SEQ_TEMPO_CONFIDENCE_MAX) {
+        return pcFail("tempo.confidence", "confidence must be 0..1");
+    }
+    // Only the analysed route measured a file, so only it can pair the grid to
+    // one; a tapped or typed tempo is unanchored by design (ADR 0058).
+    if (tempo.hasHash && tempo.source != SEQ_TEMPO_ANALYSED) {
+        return pcFail("tempo.hash", "only an analysed tempo carries a hash");
+    }
+    return pcOk();
+}
+
+// -----------------------------------------------------------------------------
 // Branch validation + effect-class stamping
 // -----------------------------------------------------------------------------
 ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,

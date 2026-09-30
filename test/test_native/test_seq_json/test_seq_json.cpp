@@ -9,6 +9,7 @@
 //   - parse error cases.
 // =============================================================================
 
+#include <stdio.h>
 #include <string.h>
 
 #include <unity.h>
@@ -594,6 +595,102 @@ static void test_prior_build_sequence_still_loads() {
 }
 
 // =============================================================================
+// Tempo and beats (ADR 0058, #438)
+// =============================================================================
+
+// DM:CANTINA's receipt: an 1846 ms period worked out from 130 BPM by hand, with
+// nothing machine-readable connecting the two. On a stored tempo the beat IS
+// the connection: four beats at 130 BPM resolve to 1846 ms, the number the
+// catalog carries, and the stale `t` written beside a beat loses to it.
+static const char* kCantinaTempoJson =
+    "{\"format\":1,\"name\":\"DM:BEATS\",\"suppressMs\":9000,"
+    "\"tempo\":{\"bpm\":%s,\"source\":\"typed\",\"confidence\":1},"
+    "\"steps\":["
+    "{\"t\":0,\"beat\":0,\"type\":\"dome\",\"cmd\":\":OP01\"},"
+    "{\"t\":5,\"beat\":2,\"type\":\"dome\",\"cmd\":\":CL01\"},"
+    "{\"t\":1500,\"type\":\"audio\",\"cmd\":\"$H\"},"
+    "{\"t\":0,\"beat\":4,\"type\":\"dome\",\"cmd\":\":OP02\"},"
+    "{\"t\":5000,\"type\":\"end\"}]}";
+
+static void parseAtBpm(const char* bpm, SeqDraft& d) {
+    char json[512];
+    snprintf(json, sizeof(json), kCantinaTempoJson, bpm);
+    ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    ProtocolCheckResult pc = protocolCheck(d);
+    TEST_ASSERT_TRUE_MESSAGE(pc.ok, pc.message);
+}
+
+static void test_tempo_beats_resolve_to_the_millisecond_the_engine_runs() {
+    SeqDraft d;
+    parseAtBpm("130", d);
+    TEST_ASSERT_EQUAL_UINT32(0, d.steps[0].tMs);
+    TEST_ASSERT_EQUAL_UINT32(923, d.steps[1].tMs);   // 2 beats of 461.54 ms
+    TEST_ASSERT_EQUAL_UINT32(1846, d.steps[3].tMs);  // DM:CANTINA's period
+}
+
+// Changing the one number re-resolves every beat-placed step and leaves the
+// millisecond-placed one where it was.
+static void test_tempo_change_moves_beats_and_leaves_milliseconds() {
+    SeqDraft d;
+    parseAtBpm("120", d);
+    TEST_ASSERT_EQUAL_UINT32(1000, d.steps[1].tMs);
+    TEST_ASSERT_EQUAL_UINT32(1500, d.steps[2].tMs);  // no beat: untouched
+    TEST_ASSERT_EQUAL_UINT32(2000, d.steps[3].tMs);
+}
+
+static void test_tempo_beat_without_tempo_is_refused() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:NOTEMPO\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"beat\":1,\"type\":\"audio\",\"cmd\":\"$H\"},"
+        "{\"t\":300,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].beat", r.field);
+}
+
+// A step in a loop body is timed from its pass, so a beat there would count
+// from a moment the grid does not know.
+static void test_tempo_beat_inside_a_loop_body_is_refused() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:LOOPBEAT\",\"suppressMs\":9000,"
+        "\"tempo\":{\"bpm\":120,\"source\":\"typed\",\"confidence\":1},\"steps\":["
+        "{\"t\":0,\"beat\":1,\"type\":\"loop\",\"body\":1,\"periodMs\":500,\"durationMs\":2000},"
+        "{\"t\":0,\"beat\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
+        "{\"t\":3000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[1].beat", r.field);
+}
+
+// Only the analysed route measured a file, so only it can carry a hash.
+static void test_tempo_hash_on_a_typed_tempo_is_refused() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:HASHED\",\"suppressMs\":5000,"
+        "\"tempo\":{\"bpm\":120,\"source\":\"typed\",\"confidence\":1,\"hash\":\"0a1b2c3d\"},"
+        "\"steps\":[{\"t\":300,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("tempo.hash", r.field);
+}
+
+// A dome turn's duration as a span of beats: two bars of 4/4 at 120 BPM.
+static void test_tempo_span_in_beats_sets_the_turn_duration() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:SPAN\",\"suppressMs\":9000,"
+        "\"tempo\":{\"bpm\":120,\"source\":\"tapped\",\"confidence\":0.8},\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":30,\"durationMs\":1,\"spanBeats\":8},"
+        "{\"t\":5000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT32(4000, d.steps[0].params.durationMs);
+}
+
+// =============================================================================
 // boundAudio field (ADR 0010 Bounded Audio)
 // =============================================================================
 
@@ -823,6 +920,13 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_body_parse_flutter_ms_out_of_field_rejected);
     RUN_TEST(test_body_serialize_roundtrip_omits_defaults);
     RUN_TEST(test_prior_build_sequence_still_loads);
+
+    RUN_TEST(test_tempo_beats_resolve_to_the_millisecond_the_engine_runs);
+    RUN_TEST(test_tempo_change_moves_beats_and_leaves_milliseconds);
+    RUN_TEST(test_tempo_beat_without_tempo_is_refused);
+    RUN_TEST(test_tempo_beat_inside_a_loop_body_is_refused);
+    RUN_TEST(test_tempo_hash_on_a_typed_tempo_is_refused);
+    RUN_TEST(test_tempo_span_in_beats_sets_the_turn_duration);
 
     RUN_TEST(test_audio_boundaudio_default_true_when_omitted);
     RUN_TEST(test_audio_boundaudio_explicit_true);
