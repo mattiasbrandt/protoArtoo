@@ -945,7 +945,7 @@ ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo) {
     // Only the analysed route measured a file, so only it can pair the grid to
     // one; a tapped or typed tempo is unanchored by design (ADR 0058).
     if (tempo.hasHash && tempo.source != SEQ_TEMPO_ANALYSED) {
-        return pcFail("tempo.hash", "only an analysed tempo carries a hash");
+        return pcFail("tempo.hash", "only an analyzed tempo carries a hash");
     }
     return pcOk();
 }

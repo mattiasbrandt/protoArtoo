@@ -46,7 +46,7 @@
 //                           our fork has no part-way move for PP3 and PP5.
 //   gesture-dome            ADR 0046: a dome Gesture is the dome's `$` command,
 //                           and a pair the dome has no command for saves.
-//   tempo-confidence        ADR 0058: the analyser read Cantina's ~200 BPM as
+//   tempo-confidence        ADR 0058: the analyzer read Cantina's ~200 BPM as
 //                           127.8; a tempo that says how unsure it is must say
 //                           so where the builder looks.
 //   tempo-hash              ADR 0058: a sound is named as a role, so the track
@@ -780,12 +780,12 @@
 
   // ---------------------------------------------------------------------------
   // The tempo (ADR 0058). Two warnings, neither a refusal: a tempo is advisory
-  // and always editable, and the builder can know what no analyser can.
+  // and always editable, and the builder can know what no analyzer can.
   // ---------------------------------------------------------------------------
 
   // Below this a tempo is called a guess. Every figure ADR 0058 has came from
   // synthesised click tracks, so this is a stated stand-in awaiting a real
-  // track, not a measurement: an analysed tempo whose best lag barely beats the
+  // track, not a measurement: an analyzed tempo whose best lag barely beats the
   // average one reads 0.5, and so do taps whose spacing wanders by a tenth of
   // a beat.
   const TEMPO_CONFIDENCE_LOW = 0.5;
@@ -812,7 +812,7 @@
         "warning",
         "tempo-hash",
         "The track you dropped in is not the one this tempo was measured from.",
-        "Analyse this track again, or tap along to it.",
+        "Analyze this track again, or tap along to it.",
       ),
     ];
   };

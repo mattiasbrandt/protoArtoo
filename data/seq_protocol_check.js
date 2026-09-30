@@ -1061,7 +1061,7 @@
           return fail("hash", "The track fingerprint is damaged");
         }
         if (tempo.source !== "analysed") {
-          return fail("hash", "Only an analysed tempo carries a track fingerprint");
+          return fail("hash", "Only an analyzed tempo carries a track fingerprint");
         }
       }
       return { ok: true };

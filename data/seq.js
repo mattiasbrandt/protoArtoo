@@ -58,7 +58,7 @@
     return Number.isInteger(bytes) && bytes > 0 ? bytes : null;
   };
 
-  // A track the builder dropped in to be analysed, while the editor is open:
+  // A track the builder dropped in to be analyzed, while the editor is open:
   // its fingerprint, which the Rehearsal compares with the one the tempo was
   // measured from, and its analysis, until the builder takes or leaves it.
   // The browser never holds the droid's audio (ADR 0046), so this is the only
@@ -1757,11 +1757,11 @@
   };
 
   // Where the tempo came from, as the field beside it says it (ADR 0058).
-  const TEMPO_SOURCE_LABELS = { typed: "Typed", tapped: "Tapped", analysed: "Analysed" };
+  const TEMPO_SOURCE_LABELS = { typed: "Typed", tapped: "Tapped", analysed: "Analyzed" };
   const tempoSourceLabel = (tempo) => (tempo ? TEMPO_SOURCE_LABELS[tempo.source] || "" : "");
 
   // A typed BPM is stored as typed, whatever it replaced: the number no longer
-  // came from the taps or the analyser, so their confidence and the analysed
+  // came from the taps or the analyzer, so their confidence and the analyzed
   // track's fingerprint go with them. Where beat 1 sits and the bar the
   // builder set stay. An empty field is no tempo; a step still on a beat then
   // fails the check until it is placed again.
@@ -1894,7 +1894,7 @@
                   <span class="setting-unit">BPM</span>
                 </span>
                 <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
-                <label class="seq-act" for="seq-editor-track">Analyse a track</label>
+                <label class="seq-act" for="seq-editor-track">Analyze a track</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
               </span>
               <span class="setting-value seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
@@ -2275,7 +2275,7 @@
         tempoFeedback("Reading the track...");
         let result;
         try {
-          result = await window.SeqTempo.analyseFile(file);
+          result = await window.SeqTempo.analyzeFile(file);
         } catch (error) {
           tempoFeedback("This file could not be read as audio.");
           return;
@@ -2301,7 +2301,7 @@
           return;
         }
         tempoFeedback("");
-        setTempo(window.SeqTempo.analysedTempo(result));
+        setTempo(window.SeqTempo.analyzedTempo(result));
       });
     }
 

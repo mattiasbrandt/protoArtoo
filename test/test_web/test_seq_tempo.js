@@ -1,9 +1,9 @@
 // A tempo read off a track (data/seq_tempo.js, ADR 0058, #438).
 //
-// The invariant is the one-way door: an analysed grid persists, and the steps
+// The invariant is the one-way door: an analyzed grid persists, and the steps
 // placed on it carry beat indices, so a grid that sits early is a fault every
 // saved sequence inherits and no later fix can quietly undo. The reference the
-// analyser is ported from timed an onset at its analysis window's start, about
+// analyzer is ported from timed an onset at its analysis window's start, about
 // 18 ms early at 44.1 kHz; the port times it at the window's centre. A click
 // track with a known click time is the measurement: the grid has to land where
 // the clicks sound.
@@ -37,8 +37,8 @@ const clickTrack = (bpm, seconds, firstSec, sampleRate = 44100) => {
   return { sampleRate, length: n, duration: seconds, numberOfChannels: 1, getChannelData: () => data };
 };
 
-test("an analysed grid lands where the clicks sound, not a window early", () => {
-  const result = load().analyse(clickTrack(120, 10, 0.5));
+test("an analyzed grid lands where the clicks sound, not a window early", () => {
+  const result = load().analyze(clickTrack(120, 10, 0.5));
   assert.ok(result.onsetsMs.length >= 8, "the clicks were not found");
   result.onsetsMs.slice(0, 8).forEach((onset, k) => {
     const click = 500 + k * 500;

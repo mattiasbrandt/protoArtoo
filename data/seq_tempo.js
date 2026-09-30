@@ -3,10 +3,10 @@
 //
 // Where a Sequence Tempo comes from (ADR 0058, ADR 0060, #438): the builder
 // taps along to the track playing on the droid, or drops their own copy of the
-// track in to be analysed. A typed number is the third route and needs nothing
+// track in to be analyzed. A typed number is the third route and needs nothing
 // here. Every route says how sure it is, and the builder sets the downbeat.
 //
-// The analyser below is PORTED, not reimplemented, from
+// The analyzer below is PORTED, not reimplemented, from
 // r2d2-astromech-simulator v1.79.0 (175ad1b), src/js/maestro/music.js:47-114
 // (musicMono, musicAnalyse). ADR 0058 took the port and its notice
 // deliberately: the constants and the estimator are the reference's, and
@@ -45,7 +45,7 @@
 //   SOFTWARE.
 //
 // CONFIDENCE is 0..1 on every source, because one field carrying two scales
-// would make "how sure" mean different things on one screen. The analyser's
+// would make "how sure" mean different things on one screen. The analyzer's
 // own figure is best / mean(corr) (ADR 0058), stored as 1 - mean/best: a best
 // lag no better than the average one is 0, twice the average is 0.5. Taps are
 // 1 - 5 * (spread of the gaps / the average gap), so gaps wandering by a tenth
@@ -78,7 +78,7 @@
   // and returns the grid in milliseconds: bpm to one decimal (0 when there is
   // no steady beat), where beat 0 sits, every beat inside the track, the
   // onsets it found, and the confidence described in the header.
-  const analyse = (buf) => {
+  const analyze = (buf) => {
     const sr = buf.sampleRate;
     const samples = mono(buf);
     const hop = 512;
@@ -249,9 +249,9 @@
     return h.toString(16).padStart(8, "0");
   };
 
-  // Decode a dropped file and analyse it. The decode is the browser's own; a
+  // Decode a dropped file and analyze it. The decode is the browser's own; a
   // file it cannot read rejects, and the caller says so.
-  const analyseFile = async (file) => {
+  const analyzeFile = async (file) => {
     const bytes = await file.arrayBuffer();
     const hash = fingerprint(new Uint8Array(bytes));
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -259,7 +259,7 @@
     const ctx = new Ctx();
     try {
       const buf = await ctx.decodeAudioData(bytes.slice(0));
-      return { ...analyse(buf), hash };
+      return { ...analyze(buf), hash };
     } finally {
       if (ctx.close) ctx.close();
     }
@@ -267,7 +267,7 @@
 
   // ---------------------------------------------------------------------------
   // The tempo block each route stores (ADR 0058). The downbeat is the
-  // builder's: a tapped tempo's is the first tap, an analysed one starts on the
+  // builder's: a tapped tempo's is the first tap, an analyzed one starts on the
   // grid's first beat until the builder moves it (moveDownbeat()).
   // ---------------------------------------------------------------------------
   const tappedTempo = (result) => ({
@@ -279,7 +279,7 @@
     confidence: result.confidence,
   });
 
-  const analysedTempo = (result) => ({
+  const analyzedTempo = (result) => ({
     bpm: result.bpm,
     phase: result.phaseMs,
     barLen: 4,
@@ -370,12 +370,12 @@
 
   window.SeqTempo = Object.freeze({
     TAPS_MIN,
-    analyse,
-    analyseFile,
+    analyze,
+    analyzeFile,
     tap,
     fingerprint,
     tappedTempo,
-    analysedTempo,
+    analyzedTempo,
     moveDownbeat,
     beatName,
     bars,

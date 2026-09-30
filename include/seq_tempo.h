@@ -44,7 +44,7 @@
 enum SeqTempoSource : uint8_t {
     SEQ_TEMPO_TYPED    = 0,  // the builder typed a number
     SEQ_TEMPO_TAPPED   = 1,  // the builder tapped along to the track on the droid
-    SEQ_TEMPO_ANALYSED = 2,  // the ported analyser read the builder's own copy
+    SEQ_TEMPO_ANALYSED = 2,  // the ported analyzer read the builder's own copy
     SEQ_TEMPO_SOURCE_COUNT = 3,
 };
 
