@@ -43,19 +43,9 @@ struct SequenceLookupResult {
 // -----------------------------------------------------------------------------
 // SequenceRequest  --  message sent to sequenceQueue to start or preempt.
 // -----------------------------------------------------------------------------
-// `kind` says what is asked of the named sequence: run it (the zero value, so
-// every existing sender that zero-initialises a request still asks for a run),
-// or send the droid to one instant of it (#440, include/sequence_pose.h).
-enum SequenceRequestKind : uint8_t {
-    SEQ_REQUEST_RUN  = 0,
-    SEQ_REQUEST_POSE = 1,
-};
-
 struct SequenceRequest {
     char          name[24];
     CommandSource src;
-    uint8_t       kind;      // SequenceRequestKind
-    uint32_t      poseAtMs;  // SEQ_REQUEST_POSE: the instant, ms from the start
 };
 
 // Queue handle  --  defined in main.cpp.
@@ -72,11 +62,13 @@ void sequenceDispatcherTask(void* pvParameters);
 // (queue full) or if the name is empty.
 bool sequenceStart(const char* name, CommandSource src);
 
-// Send the droid to one instant of a Learned or Factory sequence (#440). Queues
-// the request for the Coordinator, which works out the pose from the stored
-// steps and paces it; the estop and Sleep Mode refuse it there. Returns false
-// for a name that is not a body-owned sequence -- an alias or a name the dome
-// runs has no steps here to take a pose from -- and when the queue is full.
+// Send the droid to one instant of a Learned or Factory sequence (#440). Hands
+// the request to the Coordinator (robotState.poseRequest), which works out the
+// pose from the stored steps and paces it; the estop and Sleep Mode refuse it
+// there. A second press before the Coordinator has taken the first replaces
+// it: the latest word is the operator's. Returns false for a name that is not
+// a body-owned sequence -- an alias or a name the dome runs has no steps here
+// to take a pose from.
 bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src);
 
 // Pure routing classification  --  no side effects. Safe to call from any context

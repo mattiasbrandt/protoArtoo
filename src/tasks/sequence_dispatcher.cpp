@@ -114,7 +114,16 @@ static const ServoOutputRow* rowForPart(const char* part, ServoOutputRow* row) {
     return nullptr;
 }
 
-static bool dispatchBodyMove(const SeqAction& act) {
+// What a body move did, for a caller that paces what comes after it: whether
+// a command went to ServoTask, the Output it went to and that Output's full
+// throw. A pose press is the caller (poseOneCommand() below).
+struct BodyMoveOutcome {
+    bool     sent;
+    uint8_t  armId;
+    uint16_t throwMs;
+};
+
+static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nullptr) {
     ServoOutputRow row = {};
     const ServoOutputRow* driving = rowForPart(act.payload, &row);
 
@@ -131,7 +140,15 @@ static bool dispatchBodyMove(const SeqAction& act) {
     cmd.positionUs = plan.targetUs;
     cmd.source = SRC_SEQ;
     cmd.timestampMs = millis();
-    return xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE;
+    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
+        return false;
+    }
+    if (outcome != nullptr) {
+        outcome->sent = true;
+        outcome->armId = plan.armId;
+        outcome->throwMs = row.throw_ms;
+    }
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -264,9 +281,11 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
 // steps; this sends its next command, and the run's cursor spaces the one
 // after. Sound and light commands go through the same dispatch a run uses. A
 // dome panel goes to the dome link as one individual command -- the plan never
-// holds a group target. A body Part is resolved against the live Output rows
-// here, when its turn comes, through the same plan a Body Step uses, and queued
-// as SRC_SEQ, which ServoTask refuses under either halt.
+// holds a group target. A body Part goes through dispatchBodyMove(), the very
+// path a Body Step takes: resolved against the live Output rows when its turn
+// comes, and queued as SRC_SEQ, which ServoTask refuses under either halt.
+// Nothing here holds a row or a command of its own: this function is inlined
+// into the task's root frame, whose size is a measured figure (ADR 0040).
 //
 // The Output the last body command moved goes first: the next command waits
 // until ServoTask no longer reports it moving, so no two Outputs are in motion
@@ -280,13 +299,13 @@ static bool dispatchAction(const SeqAction& act);  // defined with the task adap
 
 static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
     if (run.awaitArm != SEQ_BULK_CENTRE_NO_AWAIT) {
-        ServoCommandedPosition at = {};
+        bool moving = false;
         if (run.awaitArm < SERVO_ARM_COUNT) {
             taskENTER_CRITICAL(&robotStateMux);
-            at = robotState.servoCommanded[run.awaitArm];
+            moving = robotState.servoCommanded[run.awaitArm].moving;
             taskEXIT_CRITICAL(&robotStateMux);
         }
-        if (!sequencePoseAwaitDone(&run, at.moving)) {
+        if (!sequencePoseAwaitDone(&run, moving)) {
             return;  // still moving: looked at again on the next tick
         }
     }
@@ -305,31 +324,13 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             return;
 
         case SEQ_POSE_BODY: {
-            ServoOutputRow row = {};
-            const ServoOutputRow* driving = rowForPart(cmd.act.payload, &row);
-            const SeqBodyStepPlan plan = sequenceBodyStepPlan(cmd.act, driving);
-            if (!plan.drive) {
-                PA_LOG_INFO(TAG, "pose: body %s not moved - %s", cmd.act.payload,
-                            consoleReasonString(plan.reason));
-                sequencePoseAdvance(&run, now, cmd.cls, /*started=*/false, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+            // A Part nothing can move is reported by dispatchBodyMove() and
+            // passed over here, costing the pose no time.
+            BodyMoveOutcome moved = {false, SEQ_BULK_CENTRE_NO_AWAIT, 0};
+            if (!dispatchBodyMove(cmd.act, &moved)) {
                 return;
             }
-            if (!servoTaskDrivesOutput(plan.armId)) {
-                PA_LOG_INFO(TAG, "pose: arm%u not moved - restart the droid to use it",
-                            (unsigned)plan.armId + 1);
-                sequencePoseAdvance(&run, now, cmd.cls, /*started=*/false, 0, SEQ_BULK_CENTRE_NO_AWAIT);
-                return;
-            }
-            ServoCommand servo = {};
-            servo.armId = plan.armId;
-            servo.type = SERVO_CMD_POSITION;
-            servo.positionUs = plan.targetUs;
-            servo.source = SRC_SEQ;
-            servo.timestampMs = now;
-            if (xQueueSend(servoCmdQueue, &servo, 0) != pdTRUE) {
-                return;
-            }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, row.throw_ms, plan.armId);
+            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.armId);
             return;
         }
 
@@ -407,24 +408,20 @@ bool sequenceStart(const char* name, CommandSource src) {
 // =============================================================================
 
 bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src) {
-    if (name == nullptr || name[0] == '\0' || sequenceQueue == nullptr) {
+    if (name == nullptr || name[0] == '\0' || src == SRC_NONE) {
         return false;
     }
     const SequenceLookupKind kind = sequenceLookup(name).kind;
     if (kind != SEQ_CATALOG && kind != SEQ_RUNTIME) {
         return false;
     }
-    SequenceRequest req = {};
-    strncpy(req.name, name, sizeof(req.name) - 1);
-    req.name[sizeof(req.name) - 1] = '\0';
-    req.src = src;
-    req.kind = SEQ_REQUEST_POSE;
-    req.poseAtMs = atMs;
-    const bool ok = xQueueSend(sequenceQueue, &req, 0) == pdTRUE;
-    if (!ok) {
-        PA_LOG_WARN(TAG, "[%s] seq queue full: pose %s", commandSourceToString(src), name);
-    }
-    return ok;
+    taskENTER_CRITICAL(&robotStateMux);
+    strncpy(robotState.poseRequestName, name, sizeof(robotState.poseRequestName) - 1);
+    robotState.poseRequestName[sizeof(robotState.poseRequestName) - 1] = '\0';
+    robotState.poseRequestAtMs = atMs;
+    robotState.poseRequest = src;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return true;
 }
 
 // =============================================================================
@@ -553,6 +550,14 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     static SeqPoseRun poseRun;
     poseRun = SeqPoseRun{};
     poseRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    // The pose request as taken from RobotState, static like the run: its name
+    // and instant live across the whole intake below, and on this task's stack
+    // they pushed the measured chain past its figure.
+    static struct {
+        CommandSource src;
+        uint32_t atMs;
+        char name[sizeof(robotState.poseRequestName)];
+    } poseAsk;
 
     // Power-up: each body Output does what its boot behaviour says (ADR 0052),
     // paced by the Cadence Floor like any sweep this task generates. The estop
@@ -586,7 +591,26 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // here because a halt can land in between. Otherwise it is the
         // operator's latest word, like back to centre: a running sequence and a
         // sweep end, and the pose is worked out once, from the stored steps.
-        if (haveReq && req.kind == SEQ_REQUEST_POSE) {
+        //
+        // The request is a transient the route sets and this clears, the shape
+        // back to centre uses (robotState.poseRequest); the name is copied out
+        // under the lock into a static buffer, off this task's stack.
+        //
+        // It is taken only on a tick with no run request, and waits for the
+        // next tick otherwise. That keeps the pose intake and the run intake
+        // the two arms of one if/else, which is what lets the compiler lay
+        // their staging results in the same stack slot: as two separate ifs
+        // the root frame outgrew its measured chain (ADR 0040).
+        poseAsk.src = SRC_NONE;
+        taskENTER_CRITICAL(&robotStateMux);
+        if (!haveReq && robotState.poseRequest != SRC_NONE) {
+            poseAsk.src = robotState.poseRequest;
+            poseAsk.atMs = robotState.poseRequestAtMs;
+            memcpy(poseAsk.name, robotState.poseRequestName, sizeof(poseAsk.name));
+            robotState.poseRequest = SRC_NONE;
+        }
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (poseAsk.src != SRC_NONE) {
             bool poseEstop = false;
             bool poseSleep = false;
             taskENTER_CRITICAL(&robotStateMux);
@@ -594,24 +618,24 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             poseSleep = robotState.sleepMode;
             taskEXIT_CRITICAL(&robotStateMux);
             const char* refusal = sequencePoseRefusal(poseEstop, poseSleep);
-            const bool isRuntime = (sequenceLookup(req.name).kind == SEQ_RUNTIME);
-            const SequenceEntry* catalogEntry = isRuntime ? nullptr : sequenceCatalogFind(req.name);
+            const bool isRuntime = (sequenceLookup(poseAsk.name).kind == SEQ_RUNTIME);
+            const SequenceEntry* catalogEntry = isRuntime ? nullptr : sequenceCatalogFind(poseAsk.name);
             bool staged = !isRuntime && catalogEntry != nullptr;
             if (refusal != nullptr) {
-                PA_LOG_WARN(TAG, "[%s] pose %s refused - %s", commandSourceToString(req.src), req.name,
+                PA_LOG_WARN(TAG, "[%s] pose %s refused - %s", commandSourceToString(poseAsk.src), poseAsk.name,
                             refusal);
                 staged = false;
             } else if (isRuntime) {
                 // Staged before the engine is touched, as a run is, so a load
                 // that fails never costs what is running.
-                const ProtocolCheckResult lr = seqStorePrepare(req.name);
+                const ProtocolCheckResult lr = seqStorePrepare(poseAsk.name);
                 staged = lr.ok;
                 if (!lr.ok) {
                     PA_LOG_WARN(TAG, "[%s] pose load failed %s: %s (%s)",
-                                commandSourceToString(req.src), req.name, lr.message, lr.field);
+                                commandSourceToString(poseAsk.src), poseAsk.name, lr.message, lr.field);
                 }
             } else if (catalogEntry == nullptr) {
-                PA_LOG_WARN(TAG, "pose request not in catalog: %s", req.name);
+                PA_LOG_WARN(TAG, "pose request not in catalog: %s", poseAsk.name);
             }
             if (staged) {
                 if (seqEngineActive(engine)) {
@@ -633,7 +657,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                         entry = &runtimeEntry;
                     } else {
                         PA_LOG_WARN(TAG, "[%s] pose %s refused (run-buffer alloc failed)",
-                                    commandSourceToString(req.src), req.name);
+                                    commandSourceToString(poseAsk.src), poseAsk.name);
                     }
                 }
                 if (entry != nullptr) {
@@ -641,19 +665,19 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     // closed, and leaves that half's ring panels open at the end.
                     const bool toggleOpenHalf =
                         entry->toggleGroup != TOGGLE_NONE && entry->closeSteps != nullptr;
-                    sequencePosePlan(entry->steps, entry->stepCount, toggleOpenHalf, req.poseAtMs,
+                    sequencePosePlan(entry->steps, entry->stepCount, toggleOpenHalf, poseAsk.atMs,
                                      &posePlan);
                     if (isRuntime) {
                         seqStoreReleaseRun();  // the plan holds its own copies
                     }
                     sequencePoseStart(&poseRun, now, poseEstop, poseSleep, posePlan.count,
-                                      (uint8_t)req.src);
+                                      (uint8_t)poseAsk.src);
                     PA_LOG_INFO(TAG, "[%s] pose %s at %u ms - %u commands, motions at least %u ms apart",
-                                commandSourceToString(req.src), req.name, (unsigned)req.poseAtMs,
+                                commandSourceToString(poseAsk.src), poseAsk.name, (unsigned)poseAsk.atMs,
                                 (unsigned)posePlan.count, (unsigned)SEQ_CADENCE_FLOOR_MS);
                     if (posePlan.truncated) {
                         PA_LOG_WARN(TAG, "pose %s names more than %u targets; the latest are left out",
-                                    req.name, (unsigned)SEQ_POSE_MAX);
+                                    poseAsk.name, (unsigned)SEQ_POSE_MAX);
                     }
                 }
             }
