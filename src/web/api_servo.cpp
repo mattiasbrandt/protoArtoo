@@ -104,6 +104,16 @@ bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize) {
     return armId >= 0 && oneOutputUndriven((uint8_t)armId, reason, reasonSize);
 }
 
+bool servoCommandIsARunsOnAFreeOutput(int16_t armId, ServoCommandType type) {
+    if (armId < 0 || armId >= SERVO_ARM_COUNT) {
+        return false;
+    }
+    if (type == SERVO_CMD_NUDGE) {
+        return servoTaskMayTakeForRun((uint8_t)armId);
+    }
+    return type == SERVO_CMD_RELEASE && servoTaskRunHolds((uint8_t)armId);
+}
+
 namespace {
 
 // What one action name means. Three rules travel with the name rather than
@@ -257,8 +267,11 @@ void handleServoPost(WebRequest& req) {
     // still told what is wrong with it. ServoTask drops a command for an Output
     // it does not drive without a word, so this is the only place the caller
     // can hear it - and a queued command would answer `ok` for nothing (#364).
+    // A Find by Moving run's nudge or release on a free Output is the one
+    // exception: ServoTask takes that Output for the run (#411).
     char undriven[96] = {};
-    if (servoOutputUndriven(armId, undriven, sizeof(undriven))) {
+    if (!servoCommandIsARunsOnAFreeOutput(armId, type) &&
+        servoOutputUndriven(armId, undriven, sizeof(undriven))) {
         webSendJsonError(req, 409, undriven);
         return;
     }

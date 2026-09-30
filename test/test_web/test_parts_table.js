@@ -23,7 +23,7 @@ import { dirname, join } from "path";
 
 import { MiniDocument, MiniDOMParser } from "./helpers/mini_dom.js";
 import { bootParts as bootPartsSurface, sleep as wait } from "./helpers/parts_surface.js";
-import { freshOutputs, withParts, describe, applyRowSave, servoRow } from "./helpers/fake_droid.js";
+import { freshOutputs, withParts, describe, applyRowSave, servoRow, statusFrame } from "./helpers/fake_droid.js";
 
 // mini_dom has no CSSStyleDeclaration, and since #362 this page's output-first
 // table paints its position marks through element.style. A plain object per
@@ -262,6 +262,7 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
     "/apply_timing.js": readData("apply_timing.js"),
     "/output_settings.js": readData("output_settings.js"),
     "/dome_command_map.js": readData("dome_command_map.js"),
+    "/find_by_moving.js": readData("find_by_moving.js"),
     "/parts_mapping.js": readData("parts_mapping.js"),
     "/wiring.js": readData("wiring.js"),
   };
@@ -526,7 +527,8 @@ test("a light Part's Light Type is saved on its own wire and leaves another lit 
     env.row(id).querySelector(".parts-carries").querySelectorAll("[data-value]").find((node) => node.dataset.value === "rgb");
   assert.equal(lightOn("cbi").classList.contains("active"), true);
   assert.equal(lightOn("dataPanel").classList.contains("active"), false);
-  assert.equal(env.row("doorFL").querySelector(".parts-carries").children.length, 0, "a Part on no Output has nothing to pick");
+  assert.equal(env.row("doorFL").querySelector(".parts-carries").querySelectorAll("[data-value]").length, 0,
+    "a Part on no Output has nothing to pick");
 
   lightOn("dataPanel").fire("click", {});
   await sleep(40);
@@ -604,4 +606,26 @@ test("Parts carries no picker and no move question of its own", async () => {
   assert.equal(env.document.querySelectorAll("select").length, 0, "no Output picker on Parts");
   assert.equal(env.document.querySelectorAll("dialog").length, 0, "and no move question");
   assert.deepStrictEqual(env.moves().filter((post) => "movePart" in post.form), [], "and no move leaves it");
+});
+
+// Find by Moving starts where a Part with no Output is listed (#411): its row
+// on Wiring, in the cell a Part on an Output uses for what is on its wire. A
+// Part already on an Output has no such act - its wire is known - and a press
+// on the act starts a run, whose first nudge names the first free Output.
+test("a Part on no Output offers find by moving on its row, and a press starts a run", async () => {
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
+  env.window.PAStatusStream.seed(statusFrame());
+  await sleep(20);
+  const act = (id) => env.row(id).querySelector(".parts-carries").querySelectorAll("[data-find]")[0];
+
+  assert.equal(act("utilUp"), undefined, "a Part on an Output has its wire's pick instead");
+  assert.ok(act("doorRL"), "a Part on no Output offers a run");
+  assert.equal(act("doorRL").disabled, false, "live once the droid has said its estop is clear");
+
+  env.table().fire("click", { target: act("doorRL") });
+  await sleep(20);
+  assert.deepEqual(env.posts.filter((post) => post.path === "/api/servo").map((post) => post.form),
+    [{ arm: "ARM2", action: "nudge" }], "ARM1 carries a Part, so ARM2 is the first free Output");
+  assert.ok(env.document.getElementById("wiring-find").querySelector(".parts-find-run"), "the run's line is up");
+  assert.equal(act("doorFR").disabled, true, "one run at a time: no other row starts one");
 });

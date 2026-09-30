@@ -58,7 +58,9 @@ uint8_t getChannelGpio(uint8_t channel) {
 // Returns false and logs on any LEDC API error (timer config only; skipped
 // channels do not fail init).
 // Stores the mask in s_configuredMask for use by write functions.
-// Returns true if timer config succeeds, even if enabledMask is 0 (no channels).
+// Returns true if timer config succeeds, even if enabledMask is 0 (no channels):
+// the timer comes up regardless, so a channel left out can be attached later
+// for a Find by Moving run (ledcPwmAttach(), #411).
 //
 // A configured SERVO channel starts with no pulse at all (duty 0): the servo is
 // limp wherever it was left, and nothing moves at power-up until ServoTask
@@ -73,11 +75,6 @@ uint8_t getChannelGpio(uint8_t channel) {
 // -----------------------------------------------------------------------------
 bool ledcPwmInit(uint8_t enabledMask) {
     s_configuredMask = enabledMask;
-
-    // If no channels are enabled, skip timer config entirely.
-    if (enabledMask == 0) {
-        return true;
-    }
 
     ledc_timer_config_t timerConfig = {};
     timerConfig.speed_mode = PA_LEDC_MODE;
@@ -117,6 +114,36 @@ bool ledcPwmInit(uint8_t enabledMask) {
 
     ESP_LOGI(TAG, "LEDC PWM initialized: %d channels @ %dHz", (int)configuredCount,
              LEDC_FREQUENCY_HZ);
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// ledcPwmAttach()
+// One servo channel configured after init, limp (duty 0): see include/ledc_pwm.h.
+// -----------------------------------------------------------------------------
+bool ledcPwmAttach(uint8_t channel) {
+    if (channel >= LEDC_CH_MAX || channel == LEDC_CH_DOME) {
+        return false;
+    }
+    if (s_configuredMask & (1 << channel)) {
+        return true;
+    }
+
+    ledc_channel_config_t channelConfig = {};
+    channelConfig.gpio_num = kChannelGpio[channel];
+    channelConfig.speed_mode = PA_LEDC_MODE;
+    channelConfig.channel = (ledc_channel_t)channel;
+    channelConfig.intr_type = LEDC_INTR_DISABLE;
+    channelConfig.timer_sel = PA_LEDC_TIMER;
+    channelConfig.duty = 0;
+    channelConfig.hpoint = 0;
+
+    const esp_err_t err = ledc_channel_config(&channelConfig);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Channel %d attach failed: %d", channel, err);
+        return false;
+    }
+    s_configuredMask = (uint8_t)(s_configuredMask | (1 << channel));
     return true;
 }
 

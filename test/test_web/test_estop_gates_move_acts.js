@@ -26,7 +26,9 @@ const frameWithoutEstop = () => {
   return frame;
 };
 
-const servoActs = (env) => [env.centreButton(), env.findButton()];
+// Back to centre, and a row's own act that moves its Part. Find by moving
+// left Servos for Wiring's Part rows (#411), where it is gated the same way.
+const servoActs = (env) => [env.centreButton(), env.row("ledc:0").querySelector(".outputs-calibrate")];
 
 const assertOff = (buttons, why) =>
   buttons.forEach((button) => {

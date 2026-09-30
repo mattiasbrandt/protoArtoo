@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import vm from "node:vm";
 
-import { bootServos, withParts, output, sleep, readData } from "./helpers/parts_surface.js";
+import { bootServos, output, sleep, readData } from "./helpers/parts_surface.js";
 import { wiredOutputs } from "./helpers/fake_droid.js";
 
 const NOT_WIRED = "– not wired –";
@@ -302,34 +302,6 @@ test("the page takes an Output only on a press, and stops asking on the estop an
   env.document.visibilityState = "hidden";
   env.document.dispatch("visibilitychange", { type: "visibilitychange" });
   assert.ok(env.cleared.includes(resumed.id), "a hidden tab stops asking, so the expiry ends the hold");
-});
-
-test("an Output going limp under a run ends the run rather than stepping on to the next", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2"]);
-
-  // Anything that takes the pulse off counts the nudge as ended, so without the
-  // limp check the count going up would read as "try the next one".
-  env.wentLimp("ledc:1", "estop");
-  await env.frame();
-
-  assert.equal(env.nudges().length, 1, "the run did not step on");
-  assert.equal(env.runPanel(), null);
-  assert.match(env.feedback(), /ARM2 is limp, so the run stopped/);
-});
-
-test("a run in progress refuses to open a dial, so one thing moves the droid at a time", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
-  env.pressFind("doorRL");
-  await sleep(20);
-
-  env.pressCalibrate("ledc:0");
-  await sleep(20);
-  assert.equal(env.dialOpen(), false);
-  assert.equal(env.holds().length, 0, "nothing was asked of the droid");
-  assert.match(env.feedback(), /One at a time: Rear-left body door is being found/);
 });
 
 test("while the estop is latched every act is refused, and a press sends nothing", async () => {

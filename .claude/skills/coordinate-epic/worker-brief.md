@@ -167,6 +167,9 @@ BOUNDARIES
 - Files the ticket fences off are out of scope even if you form a theory
   that involves them. Test the theory without editing the fenced file and
   report the result either way; the gate's --fenced check rejects the edit.
+- Stop a server you started by its PID, never by name: `pkill -f serve_editor_fixture.py`
+  matches every worktree's fixture server, and another worker's browser check
+  loses its server mid-run (2026-09-30, twice in one afternoon).
 - Never edit a shared test harness to accommodate the code under test; fix
   the code or report the conflict.
 - If you opened a browser, close it. Playwright here runs HEADED by default,

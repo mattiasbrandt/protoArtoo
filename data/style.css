@@ -4160,11 +4160,31 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-2xs);
 }
 
-/* The parts a restore may write, each its own tick. */
+/* The three parts a restore may write, each its own tick with its count and
+   the two lines saying what it replaces and what it leaves. */
 .restore-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--space-sm) var(--space-lg);
+}
+
+.restore-part .hint {
+  margin: var(--space-2xs) 0 0;
+}
+
+.restore-count {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--fs-hint);
+}
+
+#restore-question .button-row {
+  margin-top: var(--space-sm);
+}
+
+/* A restore's receipt is one line per part, joined with newlines. */
+#backup-feedback {
+  white-space: pre-line;
 }
 
 /* The Memory Profiler's own tables and its fragmentation bar. Both carried
@@ -7044,26 +7064,41 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* ---------------------------------------------------------------------------
-   Parts (#363): Find by Moving
+   Find by Moving (#363; on Wiring since #411, data/find_by_moving.js)
 
-   The button on an unwired Part's row, and the run that takes its place while
-   the droid nudges the spare Outputs one at a time. A .btn needs its own
-   [hidden] rule, because .btn's display beats the browser's [hidden] default
-   (the same reason .rc-learn-banner[hidden] exists above). A run's text is a
-   status, read in the row where the builder pressed, so it stays inline.
+   The act on a Part-with-no-Output row is the anatomy's own small quiet
+   control (.btn-sm.btn-quiet), and the run's line sits over the table while
+   the droid nudges the free Outputs one at a time. A run's text is a status,
+   so it stays inline.
 
-   is-stale is the estop's mark on the output-first table: the nudged Output's
-   last commanded position is no longer current, so the two marks are held
-   back until the droid has answered again (the freshness-stamp pattern,
+   is-stale is the estop's mark on the output-first table: an Output's last
+   commanded position is no longer current, so the two marks are held back
+   until the droid has answered again (the freshness-stamp pattern,
    r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894).
    --------------------------------------------------------------------------- */
-/* An act inside a table row is the anatomy's own small control (.btn-sm), so
-   this rule keeps only what is particular to this one: nothing but its
-   [hidden] behaviour, below. Slice 1's shared .btn sets the rest, and C1c's
-   copy of the 36 px floor and --fs-cell was a second spelling of both. */
 
-.parts-find[hidden] {
-  display: none;
+/* A Part on no Output: its row's find act, as quiet as Servos' + part - a word
+   in the cell, not a box on every row. It lights on hover and focus, and
+   reads dimmer still while it is refused. */
+.parts-carries .parts-find-act {
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: var(--fs-sect);
+}
+
+.parts-carries .parts-find-act svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+.parts-carries .parts-find-act:hover,
+.parts-carries .parts-find-act:focus-visible {
+  border-color: transparent;
+  color: var(--text);
 }
 
 .parts-find-run {
@@ -7254,20 +7289,17 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text);
 }
 
-.outputs-more svg.i,
-.outputs-find .parts-find svg.i {
+.outputs-more svg.i {
   width: 14px;
   height: 14px;
   transition: transform 0.15s ease;
 }
 
-.outputs-more[aria-expanded="true"],
-.outputs-find .parts-find[aria-expanded="true"] {
+.outputs-more[aria-expanded="true"] {
   color: var(--text);
 }
 
-.outputs-more[aria-expanded="true"] svg.i,
-.outputs-find .parts-find[aria-expanded="true"] svg.i {
+.outputs-more[aria-expanded="true"] svg.i {
   transform: rotate(90deg);
 }
 
@@ -7910,21 +7942,6 @@ body[data-page="maintenance"] .status-item .hint {
   margin: 0;
   max-width: 48ch;
   text-align: right;
-}
-
-.outputs-find-tray {
-  margin-bottom: var(--space-lg);
-  padding: var(--space-md) var(--space-lg);
-  background: color-mix(in srgb, var(--well) 55%, var(--surface));
-  border-radius: var(--radius-plate);
-}
-
-.outputs-find-tray[hidden] {
-  display: none;
-}
-
-.outputs-find-tray > .hint {
-  margin: 0;
 }
 
 .outputs-marks {

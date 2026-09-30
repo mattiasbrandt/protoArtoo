@@ -37,7 +37,6 @@ struct RcAudioCategorySnapshot;  // include/rc_action_dispatcher.h
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
-bool configCacheServoAnyEnabled();
 // Whether the Output at `boardOutputIndex` in include/board_outputs.h's
 // BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
 // without copying a 916 B snapshot onto the caller's frame to ask one bit.
@@ -97,6 +96,12 @@ uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t chan
 // fallback stands.
 bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
                                          uint16_t* openUs, uint16_t* closeUs);
+
+// The centre recorded for the output addressed there: where a Find by Moving
+// run puts a free Output before its first nudge (#411). Same false-and-untouched
+// rule as the pair above.
+bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
+                                      uint16_t* centreUs);
 
 // The Motion Profile a move is planned from (ADR 0052): the recorded ends in
 // order -- whichever way round the pair was recorded -- how long a full throw

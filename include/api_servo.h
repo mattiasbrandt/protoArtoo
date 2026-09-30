@@ -54,6 +54,16 @@ ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint
 // Returns false, and leaves `reason` alone, when every named Output is driven.
 bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize);
 
+// Whether this command is a Find by Moving run's on a free Output (#411): a
+// nudge on one a run may take (servoTaskMayTakeForRun()), which takes it for
+// the run, or a release on one a run holds (servoTaskRunHolds()), which lets it
+// go. A release on a free Output nobody holds is not one: ServoTask would drop
+// it, and the route answers that with its refusal rather than ok.
+// Such a command is not refused for being undriven: ServoTask drives a free
+// Output for the length of a run, bounded like the dial's hold. Every other
+// command on an undriven Output still is.
+bool servoCommandIsARunsOnAFreeOutput(int16_t armId, ServoCommandType type);
+
 // Refuses with 409 and servoOutputUndriven()'s sentence an act on an Output
 // nothing drives this boot; every action is checked, pulses off included.
 void handleServoPost(WebRequest& req);

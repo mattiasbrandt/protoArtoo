@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/feature_availability.js,/droid_parts.js,/outputs.js,/maintenance.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/feature_availability.js,/droid_parts.js,/outputs.js,/dome_command_map.js,/servo_motion.js,/seq_rehearsal.js,/maintenance.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -195,17 +195,48 @@
 
       <div id="backup-summary" class="hint" hidden></div>
 
+      <!-- The three parts a restore may write (ADR 0056). What each replaces
+           and leaves is the part's own, in data/maintenance.js, so no part is
+           drawn without both lines. -->
       <div id="restore-sections" hidden>
         <div class="restore-grid">
-          <label class="field-checkbox"><input type="checkbox" id="restore-chk-config"> <span>Core config</span></label>
-          <label class="field-checkbox"><input type="checkbox" id="restore-chk-rc-map"> <span>RC mappings</span></label>
-          <label class="field-checkbox"><input type="checkbox" id="restore-chk-audio-tracks"> <span>Audio tracks</span></label>
-          <label class="field-checkbox"><input type="checkbox" id="restore-chk-mood-map"> <span>Audio mood map</span></label>
+          <div class="restore-part">
+            <label class="field-checkbox"><input type="checkbox" id="restore-chk-sequences"> <span>Sequences</span></label>
+            <span class="restore-count" id="restore-count-sequences"></span>
+            <p class="hint" id="restore-touches-sequences"></p>
+            <p class="hint" id="restore-leaves-sequences"></p>
+            <p class="hint" id="restore-why-sequences" hidden></p>
+          </div>
+          <div class="restore-part">
+            <label class="field-checkbox"><input type="checkbox" id="restore-chk-configuration"> <span>Configuration</span></label>
+            <span class="restore-count" id="restore-count-configuration"></span>
+            <p class="hint" id="restore-touches-configuration"></p>
+            <p class="hint" id="restore-leaves-configuration"></p>
+            <p class="hint" id="restore-why-configuration" hidden></p>
+          </div>
+          <div class="restore-part">
+            <label class="field-checkbox"><input type="checkbox" id="restore-chk-rc-map"> <span>RC Map</span></label>
+            <span class="restore-count" id="restore-count-rc-map"></span>
+            <p class="hint" id="restore-touches-rc-map"></p>
+            <p class="hint" id="restore-leaves-rc-map"></p>
+            <p class="hint" id="restore-why-rc-map" hidden></p>
+          </div>
         </div>
       </div>
 
       <div id="restore-btn-row" class="button-row button-row-compact" hidden>
-        <button id="backup-restore-btn" class="btn" type="button">Restore the ticked parts</button>
+        <button id="backup-restore-btn" class="btn btn-sm" type="button">Restore the ticked parts</button>
+      </div>
+
+      <!-- Asked after the parts and before the first write: nothing reaches
+           the droid until one of these is pressed. -->
+      <div id="restore-question" hidden>
+        <p class="note note-act" id="restore-question-text"></p>
+        <div class="button-row button-row-compact">
+          <button id="restore-cancel-btn" class="btn btn-sm btn-quiet" type="button">Cancel</button>
+          <button id="restore-copy-btn" class="btn btn-sm" type="button">Save a copy first, then restore</button>
+          <button id="restore-replace-btn" class="btn btn-sm danger" type="button">Replace</button>
+        </div>
       </div>
 
       <div id="backup-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
