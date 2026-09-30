@@ -4167,6 +4167,11 @@ body[data-page="maintenance"] .status-item .hint {
   gap: var(--space-sm) var(--space-lg);
 }
 
+/* A restore's receipt is one line per part, joined with newlines. */
+#backup-feedback {
+  white-space: pre-line;
+}
+
 /* The Memory Profiler's own tables and its fragmentation bar. Both carried
    hard-coded colors until this slice: Material's green, amber and red on the
    bar and on a status cell, and a #444 rule under every heading. */
