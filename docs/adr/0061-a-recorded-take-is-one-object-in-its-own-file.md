@@ -71,7 +71,7 @@ speed, acceleration and easing live on the **Output** (ADR 0052), and a take
 references **the Part, not the output address**, so it survives a re-address. One
 control is a puppet string or a cue trigger and never both. Recording needs no
 **Non-RC Control** consent because recording from RC *is* RC motion; replaying
-from the browser does. The sample rate and the size bound are properties of the
+from the browser needs none either (corrected 2026-09-30, below). The sample rate and the size bound are properties of the
 take file.
 
 ## Considered options
@@ -122,3 +122,18 @@ take file.
 - **Punch-in over part of a take is named and not decided.** Layering answers two
   of #295's three push-further asks; punch-in needs addressing *inside* a take
   object and nothing here settles it.
+
+## Corrected 2026-09-30: replay asks no consent
+
+ADR 0064 decided that **no browser-initiated servo motion asks for Non-RC Control
+consent**, and corrected ADRs 0050, 0062 and 0063 with it. This ADR's sentence that
+replaying a take from the browser takes that consent was missed. The operator
+confirmed on #442 (2026-09-30) that ADR 0064 wins: a replay from the browser asks for
+no consent, like the dial, **Find by Moving**, the timeline's pose press and the
+**Body View**. The estop still stops a replay.
+
+The same day fixed where takes live on the artoo-esp32: it holds **one** take, and its
+room comes from lowering the web image's filesystem ceiling from 132 to 128 blocks (a
+full 12 KB take costs 4 blocks, measured the same way the five-sequence budget was);
+five Learned Sequences are kept, and firebeetle2 is unaffected. The arithmetic is
+redone in `tools/build_budgets.json` by #442.
