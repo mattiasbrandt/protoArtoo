@@ -26,7 +26,6 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
-<<<<<<< HEAD
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted
@@ -48,7 +47,6 @@ the patch releases, whose notes live on their own GitHub Release.
   placed on a beat stays on it: change the tempo and every step on a beat moves
   with it, while steps placed in milliseconds stay put. A tempo that is only a
   guess is flagged, never refused.
-=======
 - **See where your answers and the droid disagree.** Wiring lists every wire
   it draws and everything the droid reports on - the sound module, the dome
   link, the RC receiver, the Foot Drive, the dome's panels - with what you
@@ -56,7 +54,6 @@ the patch releases, whose notes live on their own GitHub Release.
   observed, contradicted or not probed. A module that has not answered stays
   your answer rather than a contradiction, and every row that needs a change
   links to where you make it. Nothing on the list changes the droid.
->>>>>>> origin/epic/operator-experience
 - **Read a sequence as time.** Timeline, on any sequence card, draws the
   routine with a lane per part: each move as long as it takes, and whatever the
   routine leaves open running on to the end. Move the marker to any moment and
