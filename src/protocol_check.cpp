@@ -13,6 +13,7 @@
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
 #include "droid_parts.h"             // droidPartIdIsKnown()  --  the Part vocabulary
 #include "sequence_dispatcher.h"     // sequenceCatalogFind()
+#include "sequence_gesture.h"        // the Gesture vocabulary and its stored layout
 
 // Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in the header.
 
@@ -844,6 +845,109 @@ ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo) {
 }
 
 // -----------------------------------------------------------------------------
+// Gesture grammar (ADR 0046) -- form only
+//
+// Known words, known Parts on one half, numbers inside their bounds, and a
+// flutter that still owes its close. Whether the connected dome has a command
+// for the (shape, spread) pair, whether a Part is wired, and whether the pace
+// keeps up with the Cadence Floor are the Rehearsal's and never refuse a save
+// (ADR 0044) -- a pair the dome cannot perform SAVES.
+// -----------------------------------------------------------------------------
+// What checkGesture() found wrong: the field and the reason, or no field.
+struct GestureFault {
+    const char* field;
+    const char* message;
+};
+
+// Kept out of line, and it NAMES a fault rather than formatting one: the
+// Sequence Coordinator's measured chain (ADR 0040) already runs through
+// protocolCheckBranch() into the formatter pcFailAt() calls, and a check that
+// formatted its own error would put its frame under that formatter too. So
+// the caller formats, from the same frame it always has.
+static __attribute__((noinline)) GestureFault checkGesture(uint8_t i, const SeqStep* steps, uint8_t count) {
+    const SeqStep& s = steps[i];
+    const SeqStepParams& p = s.params;
+    if (droidPartSetFind(s.payload) == nullptr) {
+        // An explicit list: every entry a known Part, none twice, all on one
+        // half, and no more than a Gesture can hold.
+        uint8_t n = 0;
+        bool known = true;
+        bool twice = false;
+        bool mixed = false;
+        int8_t half = -1;
+        // Catalog indices fit a byte (DROID_PART_COUNT is well under 256), and
+        // this frame sits on the Sequence Coordinator's measured chain (ADR 0040).
+        uint8_t seen[SEQ_GESTURE_MEMBERS_MAX];
+        seqGestureEachListed(s.payload, [&](const char* id) {
+            const size_t idx = droidPartIndexOf(id);
+            if (idx >= DROID_PART_COUNT) {
+                known = false;
+                return;
+            }
+            for (uint8_t k = 0; k < n && k < SEQ_GESTURE_MEMBERS_MAX; ++k) {
+                if (seen[k] == idx) twice = true;
+            }
+            const int8_t h = DROID_PART_ON_DOME[idx] ? 1 : 0;
+            if (half >= 0 && h != half) mixed = true;
+            half = h;
+            if (n < SEQ_GESTURE_MEMBERS_MAX) seen[n] = (uint8_t)idx;
+            ++n;
+        });
+        if (n == 0 || !known) {
+            return {"set", "not a set or a Part in the catalog"};
+        }
+        if (n > SEQ_GESTURE_MEMBERS_MAX) return {"parts", "too many parts (max 24)"};
+        if (twice) return {"parts", "a part is listed twice"};
+        if (mixed) return {"parts", "parts must all be on the dome or all on the body"};
+    }
+    if (p.shape >= BODY_SHAPE_COUNT) return {"shape", "shape must be open, close or flutter"};
+    if (seqGestureSpread(p) >= GESTURE_SPREAD_COUNT) return {"spread", "unknown spread"};
+    if (seqGestureDirection(p) >= GESTURE_DIR_COUNT) return {"direction", "unknown direction"};
+    if (seqGestureStart(p) >= GESTURE_START_COUNT) return {"start", "unknown start"};
+    if (seqGestureEasing(p) >= GESTURE_EASING_COUNT) return {"easing", "unknown easing"};
+    if (p.howFar > SEQ_BODY_HOWFAR_MAX) return {"howFar", "howFar must be 1..100"};
+    if (p.moveMs != 0 && (p.moveMs < PC_GESTURE_STEP_MS_MIN || p.moveMs > PC_GESTURE_STEP_MS_MAX)) {
+        return {"stepMs", "pace out of range (50..60000)"};
+    }
+    const uint16_t speed = seqGestureSpeedMs(p);
+    if (speed != 0 && (speed < PC_GESTURE_SPEED_MS_MIN || speed > PC_GESTURE_SPEED_MS_MAX)) {
+        return {"speedMs", "speed out of range (50..5000)"};
+    }
+    const uint16_t repeat = seqGestureRepeatMs(p);
+    const uint32_t extent = seqGestureExtentMs(p);
+    if (repeat != 0 && (repeat < PC_GESTURE_REPEAT_MS_MIN || repeat > PC_GESTURE_REPEAT_MS_MAX)) {
+        return {"repeatMs", "repeat out of range (100..60000)"};
+    }
+    if (extent > PC_GESTURE_EXTENT_MS_MAX) return {"extentMs", "extent out of range (0..120000)"};
+    if (extent != 0 && repeat == 0) return {"extentMs", "an extent needs a repeat"};
+
+    if (p.shape == BODY_SHAPE_FLUTTER) {
+        if (p.flutterMs != 0 && (p.flutterMs < PC_BODY_FLUTTER_MS_MIN || p.flutterMs > PC_BODY_FLUTTER_MS_MAX)) {
+            return {"flutterMs", "flutter duration out of range (50..60000)"};
+        }
+        // A flutter ends open and owes a close (ADR 0049), unless the spread
+        // brings every member back itself. The close it owes is a later close
+        // Gesture over the same Parts, said the same way.
+        if (seqGestureSpreadLeavesShape(seqGestureSpread(p))) {
+            bool closedLater = false;
+            for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
+                if (steps[j].type == STEP_GESTURE && seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
+                    strcmp(steps[j].payload, s.payload) == 0) {
+                    closedLater = true;
+                    break;
+                }
+            }
+            if (!closedLater) {
+                return {"shape", "flutter needs a later close of the same parts"};
+            }
+        }
+    } else if (p.flutterMs != 0) {
+        return {"flutterMs", "only a flutter carries a duration"};
+    }
+    return {nullptr, nullptr};
+}
+
+// -----------------------------------------------------------------------------
 // Branch validation + effect-class stamping
 // -----------------------------------------------------------------------------
 ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
@@ -1048,6 +1152,15 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 // cleanup to reset. A Part left open stays open, and saying so is
                 // a Rehearsal Note rather than anything this gate acts on.
                 s.effectClass = FX_NONE;
+                break;
+            }
+            case STEP_GESTURE: {
+                const GestureFault fault = checkGesture(i, steps, count);
+                if (fault.field != nullptr) return pcFailAt(label, i, fault.field, fault.message);
+                // A dome Gesture moves dome panels, so terminal cleanup owes the
+                // ring the same staggered close any panel step earns; a body
+                // Gesture is FX_NONE for the reason a Body Step is (ADR 0049).
+                s.effectClass = seqGestureIsDome(s.payload) ? FX_PANEL : FX_NONE;
                 break;
             }
             case STEP_LOOP:

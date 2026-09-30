@@ -12,6 +12,7 @@
 #include <ArduinoJson.h>
 
 #include "audio_playback_policy.h"  // AudioPlaybackCategory/Slot + audioCategoryToString
+#include "sequence_gesture.h"       // the Gesture vocabulary and its stored layout
 
 // Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in
 // protocol_check.h so callers get one error shape.
@@ -259,6 +260,132 @@ static ProtocolCheckResult parseTempo(JsonVariantConst v, SeqTempo& tempo, bool&
 }
 
 // -----------------------------------------------------------------------------
+// A Gesture (ADR 0046, include/sequence_gesture.h). Its Parts are `set`, one
+// token, or `parts`, a list of Part ids -- never both -- and travel as the
+// payload. Every other field is optional and absent means its default, so a
+// clone reads as the builder authored it. Whether the set is declared, the
+// Parts known and on one half, and the numbers inside their bounds are
+// Protocol Check's; this is the wire.
+// -----------------------------------------------------------------------------
+static ProtocolCheckResult parseGestureToken(const char* label, uint8_t idx, JsonObjectConst obj,
+                                            const char* key, const char* (*spell)(uint8_t),
+                                            uint8_t count, uint8_t& out) {
+    const char* token = obj[key] | (const char*)nullptr;
+    if (token == nullptr) return pcOk();  // absent: the default, stored as zero
+    if (!seqGestureTokenFromString(token, spell, count, out)) {
+        return pcFailAt(label, idx, key, "unknown word");
+    }
+    return pcOk();
+}
+
+static ProtocolCheckResult parseGestureMs(const char* label, uint8_t idx, JsonObjectConst obj,
+                                         const char* key, uint32_t max, uint32_t& out) {
+    JsonVariantConst v = obj[key];
+    if (v.isNull()) return pcOk();
+    long long whole = 0;
+    if (!wholeNumber(v, whole) || whole < 0 || whole > (long long)max) {
+        return pcFailAt(label, idx, key, "out of range");
+    }
+    out = (uint32_t)whole;
+    return pcOk();
+}
+
+static ProtocolCheckResult parseGestureFields(const char* label, JsonObjectConst obj,
+                                             uint8_t idx, SeqStep& s) {
+    s.type = STEP_GESTURE;
+    const char* set = obj["set"] | (const char*)nullptr;
+    JsonVariantConst parts = obj["parts"];
+    if ((set != nullptr) == !parts.isNull()) {
+        return pcFailAt(label, idx, "set", "give a set or a list of parts");
+    }
+    if (set != nullptr) {
+        if (strnlen(set, sizeof(s.payload)) >= sizeof(s.payload)) {
+            return pcFailAt(label, idx, "set", "set too long");
+        }
+        strncpy(s.payload, set, sizeof(s.payload) - 1);
+    } else {
+        if (!parts.is<JsonArrayConst>() || parts.as<JsonArrayConst>().size() == 0) {
+            return pcFailAt(label, idx, "parts", "parts must be a list of Part ids");
+        }
+        // Joined with commas into the payload; a list that does not fit is
+        // refused rather than cut, so a stored Gesture never loses a Part.
+        size_t used = 0;
+        for (JsonVariantConst v : parts.as<JsonArrayConst>()) {
+            const char* id = v.as<const char*>();
+            const size_t len = (id != nullptr) ? strnlen(id, sizeof(s.payload)) : 0;
+            if (len == 0 || strchr(id, ',') != nullptr) {
+                return pcFailAt(label, idx, "parts", "parts must be a list of Part ids");
+            }
+            if (used + (used > 0 ? 1 : 0) + len >= sizeof(s.payload)) {
+                return pcFailAt(label, idx, "parts", "too many parts to list; use a set");
+            }
+            if (used > 0) s.payload[used++] = ',';
+            memcpy(s.payload + used, id, len);
+            used += len;
+            s.payload[used] = '\0';
+        }
+    }
+
+    uint8_t token = 0;
+    ProtocolCheckResult r = parseGestureToken(label, idx, obj, "shape", seqBodyShapeToString,
+                                              BODY_SHAPE_COUNT, token);
+    if (!r.ok) return r;
+    s.params.shape = token;
+    token = 0;
+    r = parseGestureToken(label, idx, obj, "spread", seqGestureSpreadToString, GESTURE_SPREAD_COUNT, token);
+    if (!r.ok) return r;
+    seqGestureSetSpread(s.params, token);
+    token = 0;
+    r = parseGestureToken(label, idx, obj, "direction", seqGestureDirectionToString, GESTURE_DIR_COUNT, token);
+    if (!r.ok) return r;
+    seqGestureSetDirection(s.params, token);
+    token = 0;
+    r = parseGestureToken(label, idx, obj, "start", seqGestureStartToString, GESTURE_START_COUNT, token);
+    if (!r.ok) return r;
+    seqGestureSetStart(s.params, token);
+    token = 0;
+    r = parseGestureToken(label, idx, obj, "easing", seqGestureEasingToString, GESTURE_EASING_COUNT, token);
+    if (!r.ok) return r;
+    seqGestureSetEasing(s.params, token);
+
+    // howFar as a Body Step has it: zero is how absence is stored, so a stated
+    // zero is refused here, the one place that can tell the two apart.
+    JsonVariantConst howFar = obj["howFar"];
+    if (!howFar.isNull()) {
+        long long v = 0;
+        if (!wholeNumber(howFar, v) || v < 1 || v > (long long)SEQ_BODY_HOWFAR_MAX) {
+            return pcFailAt(label, idx, "howFar", "howFar must be 1..100");
+        }
+        s.params.howFar = (uint8_t)v;
+    }
+
+    // The times, read wide and stored in the member each one borrows. A value
+    // past the member's width is refused here, since saturating it would hand
+    // Protocol Check a number nobody wrote.
+    uint32_t ms = 0;
+    r = parseGestureMs(label, idx, obj, "flutterMs", 0xFFFFu, ms);
+    if (!r.ok) return r;
+    s.params.flutterMs = (uint16_t)ms;
+    ms = 0;
+    r = parseGestureMs(label, idx, obj, "stepMs", 0xFFFFu, ms);
+    if (!r.ok) return r;
+    seqGestureSetStepMs(s.params, (uint16_t)ms);
+    ms = 0;
+    r = parseGestureMs(label, idx, obj, "speedMs", 0xFFFFu, ms);
+    if (!r.ok) return r;
+    seqGestureSetSpeedMs(s.params, (uint16_t)ms);
+    ms = 0;
+    r = parseGestureMs(label, idx, obj, "repeatMs", 0xFFFFu, ms);
+    if (!r.ok) return r;
+    seqGestureSetRepeatMs(s.params, (uint16_t)ms);
+    ms = 0;
+    r = parseGestureMs(label, idx, obj, "extentMs", 0xFFFFFFFFu, ms);
+    if (!r.ok) return r;
+    seqGestureSetExtentMs(s.params, ms);
+    return pcOk();
+}
+
+// -----------------------------------------------------------------------------
 // Parse one step object into `s`. `idx` is for error fields.
 // -----------------------------------------------------------------------------
 static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst obj,
@@ -419,6 +546,9 @@ static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst ob
         }
         return pcOk();
     }
+    if (strcmp(type, "gesture") == 0) {
+        return parseGestureFields(label, obj, idx, s);
+    }
     if (strcmp(type, "end") == 0) {
         s.type = STEP_END;
         return pcOk();
@@ -480,7 +610,55 @@ static ProtocolCheckResult parseStepBeats(const char* label, JsonObjectConst obj
             return pcFailAt(label, idx, "spanBeats", "only a turn or a flutter lasts a span");
         }
     }
+
+    if (s.type == STEP_GESTURE) {
+        // A Gesture's pace, repeat and extent in beats (ADR 0060), each
+        // replacing the millisecond it resolves to. With a tempo and no pace
+        // stated, the pace is one beat: "a wave, one panel per beat".
+        static const char* const kBeatKeys[] = { "stepBeats", "repeatBeats", "extentBeats" };
+        for (uint8_t k = 0; k < 3; ++k) {
+            JsonVariantConst v = obj[kBeatKeys[k]];
+            if (v.isNull()) continue;
+            if (tempo == nullptr) {
+                return pcFailAt(label, idx, kBeatKeys[k], "beats need a tempo");
+            }
+            if (!wholeNumber(v, whole) || whole < 1 || whole > (long long)SEQ_TEMPO_BEAT_MAX) {
+                return pcFailAt(label, idx, kBeatKeys[k], "must be a whole 1..1200");
+            }
+            const uint32_t spanMs = seqTempoSpanMs(*tempo, (uint32_t)whole);
+            const uint16_t narrow = (spanMs > 0xFFFFu) ? (uint16_t)0xFFFFu : (uint16_t)spanMs;
+            if (k == 0) seqGestureSetStepMs(s.params, narrow);
+            else if (k == 1) seqGestureSetRepeatMs(s.params, narrow);
+            else seqGestureSetExtentMs(s.params, spanMs);
+        }
+        if (tempo != nullptr && s.params.moveMs == 0) {
+            const uint32_t beat = seqTempoSpanMs(*tempo, 1);
+            seqGestureSetStepMs(s.params, (uint16_t)(beat > 0xFFFFu ? 0xFFFFu : beat));
+        }
+    }
     return pcOk();
+}
+
+// A repeating Gesture that states no extent runs the length of the track, and
+// never past the sequence's own end (ADR 0060): the track's remaining length
+// when the tempo knows it, and the time to the end step when that comes first
+// or the track's length is unknown. Resolved once the whole branch is read,
+// because the end step is its last.
+static void resolveGestureExtents(SeqStep* steps, uint8_t count, const SeqTempo* tempo) {
+    if (count == 0 || steps[count - 1].type != STEP_END) return;
+    const uint32_t endMs = steps[count - 1].tMs;
+    for (uint8_t i = 0; i < count; ++i) {
+        SeqStep& s = steps[i];
+        if (s.type != STEP_GESTURE || seqGestureRepeatMs(s.params) == 0 ||
+            seqGestureExtentMs(s.params) != 0) {
+            continue;
+        }
+        uint32_t extent = (endMs > s.tMs) ? endMs - s.tMs : 0;
+        if (tempo != nullptr && tempo->durationMs > s.tMs && tempo->durationMs - s.tMs < extent) {
+            extent = tempo->durationMs - s.tMs;
+        }
+        seqGestureSetExtentMs(s.params, extent);
+    }
 }
 
 static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj, uint8_t idx,
@@ -514,6 +692,7 @@ static ProtocolCheckResult parseBranch(const char* label, JsonArrayConst arr,
         }
         ++n;
     }
+    resolveGestureExtents(buf, n, tempo);
     *outCount = n;
     return pcOk();
 }
@@ -669,6 +848,39 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
                     o["flutterMs"] = s.params.flutterMs;
                 }
                 break;
+            case STEP_GESTURE: {
+                // Only what differs from a default is written, as for a Body
+                // Step, so a clone reads as the builder authored it.
+                o["type"] = "gesture";
+                if (seqGestureIsList(s.payload)) {
+                    JsonArray parts = o["parts"].to<JsonArray>();
+                    seqGestureEachListed(s.payload, [&](const char* id) { parts.add(id); });
+                } else {
+                    o["set"] = s.payload;
+                }
+                if (s.params.shape != (uint8_t)SEQ_BODY_SHAPE_DEFAULT) {
+                    o["shape"] = seqBodyShapeToString(s.params.shape);
+                }
+                if (seqGestureSpread(s.params) != GESTURE_SPREAD_TOGETHER) {
+                    o["spread"] = seqGestureSpreadToString(seqGestureSpread(s.params));
+                }
+                if (seqGestureDirection(s.params) != GESTURE_DIR_CLOCKWISE) {
+                    o["direction"] = seqGestureDirectionToString(seqGestureDirection(s.params));
+                }
+                if (seqGestureStart(s.params) != GESTURE_START_FRONT) {
+                    o["start"] = seqGestureStartToString(seqGestureStart(s.params));
+                }
+                if (seqGestureEasing(s.params) != GESTURE_EASING_OUTPUT) {
+                    o["easing"] = seqGestureEasingToString(seqGestureEasing(s.params));
+                }
+                if (s.params.howFar != SEQ_BODY_HOWFAR_UNSET) o["howFar"] = s.params.howFar;
+                if (s.params.flutterMs != 0) o["flutterMs"] = s.params.flutterMs;
+                if (s.params.moveMs != 0) o["stepMs"] = s.params.moveMs;
+                if (seqGestureSpeedMs(s.params) != 0) o["speedMs"] = seqGestureSpeedMs(s.params);
+                if (seqGestureRepeatMs(s.params) != 0) o["repeatMs"] = seqGestureRepeatMs(s.params);
+                if (seqGestureExtentMs(s.params) != 0) o["extentMs"] = seqGestureExtentMs(s.params);
+                break;
+            }
             case STEP_END:
             default:
                 o["type"] = "end";

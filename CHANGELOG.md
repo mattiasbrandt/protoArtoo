@@ -26,6 +26,12 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **One move across many parts.** A Gesture says "the ring, clockwise, from
+  the front, a wave, one panel per beat" once: the order comes from where the
+  parts sit, and the droid works out the parts when it runs, so a panel fitted
+  later joins in. On the body the droid paces the moves itself, one part at a
+  time; on the dome it becomes one dome command, and a move the dome has no
+  command for still saves.
 - **A sequence can have a tempo.** Type the BPM, tap along while the droid
   plays the track, or drop your own copy of the track in to have its beat
   read. You set where bar 1 starts. Put a step on a beat by picking it from

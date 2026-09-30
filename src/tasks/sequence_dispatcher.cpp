@@ -37,6 +37,7 @@
 #include "sequence_dispatcher.h"
 #include "sequence_dispatcher_step.h"
 #include "sequence_engine.h"
+#include "sequence_gesture.h"
 #include "sequence_pose.h"
 #include "sequence_run_evidence.h"
 #include "servo_task.h"  // servoTaskDrivesOutput() - an undriven Output is passed over (#364)
@@ -297,6 +298,72 @@ static SeqPosePlan posePlan;  // static: off this task's measured stack (ADR 004
 
 static bool dispatchAction(const SeqAction& act);  // defined with the task adapter below
 
+// -----------------------------------------------------------------------------
+// The Gestures a sequence has fired (#438, include/sequence_gesture.h), on the
+// Coordinator's own cursor so they never hold the engine's. Static, off this
+// task's measured stack, as the pose plan is (ADR 0040); so is the one body
+// move a turn builds, which would otherwise sit on the root frame.
+// -----------------------------------------------------------------------------
+static SeqGestureRun gestureRun;
+static SeqAction gestureMove;
+
+// Every path that ends what the Coordinator is doing ends the Gestures too:
+// a halt, a stop, a later run, a pose and back to centre alike.
+static void gestureEnd(const char* why) {
+    if (sequenceGestureActive(gestureRun)) {
+        PA_LOG_INFO(TAG, "gesture ended (%s) after %u sent, %u skipped", why,
+                    (unsigned)gestureRun.sent, (unsigned)gestureRun.skipped);
+    }
+    sequenceGestureEnd(&gestureRun);
+}
+
+// A Gesture the engine has just handed over, copied into the run NOW, while
+// the engine that fired it is still active: a Learned run's steps are freed
+// when the run ends, and a Gesture may outlive it (SeqAction, sequence_engine.h).
+static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& act) {
+    if (act.gesture != nullptr && !sequenceGestureStart(&gestureRun, *act.gesture, millis())) {
+        PA_LOG_WARN(TAG, "gesture %s not performed - nothing to perform, or four already running",
+                    act.payload);
+    }
+}
+
+// One Gesture item per tick, when it is due: a dome Gesture's pass is its `$`
+// command to the dome; a body Gesture's move goes down the very path a Body
+// Step takes (dispatchBodyMove()), resolved against the live Output rows, and
+// the run holds the next body move off by the pace every generated motion
+// keeps. A full queue leaves the item where it is, to come round next tick.
+// Out of line, as gestureStartFromAction() below is, so neither's locals sit
+// on the root frame or on dispatchAction()'s: both are on the measured chain.
+static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
+    bool moving = false;
+    if (gestureRun.awaitArm < SERVO_ARM_COUNT) {
+        taskENTER_CRITICAL(&robotStateMux);
+        moving = robotState.servoCommanded[gestureRun.awaitArm].moving;
+        taskEXIT_CRITICAL(&robotStateMux);
+    }
+    SeqGestureNext next = {};
+    if (!sequenceGestureNext(&gestureRun, now, moving, &next)) {
+        return;
+    }
+    if (next.dome) {
+        if (!domeQueueTx(gestureRun.g[next.entry].domeCmd)) {
+            return;
+        }
+        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+        return;
+    }
+    memset(&gestureMove, 0, sizeof(gestureMove));
+    gestureMove.kind = SEQ_ACT_BODY_MOVE;
+    strncpy(gestureMove.payload, droidPartIdAt(next.part), sizeof(gestureMove.payload) - 1);
+    gestureMove.bodyShape = (uint8_t)next.shape;
+    gestureMove.bodyHowFar = next.howFar;
+    BodyMoveOutcome moved = {false, SEQ_BULK_CENTRE_NO_AWAIT, 0};
+    if (!dispatchBodyMove(gestureMove, &moved)) {
+        return;
+    }
+    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.armId);
+}
+
 static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
     if (run.awaitArm != SEQ_BULK_CENTRE_NO_AWAIT) {
         bool moving = false;
@@ -496,6 +563,10 @@ static bool dispatchAction(const SeqAction& act) {
         case SEQ_DISPATCH_BODY_MOVE:
             return dispatchBodyMove(act);
 
+        case SEQ_DISPATCH_GESTURE:
+            gestureStartFromAction(act);
+            return true;  // handled: the Gesture is the run's now, or reported
+
         case SEQ_DISPATCH_NONE:
         default:
             // Unknown action: silent success (fail-safe behavior).
@@ -517,7 +588,10 @@ static uint32_t bodyQueueFullCount() {
 // cannot stall an abort or preempt. These are all terminal/abort cleanup,
 // so they are recorded as cleanup evidence.
 static void drainBestEffort(SeqEngineState& engine, uint32_t now) {
-    SeqAction act;
+    // Static, off the measured chain (ADR 0040): this frame is on the task's
+    // deepest route (drainBestEffort -> dispatchAction -> a log line), and a
+    // SeqAction grew by the Gesture pointer it now carries (#438).
+    static SeqAction act;
     while (seqEnginePeek(engine, now, esp_random, act)) {
         if (!dispatchAction(act)) {
             PA_LOG_WARN(TAG, "cleanup action dropped (queue full): %s", act.payload);
@@ -576,6 +650,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     static SeqPoseRun poseRun;
     poseRun = SeqPoseRun{};
     poseRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    gestureRun = SeqGestureRun{};
+    gestureRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
     // The pose request as taken from RobotState, static like the run: its name
     // and instant live across the whole intake below, and on this task's stack
     // they pushed the measured chain past its figure.
@@ -680,6 +756,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     PA_LOG_INFO(TAG, "%s ended - a pose took over", bulkCentreName(centreRun));
                     sequenceBulkCentreEnd(&centreRun);
                 }
+                gestureEnd("a pose took over");
                 const SequenceEntry* entry = catalogEntry;
                 if (isRuntime) {
                     if (seqStoreCommit(runtimeEntry)) {
@@ -732,6 +809,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 }
             }
             if (willStart) {
+                // A later run is the later word over Gestures still repeating
+                // from the one before, whether or not that one is still running.
+                gestureEnd("a later run");
                 if (seqEngineActive(engine)) {
                     PA_LOG_INFO(TAG, "preempt %s -> %s", activeName, req.name);
                     seqEngineAbort(engine);
@@ -805,6 +885,11 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                         (unsigned)centreRun.centred, (unsigned)centreRun.skipped);
             sequenceBulkCentreEnd(&centreRun);
         }
+        // Gestures end on either halt the same way: ServoTask has let every
+        // Output go, and a Gesture still expanding would drive them again.
+        if (estopActive || sleepActive) {
+            gestureEnd(estopActive ? "estop" : "sleep mode");
+        }
         // A pose ends on either halt the same way, where it has got to.
         if ((estopActive || sleepActive) && poseRun.active) {
             PA_LOG_INFO(TAG, "pose ended (%s) after %u sent, %u skipped",
@@ -859,6 +944,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                         (unsigned)centreRun.skipped);
             sequenceBulkCentreEnd(&centreRun);
         }
+        if (stopRequested) {
+            gestureEnd("web stop");
+        }
         if (stopRequested && poseRun.active) {
             PA_LOG_INFO(TAG, "pose ended (web stop) after %u sent", (unsigned)poseRun.sent);
             sequencePoseEnd(&poseRun);
@@ -896,6 +984,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             if (sequenceResyncCloseStage(&poseRun, &resyncCloseIdx, &resyncCloseDueMs, now)) {
                 PA_LOG_INFO(TAG, "pose ended - dome resync");
             }
+            // The resync owns the dome's panels now, one motion owner at a time.
+            gestureEnd("dome resync");
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
@@ -946,6 +1036,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     PA_LOG_INFO(TAG, "pose ended - back to centre took over");
                     sequencePoseEnd(&poseRun);
                 }
+                gestureEnd("back to centre took over");
                 // A running sequence ends here, the way a web stop ends one: a
                 // sequence starting ends a sweep for the same reason (above),
                 // and whichever came later is the operator's word. Left
@@ -994,6 +1085,11 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                             commandSourceToString((CommandSource)poseRun.src), (unsigned)poseRun.sent,
                             (unsigned)poseRun.skipped);
             }
+        }
+
+        // The Gestures a sequence fired, one item per tick when it is due.
+        if (sequenceGestureActive(gestureRun)) {
+            gestureOneItem(now);
         }
 
         // SAFETY INVARIANT: Suppression window behavior.
@@ -1046,6 +1142,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // pose is being reached;
         // 250 ms otherwise (task blocks on request queue, wakes on TWDT and edges).
         waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != SEQ_RESYNC_CLOSE_NONE,
-                                             centreRun.active || poseRun.active);
+                                             centreRun.active || poseRun.active ||
+                                                 sequenceGestureActive(gestureRun));
     }
 }

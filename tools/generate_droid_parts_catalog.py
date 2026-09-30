@@ -157,7 +157,12 @@ if set(SECTION_HALVES) != set(PART_SECTIONS):
         f"{sorted(set(SECTION_HALVES) ^ set(PART_SECTIONS))}"
     )
 
-TOP_LEVEL_KEYS = frozenset(("designs", "other_slots")) | frozenset(PART_SECTIONS)
+TOP_LEVEL_KEYS = frozenset(("designs", "other_slots", "sets")) | frozenset(PART_SECTIONS)
+
+# A set token is what a saved Gesture stores, so it is held to the shape of an
+# id: short, unquoted, and stable.
+SET_ID_RE = re.compile(r"^[a-z][A-Za-z]{0,15}$")
+SET_KEYS = frozenset(("id", "label", "sections", "members"))
 
 # Every key a part row may carry. A row with a key that is not here is a typo
 # that would otherwise generate an entry silently missing a field - `postion:`
@@ -555,6 +560,73 @@ def resolve_hosts(parts, problems):
                 part[field] = host[field]
 
 
+def read_sets(doc, parts, problems):
+    """The sets a Gesture spreads across, each resolved to its members.
+
+    Members come out in emission order, which is the order nothing downstream
+    uses: a Gesture orders its Parts by bearing when it runs (ADR 0046). A set
+    that names a Part twice, names nothing, or spans both halves of the droid is
+    refused, because a Gesture over it would have no single owner to perform it.
+    """
+    rows = doc.get("sets")
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        problems.append("sets: not a list")
+        return []
+    by_id = {part["id"]: part for part in parts}
+    index = {part["id"]: i for i, part in enumerate(parts)}
+    sets = []
+    seen = set()
+    for position, row in enumerate(rows):
+        where = f"sets[{position}]"
+        if not isinstance(row, dict):
+            problems.append(f"{where}: not a set row")
+            continue
+        check_keys(where, row, SET_KEYS, problems)
+        set_id = row.get("id")
+        if not isinstance(set_id, str) or not SET_ID_RE.match(set_id):
+            problems.append(f"{where}: id {set_id!r} is not a short set token")
+            continue
+        where = f"sets/{set_id}"
+        if set_id in seen:
+            problems.append(f"{where}: declared twice")
+            continue
+        seen.add(set_id)
+        label = row.get("label")
+        if not isinstance(label, str) or not label.strip():
+            problems.append(f"{where}: needs a label")
+            continue
+        sections = row.get("sections")
+        members = row.get("members")
+        if (sections is None) == (members is None):
+            problems.append(f"{where}: give sections or members, one of the two")
+            continue
+        if sections is not None:
+            if not isinstance(sections, list) or any(s not in PART_SECTIONS for s in sections):
+                problems.append(f"{where}: sections must be part sections, from {list(PART_SECTIONS)}")
+                continue
+            ids = [part["id"] for part in parts if part["section"] in sections]
+        else:
+            if not isinstance(members, list) or any(m not in by_id for m in members):
+                problems.append(f"{where}: members must be declared part ids")
+                continue
+            if len(set(members)) != len(members):
+                problems.append(f"{where}: names a part twice")
+                continue
+            ids = list(members)
+        if not ids:
+            problems.append(f"{where}: has no members")
+            continue
+        halves = {SECTION_HALVES.get(by_id[i]["section"]) for i in ids}
+        if len(halves) != 1 or None in halves:
+            problems.append(f"{where}: spans {sorted(h or 'no half' for h in halves)}; a set is on one half")
+            continue
+        ids.sort(key=lambda i: index[i])
+        sets.append({"id": set_id, "label": label, "half": halves.pop(), "members": ids})
+    return sets
+
+
 def read_designs(doc, declared_ids, problems, halves=None):
     """The design rows, with each complement checked against the declared parts.
 
@@ -916,6 +988,8 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
                 f"({rel(SERVO_OUTPUT_ROW_PATH)})"
             )
 
+    sets = read_sets(doc, parts, problems)
+
     if problems:
         raise CatalogError(problems)
 
@@ -924,6 +998,7 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
     return {
         "parts": parts,
         "designs": designs,
+        "sets": sets,
         "digest": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
 
@@ -1007,6 +1082,7 @@ def generate_firmware_header(catalog, output_path=None):
         "#pragma once",
         "",
         "#include <stddef.h>",
+        "#include <stdint.h>",
         "#include <string.h>",
         "",
         f"constexpr size_t DROID_PART_COUNT = {len(ids)};",
@@ -1062,8 +1138,106 @@ def generate_firmware_header(catalog, output_path=None):
         "",
     ]
     lines += design_header_lines(catalog)
+    lines += geometry_header_lines(catalog)
     output_path.write_text("\n".join(lines), encoding="utf-8")
     return ids
+
+
+def geometry_header_lines(catalog):
+    """Where each Part sits, and the sets a Gesture spreads across (#438).
+
+    The first firmware reader of `bearing_deg`: a Gesture orders its Parts by
+    where they physically are, and a sequence resolves that when it runs, so
+    the droid must know it (ADR 0046). Tenths of a degree so a 142.5 degree
+    panel keeps its half degree; -1 for a Part with no bearing, which orders
+    last and is never dropped.
+    """
+    parts = catalog["parts"]
+    lines = [
+        "// -----------------------------------------------------------------------------",
+        "// Where each Part sits, and the sets a Gesture spreads across (ADR 0046, #438)",
+        "//",
+        "// Bearings are degrees clockwise viewed from above, in TENTHS, by the",
+        "// catalog's convention: 0 is dead astern and 180 dead ahead (operator",
+        "// decision, 2026-09-30 on #438). The convention is held in ONE constant,",
+        "// DROID_BEARING_DEAD_AHEAD_TENTHS, so \"from the front\" is measured from it",
+        "// and nowhere else. -1 is a Part the catalog gives no bearing: every body",
+        "// Part today, placed by a position word until one is measured.",
+        "//",
+        "// A set is the Parts one Gesture token means, on one half of the droid,",
+        "// in emission order. Their order round the droid is the Gesture's to work",
+        "// out from the bearings above when it runs, never this table's.",
+        "// -----------------------------------------------------------------------------",
+        "constexpr int16_t DROID_BEARING_NONE = -1;",
+        "constexpr int16_t DROID_BEARING_DEAD_AHEAD_TENTHS = 1800;",
+        "",
+        "inline constexpr int16_t DROID_PART_BEARING_TENTHS[DROID_PART_COUNT] = {",
+    ]
+    for part in parts:
+        bearing = part["bearing_deg"]
+        if bearing is not None and declared(bearing):
+            tenths = int(round(float(bearing) * 10))
+            lines.append(f"    {tenths},  // {part['id']}")
+        else:
+            lines.append(f"    DROID_BEARING_NONE,  // {part['id']}")
+    lines += [
+        "};",
+        "",
+        "// Which half of the droid owns each Part: true for the dome's, false for",
+        "// the body's. The escape-hatch slots belong to no design and are spare",
+        "// BODY outputs, so they read as the body's. Who performs a Gesture is",
+        "// decided by this (Coordinator Resolution).",
+        "inline constexpr bool DROID_PART_ON_DOME[DROID_PART_COUNT] = {",
+    ]
+    for part in parts:
+        dome = "true" if SECTION_HALVES.get(part["section"]) == "dome" else "false"
+        lines.append(f"    {dome},  // {part['id']}")
+    index = {part["id"]: i for i, part in enumerate(parts)}
+    lines += ["};", ""]
+    for part_set in catalog["sets"]:
+        members = ", ".join(str(index[m]) for m in part_set["members"])
+        lines.append(
+            f"inline constexpr uint8_t DROID_SET_MEMBERS_{part_set['id'].upper()}[] = {{{members}}};"
+        )
+    lines += [
+        "",
+        "struct DroidPartSet {",
+        "    const char* id;",
+        "    bool dome;               // true: the dome performs it; false: the body expands it",
+        "    uint8_t count;",
+        "    const uint8_t* members;  // indices into DROID_PART_IDS",
+        "};",
+        "",
+        f"constexpr size_t DROID_PART_SET_COUNT = {len(catalog['sets'])};",
+        "",
+        "inline constexpr DroidPartSet DROID_PART_SETS[DROID_PART_SET_COUNT] = {",
+    ]
+    for part_set in catalog["sets"]:
+        name = f"DROID_SET_MEMBERS_{part_set['id'].upper()}"
+        dome = "true" if part_set["half"] == "dome" else "false"
+        lines.append(f'    {{"{part_set["id"]}", {dome}, {len(part_set["members"])}, {name}}},')
+    lines += [
+        "};",
+        "",
+        "// -----------------------------------------------------------------------------",
+        "// droidPartSetFind()",
+        "// The set a Gesture token names, or nullptr for a token this build does not",
+        "// declare.",
+        "// -----------------------------------------------------------------------------",
+        "inline const DroidPartSet* droidPartSetFind(const char* id) {",
+        "    if (id == nullptr) {",
+        "        return nullptr;",
+        "    }",
+        "    for (size_t i = 0; i < DROID_PART_SET_COUNT; ++i) {",
+        "        if (strcmp(DROID_PART_SETS[i].id, id) == 0) {",
+        "            return &DROID_PART_SETS[i];",
+        "        }",
+        "    }",
+        "    return nullptr;",
+        "}",
+        "",
+    ]
+    return lines
 
 
 def design_identifier(design_id):
@@ -1346,6 +1520,7 @@ def generate_browser_module(catalog, output_path=None):
         "sourceSha256": catalog["digest"],
         "designs": catalog["designs"],
         "parts": [browser_part(part) for part in catalog["parts"]],
+        "sets": catalog["sets"],
     }
     # ASCII-escaped on purpose. The catalog's blurbs carry em dashes, and this
     # module is served off LittleFS with no charset on the response, so an
@@ -1407,6 +1582,10 @@ def generate_browser_module(catalog, output_path=None):
  * `sitsOn` names the Part this one is carried by - a light and the dome panel
  * it lights. Such a Part takes its host's `position` and `bearingDeg` unless it
  * declares its own, so the two can never disagree about where they both are.
+ *
+ * `sets` are the tokens a Gesture spreads across - "the ring" - each with the
+ * Parts it means, on one half of the droid (`half`). A sequence stores the
+ * token, never the members, and orders them by `bearingDeg` when it runs.
  */
 
 (function () {{

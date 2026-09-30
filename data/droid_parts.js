@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 7712b0c016cf25be6161a9586f0df734004d10c43b23bf1dcdaf3859f5a780f5
+ * Source digest: sha256 c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -50,6 +50,10 @@
  * `sitsOn` names the Part this one is carried by - a light and the dome panel
  * it lights. Such a Part takes its host's `position` and `bearingDeg` unless it
  * declares its own, so the two can never disagree about where they both are.
+ *
+ * `sets` are the tokens a Gesture spreads across - "the ring" - each with the
+ * Parts it means, on one half of the droid (`half`). A sequence stores the
+ * token, never the members, and orders them by `bearingDeg` when it runs.
  */
 
 (function () {
@@ -58,7 +62,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "7712b0c016cf25be6161a9586f0df734004d10c43b23bf1dcdaf3859f5a780f5",
+    "sourceSha256": "c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa",
     "designs": [
       {
         "id": "mk4",
@@ -1114,6 +1118,102 @@
         "name": "Other part 10",
         "aliases": [],
         "control": "body-ledc"
+      }
+    ],
+    "sets": [
+      {
+        "id": "ring",
+        "label": "The ring",
+        "half": "dome",
+        "members": [
+          "panel1",
+          "panel2",
+          "panel3",
+          "panel4",
+          "panel5",
+          "panel6",
+          "panel7",
+          "panel8",
+          "panel9",
+          "panel10",
+          "panel11",
+          "panel12",
+          "panel13",
+          "panel14"
+        ]
+      },
+      {
+        "id": "pies",
+        "label": "The pies",
+        "half": "dome",
+        "members": [
+          "pie1",
+          "pie2",
+          "pie3",
+          "pie4",
+          "pie5",
+          "pie6"
+        ]
+      },
+      {
+        "id": "dome",
+        "label": "Every dome panel",
+        "half": "dome",
+        "members": [
+          "pie1",
+          "pie2",
+          "pie3",
+          "pie4",
+          "pie5",
+          "pie6",
+          "panel1",
+          "panel2",
+          "panel3",
+          "panel4",
+          "panel5",
+          "panel6",
+          "panel7",
+          "panel8",
+          "panel9",
+          "panel10",
+          "panel11",
+          "panel12",
+          "panel13",
+          "panel14"
+        ]
+      },
+      {
+        "id": "breadpan",
+        "label": "The breadpan doors",
+        "half": "body",
+        "members": [
+          "doorFL",
+          "doorFR",
+          "doorRL",
+          "doorRR"
+        ]
+      },
+      {
+        "id": "bodyDoors",
+        "label": "Every body door",
+        "half": "body",
+        "members": [
+          "bodyPanel1",
+          "bodyPanel2",
+          "bodyPanel3",
+          "bodyPanel4",
+          "bodyPanel5",
+          "bodyPanel6",
+          "bodyPanel7",
+          "bodyPanel8",
+          "chargebay",
+          "dataport",
+          "doorFL",
+          "doorFR",
+          "doorRL",
+          "doorRR",
+          "smallDoor"
+        ]
       }
     ]
   };

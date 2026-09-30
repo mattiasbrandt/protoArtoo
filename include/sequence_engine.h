@@ -59,6 +59,17 @@ enum SeqStepType : uint8_t {
                               // rather than a body target smuggled into
                               // STEP_DOME_CMD's payload, on the precedent
                               // STEP_DOME_ROTATE set for a body-owned motion step.
+    STEP_GESTURE        = 10, // Gesture (ADR 0046, include/sequence_gesture.h):
+                              // one authored move spread across many Parts.
+                              // payload carries the set token or the listed
+                              // Part ids, resolved when the step RUNS; params
+                              // carry the shape, how far and the spread, in
+                              // members the other types leave idle (the table
+                              // in sequence_gesture.h). The engine hands it to
+                              // the Sequence Coordinator whole: a dome Gesture
+                              // is one `$` command, a body Gesture a paced
+                              // expansion on the Coordinator's own cursor, so
+                              // it never holds this engine's single cursor.
 };
 
 // -----------------------------------------------------------------------------
@@ -341,6 +352,9 @@ enum SeqActionKind : uint8_t {
                                  // time, because wiring the arm must start the
                                  // step working with nothing re-authored
                                  // (include/droid_part_availability.h).
+    SEQ_ACT_GESTURE        = 7,  // `gesture` -> the Sequence Coordinator, which
+                                 // resolves the set against the droid as it is
+                                 // and performs it by owner (ADR 0046).
 };
 
 struct SeqAction {
@@ -355,6 +369,11 @@ struct SeqAction {
     uint8_t       bodyShape;
     uint8_t       bodyHowFar;
     uint16_t      bodyFlutterMs;
+    // GESTURE. The step itself, valid only while the run that fired it is
+    // still active: a Learned run's steps live in heap run buffers the
+    // dispatcher frees when the run ends, and a Gesture can outlive its run.
+    // So the Coordinator copies what it needs AT DISPATCH, never later.
+    const SeqStep* gesture;
 };
 
 // Latched per-group panel state. Owned by the engine; the dispatcher task

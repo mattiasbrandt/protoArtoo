@@ -48,6 +48,13 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
             actions.target = SEQ_DISPATCH_BODY_MOVE;
             break;
 
+        case SEQ_ACT_GESTURE:
+            // Route only. Resolving the set against the droid, and pacing a body
+            // Gesture, need the live Output rows and ServoTask's reports, which
+            // this pure core cannot reach.
+            actions.target = SEQ_DISPATCH_GESTURE;
+            break;
+
         default:
             // Unknown action: silent success (fail-safe behavior).
             actions.target = SEQ_DISPATCH_NONE;

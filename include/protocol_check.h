@@ -95,6 +95,23 @@ static const uint8_t  PC_CMD_MAX          = 63;  // payload[64] minus NUL
 static const uint16_t PC_BODY_FLUTTER_MS_MIN = PC_SM_MOVE_MIN;
 static const uint16_t PC_BODY_FLUTTER_MS_MAX = PC_LOOP_PERIOD_MAX;
 
+// A Gesture's times (ADR 0046), bounded by the model's own ends the same way:
+//   step    its pace: a move this model accepts, up to the longest repeat.
+//   speed   how long a full throw takes when the Gesture overrides the
+//           Output's own (ADR 0052): a servo move this model accepts.
+//   repeat  how often it starts again: the loop period's own bounds.
+//   extent  how long it keeps repeating: the loop duration's own bound.
+// Form only. A pace faster than the Cadence Floor is not refused: the
+// Coordinator paces what it generates whatever the authored spread asks, and
+// saying the spread will not keep time is the Rehearsal's (ADR 0044).
+static const uint16_t PC_GESTURE_STEP_MS_MIN   = PC_SM_MOVE_MIN;
+static const uint16_t PC_GESTURE_STEP_MS_MAX   = PC_LOOP_PERIOD_MAX;
+static const uint16_t PC_GESTURE_SPEED_MS_MIN  = PC_SM_MOVE_MIN;
+static const uint16_t PC_GESTURE_SPEED_MS_MAX  = PC_SM_MOVE_MAX;
+static const uint16_t PC_GESTURE_REPEAT_MS_MIN = PC_LOOP_PERIOD_MIN;
+static const uint16_t PC_GESTURE_REPEAT_MS_MAX = PC_LOOP_PERIOD_MAX;
+static const uint32_t PC_GESTURE_EXTENT_MS_MAX = PC_LOOP_DUR_MAX;
+
 // -----------------------------------------------------------------------------
 // Staging draft  --  the in-memory form a Learned Sequence takes between JSON parse
 // and engine execution. `steps`/`closeSteps` point at caller-owned buffers

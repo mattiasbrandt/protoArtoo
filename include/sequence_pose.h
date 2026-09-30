@@ -58,10 +58,12 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "sequence_bulk_centre.h"  // SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs()
 #include "sequence_engine.h"       // SequenceEntry, SeqStep, SeqAction, panel targets
+#include "sequence_gesture.h"      // a Gesture's members, order and spread
 
 // What a pose command is, which decides how far apart it goes.
 enum SeqPoseClass : uint8_t {
@@ -270,8 +272,68 @@ inline bool visitLight(SeqPosePlan& plan, const char* cmd, uint32_t fireMs) {
     return false;
 }
 
+// The panel command target a dome Part is sent to ("01", "P3"), or false for a
+// Part the dome has no individual target for.
+inline bool domePartTarget(uint8_t partIndex, char* out, size_t outLen) {
+    const char* id = droidPartIdAt(partIndex);
+    if (seqGestureDomeBit(partIndex) < 0) return false;
+    if (strncmp(id, "panel", 5) == 0) {
+        snprintf(out, outLen, "%02d", atoi(id + 5));
+        return true;
+    }
+    if (strncmp(id, "pie", 3) == 0) {
+        snprintf(out, outLen, "P%s", id + 3);
+        return true;
+    }
+    return false;
+}
+
+// A Gesture, as a run performs it, up to atMs (ADR 0046). Each Part it moves
+// is where the Gesture's last move before the instant left it. A body Gesture
+// is expanded by the Coordinator on the spread's own timing, pass by pass. A
+// dome Gesture is the dome's `$` command: a together open or close leaves its
+// panels that way; every other command the dome performs ends them closed, on
+// the dome's own timing, and a pair the dome has no command for moves nothing
+// (include/sequence_gesture.h) -- so neither does the pose.
+inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs) {
+    uint8_t members[SEQ_GESTURE_MEMBERS_MAX];
+    const uint8_t n = seqGestureMembers(step, members, SEQ_GESTURE_MEMBERS_MAX);
+    const SeqBodyShape shape = seqBodyShape(step.params);
+    const uint8_t spread = seqGestureSpread(step.params);
+    if (seqGestureIsDome(step.payload)) {
+        if (seqGestureDomePrefix(shape, spread) == nullptr) return;
+        if (spread == GESTURE_SPREAD_TOGETHER && shape == BODY_SHAPE_FLUTTER) return;  // the dome's to know
+        const bool opens = spread == GESTURE_SPREAD_TOGETHER && shape == BODY_SHAPE_OPEN;
+        for (uint8_t i = 0; i < n; ++i) {
+            char target[4];
+            if (!domePartTarget(members[i], target, sizeof(target))) continue;
+            char one[8];
+            snprintf(one, sizeof(one), ":%s%s", opens ? "OP" : "CL", target);
+            upsert(plan, SEQ_POSE_PANEL, target, blankAction(SEQ_ACT_DOME_CMD, one), fireMs, 0);
+        }
+        return;
+    }
+    const uint16_t stepMs = seqGestureStepMs(step.params);
+    const uint16_t repeat = seqGestureRepeatMs(step.params);
+    const uint32_t passes = seqGesturePasses(step.params);
+    const uint16_t moves = seqGesturePassMoves(spread, n);
+    for (uint32_t pass = 0; pass < passes; ++pass) {
+        const uint32_t passAt = fireMs + pass * repeat;
+        if (passAt > atMs) break;
+        for (uint16_t k = 0; k < moves; ++k) {
+            const SeqGestureMove move = seqGesturePassMove(spread, n, stepMs, k);
+            const uint32_t at = passAt + move.atMs;
+            if (at > atMs) continue;
+            SeqAction a = blankAction(SEQ_ACT_BODY_MOVE, droidPartIdAt(members[move.member]));
+            a.bodyShape = (uint8_t)seqGestureMoveShape(shape, move.undo);
+            a.bodyHowFar = seqBodyHowFar(step.params);
+            upsert(plan, SEQ_POSE_BODY, "", a, at, 0);
+        }
+    }
+}
+
 // One step, as the engine would fire it at fireMs.
-inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs) {
+inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs) {
     switch (step.type) {
         case STEP_DOME_CMD:
             if (!visitPanel(plan, step.payload, fireMs)) {
@@ -306,6 +368,9 @@ inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs) {
             upsert(plan, SEQ_POSE_BODY, "", a, fireMs, 0);
             break;
         }
+        case STEP_GESTURE:
+            visitGesture(plan, step, fireMs, atMs);
+            break;
         default:
             // A random step's pick, a dome turn, a latch reset: nothing an
             // instant can be sent to (see the header comment).
@@ -350,14 +415,14 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
             do {
                 for (uint8_t k = (uint8_t)(i + 1); k <= last; ++k) {
                     const uint32_t fire = step.tMs + start + steps[k].tMs;
-                    if (fire <= atMs) seq_pose_detail::visit(*out, steps[k], fire);
+                    if (fire <= atMs) seq_pose_detail::visit(*out, steps[k], fire, atMs);
                 }
                 start += period;
             } while (period > 0 && start < step.params.durationMs && step.tMs + start <= atMs);
             i = (uint8_t)(last + 1);
             continue;
         }
-        if (step.tMs <= atMs) seq_pose_detail::visit(*out, step, step.tMs);
+        if (step.tMs <= atMs) seq_pose_detail::visit(*out, step, step.tMs, atMs);
         ++i;
     }
 
@@ -501,10 +566,8 @@ inline bool sequencePoseDue(const SeqPoseRun& run, uint32_t nowMs) {
 // Whether the Output the last body command moved has stopped, given what
 // ServoTask reports. Clears the wait when it has.
 inline bool sequencePoseAwaitDone(SeqPoseRun* run, bool outputMoving) {
-    if (run == nullptr || run->awaitArm == SEQ_BULK_CENTRE_NO_AWAIT) return true;
-    if (outputMoving) return false;
-    run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
-    return true;
+    if (run == nullptr) return true;
+    return sequencePaceAwaitDone(&run->awaitArm, outputMoving);
 }
 
 // The command whose turn it was has been dealt with. `started` is whether it
@@ -517,18 +580,11 @@ inline void sequencePoseAdvance(SeqPoseRun* run, uint32_t nowMs, uint8_t cls, bo
     if (run == nullptr || !run->active) return;
     if (started) {
         run->sent++;
-        if (cls == SEQ_POSE_PANEL) {
-            run->dueMs = nowMs + SEQ_CADENCE_FLOOR_MS;
-        } else if (cls == SEQ_POSE_BODY) {
-            run->dueMs = nowMs + sequenceCadenceSpacingMs(throwMs);
-            run->awaitArm = armId;
-        } else {
-            run->dueMs = nowMs;
-        }
     } else {
         run->skipped++;
-        run->dueMs = nowMs;
     }
+    sequencePaceMotion(&run->dueMs, &run->awaitArm, nowMs, started, cls != SEQ_POSE_INSTANT,
+                       cls == SEQ_POSE_BODY, throwMs, armId);
     run->next++;
 }
 

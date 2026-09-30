@@ -13,6 +13,7 @@
 
 #include "droid_parts.h"  // DROID_PART_ID_MAX_LEN -- the longest id the catalog has
 #include "robot_state.h"  // portMUX_TYPE
+#include "sequence_gesture.h"  // seqGestureIsDome()
 
 static portMUX_TYPE seqEvidenceMux = portMUX_INITIALIZER_UNLOCKED;
 static SeqRunEvidence g;                         // the live record (zero-initialized)
@@ -102,6 +103,15 @@ static void actionToString(const SeqAction& act, char* out, size_t cap) {
             snprintf(out, cap, "<domeRotate:%d:%u>",
                      (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
             break;
+        case SEQ_ACT_GESTURE: {
+            // The set, or the start of a listed one: what the engine handed
+            // over. What the Coordinator then sent for it is its own log.
+            char set[DROID_PART_ID_MAX_LEN + 1];
+            strncpy(set, act.payload, sizeof(set) - 1);
+            set[sizeof(set) - 1] = '\0';
+            snprintf(out, cap, "<gesture:%s>", set);
+            break;
+        }
         case SEQ_ACT_BODY_MOVE: {
             // Part, shape and how-far, plus a flutter's duration when there is
             // one. This is what the engine emitted, which is what this record is
@@ -196,6 +206,10 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
         if (act.kind == SEQ_ACT_DOME_CMD) {
             applyScope(g, rep);
             applyRing(g, rep);
+        } else if (act.kind == SEQ_ACT_GESTURE && seqGestureIsDome(act.payload)) {
+            // A dome Gesture moves dome panels, which is the panel scope its
+            // FX_PANEL stamp puts terminal cleanup on.
+            g.fxScopes |= SEQ_EVID_FX_PANEL;
         } else if (isAudio) {
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }

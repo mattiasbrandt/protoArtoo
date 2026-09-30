@@ -10,9 +10,11 @@
 // =============================================================================
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "sequence_engine.h"
+#include "sequence_gesture.h"
 
 static const char* const kRingTargets[] = { "01", "02", "03", "04", "07", "11", "13" };
 static const char* const kPieTargets[]  = { "P1", "P2", "P3", "P4", "P5", "P6" };
@@ -57,6 +59,7 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
     a.bodyShape = 0;
     a.bodyHowFar = 0;
     a.bodyFlutterMs = 0;
+    a.gesture = nullptr;
     setPayload(a, payload);
     st.finalDueRel[idx] = dueRel;
 }
@@ -76,6 +79,7 @@ static void addFinalDomeRotateStop(SeqEngineState& st) {
     a.bodyShape = 0;
     a.bodyHowFar = 0;
     a.bodyFlutterMs = 0;
+    a.gesture = nullptr;
     a.payload[0] = '\0';
     st.finalDueRel[idx] = 0;
 }
@@ -147,6 +151,29 @@ static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     if (bit < 0) return;
     if (open) st.ringOpenMask |= (uint16_t)(1u << bit);
     else      st.ringOpenMask  = (uint16_t)(st.ringOpenMask & ~(1u << bit));
+}
+
+// A dome Gesture that leaves its ring panels OPEN marks them open, so terminal
+// cleanup closes them one at a time exactly as it does a ring panel opened by
+// :OPnn. Only (open, together) leaves a panel open: every other `$` command
+// the dome performs ends its panels closed (include/sequence_gesture.h), and a
+// Gesture the dome has no command for moves nothing. A body Gesture records
+// nothing, for the reason a Body Step does not (ADR 0049).
+static void recordGestureRingOpen(SeqEngineState& st, const SeqStep& step) {
+    if (!seqGestureIsDome(step.payload) ||
+        seqBodyShape(step.params) != BODY_SHAPE_OPEN ||
+        seqGestureSpread(step.params) != GESTURE_SPREAD_TOGETHER) {
+        return;
+    }
+    uint8_t members[SEQ_GESTURE_MEMBERS_MAX];
+    const uint8_t n = seqGestureMembers(step, members, SEQ_GESTURE_MEMBERS_MAX);
+    for (uint8_t i = 0; i < n; ++i) {
+        const char* id = droidPartIdAt(members[i]);
+        // Ring panels are "panel<N>" in the catalog and <N> on the wire.
+        if (strncmp(id, "panel", 5) != 0 || seqGestureDomeBit(members[i]) < 0) continue;
+        const int bit = ringPanelBit(atoi(id + 5));
+        if (bit >= 0) st.ringOpenMask |= (uint16_t)(1u << bit);
+    }
 }
 
 // Body-authoritative latch update: an explicit group/all close on the wire means
@@ -382,6 +409,7 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
     a.bodyShape = 0;
     a.bodyHowFar = 0;
     a.bodyFlutterMs = 0;
+    a.gesture = nullptr;
     a.payload[0] = '\0';
     uint32_t jitter = 0;
 
@@ -419,6 +447,13 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.bodyShape = (uint8_t)seqBodyShape(step.params);
             a.bodyHowFar = seqBodyHowFar(step.params);
             a.bodyFlutterMs = step.params.flutterMs;
+            break;
+        case STEP_GESTURE:
+            // Handed on whole. The payload rides along so a log line and the
+            // run evidence can name the set without reaching into the step.
+            a.kind = SEQ_ACT_GESTURE;
+            a.gesture = &step;
+            setPayload(a, step.payload);
             break;
         case STEP_RANDOM: {
             const uint8_t target = pickTarget(st, step, rnd);
@@ -662,6 +697,8 @@ void seqEngineCommit(SeqEngineState& st) {
         if (strncmp(st.pending.payload, "DV:", 3) == 0) {
             st.dvPresetActive = true;
         }
+    } else if (st.pending.kind == SEQ_ACT_GESTURE && st.pending.gesture != nullptr) {
+        recordGestureRingOpen(st, *st.pending.gesture);
     } else if (st.pending.kind == SEQ_ACT_DOME_ROTATE &&
                st.pending.domeSpeedPct != 0) {
         st.domeRotateActive = true;
