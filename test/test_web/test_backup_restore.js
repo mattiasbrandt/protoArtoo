@@ -91,6 +91,10 @@ const httpError = (status, message) => Object.assign(new Error(message), { kind:
  * A droid behind the routes a backup and a restore use. `library` is its
  * Learned Sequences in list order; `refuse(seq)` returns the droid's reason
  * to refuse a save, or null; `fail(path, method)` fails a request outright.
+ * `breaks(path, method)` fails a write AFTER the store changed, the two ways
+ * the firmware can: "rename" is a save that removed the old file and then
+ * could not rename the new one into place (src/seq_store.cpp), answering 500;
+ * "no-reply" is a write that landed and whose answer never arrived.
  */
 const makeDroid = ({
   board = "artoo_esp32",
@@ -99,6 +103,7 @@ const makeDroid = ({
   rcMap = { mode: "dual_sbus", map: [] },
   refuse = () => null,
   fail = () => false,
+  breaks = () => null,
   soundOff = false,
 } = {}) => {
   const { DroidParts } = partsGlobals();
@@ -123,6 +128,7 @@ const makeDroid = ({
       if (!droid.store.has(name)) throw httpError(404, "not found");
       if (method === "DELETE") {
         droid.store.delete(name);
+        if (breaks(path, method) === "no-reply") throw httpError(0, `no answer from ${path}`);
         const danglingBindings = droid.rcMap.map
           .filter((entry) => entry.action === "dome_seq" && entry.payload === name)
           .map((entry) => ({ source: entry.source, channel: entry.channel }));
@@ -135,7 +141,13 @@ const makeDroid = ({
       const reason = refuse(seq);
       if (reason) throw httpError(400, reason);
       if (!droid.store.has(seq.name) && droid.store.size >= cap) throw httpError(400, `store full (${cap} sequences max)`);
+      const broken = breaks(path, method);
+      if (broken === "rename") {
+        droid.store.delete(seq.name);
+        throw httpError(500, "rename failed");
+      }
       droid.store.set(seq.name, structuredClone(seq));
+      if (broken === "no-reply") throw httpError(0, `no answer from ${path}`);
       return { data: { ok: true } };
     }
     if (path === "/api/rc/map" && method === "POST") {
@@ -409,6 +421,46 @@ test("a Sequence the droid refuses partway through leaves the droid's library ex
     library.slice().sort((a, b) => a.name.localeCompare(b.name)),
     "the droid holds the Sequences it had, each as it was");
   assert.match(receipt(), /Sequences: FAILED — the droid refused DM:BIG: payload too large\. The Sequences the droid had are put back\./);
+});
+
+// The droid changes its store before it answers. A save that fails at the
+// rename has already removed the Sequence it was replacing, and a delete whose
+// answer is lost has still deleted. Recording a name only on a good answer
+// left both out of the put-back, and the receipt said the library was back
+// (Codex review of #448 slice 1).
+const byName = (seqs) => seqs.slice().sort((a, b) => a.name.localeCompare(b.name));
+const heldAfter = (droid) => byName([...droid.store.values()]);
+
+test("a save that fails after the droid removed the old Sequence still puts it back", async () => {
+  const mine = sequence("DM:MINE", [{ type: "dome", cmd: ":OP01", ms: 0 }]);
+  let broken = false;
+  const droid = makeDroid({
+    library: [mine],
+    breaks: (path, method) => {
+      if (method !== "POST" || broken) return null;
+      broken = true;
+      return "rename";
+    },
+  });
+  const backup = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:MINE")] };
+  const { receipt } = await restoreOn(droid, backup);
+
+  assert.deepEqual(heldAfter(droid), [mine], "the droid holds the Sequence it had, as it was");
+  assert.match(receipt(), /Sequences: FAILED — the droid refused DM:MINE: rename failed\. The Sequences the droid had are put back\./);
+});
+
+test("a delete whose answer is lost still puts the Sequence back", async () => {
+  const library = [sequence("DM:GONE", [{ type: "dome", cmd: ":OP02", ms: 0 }]), sequence("DM:KEEP")];
+  const droid = makeDroid({
+    library,
+    breaks: (path, method) => (method === "DELETE" && path.includes("GONE") ? "no-reply" : null),
+  });
+  const backup = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:KEEP"), sequence("DM:NEW")] };
+  const { receipt } = await restoreOn(droid, backup);
+
+  assert.deepEqual(heldAfter(droid), byName(library),
+    "the droid holds the Sequences it had, each as it was");
+  assert.match(receipt(), /Sequences: FAILED — the droid refused DM:GONE: no answer[^\n]*The Sequences the droid had are put back\./);
 });
 
 test("the RC Map never goes out with a binding the droid would refuse, and a refused map is never called restored", async () => {

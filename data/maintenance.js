@@ -241,6 +241,17 @@
   const listOf = (names) => names.join(', ');
   const seqPath = (name) => `/api/seq?name=${encodeURIComponent(name)}`;
 
+  // Two JSON values with the same content, whatever order their keys came in:
+  // the order a Sequence's keys were written in is not part of the Sequence.
+  const sameJson = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length
+      && keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && sameJson(a[key], b[key]));
+  };
+
   // ---- READ THE DROID: the reads a backup is made of, by part ----
   // Download reads every part; the copy offered before a restore reads the
   // parts about to be replaced. One function, so the copy is a backup like any
@@ -543,26 +554,33 @@
   // droid just before, and the receipt says so. `held` and `changed` track what
   // the droid holds now, so the put-back deletes only what this restore added
   // and re-posts only what it removed or overwrote.
+  //
+  // Both are written BEFORE each request, never after its answer. The droid
+  // changes its store before it answers (src/web/api_seq.cpp), and a save that
+  // fails at the rename has already removed the old file (src/seq_store.cpp,
+  // LittleFS.remove before rename). So a refusal, a lost reply or a timeout can
+  // each leave a name changed, and only a name recorded up front is put back.
   const restoreSequences = async (fileSequences, prior, cap) => {
     const keep = cap ? fileSequences.slice(0, cap) : fileSequences.slice();
     const leftOut = fileSequences.slice(keep.length).map((seq) => seq?.name);
     const keepNames = new Set(keep.map((seq) => seq?.name));
     const priorNames = new Set(prior.map((seq) => seq.name));
+    const priorByName = new Map(prior.map((seq) => [seq.name, seq]));
     const held = new Set(priorNames);
     const changed = new Set();
     const dangling = [];
     let refused = null;
 
     const remove = async (name) => {
-      const answer = await window.PAApi.request(seqPath(name), { method: 'DELETE', timeoutMs: 10000 });
       held.delete(name);
       changed.add(name);
+      const answer = await window.PAApi.request(seqPath(name), { method: 'DELETE', timeoutMs: 10000 });
       return answer?.data?.danglingBindings || [];
     };
     const save = async (seq) => {
-      await window.PAApi.postJson('/api/seq', seq, { timeoutMs: 15000 });
       held.add(seq.name);
       changed.add(seq.name);
+      await window.PAApi.postJson('/api/seq', seq, { timeoutMs: 15000 });
     };
 
     let step = null;
@@ -573,6 +591,11 @@
         (await remove(seq.name)).forEach((binding) => dangling.push({ ...binding, name: seq.name }));
       }
       for (const seq of keep) {
+        // A Sequence the droid already holds exactly is left alone: on a full
+        // store every save can be refused for room (src/seq_store_util.cpp),
+        // and re-posting an identical copy would fail a restore that changes
+        // nothing about it.
+        if (sameJson(seq, priorByName.get(seq?.name))) continue;
         step = seq?.name;
         await save(seq);
       }
@@ -582,12 +605,16 @@
     if (!refused) return { restored: keep, leftOut, dangling, held };
 
     // Put back. What this restore added goes first, so a full store has room
-    // for what it removed.
+    // for what it removed. A name recorded before a save whose reply was lost
+    // may never have reached the droid: its "not found" means it is gone,
+    // which is what the put-back wants.
     const notBack = [];
     for (const name of [...held].filter((each) => !priorNames.has(each))) {
       try {
         await remove(name);
-      } catch {
+      } catch (error) {
+        if (error?.kind === 'http' && error.status === 404) continue;
+        held.add(name);
         notBack.push(name);
       }
     }
@@ -595,6 +622,7 @@
       try {
         await save(seq);
       } catch {
+        held.delete(seq.name);
         notBack.push(seq.name);
       }
     }
