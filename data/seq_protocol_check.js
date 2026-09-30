@@ -158,6 +158,10 @@
   };
 
   const SeqProtocolCheck = {
+    // The most steps a sequence may hold: PC_MAX_STEPS (include/protocol_check.h).
+    // The Rehearsal's size figure reads it from here rather than keep its own.
+    MAX_STEPS: 96,
+
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a
@@ -944,8 +948,8 @@
       if (steps.length === 0) {
         return { ok: false, error: "Add at least one step to the sequence" };
       }
-      if (steps.length > 96) {
-        return { ok: false, error: "A sequence can have at most 96 steps" };
+      if (steps.length > this.MAX_STEPS) {
+        return { ok: false, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
       }
 
       // Must end with 'end' type

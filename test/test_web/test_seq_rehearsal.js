@@ -16,18 +16,22 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+// The modules the Rehearsal reads beside it on data/seq.html: the generated
+// motion model, the dome command map and Protocol Check's mirror.
+const MODULES = ["servo_motion.js", "dome_command_map.js", "seq_protocol_check.js", "seq_rehearsal.js"];
+
 const loadRehearsal = () => {
   const sandbox = { window: {} };
   vm.createContext(sandbox);
-  vm.runInContext(
-    fs.readFileSync(path.resolve(__dirname, "../../data/seq_rehearsal.js"), "utf8"),
-    sandbox,
-    { filename: "seq_rehearsal.js" },
+  MODULES.forEach((name) =>
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, "../../data", name), "utf8"), sandbox, { filename: name }),
   );
-  return sandbox.window.SeqRehearsal;
+  return sandbox.window;
 };
 
-const R = loadRehearsal();
+const W = loadRehearsal();
+const R = W.SeqRehearsal;
+const M = W.ServoMotion;
 
 const seq = (steps) => ({ name: "DM:TEST", suppressMs: 8000, toggleGroup: "none", steps });
 
@@ -203,4 +207,155 @@ test("Protocol Check's mirror answers with a verdict and carries no advice chann
   const refused = check.validateSequence(seq([{ t: 0, type: "dome", cmd: ":OP01" }]));
   assert.equal(refused.ok, false);
   assert.deepEqual(Object.keys(refused).filter((k) => !["ok", "field", "error"].includes(k)), []);
+});
+
+// ---------------------------------------------------------------------------
+// The body, timed by the planner the firmware runs (#439).
+// ---------------------------------------------------------------------------
+
+// A Servo Output row as data/outputs.js reads GET /api/servo/outputs: an
+// MG996R-sized pair, 900 ms end to end and 225 ms to speed -- the profile
+// test_native/test_servo_motion_ramp pins its figures on.
+const output = (parts, extra = {}) => ({
+  name: "ARM1",
+  wired: true,
+  light: null,
+  openUs: 2000,
+  closeUs: 1000,
+  bandLoUs: 1000,
+  bandHiUs: 2000,
+  throwMs: 900,
+  accelMs: 225,
+  ease: "none",
+  calibrated: true,
+  parts,
+  ...extra,
+});
+
+test("the browser's planner lands on the firmware's own figures", () => {
+  // test_native/test_servo_motion_ramp: a full throw takes the Output's own
+  // time with its own ramp, a half throw pays both ramps (562.5 ms, not 450),
+  // and an Output nobody has measured jumps.
+  const profile = { loUs: 1000, hiUs: 2000, throwMs: 900, accelMs: 225, easing: 0, calibrated: true };
+  const full = M.servoMotionPlan(1000, 2000, profile, 1000);
+  assert.equal(full.durationMs, 900);
+  assert.equal(full.rampMs, 225);
+  assert.equal(M.servoMotionPlan(1000, 1500, profile, 1000).durationMs, 563);
+  assert.equal(M.servoMotionArrivalMs(1000, 2000, { ...profile, calibrated: false }), 0);
+  // An overshoot arrives when its settle back does, not when its aim is reached.
+  const overshoot = { ...profile, easing: M.ServoEasing.SERVO_EASE_OVERSHOOT };
+  const out = M.servoMotionPlan(1000, 1800, overshoot, 0);
+  assert.ok(M.servoMotionSettles(out));
+  const back = M.servoMotionSettleBack(out, overshoot, out.durationMs);
+  assert.equal(M.servoMotionArrivalMs(1000, 1800, overshoot), out.durationMs + back.durationMs);
+});
+
+test("a Part turned back before it arrives is judged against the run it cuts short", () => {
+  const context = { outputs: [output(["doorFL"])] };
+  const found = byCode(
+    R.rehearse(
+      seq([
+        { t: 0, type: "body", part: "doorFL" },
+        { t: 300, type: "body", part: "doorFL", shape: "close" },
+        { t: 2000, type: "end" },
+      ]),
+      context,
+    ),
+    "retarget-before-arrival",
+  );
+  assert.equal(found.length, 1);
+  assert.equal(found[0].part, "doorFL");
+  assert.equal(found[0].step, 1);
+  assert.match(found[0].msg, /300 ms into a move that takes 900 ms/);
+});
+
+test("re-targets the same way on are one move, measured from where it set off", () => {
+  // The reference's v1.78.0 lesson: judging every re-target buried the real
+  // findings under ones about routines that arrive exactly when they say.
+  // Half open, then all the way open 200 ms later, then closed once the whole
+  // 900 ms run has had its time.
+  const context = { outputs: [output(["doorFL"])] };
+  const report = R.rehearse(
+    seq([
+      { t: 0, type: "body", part: "doorFL", howFar: 50 },
+      { t: 200, type: "body", part: "doorFL" },
+      { t: 900, type: "body", part: "doorFL", shape: "close" },
+      { t: 2000, type: "end" },
+    ]),
+    context,
+  );
+  assert.equal(byCode(report, "retarget-before-arrival").length, 0);
+  // Timed, so no body-timing Gap; the slowest throw is the Output's full one.
+  assert.equal(report.gaps.length, 0);
+  assert.equal(report.figures.slowestThrow.ms, 900);
+});
+
+test("a body move that cannot be timed keeps its Gap, and a dome-only routine keeps the dome's", () => {
+  const uncalibrated = { outputs: [output(["doorFL"], { calibrated: false })] };
+  const body = R.rehearse(seq([{ t: 0, type: "body", part: "doorFL" }, { t: 900, type: "end" }]), uncalibrated);
+  assert.equal(body.gaps.map((gap) => gap.code).join(), "body-timing");
+  const dome = R.rehearse(seq([{ t: 0, type: "dome", cmd: ":OP01" }, { t: 900, type: "end" }]), uncalibrated);
+  assert.equal(dome.gaps.map((gap) => gap.code).join(), "dome-timing");
+});
+
+// The 2026-06-17 ROCKMARCH run, as far as a sequence can carry it: raw logic
+// and PSI codes that left the logics default blue, a blanket :CL00 that moved
+// pies the routine never touched until they stalled, and a named track that
+// played on past the show.
+test("ROCKMARCH as it ran on 17 June trips the receipts it paid for", () => {
+  const report = R.rehearse(
+    seq([
+      { t: 0, type: "audio", cmd: "$M", boundAudio: false },
+      { t: 0, type: "audioCat", category: "alert", fallback: "none" },
+      { t: 500, type: "dome", cmd: "@0T11" },
+      { t: 1000, type: "dome", cmd: "@0P11" },
+      { t: 1500, type: "dome", cmd: ":OP01" },
+      { t: 3000, type: "dome", cmd: ":CL00" },
+      { t: 4000, type: "end" },
+    ]),
+  );
+  assert.equal(byCode(report, "raw-light-code").length, 2);
+  const group = byCode(report, "group-panel");
+  assert.equal(group.length, 1);
+  assert.match(group[0].msg, /PP1/, "the pies it never touched are not named");
+  const outlives = byCode(report, "audio-outlives-show");
+  // A Note, and only the named track: a category rings out on purpose (ADR 0010).
+  assert.equal(outlives.length, 1);
+  assert.equal(outlives[0].level, "note");
+  assert.equal(outlives[0].step, 0);
+});
+
+test("DM:LOW's ring closes inside the dome's cadence are a burst, and nine body closes at once overlap", () => {
+  const low = R.rehearse(
+    seq([
+      ...[1, 2, 3, 4, 7, 11, 13].map((panel, k) => ({ t: k * 150, type: "dome", cmd: `:CL${String(panel).padStart(2, "0")}` })),
+      { t: 2000, type: "end" },
+    ]),
+  );
+  const burst = byCode(low, "servo-burst");
+  assert.equal(burst.length, 1);
+  assert.equal(burst[0].n, 6);
+  // The :SE routines fire nine BODY_CLOSE steps at t=0 (include/sequence_bulk_centre.h).
+  const parts = ["doorFL", "doorFR", "doorBL", "doorBR", "dataPort", "chargeBay", "utilArmT", "utilArmB", "drawer"];
+  const se = R.rehearse(seq([...parts.map((part) => ({ t: 0, type: "body", part, shape: "close" })), { t: 900, type: "end" }]));
+  const overlap = byCode(se, "body-overlap");
+  assert.equal(overlap.length, 1);
+  assert.equal(overlap[0].n, 8);
+});
+
+test("a step aimed at hardware switched off on this droid is one finding per switch", () => {
+  const report = R.rehearse(
+    seq([
+      { t: 0, type: "audio", cmd: "$H" },
+      { t: 0, type: "dome", cmd: ":OP01" },
+      { t: 500, type: "dome", cmd: ":CL01" },
+      { t: 900, type: "body", part: "doorFL" },
+      { t: 1500, type: "end" },
+    ]),
+    { config: { components: { protoR2link: { enabled: false }, audio: { enabled: true } } }, outputs: [output(["doorFL"], { wired: false })] },
+  );
+  const off = byCode(report, "switched-off");
+  assert.equal(off.length, 2);
+  assert.equal(off.find((item) => !item.part).n, 2);
+  assert.equal(off.find((item) => item.part).part, "doorFL");
 });

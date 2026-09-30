@@ -6374,10 +6374,25 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-editor-footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 20px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+/* The uncalibrated Outputs this routine moves, read under Test on the droid
+   before the press (#439). A line, never a gate: the button beside it stays
+   live. */
+.seq-editor-prerun {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+.seq-editor-prerun b {
+  color: var(--warning);
 }
 
 .seq-editor-feedback {
