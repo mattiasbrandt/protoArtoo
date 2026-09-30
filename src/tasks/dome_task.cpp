@@ -224,17 +224,25 @@ void domeTask(void* pvParameters) {
         }
 
         // Random dome idle rotation state machine
+        //
+        // How often it turns follows the Mood (#452): domeRndPauseMsForMood()
+        // scales the stored pause window, and Quiet starts no move at all.
+        // Quiet goes through the same not-active branch as Sleep and Estop, so
+        // a move in progress ends at neutral; leaving Quiet draws a fresh
+        // pause, as any return to active does.
         {
             enum DomeRndState : uint8_t { DOME_RND_PAUSING = 0, DOME_RND_MOVING };
             static DomeRndState rndState    = DOME_RND_PAUSING;
             static uint32_t     rndNextMs   = 0;
             static float        rndSpeed    = 0.0f;
             static bool         rndWasActive = false;
+            static uint8_t      rndPauseMood = 0;  // Mood the running pause was drawn under
 
             bool     rndEnabled;
             uint8_t  rndSpeedPct, rndPauseMin, rndPauseMax;
             uint16_t rndMoveMs;
             bool     domeSeqActive;
+            uint8_t  mood;
             uint32_t now = millis();
             DomeConfig rndCfg = {};
             configCacheReadDome(&rndCfg);
@@ -245,24 +253,32 @@ void domeTask(void* pvParameters) {
             rndMoveMs     = rndCfg.dome_rnd_move_ms;
             taskENTER_CRITICAL(&robotStateMux);
             domeSeqActive = robotState.domeSeqActive;
+            mood          = robotState.activeMood;
             taskEXIT_CRITICAL(&robotStateMux);
 
-            if (rndEnabled && !sleepMode && !estop && !domeSeqActive) {
-                const uint32_t rndPauseRangeMs =
-                    (rndPauseMax > rndPauseMin)
-                        ? (uint32_t)(rndPauseMax - rndPauseMin) * 1000UL
-                        : 0UL;
+            if (rndEnabled && domeRndMoodStartsMoves(mood) && !sleepMode && !estop &&
+                !domeSeqActive) {
+                // A pause is always drawn at the Mood the droid is in now.
+                auto startPause = [&]() {
+                    rndState     = DOME_RND_PAUSING;
+                    rndNextMs    = now + domeRndPauseMsForMood(rndPauseMin, rndPauseMax, mood,
+                                                               esp_random());
+                    rndPauseMood = mood;
+                };
 
                 if (!rndWasActive) {
                     // Conditions just became active  --  set initial pause before first move.
-                    rndState    = DOME_RND_PAUSING;
-                    rndNextMs   = now + (uint32_t)rndPauseMin * 1000UL +
-                                  (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
+                    startPause();
                     rndWasActive = true;
                 } else if (manualCommandThisTick) {
-                    rndState  = DOME_RND_PAUSING;
-                    rndNextMs = now + (uint32_t)rndPauseMin * 1000UL +
-                                (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
+                    // No setDomeNeutral(): the manual command owns the dome now.
+                    startPause();
+                } else if (rndState == DOME_RND_PAUSING && mood != rndPauseMood) {
+                    // The Mood changed mid-pause: the next move comes at the new
+                    // Mood's pace, not after the old pause runs out. A change
+                    // mid-move needs nothing here - the move keeps its duration
+                    // and the pause after it is drawn at the new Mood below.
+                    startPause();
                 } else if (rndState == DOME_RND_PAUSING && (int32_t)(now - rndNextMs) >= 0) {
                     rndSpeed      = ((float)rndSpeedPct / 100.0f) * ((esp_random() & 1) ? 1.0f : -1.0f);
                     currentSpeed  = rndSpeed;
@@ -277,9 +293,7 @@ void domeTask(void* pvParameters) {
                         currentSpeed = 0.0f;
                         setDomeNeutral();
                         hasCommand = false;
-                        rndState   = DOME_RND_PAUSING;
-                        rndNextMs  = now + (uint32_t)rndPauseMin * 1000UL +
-                                     (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
+                        startPause();
                     } else {
                         lastCommandMs = now;  // prevent 500 ms manual timeout during random move
                     }
