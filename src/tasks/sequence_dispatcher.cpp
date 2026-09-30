@@ -879,9 +879,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
         // dome is unknown after boot or a link gap, so assume closed  --  abort any
         // running sequence, end a pose being reached, stage an individual
-        // ring-only close (drained below), and clear the latches. Never a group :CL15/:CL00 (see the estop-clear
-        // resync above  --  a group close browns out the dome from a loaded ring);
-        // pies are never auto-closed on resync.
+        // ring-only close (drained below), and clear the latches. Never a group
+        // :CL15/:CL00 (see the estop-clear resync above  --  a group close browns
+        // out the dome from a loaded ring); pies are never auto-closed on resync.
         const bool domeConn = domeConnected();
         if (domeConn && !prevDomeConn) {
             PA_LOG_INFO(TAG, "dome (re)connected - panel state resync (staged ring close)");
