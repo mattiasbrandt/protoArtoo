@@ -113,9 +113,10 @@
             <p class="hint drive-meters-hint">A jammed wheel reads the same as a free one.</p>
           </div>
 
-          <!-- The wheel controller's own telemetry: the hoverboard board, not
-               this droid's Body Controller. -->
-          <div class="drive-side-part" id="hoverboard-card">
+          <!-- The wheel controller's own readings, not this droid's Body
+               Controller's. Hidden until the fitted Foot Drive declares that
+               it reports them (data/drive.js loadFootDrive). -->
+          <div class="drive-side-part" id="wheel-controller-card" hidden>
             <div class="drive-side-head"><span class="drive-side-label">Wheel controller</span><span class="drive-side-state">last reply</span></div>
             <p class="hint" id="hb-no-data">Nothing from the wheel controller yet.</p>
             <dl class="drive-telemetry" id="hb-data-grid">

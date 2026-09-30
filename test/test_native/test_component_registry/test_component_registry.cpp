@@ -93,6 +93,21 @@ void test_sound_rows_declare_the_capability_words_their_drivers_return() {
     TEST_ASSERT_EQUAL_UINT8(0x00, componentPartCapabilities("no_such_product"));
 }
 
+// The Foot Drive's word is read by the drive backend profile and by the Foot
+// Drive page, so this is the one place the numbers are pinned. The hoverboard
+// reports battery, temperature, speed and current back (#446); the roadmap rows
+// declare nothing until #304's follow-up decides what they read back.
+void test_foot_drive_rows_declare_whether_they_report_feedback() {
+    TEST_ASSERT_EQUAL_HEX8(DRIVE_CAP_REPORTS_FEEDBACK, componentPartCapabilities("hoverboard"));
+    TEST_ASSERT_EQUAL_HEX8(0x00, componentPartCapabilities("sabertooth_2x25"));
+    TEST_ASSERT_EQUAL_HEX8(0x00, componentPartCapabilities("flipsky_mini_v6_vesc"));
+    // The table the lineup serialises carries the same word the constexpr
+    // lookup folds, since GET /api/identity/components reads the table.
+    const ComponentPartEntry* hoverboard = componentPartById("hoverboard");
+    TEST_ASSERT_NOT_NULL(hoverboard);
+    TEST_ASSERT_EQUAL_HEX8(DRIVE_CAP_REPORTS_FEEDBACK, hoverboard->capabilities);
+}
+
 // A stored member survives a firmware change that dropped the part, and a
 // member value borrowed from another family is not honoured -- both degrade to
 // the build default rather than to silence.
@@ -158,6 +173,7 @@ int main() {
     RUN_TEST(test_every_roadmap_row_is_present_and_carries_no_driver);
     RUN_TEST(test_dfplayer_mini_is_a_row_with_no_driver);
     RUN_TEST(test_sound_rows_declare_the_capability_words_their_drivers_return);
+    RUN_TEST(test_foot_drive_rows_declare_whether_they_report_feedback);
     RUN_TEST(test_a_stored_member_resolves_or_falls_back_to_the_default);
     RUN_TEST(test_body_controller_reports_the_board_this_image_is_for);
     RUN_TEST(test_part_values_and_ids_are_unique_and_nonzero);

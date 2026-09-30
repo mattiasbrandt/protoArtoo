@@ -8,7 +8,8 @@ mechanical and cannot drift: the tables are X-macro expansions of the manifest,
 each sound driver returns its own row's capability word through
 `componentPartCapabilities()`, and a `static_assert` in
 `src/tasks/audio_sound_member.cpp` ties the driver instances to the manifest's
-selectable count.
+selectable count. The drive backend profile reads the Foot Drive row's word the
+same way (`include/drive_backend.h`).
 
 What is left is what no compiler can see, and this is it. Three questions, all
 answered by reading source text, and none of them by rewriting a file - the
@@ -21,7 +22,9 @@ convention `tools/check_action_registry_drift.py` set.
    records from the reference project - a flag declared on every entry and
    consulted by nothing, so the software confidently reproduced behaviour no
    real board would produce. `AUDIO_CAP_TRACK_COUNT` was exactly that here
-   until #340.
+   until #340. Every family's vocabulary is read - Sound's `AUDIO_CAP_*` and
+   the Foot Drive's `DRIVE_CAP_*` (#446) - so a bit in any of them is held to
+   it; `VOCABULARIES` below is where a family's vocabulary is registered.
 
 2. **A row's Board Capability Gate and its `included` expression agree.** The
    `gate` column is what the identity payload reports as the reason a part is
@@ -52,6 +55,7 @@ import setting_declarations  # tools/, beside this script
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "include" / "component_registry.inc"
 AUDIO_DRIVER_HEADER = ROOT / "include" / "audio_driver.h"
+DRIVE_CAPABILITIES_HEADER = ROOT / "include" / "drive_capabilities.h"
 BOARD_CAPABILITIES = ROOT / "include" / "board_capabilities.inc"
 CONFIG_SETTINGS = setting_declarations.CONFIG_SETTINGS
 
@@ -62,9 +66,23 @@ CONFIG_SETTINGS = setting_declarations.CONFIG_SETTINGS
 CONSUMER_DIRS = (ROOT / "src", ROOT / "include", ROOT / "data")
 CONSUMER_SUFFIXES = (".c", ".cpp", ".h", ".hpp", ".inc", ".js")
 
-# Declaring a bit is not consuming it. These two files are where the vocabulary
-# and the per-product words are written down, so a hit in either proves nothing.
-DECLARATION_FILES = {AUDIO_DRIVER_HEADER, MANIFEST}
+# Every Component Family that owns a capability vocabulary: the prefix its bit
+# names share, and the header that defines them (ADR 0042 as amended: "The
+# Component Family owns the vocabulary"). A family that gains a vocabulary is
+# one more line here; until it is, a row naming its bits is reported rather
+# than passed unexamined.
+VOCABULARIES = (
+    ("AUDIO_CAP_", AUDIO_DRIVER_HEADER),
+    ("DRIVE_CAP_", DRIVE_CAPABILITIES_HEADER),
+)
+
+# Any capability-shaped name, registered or not, so a row naming a vocabulary
+# nobody registered above is caught rather than read past.
+CAPABILITY_NAME = re.compile(r"\b([A-Z]+_CAP_[A-Z0-9_]+)\b")
+
+# Declaring a bit is not consuming it. These files are where the vocabularies
+# and the per-product words are written down, so a hit in any proves nothing.
+DECLARATION_FILES = {header for _, header in VOCABULARIES} | {MANIFEST}
 
 CATEGORY_COLUMNS = 4
 PART_COLUMNS = 9
@@ -161,20 +179,36 @@ def load_manifest(path: Path, errors: list[str]) -> tuple[list[list[str]], list[
     return categories, parts
 
 
-def capability_bit_names(path: Path, errors: list[str]) -> dict[str, str]:
-    """`AUDIO_CAP_*` name -> its hex value, read from the interface header."""
+def capability_bit_names(path: Path, prefix: str, errors: list[str]) -> dict[str, str]:
+    """`<prefix>*` name -> its hex value, read from the header that defines them."""
     found = dict(
         re.findall(
-            r"constexpr\s+uint8_t\s+(AUDIO_CAP_[A-Z_]+)\s*=\s*(0x[0-9A-Fa-f]+)",
+            rf"constexpr\s+uint8_t\s+({re.escape(prefix)}[A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+)",
             path.read_text(encoding="utf-8"),
         )
     )
     if not found:
         errors.append(
-            f"no AUDIO_CAP_* constants found in {path.name} - the Sound family's capability "
+            f"no {prefix}* constants found in {path.name} - that family's capability "
             "vocabulary moved and this check has stopped reading it"
         )
     return found
+
+
+def all_capability_bit_names(errors: list[str]) -> dict[str, str]:
+    """Every registered family's bit names, merged into one name -> value map."""
+    names: dict[str, str] = {}
+    for prefix, header in VOCABULARIES:
+        names.update(capability_bit_names(header, prefix, errors))
+    return names
+
+
+def vocabulary_header(name: str) -> Path | None:
+    """The header a bit name's prefix says should define it, or None."""
+    for prefix, header in VOCABULARIES:
+        if name.startswith(prefix):
+            return header
+    return None
 
 
 def consumer_files(directories=CONSUMER_DIRS, exclude=None) -> list[Path]:
@@ -227,26 +261,32 @@ def check_capability_consumers(parts: list[list[str]], errors: list[str],
         status = row[5].strip()
         if status != "COMPONENT_STATUS_SUPPORTED":
             continue
-        for name in re.findall(r"AUDIO_CAP_[A-Z_]+", row[6]):
+        for name in CAPABILITY_NAME.findall(row[6]):
             declared.setdefault(name, []).append(part_id)
 
     if not declared:
         errors.append(
-            "no supported row declares a capability - either the Sound rows lost theirs or "
-            "the capability column moved"
+            "no supported row declares a capability - either the Sound and Foot Drive rows "
+            "lost theirs or the capability column moved"
         )
         return
 
-    # A row naming a bit the interface header does not define would not
+    # A row naming a bit its family's header does not define would not
     # compile, but reading it here keeps the vocabulary and the rows answerable
     # to one place and makes a typo a sentence rather than a template error.
     if vocabulary is None:
-        vocabulary = capability_bit_names(AUDIO_DRIVER_HEADER, errors)
+        vocabulary = all_capability_bit_names(errors)
     for name in sorted(name for name in declared if name not in vocabulary):
-        errors.append(
-            f"{name} is declared by a registry row but {AUDIO_DRIVER_HEADER.name} does not "
-            "define it"
-        )
+        header = vocabulary_header(name)
+        if header is None:
+            errors.append(
+                f"{name} is declared by a registry row but belongs to no vocabulary this check "
+                "reads - register its family's prefix and header in VOCABULARIES"
+            )
+        else:
+            errors.append(
+                f"{name} is declared by a registry row but {header.name} does not define it"
+            )
 
     if files is None:
         files = consumer_files()

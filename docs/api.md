@@ -238,7 +238,11 @@ this one runs to roughly 4.7 KB; it is sent chunked.
     - `status`: `supported` (implemented and drivable) or `roadmap` (planned,
       not built). A project fact.
     - `capabilities`: what this product can be asked, as its family's own
-      bitmask. `0` where the family has no vocabulary yet.
+      bitmask. `0` where the family has no vocabulary yet. Sound's bits are
+      the `AUDIO_CAP_*` words (`include/audio_driver.h`); the Foot Drive's are
+      `DRIVE_CAP_*` (`include/drive_capabilities.h`), where `1` says the Foot
+      Drive reports readings back and the Foot Drive page shows the wheel
+      controller's card only then.
     - `included`: whether this image carries a driver for it. A controller
       fact, not a project one: a `supported` part can read `false`.
     - `board_capability`: the `PA_CAP_*` gate it requires, or `null` for a part
@@ -260,7 +264,7 @@ line below is verbatim from an `artoo_esp32` build.
   {"id":"body_controller","name":"Body Controller","selectable":1,"member_key":null,"active_member":null},
   {"id":"sound","name":"Sound","selectable":3,"member_key":"snd_member","active_member":"dy_sv5w"}
 ],"parts":[
-  {"id":"hoverboard","value":15,"name":"Hoverboard, hacked firmware","category":"foot_drive","protocol":"hoverboard_gen2_uart","status":"supported","capabilities":0,"included":true,"board_capability":"PA_CAP_DRIVE_BACKEND_HOVERBOARD"},
+  {"id":"hoverboard","value":15,"name":"Hoverboard, hacked firmware","category":"foot_drive","protocol":"hoverboard_gen2_uart","status":"supported","capabilities":1,"included":true,"board_capability":"PA_CAP_DRIVE_BACKEND_HOVERBOARD"},
   {"id":"chirp","value":20,"name":"CHIRP Audio Trigger","category":"sound","protocol":"chirp_ascii_uart","status":"supported","capabilities":63,"included":true,"board_capability":null},
   {"id":"dfplayer_mini","value":21,"name":"DFPlayer Mini","category":"sound","protocol":"dfplayer_serial","status":"roadmap","capabilities":0,"included":false,"board_capability":null}
 ]}
