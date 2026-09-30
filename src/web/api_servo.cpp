@@ -105,8 +105,13 @@ bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize) {
 }
 
 bool servoCommandIsARunsOnAFreeOutput(int16_t armId, ServoCommandType type) {
-    return (type == SERVO_CMD_NUDGE || type == SERVO_CMD_RELEASE) && armId >= 0 &&
-           armId < SERVO_ARM_COUNT && servoTaskMayTakeForRun((uint8_t)armId);
+    if (armId < 0 || armId >= SERVO_ARM_COUNT) {
+        return false;
+    }
+    if (type == SERVO_CMD_NUDGE) {
+        return servoTaskMayTakeForRun((uint8_t)armId);
+    }
+    return type == SERVO_CMD_RELEASE && servoTaskRunHolds((uint8_t)armId);
 }
 
 namespace {

@@ -179,6 +179,7 @@ void setUp() {
     g_test_aux_led_queue_ok = true;
     g_test_servo_wired_at_start_mask = 0xFF;
     g_test_servo_driven_mask = 0xFF;
+    g_test_servo_run_held_mask = 0;
     g_test_dome_layout_status = {};
     g_test_dome_layout_payload = "";
     g_test_dome_layout_refresh_requests = 0;
@@ -1155,9 +1156,16 @@ void test_servo_lets_a_run_nudge_a_free_output_and_nothing_else() {
     WebRequestTestBackend nudge;
     post("ARM3", "nudge", nudge);
     TEST_ASSERT_EQUAL_INT_MESSAGE(200, nudge.sentCode, "a free Output takes a run's nudge");
+    // A release only for an Output a run holds: on a free one nobody holds,
+    // ServoTask would drop it, and the route does not answer ok for nothing.
+    WebRequestTestBackend unheld;
+    post("ARM3", "release", unheld);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, unheld.sentCode, "no run holds ARM3, so nothing would let go");
+    g_test_servo_run_held_mask = 1u << 2;
     WebRequestTestBackend release;
     post("ARM3", "release", release);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(200, release.sentCode, "and the run's release");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, release.sentCode, "the run's release on the Output it holds");
+    g_test_servo_run_held_mask = 0;
     WebRequestTestBackend hold;
     post("ARM3", "hold", hold);
     TEST_ASSERT_EQUAL_INT_MESSAGE(409, hold.sentCode, "a run nudges; it does not hold or drive");

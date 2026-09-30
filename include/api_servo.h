@@ -55,8 +55,10 @@ ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint
 bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize);
 
 // Whether this command is a Find by Moving run's on a free Output (#411): a
-// nudge, which takes the Output for the run, or a release, which lets go of
-// one a run holds, on one Output a run may take (servoTaskMayTakeForRun()).
+// nudge on one a run may take (servoTaskMayTakeForRun()), which takes it for
+// the run, or a release on one a run holds (servoTaskRunHolds()), which lets it
+// go. A release on a free Output nobody holds is not one: ServoTask would drop
+// it, and the route answers that with its refusal rather than ok.
 // Such a command is not refused for being undriven: ServoTask drives a free
 // Output for the length of a run, bounded like the dial's hold. Every other
 // command on an undriven Output still is.

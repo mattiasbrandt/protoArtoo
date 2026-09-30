@@ -179,6 +179,11 @@ bool servoTaskDrivesOutput(uint8_t armId) {
 }
 
 uint8_t g_test_servo_lit_at_start_mask = 0;
+uint8_t g_test_servo_run_held_mask = 0;
+
+bool servoTaskRunHolds(uint8_t armId) {
+    return armId < SERVO_ARM_COUNT && (g_test_servo_run_held_mask & (1u << armId)) != 0;
+}
 
 // The same inputs servo_task.cpp assembles, from the masks above and the live
 // cache, through the one rule.

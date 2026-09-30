@@ -633,8 +633,10 @@ Queues servo command.
 - `400` missing/invalid `positionUs`, with `field`, `reason` and `accepts` (`500..2500`) as in "Refusals from a settings write"
 - `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
 - `409` the droid has not used the Output since it started, whatever the action
-  (pulses off included; for `both`, either of the two) - except a nudge or a
-  release on a free output, which a Find by Moving run takes (`action=nudge`). The wired ticks are read
+  (pulses off included; for `both`, either of the two) - except a nudge on a
+  free output, which a Find by Moving run takes (`action=nudge`), and a release
+  on one a run holds. A release on a free output no run holds is refused like
+  any other: there is nothing to let go. The wired ticks are read
   once at start (ADR 0027), so an Output ticked since has nothing behind it until
   a restart. The sentence says what would let it be used:
   `{"ok":false,"error":"Restart the droid to use ARM2."}` when it is ticked now,

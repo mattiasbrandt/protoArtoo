@@ -21,3 +21,6 @@ extern uint8_t g_test_servo_driven_mask;
 // armId; none by default. servoTaskMayTakeForRun() reads it with the two masks
 // above and the live cache, through the one rule (include/servo_run.h).
 extern uint8_t g_test_servo_lit_at_start_mask;
+// Which Outputs a Find by Moving run holds now, one bit per armId; none by
+// default. servoTaskRunHolds() answers from it.
+extern uint8_t g_test_servo_run_held_mask;

@@ -1112,6 +1112,10 @@ bool servoTaskMayTakeForRun(uint8_t armId) {
     return mayTakeForRun(armId);
 }
 
+bool servoTaskRunHolds(uint8_t armId) {
+    return armId < kArmCount && s_arm[armId].runHeld;
+}
+
 // -----------------------------------------------------------------------------
 // servoTask()
 // Main servo task loop.
