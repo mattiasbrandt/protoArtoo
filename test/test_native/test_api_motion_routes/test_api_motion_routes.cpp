@@ -1111,7 +1111,7 @@ void test_servo_refuses_an_output_nothing_drives_since_boot() {
     WebRequestTestBackend unwired;
     post("ARM2", "hold", unwired);
     TEST_ASSERT_EQUAL_INT(409, unwired.sentCode);
-    TEST_ASSERT_NOT_NULL(strstr(unwired.sentBody, "ARM2 is not wired. Mark it on Wiring."));
+    TEST_ASSERT_NOT_NULL(strstr(unwired.sentBody, "ARM2 has no Part on it. Put one on it on Wiring."));
 }
 
 // A dial stands on one row, so the `both` broadcast is refused the same way
