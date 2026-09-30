@@ -417,6 +417,15 @@ struct RobotState {
     // asked, so the log line the sweep leaves names who pressed - the Console
     // and the browser both reach this and they are different surfaces.
     CommandSource bulkCentreRequest;
+    // A pose press (POST /api/seq/pose and the Console, #440): the sequence and
+    // the instant to send the droid to, taken and cleared by
+    // SequenceDispatcherTask. The same transient shape as bulkCentreRequest,
+    // SRC_NONE meaning nobody has asked -- and deliberately not the sequence
+    // queue: a wider SequenceRequest grows the frame of every sequenceStart()
+    // caller, RC input's measured stack chain among them.
+    CommandSource poseRequest;
+    uint32_t poseRequestAtMs;
+    char poseRequestName[24];
 };
 
 // -----------------------------------------------------------------------------

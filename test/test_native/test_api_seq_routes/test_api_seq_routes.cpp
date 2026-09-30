@@ -27,7 +27,9 @@
 #include "protocol_check.h"
 #include "seq_store_index.h"
 #include "seq_store_util.h"  // SEQ_FILE_MAX_BYTES
+#include "robot_state.h"
 #include "sequence_dispatcher.h"
+#include "sequence_pose.h"
 #include "web_request_test_backend.h"
 
 // Recorded side effects from src/native_test_stubs.cpp.
@@ -216,6 +218,68 @@ void test_test_rejects_a_malformed_json_body() {
 
     TEST_ASSERT_EQUAL_INT(400, b.sentCode);
     TEST_ASSERT_TRUE(bodyContains(b, "invalid json body"));
+}
+
+// -----------------------------------------------------------------------------
+// POST /api/seq/pose -- the pose press (#440)
+// -----------------------------------------------------------------------------
+
+namespace {
+void setHalts(bool estop, bool sleep) {
+    robotState.estop = estop;
+    robotState.sleepMode = sleep;
+    robotState.poseRequest = SRC_NONE;
+}
+}  // namespace
+
+void test_pose_accepts_a_factory_sequence_and_an_instant() {
+    setHalts(false, false);
+    WebRequestTestBackend b = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":2500}");
+    WebRequest req(&b);
+    handleSeqPosePost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, b.sentCode);
+    // The press hands the Coordinator a name and an instant, and nothing else.
+    TEST_ASSERT_EQUAL_INT(SRC_WEB_API, robotState.poseRequest);
+    TEST_ASSERT_EQUAL_UINT32(2500, robotState.poseRequestAtMs);
+    TEST_ASSERT_EQUAL_STRING("DM:ROCKMARCH", robotState.poseRequestName);
+}
+
+// Refused under either halt, and the answer carries the one rule's own words
+// so the surface can say why.
+void test_pose_is_refused_under_the_estop_and_in_sleep_mode_and_says_why() {
+    setHalts(true, false);
+    WebRequestTestBackend estop = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":0}");
+    WebRequest estopReq(&estop);
+    handleSeqPosePost(estopReq);
+    TEST_ASSERT_EQUAL_INT(409, estop.sentCode);
+    TEST_ASSERT_TRUE(bodyContains(estop, sequencePoseRefusal(true, false)));
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);  // nothing handed over
+
+    setHalts(false, true);
+    WebRequestTestBackend asleep = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":0}");
+    WebRequest asleepReq(&asleep);
+    handleSeqPosePost(asleepReq);
+    TEST_ASSERT_EQUAL_INT(409, asleep.sentCode);
+    TEST_ASSERT_TRUE(bodyContains(asleep, sequencePoseRefusal(false, true)));
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+    setHalts(false, false);
+}
+
+// Only a body-owned sequence has steps to take a pose from, and an instant is
+// whole milliseconds from the start: a negative one is refused, not wrapped.
+void test_pose_refuses_a_name_the_dome_runs_and_a_negative_instant() {
+    setHalts(false, false);
+    WebRequestTestBackend unknown = postBackend("{\"name\":\"DM:NOTHING\",\"t\":0}");
+    WebRequest unknownReq(&unknown);
+    handleSeqPosePost(unknownReq);
+    TEST_ASSERT_EQUAL_INT(404, unknown.sentCode);
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+
+    WebRequestTestBackend negative = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":-1}");
+    WebRequest negativeReq(&negative);
+    handleSeqPosePost(negativeReq);
+    TEST_ASSERT_EQUAL_INT(400, negative.sentCode);
 }
 
 // -----------------------------------------------------------------------------
@@ -459,6 +523,9 @@ int main(int, char**) {
     RUN_TEST(test_test_trims_whitespace_around_the_name);
     RUN_TEST(test_test_rejects_a_name_without_the_dm_prefix);
     RUN_TEST(test_test_rejects_a_malformed_json_body);
+    RUN_TEST(test_pose_accepts_a_factory_sequence_and_an_instant);
+    RUN_TEST(test_pose_is_refused_under_the_estop_and_in_sleep_mode_and_says_why);
+    RUN_TEST(test_pose_refuses_a_name_the_dome_runs_and_a_negative_instant);
 
     RUN_TEST(test_get_streams_the_stored_file);
     RUN_TEST(test_get_streams_a_file_larger_than_one_chunk);

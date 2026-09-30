@@ -142,6 +142,9 @@
   // A loop's body runs once per period while the iteration start is inside the
   // loop's duration, and its steps are timed from the iteration start -- the
   // engine's own arithmetic (stepFireAt(), src/tasks/sequence_engine.cpp).
+  // An event from a loop body carries `iter`, which pass of the loop it is
+  // (0 for the first), so the timeline can draw the loop as it was written
+  // over the same expansion the rules read (data/seq_timeline.js).
   // ---------------------------------------------------------------------------
   const expand = (steps) => {
     const events = [];
@@ -152,10 +155,10 @@
         const count = Math.min(step.body, steps.length - i - 1);
         const period = Number(step.periodMs) || 0;
         const duration = Number(step.durationMs) || 0;
-        for (let start = 0; period > 0 && start < duration; start += period) {
+        for (let start = 0, iter = 0; period > 0 && start < duration; start += period, iter += 1) {
           for (let k = 1; k <= count; k += 1) {
             const inner = steps[i + k] || {};
-            events.push({ t: (Number(step.t) || 0) + start + (Number(inner.t) || 0), step: i + k, def: inner });
+            events.push({ t: (Number(step.t) || 0) + start + (Number(inner.t) || 0), step: i + k, def: inner, iter });
           }
         }
         i += count + 1;
@@ -879,6 +882,10 @@
     LEVELS,
     finding,
     rehearse,
+    // The expansion and a body move's resolution, for the timeline to draw
+    // from the same reading of a routine the rules judge it by (#440).
+    expand,
+    bodyMove,
     unavailableMessage,
     unmeasuredOutputs,
     countsHtml,

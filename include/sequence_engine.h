@@ -468,6 +468,15 @@ void seqEngineCommit(SeqEngineState& st);
 uint8_t seqEngineRingPanelCount(void);
 bool    seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen);
 
+// Every dome panel a sequence can name by Panel Intent target, ring panels
+// first and then pies ("01".."13", "P1".."P6"): the set a random step picks
+// from (SLOTSET_ALL). Target i < seqEngineRingPanelCount() is a ring panel.
+// nullptr for an out-of-range index. Single source for callers outside the
+// engine that expand a group target into its members, one command each (the
+// timeline's pose press, include/sequence_pose.h).
+uint8_t     seqEnginePanelTargetCount(void);
+const char* seqEnginePanelTarget(uint8_t i);
+
 // Ring panel NUMBER (e.g. 1, 2, 13) for ring index i (0..count-1), or -1 if out
 // of range. Single source of the ring panel set for callers that need to map a
 // ringOpenMask/touched-mask bit back to a panel number (e.g. run-evidence).

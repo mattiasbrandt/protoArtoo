@@ -10,6 +10,7 @@
 //   DELETE /api/seq?name=      - Memory Wipe
 //   POST   /api/seq/test       - run a sequence by name (same path as dome/cmd)
 //   POST   /api/seq/stop       - abort current sequence (non-latching, idempotent)
+//   POST   /api/seq/pose       - send the droid to one instant of a sequence
 //   GET    /api/seq/builtins   - factory catalog serialized to JSON v1
 //   GET    /api/seq/last-run   - machine-readable evidence of the last run
 // =============================================================================
@@ -24,4 +25,5 @@ void handleSeqPost(WebRequest& req);
 void handleSeqDelete(WebRequest& req);
 void handleSeqTestPost(WebRequest& req);
 void handleSeqStopPost(WebRequest& req);
+void handleSeqPosePost(WebRequest& req);
 void handleSeqLastRunGet(WebRequest& req);

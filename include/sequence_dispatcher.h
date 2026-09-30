@@ -62,6 +62,15 @@ void sequenceDispatcherTask(void* pvParameters);
 // (queue full) or if the name is empty.
 bool sequenceStart(const char* name, CommandSource src);
 
+// Send the droid to one instant of a Learned or Factory sequence (#440). Hands
+// the request to the Coordinator (robotState.poseRequest), which works out the
+// pose from the stored steps and paces it; the estop and Sleep Mode refuse it
+// there. A second press before the Coordinator has taken the first replaces
+// it: the latest word is the operator's. Returns false for a name that is not
+// a body-owned sequence -- an alias or a name the dome runs has no steps here
+// to take a pose from.
+bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src);
+
 // Pure routing classification  --  no side effects. Safe to call from any context
 // including native tests. Returns SEQ_FALLBACK for non-DM:* names.
 SequenceLookupResult sequenceLookup(const char* name);

@@ -30,6 +30,7 @@
 #include "seq_store.h"
 #include "seq_store_index.h"
 #include "sequence_dispatcher.h"
+#include "sequence_pose.h"          // sequencePoseRefusal() - POST /api/seq/pose
 #include "sequence_run_evidence.h"  // GET /api/seq/last-run
 #include "web_request_scratch.h"
 
@@ -352,6 +353,68 @@ void handleSeqTestPost(WebRequest& req) {
         return;
     }
     PA_LOG_INFO(TAG, "[WEB] test %s", name);
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /api/seq/pose  {name, t}  - send the droid to one instant of a sequence
+// (#440, ADR 0062, include/sequence_pose.h).
+//
+// The timeline's marker moves silently; this is the separate, deliberate press
+// that moves the droid. What arrives is the whole of the press -- the name of a
+// saved or Factory sequence and the instant, in ms from its start. The pose at
+// that instant and its pace are the Sequence Coordinator's, worked out from
+// the stored steps, never taken from the page (the operator's decision,
+// 2026-09-30 on #440). It asks no Non-RC Control consent: it commands exactly
+// what a normal run commands at that instant (ADR 0062, ADR 0064).
+//
+// A latched estop or Sleep Mode refuses it, and the answer says why in the
+// words sequencePoseRefusal() holds -- the one copy of that rule, which the
+// Coordinator asks again when the request reaches it, since a halt can land in
+// between. Only a body-owned sequence has steps to take a pose from, so a name
+// the dome runs itself is a 404.
+void handleSeqPosePost(WebRequest& req) {
+    const char* body = requireBody(req, SEQ_TEST_BODY_MAX);
+    if (body == nullptr) {
+        return;
+    }
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) {
+        sendJsonError(req, 400, "invalid json body");
+        return;
+    }
+    char name[kSeqNameBufSize] = {};
+    snprintf(name, sizeof(name), "%s", (const char*)(doc["name"] | ""));
+    trimAsciiWhitespace(name);
+    if (name[0] == '\0' || strncmp(name, "DM:", 3) != 0) {
+        sendJsonError(req, 400, "missing or invalid DM:* name");
+        return;
+    }
+    // Whole milliseconds from the start, read wide and signed so a negative or
+    // a value past the registry's int32 range is refused rather than wrapped
+    // into an instant (docs/action-registry.yaml dome.action.pose-sequence).
+    JsonVariantConst t = doc["t"];
+    const long long atMs = t.is<long long>() ? t.as<long long>() : -1LL;
+    if (atMs < 0 || atMs > 0x7FFFFFFFLL) {
+        sendJsonError(req, 400, "t must be whole milliseconds from the start");
+        return;
+    }
+    bool estopLatched = false;
+    bool sleepMode = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    estopLatched = robotState.estop;
+    sleepMode = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    const char* refusal = sequencePoseRefusal(estopLatched, sleepMode);
+    if (refusal != nullptr) {
+        sendJsonError(req, 409, refusal);
+        return;
+    }
+
+    if (!sequencePoseRequest(name, (uint32_t)atMs, SRC_WEB_API)) {
+        sendJsonError(req, 404, "not a saved or factory sequence");
+        return;
+    }
+    PA_LOG_INFO(TAG, "[WEB] pose %s at %u ms", name, (unsigned)atMs);
     req.send(200, "application/json", "{\"ok\":true}");
 }
 

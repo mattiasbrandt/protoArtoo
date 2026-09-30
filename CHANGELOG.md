@@ -26,6 +26,15 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Read a sequence as time.** Timeline, on any sequence card, draws the
+  routine with a lane per part: each move as long as it takes, and whatever the
+  routine leaves open running on to the end. Move the marker to any moment and
+  the droid picture shows that moment. Moving it never moves the droid. Parts
+  the routine names that are not wired are listed once, above the routine.
+- **Send the droid to one moment of a routine.** On the timeline, Move the
+  droid to this moment puts every part where the routine had it then, one at a
+  time, with the lights and the sound that was playing. It will not while the
+  estop is latched or the droid is asleep, and says so.
 - **Your routines are in the backup.** A backup now holds every Sequence you
   taught the droid, and says which board made it. A restore offers three parts,
   Sequences, Configuration and RC Map, each saying what it replaces and what

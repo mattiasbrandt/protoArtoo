@@ -905,6 +905,36 @@ entries:
     type: string
     required: true
   executor: sequenceStart
+- name: dome.action.pose-sequence
+  display_name: Send To This Moment
+  description: Send the droid to one moment of a sequence, Learned or Factory. Each part goes where the routine had it then, one at a time; lights and the sound that was playing follow. Refused while the estop is latched or the droid is asleep.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/pose
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/sequence_pose.h
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # The pose and its pace are the Sequence Coordinator's, worked out from the
+  # stored steps (#440): the caller names a sequence and an instant and nothing
+  # else, because a pace a caller could name is a pace a caller could walk
+  # around (CONTEXT.md "Cadence Floor"). No Non-RC Control consent: it commands
+  # what a normal run commands at that instant (ADR 0062, ADR 0064).
+  params:
+  - name: name
+    type: string
+    required: true
+  - name: t
+    type: int32
+    range:
+    - 0
+    - 2147483647
+    required: true
+  executor: sequencePoseRequest
 - name: dome.api.get-sequence-last-run
   display_name: Get Last Sequence Run
   description: 'What the last sequence run did: how it ended, and every command it sent.'

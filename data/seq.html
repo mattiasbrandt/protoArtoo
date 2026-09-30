@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/seq_protocol_check.js,/servo_motion.js,/seq_rehearsal.js,/droid_parts.js,/outputs.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/seq.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/seq_protocol_check.js,/servo_motion.js,/seq_rehearsal.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/body_art.js,/body_view.js,/parts_mapping.js,/droid_picture.js,/seq_timeline.js,/seq.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -82,6 +82,10 @@
     <div id="seq-editor-view" class="hidden">
       <!-- Editor content loaded here by seq.js -->
     </div>
+
+    <!-- Timeline view (written by data/seq_timeline.js when a sequence is
+         opened as a timeline) -->
+    <div id="seq-timeline-view" class="hidden"></div>
 
     <!-- Memory wipe dialog: the title is the question, the buttons are verbs -->
     <div id="seq-modal-memory-wipe" class="seq-modal hidden" role="dialog" aria-labelledby="seq-modal-wipe-title">

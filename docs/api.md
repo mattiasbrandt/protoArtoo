@@ -1477,6 +1477,40 @@ curl -s -X POST http://artoo.local/api/seq/stop
 {"ok":true}
 ```
 
+### POST /api/seq/pose
+
+Sends the droid to one instant of a sequence (Learned or factory): the pose press on the Sequences timeline (#440).
+
+The request names the sequence and the instant, and nothing else. The firmware works out the pose from the sequence it stores, and the Sequence Coordinator sends it one command at a time:
+- Sound and lights go first: each light in the mode it is in at that instant, and the sound that was playing, started from its beginning.
+- Then each dome panel and body Part goes to where the last step before that instant left it, one at a time. Consecutive motions are at least the Cadence Floor apart, a body Output also holds the next one off for its own throw, and nothing is ever sent as a group command.
+- A Part the routine has not yet moved is not commanded, and neither is a flutter's end position, a random step's pick, a dome turn or a raw light code.
+- Past the end, the pose is what the routine's own ending leaves: ring panels closed, pies and body Parts where they were.
+
+No Non-RC Control consent is asked: it commands what a normal run commands at that instant.
+
+- Body (JSON): `{"name":"DM:*","t":<ms from the start, 0..2147483647>}`
+- Success: `200` `{"ok":true}`. The pose is under way; a running sequence or back to centre is ended by it.
+- Errors:
+  - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`
+  - `400` `{"ok":false,"error":"t must be whole milliseconds from the start"}`
+  - `404` `{"ok":false,"error":"not a saved or factory sequence"}`: the name is not one whose steps the droid holds
+  - `409` `{"ok":false,"error":"Estop latched. Clear it to send the droid to this moment."}`, or the Sleep Mode sentence. The Coordinator applies the same rule again when it takes the request.
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/seq/pose \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"DM:CANTINA","t":6000}'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
 ### GET /api/seq/last-run
 
 Returns machine-readable evidence of the last sequence execution.
