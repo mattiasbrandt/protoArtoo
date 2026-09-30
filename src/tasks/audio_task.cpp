@@ -909,8 +909,8 @@ void audioTask(void* pvParameters) {
             cmdIn.named = &named;
             cmdIn.bindings = &s_audioBindings;
             cmdIn.randomValue = esp_random();
-            cmdIn.catalogBanks = driver()->getCatalogBanks();
-            cmdIn.catalogBankCount = driver()->getCatalogBankCount();
+            audioCatalogBankPage(driver()->getCatalogBanks(), driver()->getCatalogBankCount(),
+                                 AUDIO_DOLLAR_BANK, &cmdIn.dollarBankPage);
             const AudioStepCommandActions ca = audioStepCommand(step, cmdIn, cmd);
 
             if (ca.ignored == AUDIO_STEP_IGNORE_SLEEP) {

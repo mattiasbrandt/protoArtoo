@@ -256,13 +256,8 @@ void test_dollar_bank_form_plays_only_where_the_module_has_the_bank() {
     TEST_ASSERT_EQUAL(AUDIO_STEP_IGNORE_BANK_NOT_FITTED, a.ignored);
     TEST_ASSERT_FALSE(a.hasIntent);
 
-    AudioCatalogBank banks[2] = {};
-    banks[0].bank = 1;
-    banks[1].bank = 8;
-    banks[1].page = 'B';
     in.catalogCapable = true;
-    in.catalogBanks = banks;
-    in.catalogBankCount = 2;
+    in.dollarBankPage = 'B';  // the module reported a bank 8, on page B
     a = audioStepCommand(s, in, cmd);
     TEST_ASSERT_EQUAL(AUDIO_STEP_IGNORE_NONE, a.ignored);
     TEST_ASSERT_TRUE(a.hasIntent);

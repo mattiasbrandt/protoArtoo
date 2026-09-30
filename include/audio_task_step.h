@@ -103,14 +103,17 @@ struct AudioStepCommandInputs {
     uint32_t nowMs = 0;
     bool sleepMode = false;
     bool catalogCapable = false;
+    // The page of the bank a $8nn line names (AUDIO_DOLLAR_BANK), as the
+    // fitted module reported it (audioCatalogBankPage(), include/
+    // audio_driver.h), or '\0' where it reported no such bank. The answer
+    // rather than the bank table: one byte that sits in this struct's padding,
+    // because AudioTask's stack chain is recorded to the byte
+    // (tools/task_stack_recipes.json) and a pointer and a count cost 16 B.
+    char dollarBankPage = '\0';
     const AudioPlaybackConfig* playback = nullptr;
     const AudioNamedTracks* named = nullptr;
     const AudioBindingCache* bindings = nullptr;
     uint32_t randomValue = 0;  // category-play selection entropy
-    // The fitted module's catalog banks, which decide whether a $8nn bank
-    // request can play (audioCatalogBankPage(), include/audio_driver.h).
-    const AudioCatalogBank* catalogBanks = nullptr;
-    uint8_t catalogBankCount = 0;
 };
 
 struct AudioStepCommandActions {
