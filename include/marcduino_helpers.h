@@ -127,7 +127,7 @@ inline bool marcduino_is_body_hash_command(const char* line) {
 //
 // Marcduino direct numeric semantics:
 //   - 0000-0180 => degrees across the configured servo pulse range
-//   - >0544     => direct microseconds
+//   - above SERVO_PULSE_MIN_US (500) => direct microseconds
 //
 // Inputs are not clamped here. Caller-side validation decides what ranges are
 // accepted; this helper only models the conversion rule.
