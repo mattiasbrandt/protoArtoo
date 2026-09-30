@@ -1,8 +1,8 @@
 # A backup restores in three groups, and replaces what it lands on
 
-Status: accepted (2026-09-09, issue #294). Describes the **target** backup and
-restore contract. Nothing in it ships today beyond the four-checkbox restore
-panel it replaces.
+Status: accepted (2026-09-09, issue #294). Built by #448 (2026-09-30):
+the backup carries the Sequences and the board that wrote it, and the restore
+offers the three parts.
 
 ## Context
 
@@ -66,8 +66,8 @@ They are three because they go stale at three different rates, and because the
 RC Map is the one with a clock on it: since #330 it is the running order, so
 restoring a month-old one twenty minutes before a show replaces what the droid
 will do. The shipped panel already keeps `rc_map` apart from `config` for
-reasons nobody wrote down; this states them - and no part is renamed, because
-`RC mappings` is what the restore panel calls that tick-box today.
+reasons nobody wrote down; this states them - and the panel names the part
+**RC Map**, the glossary's word (#448).
 
 **A restore replaces the part it writes, never merges into it.** Restoring
 Sequences makes them exactly the file's. The 16-slot cap can therefore never be
