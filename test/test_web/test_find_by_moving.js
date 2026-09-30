@@ -206,6 +206,23 @@ test("Stop lets go of the output under the nudge and sends nothing further", asy
   assert.deepEqual(env.nudges(), ["ARM3"], "no next nudge is asked for");
 });
 
+// Letting go is only ever of a FREE Output. If a Part lands on the Output under
+// the nudge while the run goes - from another tab, or the Console - that
+// Output is the Part's now, and Stop must not take the pulse off it.
+test("Stop never lets go of an output a Part has landed on meanwhile", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.taken("ledc:3");
+  env.outputs.find((each) => each.address === "ledc:3").parts = ["doorFL"];
+  await env.frame();
+
+  env.pressStop();
+  await settle();
+  assert.equal(env.running(), null);
+  assert.deepEqual(env.releases(), [], "the Part's Output keeps its pulse");
+});
+
 // "That one" is the row's own move, and the run lets go of the Output first:
 // once the Part is on it, it is the Part's.
 test("That one lets go of the output and puts the Part on it", async () => {
@@ -251,6 +268,23 @@ test("the estop ends a run at once, and a latched estop starts none", async () =
   env.find("doorRR");
   await settle();
   assert.deepEqual(env.nudges(), ["ARM3"], "nothing is nudged while the estop is latched");
+});
+
+// The droid holds a free Output for the run until a few seconds after its
+// nudge (the dial's expiry, ADR 0064), then lets it go on its own. That is the
+// run moving on, not a fault: a read that finds the Output limp AFTER its count
+// went up steps the run on to the next Output rather than ending it.
+test("an output the droid lets go after its nudge ended steps the run on", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.taken("ledc:3");
+  await env.frame();
+  env.endNudge("ledc:3");
+  env.wentLimp("ledc:3", "off");
+  await env.frame();
+  assert.notEqual(env.running(), null, "the run goes on");
+  assert.deepEqual(env.nudges(), ["ARM3", "ARM4"]);
 });
 
 // Pulses off, a dial's bound, anything that takes a pulse off a pin: an Output
