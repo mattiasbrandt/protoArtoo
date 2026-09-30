@@ -39,6 +39,7 @@ const read = (name) => readFileSync(join(__dirname, "../../data", name), "utf-8"
 // The script chain data/seq.html declares, from the page's own modules on.
 const PAGE_MODULES = [
   "seq_protocol_check.js",
+  "seq_tempo.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "droid_parts.js",

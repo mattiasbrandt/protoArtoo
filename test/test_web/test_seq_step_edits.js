@@ -31,6 +31,7 @@ const PAGE_MODULES = [
   "dome_panel_model.js",
   "dome_layout.js",
   "seq_protocol_check.js",
+  "seq_tempo.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "outputs.js",
@@ -298,4 +299,38 @@ test("a step on a beat keeps its beat through an edit, and a new tempo moves it"
   assert.equal(steps[0].t, 0);
   assert.equal(steps[2].t, 3000, "a step placed in milliseconds moved with the tempo");
   assert.equal(saved[0].body.tempo.source, "typed");
+});
+
+// Retime to the grid is the most destructive edit on this surface (ADR 0060):
+// it moves every step at once. So it says how many steps actually landed on a
+// beat - a step inside a loop body cannot, and is not counted as if it had,
+// which is the silence the reference's own test rewarded - and one press puts
+// every step back where it was.
+test("retiming to the grid counts only the steps that landed, and one undo puts them all back", async () => {
+  const page = newPage();
+  const original = [
+    { t: 90, type: "audio", cmd: "$H" },
+    { t: 600, type: "loop", body: 1, periodMs: 500, durationMs: 1000 },
+    { t: 40, type: "audio", cmd: "$S" },
+    { t: 2600, type: "end" },
+  ];
+  page.open(
+    {
+      name: "DM:RETIME",
+      suppressMs: 8000,
+      toggleGroup: "none",
+      tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+      steps: JSON.parse(JSON.stringify(original)),
+    },
+    [],
+  );
+
+  fire(page.byId("seq-editor-retime"), "click");
+  assert.equal(page.byId("seq-editor-retime-receipt").textContent, "3 of 4 steps landed on a beat.");
+
+  fire(page.byId("seq-editor-retime-undo"), "click");
+  await page.save();
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  assert.deepEqual(saved[0].body.steps, original, "undo did not put every step back");
 });

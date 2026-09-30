@@ -301,6 +301,73 @@
     return check.validateTempo(moved).ok ? moved : null;
   };
 
+  // ---------------------------------------------------------------------------
+  // The grid a builder picks from (ADR 0060). Beats are counted from beat 0,
+  // where the builder's downbeat sits; bars from the builder's downbeat too,
+  // so the twelfth beat in 4/4 is bar 3, beat 4 -- never "bar 12", the
+  // reference's label defect. A beat before `barPhase` is a pickup, bar 0.
+  // ---------------------------------------------------------------------------
+  // The last beat a step can sit on (SEQ_TEMPO_BEAT_MAX, include/seq_tempo.h).
+  const BEAT_MAX = 1200;
+
+  const barLenOf = (tempo) => (Number.isInteger(tempo?.barLen) && tempo.barLen > 0 ? tempo.barLen : 4);
+
+  const beatName = (tempo, index) => {
+    const barLen = barLenOf(tempo);
+    const from = index - (Number(tempo?.barPhase) || 0);
+    const bar = from < 0 ? 0 : Math.floor(from / barLen) + 1;
+    const inBar = (((from % barLen) + barLen) % barLen) + 1;
+    return { index, bar, beat: inBar, strong: inBar === 1 };
+  };
+
+  // Every beat from beat 0 through the bar that holds `untilMs`, grouped by
+  // bar. `untilMs` is how far the routine reaches; the list runs to the end
+  // of that bar so the last step always has a beat after it to move to.
+  const bars = (tempo, untilMs) => {
+    const check = window.SeqProtocolCheck;
+    if (!check || !tempo || !check.validateTempo(tempo).ok) return [];
+    const out = [];
+    for (let index = 0; index <= BEAT_MAX; index++) {
+      const name = beatName(tempo, index);
+      if (name.beat === 1 && check.tempoBeatMs(tempo, index) > untilMs && out.length > 0) break;
+      if (!out.length || out[out.length - 1].bar !== name.bar) out.push({ bar: name.bar, beats: [] });
+      out[out.length - 1].beats.push(name);
+    }
+    return out;
+  };
+
+  // Retime to the grid (ADR 0060): every step to its nearest beat, as a copy,
+  // with the receipt. A step inside a loop body is timed from its pass and
+  // cannot sit on a beat, so it never lands, and the receipt counts it among
+  // the steps that did not: a bulk edit that mostly missed must say so rather
+  // than count itself a success, which is what the reference's own test did.
+  // The caller keeps what it had, which is the one-press undo.
+
+  const retime = (seq) => {
+    const check = window.SeqProtocolCheck;
+    if (!check || !seq || !Array.isArray(seq.steps) || !seq.tempo || !check.validateTempo(seq.tempo).ok) {
+      return null;
+    }
+    const tempo = seq.tempo;
+    const beatMs = 60000 / (Math.round(tempo.bpm * 10) / 10);
+    const phase = Number(tempo.phase) || 0;
+    let landed = 0;
+    let total = 0;
+    const branch = (steps) => {
+      const inLoop = check.loopBodySteps(steps);
+      return steps.map((step, i) => {
+        total += 1;
+        if (!step || inLoop.has(i)) return step;
+        const nearest = Math.min(BEAT_MAX, Math.max(0, Math.round(((Number(step.t) || 0) - phase) / beatMs)));
+        landed += 1;
+        return { ...step, beat: nearest, t: check.tempoBeatMs(tempo, nearest) };
+      });
+    };
+    const out = { ...seq, steps: branch(seq.steps) };
+    if (Array.isArray(seq.closeSteps)) out.closeSteps = branch(seq.closeSteps);
+    return { seq: out, landed, total };
+  };
+
   window.SeqTempo = Object.freeze({
     TAPS_MIN,
     analyse,
@@ -310,5 +377,8 @@
     tappedTempo,
     analysedTempo,
     moveDownbeat,
+    beatName,
+    bars,
+    retime,
   });
 })();

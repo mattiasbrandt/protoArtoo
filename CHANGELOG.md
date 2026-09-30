@@ -28,7 +28,10 @@ the patch releases, whose notes live on their own GitHub Release.
 ### Added
 - **A sequence can have a tempo.** Type the BPM, tap along while the droid
   plays the track, or drop your own copy of the track in to have its beat
-  read. You set where bar 1 starts. A step
+  read. You set where bar 1 starts. Put a step on a beat by picking it from
+  the bar-numbered list, give a dome turn or a flutter a length in beats, or
+  retime the whole routine to the grid: it says how many steps landed, and
+  Undo puts them back. A step
   placed on a beat stays on it: change the tempo and every step on a beat moves
   with it, while steps placed in milliseconds stay put. A tempo that is only a
   guess is flagged, never refused.

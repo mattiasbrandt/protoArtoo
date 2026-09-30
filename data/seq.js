@@ -852,7 +852,7 @@
       <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0" ${isInvalid ? `aria-invalid="true" aria-describedby="${errorId}"` : ""}>
         <span class="step-handle" title="Drag to reorder steps">⋯</span>
         <span class="step-number-label">Step ${idx + 1}</span>
-        <span class="step-time-label">t=${step.t || 0}ms</span>
+        <span class="step-time-label">t=${step.t || 0}ms${beatLabel(step)}</span>
         <span class="step-card-type">${window.PAUtils.escapeHtml(typeName)}</span>
         <span class="step-card-preview">${window.PAUtils.escapeHtml(preview)}</span>
         ${isInvalid ? `<span class="step-card-error-badge" aria-hidden="true">!</span>` : ""}
@@ -872,6 +872,7 @@
         </div>` : ""}
         <div class="step-card-expanded-content">
           <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+          ${renderBeatPicker(step, idx)}
 
           <!-- Grouped icon cards (Common + Advanced) -->
           <div class="step-type-picker">
@@ -930,6 +931,119 @@
         ${expandedHtml}
       </div>
     `;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Putting a step on a beat (ADR 0060): the builder picks the beat, from a
+  // list of every beat with its bar number, rather than dragging a time until
+  // it lands near one. The list and the span sit outside .step-fields, because
+  // the form rebuilds a step from its [data-field] inputs and a beat is not a
+  // form value: it is set on the step directly and the time resolved from it.
+  // ---------------------------------------------------------------------------
+  const tempoOf = () => {
+    const tempo = editorState.current?.tempo;
+    return tempo && SeqProtocolCheck.validateTempo(tempo).ok ? tempo : null;
+  };
+
+  // How far a routine reaches, for how long the beat list runs.
+  const routineReachMs = () =>
+    Math.max(...(editorState.current?.steps || []).map((step) => Number(step?.t) || 0), 0);
+
+  const beatLabel = (step) => {
+    const tempo = tempoOf();
+    if (!tempo || !Number.isInteger(step.beat) || !window.SeqTempo) return "";
+    const name = window.SeqTempo.beatName(tempo, step.beat);
+    return name.bar === 0 ? ` &middot; pickup beat ${name.beat}` : ` &middot; bar ${name.bar}, beat ${name.beat}`;
+  };
+
+  // Steps whose duration can be a span of beats: a turn that moves, and a
+  // body flutter (src/seq_json.cpp parseStepBeats()).
+  const spansBeats = (step) =>
+    (step.type === "domeRotate" && Number(step.speedPct) !== 0) || (step.type === "body" && step.shape === "flutter");
+
+  const renderBeatPicker = (step, idx) => {
+    const tempo = tempoOf();
+    if (!tempo || !window.SeqTempo) return "";
+    if (SeqProtocolCheck.loopBodySteps(editorState.current.steps).has(idx)) return "";
+    const rows = window.SeqTempo.bars(tempo, Math.max(routineReachMs(), Number(step.t) || 0))
+      .map(
+        (bar) => `
+          <div class="part-pills-group">
+            <span class="part-pills-name">${bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`}</span>
+            <div class="part-pills" role="radiogroup" aria-label="${bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`}">
+              ${bar.beats
+                .map(
+                  (b) =>
+                    `<button type="button" class="light-mode step-beat-pick" role="radio" data-beat="${b.index}" aria-checked="${step.beat === b.index ? "true" : "false"}" aria-label="Bar ${bar.bar}, beat ${b.beat}">${b.strong ? `<b>${b.beat}</b>` : b.beat}</button>`,
+                )
+                .join("")}
+            </div>
+          </div>`,
+      )
+      .join("");
+    const clear = Number.isInteger(step.beat)
+      ? `<button type="button" class="btn btn-sm btn-quiet step-beat-clear">Off the beat</button>`
+      : "";
+    const span = spansBeats(step)
+      ? `<label class="step-field-checkbox">Lasts <input class="step-field step-beat-span" type="number" min="1" max="1200" step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts"> beats</label>`
+      : "";
+    return renderFieldGroup("On the beat", `${rows}${span}${clear}`);
+  };
+
+  // Put the step at `stepIdx` on beat `beat` (null takes it off), or give its
+  // duration a span of `spanBeats` beats (null clears it). The time and the
+  // duration are resolved from the tempo, as the droid will.
+  const setStepBeat = (stepIdx, patch) => {
+    const step = { ...editorState.current.steps[stepIdx] };
+    if ("beat" in patch) {
+      if (patch.beat === null) delete step.beat;
+      else step.beat = patch.beat;
+    }
+    if ("spanBeats" in patch) {
+      if (patch.spanBeats === null) delete step.spanBeats;
+      else step.spanBeats = patch.spanBeats;
+    }
+    editorState.current.steps[stepIdx] = step;
+    editorState.current = SeqProtocolCheck.resolveBeats(editorState.current);
+    retimeUndo = null;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime("");
+  };
+
+  // Retime to the grid, and the one press that takes it back (ADR 0060). The
+  // steps from before the retime are kept until the next edit to a step or to
+  // the tempo, which is what makes the undo one press rather than one per
+  // step - and never a press that throws a later edit away.
+  let retimeUndo = null;
+
+  const showRetime = (receipt) => {
+    const receiptEl = document.getElementById("seq-editor-retime-receipt");
+    const undoBtn = document.getElementById("seq-editor-retime-undo");
+    const retimeBtn = document.getElementById("seq-editor-retime");
+    if (retimeBtn) retimeBtn.classList.toggle("hidden", !tempoOf());
+    if (receiptEl) receiptEl.textContent = receipt || "";
+    if (undoBtn) undoBtn.classList.toggle("hidden", !retimeUndo);
+  };
+
+  const retimeToGrid = () => {
+    const result = window.SeqTempo?.retime(editorState.current);
+    if (!result) return;
+    retimeUndo = JSON.parse(JSON.stringify({ steps: editorState.current.steps, closeSteps: editorState.current.closeSteps }));
+    editorState.current = result.seq;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime(`${result.landed} of ${result.total} steps landed on a beat.`);
+  };
+
+  const undoRetime = () => {
+    if (!retimeUndo) return;
+    editorState.current.steps = retimeUndo.steps;
+    if (retimeUndo.closeSteps !== undefined) editorState.current.closeSteps = retimeUndo.closeSteps;
+    retimeUndo = null;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime("");
   };
 
   // Helper to render a grouped field section with optional label
@@ -1547,8 +1661,10 @@
     const sourceEl = document.getElementById("seq-editor-tempo-source");
     if (sourceEl) sourceEl.textContent = tempoSourceLabel(tempo);
     document.getElementById("seq-editor-downbeat")?.classList.toggle("hidden", !tempo);
+    retimeUndo = null;
     rerenderStepTable();
     updateValidationSummary();
+    showRetime("");
   };
 
   const tapCountText = () => {
@@ -1679,6 +1795,9 @@
             ${stepRows}
           </div>
           <button id="seq-editor-add-step" class="btn btn-sm" type="button">Add a step</button>
+          <button id="seq-editor-retime" class="btn btn-sm btn-quiet${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
+          <span class="hint" id="seq-editor-retime-receipt" role="status"></span>
+          <button id="seq-editor-retime-undo" class="btn btn-sm btn-quiet hidden" type="button">Undo</button>
         </div>
 
         <div class="seq-editor-footer">
@@ -1854,6 +1973,10 @@
 
     // Update editor state
     editorState.current.steps[stepIdx] = step;
+    if (retimeUndo) {
+      retimeUndo = null;
+      showRetime("");
+    }
     updateValidationSummary();
   };
 
@@ -2009,6 +2132,9 @@
         setTempo(moved);
       });
     }
+
+    document.getElementById("seq-editor-retime")?.addEventListener("click", retimeToGrid);
+    document.getElementById("seq-editor-retime-undo")?.addEventListener("click", undoRetime);
 
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) {
@@ -2519,6 +2645,28 @@
   };
 
   const attachStepListeners = () => {
+    // The beat list and a span in beats (renderBeatPicker()).
+    const stepIndexOf = (el) => parseInt(el.closest(".step-card")?.dataset.stepIndex, 10);
+    document.querySelectorAll(".step-beat-pick").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const stepIdx = stepIndexOf(pill);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: parseInt(pill.dataset.beat, 10) });
+      });
+    });
+    document.querySelectorAll(".step-beat-clear").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const stepIdx = stepIndexOf(btn);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: null });
+      });
+    });
+    document.querySelectorAll(".step-beat-span").forEach((input) => {
+      input.addEventListener("change", () => {
+        const stepIdx = stepIndexOf(input);
+        const beats = parseInt(input.value, 10);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { spanBeats: Number.isInteger(beats) ? beats : null });
+      });
+    });
+
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
       dome: { cmd: ":OP00" },

@@ -999,6 +999,8 @@
       return { ok: true };
     },
 
+    /** The indices of steps inside a loop body, which are timed from a pass. */
+    loopBodySteps: loopBodyIndices,
     /** Where beat `beat` falls, in ms, on this tempo (seqTempoBeatMs()). */
     tempoBeatMs,
     /** How long `beats` beats last, in ms, on this tempo (seqTempoSpanMs()). */
