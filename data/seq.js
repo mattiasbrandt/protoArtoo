@@ -978,31 +978,36 @@
     const tempo = tempoOf();
     if (!tempo || !window.SeqTempo) return "";
     if (SeqProtocolCheck.loopBodySteps(editorState.current.steps).has(idx)) return "";
-    const rows = window.SeqTempo.bars(tempo, Math.max(routineReachMs(), Number(step.t) || 0))
-      .map(
-        (bar) => `
-          <div class="part-pills-group">
-            <span class="part-pills-name">${bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`}</span>
-            <div class="part-pills" role="radiogroup" aria-label="${bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`}">
-              ${bar.beats
-                .map(
-                  (b) =>
-                    `<button type="button" class="light-mode step-beat-pick" role="radio" data-beat="${b.index}" aria-checked="${step.beat === b.index ? "true" : "false"}" aria-label="Bar ${bar.bar}, beat ${b.beat}">${b.strong ? `<b>${b.beat}</b>` : b.beat}</button>`,
-                )
-                .join("")}
-            </div>
-          </div>`,
-      )
+    // Each bar is its number and its beats as one joined bar, the first beat
+    // weighted; the bars sit side by side and wrap.
+    const bars = window.SeqTempo.bars(tempo, Math.max(routineReachMs(), Number(step.t) || 0))
+      .map((bar) => {
+        const name = bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`;
+        const beats = bar.beats
+          .map(
+            (b) =>
+              `<button type="button" class="step-beat-pick${b.strong ? " strong" : ""}" data-beat="${b.index}" aria-pressed="${step.beat === b.index ? "true" : "false"}" aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
+          )
+          .join("");
+        return `<span class="seq-bar"><span class="seq-bar-num" aria-hidden="true">${bar.bar === 0 ? "-" : bar.bar}</span><span class="seg seg-sm seq-beats" role="group" aria-label="${name}">${beats}</span></span>`;
+      })
       .join("");
     const clear = Number.isInteger(step.beat)
-      ? `<button type="button" class="btn btn-sm btn-quiet step-beat-clear">Off the beat</button>`
+      ? `<button type="button" class="seq-act step-beat-clear">Off the beat</button>`
       : "";
     const span = spansBeats(step)
-      ? `<label class="step-field-checkbox">Lasts <input class="step-field step-beat-span" type="number" min="1" max="1200" step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts"> beats</label>`
+      ? `<span class="seq-row-label">Lasts</span>
+         <div class="seq-row-ctl">
+           <input class="seq-num step-beat-span" type="number" min="1" max="1200" step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts">
+           <span class="seq-unit">beats</span>
+         </div>`
       : "";
-    // One block, so the bars stack under each other rather than flowing
-    // across the group's row.
-    return renderFieldGroup("On the beat", `<div>${rows}</div>${span}${clear}`);
+    return `
+      <div class="seq-rows">
+        <span class="seq-row-label">Beat</span>
+        <div class="seq-row-ctl"><div class="seq-bars">${bars}</div>${clear}</div>
+        ${span}
+      </div>`;
   };
 
   // Put the step at `stepIdx` on beat `beat` (null takes it off), or give its
@@ -1512,7 +1517,7 @@
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button class="dome-mode-toggle" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
-            ${action === "OF" ? "" : `<label class="step-field-checkbox">How far <input class="step-field" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"> %</label>`}
+            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
             <div class="dome-panel-advisory hidden"></div>
           `;
         } else {
@@ -1606,36 +1611,69 @@
         break;
 
       case "gesture": {
-        // Pickers as pills over hidden form values, so the step still reads
-        // back through its [data-field] inputs like every other type.
+        // One grid of rows, each choice drawn as what it is: a joined bar for
+        // a few peers, wrapping pills for a longer set. Each writes a hidden
+        // form value, so the step still reads back through its [data-field]
+        // inputs like every other type. Pace and repeat are rarely set and
+        // fold away.
         const G = window.SeqGesture;
         if (!G) break;
-        const pills = (field, options, current) => `
-          <div class="part-pills" role="radiogroup" aria-label="${field}">
+        const esc = window.PAUtils.escapeHtml;
+        const hidden = (field, current) => `<input type="hidden" data-field="${field}" value="${esc(current || "")}">`;
+        const bar = (field, options, current) => `
+          <span class="seg seg-sm" role="group" aria-label="${field}">
             ${options
               .map(
                 (o) =>
-                  `<button type="button" class="light-mode gesture-pick" role="radio" data-pick="${field}" data-value="${window.PAUtils.escapeHtml(o.id)}" aria-checked="${o.id === current ? "true" : "false"}">${window.PAUtils.escapeHtml(o.label)}</button>`,
+                  `<button type="button" class="gesture-pick" data-pick="${field}" data-value="${esc(o.id)}" aria-pressed="${o.id === current ? "true" : "false"}">${esc(o.label)}</button>`,
               )
               .join("")}
-          </div>
-          <input type="hidden" data-field="${field}" value="${window.PAUtils.escapeHtml(current || "")}">`;
+          </span>${hidden(field, current)}`;
+        const pills = (field, options, current) => `
+          <span class="seq-pills" role="radiogroup" aria-label="${field}">
+            ${options
+              .map(
+                (o) =>
+                  `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="${field}" data-value="${esc(o.id)}" aria-checked="${o.id === current ? "true" : "false"}">${esc(o.label)}</button>`,
+              )
+              .join("")}
+          </span>${hidden(field, current)}`;
+        const num = (field, value, placeholder, label, extra = "") =>
+          `<input class="seq-num" type="number" ${extra} value="${value ?? ""}" placeholder="${placeholder}" aria-label="${label}">`;
         const sets = (window.DroidParts?.sets || []).map((x) => ({ id: x.id, label: x.label }));
-        targetHtml = pills("set", sets, step.set || "");
-        behaviorHtml =
-          pills("shape", G.SHAPES.map((x) => ({ id: x, label: x })), step.shape || "open") +
-          pills("spread", G.SPREADS, step.spread || "together") +
-          pills("direction", G.DIRECTIONS, step.direction || "cw") +
-          pills("start", G.STARTS, step.start || "front") +
-          `<label class="step-field-checkbox">How far <input class="step-field" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of each part's throw"> %</label>`;
+        const shapes = G.SHAPES.map((x) => ({ id: x, label: x[0].toUpperCase() + x.slice(1) }));
         const tempo = tempoOf();
-        timingHtml = tempo
-          ? `<label class="step-field-checkbox">One step every <input class="step-field gesture-beats" type="number" data-beats="stepBeats" value="${step.stepBeats ?? ""}" min="1" max="1200" placeholder="1" aria-label="Beats between parts"> beats</label>
-             <label class="step-field-checkbox">Again every <input class="step-field gesture-beats" type="number" data-beats="repeatBeats" value="${step.repeatBeats ?? ""}" min="1" max="1200" placeholder="-" aria-label="Repeat every beats"> beats</label>`
-          : `<label class="step-field-checkbox">One step every <input class="step-field" type="number" data-field="stepMs" value="${step.stepMs ?? ""}" min="50" max="60000" placeholder="${G.STEP_DEFAULT_MS}" aria-label="Milliseconds between parts"> ms</label>
-             <label class="step-field-checkbox">Again every <input class="step-field" type="number" data-field="repeatMs" value="${step.repeatMs ?? ""}" min="100" max="60000" placeholder="-" aria-label="Repeat every milliseconds"> ms</label>`;
-        timingHtml += `<label class="step-field-checkbox">For <input class="step-field" type="number" data-field="extentMs" value="${step.extentMs ?? ""}" min="0" max="120000" placeholder="to the end" aria-label="Repeat for milliseconds"> ms</label>`;
-        break;
+        const every = tempo
+          ? `${num("stepBeats", step.stepBeats, "1", "Beats between parts", 'min="1" max="1200" data-beats="stepBeats"').replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
+          : `${num("stepMs", step.stepMs, G.STEP_DEFAULT_MS, "Milliseconds between parts", 'min="50" max="60000" data-field="stepMs"')}<span class="seq-unit">ms</span>`;
+        const again = tempo
+          ? `${num("repeatBeats", step.repeatBeats, "-", "Repeat every beats", 'min="1" max="1200" data-beats="repeatBeats"').replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
+          : `${num("repeatMs", step.repeatMs, "-", "Repeat every milliseconds", 'min="100" max="60000" data-field="repeatMs"')}<span class="seq-unit">ms</span>`;
+        fieldsContainer.innerHTML = `
+          <div class="seq-rows">
+            <span class="seq-row-label">Parts</span>
+            <div class="seq-row-ctl">${pills("set", sets, step.set || "")}</div>
+            <span class="seq-row-label">Move</span>
+            <div class="seq-row-ctl">${bar("shape", shapes, step.shape || "open")}</div>
+            <span class="seq-row-label">Travels</span>
+            <div class="seq-row-ctl">${pills("spread", G.SPREADS, step.spread || "together")}</div>
+            <span class="seq-row-label">Order</span>
+            <div class="seq-row-ctl">${bar("direction", G.DIRECTIONS, step.direction || "cw")}${bar("start", G.STARTS, step.start || "front")}</div>
+            <span class="seq-row-label">How far</span>
+            <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", 'min="1" max="100" data-field="howFar"')}<span class="seq-unit">%</span></div>
+          </div>
+          <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs ? " open" : ""}>
+            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace and repeat</summary>
+            <div class="seq-rows">
+              <span class="seq-row-label">Every</span>
+              <div class="seq-row-ctl">${every}</div>
+              <span class="seq-row-label">Again</span>
+              <div class="seq-row-ctl">${again}</div>
+              <span class="seq-row-label">For</span>
+              <div class="seq-row-ctl">${num("extentMs", step.extentMs, "end", "Repeat for milliseconds, to the end when empty", 'min="0" max="120000" data-field="extentMs"')}<span class="seq-unit">ms</span></div>
+            </div>
+          </details>`;
+        return;
       }
 
       case "end":
@@ -1784,25 +1822,29 @@
               </select>
             </div>
 
-            <div class="seq-editor-field">
-              <label for="seq-editor-bpm">Tempo (BPM)</label>
-              <div class="seq-editor-slider-row">
-                <input id="seq-editor-bpm" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
-                <span class="seq-editor-slider-value" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
-                <button id="seq-editor-tap-open" class="btn btn-sm btn-quiet" type="button">Tap along</button>
-                <label class="btn btn-sm btn-quiet" for="seq-editor-track">Analyse a track</label>
+            <div class="seq-editor-field seq-tempo">
+              <label for="seq-editor-bpm">Tempo</label>
+              <div class="seq-row-ctl">
+                <input id="seq-editor-bpm" class="seq-num" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
+                <span class="seq-unit">BPM</span>
+                <span class="seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
+                <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
+                <label class="seq-act" for="seq-editor-track">Analyse a track</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
               </div>
-              <div id="seq-editor-tap" class="seq-editor-slider-row hidden">
-                <button id="seq-editor-tap-play" class="btn btn-sm" type="button">Play on the droid</button>
+              <div id="seq-editor-tap" class="seq-row-ctl hidden">
+                <button id="seq-editor-tap-play" class="seq-act" type="button">Play on the droid</button>
                 <button id="seq-editor-tap-beat" class="btn btn-sm accent" type="button">Tap</button>
-                <span class="seq-editor-slider-value" id="seq-editor-tap-count" role="status">0 taps</span>
-                <button id="seq-editor-tap-use" class="btn btn-sm btn-quiet" type="button" disabled>Use</button>
+                <span class="seq-unit" id="seq-editor-tap-count" role="status">0 taps</span>
+                <button id="seq-editor-tap-use" class="seq-act" type="button" disabled>Use</button>
               </div>
-              <div id="seq-editor-downbeat" class="seq-editor-slider-row${seq.tempo ? "" : " hidden"}">
-                <label for="seq-editor-downbeat-beat">Bar 1 starts on beat</label>
-                <input id="seq-editor-downbeat-beat" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
-              </div>
+              <details id="seq-editor-downbeat" class="seq-more${seq.tempo ? "" : " hidden"}">
+                <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Bar 1</summary>
+                <div class="seq-row-ctl">
+                  <span class="seq-unit">Starts on beat</span>
+                  <input id="seq-editor-downbeat-beat" class="seq-num" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
+                </div>
+              </details>
               <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
             </div>
           </div>
@@ -1844,10 +1886,12 @@
           <div class="seq-editor-step-table" id="seq-editor-step-table">
             ${stepRows}
           </div>
-          <button id="seq-editor-add-step" class="btn btn-sm" type="button">Add a step</button>
-          <button id="seq-editor-retime" class="btn btn-sm btn-quiet${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
-          <span class="hint" id="seq-editor-retime-receipt" role="status"></span>
-          <button id="seq-editor-retime-undo" class="btn btn-sm btn-quiet hidden" type="button">Undo</button>
+          <div class="seq-row-ctl">
+            <button id="seq-editor-add-step" class="btn btn-sm" type="button">Add a step</button>
+            <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
+            <span class="seq-unit" id="seq-editor-retime-receipt" role="status"></span>
+            <button id="seq-editor-retime-undo" class="seq-act hidden" type="button">Undo</button>
+          </div>
         </div>
 
         <div class="seq-editor-footer">
