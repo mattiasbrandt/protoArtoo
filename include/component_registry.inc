@@ -56,8 +56,9 @@
 //   capabilities  what this product can be asked, as the family's own bitmask.
 //                 Declared per part, not per family and not per protocol: two
 //                 products on one protocol can genuinely differ in what they
-//                 can be asked (ADR 0042). Sound is the only family with a
-//                 vocabulary today (AudioDriver::AUDIO_CAP_*); every other row
+//                 can be asked (ADR 0042). Sound (AudioDriver::AUDIO_CAP_*)
+//                 and Foot Drive (DRIVE_CAP_*, include/drive_capabilities.h)
+//                 are the families with a vocabulary today; every other row
 //                 declares 0, which says "nothing to ask", not "unknown".
 //   gate          the Board Capability Gate this part requires, as the name
 //                 string the payload reports, or nullptr where it needs none.
@@ -162,8 +163,18 @@ PA_COMPONENT_PART(14, "teeces",           "Teeces",           COMPONENT_CATEGORY
 
 // -----------------------------------------------------------------------------
 // Foot Drive -- what drives the feet.
+//
+// The capability word is the ONE declaration of whether a Foot Drive reports
+// readings back (include/drive_capabilities.h). The drive backend profile reads
+// the hoverboard's bit from this row rather than restating it
+// (include/drive_backend.h), and the Foot Drive page reads it off the lineup,
+// so neither can disagree with the row. The two roadmap rows declare 0: whether
+// a Sabertooth or a VESC reports back over the seam is #304's open follow-up,
+// and a bit on either row would answer it here.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART(15, "hoverboard",           "Hoverboard, hacked firmware", COMPONENT_CATEGORY_FOOT_DRIVE, "hoverboard_gen2_uart", COMPONENT_STATUS_SUPPORTED, 0, "PA_CAP_DRIVE_BACKEND_HOVERBOARD", PA_CAP_DRIVE_BACKEND_HOVERBOARD)
+PA_COMPONENT_PART(15, "hoverboard",           "Hoverboard, hacked firmware", COMPONENT_CATEGORY_FOOT_DRIVE, "hoverboard_gen2_uart", COMPONENT_STATUS_SUPPORTED,
+                  DRIVE_CAP_REPORTS_FEEDBACK,
+                  "PA_CAP_DRIVE_BACKEND_HOVERBOARD", PA_CAP_DRIVE_BACKEND_HOVERBOARD)
 PA_COMPONENT_PART(16, "sabertooth_2x25",      "Sabertooth 2x25",             COMPONENT_CATEGORY_FOOT_DRIVE, "de_packet_serial",     COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 PA_COMPONENT_PART(17, "flipsky_mini_v6_vesc", "Flipsky Mini V6 VESC",        COMPONENT_CATEGORY_FOOT_DRIVE, "vesc_uart",            COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
 

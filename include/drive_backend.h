@@ -27,7 +27,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "component_registry.h"  // componentPartCapabilities() -- the row a profile reads
 #include "config.h"
+#include "drive_capabilities.h"   // DRIVE_CAP_* -- the Foot Drive family's vocabulary
 
 #ifdef ARDUINO_ARCH_ESP32
 class HardwareSerial;
@@ -51,18 +53,33 @@ struct DriveBackendProfile {
     bool reportsFeedback;           // false -> pollFeedback() never reports
 };
 
+// Whether the Foot Drive with this Component Registry id reports readings
+// back. Read from the row's own capability word rather than written into the
+// profile, so the firmware's answer and the one GET /api/identity/components
+// gives the browser are the same declaration and cannot drift apart (ADR 0042).
+constexpr bool driveBackendReportsFeedback(const char* registryId) {
+    return (componentPartCapabilities(registryId) & DRIVE_CAP_REPORTS_FEEDBACK) != 0;
+}
+
 #if PA_CAP_DRIVE_BACKEND_HOVERBOARD
+// The hoverboard's Component Registry id, named once so the profile's id and
+// the row its feedback bit is read from cannot be two different spellings.
+inline constexpr char kHoverboardRegistryId[] = "hoverboard";
+static_assert(componentPartExists(kHoverboardRegistryId),
+              "the drive backend cites a product id no Component Registry row declares; a typo"
+              " here would otherwise read as a Foot Drive that reports nothing");
+
 // RoboDurden Gen2.x hoverboard mainboard, 8-byte command frames over UART.
 // The 20 ms deadline is the protocol's, not a preference: the mainboard holds
 // its last command when the stream stops, which is why zero-frame continuity
 // is unconditional above this line.
 inline constexpr DriveBackendProfile kDriveBackend = {
-    .id = "hoverboard",
+    .id = kHoverboardRegistryId,
     .protocol = "hoverboard_gen2x",
     .baud = 115200,
     .continuityDeadlineMs = 20,
     .starvation = DriveStarvation::Drifts,
-    .reportsFeedback = true,
+    .reportsFeedback = driveBackendReportsFeedback(kHoverboardRegistryId),
 };
 #else
   #error "no Board Capability Gate selects a drive backend: add a row and select it here"

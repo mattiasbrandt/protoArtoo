@@ -59,10 +59,21 @@ void test_the_generic_tick_feeds_the_backend_inside_its_own_deadline() {
     TEST_ASSERT_GREATER_THAN_UINT16(0, DRIVE_FRAME_PERIOD_MS);
 }
 
+// DriveTask polls the wire only when the profile says the far end reports, and
+// the Foot Drive page shows the readings only when the registry row says so.
+// The profile reads its answer from that row, so the two are one declaration;
+// this pins that the hoverboard's is "reports" on both sides.
+void test_the_profile_reports_feedback_exactly_as_its_registry_row_declares() {
+    TEST_ASSERT_TRUE(kDriveBackend.reportsFeedback);
+    TEST_ASSERT_EQUAL(kDriveBackend.reportsFeedback,
+                      (componentPartCapabilities(kDriveBackend.id) & DRIVE_CAP_REPORTS_FEEDBACK) != 0);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_encode_maps_speed_and_steer_onto_the_wire_fields);
     RUN_TEST(test_encode_refuses_a_buffer_too_small_for_a_whole_frame);
     RUN_TEST(test_the_generic_tick_feeds_the_backend_inside_its_own_deadline);
+    RUN_TEST(test_the_profile_reports_feedback_exactly_as_its_registry_row_declares);
     return UNITY_END();
 }
