@@ -366,6 +366,14 @@ bool sequenceStart(const char* name, CommandSource src) {
             if (sequenceQueue == nullptr) {
                 return false;
             }
+            // A run asked for after a pose press is the later word: the pose
+            // still waiting for the Coordinator is cancelled here, before the
+            // run is queued, so no wake can take the older pose after the run
+            // and abort it (#440). A pose pressed after this is still the later
+            // word and wins, as sequencePoseRequest() writes the slot again.
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.poseRequest = SRC_NONE;
+            taskEXIT_CRITICAL(&robotStateMux);
             SequenceRequest req = {};
             strncpy(req.name, name, sizeof(req.name) - 1);
             req.name[sizeof(req.name) - 1] = '\0';
@@ -422,6 +430,23 @@ bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src) {
     robotState.poseRequest = src;
     taskEXIT_CRITICAL(&robotStateMux);
     return true;
+}
+
+// =============================================================================
+// sequenceStopRequest  --  the non-latching Stop's one way in (#440).
+//
+// A Stop is the later word over a pose still waiting for the Coordinator, the
+// way sequenceStart() is: the pending pose is cleared under the same lock that
+// raises the flag, so no wake can take the pose after the Stop and start it.
+// A pose already being reached is ended by the Coordinator when it reads the
+// flag.
+// =============================================================================
+
+void sequenceStopRequest() {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.poseRequest = SRC_NONE;
+    robotState.seqStopRequested = true;
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // =============================================================================
@@ -600,7 +625,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // next tick otherwise. That keeps the pose intake and the run intake
         // the two arms of one if/else, which is what lets the compiler lay
         // their staging results in the same stack slot: as two separate ifs
-        // the root frame outgrew its measured chain (ADR 0040).
+        // the root frame outgrew its measured chain (ADR 0040). Deferring is
+        // also the right order: sequenceStart() and sequenceStopRequest()
+        // cancel a pending pose, so a pose still waiting on a tick that
+        // received a run was pressed after that run, and is the later word.
         poseAsk.src = SRC_NONE;
         taskENTER_CRITICAL(&robotStateMux);
         if (!haveReq && robotState.poseRequest != SRC_NONE) {

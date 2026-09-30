@@ -451,10 +451,9 @@ void handleSeqLastRunGet(WebRequest& req) {
 // 200 OK even if no sequence is running (no-op). Does not latch or affect other
 // subsystems (unlike estop). The web handler signals the dispatcher via a
 // transient flag in robotState; the dispatcher clears it after processing.
+// A pose press not yet taken is cancelled with it (sequenceStopRequest()).
 void handleSeqStopPost(WebRequest& req) {
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.seqStopRequested = true;
-    taskEXIT_CRITICAL(&robotStateMux);
+    sequenceStopRequest();
 
     PA_LOG_INFO(TAG, "[WEB] stop requested");
     req.send(200, "application/json", "{\"ok\":true}");
