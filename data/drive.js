@@ -22,6 +22,7 @@
   const throttleFill = document.getElementById("throttle-fill");
   const throttleThumb = document.getElementById("throttle-thumb");
   const throttleValue = document.getElementById("throttle-value");
+  const wheelControllerCard = document.getElementById("wheel-controller-card");
   const hbNoData    = document.getElementById("hb-no-data");
   const hbDataGrid  = document.getElementById("hb-data-grid");
   const hbBattery   = document.getElementById("hb-battery");
@@ -48,6 +49,12 @@
   const presetFeedback = document.getElementById("preset-feedback");
   const presetDistinctHint = document.getElementById("preset-distinct-hint");
   const driveDisabledCard = document.getElementById("drive-disabled-card");
+
+  // The Foot Drive family's capability word (include/drive_capabilities.h),
+  // mirrored because a page cannot include a header. The page asks this one
+  // question of the fitted Foot Drive and never which controller it is
+  // (ADR 0042, #446).
+  const DRIVE_CAP_REPORTS_FEEDBACK = 0x01;
 
   const driveButtons = document.querySelectorAll("[data-drive-speed]");
   const presetButtons = document.querySelectorAll("[data-speed-preset]");
@@ -435,6 +442,29 @@
     }
   };
 
+  // The fitted Foot Drive is the one product of its family this image drives:
+  // the family has no Component Member, so the lineup's supported, included
+  // row is the one on the droid - the rule the Component Picker reads it by
+  // (data/component_picker.js). None, or a lineup that cannot say, is a Foot
+  // Drive that declares no readings.
+  const fittedFootDriveReportsFeedback = (lineup) => {
+    const parts = Array.isArray(lineup?.parts) ? lineup.parts : [];
+    const fitted = parts.filter((part) =>
+      part?.category === "foot_drive" && part.status === "supported" && part.included === true);
+    if (fitted.length !== 1) return false;
+    return (Number(fitted[0].capabilities) & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;
+  };
+
+  // The wheel controller's card exists only for a Foot Drive that reports
+  // readings back. It starts hidden (data/drive.html), so a Foot Drive that
+  // reports nothing never shows a card waiting for readings that cannot come.
+  const loadFootDrive = async ({ handle = null } = {}) => {
+    if (!window.PAApi) throw new Error("API helper unavailable");
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/identity/components");
+    if (wheelControllerCard) wheelControllerCard.hidden = !fittedFootDriveReportsFeedback(result.data);
+  };
+
   const saveConfig = async () => {
     if (!window.PAApi) return;
     if (saveInFlight) {
@@ -512,11 +542,13 @@
   // See docs/page-load-recovery-architecture.md and ADR 0019.
   const SECTIONS = [
     ["drive-configuration", loadConfig, "drive configuration"],
+    ["foot-drive", loadFootDrive, "wheel controller"],
   ];
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
       loadConfig().catch(() => {});
+      loadFootDrive().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

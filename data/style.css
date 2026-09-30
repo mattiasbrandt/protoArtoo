@@ -1518,6 +1518,12 @@ body[data-page="firmware"] .card > * + * {
   min-width: 0;
 }
 
+/* The display above beats the browser's [hidden] default, and the wheel
+   controller's card is hidden for a Foot Drive that reports nothing. */
+.drive-side-part[hidden] {
+  display: none;
+}
+
 .drive-side-head {
   display: flex;
   align-items: baseline;
