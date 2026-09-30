@@ -473,6 +473,21 @@ static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
 static void releaseArm(uint8_t armId, ServoLimpReason reason);
 
 // -----------------------------------------------------------------------------
+// letGoOfTheRunsOutput()
+// A run lets go of the Output it held, back to limp-since-start, and says why.
+//
+// noinline, deliberately: its PA_LOG_* line buffer must stay out of
+// processCommand()'s and servoTask()'s frames. Both callers sit on ServoTask's
+// measured chain (ADR 0040), and inlined here the log line grew processCommand()
+// past what GCC folds into servoTask(), which stacked the two 352 B frames and
+// added 352 B to the walked chain (#411 slice 4).
+// -----------------------------------------------------------------------------
+static void __attribute__((noinline)) letGoOfTheRunsOutput(uint8_t armId, const char* why) {
+    releaseArm(armId, SERVO_LIMP_OFF);
+    PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1, why);
+}
+
+// -----------------------------------------------------------------------------
 // takeForRun()
 // A nudge has named a free Output (#411). Whether it is still free is asked on
 // every nudge, not only the first (servoRunOnNudge()): the run takes it, keeps
@@ -493,10 +508,8 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason);
 static bool takeForRun(uint8_t armId, CommandSource source) {
     const ServoRunNudgeStep step = servoRunOnNudge(s_runArm, armId, mayTakeForRun(armId));
     if (step.letGo != SERVO_RUN_NONE) {
-        releaseArm(step.letGo, SERVO_LIMP_OFF);
-        PA_LOG_INFO(TAG, "[%s] Arm%d let go - %s", commandSourceToString(source), step.letGo + 1,
-                    step.letGo == armId ? "it is not free for a run any more"
-                                        : "the run moved on to the next output");
+        letGoOfTheRunsOutput(step.letGo, step.letGo == armId ? "it is not free for a run any more"
+                                                             : "the run moved on to the next output");
     }
     if (step.act == SERVO_RUN_REFUSE) {
         return false;
@@ -934,8 +947,7 @@ static void letGoIfTheRunsOutputIsNoLongerFree() {
     if (armId == SERVO_RUN_NONE || mayTakeForRun(armId)) {
         return;
     }
-    releaseArm(armId, SERVO_LIMP_OFF);
-    PA_LOG_INFO(TAG, "Arm%d let go - a Part or a light is on it now", armId + 1);
+    letGoOfTheRunsOutput(armId, "a Part or a light is on it now");
 }
 
 // -----------------------------------------------------------------------------
