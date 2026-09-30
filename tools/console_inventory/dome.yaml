@@ -487,6 +487,37 @@ rows:
     missing_metadata:
       - "parameter 'name' lacks description/default/enum values"
     notes: ""
+  - name: dome.action.pose-sequence
+    type: action
+    registry_api_path: /api/seq/pose
+    registry_cpp_enum: null
+    registry_cpp_file: include/sequence_pose.h
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_params:
+      - name: name
+        type: string
+        required: true
+      - name: t
+        type: int32
+        range:
+          - 0
+          - 2147483647
+        required: true
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - webRegisterRoute(\"/api/seq/pose\", kPost, handleSeqPosePost)"
+      - "include/api_seq.h - void handleSeqPosePost(WebRequest& req)"
+      - "src/web/api_seq.cpp - handleSeqPosePost(): sequencePoseRefusal(), then sequencePoseRequest(name, t, SRC_WEB_API)"
+      - "src/tasks/sequence_dispatcher.cpp - sequencePosePlan() once per request, poseOneCommand() one command per turn"
+    executor_or_core: "sequencePoseRequest"
+    missing_metadata:
+      - "parameter 'name' lacks description/default/enum values"
+    notes: "Web-API and Console. The pose and its pace are the Sequence Coordinator's, from the stored steps; motions at least the Cadence Floor apart, never a group command. Refused under a latched estop or in Sleep Mode."
   - name: dome.api.get-layout
     type: action
     registry_api_path: /api/dome/layout

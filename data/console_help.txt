@@ -45,6 +45,7 @@ dome.api.get-sequence|Get Learned Sequence|One Learned Sequence, as its saved JS
 dome.action.save-sequence|Save Learned Sequence|Check a Learned Sequence and save it on the droid.|seqStoreSave|
 dome.action.delete-sequence|Memory Wipe|Wipe a Learned Sequence off the droid. Names any RC trigger it leaves dead.|seqStoreDelete|name:string:1
 dome.action.test-sequence|Test Sequence|Play a sequence by name, Learned or Factory.|sequenceStart|name:string:1
+dome.action.pose-sequence|Send To This Moment|Send the droid to one moment of a sequence, Learned or Factory. Each part goes where the routine had it then, one at a time; lights and the sound that was playing follow. Refused while the estop is latched or the droid is asleep.|sequencePoseRequest|name:string:1|t:int32:1
 dome.api.get-sequence-last-run|Get Last Sequence Run|What the last sequence run did: how it ended, and every command it sent.|seqEvidenceSnapshot|
 sound.action.play-track|Play Track|Play a track number off the card.|audioQueuePlayTrack|track:uint16:1
 sound.action.play-track-scream|Play Scream|Play the scream.|audioQueuePlayTrackBanked|

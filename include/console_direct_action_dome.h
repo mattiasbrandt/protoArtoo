@@ -10,7 +10,8 @@
 // was wired at that point - this file and its cascade entry are what closes
 // that gap.
 //
-// Six of dome's 21 dome.action.* rows are wired below. The rest already
+// Six of dome's 21 dome.action.* rows are wired below, and a seventh landed
+// later with its route (dome.action.pose-sequence, #440). The rest already
 // dispatch through the existing ACTION_REGISTRY[] fallback with no direct
 // executor needed (verified with a temporary diagnostic sweep before writing
 // this file, not assumed):
@@ -75,7 +76,8 @@
 #include "robot_state.h"                  // robotState, robotStateMux, DomeCommand, domeCmdQueue
 #include "config_cache.h"                 // ConfigSnapshot, configCacheRead()
 #include "dome_link.h"                    // domeQueueTx(), DomeTxCmd sizing (dome_link.h)
-#include "sequence_dispatcher.h"          // sequenceStart()
+#include "sequence_dispatcher.h"          // sequenceStart(), sequencePoseRequest()
+#include "sequence_pose.h"                // sequencePoseRefusal()
 #include "api_drive.h"                    // executeManualCommand()
 #include "seq_store.h"                    // seqStoreDelete()
 #include "seq_store_index.h"              // seqStoreIndexFind()
@@ -420,6 +422,61 @@ static void consoleExecuteDomeTestSequence(uint32_t requestId, const char* opera
     }
 }
 
+// dome.action.pose-sequence: name=DM:<NAME> t=<ms> - send the droid to one
+// instant of a Learned or Factory sequence, the same checks and the same
+// choke point handleSeqPosePost() (POST /api/seq/pose, src/web/api_seq.cpp)
+// uses (#440). The halt rule is sequencePoseRefusal()'s, asked here as the
+// route asks it, so the Console and the page refuse for one reason; a name the
+// dome runs itself has no steps to take a pose from, so sequencePoseRequest()
+// takes nothing and the name is out of range.
+static void consoleExecuteDomePoseSequence(uint32_t requestId, const char* operationName,
+                                           const ConsoleArgs& args, ConsoleCommandSource source,
+                                           const ConsoleRecordSink* sink) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    ConsoleArgSchemaStatus schemaStatus = consoleValidateArgsAgainstSchema(
+        entry != nullptr ? entry->params : nullptr, args, badKey, sizeof(badKey));
+    if (schemaStatus != CONSOLE_ARG_SCHEMA_OK) {
+        ConsoleReason reason = (schemaStatus == CONSOLE_ARG_SCHEMA_UNKNOWN_KEY)
+                                   ? CONSOLE_REASON_UNKNOWN_ARGUMENT
+                               : (schemaStatus == CONSOLE_ARG_SCHEMA_MISSING_REQUIRED)
+                                   ? CONSOLE_REASON_MISSING_ARGUMENT
+                                   : CONSOLE_REASON_OUT_OF_RANGE;
+        consoleEmitArgFailure(requestId, operationName, badKey, reason, sink);
+        return;
+    }
+
+    const char* name = consoleArgsFind(args, "name");
+    if (name == nullptr || strncmp(name, "DM:", 3) != 0) {
+        consoleEmitArgFailure(requestId, operationName, "name", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    // Schema already confirmed "t" is an int32 in 0..INT32_MAX; reparse with
+    // the same parser the schema check used.
+    double atMs = 0.0;
+    consoleParamParseNumeric(CONSOLE_PARAM_TYPE_INT32, consoleArgsFind(args, "t"), &atMs);
+
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool estopLatched = robotState.estop;
+    const bool sleepMode = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (sequencePoseRefusal(estopLatched, sleepMode) != nullptr) {
+        if (sink->onRecordResult) {
+            sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                                CONSOLE_REASON_BLOCKED_BY_STATE);
+        }
+        return;
+    }
+
+    if (!sequencePoseRequest(name, (uint32_t)atMs, consoleCommandSourceFor(source))) {
+        consoleEmitArgFailure(requestId, operationName, "name", CONSOLE_REASON_OUT_OF_RANGE, sink);
+        return;
+    }
+    if (sink->onRecordResult) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
 // dome.seq.<name>: the sixteen registry rows that name one body-owned
 // sequence outright (dome.seq.vader ... dome.seq.overload), as opposed to
 // dome.action.dome-sequence above, which takes the name as an argument. They
@@ -477,6 +534,7 @@ static const ConsoleDirectActionExecutorEntry g_domeDirectActionExecutors[] = {
     {"dome.action.move", consoleExecuteDomeMove},
     {"dome.action.delete-sequence", consoleExecuteDomeDeleteSequence},
     {"dome.action.test-sequence", consoleExecuteDomeTestSequence},
+    {"dome.action.pose-sequence", consoleExecuteDomePoseSequence},
 };
 static const size_t kDomeDirectActionExecutorCount =
     sizeof(g_domeDirectActionExecutors) / sizeof(g_domeDirectActionExecutors[0]);
