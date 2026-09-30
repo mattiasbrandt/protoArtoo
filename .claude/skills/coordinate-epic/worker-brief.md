@@ -120,6 +120,15 @@ criteria are test-shaped and the epic is at PoC stage, say so on the issue
 rather than building the harness silently.
 
 SURFACE WORK - IF YOUR SLICE TOUCHES `data/`
+
+YOU OWN THE WHOLE PAGE, NOT YOUR DIFF. The operator, 2026-10-01: *"the workers
+need to align the page allover that they are working on. only focusing on the
+new stuff is simply bad work."* Any surface your slice touches is yours to
+bring into line end to end - every section on that page, including controls
+and copy that predate your ticket: one grid, one control family, card-scale
+text. "It came from older work" is not a reason to leave it. This is in scope
+without a ticket line saying so; it does not reach pages your slice does not
+touch.
 Load the project's `frontend-designer` skill BEFORE you write any markup, copy
 or CSS, and follow it. It carries the operator's standing review rules, and
 this project keeps paying for them in rejected iterations rather than reading

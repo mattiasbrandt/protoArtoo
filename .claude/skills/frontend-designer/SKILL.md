@@ -36,6 +36,7 @@ Control scale - the mistake this project makes most:
 - On a card: `.btn.btn-sm`, `.btn.btn-quiet` for a secondary act, `.btn.link-btn` for navigation to another surface. A page-level primary `.btn` belongs to the page, not to a card.
 - `.field input` is `width: 100%`. A numeric input holding one to three digits is constrained to its content, not stretched to the card.
 - Before you hand a surface over, walk EVERY control on it - inputs, selects, buttons, labels, sliders - and check each sits at card scale. Do not make the operator find them one at a time.
+- **The whole page is yours, not only what you added** (operator, 2026-10-01: *"the workers need to align the page allover that they are working on. only focusing on the new stuff is simply bad work"*). Walk every section of every page you touch, old controls included, and bring it into the same family. His rejection of #438's Sequences editor was of fields the ticket did not add (Name, Interrupt group) sitting beside ones it did.
 
 Control style - no "classic" square buttons (the operator's standing direction, 2026-09-28):
 - His words, from three reviews in one evening: *"the classic square buttons style looks way early 2000s web page ... have some modern sleek style or choice of toggles"*; *"the page design is way too cluttered too many simply ugly square boxes allover"*; and a restyle he rejected because it only *"rounded off some squares"*. Rounding corners, recoloring borders or re-spacing the same boxes is NOT a redesign and reads to him as no change.
