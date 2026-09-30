@@ -699,6 +699,324 @@
     );
   };
 
+  // ===========================================================================
+  // What does not line up
+  //
+  // What the builder told the droid, set against what the droid reports, one
+  // row per thing either side speaks about (research 9.2, "the contradiction
+  // engine"; #454). The second side is a reading wherever the droid has one,
+  // which is what makes this stronger than a second declaration.
+  //
+  // FOUR STATES, AND EVERY ROW HAS EXACTLY ONE (research 5.3):
+  //   declared      the builder said so, and nothing has confirmed it -
+  //                 including a thing the droid asked and got no answer from
+  //                 (ADR 0059's declared-but-not-detected): silence is not a
+  //                 second answer, so it never reads as contradicted
+  //   observed      the droid saw it: a module answered, a servo's ends were
+  //                 recorded by the builder driving it and watching it move
+  //   contradicted  declared one thing and observed another, or two of the
+  //                 builder's own answers that cannot both be true
+  //   not probed    nobody has looked, or nobody can: its own row and its own
+  //                 words, never a default, and never amber (#402)
+  //
+  // ONE FUNCTION DECIDES, EVERY RENDERER READS (the reference's wiring.js,
+  // where `live` and `why` come from the same comparison on adjacent lines).
+  // lineUp() returns rows of { key, subject, declared, observed, state, light,
+  // why, move }; lineUpHtml() reads state, light, why and move and works none
+  // of them out again.
+  //
+  // It is the SCREEN's and never the sheet's. Every observed value here is
+  // live, and a printed sheet cannot carry a live value without freezing a lie
+  // on paper (#293), so wiringDocument() does not call it, the saved bench copy
+  // does not carry it, and nothing is painted onto the drawn wires: the list
+  // is where each drawn wire gets its state.
+  //
+  // IT READS, IT NEVER RESOLVES. A row names both facts and the answer to
+  // change, and its route is a link to where that answer lives. Nothing here
+  // writes to the droid, unmaps a Part or overwrites the stated Dome Design
+  // (CONTEXT.md "Dome Design", #373).
+  // ===========================================================================
+  const STATES = Object.freeze({
+    contradicted: "contradicted",
+    declared: "declared",
+    notProbed: "not probed",
+    observed: "observed",
+  });
+  // The order a builder has to deal with them in: what cannot be true first,
+  // what nobody has confirmed next, then what nobody could look at, and what
+  // the droid has seen last.
+  const STATE_ORDER = [STATES.contradicted, STATES.declared, STATES.notProbed, STATES.observed];
+
+  // Where each answer is changed. Every one is a surface this image serves
+  // on every board (data/shell.js SURFACES), never one-shot Setup (#298).
+  const MOVES = Object.freeze({
+    configuration: Object.freeze({ href: "#configuration", label: "Change it in Configuration" }),
+    servos: Object.freeze({ href: "#servo", label: "Record its ends on Servos" }),
+    parts: Object.freeze({ href: "#parts", label: "Add it back on Parts" }),
+  });
+
+  // What the list cannot see, said on its face (#350 finding 3): no Board
+  // Lane reports these two, so the drawing gives them no pin and no row here
+  // can check their wires.
+  const UNSEEN =
+    "The dome ESC and the RC receiver report no pins in this image, so their wires " +
+    "are not drawn and cannot be checked here.";
+
+  const row = (fields) => ({ light: null, why: "", move: null, ...fields });
+
+  // A Health Signal's answer as a row: its own word and its own light, so the
+  // list never reads a signal differently from the Status Plate (CONTEXT.md
+  // "Health Signal"). ok is observed; fail and a grey "asked, nobody answered"
+  // are declared; anything else nobody could ask is not probed.
+  const signalRow = (base, answer, { askedWithNoAnswer = [] } = {}) => {
+    const { state, word } = answer;
+    if (state === "ok") return row({ ...base, observed: word, light: "ok", state: STATES.observed });
+    if (state === "fail" || askedWithNoAnswer.includes(word)) {
+      return row({ ...base, observed: word, light: state, state: STATES.declared, move: MOVES.configuration });
+    }
+    return row({ ...base, observed: word, light: "off", state: STATES.notProbed });
+  };
+
+  // The Foot Drive: fitted is the builder's answer, and the wheel controller's
+  // readings are the droid's. Only a foot drive that declares it reports
+  // anything can be asked (DRIVE_CAP_REPORTS_FEEDBACK, #446); the firmware
+  // sends the `hoverboard` block only while its readings are valid
+  // (src/web/status_json.cpp).
+  const footDriveRow = (base, { status, reportsFeedback, words }) => {
+    if (status === null || reportsFeedback === null) {
+      return row({ ...base, observed: words.waiting, light: "off", state: STATES.notProbed });
+    }
+    if (reportsFeedback === false) {
+      return row({
+        ...base,
+        observed: "Reports nothing back",
+        light: "off",
+        state: STATES.notProbed,
+        why: "This foot drive sends no readings, so the droid cannot check it.",
+      });
+    }
+    if (status.hoverboard && typeof status.hoverboard === "object") {
+      return row({ ...base, observed: "Readings arriving", state: STATES.observed });
+    }
+    // data/drive.js renderHoverboard()'s own words for the same silence.
+    return row({
+      ...base,
+      observed: "Nothing from the wheel controller yet.",
+      state: STATES.declared,
+      why: "Asked, and no answer yet. Check its wire and its power.",
+      move: MOVES.configuration,
+    });
+  };
+
+  // One row per serial link the drawing shows, and only those: the same
+  // lanes sheetWires() draws, so no drawn wire is covered only by a caveat.
+  const laneRow = (lane, input) => {
+    const { status, words, soundName } = input;
+    const readers = window.PAHealthSignals;
+    const base = { key: `lane:${lane.key}`, subject: lane.name, declared: "Fitted" };
+    if (lane.key === "drive") return footDriveRow(base, input);
+    if (lane.key === "audio") {
+      return signalRow({ ...base, declared: soundName || base.declared }, readers.readSoundLink(status, words));
+    }
+    if (lane.key === "protor2link") {
+      // Enabled and never answered: the droid is asking, nobody answers.
+      return signalRow(base, readers.readProtoR2link(status, words), { askedWithNoAnswer: ["Not seen"] });
+    }
+    return row({ ...base, observed: words.unknown, light: "off", state: STATES.notProbed,
+      why: "Nothing in this image reports on this link." });
+  };
+
+  // The RC receiver has no lane (UNSEEN), but its link is a Health Signal the
+  // droid reports: the Status Plate's RC word, from the same model.
+  const receiverRow = ({ status, words, rcName }) => {
+    const base = { key: "rc", subject: "RC receiver", declared: rcName || "Fitted" };
+    if (status === null) return row({ ...base, observed: words.waiting, light: "off", state: STATES.notProbed });
+    const signals = window.PAHealthSignals.deriveHealthSignals(status, { unknown: words.unknown });
+    const sbus = signals.find((signal) => signal.id === "h-sbus");
+    const answer = { state: sbus.state, word: sbus.reason };
+    if (answer.state === "off") {
+      return row({ ...base, observed: answer.word, light: "off", state: STATES.notProbed,
+        why: "Its input is switched off, so the droid is not listening.", move: MOVES.configuration });
+    }
+    return signalRow(base, answer);
+  };
+
+  // The dome's panels against the stated Dome Design, from the one function
+  // that compares them (data/dome_layout.js statedDesignDifference(), #368):
+  // pies and side panels only, because holos, lights and fixtures are spelled
+  // differently on the two sides and are not matched by guesswork.
+  const domePanelsRow = ({ difference, designLabel }) => {
+    const base = { key: "dome-panels", subject: "Dome panels", declared: designLabel || "No dome design" };
+    if (difference === null) {
+      return row({ ...base, observed: "No live dome layout", light: "off", state: STATES.notProbed });
+    }
+    if (!difference.comparable) {
+      return row({ ...base, observed: "Nothing to compare", state: STATES.declared,
+        why: "Your dome design records no panel list to check the dome against." });
+    }
+    const clauses = [];
+    if (difference.domeOnly.length > 0) clauses.push(`has ${difference.domeOnly.join(", ")}`);
+    if (difference.designOnly.length > 0) clauses.push(`lacks ${difference.designOnly.join(", ")}`);
+    const declared = difference.designLabel;
+    if (clauses.length === 0) return row({ ...base, declared, observed: "The same panels", state: STATES.observed });
+    return row({
+      ...base,
+      declared,
+      observed: `It ${clauses.join(" and ")}`,
+      light: "warn",
+      state: STATES.contradicted,
+      why: `The connected dome differs from ${declared}: it ${clauses.join(" and ")}. Your answer stands until you change it.`,
+      move: MOVES.configuration,
+    });
+  };
+
+  // An Output the drawing shows: a Part on it. Nothing reads a servo back -
+  // no encoder, no feedback path (#318) - so a pulse on the pin is never a
+  // servo being there. The one thing that has ever confirmed one moves is the
+  // builder recording its ends by moving it: `calibrated`. Until then it is
+  // amber, as CONTEXT.md "Status Color" puts an uncalibrated Servo Output.
+  const outputRow = (output, parts) => {
+    const base = {
+      key: output.address,
+      subject: `${output.name} · ${partNames(parts, output.parts).join(" + ")}`,
+      // What the builder put on the wire, by its own name: the Light Type's
+      // or the servo model's, as the picker's row offers them.
+      declared: output.light ? output.light.label : output.servo ? output.servo.label : "a servo",
+    };
+    if (output.light) {
+      return row({ ...base, observed: "Nothing reads a light back", light: "off", state: STATES.notProbed });
+    }
+    if (output.calibrated) {
+      return row({ ...base, observed: "Ends recorded", state: STATES.observed,
+        why: "You moved it and saw it move when you recorded its ends." });
+    }
+    return row({
+      ...base,
+      observed: "Ends not recorded",
+      light: "warn",
+      state: STATES.declared,
+      why: "Nothing reads a servo back. Recording its ends is how you see it move.",
+      move: MOVES.servos,
+    });
+  };
+
+  // Saved but not yet applied (ADR 0059): the Output's row as saved against
+  // what the droid started with (data/outputs.js `started`, from `activeWired`
+  // and `activeLight`). The comparison is the one the picker's timing line
+  // makes (data/parts_mapping.js paintTiming()); that line says something is
+  // waiting, and this row says which Output and what it is still running.
+  const lightWord = (token) => window.PAOutputs?.lightType?.(token)?.label || token;
+  const wireWords = (wired, light) => `${wired ? "wired" : FREE}${light ? `, ${lightWord(light)}` : ""}`;
+
+  const pendingRow = (output, restart) => row({
+    key: `pending:${output.address}`,
+    subject: output.name,
+    declared: `Saved ${wireWords(output.wired, output.light ? output.light.id : null)}`,
+    observed: `Running ${wireWords(output.started.wired, output.started.light)}`,
+    state: STATES.declared,
+    why: `The droid is still running the old answer. Restart the droid to use ${output.name}.`,
+    move: restart,
+  });
+
+  const isPending = (output) =>
+    Boolean(output.started) &&
+    (output.wired !== output.started.wired || (output.light ? output.light.id : null) !== output.started.light);
+
+  // Two of the builder's answers that cannot both be true: the Part is off
+  // the droid, and an Output still claims it (data/parts_mapping.js
+  // offButMapped(), the rule the droid picture and Parts read too). There is
+  // no observed side, and the sentence says so.
+  const offRow = (part, output) => row({
+    key: `off:${part.id}`,
+    subject: part.name,
+    declared: "Off your droid",
+    observed: `Still on ${output.name}`,
+    light: "warn",
+    state: STATES.contradicted,
+    why:
+      `You took it off your droid, and your wiring still puts it on ${output.name}. ` +
+      "Both are your answers: add it back, or change its output above.",
+    move: MOVES.parts,
+  });
+
+  /**
+   * Every row of what the builder said against what the droid reports, in
+   * the order a builder deals with them. Pure: everything it reads arrives in
+   * `input`, the Live Reading's status included.
+   *
+   * @param {object} input
+   * @param {object[]} input.outputs - data/outputs.js's Outputs
+   * @param {object[]} input.parts - the Droid Parts Catalog's parts
+   * @param {string[]|null} input.fitted - the Fitted Parts, null before the
+   *   Droid Build has answered
+   * @param {object} input.lanes, input.components, input.capabilities - as
+   *   loomRows() takes them
+   * @param {object|null} input.status - the Live Reading's status, null
+   *   before the droid has sent a good frame
+   * @param {{unknown: string, waiting: string}} input.words - the Live
+   *   Reading's two words
+   * @param {boolean} input.rcFitted - the Radio Controller is not answered
+   *   Not fitted, which declares nothing and has no row
+   * @param {boolean|null} input.reportsFeedback - the fitted Foot Drive
+   *   declares it reports readings; null before the lineup has answered
+   * @param {object|null} input.difference - statedDesignDifference()
+   * @param {{href: string, label: string}} input.restart - where a builder
+   *   restarts the droid (data/apply_timing.js RESTART_ROUTE)
+   * @returns {object[]}
+   */
+  const lineUp = (input = {}) => {
+    const { outputs = [], parts = [], fitted = null, restart = null } = input;
+    const lanes = loomRows(input).filter((lane) => lane.on);
+    const rows = [
+      ...lanes.map((lane) => laneRow(lane, input)),
+      ...(input.rcFitted ? [receiverRow(input)] : []),
+      ...(lanes.some((lane) => lane.key === "protor2link") ? [domePanelsRow(input)] : []),
+      ...outputs.filter(hasPart).map((output) => outputRow(output, parts)),
+      ...outputs.filter(isPending).map((output) => pendingRow(output, restart)),
+      ...parts
+        .map((part) => ({ part, output: window.PAParts.offButMapped(part.id, fitted, outputs) }))
+        .filter(({ output }) => output !== null)
+        .map(({ part, output }) => offRow(part, output)),
+    ];
+    return rows
+      .map((each, at) => ({ each, at }))
+      .sort((a, b) => STATE_ORDER.indexOf(a.each.state) - STATE_ORDER.indexOf(b.each.state) || a.at - b.at)
+      .map(({ each }) => each);
+  };
+
+  // The section's subtitle: a count per state that has any, contradictions
+  // first (docs/ui-copy-voice.md rule 8).
+  const lineUpSummary = (rows) => {
+    if (rows.length === 0) return "nothing to check yet";
+    return STATE_ORDER
+      .map((state) => [state, rows.filter((each) => each.state === state).length])
+      .filter(([, count]) => count > 0)
+      .map(([state, count]) => `${count} ${state}`)
+      .join(" · ");
+  };
+
+  // Reads state, light, why and move off each row and nothing else. A
+  // builder's answer takes no color: it is a value, not a health signal.
+  const lineUpHtml = (rows) => {
+    const body = rows.length
+      ? '<table class="lineup-table"><thead><tr><th scope="col"></th><th scope="col">You said</th>' +
+        '<th scope="col">The droid reports</th><th scope="col">State</th><th scope="col"></th></tr></thead><tbody>' +
+        rows.map((each) =>
+          `<tr class="lineup-row" data-row="${escAttr(each.key)}" data-state="${escAttr(each.state)}">` +
+          `<th scope="row">${esc(each.subject)}</th>` +
+          `<td>${esc(each.declared)}</td>` +
+          `<td class="lineup-observed">` +
+          (each.light ? `<span class="indicator ${escAttr(each.light)}" aria-hidden="true"></span>` : "") +
+          `${esc(each.observed)}</td>` +
+          `<td class="lineup-state">${esc(each.state)}</td>` +
+          `<td class="lineup-why">${esc(each.why)}` +
+          (each.move ? `${each.why ? " " : ""}<a class="btn btn-sm btn-quiet link-btn" href="${escAttr(each.move.href)}">${esc(each.move.label)}</a>` : "") +
+          `</td></tr>`).join("") +
+        "</tbody></table>"
+      : '<p class="hint">Nothing to check yet: no Part is on an output and nothing is fitted.</p>';
+    return body + `<p class="hint">${esc(UNSEEN)}</p>`;
+  };
+
   window.PAWiring = Object.freeze({
     SUBTITLE,
     PROMISE,
@@ -712,6 +1030,10 @@
     sheetStamp,
     wiringDocument,
     wiringSheetFile,
+    STATES,
+    lineUp,
+    lineUpSummary,
+    lineUpHtml,
   });
 
   // ===========================================================================
@@ -731,7 +1053,13 @@
   // The config's Component Toggles, for the Board Lanes' switches and labels.
   // The Outputs are data/outputs.js's, read at paint time.
   let components = {};
+  // The whole GET /api/config answer, for what the list of what does not
+  // line up reads beside the toggles: the Radio Controller's answer.
+  let config = {};
   let answered = false;
+  // The Live Reading's status frame, null until the droid has sent a good
+  // one: the observed side of the list (data/live_reading.js).
+  let status = null;
 
   // The product the board's GPIO outputs are - "Body controller board GPIO" -
   // which the picker pictures with the Body Controller this image runs on.
@@ -840,8 +1168,81 @@
     write("wiring-wires-summary", sheet.wiresSummary);
     write("wiring-wires", sheet.wiresHtml);
     fillBoardArt();
+    paintLineUp();
     return sheet;
   };
+
+  // ---------------------------------------------------------------------------
+  // The list of what does not line up, on screen
+  //
+  // Mounted here and never made by wiringDocument(): every observed value in
+  // it is live, and the printed sheet stays a reference that carries none
+  // (lineUp() above). Its inputs are the answers this surface already holds -
+  // the Outputs and the config from the one section read, the Droid Build
+  // adopted from that same config, the lineup the Component Picker read, the
+  // dome's layout as data/dome_layout.js resolved it - and the Live Reading
+  // the shell already runs. It starts no read of its own.
+  // ---------------------------------------------------------------------------
+  // "MK4 Complex": the stated Dome Design in the catalog's own short words,
+  // as the Droid Build picker names it (data/droid_build_picker.js).
+  const domeDesignLabel = () => {
+    const build = window.DroidBuild?.current?.();
+    const design = build ? (window.DroidParts?.designs || []).find((row) => row.id === build.dome.design) : null;
+    if (!design) return "";
+    const variant = (design.variants || []).find((row) => row.id === build.dome.variant);
+    return variant ? `${design.short} ${variant.label}` : design.short;
+  };
+
+  const lineUpInput = () => {
+    const picker = window.ComponentPicker;
+    const rc = config.rc && typeof config.rc === "object" ? config.rc : null;
+    return {
+      ...model(),
+      fitted: window.DroidBuild?.current?.()?.fitted ?? null,
+      status,
+      words: { unknown: window.PALiveReading.UNKNOWN, waiting: window.PALiveReading.WAITING },
+      soundName: picker?.chosenPart?.("sound")?.name || "",
+      // The Radio Controller answered Not fitted declares nothing, so it has
+      // no row (#369); the picker's own rule for that answer.
+      rcFitted: rc !== null && !(picker?.isRadioNotFitted?.() ?? rc.inputMode === "not_fitted"),
+      rcName: picker?.chosenPart?.("radio_controller")?.name || picker?.chosenReceiverPart?.()?.name || "",
+      reportsFeedback: picker?.footDriveReportsFeedback?.() ?? null,
+      difference: window.DomeLayout?.statedDesignDifference?.() ?? null,
+      designLabel: domeDesignLabel(),
+      restart: window.PAApplyTiming?.RESTART_ROUTE || null,
+    };
+  };
+
+  // Written only when what it says has changed: the Live Reading repaints it
+  // on every frame, and a table rebuilt under a builder's pointer takes the
+  // link they were about to press out from under them.
+  let lineUpDrawn = null;
+  const paintLineUp = () => {
+    if (!answered) return;
+    const rows = lineUp(lineUpInput());
+    const html = lineUpHtml(rows);
+    const summary = lineUpSummary(rows);
+    if (lineUpDrawn === summary + html) return;
+    lineUpDrawn = summary + html;
+    const sub = document.getElementById("wiring-lineup-summary");
+    if (sub) {
+      sub.classList.remove("waiting");
+      sub.textContent = summary;
+    }
+    write("wiring-lineup", html);
+  };
+
+  const onWiring = () => answered && document.body?.dataset?.page === "wiring";
+  window.PALiveReading?.subscribe((reading) => {
+    status = reading.status;
+    if (onWiring()) paintLineUp();
+  });
+  window.DroidBuild?.onChange?.(() => {
+    if (onWiring()) paintLineUp();
+  });
+  window.DomeLayout?.onChange?.(() => {
+    if (onWiring()) paintLineUp();
+  });
 
   // ---------------------------------------------------------------------------
   // The bench copy's caller
@@ -906,8 +1307,13 @@
   // View is for. The same read paints the part-first picker: GET /api/config is
   // asked once.
   const loadSheet = async ({ handle = null } = {}) => {
-    const { config } = await window.PAOutputs.load({ handle });
+    const answer = await window.PAOutputs.load({ handle });
+    config = answer.config && typeof answer.config === "object" ? answer.config : {};
     components = config.components && typeof config.components === "object" ? config.components : {};
+    // The Droid Build and the Component Members ride this same answer, so
+    // neither module reads GET /api/config again for the list.
+    window.DroidBuild?.adopt?.(config);
+    window.ComponentPicker?.adopt?.(config);
     answered = true;
     paint();
     saveLink?.setAttribute("aria-disabled", "false");
@@ -935,6 +1341,8 @@
       "/dome_command_map.js": "the dome's commands",
       "/find_by_moving.js": "find by moving",
       "/parts_mapping.js": "the parts on each output",
+      "/droid_build.js": "your droid build",
+      "/dome_layout.js": "the dome's layout",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {
       label: "the wiring sheet",
@@ -944,10 +1352,10 @@
   }
 
   // Owned by this surface, so the shell stops it when the operator leaves and
-  // starts it again on the way back (#360). There is no cadence: a reference
-  // surface has no live reading to keep up with, and the one thing that must
-  // not go stale is the sheet after a Part was moved on Servos - which is a
-  // return, not a tick.
+  // starts it again on the way back (#360). There is no cadence: the one live
+  // reading here - the list of what does not line up - rides the Live Reading
+  // the shell already runs, and the one thing that must not go stale is the
+  // sheet after a Part was moved on Servos - which is a return, not a tick.
   //
   // A return is `runOnStart`, because the shell restarts a surface's polls on
   // the way in (syncSurfacePoll, data/page_bootstrap.js); `refreshOnReturn` is
