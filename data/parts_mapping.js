@@ -545,7 +545,12 @@
       act.type = "button";
       act.className = "btn btn-sm btn-quiet parts-find-act";
       act.dataset.find = id;
-      act.textContent = "find by moving";
+      // The magnifying glass beside the words (operator, 2026-09-30 on #411),
+      // in the markup data/shell.js icon() writes: the sprite is the shell's,
+      // and a module names a symbol by its literal <use> so
+      // tools/check_surface_anatomy.py can resolve it.
+      act.innerHTML =
+        `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-magnify"/></svg>find by moving`;
       act.setAttribute("aria-label", `Find the output ${row.part.name} is on by moving each free one`);
       window.PAApi.gateControls([act], live && !running);
       row.carries.replaceChildren(act);

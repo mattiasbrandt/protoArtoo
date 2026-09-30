@@ -7070,6 +7070,11 @@ body[data-page="maintenance"] .status-item .hint {
   font-size: var(--fs-sect);
 }
 
+.parts-carries .parts-find-act svg.i {
+  width: 14px;
+  height: 14px;
+}
+
 .parts-carries .parts-find-act:hover,
 .parts-carries .parts-find-act:focus-visible {
   border-color: transparent;
