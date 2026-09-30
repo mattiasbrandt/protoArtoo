@@ -40,6 +40,7 @@ const read = (name) => readFileSync(join(__dirname, "../../data", name), "utf-8"
 const PAGE_MODULES = [
   "seq_protocol_check.js",
   "seq_tempo.js",
+  "seq_gesture.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "droid_parts.js",

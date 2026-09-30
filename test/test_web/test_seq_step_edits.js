@@ -32,6 +32,7 @@ const PAGE_MODULES = [
   "dome_layout.js",
   "seq_protocol_check.js",
   "seq_tempo.js",
+  "seq_gesture.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "outputs.js",

@@ -310,12 +310,18 @@
           add(rowLane("spin", "Dome turn"), { kind: durationMs > 0 ? "span" : "tick", t0: t, t1: t + durationMs, label, ghost });
           return;
         }
+        case "gesture":
+          // Where the Gesture was fired. The moves it becomes are drawn on
+          // their own Parts' lanes from the same expansion the Rehearsal
+          // reads (seq_rehearsal.js expand()); drawing it as one block across
+          // those lanes is the timeline editor's (#441).
+          add(rowLane("gesture", "Gesture"), { kind: "tick", t0: t, t1: t, label, ghost });
+          return;
         case "end":
           return;
         default:
-          // A step kind this view does not know yet -- a Gesture, a nested
-          // sequence -- still draws, as a labelled mark at its time. It is
-          // never dropped.
+          // A step kind this view does not know yet -- a nested sequence --
+          // still draws, as a labelled mark at its time. It is never dropped.
           add(rowLane("other", "Other"), { kind: "tick", t0: t, t1: t, label: def.type || label, ghost });
       }
     });

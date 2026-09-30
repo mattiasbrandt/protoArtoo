@@ -42,6 +42,8 @@
 //                           generates, so hand-written overlaps are advised on.
 //   part-left-open          ADR 0049: the engine undoes nothing a body step did.
 //   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
+//   gesture-dome            ADR 0046: a dome Gesture is the dome's `$` command,
+//                           and a pair the dome has no command for saves.
 //   tempo-confidence        ADR 0058: the analyser read Cantina's ~200 BPM as
 //                           127.8; a tempo that says how unsure it is must say
 //                           so where the builder looks.
@@ -173,10 +175,49 @@
         i += 1;
       }
     }
+    // A Gesture also reads as the moves it becomes (ADR 0046), each marked
+    // `generated`: a body Gesture's moves as the Coordinator asks for them
+    // before pacing, and a dome Gesture's panels where the dome's `$` command
+    // leaves them. The Part rules read them; the rules about an author's own
+    // timing do not, because the body paces what it generates and the dome
+    // performs its command as one (data/seq_gesture.js).
+    const G = window.SeqGesture;
+    if (G) {
+      events.slice().forEach((event) => {
+        if (event.def.type !== "gesture") return;
+        const t = event.t;
+        const meta = { step: event.step, iter: event.iter, generated: true };
+        G.bodyMoves(event.def, t).forEach((move) =>
+          events.push({ ...meta, t: move.t, def: { type: "body", part: move.part, shape: move.shape, howFar: event.def.howFar } }),
+        );
+        domePanelsOf(event.def).forEach((cmd) => events.push({ ...meta, t, def: { type: "dome", cmd } }));
+      });
+    }
     // Stable: equal times keep authored order, which is the engine's order too.
     return events
       .map((event, order) => ({ ...event, order }))
       .sort((a, b) => a.t - b.t || a.order - b.order);
+  };
+
+  // A dome Gesture's panels as its `$` command leaves them: a together open or
+  // close as written, a flutter as the dome's to know (nothing), every other
+  // command the dome performs ends its panels closed, and a pair with no
+  // command moves nothing (include/sequence_gesture.h).
+  const domePanelsOf = (def) => {
+    const G = window.SeqGesture;
+    if (!G || !G.onDome(def)) return [];
+    const shape = def.shape || "open";
+    const spread = def.spread || "together";
+    if (!G.domeCommand(shape, spread) || (spread === "together" && shape === "flutter")) return [];
+    const word = spread === "together" && shape === "open" ? "OP" : "CL";
+    return G.members(def)
+      .map((id) => {
+        const panel = /^panel(\d+)$/.exec(id);
+        const pie = /^pie(\d)$/.exec(id);
+        if (panel) return `:${word}${String(panel[1]).padStart(2, "0")}`;
+        return pie ? `:${word}P${pie[1]}` : null;
+      })
+      .filter((cmd) => cmd && panelIntent(cmd));
   };
 
   // A panel intent (:OP/:CL/:OF) split into what it does and to which panel.
@@ -308,7 +349,7 @@
       : `${name(worst.after)} ${worst.gap} ms after ${name(worst.before)}`;
 
   const dispatchSpacing = (events) => {
-    const dome = events.filter((event) => event.def.type === "dome");
+    const dome = events.filter((event) => event.def.type === "dome" && !event.generated);
     const { tight, worst } = tightPairs(dome, DOME_SPACING_MS);
     if (!worst) return [];
     const when =
@@ -331,7 +372,7 @@
   const servoBurst = (events) => {
     const floor = cadenceFloorMs();
     if (floor === null) return [];
-    const panels = events.filter((event) => event.def.type === "dome" && panelIntent(event.def.cmd));
+    const panels = events.filter((event) => event.def.type === "dome" && panelIntent(event.def.cmd) && !event.generated);
     const { tight, worst } = tightPairs(panels, floor);
     if (!worst) return [];
     return [
@@ -392,6 +433,9 @@
     const runs = new Map();
     const groups = grouped();
     events.forEach((event) => {
+      // A generated move waits for the one before to arrive: the Coordinator
+      // paces it (include/sequence_gesture.h).
+      if (event.generated) return;
       const def = event.def;
       let key = null;
       let command = null;
@@ -610,7 +654,7 @@
   const bodyOverlap = (events) => {
     const floor = cadenceFloorMs();
     if (floor === null) return [];
-    const moves = events.filter((event) => event.def.type === "body" && event.def.part);
+    const moves = events.filter((event) => event.def.type === "body" && event.def.part && !event.generated);
     const { tight, worst } = tightPairs(moves, floor, (a, b) => a.def.part === b.def.part);
     if (!worst) return [];
     return [
@@ -664,6 +708,30 @@
         { step: first.event.step, n },
       ),
     );
+  };
+
+  // A dome Gesture the connected dome performs only in part, or not at all
+  // (ADR 0046): Coordinator Resolution maps it onto the dome's `$` family, and
+  // the body never breaks it into single panel commands. It still saved; this
+  // says what happens instead.
+  const gestureDome = (events) => {
+    const G = window.SeqGesture;
+    if (!G) return [];
+    return events
+      .filter((event) => event.def.type === "gesture" && !event.generated && !(event.iter > 0))
+      .map((event) => ({ event, reading: G.domeReading(event.def) }))
+      .filter(({ reading }) => reading)
+      .map(({ event, reading }) =>
+        finding(
+          "warning",
+          "gesture-dome",
+          reading.notes.join(" "),
+          reading.performs
+            ? "Use together, or a chase that opens, for the dome to do exactly this."
+            : "Pick together, or open with another spread.",
+          { step: event.step },
+        ),
+      );
   };
 
   // ---------------------------------------------------------------------------
@@ -772,6 +840,7 @@
       ...bodyOverlap(events),
       ...partLeftOpen(events),
       ...audioOutlivesShow(events),
+      ...gestureDome(events),
       ...tempoConfidence(seq),
       ...tempoHash(seq, context),
     ];

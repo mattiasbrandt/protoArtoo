@@ -756,6 +756,12 @@
         const category = step.category || "alert";
         return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
       }
+      case "gesture": {
+        const G = window.SeqGesture;
+        const set = G && step.set ? G.setOf(step.set)?.label || step.set : `${(step.parts || []).length} parts`;
+        const spread = G?.SPREADS.find((x) => x.id === (step.spread || "together"))?.id || step.spread || "together";
+        return `${set}: ${step.shape || "open"}, ${spread}`;
+      }
       case "body": {
         // A Body Step names a Part and a Move Shape (ADR 0049). A light Part
         // hears the same three stored words as on, off and flash, so it reads
@@ -786,6 +792,7 @@
     loop: "Servo Loop",
     random: "Random Flutter",
     audioCat: "Sound Category",
+    gesture: "Gesture",
     end: "Sequence End",
   };
 
@@ -806,6 +813,7 @@
     loop: "Repeat a group of steps at an interval",
     random: "Randomized panel motion",
     audioCat: "Play a random sound from a category",
+    gesture: "One move across a set of parts, in order round the droid",
     end: "Mark the end of the sequence",
   };
 
@@ -818,7 +826,7 @@
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
-            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
+            ${["audio", "dome", "domeRotate", "gesture", "loop", "random", "audioCat", "end"]
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
@@ -879,7 +887,7 @@
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
               <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "loop"]
+                ${["audio", "domeRotate", "dome", "gesture", "loop"]
                   .map(
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
@@ -961,6 +969,11 @@
   const spansBeats = (step) =>
     (step.type === "domeRotate" && Number(step.speedPct) !== 0) || (step.type === "body" && step.shape === "flutter");
 
+  // The Gesture's form values: numbers that are optional, and words that are
+  // optional (an unset word is its default).
+  const GESTURE_NUMBER_FIELDS = ["howFar", "stepMs", "repeatMs", "extentMs", "speedMs"];
+  const GESTURE_WORD_FIELDS = ["set", "shape", "spread", "direction", "start", "easing"];
+
   const renderBeatPicker = (step, idx) => {
     const tempo = tempoOf();
     if (!tempo || !window.SeqTempo) return "";
@@ -987,7 +1000,9 @@
     const span = spansBeats(step)
       ? `<label class="step-field-checkbox">Lasts <input class="step-field step-beat-span" type="number" min="1" max="1200" step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts"> beats</label>`
       : "";
-    return renderFieldGroup("On the beat", `${rows}${span}${clear}`);
+    // One block, so the bars stack under each other rather than flowing
+    // across the group's row.
+    return renderFieldGroup("On the beat", `<div>${rows}</div>${span}${clear}`);
   };
 
   // Put the step at `stepIdx` on beat `beat` (null takes it off), or give its
@@ -999,12 +1014,13 @@
       if (patch.beat === null) delete step.beat;
       else step.beat = patch.beat;
     }
-    if ("spanBeats" in patch) {
-      if (patch.spanBeats === null) delete step.spanBeats;
-      else step.spanBeats = patch.spanBeats;
-    }
+    ["spanBeats", "stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
+      if (!(key in patch)) return;
+      if (patch[key] === null) delete step[key];
+      else step[key] = patch[key];
+    });
     editorState.current.steps[stepIdx] = step;
-    editorState.current = SeqProtocolCheck.resolveBeats(editorState.current);
+    editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
     retimeUndo = null;
     rerenderStepTable();
     updateValidationSummary();
@@ -1588,6 +1604,39 @@
         `;
         break;
 
+      case "gesture": {
+        // Pickers as pills over hidden form values, so the step still reads
+        // back through its [data-field] inputs like every other type.
+        const G = window.SeqGesture;
+        if (!G) break;
+        const pills = (field, options, current) => `
+          <div class="part-pills" role="radiogroup" aria-label="${field}">
+            ${options
+              .map(
+                (o) =>
+                  `<button type="button" class="light-mode gesture-pick" role="radio" data-pick="${field}" data-value="${window.PAUtils.escapeHtml(o.id)}" aria-checked="${o.id === current ? "true" : "false"}">${window.PAUtils.escapeHtml(o.label)}</button>`,
+              )
+              .join("")}
+          </div>
+          <input type="hidden" data-field="${field}" value="${window.PAUtils.escapeHtml(current || "")}">`;
+        const sets = (window.DroidParts?.sets || []).map((x) => ({ id: x.id, label: x.label }));
+        targetHtml = pills("set", sets, step.set || "");
+        behaviorHtml =
+          pills("shape", G.SHAPES.map((x) => ({ id: x, label: x })), step.shape || "open") +
+          pills("spread", G.SPREADS, step.spread || "together") +
+          pills("direction", G.DIRECTIONS, step.direction || "cw") +
+          pills("start", G.STARTS, step.start || "front") +
+          `<label class="step-field-checkbox">How far <input class="step-field" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of each part's throw"> %</label>`;
+        const tempo = tempoOf();
+        timingHtml = tempo
+          ? `<label class="step-field-checkbox">One step every <input class="step-field gesture-beats" type="number" data-beats="stepBeats" value="${step.stepBeats ?? ""}" min="1" max="1200" placeholder="1" aria-label="Beats between parts"> beats</label>
+             <label class="step-field-checkbox">Again every <input class="step-field gesture-beats" type="number" data-beats="repeatBeats" value="${step.repeatBeats ?? ""}" min="1" max="1200" placeholder="-" aria-label="Repeat every beats"> beats</label>`
+          : `<label class="step-field-checkbox">One step every <input class="step-field" type="number" data-field="stepMs" value="${step.stepMs ?? ""}" min="50" max="60000" placeholder="${G.STEP_DEFAULT_MS}" aria-label="Milliseconds between parts"> ms</label>
+             <label class="step-field-checkbox">Again every <input class="step-field" type="number" data-field="repeatMs" value="${step.repeatMs ?? ""}" min="100" max="60000" placeholder="-" aria-label="Repeat every milliseconds"> ms</label>`;
+        timingHtml += `<label class="step-field-checkbox">For <input class="step-field" type="number" data-field="extentMs" value="${step.extentMs ?? ""}" min="0" max="120000" placeholder="to the end" aria-label="Repeat for milliseconds"> ms</label>`;
+        break;
+      }
+
       case "end":
         html = `<span class="step-field-empty">(terminal step)</span>`;
         fieldsContainer.innerHTML = html;
@@ -1655,7 +1704,7 @@
     // milliseconds stays put (ADR 0058).
     const next = { ...editorState.current, tempo };
     if (tempo === undefined) delete next.tempo;
-    editorState.current = SeqProtocolCheck.resolveBeats(next);
+    editorState.current = SeqProtocolCheck.resolveBeats(next, { written: true });
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) bpmInput.value = tempo ? String(tempo.bpm) : "";
     const sourceEl = document.getElementById("seq-editor-tempo-source");
@@ -1915,6 +1964,13 @@
         value = input.checked;
       } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "moveMs" || field === "jitterMs" || field === "speed") {
         value = parseInt(value, 10);
+      } else if (GESTURE_NUMBER_FIELDS.includes(field)) {
+        // A Gesture's optional numbers: an empty field is the default, which
+        // is stored as absence.
+        if (value === "") return;
+        value = parseInt(value, 10);
+      } else if (GESTURE_WORD_FIELDS.includes(field) && value === "") {
+        return;
       }
       step[field] = value;
     });
@@ -1946,6 +2002,16 @@
     // in beats goes the same way when its duration is typed over (ADR 0058).
     const prev = editorState.current.steps[stepIdx] || {};
     if (prev.beat !== undefined && step.t === prev.t) step.beat = prev.beat;
+    // A Gesture's times in beats have no form field either, so they ride
+    // along the same way (their inputs set them directly, setStepBeat()); and
+    // a Gesture over a listed set of parts, which the pickers do not offer,
+    // keeps its list.
+    if (step.type === "gesture" && prev.type === "gesture") {
+      ["stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
+        if (prev[key] !== undefined) step[key] = prev[key];
+      });
+      if (step.set === undefined && Array.isArray(prev.parts)) step.parts = prev.parts;
+    }
     if (prev.spanBeats !== undefined && step.type === prev.type && step.durationMs === prev.durationMs) {
       step.spanBeats = prev.spanBeats;
     }
@@ -2659,6 +2725,25 @@
         if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: null });
       });
     });
+    // A Gesture's pickers write their hidden form value and read the step back.
+    document.querySelectorAll(".gesture-pick").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const stepIdx = stepIndexOf(pill);
+        const fields = pill.closest(".step-fields");
+        const hidden = fields?.querySelector(`input[data-field="${pill.dataset.pick}"]`);
+        if (!hidden || !Number.isInteger(stepIdx)) return;
+        hidden.value = pill.dataset.value;
+        validateAndUpdateStep(stepIdx);
+        rerenderStepTable();
+      });
+    });
+    document.querySelectorAll(".gesture-beats").forEach((input) => {
+      input.addEventListener("change", () => {
+        const stepIdx = stepIndexOf(input);
+        const beats = parseInt(input.value, 10);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { [input.dataset.beats]: Number.isInteger(beats) ? beats : null });
+      });
+    });
     document.querySelectorAll(".step-beat-span").forEach((input) => {
       input.addEventListener("change", () => {
         const stepIdx = stepIndexOf(input);
@@ -2674,6 +2759,7 @@
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
       audioCat: { category: "alert", fallback: "scream" },
+      gesture: { set: "ring", spread: "wave" },
       end: {},
     };
 
