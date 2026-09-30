@@ -55,8 +55,6 @@
     ALL: ["FLD", "RLD", "FPSI", "RPSI"],
   });
 
-  const RANDOM_WORDS = Object.freeze({ open: "open", close: "close", flutter: "flutter" });
-
   const esc = (value) =>
     String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -254,10 +252,12 @@
         case "random": {
           const set = def.set === "hold" ? lastRandom : def.set || "ring";
           if (def.set !== "hold") lastRandom = set;
-          const word = def.set === "hold" ? "same pick" : `${RANDOM_WORDS[def.mode] || "flutter"}, random`;
+          // A hold reuses the pick before it, so it is drawn on that step's
+          // lanes and says so; a pick of its own says what it does.
+          const said = def.set === "hold" ? `${label} (same pick)` : label;
           const reach = (Number(def.jitterMs) || 0) + (Number(def.moveMs) || 0);
           idsOf(setShorthands(set || "ring")).forEach((id) => {
-            add(partLane(id), { kind: "maybe", t0: t, t1: t + reach, label: `${label} (${word})`, ghost });
+            add(partLane(id), { kind: "maybe", t0: t, t1: t + reach, label: said, ghost });
           });
           return;
         }

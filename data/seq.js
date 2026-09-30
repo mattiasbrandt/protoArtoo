@@ -593,6 +593,10 @@
       sayOnCard(`Could not read ${name}: ${PAApi.messageFor(error)}`);
       return;
     }
+    if (!seq || !Array.isArray(seq.steps)) {
+      sayOnCard(`The droid sent ${name} back with no steps.`);
+      return;
+    }
     closeTimeline();
     els.emptyState.classList.add("hidden");
     els.populatedState.classList.add("hidden");
