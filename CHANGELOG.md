@@ -43,6 +43,13 @@ the patch releases, whose notes live on their own GitHub Release.
   on a body arm opens it. Every command now answers what happened: done
   here, sent to the dome, or no and why. `docs/marcduino_commands.md` lists
   which commands the body answers.
+- **A servo lets go once it has got there.** On Servos, set how long a
+  calibrated part holds after each move arrives, up to a minute, or never.
+  After that it goes limp, so a jammed or fought part stops grinding instead
+  of pushing until somebody notices. Any new move starts the count again, and
+  the calibration dial keeps holding while you look. A part set to go home
+  and hold at power-up lets go the same way. Nothing changes until you set a
+  time.
 - **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
   as that, not as track 803. A sound module with no bank 8 says so instead of
   playing the wrong file.
