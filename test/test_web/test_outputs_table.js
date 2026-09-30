@@ -11,7 +11,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { bootServos, freshOutputs, withParts, sleep } from "./helpers/parts_surface.js";
+import vm from "node:vm";
+import { bootServos, freshOutputs, withParts, sleep, readData } from "./helpers/parts_surface.js";
 import { wiredOutputs } from "./helpers/fake_droid.js";
 
 // ---------------------------------------------------------------------------
@@ -157,6 +158,61 @@ test("an Output nobody has measured cannot send a shape, and a measured one save
     { outputs: [{ address: "ledc:0", ease: "overshoot" }] },
     { outputs: [{ address: "ledc:0", throwMs: 800 }] },
   ]);
+});
+
+// An Output Release is counted by the droid in milliseconds and typed here in
+// seconds (#443). What goes on the row is the number the droid counts - a
+// slip between the two would have a part let go a thousand times too soon -
+// and "never" is the row's 0.
+test("a release time typed in seconds is saved as the milliseconds the droid counts, and never as 0", async () => {
+  const outputs = wiredOutputs();
+  outputs[0].calibrated = true;
+  const env = await bootServos({ outputs });
+  const press = (choice) =>
+    env.region().fire("click", { target: env.row("ledc:0").querySelector(`[data-release="${choice}"]`) });
+
+  press("after");
+  await sleep(20);
+  assert.equal(env.rowSaves().length, 0, "choosing to let go asks nothing until a time is typed");
+  const box = env.row("ledc:0").querySelector(".outputs-release-s");
+  box.value = "2.5";
+  env.region().fire("change", { target: box });
+  await sleep(20);
+  press("never");
+  await sleep(20);
+
+  assert.deepEqual(env.rowSaves().map((post) => post.json), [
+    { outputs: [{ address: "ledc:0", release: 2500 }] },
+    { outputs: [{ address: "ledc:0", release: 0 }] },
+  ]);
+});
+
+// A release time the droid refuses is said in the builder's words, from the
+// refusal's field, reason and accepts (ADR 0068, second amendment) - never as
+// the row key or the droid's own sentence, which stands in here as a decoy.
+test("a release time the droid refuses names the Output and the setting in the builder's words", async () => {
+  const outputs = wiredOutputs();
+  outputs[0].calibrated = true;
+  const env = await bootServos({ outputs });
+  const window = {};
+  vm.runInNewContext(readData("web_api.js"), { window, URLSearchParams });
+  const words = window.PAApi;
+  words.nameOutputsWith((address) => env.outputs.find((each) => each.address === address)?.name ?? null);
+  env.window.PAApi.messageFor = words.messageFor;
+  env.window.PAApi.sayRefusal = words.sayRefusal;
+  const sentence = "ledc:0.release must be 0..60000 ms";
+  env.configFails = new words.ApiError(sentence, {
+    kind: "http", status: 400, field: "ledc:0.release", reason: "out-of-range", accepts: "0..60000",
+  });
+
+  const box = env.row("ledc:0").querySelector(".outputs-release-s");
+  box.value = "30";
+  env.region().fire("change", { target: box });
+  await sleep(20);
+
+  const said = env.feedback();
+  assert.ok(!said.includes(sentence) && !said.includes("ledc:0.release"), `the droid's sentence reached the page: ${said}`);
+  assert.match(said, /ARM1's release time/, said);
 });
 
 // What an Output does at power-up is set on the same row (ADR 0052, #414), and

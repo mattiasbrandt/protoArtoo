@@ -18,6 +18,7 @@
 #include "drive_speed_preset.h"  // speedPresetValueForId() - configCacheSelectSpeedPreset()
 #include "console_config_fields.h"  // kComponentToggleFields[] - Active Component Toggle snapshot
 #include "logging.h"
+#include "output_wire.h"  // outputWireReleaseAfterMs() - the release a light never has
 #include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
 #include "rc_mapping.h"
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
@@ -494,6 +495,17 @@ ServoComponentType configCacheReadServoOutputComponent(ServoOutputDriver driver,
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return component;
+}
+
+uint16_t configCacheReadServoOutputReleaseMs(ServoOutputDriver driver, uint8_t channel) {
+    uint16_t releaseMs = SERVO_RELEASE_MS_NEVER;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    if (index < SERVO_OUTPUT_ROW_MAX) {
+        releaseMs = outputWireReleaseAfterMs(servoOutputCache.rows[index]);
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return releaseMs;
 }
 
 uint8_t configCacheReadServoOutputLedCount(ServoOutputDriver driver, uint8_t channel) {

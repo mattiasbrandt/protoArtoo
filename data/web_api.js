@@ -578,6 +578,7 @@
     throwMs: { applies: "immediate", word: "time to full throw", unit: MS },
     accelMs: { applies: "immediate", word: "time to get up to speed", unit: MS },
     ease: { applies: "immediate", word: "ease" },
+    release: { applies: "immediate", word: "release time", unit: MS },
     boot: {
       applies: "at-reboot",
       word: "power-up setting",

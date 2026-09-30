@@ -99,7 +99,7 @@ struct ConfigCommitOutcome {
 //
 // Three answers rather than a bool, because the verdict has to be taken
 // inside the window: the Console passes a ConfigApplyResult its two adapters
-// share (2,060 B on artoo-esp32, too big for either task's stack), and the
+// share (2,088 B on artoo-esp32, too big for either task's stack), and the
 // other adapter may overwrite it the moment the lock is released. For the
 // same reason the Console reads why a write was refused from `*refused` (81 B,
 // on its own stack) rather than from `*result`.

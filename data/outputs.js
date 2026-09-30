@@ -92,8 +92,9 @@
   const text = (value) => (typeof value === "string" ? value : "");
 
   // Why an Output has no pulse, in the builder's words. The two firmware bounds
-  // on a calibration dial's hold each get their own sentence (#364), and a
-  // reason this page does not know reads as the plain one.
+  // on a calibration dial's hold each get their own sentence (#364), so does
+  // the Output's own release time running out after a move arrived (#443), and
+  // a reason this page does not know reads as the plain one.
   const LIMP_WORDS = Object.freeze({
     "off": "Limp - no pulse",
     "pulses-off": "Limp - pulses off",
@@ -101,6 +102,7 @@
     "ceiling": "Went limp - ten minutes is the most a dial holds",
     "estop": "Limp - the estop let go",
     "sleep": "Limp - sleep mode let go",
+    "release": "Went limp - let go after it arrived",
   });
 
   // The follow: one read of the table a second, while the surface that
@@ -156,6 +158,9 @@
     throwMs: number(row.throwMs),
     accelMs: number(row.accelMs),
     ease: text(row.ease),
+    // How long it holds after a move arrives before it lets go, in ms; 0 is
+    // never (#443). null from a firmware that does not say.
+    release: number(row.release),
     boot: text(row.boot),
     parts: Array.isArray(row.parts) ? row.parts.map(String) : [],
     // A firmware older than the output-first table reports no position at
@@ -222,6 +227,8 @@
   //   throwMs, accelMs its Motion Profile's two times, or null where the row
   //   ease             reports none; the ease as the builder chose it
   //   motionSettable   its row carries all three
+  //   release          ms it holds after a move arrives, 0 for never, or null
+  //   releaseSettable  its row carries one
   //   boot             what it does at power-up, as the builder chose it
   //   bootSettable     its row carries one
   //   started          what it was first reported with (above), or null
@@ -246,6 +253,7 @@
       ledCount: table.ledCount || 1,
       ledCountSettable: lightCapable && table.ledCount !== null,
       motionSettable: table.throwMs !== null && table.accelMs !== null && table.ease !== "",
+      releaseSettable: table.release !== null,
       bootSettable: table.boot !== "",
     };
     if (output.fromConfig && !started.has(output.address)) {
@@ -359,6 +367,7 @@
     throwMs: { key: "throwMs", can: (output) => output.motionSettable },
     accelMs: { key: "accelMs", can: (output) => output.motionSettable },
     ease: { key: "ease", can: (output) => output.motionSettable, value: String },
+    release: { key: "release", can: (output) => output.releaseSettable },
     boot: { key: "boot", can: (output) => output.bootSettable, value: String },
   };
 
@@ -438,9 +447,9 @@
 
   /**
    * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
-   * accelMs, ease, boot } }`, any of them per Output, through the row door
-   * (POST /api/config `outputs`, ADR 0068). The droid's answer becomes what
-   * this module holds.
+   * accelMs, ease, release, boot } }`, any of them per Output, through the
+   * row door (POST /api/config `outputs`, ADR 0068). The droid's answer
+   * becomes what this module holds.
    *
    * @param {object} changes
    * @param {object} [opts]

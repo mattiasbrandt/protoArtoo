@@ -56,8 +56,8 @@ const storedIdFor = (address) =>
  * it is always wired.
  *
  * Every row reports its Motion Profile at the firmware's defaults - time to
- * full throw, time to get up to speed and the ease - and what it does at
- * power-up, limp (#414).
+ * full throw, time to get up to speed and the ease - its release time, never
+ * (#443), and what it does at power-up, limp (#414).
  */
 export const servoRow = (address, name, extra = {}) => {
   const board = name !== "";
@@ -71,6 +71,7 @@ export const servoRow = (address, name, extra = {}) => {
     throwMs: 1000,
     accelMs: 250,
     ease: "none",
+    release: 0,
     boot: "limp",
     parts: [],
     bandLoUs: 1000,
@@ -146,15 +147,15 @@ export const describe = (rows, say = {}) => {
 /**
  * Apply a POST /api/config JSON body's `outputs` rows to the rows they name,
  * as the firmware does, and say whether it named any Output setting: its wired
- * tick, what is on its wire, a light's LED count, its Motion Profile or its
- * boot behaviour.
+ * tick, what is on its wire, a light's LED count, its Motion Profile, its
+ * release time or its boot behaviour.
  */
 export const applyRowSave = (rows, body) => {
   let named = false;
   (Array.isArray(body?.outputs) ? body.outputs : []).forEach((sent) => {
     const row = rows.find((each) => each.address === sent.address);
     if (!row) return;
-    ["wired", "component", "ledCount", "throwMs", "accelMs", "ease", "boot"].forEach((key) => {
+    ["wired", "component", "ledCount", "throwMs", "accelMs", "ease", "release", "boot"].forEach((key) => {
       if (sent[key] === undefined) return;
       row[key] = sent[key];
       named = true;

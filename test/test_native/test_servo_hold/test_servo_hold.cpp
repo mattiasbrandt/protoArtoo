@@ -175,6 +175,8 @@ void test_every_limp_reason_has_its_own_word() {
     TEST_ASSERT_EQUAL_STRING("ceiling", servoLimpReasonToString(SERVO_LIMP_CEILING));
     TEST_ASSERT_EQUAL_STRING("estop", servoLimpReasonToString(SERVO_LIMP_ESTOP));
     TEST_ASSERT_EQUAL_STRING("sleep", servoLimpReasonToString(SERVO_LIMP_SLEEP));
+    // The timed Output Release is its own reason, never read as pulses off.
+    TEST_ASSERT_EQUAL_STRING("release", servoLimpReasonToString(SERVO_LIMP_OUTPUT_RELEASE));
     // A zero-filled mirror is an output nothing has driven, not a released one.
     TEST_ASSERT_EQUAL_UINT8(0, (uint8_t)SERVO_LIMP_OFF);
 }

@@ -431,6 +431,25 @@ pause POST /api/servo action=hold arm=<an enabled Output> positionUs=1500, wait 
 http GET /api/servo/outputs
 send servo.api.get-outputs
 
+# #443 (ADR 0043) - an Output with a release time lets go that long after its
+# move ARRIVES, and a later move starts the count again. Read from the firmware
+# with nothing on the pin: the pulse and the limp token are ServoTask's, so a
+# servo stopping its fight is droid-only and never here. Needs one enabled
+# Output, named from the get-outputs answer, as a-hold-expires-limp does. The
+# first read after each wait says limp:release, the read straight after the
+# second move says limp:- (a pulse, the count restarted); #355 checks them.
+@row 443 a-release-lets-go-after-it-arrives
+send system.action.enable-web-control
+send servo.api.get-outputs
+pause POST /api/config outputRow=<an enabled Output's address> release=3000, then POST /api/servo action=position arm=<it> positionUs=1500. Wait 5 s, then press Enter.
+send servo.api.get-outputs
+pause POST /api/servo action=position arm=<it> positionUs=1600, then press Enter at once.
+send servo.api.get-outputs
+listen 5
+send servo.api.get-outputs
+pause POST /api/config outputRow=<its address> release=0 to leave it holding again, then press Enter.
+send system.action.disable-web-control
+
 # #364 (ADR 0043) - estop and Sleep release every enabled Output, replacing
 # the park. The physical limp is droid-only; the firmware's state is not.
 # Every enabled row reading commandedUs null, limp "estop", then limp "sleep",
