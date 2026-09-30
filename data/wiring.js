@@ -786,9 +786,16 @@
   // anything can be asked (DRIVE_CAP_REPORTS_FEEDBACK, #446); the firmware
   // sends the `hoverboard` block only while its readings are valid
   // (src/web/status_json.cpp).
-  const footDriveRow = (base, { status, reportsFeedback, words }) => {
+  const footDriveRow = (base, { status, reportsFeedback, words, restart }) => {
     if (status === null || reportsFeedback === null) {
       return row({ ...base, observed: words.waiting, light: "off", state: STATES.notProbed });
+    }
+    // The frame carries no `drive` key at all while the feet are not running
+    // this boot (data/drive.js renderReading()): saved on, and started off.
+    // Nobody is asking, so the silence below would be a lie.
+    if (!Object.prototype.hasOwnProperty.call(status, "drive")) {
+      return row({ ...base, observed: "Off", light: "off", state: STATES.notProbed,
+        why: "The droid started with it off. Restart the droid to use it.", move: restart });
     }
     if (reportsFeedback === false) {
       return row({
@@ -820,7 +827,12 @@
     const base = { key: `lane:${lane.key}`, subject: lane.name, declared: "Fitted" };
     if (lane.key === "drive") return footDriveRow(base, input);
     if (lane.key === "audio") {
-      return signalRow({ ...base, declared: soundName || base.declared }, readers.readSoundLink(status, words));
+      const answer = readers.readSoundLink(status, words);
+      const sound = signalRow({ ...base, declared: soundName || base.declared }, answer);
+      // Switched on, and the reader's Off: the frame carries no running sound
+      // module this boot - no block at all, or one saying its output is off
+      // (#370). The reader does not say which, so neither does this.
+      return answer.word === "Off" ? { ...sound, why: "The droid is not running it this boot." } : sound;
     }
     if (lane.key === "protor2link") {
       // Enabled and never answered: the droid is asking, nobody answers.

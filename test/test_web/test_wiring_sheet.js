@@ -587,11 +587,13 @@ test("a fitted part the droid cannot hear from is never read as contradicting yo
       { id: "hoverboard", name: "Hoverboard", category: "foot_drive", status: "supported", included: true, capabilities: 0 },
     ],
   });
-  // A good frame: the six fields the Live Reading needs, and a sound block
-  // whose module did not answer (link_ok false, the line not held).
+  // A good frame: the six fields the Live Reading needs, the feet running
+  // this boot with no wheel controller block, and a sound block whose module
+  // did not answer (link_ok false, the line not held).
   env.window.PAStatusStream.seed({
     estop: false, sbusHwFailsafe: false, sbusSignalLost: false, webDriveExpired: false,
     webControlEnabled: false, sleepMode: false,
+    drive: { state: "idle", detail: "Enabled" },
     audio: { output: "on", link_ok: false, rx_status: "ok" },
   });
   await sleep(40);
