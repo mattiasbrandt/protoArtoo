@@ -135,9 +135,9 @@
             "servoTask"
           ],
           "frames": [],
-          "chain_bytes": 3824,
+          "chain_bytes": 3840,
           "stack_bytes": 5120,
-          "note": "resolveArmPulse's clamp log line is this task's logging route, reached from the drive path. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: servoTask -> driveArmTo() -> writeArmPulse() -> ledcPwmSetPulseWidth() -> ledc_set_duty -> esp_log -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, servoTask 400 B."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). processCommand() is always_inline into servoTask() since #411 slice 4, which walked 4176 B while it was out of line. Deepest route: servoTask -> (processCommand, inlined) a Find by Moving run taking a free Output -> ledcPwmAttach() -> ledc_channel_config -> _ledc_set_pin -> gpio_func_sel -> esp_log -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, servoTask 400 B."
         }
       }
     },
