@@ -657,6 +657,18 @@
         const category = step.category || "alert";
         return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
       }
+      case "body": {
+        // A Body Step names a Part and a Move Shape (ADR 0049). A light Part
+        // hears the same three stored words as on, off and flash, so it reads
+        // that way here (CONTEXT.md "Move Shape").
+        const part = (window.DroidParts?.parts || []).find((entry) => entry.id === step.part);
+        const words = window.DroidPartKind?.isLight(part)
+          ? { open: "On", close: "Off", flutter: "Flash" }
+          : { open: "Open", close: "Close", flutter: "Flutter" };
+        const shape = step.shape || "open";
+        const howFar = step.howFar ? `, ${step.howFar}%` : "";
+        return `${words[shape] || shape} ${part ? part.name : step.part || "a part"}${howFar}`;
+      }
       case "end":
         return "End of sequence";
       default:
