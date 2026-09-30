@@ -58,11 +58,19 @@
     return Number.isInteger(bytes) && bytes > 0 ? bytes : null;
   };
 
+  // A track the builder dropped in to be analysed, while the editor is open:
+  // its fingerprint, which the Rehearsal compares with the one the tempo was
+  // measured from, and its analysis, until the builder takes or leaves it.
+  // The browser never holds the droid's audio (ADR 0046), so this is the only
+  // moment a stored fingerprint can be checked.
+  let droppedTrack = null;
+
   const rehearsalContext = () => ({
     outputs: rehearsalFacts.outputs,
     config: rehearsalFacts.config,
     layout: window.DomeLayout?.getModel?.() || null,
     maxBytes: learnedSequenceMaxBytes(),
+    trackHash: droppedTrack ? droppedTrack.hash : null,
   });
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
@@ -1492,35 +1500,68 @@
   // A typed BPM is stored as typed, whatever it replaced: the number no longer
   // came from the taps or the analyser, so their confidence and the analysed
   // track's fingerprint go with them. Where beat 1 sits and the bar the
-  // builder set stay. Every step on a beat then moves to where its beat now
-  // falls, and every step placed in milliseconds stays put (ADR 0058). An
-  // empty field removes the tempo; a step still on a beat then fails the
-  // check until it is placed again.
-  const applyTypedBpm = (value) => {
-    const seq = editorState.current;
-    if (value === "" || value === null) {
-      delete seq.tempo;
-    } else {
-      const bpm = Math.round(Number(value) * 10) / 10;
-      if (!Number.isFinite(bpm)) return;
-      const kept = seq.tempo || {};
-      seq.tempo = {
-        bpm,
-        phase: kept.phase ?? 0,
-        barLen: kept.barLen ?? 4,
-        barPhase: kept.barPhase ?? 0,
-        ...(kept.duration ? { duration: kept.duration } : {}),
-        source: "typed",
-        confidence: 1,
-      };
-    }
-    editorState.current = SeqProtocolCheck.resolveBeats(seq);
+  // builder set stay. An empty field is no tempo; a step still on a beat then
+  // fails the check until it is placed again.
+  const typedTempo = (value) => {
+    const kept = editorState.current.tempo;
+    if (value === "" || value === null) return undefined;
+    const bpm = Math.round(Number(value) * 10) / 10;
+    if (!Number.isFinite(bpm)) return kept;
+    return {
+      bpm,
+      phase: kept?.phase ?? 0,
+      barLen: kept?.barLen ?? 4,
+      barPhase: kept?.barPhase ?? 0,
+      ...(kept?.duration ? { duration: kept.duration } : {}),
+      source: "typed",
+      confidence: 1,
+    };
+  };
+
+  // Tapping along (ADR 0058). Times are from the start edge of the track on
+  // the droid when the builder pressed Play on the droid, else from the first
+  // tap - so the first tap is the downbeat either way (ADR 0060).
+  const tapState = { taps: [], startedAt: null };
+  const nowMs = () => (window.performance?.now ? window.performance.now() : Date.now());
+
+  const resetTaps = () => {
+    tapState.taps = [];
+    tapState.startedAt = null;
+  };
+
+  const tempoFeedback = (message) => {
+    const el = document.getElementById("seq-editor-tempo-feedback");
+    if (el) el.textContent = message || "";
+  };
+
+  // A tempo from any route replaces the one there, and every step on a beat
+  // moves to where its beat now falls; the field and the source say so.
+  const setTempo = (tempo) => {
+    // Every step on a beat moves to where its beat now falls; a step placed in
+    // milliseconds stays put (ADR 0058).
+    const next = { ...editorState.current, tempo };
+    if (tempo === undefined) delete next.tempo;
+    editorState.current = SeqProtocolCheck.resolveBeats(next);
+    const bpmInput = document.getElementById("seq-editor-bpm");
+    if (bpmInput) bpmInput.value = tempo ? String(tempo.bpm) : "";
+    const sourceEl = document.getElementById("seq-editor-tempo-source");
+    if (sourceEl) sourceEl.textContent = tempoSourceLabel(tempo);
+    document.getElementById("seq-editor-downbeat")?.classList.toggle("hidden", !tempo);
+    rerenderStepTable();
+    updateValidationSummary();
+  };
+
+  const tapCountText = () => {
+    const n = tapState.taps.length;
+    const result = window.SeqTempo?.tap(tapState.taps);
+    return result ? `${n} taps, ${result.bpm} BPM` : `${n} ${n === 1 ? "tap" : "taps"}`;
   };
 
   const renderEditorView = (seq) => {
     // isNew must be set by the caller before calling renderEditorView
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
+    droppedTrack = null;
 
     // Load DomeLayout if available so the live picker in panel-intent steps can
     // render from the connected dome's layout, with automatic refresh on dome
@@ -1582,7 +1623,21 @@
               <div class="seq-editor-slider-row">
                 <input id="seq-editor-bpm" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
                 <span class="seq-editor-slider-value" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
+                <button id="seq-editor-tap-open" class="btn btn-sm btn-quiet" type="button">Tap along</button>
+                <label class="btn btn-sm btn-quiet" for="seq-editor-track">Analyse a track</label>
+                <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
               </div>
+              <div id="seq-editor-tap" class="seq-editor-slider-row hidden">
+                <button id="seq-editor-tap-play" class="btn btn-sm" type="button">Play on the droid</button>
+                <button id="seq-editor-tap-beat" class="btn btn-sm accent" type="button">Tap</button>
+                <span class="seq-editor-slider-value" id="seq-editor-tap-count" role="status">0 taps</span>
+                <button id="seq-editor-tap-use" class="btn btn-sm btn-quiet" type="button" disabled>Use</button>
+              </div>
+              <div id="seq-editor-downbeat" class="seq-editor-slider-row${seq.tempo ? "" : " hidden"}">
+                <label for="seq-editor-downbeat-beat">Bar 1 starts on beat</label>
+                <input id="seq-editor-downbeat-beat" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
+              </div>
+              <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
             </div>
           </div>
 
@@ -1844,14 +1899,121 @@
       });
     }
 
+    const tapPanel = document.getElementById("seq-editor-tap");
+    const tapOpen = document.getElementById("seq-editor-tap-open");
+    const tapPlay = document.getElementById("seq-editor-tap-play");
+    const tapBeat = document.getElementById("seq-editor-tap-beat");
+    const tapUse = document.getElementById("seq-editor-tap-use");
+    const tapCount = document.getElementById("seq-editor-tap-count");
+    const showTaps = () => {
+      if (tapCount) tapCount.textContent = tapCountText();
+      if (tapUse) tapUse.disabled = !window.SeqTempo?.tap(tapState.taps);
+    };
+    resetTaps();
+    if (tapOpen && tapPanel) {
+      tapOpen.addEventListener("click", () => {
+        resetTaps();
+        showTaps();
+        tempoFeedback("");
+        tapPanel.classList.toggle("hidden");
+      });
+    }
+    if (tapPlay) {
+      tapPlay.addEventListener("click", async () => {
+        // The droid plays what is saved under this name, so a sequence never
+        // saved has nothing on the droid to play yet.
+        if (editorState.isNew || !editorState.original?.name) {
+          tempoFeedback("Save it first, so the droid has the track to play.");
+          return;
+        }
+        tapPlay.disabled = true;
+        try {
+          await PAApi.postJson("/api/seq/test", { name: editorState.original.name });
+          resetTaps();
+          tapState.startedAt = nowMs();
+          showTaps();
+          tempoFeedback("");
+        } catch (error) {
+          tempoFeedback("The droid did not play it: " + PAApi.messageFor(error));
+        } finally {
+          tapPlay.disabled = false;
+        }
+      });
+    }
+    if (tapBeat) {
+      tapBeat.addEventListener("click", () => {
+        const now = nowMs();
+        if (tapState.startedAt === null) tapState.startedAt = now;
+        tapState.taps.push(now - tapState.startedAt);
+        showTaps();
+      });
+    }
+    if (tapUse) {
+      tapUse.addEventListener("click", () => {
+        const result = window.SeqTempo?.tap(tapState.taps);
+        if (!result) return;
+        setTempo(window.SeqTempo.tappedTempo(result));
+        resetTaps();
+        tapPanel?.classList.add("hidden");
+      });
+    }
+    const trackInput = document.getElementById("seq-editor-track");
+    if (trackInput) {
+      trackInput.addEventListener("change", async () => {
+        const file = trackInput.files && trackInput.files[0];
+        trackInput.value = "";
+        if (!file || !window.SeqTempo) return;
+        tempoFeedback("Reading the track...");
+        let result;
+        try {
+          result = await window.SeqTempo.analyseFile(file);
+        } catch (error) {
+          tempoFeedback("This file could not be read as audio.");
+          return;
+        }
+        if (!result.bpm) {
+          tempoFeedback("No steady beat in this track. Type the tempo, or tap along.");
+          return;
+        }
+        const offeredBefore = droppedTrack && droppedTrack.hash === result.hash;
+        droppedTrack = result;
+        const held = editorState.current.tempo;
+        // A tempo already measured from a different file is not replaced
+        // behind the builder's back: the Rehearsal says the two differ, and
+        // dropping the same file in a second time takes its tempo (ADR 0058).
+        if (held && held.source === "analysed" && held.hash && held.hash !== result.hash && !offeredBefore) {
+          tempoFeedback(`Not the track this tempo was measured from. It reads ${result.bpm} BPM; drop it in again to use it.`);
+          updateValidationSummary();
+          return;
+        }
+        if (held && held.hash === result.hash) {
+          tempoFeedback("This is the track the tempo was measured from.");
+          updateValidationSummary();
+          return;
+        }
+        tempoFeedback("");
+        setTempo(window.SeqTempo.analysedTempo(result));
+      });
+    }
+
+    const downbeatInput = document.getElementById("seq-editor-downbeat-beat");
+    if (downbeatInput) {
+      downbeatInput.addEventListener("change", () => {
+        const moved = window.SeqTempo?.moveDownbeat(editorState.current.tempo, parseInt(downbeatInput.value, 10));
+        if (!moved) {
+          tempoFeedback("That beat is past where a sequence can reach.");
+          return;
+        }
+        tempoFeedback("");
+        downbeatInput.value = "1";
+        setTempo(moved);
+      });
+    }
+
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) {
       bpmInput.addEventListener("change", () => {
-        applyTypedBpm(bpmInput.value);
-        const sourceEl = document.getElementById("seq-editor-tempo-source");
-        if (sourceEl) sourceEl.textContent = tempoSourceLabel(editorState.current.tempo);
-        rerenderStepTable();
-        updateValidationSummary();
+        setTempo(typedTempo(bpmInput.value));
       });
     }
 
