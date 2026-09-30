@@ -717,8 +717,8 @@
   // A file from the other Board Variant writes only what names no pin: the
   // Sequences, the RC Map and the sound setup (ADR 0056). A file that does not
   // say which board wrote it (schema 1) is this droid's own.
-  const fromOtherBoard = () =>
-    typeof parsedBackup?.board === 'string' && typeof facts?.board === 'string' && parsedBackup.board !== facts.board;
+  const fromOtherBoard = (file = parsedBackup, known = facts) =>
+    typeof file?.board === 'string' && typeof known?.board === 'string' && file.board !== known.board;
 
   // The Learned Sequences the droid will hold once this restore is done, as far
   // as it can be known before it runs: the file's first `cap` when Sequences is
@@ -784,7 +784,7 @@
     const n = tickedParts().length;
     if (restoreBtn) {
       restoreBtn.textContent = `Restore ${n} ticked part${n === 1 ? '' : 's'}`;
-      restoreBtn.disabled = n === 0 || !facts?.library;
+      restoreBtn.disabled = restoring || n === 0 || !facts?.library;
     }
     if (question) question.hidden = true;
   };
@@ -844,13 +844,11 @@
   };
 
   // ---- RESTORE: apply the ticked parts ----
-  const performRestore = async ({ withCopy }) => {
-    if (!parsedBackup || !facts?.library || !window.PAApi) return;
-    const parts = tickedParts().map((part) => part.id);
-    if (parts.length === 0) return;
-    if (question) question.hidden = true;
-    if (restoreBtn) restoreBtn.disabled = true;
-    setFeedback('Restoring...');
+  // `file` and `known` are the chosen file and what the droid said about
+  // itself, as they stood when the question was answered. Nothing below reads
+  // the live ones: the copy's reads take seconds, and a file chosen meanwhile
+  // must not become the one written.
+  const applyRestore = async (file, known, parts, withCopy) => {
 
     // The copy is built from the droid's own answers for every part about to
     // be replaced, and a download the browser blocked still reads as saved -
@@ -866,7 +864,6 @@
         setFeedback(withCopy
           ? `No copy saved: the droid did not send ${listOf(failed)}. Nothing was replaced.`
           : `The droid did not send its Sequences (${listOf(failed)}). Nothing was replaced.`, 'error');
-        renderParts();
         return;
       }
       before = backup;
@@ -881,7 +878,7 @@
     let sequencesDone = null;
 
     if (parts.includes('sequences')) {
-      const result = await restoreSequences(parsedBackup.sequences, before.sequences, facts.cap);
+      const result = await restoreSequences(file.sequences, before.sequences, known.cap);
       sequencesDone = result;
       if (result.refused) {
         const back = result.notBack.length === 0
@@ -891,33 +888,33 @@
       } else if (result.leftOut.length === 0) {
         lines.push(`Sequences: restored ${result.restored.length}`);
       } else {
-        lines.push(`Sequences: partial — ${result.restored.length} restored; left out, this droid holds ${facts.cap}: ${listOf(result.leftOut)}`);
+        lines.push(`Sequences: partial — ${result.restored.length} restored; left out, this droid holds ${known.cap}: ${listOf(result.leftOut)}`);
       }
     }
 
     if (parts.includes('configuration')) {
-      if (fromOtherBoard()) {
+      if (fromOtherBoard(file, known)) {
         lines.push('Configuration: partial — the sound setup only; the rest names another board\'s pins and stays');
       } else {
         try {
           // "restored" only when all of it landed.
-          const gaps = await restoreConfiguration(parsedBackup);
+          const gaps = await restoreConfiguration(file);
           lines.push(gaps.length === 0 ? 'Configuration: restored' : `Configuration: partial — ${gaps.join(', ')}`);
         } catch (err) {
           lines.push(`Configuration: FAILED — ${window.PAApi.messageFor(err)}`);
         }
       }
       // The sound setup follows on its own routes, with its own lines.
-      if (parsedBackup.audio_tracks) {
-        const { failed, skipped } = await restoreAudioTracks(parsedBackup.audio_tracks);
+      if (file.audio_tracks) {
+        const { failed, skipped } = await restoreAudioTracks(file.audio_tracks);
         const line = failed.length === 0
           ? 'Audio tracks: restored'
           : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`;
         lines.push(skipped.length === 0 ? line : `${line}; ${skipped.join(', ')}`);
       }
-      if (parsedBackup.audio_mood_map) {
+      if (file.audio_mood_map) {
         try {
-          await window.PAApi.postForm('/api/audio/mood-map', parsedBackup.audio_mood_map, { timeoutMs: 5000 });
+          await window.PAApi.postForm('/api/audio/mood-map', file.audio_mood_map, { timeoutMs: 5000 });
           lines.push('Audio mood map: restored');
         } catch (err) {
           lines.push(`Audio mood map: FAILED — ${window.PAApi.messageFor(err)}`);
@@ -927,7 +924,7 @@
 
     let rcMapLanded = false;
     if (parts.includes('rc-map')) {
-      const rcLines = await restoreRcMap(parsedBackup.rc_map, facts.factory);
+      const rcLines = await restoreRcMap(file.rc_map, known.factory);
       rcMapLanded = !rcLines[0].includes('FAILED');
       lines.push(...rcLines);
     }
@@ -947,7 +944,7 @@
     // need the droid's rows silent, exactly as in the editor.
     if (sequencesDone?.restored?.length > 0 && window.SeqRehearsal) {
       const droid = await window.PAOutputs?.load().catch(() => null);
-      const context = { outputs: droid?.outputs || null, config: droid?.config || null, maxBytes: facts.maxBytes };
+      const context = { outputs: droid?.outputs || null, config: droid?.config || null, maxBytes: known.maxBytes };
       sequencesDone.restored.forEach((seq) => {
         lines.push(`${seq.name} — ${window.SeqRehearsal.summaryText(window.SeqRehearsal.rehearse(seq, context))}`);
       });
@@ -958,8 +955,32 @@
     if (anyRestored) lines.push('Restart the Body Controller to apply everything restored.');
     setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
     // The library the parts are counted against is the one the droid holds now.
-    if (sequencesDone && facts) facts.library = [...sequencesDone.held];
-    renderParts();
+    if (sequencesDone) known.library = [...sequencesDone.held];
+  };
+
+  // The chooser is locked from the answer until the receipt is in, and a file
+  // whose read lands meanwhile is dropped (handleFile()).
+  let restoring = false;
+  const lockChooser = (locked) => {
+    restoring = locked;
+    fileInput.disabled = locked;
+    if (fileTrigger) fileTrigger.disabled = locked;
+  };
+
+  const performRestore = async ({ withCopy }) => {
+    if (restoring || !parsedBackup || !facts?.library || !window.PAApi) return;
+    const parts = tickedParts().map((part) => part.id);
+    if (parts.length === 0) return;
+    if (question) question.hidden = true;
+    if (restoreBtn) restoreBtn.disabled = true;
+    setFeedback('Restoring...');
+    lockChooser(true);
+    try {
+      await applyRestore(parsedBackup, facts, parts, withCopy);
+    } finally {
+      lockChooser(false);
+      renderParts();
+    }
   };
 
   // ---- FILE PARSE ----
@@ -1020,8 +1041,13 @@
 
   const handleFile = (file) => {
     if (!file) return;
+    if (restoring) {
+      fileInput.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
+      if (restoring) return;
       let backup;
       try {
         backup = JSON.parse(e.target.result);

@@ -507,6 +507,42 @@ test("a file not in the shape Download backup writes is refused, and nothing is 
   }
 });
 
+// Save a copy first reads the droid for seconds before the first write, and
+// the chooser stayed usable: a file chosen meanwhile became the one written,
+// not the one the builder confirmed (Codex review of #448 slice 1).
+test("a file chosen while the copy is read is not the one written", async () => {
+  const confirmed = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:CONFIRMED")] };
+  const other = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:OTHER")] };
+  const droid = makeDroid({ library: [sequence("DM:MINE")] });
+  let page = null;
+  let identityReads = 0;
+  let lockedWhileCopying = null;
+  const answer = droid.respond;
+  droid.respond = (path, opts) => {
+    // The first identity read is the droid being asked about the chosen file;
+    // the second is the copy's.
+    if (path === "/api/identity" && ++identityReads === 2) {
+      lockedWhileCopying = page.env.element("backup-file-input").disabled;
+      page.env.element("backup-file-input").files = [{ text: JSON.stringify(other) }];
+      page.env.emitOn("backup-file-input", "change");
+    }
+    return answer(path, opts);
+  };
+  page = openPage(droid);
+  const { env } = page;
+  await env.settle();
+  env.element("backup-file-input").files = [{ text: JSON.stringify(confirmed) }];
+  env.emitOn("backup-file-input", "change");
+  await page.until(() => env.element("backup-restore-btn").disabled === false);
+  env.emitOn("backup-restore-btn", "click");
+  env.emitOn("restore-copy-btn", "click");
+  await page.until(() => !["", "Restoring..."].includes(page.receipt()));
+
+  assert.deepEqual([...droid.store.keys()], ["DM:CONFIRMED"], "the droid holds what the confirmed file holds");
+  assert.equal(lockedWhileCopying, true, "the chooser is locked while the restore runs");
+  assert.equal(env.element("backup-file-input").disabled, false, "and unlocked once the receipt is in");
+});
+
 test("a copy of what is about to be replaced that cannot be built replaces nothing", async () => {
   const droid = makeDroid({
     library: [sequence("DM:MINE")],
