@@ -840,7 +840,8 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     `null`. One of `off` (nothing has driven it since boot — switched off, or
     never commanded), `pulses-off` (a release let go of it), `expiry` (a dial's
     hold commands stopped arriving), `ceiling` (a dial held it for the full ten
-    minutes), `estop`, or `sleep`.
+    minutes), `estop`, `sleep`, or `release` (its `release` time ran out after
+    a move arrived - the Output Release, #443).
   - `commandedUs`: the width the controller has put on the pin right now, part
     way through a move too. `null` when there is no pulse on the Output at all.
   - `targetUs`: where the move in progress ends, or the same as `commandedUs`

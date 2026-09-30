@@ -896,7 +896,9 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
 
     const RobotState saved = robotState;
     robotState.servoCommanded[0] = {1620, 2000, true, 0};   // ARM1, part way through a move
-    robotState.servoCommanded[2] = {1100, 1200, false, 1};  // AUX1, no pulse whatever the widths, nudged once
+    // AUX1: no pulse whatever the widths, nudged once, and let go by its
+    // Output Release (#443), which the bench reads by the REST token.
+    robotState.servoCommanded[2] = {1100, 1200, false, 1, false, SERVO_LIMP_OUTPUT_RELEASE};
     robotState.servoCommanded[3] = {2400, 2400, true, 3};   // AUX2, nudged three times
 
     runSeqItemQuery("servo.api.get-outputs");
@@ -909,16 +911,16 @@ void test_servo_api_get_outputs_streams_every_row_as_an_item() {
     TEST_ASSERT_EQUAL_INT(SERVO_OUTPUT_ROW_DEFAULT_COUNT, g_seqItemCap.count);
     TEST_ASSERT_EQUAL_STRING(
         "address:ledc:0 name:ARM1 parts:utilUp,doorFL bandLoUs:1000 bandHiUs:2000 "
-        "commandedUs:1620 targetUs:2000 nudgesDone:0",
+        "commandedUs:1620 targetUs:2000 nudgesDone:0 limp:-",
         g_seqItemCap.values[0]);
     // The nudge count travels whether or not there is a pulse (#363).
     TEST_ASSERT_EQUAL_STRING(
         "address:ledc:3 name:ARM3 parts:- bandLoUs:1000 bandHiUs:2000 commandedUs:- targetUs:- "
-        "nudgesDone:1",
+        "nudgesDone:1 limp:release",
         g_seqItemCap.values[2]);
     TEST_ASSERT_EQUAL_STRING(
         "address:ledc:4 name:ARM4 parts:- bandLoUs:500 bandHiUs:2500 "
-        "commandedUs:2400 targetUs:2400 nudgesDone:3",
+        "commandedUs:2400 targetUs:2400 nudgesDone:3 limp:-",
         g_seqItemCap.values[3]);
 
     // Leave a controller nobody has wired for whatever runs next.

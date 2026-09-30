@@ -1332,13 +1332,17 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
 // configCacheReadServoOutput() for the row, captureServoOutputCommanded() for
 // the position - so the adapters cannot disagree about an Output (ADR 0036).
 // The keys are the REST answer's JSON names, and `-` is the absent value, as in
-// system.api.get-components: no name, no Part, no pulse. Both widths are
-// commanded; nothing on the droid reads a servo back.
+// system.api.get-components: no name, no Part, no pulse, and no reason to be
+// limp while there is a pulse. `limp` is the REST answer's token, read through
+// the same servoLimpReasonToString(), so a bench sheet reads a timed Output
+// Release (`release`, #443) exactly as a page does. Both widths are commanded;
+// nothing on the droid reads a servo back.
 //
 // A row (70 B) and one line on the Console task's measured chain. The longest
-// line is 154 B - an expander's address, four Parts at the longest id, four
-// four-digit widths and a three-digit nudge count - against 192, and snprintf
-// truncates in silence, so the margin is the guard.
+// line is 164 B - an expander's address, four Parts at the longest id, the two
+// four-digit band widths, no pulse, a three-digit nudge count and
+// `limp:pulses-off`; a pulsing line carries two more widths and `limp:-`, 161 B -
+// against 192, and snprintf truncates in silence, so the margin is the guard.
 static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRecordSink* sink) {
     if (sink->onRecordItem) {
         char itemBuf[192];
@@ -1386,12 +1390,14 @@ static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRe
             if (head > 0 && (size_t)head < sizeof(itemBuf)) {
                 if (commanded.pulsing) {
                     snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
-                             "commandedUs:%u targetUs:%u nudgesDone:%u", (unsigned)commanded.nowUs,
-                             (unsigned)commanded.targetUs, (unsigned)commanded.nudgesDone);
+                             "commandedUs:%u targetUs:%u nudgesDone:%u limp:-",
+                             (unsigned)commanded.nowUs, (unsigned)commanded.targetUs,
+                             (unsigned)commanded.nudgesDone);
                 } else {
                     snprintf(itemBuf + head, sizeof(itemBuf) - (size_t)head,
-                             "commandedUs:- targetUs:- nudgesDone:%u",
-                             (unsigned)commanded.nudgesDone);
+                             "commandedUs:- targetUs:- nudgesDone:%u limp:%s",
+                             (unsigned)commanded.nudgesDone,
+                             servoLimpReasonToString(commanded.limp));
                 }
             }
             sink->onRecordItem(requestId, itemBuf);

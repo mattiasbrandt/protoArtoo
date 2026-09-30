@@ -92,8 +92,9 @@
   const text = (value) => (typeof value === "string" ? value : "");
 
   // Why an Output has no pulse, in the builder's words. The two firmware bounds
-  // on a calibration dial's hold each get their own sentence (#364), and a
-  // reason this page does not know reads as the plain one.
+  // on a calibration dial's hold each get their own sentence (#364), so does
+  // the Output's own release time running out after a move arrived (#443), and
+  // a reason this page does not know reads as the plain one.
   const LIMP_WORDS = Object.freeze({
     "off": "Limp - no pulse",
     "pulses-off": "Limp - pulses off",
@@ -101,6 +102,7 @@
     "ceiling": "Went limp - ten minutes is the most a dial holds",
     "estop": "Limp - the estop let go",
     "sleep": "Limp - sleep mode let go",
+    "release": "Went limp - let go after it arrived",
   });
 
   // The follow: one read of the table a second, while the surface that

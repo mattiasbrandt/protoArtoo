@@ -218,6 +218,9 @@ enum ServoLimpReason : uint8_t {
     SERVO_LIMP_CEILING,   // the dial held it for SERVO_HOLD_CEILING_MS
     SERVO_LIMP_ESTOP,     // the estop released every output (ADR 0043)
     SERVO_LIMP_SLEEP,     // Sleep Mode released every output (ADR 0043)
+    // Its Output Release: the row's release time ran out after its move
+    // arrived (ADR 0043, #443). Appended, so every value above keeps its number.
+    SERVO_LIMP_OUTPUT_RELEASE,
 };
 
 // The token a surface reads for it: GET /api/servo/outputs' `limp` value and
@@ -234,6 +237,8 @@ inline const char* servoLimpReasonToString(ServoLimpReason reason) {
             return "estop";
         case SERVO_LIMP_SLEEP:
             return "sleep";
+        case SERVO_LIMP_OUTPUT_RELEASE:
+            return "release";
         case SERVO_LIMP_OFF:
         default:
             return "off";
