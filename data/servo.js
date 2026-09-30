@@ -47,9 +47,10 @@
 // calibrated it moves by none of the three - it jumps - so its row offers
 // nothing to set, and says why. How long it holds after a move arrives before
 // it lets go - its Output Release (ADR 0043, #443) - is set beside them, on
-// the same terms, and the row says what it will do whether or not it is set. What it does at power-up sits beside them and
-// is offered whether or not it is calibrated: the two are separate decisions
-// (ADR 0052), and calibrating never changes it.
+// the same terms, and the row says what it will do whether or not it is set.
+// What it does at power-up sits beside them and is offered whether or not it
+// is calibrated: the two are separate decisions (ADR 0052), and calibrating
+// never changes it.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -385,11 +386,11 @@
 
   // A release time in the seconds a builder types, from the ms the row holds.
   const seconds = (ms) => String(Number((ms / 1000).toFixed(3)));
-  const releaseSet = (output) => typeof output.release === "number" && output.release > 0;
+  const letsGo = (output) => typeof output.release === "number" && output.release > 0;
   // What a pulsing servo Output will do once a move arrives (#443). Never
   // "holds where it stops" for one that will let go.
   const releaseSaid = (output) =>
-    releaseSet(output) ? `Lets go ${seconds(output.release)} s after it arrives` : "Holds where it stops";
+    letsGo(output) ? `Lets go ${seconds(output.release)} s after it arrives` : "Holds where it stops";
 
   // ---------------------------------------------------------------------------
   // How it moves (ADR 0052, #414)
@@ -417,7 +418,7 @@
       // Home and hold with a release time lets go after it gets home, like
       // any arrival (operator, 2026-09-30 on #443): the grind risk is only
       // true of a hold with none.
-      row.bootRisk.textContent = releaseSet(output)
+      row.bootRisk.textContent = letsGo(output)
         ? `Lets go ${seconds(output.release)} s after it gets home.`
         : "Hold keeps the pulse on, so a blocked part grinds.";
     }
@@ -444,8 +445,8 @@
   const paintRelease = (row, output, open) => {
     row.releaseSet.hidden = !open;
     if (!open) return;
-    if (releaseSet(output)) releaseAsked.delete(output.address);
-    const after = releaseSet(output) || releaseAsked.has(output.address);
+    if (letsGo(output)) releaseAsked.delete(output.address);
+    const after = letsGo(output) || releaseAsked.has(output.address);
     row.releaseChoices.forEach((button) => {
       const on = (button.dataset.release === "after") === after;
       button.classList.toggle("active", on);
@@ -454,7 +455,7 @@
     row.releaseAfter.hidden = !after;
     // Never the box the builder is typing in.
     if (document.activeElement !== row.releaseSeconds) {
-      row.releaseSeconds.value = releaseSet(output) ? seconds(output.release) : "";
+      row.releaseSeconds.value = letsGo(output) ? seconds(output.release) : "";
     }
   };
 
@@ -1184,7 +1185,7 @@
       if (!output) return;
       if (button.dataset.release === "never") {
         releaseAsked.delete(address);
-        if (releaseSet(output)) started(saveMotion(address, { release: 0 }));
+        if (letsGo(output)) started(saveMotion(address, { release: 0 }));
         else paint();
         return;
       }

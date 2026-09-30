@@ -447,9 +447,9 @@
 
   /**
    * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
-   * accelMs, ease, release, boot } }`, any of them per Output, through the row door
-   * (POST /api/config `outputs`, ADR 0068). The droid's answer becomes what
-   * this module holds.
+   * accelMs, ease, release, boot } }`, any of them per Output, through the
+   * row door (POST /api/config `outputs`, ADR 0068). The droid's answer
+   * becomes what this module holds.
    *
    * @param {object} changes
    * @param {object} [opts]
