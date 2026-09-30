@@ -477,13 +477,12 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason);
 // The log line for a run letting go of the Output it held, and nothing else.
 //
 // noinline, and a leaf, deliberately: its PA_LOG_* line buffer must stay out of
-// every frame on ServoTask's measured chain (ADR 0040). Written in place in
-// takeForRun(), the line grew processCommand() past what GCC folds into
-// servoTask() on the ESP32, which stacked the two 352 B frames (+352 B walked);
-// with releaseArm() called from inside this helper, its frame sat over the LEDC
-// driver's log route on the ESP32-P4 (+208 B walked). Its callers release the
-// Output themselves, so the buffer is only ever on the stack for the line
-// (#411 slice 4).
+// servoTask()'s frame, which processCommand() and so takeForRun() are inlined
+// into (see processCommand()) and which every route on ServoTask's measured
+// chain starts from (ADR 0040). A leaf, because a helper that also called
+// releaseArm() put its log frame over the LEDC driver's log route: +208 B
+// walked on the ESP32-P4 (#411 slice 4). Its callers release the Output
+// themselves, so the buffer is only ever on the stack for the line.
 // -----------------------------------------------------------------------------
 static void __attribute__((noinline)) sayTheRunLetGo(uint8_t armId, const char* why) {
     PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1, why);
