@@ -451,7 +451,9 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
             // is closed by the engine's ending, all the way.
             const bool leftOpen = strncmp(cmd.act.payload, ":OP", 3) == 0 || strncmp(cmd.act.payload, ":MV", 3) == 0;
             if (ended && isRing && !toggleOpenHalf && leftOpen) {
-                snprintf(cmd.act.payload, sizeof(cmd.act.payload), ":CL%s", cmd.key);
+                char key[sizeof(cmd.key)];
+                memcpy(key, cmd.key, sizeof(key));
+                snprintf(cmd.act.payload, sizeof(cmd.act.payload), ":CL%s", key);
             }
         }
     }
