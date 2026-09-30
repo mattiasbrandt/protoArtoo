@@ -4160,11 +4160,22 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-2xs);
 }
 
-/* The parts a restore may write, each its own tick. */
+/* The three parts a restore may write, each its own tick with its count and
+   the two lines saying what it replaces and what it leaves. */
 .restore-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--space-sm) var(--space-lg);
+}
+
+.restore-part .hint {
+  margin: var(--space-2xs) 0 0;
+}
+
+.restore-count {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--fs-hint);
 }
 
 /* A restore's receipt is one line per part, joined with newlines. */

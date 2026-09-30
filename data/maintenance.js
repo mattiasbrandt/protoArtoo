@@ -194,6 +194,16 @@
 
 // =============================================================================
 // Backup & Restore
+//
+// A backup holds what the builder made on the controller in three parts, and a
+// restore writes the parts ticked, each replacing what the droid holds and
+// never merging into it (CONTEXT.md "Backup", ADR 0056 and its 2026-09-25
+// amendment, #448):
+//   Sequences      every Learned Sequence, as GET /api/seq?name= answers it
+//   Configuration  the config and the Outputs' rows, and the sound setup
+//   RC Map         which action each RC Channel fires
+// Every answer is taken before the first write: the parts, then whether to save
+// a copy of what is about to go. A copy that cannot be built stops the restore.
 // =============================================================================
 (() => {
   const downloadBtn = document.getElementById('backup-download-btn');
@@ -203,21 +213,116 @@
   const restoreSections = document.getElementById('restore-sections');
   const restoreBtnRow = document.getElementById('restore-btn-row');
   const restoreBtn = document.getElementById('backup-restore-btn');
+  const question = document.getElementById('restore-question');
+  const questionText = document.getElementById('restore-question-text');
+  const cancelBtn = document.getElementById('restore-cancel-btn');
+  const copyBtn = document.getElementById('restore-copy-btn');
+  const replaceBtn = document.getElementById('restore-replace-btn');
   const feedback = document.getElementById('backup-feedback');
 
   if (!downloadBtn || !fileInput || !feedback) return;
 
+  // The file this page writes. Schema 1 carried no Sequences and did not say
+  // which board wrote it; a file above this number is from newer firmware.
+  const BACKUP_SCHEMA = 2;
+
+  // The chosen file, and what the droid said about itself when it was chosen:
+  // its board, its Sequence cap, the Learned Sequences it holds and the Factory
+  // ones it ships. `facts` is null while the droid is being asked.
   let parsedBackup = null;
+  let facts = null;
+  let factsAsked = 0;
 
   const setFeedback = (msg, variant = '') => {
     feedback.textContent = msg;
     feedback.className = variant ? `feedback ${variant}` : 'feedback';
   };
 
-  const showRestorePanel = (show) => {
-    if (summary) summary.hidden = !show;
-    if (restoreSections) restoreSections.hidden = !show;
-    if (restoreBtnRow) restoreBtnRow.hidden = !show;
+  const listOf = (names) => names.join(', ');
+  const seqPath = (name) => `/api/seq?name=${encodeURIComponent(name)}`;
+
+  // ---- READ THE DROID: the reads a backup is made of, by part ----
+  // Download reads every part; the copy offered before a restore reads the
+  // parts about to be replaced. One function, so the copy is a backup like any
+  // other and restores the same way. The Outputs' centre, `calibrated` and Part
+  // map are on /api/servo/outputs, not /api/config, and ADR 0056 puts them in
+  // the Configuration all the same (#417).
+  const PART_READS = {
+    configuration: [
+      ['config', '/api/config'],
+      ['servo_outputs', '/api/servo/outputs'],
+      ['audio_tracks', '/api/audio/tracks'],
+      ['audio_mood_map', '/api/audio/mood-map'],
+    ],
+    rc_map: [['rc_map', '/api/rc/map']],
+  };
+
+  // The Learned Sequences, in the droid's list order, each as it is stored.
+  // One at a time: a sequence runs to the per-file cap and the controller
+  // answers one of those at a time anyway. Every name that did not come back
+  // is in `failed`, so the message can say which.
+  const readSequences = async (failed) => {
+    let list;
+    try {
+      list = (await window.PAApi.get('/api/seq/list', { timeoutMs: 10000 })).data;
+    } catch {
+      list = null;
+    }
+    if (!Array.isArray(list)) {
+      failed.push('the Sequence list');
+      return [];
+    }
+    const sequences = [];
+    for (const { name } of list) {
+      try {
+        sequences.push((await window.PAApi.get(seqPath(name), { timeoutMs: 10000 })).data);
+      } catch {
+        failed.push(name);
+      }
+    }
+    return sequences;
+  };
+
+  // A backup of `parts` ('sequences', 'configuration', 'rc_map') read off the
+  // droid, with the board that wrote it, or the reads that did not answer.
+  const readDroid = async (parts) => {
+    const reads = [['identity', '/api/identity'], ...parts.flatMap((part) => PART_READS[part] || [])];
+    const [fwRes, ...answers] = await Promise.allSettled([
+      fetch('/fw-version.json').then((r) => r.json()),
+      ...reads.map(([, path]) => window.PAApi.get(path, { timeoutMs: 10000 })),
+    ]);
+    const failed = [];
+    const read = {};
+    answers.forEach((res, index) => {
+      const [key] = reads[index];
+      if (res.status === 'fulfilled') read[key] = res.value?.data ?? null;
+      else failed.push(key);
+    });
+    const sequences = parts.includes('sequences') ? await readSequences(failed) : undefined;
+    if (failed.length > 0) return { failed };
+    const { identity, ...held } = read;
+    return {
+      backup: {
+        schema: BACKUP_SCHEMA,
+        generated: new Date().toISOString(),
+        fw_version: fwRes.status === 'fulfilled' ? (fwRes.value?.firmwareVersion || 'unknown') : 'unknown',
+        board: identity?.board,
+        ...(sequences ? { sequences } : {}),
+        ...held,
+      },
+    };
+  };
+
+  const saveFile = (backup, suffix = '') => {
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `artoo-backup-${new Date().toISOString().slice(0, 10)}${suffix}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ---- DOWNLOAD BACKUP ----
@@ -226,60 +331,12 @@
     downloadBtn.disabled = true;
     setFeedback('Downloading settings...');
     try {
-      // The Outputs' centre, `calibrated` and Part map are on
-      // /api/servo/outputs, not /api/config (ADR 0056 puts them in the
-      // Configuration group all the same), so a backup carries both (#417).
-      const [configRes, servoOutputsRes, rcMapRes, tracksRes, moodMapRes, fwRes] = await Promise.allSettled([
-        window.PAApi.get('/api/config', { timeoutMs: 10000 }),
-        window.PAApi.get('/api/servo/outputs', { timeoutMs: 10000 }),
-        window.PAApi.get('/api/rc/map', { timeoutMs: 10000 }),
-        window.PAApi.get('/api/audio/tracks', { timeoutMs: 10000 }),
-        window.PAApi.get('/api/audio/mood-map', { timeoutMs: 10000 }),
-        fetch('/fw-version.json').then((r) => r.json()).catch(() => ({})),
-      ]);
-
-      const failed = [];
-      const extract = (res, label) => {
-        if (res.status === 'fulfilled') return res.value?.data ?? null;
-        failed.push(label);
-        return null;
-      };
-
-      const config = extract(configRes, 'config');
-      const servo_outputs = extract(servoOutputsRes, 'servo_outputs');
-      const rc_map = extract(rcMapRes, 'rc_map');
-      const audio_tracks = extract(tracksRes, 'audio_tracks');
-      const audio_mood_map = extract(moodMapRes, 'audio_mood_map');
-
-      if (failed.length > 0) {
-        setFeedback(`No backup saved: the droid did not send ${failed.join(', ')}.`, 'error');
+      const { backup, failed } = await readDroid(['sequences', 'configuration', 'rc_map']);
+      if (failed) {
+        setFeedback(`No backup saved: the droid did not send ${listOf(failed)}.`, 'error');
         return;
       }
-
-      const fw_version =
-        fwRes.status === 'fulfilled' ? (fwRes.value?.firmwareVersion || 'unknown') : 'unknown';
-
-      const backup = {
-        schema: 1,
-        generated: new Date().toISOString(),
-        fw_version,
-        config,
-        servo_outputs,
-        rc_map,
-        audio_tracks,
-        audio_mood_map,
-      };
-
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `artoo-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
+      saveFile(backup);
       setFeedback(`Backup downloaded at ${new Date().toLocaleTimeString()}`, 'success');
     } catch (err) {
       setFeedback(`Backup failed: ${window.PAApi?.messageFor(err) || err.message}`, 'error');
@@ -470,65 +527,428 @@
     return { failed, skipped };
   };
 
-  // ---- RESTORE: apply all selected sections ----
-  const performRestore = async () => {
-    if (!parsedBackup || !window.PAApi) return;
-    restoreBtn.disabled = true;
+  // ---- RESTORE: the Sequences ----
+  // Replacing the Learned Sequences is deleting what the file does not hold and
+  // posting what it does, through the droid's own routes. The droid refuses a
+  // NEW save while it holds its cap, so the deletes go first.
+  //
+  // The droid keeps the first Sequences in file order up to its cap, and the
+  // rest are named (ADR 0056, amended 2026-09-25). Nothing in a Sequence is
+  // changed on the way: the droid's Protocol Check is the only gate, and a
+  // routine it refuses - or one over this board's per-file cap - is refused by
+  // the droid, not guessed at here.
+  //
+  // THE INVARIANT: if the droid refuses anything after the library has
+  // changed, the library is put back from `prior`, the Sequences read off the
+  // droid just before, and the receipt says so. `held` and `changed` track what
+  // the droid holds now, so the put-back deletes only what this restore added
+  // and re-posts only what it removed or overwrote.
+  const restoreSequences = async (fileSequences, prior, cap) => {
+    const keep = cap ? fileSequences.slice(0, cap) : fileSequences.slice();
+    const leftOut = fileSequences.slice(keep.length).map((seq) => seq?.name);
+    const keepNames = new Set(keep.map((seq) => seq?.name));
+    const priorNames = new Set(prior.map((seq) => seq.name));
+    const held = new Set(priorNames);
+    const changed = new Set();
+    const dangling = [];
+    let refused = null;
+
+    const remove = async (name) => {
+      const answer = await window.PAApi.request(seqPath(name), { method: 'DELETE', timeoutMs: 10000 });
+      held.delete(name);
+      changed.add(name);
+      return answer?.data?.danglingBindings || [];
+    };
+    const save = async (seq) => {
+      await window.PAApi.postJson('/api/seq', seq, { timeoutMs: 15000 });
+      held.add(seq.name);
+      changed.add(seq.name);
+    };
+
+    let step = null;
+    try {
+      for (const seq of prior) {
+        if (keepNames.has(seq.name)) continue;
+        step = seq.name;
+        (await remove(seq.name)).forEach((binding) => dangling.push({ ...binding, name: seq.name }));
+      }
+      for (const seq of keep) {
+        step = seq?.name;
+        await save(seq);
+      }
+    } catch (error) {
+      refused = { name: step, reason: window.PAApi.messageFor(error) };
+    }
+    if (!refused) return { restored: keep, leftOut, dangling, held };
+
+    // Put back. What this restore added goes first, so a full store has room
+    // for what it removed.
+    const notBack = [];
+    for (const name of [...held].filter((each) => !priorNames.has(each))) {
+      try {
+        await remove(name);
+      } catch {
+        notBack.push(name);
+      }
+    }
+    for (const seq of prior.filter((each) => changed.has(each.name))) {
+      try {
+        await save(seq);
+      } catch {
+        notBack.push(seq.name);
+      }
+    }
+    return { refused, notBack, held };
+  };
+
+  // ---- RESTORE: the RC Map ----
+  // POST /api/rc/map refuses the WHOLE map over one dome_seq binding whose
+  // Sequence the droid does not hold (isValidDomeSeqPayload(),
+  // src/web/api_rc_map_apply.cpp). So a binding whose Sequence will not be on
+  // the droid is left out of what is sent and named, and the rest of the map
+  // still replaces the droid's (operator, 2026-09-30, #448) - the "not sent,
+  // named on the receipt" shape of an Output this droid lacks, above.
+  //
+  // `holds(name)` answers for a Learned Sequence the droid holds or a Factory
+  // one it ships (GET /api/seq/builtins). The droid's own accepted Factory list
+  // is narrower than the catalog; a binding to a catalog name outside it that
+  // only a Learned copy made valid, when that copy is left out, is kept here
+  // and refused there - and the receipt then says the RC Map did not land.
+  const rcMapToRestore = (rcMap, holds) => {
+    const map = Array.isArray(rcMap?.map) ? rcMap.map : [];
+    const send = [];
+    const leftOut = [];
+    map.forEach((entry) => {
+      if (entry?.action === 'dome_seq' && typeof entry.payload === 'string' && !holds(entry.payload)) {
+        leftOut.push(`RC Channel ${entry.channel}: ${entry.payload} is not on this droid`);
+      } else {
+        send.push(entry);
+      }
+    });
+    return { body: { ...rcMap, map: send }, leftOut };
+  };
+
+  // The map is filtered against the library the droid holds NOW, read after the
+  // Sequences have landed or been put back, never against the plan.
+  const restoreRcMap = async (rcMap, factory) => {
+    let list;
+    try {
+      list = (await window.PAApi.get('/api/seq/list', { timeoutMs: 10000 })).data;
+    } catch {
+      list = null;
+    }
+    if (!Array.isArray(list)) {
+      return ['RC Map: FAILED — the droid did not say which Sequences it holds. Nothing was written.'];
+    }
+    const learned = new Set(list.map((row) => row.name));
+    const { body, leftOut } = rcMapToRestore(rcMap, (name) => learned.has(name) || factory.has(name));
+    try {
+      await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify(body) }, { timeoutMs: 10000 });
+    } catch (err) {
+      return [`RC Map: FAILED — ${window.PAApi.messageFor(err)}`];
+    }
+    if (leftOut.length === 0) return ['RC Map: restored'];
+    return [`RC Map: partial — ${leftOut.length} left out`, ...leftOut];
+  };
+
+  // ---- THE THREE PARTS ----
+  // Each part carries the two lines it is shown with, so no part can be drawn
+  // without both: what it replaces and what it leaves (r2d2-astromech-simulator
+  // v1.79.0, wizard-import.js:715). The lines are authored; what is computed
+  // from the file is whether a part is offered and its count.
+  const PARTS = [
+    {
+      id: 'sequences',
+      label: 'Sequences',
+      touches: 'Replaces every Learned Sequence on the droid.',
+      leaves: 'Leaves the Configuration and the RC Map.',
+      inFile: (backup) => Array.isArray(backup.sequences),
+    },
+    {
+      id: 'configuration',
+      label: 'Configuration',
+      touches: 'Replaces the droid build, the Parts on its Outputs, their calibration and the sound setup.',
+      leaves: 'Leaves the Sequences, the RC Map and the WiFi.',
+      inFile: (backup) => Boolean(backup.config),
+    },
+    {
+      id: 'rc-map',
+      label: 'RC Map',
+      touches: 'Replaces what the droid will do this evening.',
+      leaves: 'Leaves the Sequences and the Configuration.',
+      inFile: (backup) => Array.isArray(backup.rc_map?.map),
+    },
+  ];
+  const partEl = (kind, id) => document.getElementById(`restore-${kind}-${id}`);
+  const tick = (id) => partEl('chk', id);
+  const isTicked = (id) => Boolean(tick(id)?.checked) && !tick(id)?.disabled;
+
+  // A file from the other Board Variant writes only what names no pin: the
+  // Sequences, the RC Map and the sound setup (ADR 0056). A file that does not
+  // say which board wrote it (schema 1) is this droid's own.
+  const fromOtherBoard = () =>
+    typeof parsedBackup?.board === 'string' && typeof facts?.board === 'string' && parsedBackup.board !== facts.board;
+
+  // The Learned Sequences the droid will hold once this restore is done, as far
+  // as it can be known before it runs: the file's first `cap` when Sequences is
+  // ticked, what the droid holds now when it is not.
+  const learnedAfter = () => {
+    if (isTicked('sequences')) {
+      const names = parsedBackup.sequences.map((seq) => seq?.name);
+      return new Set(facts.cap ? names.slice(0, facts.cap) : names);
+    }
+    return new Set(facts.library);
+  };
+
+  const countFor = (part) => {
+    const backup = parsedBackup;
+    if (part.id === 'sequences') {
+      const n = backup.sequences.length;
+      const said = `${n} in this file`;
+      return facts?.cap && n > facts.cap ? `${said} · keeps the first ${facts.cap}` : said;
+    }
+    if (part.id === 'configuration') return fromOtherBoard() ? 'from another board' : '';
+    const n = backup.rc_map.map.length;
+    const said = `${n} binding${n === 1 ? '' : 's'}`;
+    if (!facts?.library) return said;
+    const after = learnedAfter();
+    const { leftOut } = rcMapToRestore(backup.rc_map, (name) => after.has(name) || facts.factory.has(name));
+    return leftOut.length === 0 ? said : `${said} · ${leftOut.length} left out, its Sequence is not on this droid`;
+  };
+
+  const touchesFor = (part) =>
+    part.id === 'configuration' && fromOtherBoard()
+      ? 'Replaces only the sound setup. The rest names another board\'s pins and stays.'
+      : part.touches;
+
+  const tickedParts = () => PARTS.filter((part) => isTicked(part.id));
+
+  // Draws the three parts from the file and the droid's facts. The Restore
+  // press waits for the facts: without them the cap, the board and the RC Map's
+  // count are not known, and a restore would be a guess.
+  const renderParts = () => {
+    if (!parsedBackup) return;
+    PARTS.forEach((part) => {
+      const carried = part.inFile(parsedBackup);
+      const box = tick(part.id);
+      if (box) box.disabled = !carried;
+      const why = partEl('why', part.id);
+      if (why) {
+        why.hidden = carried;
+        why.textContent = carried ? '' : `This file has no ${part.label}. Download backup makes one that does.`;
+      }
+      const touches = partEl('touches', part.id);
+      const leaves = partEl('leaves', part.id);
+      if (touches) {
+        touches.hidden = !carried;
+        touches.textContent = carried ? touchesFor(part) : '';
+      }
+      if (leaves) {
+        leaves.hidden = !carried;
+        leaves.textContent = carried ? part.leaves : '';
+      }
+      const count = partEl('count', part.id);
+      if (count) count.textContent = carried ? countFor(part) : 'not in this file';
+    });
+    const n = tickedParts().length;
+    if (restoreBtn) {
+      restoreBtn.textContent = `Restore ${n} ticked part${n === 1 ? '' : 's'}`;
+      restoreBtn.disabled = n === 0 || !facts?.library;
+    }
+    if (question) question.hidden = true;
+  };
+
+  // What the droid says about itself, asked when a file is chosen. A later
+  // file supersedes an answer still on its way.
+  const askDroid = async () => {
+    const asked = ++factsAsked;
+    facts = null;
+    const [identity, list, builtins] = await Promise.allSettled([
+      window.PAApi.get('/api/identity', { timeoutMs: 10000 }),
+      window.PAApi.get('/api/seq/list', { timeoutMs: 10000 }),
+      window.PAApi.get('/api/seq/builtins', { timeoutMs: 10000 }),
+    ]);
+    if (asked !== factsAsked) return;
+    const rows = (res) => (res.status === 'fulfilled' && Array.isArray(res.value?.data) ? res.value.data : null);
+    const failed = [];
+    if (identity.status !== 'fulfilled') failed.push('which board it is');
+    if (!rows(list)) failed.push('which Sequences it holds');
+    if (!rows(builtins)) failed.push('its Factory Sequences');
+    if (failed.length > 0) {
+      facts = { failed };
+      renderParts();
+      setFeedback(`The droid did not say ${listOf(failed)}. Choose the file again to retry.`, 'error');
+      return;
+    }
+    const id = identity.value?.data || {};
+    const whole = (value) => (Number.isInteger(value) && value > 0 ? value : null);
+    facts = {
+      board: id.board,
+      cap: whole(id.learned_sequence_cap),
+      maxBytes: whole(id.learned_sequence_max_bytes),
+      library: rows(list).map((row) => row.name),
+      factory: new Set(rows(builtins).map((row) => row.name)),
+    };
+    renderParts();
+  };
+
+  // ---- ASK BEFORE ANYTHING IS WRITTEN ----
+  // Both answers - the parts and the copy - are in before the first request
+  // that changes the droid, so Cancel means nothing was touched (wizard-import.js
+  // :1014).
+  const askToReplace = () => {
+    const parts = tickedParts();
+    if (parts.length === 0 || !facts?.library || !question) return;
+    const names = parts.map((part) => part.label);
+    const said = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    if (questionText) questionText.textContent = `Replace the droid's ${said}? What is on it now goes.`;
+    question.hidden = false;
+    if (restoreBtn) restoreBtn.disabled = true;
+  };
+
+  const cancelRestore = () => {
+    if (question) question.hidden = true;
+    renderParts();
+    setFeedback('Nothing was touched.');
+  };
+
+  // ---- RESTORE: apply the ticked parts ----
+  const performRestore = async ({ withCopy }) => {
+    if (!parsedBackup || !facts?.library || !window.PAApi) return;
+    const parts = tickedParts().map((part) => part.id);
+    if (parts.length === 0) return;
+    if (question) question.hidden = true;
+    if (restoreBtn) restoreBtn.disabled = true;
     setFeedback('Restoring...');
 
+    // The copy is built from the droid's own answers for every part about to
+    // be replaced, and a download the browser blocked still reads as saved -
+    // so what can be checked is the reads: if any fails, there is no copy and
+    // nothing is replaced (wizard-import.js:1041, :1096). Sequences read their
+    // current library either way, since that is what a refusal puts back.
+    const reads = withCopy ? parts.map((id) => (id === 'rc-map' ? 'rc_map' : id)) : [];
+    if (parts.includes('sequences') && !reads.includes('sequences')) reads.push('sequences');
+    let before = null;
+    if (reads.length > 0) {
+      const { backup, failed } = await readDroid(reads);
+      if (failed) {
+        setFeedback(withCopy
+          ? `No copy saved: the droid did not send ${listOf(failed)}. Nothing was replaced.`
+          : `The droid did not send its Sequences (${listOf(failed)}). Nothing was replaced.`, 'error');
+        renderParts();
+        return;
+      }
+      before = backup;
+      if (withCopy) {
+        const kept = { ...backup };
+        if (!parts.includes('sequences')) delete kept.sequences;
+        saveFile(kept, '-before-restore');
+      }
+    }
+
     const lines = [];
+    let sequencesDone = null;
 
-    const chkConfig = document.getElementById('restore-chk-config');
-    const chkRcMap = document.getElementById('restore-chk-rc-map');
-    const chkTracks = document.getElementById('restore-chk-audio-tracks');
-    const chkMoodMap = document.getElementById('restore-chk-mood-map');
-
-    if (chkConfig?.checked && parsedBackup.config) {
-      try {
-        // "restored" only when all of it landed.
-        const gaps = await restoreConfiguration(parsedBackup);
-        lines.push(gaps.length === 0 ? 'Core config: restored' : `Core config: partial — ${gaps.join(', ')}`);
-      } catch (err) {
-        lines.push(`Core config: FAILED — ${window.PAApi.messageFor(err)}`);
+    if (parts.includes('sequences')) {
+      const result = await restoreSequences(parsedBackup.sequences, before.sequences, facts.cap);
+      sequencesDone = result;
+      if (result.refused) {
+        const back = result.notBack.length === 0
+          ? 'The Sequences the droid had are put back.'
+          : `Not put back: ${listOf(result.notBack)}.${withCopy ? ' They are in the copy you saved.' : ''}`;
+        lines.push(`Sequences: FAILED — the droid refused ${result.refused.name}: ${result.refused.reason}. ${back}`);
+      } else if (result.leftOut.length === 0) {
+        lines.push(`Sequences: restored ${result.restored.length}`);
+      } else {
+        lines.push(`Sequences: partial — ${result.restored.length} restored; left out, this droid holds ${facts.cap}: ${listOf(result.leftOut)}`);
       }
     }
 
-    if (chkRcMap?.checked && parsedBackup.rc_map) {
-      try {
-        await window.PAApi.postForm('/api/rc/map',
-          { plain: JSON.stringify(parsedBackup.rc_map) }, { timeoutMs: 10000 });
-        lines.push('RC mappings: restored');
-      } catch (err) {
-        lines.push(`RC mappings: FAILED — ${window.PAApi.messageFor(err)}`);
+    if (parts.includes('configuration')) {
+      if (fromOtherBoard()) {
+        lines.push('Configuration: partial — the sound setup only; the rest names another board\'s pins and stays');
+      } else {
+        try {
+          // "restored" only when all of it landed.
+          const gaps = await restoreConfiguration(parsedBackup);
+          lines.push(gaps.length === 0 ? 'Configuration: restored' : `Configuration: partial — ${gaps.join(', ')}`);
+        } catch (err) {
+          lines.push(`Configuration: FAILED — ${window.PAApi.messageFor(err)}`);
+        }
+      }
+      // The sound setup follows on its own routes, with its own lines.
+      if (parsedBackup.audio_tracks) {
+        const { failed, skipped } = await restoreAudioTracks(parsedBackup.audio_tracks);
+        const line = failed.length === 0
+          ? 'Audio tracks: restored'
+          : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`;
+        lines.push(skipped.length === 0 ? line : `${line}; ${skipped.join(', ')}`);
+      }
+      if (parsedBackup.audio_mood_map) {
+        try {
+          await window.PAApi.postForm('/api/audio/mood-map', parsedBackup.audio_mood_map, { timeoutMs: 5000 });
+          lines.push('Audio mood map: restored');
+        } catch (err) {
+          lines.push(`Audio mood map: FAILED — ${window.PAApi.messageFor(err)}`);
+        }
       }
     }
 
-    if (chkTracks?.checked && parsedBackup.audio_tracks) {
-      const { failed, skipped } = await restoreAudioTracks(parsedBackup.audio_tracks);
-      const line = failed.length === 0
-        ? 'Audio tracks: restored'
-        : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`;
-      lines.push(skipped.length === 0 ? line : `${line}; ${skipped.join(', ')}`);
+    let rcMapLanded = false;
+    if (parts.includes('rc-map')) {
+      const rcLines = await restoreRcMap(parsedBackup.rc_map, facts.factory);
+      rcMapLanded = !rcLines[0].includes('FAILED');
+      lines.push(...rcLines);
     }
 
-    if (chkMoodMap?.checked && parsedBackup.audio_mood_map) {
-      try {
-        await window.PAApi.postForm('/api/audio/mood-map', parsedBackup.audio_mood_map,
-          { timeoutMs: 5000 });
-        lines.push('Audio mood map: restored');
-      } catch (err) {
-        lines.push(`Audio mood map: FAILED — ${window.PAApi.messageFor(err)}`);
-      }
+    // A binding whose Sequence this restore removed fires nothing now, unless
+    // the RC Map written after it replaced that binding (DELETE /api/seq
+    // answers danglingBindings for each Sequence it removes).
+    if (sequencesDone && !rcMapLanded) {
+      sequencesDone.dangling
+        ?.filter((binding) => !sequencesDone.held.has(binding.name))
+        .forEach((binding) => lines.push(`RC Channel ${binding.channel} fires ${binding.name}, which is not on this droid`));
     }
 
-    const anyRestored = lines.some((l) => l.includes(': restored'));
-    const anyIssue = lines.some((l) => l.includes('FAILED') || l.includes('partial'));
+    // What the Rehearsal finds in each Sequence written, against the droid as
+    // it now stands. It never refuses (CONTEXT.md "Rehearsal"): nothing here
+    // stops or changes the restore. A read that fails leaves the rules that
+    // need the droid's rows silent, exactly as in the editor.
+    if (sequencesDone?.restored?.length > 0 && window.SeqRehearsal) {
+      const droid = await window.PAOutputs?.load().catch(() => null);
+      const context = { outputs: droid?.outputs || null, config: droid?.config || null, maxBytes: facts.maxBytes };
+      sequencesDone.restored.forEach((seq) => {
+        lines.push(`${seq.name} — ${window.SeqRehearsal.summaryText(window.SeqRehearsal.rehearse(seq, context))}`);
+      });
+    }
+
+    const anyRestored = lines.some((l) => l.includes(': restored') || l.includes(': partial'));
+    const anyIssue = lines.some((l) => l.includes('FAILED') || l.includes('partial') || l.startsWith('RC Channel'));
     if (anyRestored) lines.push('Restart the Body Controller to apply everything restored.');
     setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
-    restoreBtn.disabled = false;
+    // The library the parts are counted against is the one the droid holds now.
+    if (sequencesDone && facts) facts.library = [...sequencesDone.held];
+    renderParts();
   };
 
   // ---- FILE PARSE ----
+  // A protoArtoo backup is a JSON object with a schema number. Anything else is
+  // refused with the reason, never half-read, and as not supported rather than
+  // impossible: opening sharing later is a policy change, not a format change
+  // (ADR 0056).
+  const refuseFile = (why) => {
+    setFeedback(`Not a protoArtoo backup: ${why}. Restoring it is not supported; choose a file Download backup saved.`, 'error');
+    parsedBackup = null;
+    showRestorePanel(false);
+  };
+
+  const showRestorePanel = (show) => {
+    if (summary) summary.hidden = !show;
+    if (restoreSections) restoreSections.hidden = !show;
+    if (restoreBtnRow) restoreBtnRow.hidden = !show;
+    if (!show && question) question.hidden = true;
+  };
+
   const handleFile = (file) => {
     if (!file) return;
     const reader = new FileReader();
@@ -537,52 +957,34 @@
       try {
         backup = JSON.parse(e.target.result);
       } catch {
-        setFeedback('Not a backup file: it is not JSON. Nothing restored.', 'error');
-        parsedBackup = null;
-        showRestorePanel(false);
+        refuseFile('it is not JSON');
         return;
       }
-
-      if (!backup.schema) {
-        setFeedback('Not a backup file: it has no schema. Nothing restored.', 'error');
-        parsedBackup = null;
-        showRestorePanel(false);
+      if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
+        refuseFile('it is not a backup object');
+        return;
+      }
+      if (!Number.isInteger(backup.schema) || backup.schema < 1) {
+        refuseFile('it has no backup schema');
         return;
       }
 
       parsedBackup = backup;
-
-      const date = backup.generated ? backup.generated.slice(0, 10) : 'unknown';
-      const fw = backup.fw_version || 'unknown';
-      const sections = ['config', 'rc_map', 'audio_tracks', 'audio_mood_map'].filter(
-        (k) => backup[k],
-      );
-
-      if (summary) {
-        summary.textContent =
-          `Backup from ${date}, firmware ${fw} — ${sections.length} section${sections.length !== 1 ? 's' : ''} found`;
-      }
-
-      [
-        ['restore-chk-config', 'config'],
-        ['restore-chk-rc-map', 'rc_map'],
-        ['restore-chk-audio-tracks', 'audio_tracks'],
-        ['restore-chk-mood-map', 'audio_mood_map'],
-      ].forEach(([id, key]) => {
-        const chk = document.getElementById(id);
-        if (chk) { chk.checked = Boolean(backup[key]); chk.disabled = !backup[key]; }
+      const date = backup.generated ? String(backup.generated).slice(0, 10) : 'unknown';
+      if (summary) summary.textContent = `Backup from ${date}, firmware ${backup.fw_version || 'unknown'}`;
+      PARTS.forEach((part) => {
+        const box = tick(part.id);
+        if (box) box.checked = part.inFile(backup);
       });
-
+      facts = null;
+      renderParts();
       showRestorePanel(true);
-
-      if (backup.schema > 1) {
-        setFeedback(
-          `This backup is from newer firmware (schema ${backup.schema}). Some of it may not restore.`,
-          'warning',
-        );
+      if (backup.schema > BACKUP_SCHEMA) {
+        setFeedback(`This backup is from newer firmware (schema ${backup.schema}). Some of it may not restore.`, 'warning');
       } else {
         setFeedback('');
       }
+      askDroid();
     };
     reader.readAsText(file);
   };
@@ -590,7 +992,11 @@
   downloadBtn.addEventListener('click', downloadBackup);
   if (fileTrigger) fileTrigger.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => handleFile(fileInput.files?.[0] ?? null));
-  if (restoreBtn) restoreBtn.addEventListener('click', performRestore);
+  PARTS.forEach((part) => tick(part.id)?.addEventListener('change', renderParts));
+  if (restoreBtn) restoreBtn.addEventListener('click', askToReplace);
+  if (cancelBtn) cancelBtn.addEventListener('click', cancelRestore);
+  if (copyBtn) copyBtn.addEventListener('click', () => performRestore({ withCopy: true }));
+  if (replaceBtn) replaceBtn.addEventListener('click', () => performRestore({ withCopy: false }));
 })();
 
 // =============================================================================

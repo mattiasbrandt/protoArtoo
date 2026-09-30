@@ -1,16 +1,34 @@
 // =============================================================================
 // test/test_web/test_backup_restore.js
 //
-// Restoring a backup (data/maintenance.js): the Configuration goes back to the
-// droid in one POST /api/config, in the shape GET read it - the config as the
-// backup holds it, and each Output's row as `outputs` (ADR 0068).
+// Backup and restore (data/maintenance.js). A backup holds three parts - the
+// Sequences, the Configuration and the RC Map - and a restore replaces the
+// parts ticked, never merging (ADR 0056).
 //
-// The invariant: a restore gives back every setting the backup holds. Twice a
-// restore said "restored" over a droid that had lost part of it - every lit
-// wire's count but one (#413), the centre, calibration and Part map (#417) -
-// because each setting had its own door and the restore had to know them all.
-// The droid here takes a row the way the firmware does, so a setting the
-// restore leaves out stays at what the droid had and the comparison finds it.
+// The invariants:
+//   - a restore gives back every setting the backup holds. Twice a restore
+//     said "restored" over a droid that had lost part of it - every lit wire's
+//     count but one (#413), the centre, calibration and Part map (#417) -
+//     because each setting had its own door and the restore had to know them
+//     all. The Configuration goes back in one POST /api/config, in the shape
+//     GET read it (ADR 0068).
+//   - a backup holds the builder's Sequences. For its first life the file had
+//     none while the page promised every setting (#294).
+//   - a Sequences restore the droid refuses partway leaves the library exactly
+//     as it was. The reference emptied a library, failed, and saved the empty
+//     one (r2d2-astromech-simulator v1.77.0).
+//   - the RC Map never goes out holding a binding the droid refuses, since one
+//     such binding refuses the whole map, and a refused map is never called
+//     restored.
+//   - a copy of what is about to be replaced that cannot be built stops the
+//     restore before anything is written.
+//
+// The droid here answers the way the firmware does: its Sequence store has a
+// cap and refuses a new save when full, POST /api/rc/map refuses the whole map
+// over one dome_seq binding to a Sequence it neither holds nor ships
+// (src/web/api_rc_map_apply.cpp), and its rows take a POST /api/config body's
+// `outputs` - so a setting the restore leaves out stays at what the droid had
+// and the comparison finds it.
 //
 // A backup made before the Outputs were read whole from their rows carries
 // their settings in the config, keyed by stored id; that shape is translated
@@ -55,65 +73,171 @@ const ROW_SETTINGS = [
   "openUs", "centreUs", "closeUs", "calibrated", "parts",
 ];
 
+// A Learned Sequence as GET /api/seq?name= answers it: the stored JSON v1.
+const sequence = (name, steps = []) => ({ version: 1, name, toggleGroup: "none", suppressMs: 0, steps });
+
+// A Factory Sequence the droid ships and accepts a binding to.
+const FACTORY = ["DM:VADER", "DM:LEIA"];
+
 class FileReaderNow {
   readAsText(file) {
     this.onload({ target: { result: file.text } });
   }
 }
 
-// Restore `backup` onto a droid whose rows take a POST /api/config body's
-// `outputs` the way the firmware does - a Part a row states comes off the row
-// it was on - and whose config is the GET shape it was sent. Like the
-// firmware, it refuses the whole body over a fitted Part the catalog does not
-// model, and with `soundOff` it refuses a volume (409, #370).
-const restore = async (backup, { soundOff = false } = {}) => {
-  let env = null;
-  const rows = freshDroid();
+const httpError = (status, message) => Object.assign(new Error(message), { kind: "http", status });
+
+/**
+ * A droid behind the routes a backup and a restore use. `library` is its
+ * Learned Sequences in list order; `refuse(seq)` returns the droid's reason
+ * to refuse a save, or null; `fail(path, method)` fails a request outright.
+ */
+const makeDroid = ({
+  board = "artoo_esp32",
+  cap = 5,
+  library = [],
+  rcMap = { mode: "dual_sbus", map: [] },
+  refuse = () => null,
+  fail = () => false,
+  soundOff = false,
+} = {}) => {
   const { DroidParts } = partsGlobals();
   const modelled = new Set(DroidParts.parts.map((part) => part.id));
-  let config = { drive: { speedLimitMax: 100 } };
-  env = loadPageModule("maintenance.js", {
-    respond: (path, opts) => {
-      if (path === "/api/audio" && opts.method === "GET") return { data: { output: soundOff ? "off" : "on" } };
-      if (path === "/api/audio" && soundOff) {
-        throw Object.assign(new Error("Sound is off."), { kind: "http", status: 409 });
+  const droid = {
+    DroidParts,
+    rows: freshDroid(),
+    config: { drive: { speedLimitMax: 100 } },
+    store: new Map(library.map((seq) => [seq.name, structuredClone(seq)])),
+    rcMap: structuredClone(rcMap),
+  };
+  droid.respond = (path, opts) => {
+    const method = opts.method;
+    if (fail(path, method)) throw httpError(0, `no answer from ${path}`);
+    if (path === "/api/identity") {
+      return { data: { board, learned_sequence_cap: cap, learned_sequence_max_bytes: 12288 } };
+    }
+    if (path === "/api/seq/list") return { data: [...droid.store.keys()].map((name) => ({ name, valid: true })) };
+    if (path === "/api/seq/builtins") return { data: FACTORY.map((name) => ({ name })) };
+    if (path.startsWith("/api/seq?name=")) {
+      const name = decodeURIComponent(path.slice("/api/seq?name=".length));
+      if (!droid.store.has(name)) throw httpError(404, "not found");
+      if (method === "DELETE") {
+        droid.store.delete(name);
+        const danglingBindings = droid.rcMap.map
+          .filter((entry) => entry.action === "dome_seq" && entry.payload === name)
+          .map((entry) => ({ source: entry.source, channel: entry.channel }));
+        return { data: { ok: true, ...(danglingBindings.length ? { danglingBindings } : {}) } };
       }
-      if (opts.method === "POST" && path === "/api/config") {
-        if ((opts.body.droidBuild?.fitted || []).some((id) => !modelled.has(id))) {
-          throw Object.assign(new Error("fittedParts names a Part this build does not model"), {
-            kind: "http", status: 400, field: "fittedParts", reason: "out-of-range", accepts: null,
-          });
+      return { data: structuredClone(droid.store.get(name)) };
+    }
+    if (path === "/api/seq" && method === "POST") {
+      const seq = opts.body;
+      const reason = refuse(seq);
+      if (reason) throw httpError(400, reason);
+      if (!droid.store.has(seq.name) && droid.store.size >= cap) throw httpError(400, `store full (${cap} sequences max)`);
+      droid.store.set(seq.name, structuredClone(seq));
+      return { data: { ok: true } };
+    }
+    if (path === "/api/rc/map" && method === "POST") {
+      const body = JSON.parse(opts.body.plain);
+      body.map.forEach((entry) => {
+        if (entry.action === "dome_seq" && !FACTORY.includes(entry.payload) && !droid.store.has(entry.payload)) {
+          throw httpError(400, "invalid dome sequence payload (expected DM:NAME)");
         }
-        const { outputs = [], ...sent } = opts.body;
-        outputs.forEach((row) => {
-          (row.parts || []).forEach((part) => rows.forEach((each) => {
-            each.parts = each.parts.filter((id) => id !== part);
-          }));
-          Object.assign(rows.find((each) => each.address === row.address), row);
+        if (entry.action === "dome_marcduino" && String(entry.payload).startsWith(":SM")) {
+          throw httpError(400, ":SM is diagnostic only and cannot be saved as an RC binding");
+        }
+      });
+      droid.rcMap = { ...droid.rcMap, map: body.map };
+      return { data: { ok: true } };
+    }
+    if (path === "/api/rc/map") return { data: structuredClone(droid.rcMap) };
+    if (path === "/api/audio" && method === "GET") return { data: { output: soundOff ? "off" : "on" } };
+    if (path === "/api/audio" && soundOff) throw httpError(409, "Sound is off.");
+    if (method === "POST" && path === "/api/config") {
+      if ((opts.body.droidBuild?.fitted || []).some((id) => !modelled.has(id))) {
+        throw Object.assign(httpError(400, "fittedParts names a Part this build does not model"), {
+          field: "fittedParts", reason: "out-of-range", accepts: null,
         });
-        config = sent;
-        return { data: config };
       }
-      if (path === "/api/config") return { data: config };
-      if (path === "/api/servo/outputs") return { data: { outputs: structuredClone(rows) } };
-      return { data: {} };
+      const { outputs = [], ...sent } = opts.body;
+      outputs.forEach((row) => {
+        (row.parts || []).forEach((part) => droid.rows.forEach((each) => {
+          each.parts = each.parts.filter((id) => id !== part);
+        }));
+        Object.assign(droid.rows.find((each) => each.address === row.address), row);
+      });
+      droid.config = sent;
+      return { data: droid.config };
+    }
+    if (path === "/api/config") return { data: droid.config };
+    if (path === "/api/servo/outputs") return { data: { outputs: structuredClone(droid.rows) } };
+    return { data: {} };
+  };
+  return droid;
+};
+
+// The page on `droid`, with the browser's file download caught: each file the
+// page saves lands in `saved`, parsed.
+const openPage = (droid) => {
+  let env = null;
+  const saved = [];
+  class Blob {
+    constructor(parts) {
+      this.text = parts.join("");
+    }
+  }
+  const URL = {
+    createObjectURL: (blob) => {
+      saved.push(JSON.parse(blob.text));
+      return "blob:backup";
     },
+    revokeObjectURL: () => {},
+  };
+  env = loadPageModule("maintenance.js", {
+    respond: droid.respond,
+    chain: ["seq_rehearsal.js"],
     overrides: {
       PAFeatureAvailability: createFeatureAvailability(),
       FileReader: FileReaderNow,
-      DroidParts,
-      PAOutputs: outputsModule(() => env.window.PAApi, { DroidParts }),
+      DroidParts: droid.DroidParts,
+      PAOutputs: outputsModule(() => env.window.PAApi, { DroidParts: droid.DroidParts }),
+      Blob,
+      URL,
     },
   });
-  await env.settle();
-  env.element("backup-file-input").files = [{ text: JSON.stringify(backup) }];
-  env.emitOn("backup-file-input", "change");
-  env.emitOn("backup-restore-btn", "click");
-  await env.settle(40);
+  const writes = () => env.requests.filter((request) => request.method !== "GET");
   const posts = (path) => env.requests
     .filter((request) => request.method === "POST" && request.path === path)
     .map((request) => request.opts.body);
-  return { rows, posts, config: () => config, receipt: env.element("backup-feedback").textContent };
+  const receipt = () => env.element("backup-feedback").textContent;
+  // Waits for the page to settle after an act that makes several requests in
+  // turn: until `done()` holds, bounded so a hang fails rather than stalls.
+  const until = async (done) => {
+    for (let i = 0; i < 200 && !done(); i += 1) await env.settle(5);
+    assert.ok(done(), `the page did not settle: ${receipt()}`);
+  };
+  return { env, saved, writes, posts, receipt, until };
+};
+
+// Choose `backup` as the file, untick the parts named in `untick`, press
+// Restore and answer the question with `answer` ("replace", "copy" or
+// "cancel"); returns once the receipt is in.
+const restoreOn = async (droid, backup, { untick = [], answer = "replace" } = {}) => {
+  const page = openPage(droid);
+  const { env } = page;
+  await env.settle();
+  env.element("backup-file-input").files = [{ text: JSON.stringify(backup) }];
+  env.emitOn("backup-file-input", "change");
+  await page.until(() => env.element("backup-restore-btn").disabled === false);
+  untick.forEach((id) => {
+    env.element(`restore-chk-${id}`).checked = false;
+    env.emitOn(`restore-chk-${id}`, "change");
+  });
+  env.emitOn("backup-restore-btn", "click");
+  env.emitOn(`restore-${answer}-btn`, "click");
+  await page.until(() => !["", "Restoring..."].includes(page.receipt()));
+  return page;
 };
 
 // What the backup says each Output holds, read the way a builder would read
@@ -138,18 +262,19 @@ const heldBy = (backup, id, address) => {
 };
 
 test("a backup made before the Outputs were their rows restores every row setting, in one request", async () => {
-  const { rows, posts, receipt } = await restore(OLDER_BACKUP);
+  const droid = makeDroid();
+  const { posts, receipt } = await restoreOn(droid, OLDER_BACKUP);
 
   const saves = posts("/api/config");
   assert.equal(saves.length, 1, "the Configuration goes back in one request, so it lands whole or not at all");
   assert.equal(saves[0].drive.speedLimitMax, OLDER_BACKUP.config.drive.speedLimitMax,
     "the config goes back in the shape it was read");
-  rows.forEach((row, index) => {
+  droid.rows.forEach((row, index) => {
     const want = heldBy(OLDER_BACKUP, IDS[index], row.address);
     const got = Object.fromEntries(ROW_SETTINGS.filter((key) => key in want).map((key) => [key, row[key]]));
     assert.deepEqual(got, want, `${row.name} is not what the backup holds`);
   });
-  assert.match(receipt, /Core config: restored/);
+  assert.match(receipt(), /Configuration: restored/);
 });
 
 // A backup can name an Output this droid does not have - an expander that is
@@ -159,33 +284,33 @@ test("a backup made before the Outputs were their rows restores every row settin
 test("an Output the backup names and this droid lacks is not sent, and the receipt names it", async () => {
   const backup = structuredClone(OLDER_BACKUP);
   backup.servo_outputs.outputs.push({ address: "pca:3", name: "", parts: [], calibrated: true, centreUs: 1500 });
-  const { posts, receipt } = await restore(backup);
+  const { posts, receipt } = await restoreOn(makeDroid(), backup);
 
   const sent = posts("/api/config")[0].outputs.map((row) => row.address);
   assert.ok(!sent.includes("pca:3"), "a row for an Output this droid lacks is not sent");
   assert.equal(sent.length, 5, "and every Output it has is");
-  assert.match(receipt, /Core config: partial — pca:3 not on this droid/);
+  assert.match(receipt(), /Configuration: partial — pca:3 not on this droid/);
 });
 
 // The backup the #355 bench restored (2026-09-28): made before #409 retired
 // `drawer`, onto a droid with Sound off. The droid refuses a fitted list naming
-// a Part it does not model, so the retired id used to fail the whole Core
-// config - droid build, Sound pick and Guided Setup with it - and the volume
-// read as a failure. The retired id is dropped and named; the volume is left
-// out and said to be.
+// a Part it does not model, so the retired id used to fail the whole
+// Configuration - droid build, Sound pick and Guided Setup with it - and the
+// volume read as a failure. The retired id is dropped and named; the volume is
+// left out and said to be.
 test("a backup naming a retired Part, restored with Sound off, lands the rest and names what it left out", async () => {
   const backup = structuredClone(OLDER_BACKUP);
   backup.config.droidBuild.fitted.push("drawer");
-  const { posts, config, receipt } = await restore(backup, { soundOff: true });
+  const droid = makeDroid({ soundOff: true });
+  const { posts, receipt } = await restoreOn(droid, backup);
 
-  const landed = config();
-  assert.deepEqual(landed.droidBuild?.fitted, ["doorFL", "utilUp", "gripArm"],
+  assert.deepEqual(droid.config.droidBuild?.fitted, ["doorFL", "utilUp", "gripArm"],
     "every fitted Part this build models lands, and the retired one does not");
-  assert.deepEqual(landed.guidedSetup, OLDER_BACKUP.config.guidedSetup);
-  assert.equal(landed.components?.audio?.member, OLDER_BACKUP.config.components.audio.member);
-  assert.match(receipt, /Core config: partial — [^\n]*drawer/, `the dropped Part is not named: ${receipt}`);
+  assert.deepEqual(droid.config.guidedSetup, OLDER_BACKUP.config.guidedSetup);
+  assert.equal(droid.config.components?.audio?.member, OLDER_BACKUP.config.components.audio.member);
+  assert.match(receipt(), /Configuration: partial — [^\n]*drawer/, `the dropped Part is not named: ${receipt()}`);
   assert.equal(posts("/api/audio").length, 0, "no volume is sent to a droid with Sound off");
-  assert.match(receipt, /Audio tracks: restored[^\n]*volume/, `the skipped volume is not said: ${receipt}`);
+  assert.match(receipt(), /Audio tracks: restored[^\n]*volume/, `the skipped volume is not said: ${receipt()}`);
 });
 
 // A backup that puts one Part on two Outputs is refused by the droid as a
@@ -196,38 +321,23 @@ test("a backup with one Part on two Outputs says which Part, in the builder's wo
   const backup = structuredClone(OLDER_BACKUP);
   const aux1 = backup.servo_outputs.outputs.find((row) => row.address === "ledc:3");
   aux1.parts = ["doorFL"];  // doorFL is on ARM1 in the fixture too
-  const { DroidParts } = partsGlobals();
-  const partName = DroidParts.parts.find((part) => part.id === "doorFL").name;
+  const droid = makeDroid();
+  const partName = droid.DroidParts.parts.find((part) => part.id === "doorFL").name;
+  const answer = droid.respond;
+  droid.respond = (path, opts) => {
+    if (opts.method === "POST" && path === "/api/config") {
+      throw Object.assign(httpError(400, "ledc:3.parts names a Part another row names too"), {
+        field: "ledc:3.parts", reason: "conflict", accepts: null,
+      });
+    }
+    return answer(path, opts);
+  };
+  const { receipt } = await restoreOn(droid, backup);
 
-  let env = null;
-  env = loadPageModule("maintenance.js", {
-    respond: (path, opts) => {
-      if (opts.method === "POST" && path === "/api/config") {
-        throw Object.assign(new Error("ledc:3.parts names a Part another row names too"), {
-          kind: "http", status: 400, field: "ledc:3.parts", reason: "conflict", accepts: null,
-        });
-      }
-      if (path === "/api/servo/outputs") return { data: { outputs: freshDroid() } };
-      return { data: {} };
-    },
-    overrides: {
-      PAFeatureAvailability: createFeatureAvailability(),
-      FileReader: FileReaderNow,
-      DroidParts,
-      PAOutputs: outputsModule(() => env.window.PAApi, { DroidParts }),
-    },
-  });
-  await env.settle();
-  env.element("backup-file-input").files = [{ text: JSON.stringify(backup) }];
-  env.emitOn("backup-file-input", "change");
-  env.emitOn("backup-restore-btn", "click");
-  await env.settle(40);
-  const receipt = env.element("backup-feedback").textContent;
-
-  assert.match(receipt, /Core config: FAILED/);
-  assert.ok(receipt.includes(partName), `the Part is not named as the builder knows it: ${receipt}`);
-  assert.ok(receipt.includes("ARM3"), `the Output is not named as the board prints it: ${receipt}`);
-  assert.doesNotMatch(receipt, /doorFL|ledc:/, "no id and no row key reaches the builder");
+  assert.match(receipt(), /Configuration: FAILED/);
+  assert.ok(receipt().includes(partName), `the Part is not named as the builder knows it: ${receipt()}`);
+  assert.ok(receipt().includes("ARM3"), `the Output is not named as the board prints it: ${receipt()}`);
+  assert.doesNotMatch(receipt(), /doorFL|ledc:/, "no id and no row key reaches the builder");
 });
 
 // "restored" is a claim that every part of the section landed. Before #417 it
@@ -236,47 +346,107 @@ test("a backup with one Part on two Outputs says which Part, in the builder's wo
 // track - which cleared the slot's bank - and dropped every category bank.
 test("a restore never says restored over something that did not land, and names it", async () => {
   const { servo_outputs: _rows, ...withoutRows } = OLDER_BACKUP;
-  let env = null;
-  const rows = freshDroid();
-  env = loadPageModule("maintenance.js", {
-    respond: (path, opts) => {
-      if (opts.method === "POST" && new URLSearchParams(opts.body).has("bank")) throw new Error("refused");
-      if (path === "/api/servo/outputs") return { data: { outputs: structuredClone(rows) } };
-      return { data: {} };
-    },
-    overrides: {
-      PAFeatureAvailability: createFeatureAvailability(),
-      FileReader: FileReaderNow,
-      PAOutputs: outputsModule(() => env.window.PAApi),
+  const droid = makeDroid();
+  const answer = droid.respond;
+  droid.respond = (path, opts) => {
+    if (opts.method === "POST" && typeof opts.body === "object" && new URLSearchParams(opts.body).has("bank")) {
+      throw new Error("refused");
+    }
+    return answer(path, opts);
+  };
+  const { env, receipt } = await restoreOn(droid, {
+    ...withoutRows,
+    audio_tracks: {
+      doodoo: 3,
+      snd_cat_gen_lo: 1,
+      snd_cat_gen_hi: 20,
+      chirp_bindings: { doodoo: { bank: 1, page: "A", index: 3 } },
+      chirp_category_bindings: { snd_cat_gen_lo: { bank: 2, page: "B" } },
     },
   });
-  await env.settle();
-  env.element("backup-file-input").files = [{
-    text: JSON.stringify({
-      ...withoutRows,
-      audio_tracks: {
-        doodoo: 3,
-        snd_cat_gen_lo: 1,
-        snd_cat_gen_hi: 20,
-        chirp_bindings: { doodoo: { bank: 1, page: "A", index: 3 } },
-        chirp_category_bindings: { snd_cat_gen_lo: { bank: 2, page: "B" } },
-      },
-    }),
-  }];
-  env.emitOn("backup-file-input", "change");
-  env.emitOn("backup-restore-btn", "click");
-  await env.settle(40);
   const posts = (path) => env.requests
     .filter((request) => request.method === "POST" && request.path === path)
     .map((request) => Object.fromEntries(new URLSearchParams(request.opts.body)));
-  const receipt = env.element("backup-feedback").textContent;
 
-  assert.match(receipt, /Core config: partial — no centre, calibration or Part map in this file/);
-  assert.match(receipt, /Audio tracks: partial — 2 failed \(doodoo, snd_cat_gen_lo\)/);
-  assert.doesNotMatch(receipt, /(Core config|Audio tracks): restored/);
+  assert.match(receipt(), /Configuration: partial — no centre, calibration or Part map in this file/);
+  assert.match(receipt(), /Audio tracks: partial — 2 failed \(doodoo, snd_cat_gen_lo\)/);
+  assert.doesNotMatch(receipt(), /(Configuration|Audio tracks): restored/);
   assert.deepEqual(posts("/api/audio/tracks"), [{ key: "doodoo", track: "3", bank: "1", page: "A" }],
     "a refused banked slot is not sent again as a plain track, and no category key goes this way");
   assert.deepEqual(posts("/api/audio/category-range"),
     [{ lo_key: "snd_cat_gen_lo", hi_key: "snd_cat_gen_hi", lo: "1", hi: "20", bank: "2", page: "B" }],
     "a category goes back as its pair, with its bank and page");
+});
+
+test("a backup holds every Learned Sequence as the droid stores it, in its list order, and the board that wrote it", async () => {
+  const library = [sequence("DM:WAVE", [{ type: "dome", cmd: ":OP01", ms: 0 }]), sequence("DM:NOD")];
+  const page = openPage(makeDroid({ board: "firebeetle2", cap: 10, library }));
+  await page.env.settle();
+  page.env.emitOn("backup-download-btn", "click");
+  await page.until(() => page.saved.length > 0 || /No backup/.test(page.receipt()));
+
+  const [file] = page.saved;
+  assert.deepEqual(file.sequences, library);
+  assert.equal(file.board, "firebeetle2");
+  assert.ok(file.config && file.servo_outputs && file.rc_map && file.audio_tracks && file.audio_mood_map,
+    "and every part it carried before");
+});
+
+test("a Sequence the droid refuses partway through leaves the droid's library exactly as it was", async () => {
+  const library = [sequence("DM:MINE"), sequence("DM:KEEP", [{ type: "dome", cmd: ":OP01", ms: 0 }])];
+  const droid = makeDroid({
+    library,
+    refuse: (seq) => (seq.name === "DM:BIG" ? "payload too large" : null),
+  });
+  const backup = {
+    schema: 2,
+    board: "artoo_esp32",
+    sequences: [sequence("DM:KEEP"), sequence("DM:NEW"), sequence("DM:BIG")],
+  };
+  const { receipt } = await restoreOn(droid, backup);
+
+  assert.deepEqual([...droid.store.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    library.slice().sort((a, b) => a.name.localeCompare(b.name)),
+    "the droid holds the Sequences it had, each as it was");
+  assert.match(receipt(), /Sequences: FAILED — the droid refused DM:BIG: payload too large\. The Sequences the droid had are put back\./);
+});
+
+test("the RC Map never goes out with a binding the droid would refuse, and a refused map is never called restored", async () => {
+  // Six Sequences onto a droid that stores five: the sixth is left out, and
+  // the RC Map's binding to it with it.
+  const names = ["DM:A", "DM:B", "DM:C", "DM:D", "DM:E", "DM:SIXTH"];
+  const rcMap = {
+    mode: "dual_sbus",
+    map: [
+      { source: "sbus1", channel: 5, action: "dome_seq", payload: "DM:SIXTH" },
+      { source: "sbus1", channel: 6, action: "dome_seq", payload: "DM:VADER" },
+      { source: "sbus1", channel: 7, action: "dome_seq", payload: "DM:A" },
+    ],
+  };
+  const droid = makeDroid({ cap: 5 });
+  const backup = { schema: 2, board: "artoo_esp32", sequences: names.map((name) => sequence(name)), rc_map: rcMap };
+  const { receipt } = await restoreOn(droid, backup);
+
+  assert.deepEqual(droid.rcMap.map, rcMap.map.slice(1), "the map landed without the binding whose Sequence was left out");
+  assert.match(receipt(), /RC Channel 5: DM:SIXTH is not on this droid/);
+
+  const refusing = makeDroid();
+  const bad = { schema: 2, rc_map: { map: [{ source: "sbus1", channel: 4, action: "dome_marcduino", payload: ":SM01" }] } };
+  const refused = await restoreOn(refusing, bad);
+  assert.match(refused.receipt(), /RC Map: FAILED — :SM is diagnostic only/);
+  assert.doesNotMatch(refused.receipt(), /RC Map: (restored|partial)/);
+});
+
+test("a copy of what is about to be replaced that cannot be built replaces nothing", async () => {
+  const droid = makeDroid({
+    library: [sequence("DM:MINE")],
+    fail: (path, method) => path === "/api/rc/map" && method === "GET",
+  });
+  const backup = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:OTHER")], rc_map: { map: [] } };
+  const { writes, saved, receipt } = await restoreOn(droid, backup, { answer: "copy" });
+
+  assert.deepEqual(writes(), [], "nothing was sent to the droid");
+  assert.equal(saved.length, 0, "and no copy was saved");
+  assert.deepEqual([...droid.store.keys()], ["DM:MINE"]);
+  assert.match(receipt(), /No copy saved: the droid did not send rc_map\. Nothing was replaced\./);
 });
