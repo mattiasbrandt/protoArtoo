@@ -28,6 +28,39 @@
 #include "mood.h"                 // moodIdFromSeCommand()
 #include "servo_task.h"           // servoTaskDrivesOutput()
 
+// The router's one log line, kept out of line on purpose. Every PA_LOG_* puts
+// a line buffer in the frame of the function it is written in, and
+// routeMarcduinoLine() sits on RCInputTask's measured chain directly under the
+// body handler: logging inline walked that chain at 5904 B on the P4, past
+// the stack rule's step for its 7168 B stack; out of line it walks 5632 B
+// (#449, tools/check_task_stack_chains.py). The buffer then lives only while a
+// line is logged, beside the handler rather than under it.
+__attribute__((noinline)) inline void marcduinoLogRoute(MarcduinoRouteOutcome outcome,
+                                                        const char* line) {
+    switch (outcome) {
+        case MarcduinoRouteOutcome::Forwarded:
+            PA_LOG_DEBUG("MARCDUINO", "forwarded to dome: %s", line);
+            break;
+        case MarcduinoRouteOutcome::DomeLinkDown:
+            PA_LOG_WARN("MARCDUINO", "not forwarded, dome not connected: %s", line);
+            break;
+        case MarcduinoRouteOutcome::DomeQueueFull:
+            PA_LOG_WARN("MARCDUINO", "not forwarded, dome TX queue full: %s", line);
+            break;
+        case MarcduinoRouteOutcome::OutputUndriven:
+            PA_LOG_WARN("MARCDUINO", "%s refused - nothing drives that Output", line);
+            break;
+        case MarcduinoRouteOutcome::NotRun:
+            PA_LOG_WARN("MARCDUINO", "%s not run from this path", line);
+            break;
+        case MarcduinoRouteOutcome::Applied:
+        case MarcduinoRouteOutcome::BlockedByEstop:
+        case MarcduinoRouteOutcome::QueueFull:
+            // The body handler logged these itself.
+            break;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // marcduinoForwardToDome()
 // The one forward: POST /api/dome/cmd's shape (handleDomeCmdPost(),
@@ -38,16 +71,14 @@
 // (src/rc_dispatcher_helpers.cpp).
 // -----------------------------------------------------------------------------
 inline MarcduinoRouteOutcome marcduinoForwardToDome(const char* line) {
+    MarcduinoRouteOutcome outcome = MarcduinoRouteOutcome::Forwarded;
     if (!domeConnected()) {
-        PA_LOG_WARN("MARCDUINO", "not forwarded, dome not connected: %s", line);
-        return MarcduinoRouteOutcome::DomeLinkDown;
+        outcome = MarcduinoRouteOutcome::DomeLinkDown;
+    } else if (!domeQueueTx(line)) {
+        outcome = MarcduinoRouteOutcome::DomeQueueFull;
     }
-    if (!domeQueueTx(line)) {
-        PA_LOG_WARN("MARCDUINO", "not forwarded, dome TX queue full: %s", line);
-        return MarcduinoRouteOutcome::DomeQueueFull;
-    }
-    PA_LOG_DEBUG("MARCDUINO", "forwarded to dome: %s", line);
-    return MarcduinoRouteOutcome::Forwarded;
+    marcduinoLogRoute(outcome, line);
+    return outcome;
 }
 
 // Whether ServoTask drives the Output(s) a body-owned panel line names; 255 is
@@ -101,12 +132,12 @@ inline MarcduinoRouteOutcome routeMarcduinoLine(const char* line) {
 
         case MarcduinoOwner::Body: {
             if (moodIdFromSeCommand(line) != 0) {
-                PA_LOG_WARN("MARCDUINO", "mood %s not applied from this path", line);
+                marcduinoLogRoute(MarcduinoRouteOutcome::NotRun, line);
                 return MarcduinoRouteOutcome::NotRun;
             }
             const uint8_t armId = marcduino_panel_command_arm_id(line);
             if (armId != 254 && !marcduinoPanelOutputDriven(armId)) {
-                PA_LOG_WARN("MARCDUINO", "%s refused - nothing drives that Output", line);
+                marcduinoLogRoute(MarcduinoRouteOutcome::OutputUndriven, line);
                 return MarcduinoRouteOutcome::OutputUndriven;
             }
             return marcduinoRouteFromBody(executeMarcduinoBodyCommand(line));
