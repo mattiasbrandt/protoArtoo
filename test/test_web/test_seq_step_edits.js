@@ -195,6 +195,7 @@ function newPage() {
     removeEventListener() {},
     alert() {},
     confirm: () => false,
+    crypto: require("node:crypto").webcrypto,  // the browser's own, which the editor mints ids with
     setTimeout,
     clearTimeout,
     setInterval,
@@ -334,4 +335,22 @@ test("retiming to the grid counts only the steps that landed, and one undo puts 
   const saved = page.posts.filter((post) => post.url === "/api/seq");
   assert.equal(saved.length, 1, "Save sent nothing");
   assert.deepEqual(saved[0].body.steps, original, "undo did not put every step back");
+});
+
+// A sequence inside another names it by a stable id (ADR 0046), so a save
+// always carries one, and never replaces one it already has: a new id would
+// orphan every sequence that holds this one.
+test("a saved sequence always carries a stable id, and keeps the one it has", async () => {
+  const minted = newPage();
+  minted.open({ name: "DM:FRESH", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] }, []);
+  await minted.save();
+  const first = minted.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(first.length, 1, "Save sent nothing");
+  assert.match(first[0].body.id || "", /^[0-9a-f]{8}$/);
+
+  const kept = newPage();
+  kept.open({ name: "DM:HELD", id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] }, []);
+  await kept.save();
+  const second = kept.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(second[0].body.id, "abcd1234", "the save replaced the sequence's id");
 });

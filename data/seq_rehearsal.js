@@ -77,6 +77,10 @@
       msg: "Only a part on a calibrated output can be timed here.",
       closes: "Calibrate the output it is on, with the droid connected.",
     },
+    "phrase": {
+      msg: "A sequence inside this one is read when it runs, not here.",
+      closes: "Open that sequence to see what it does.",
+    },
     "random-pick": {
       msg: "A random step picks its panel at run time. Nothing fixed to check.",
       closes: "Nothing closes this; the pick is the point.",
@@ -878,6 +882,7 @@
         const move = bodyMove(step, context);
         if (!(move.output && !isServo(move.output)) && !move.timed) gap = "body-timing";
       } else if (step.type === "random") gap = "random-pick";
+      else if (step.type === "sequence") gap = "phrase";
       if (gap) gapCounts.set(gap, (gapCounts.get(gap) || 0) + 1);
     });
     const gaps = [...gapCounts.entries()].map(([code, n]) => ({ code, n, ...GAPS[code] }));

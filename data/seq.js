@@ -756,6 +756,8 @@
         const category = step.category || "alert";
         return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
       }
+      case "sequence":
+        return phraseName(step);
       case "gesture": {
         const G = window.SeqGesture;
         const set = G && step.set ? G.setOf(step.set)?.label || step.set : `${(step.parts || []).length} parts`;
@@ -793,6 +795,7 @@
     random: "Random Flutter",
     audioCat: "Sound Category",
     gesture: "Gesture",
+    sequence: "Sequence",
     end: "Sequence End",
   };
 
@@ -814,6 +817,7 @@
     random: "Randomized panel motion",
     audioCat: "Play a random sound from a category",
     gesture: "One move across a set of parts, in order round the droid",
+    sequence: "Another sequence, as one step, kept linked",
     end: "Mark the end of the sequence",
   };
 
@@ -826,7 +830,7 @@
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
-            ${["audio", "dome", "domeRotate", "gesture", "loop", "random", "audioCat", "end"]
+            ${["audio", "dome", "domeRotate", "gesture", "sequence", "loop", "random", "audioCat", "end"]
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
@@ -887,7 +891,7 @@
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
               <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "gesture", "loop"]
+                ${["audio", "domeRotate", "dome", "gesture", "sequence", "loop"]
                   .map(
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
@@ -968,6 +972,38 @@
   // body flutter (src/seq_json.cpp parseStepBeats()).
   const spansBeats = (step) =>
     (step.type === "domeRotate" && Number(step.speedPct) !== 0) || (step.type === "body" && step.shape === "flutter");
+
+  // ---------------------------------------------------------------------------
+  // A sequence inside a sequence (ADR 0046). A step names its phrase by the
+  // phrase's stable reference - a saved sequence's `id`, or a factory
+  // sequence's name, which never changes - and shows it by its CURRENT name,
+  // so a rename orphans nothing. A saved sequence with no id yet cannot be
+  // picked until it is saved again, which mints one.
+  // ---------------------------------------------------------------------------
+  const phraseChoices = () => [
+    ...sequences
+      .filter((x) => x.id && x.name !== editorState.current?.name && x.toggleGroup === "none")
+      .map((x) => ({ id: x.id, label: x.name })),
+    ...builtins
+      .filter((x) => (x.toggleGroup || "none") === "none" && x.name !== editorState.current?.name)
+      .map((x) => ({ id: x.name, label: x.name })),
+  ];
+
+  const phraseName = (step) => {
+    const ref = step?.ref;
+    const learned = sequences.find((x) => x.id && x.id === ref);
+    if (learned) return learned.name;
+    if (typeof ref === "string" && ref.startsWith("DM:")) return ref;
+    return step?.name ? `${step.name} (not on this droid)` : "Pick a sequence";
+  };
+
+  // A stable id for a sequence being saved that has none: eight lowercase hex
+  // digits, never changed after (protocolCheckSeqIdValid()).
+  const mintSequenceId = () => {
+    const bytes = new Uint8Array(4);
+    (window.crypto || globalThis.crypto).getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  };
 
   // The Gesture's form values: numbers that are optional, and words that are
   // optional (an unset word is its default).
@@ -1676,6 +1712,30 @@
         return;
       }
 
+      case "sequence": {
+        // The phrase as wrapping pills of names over a hidden reference; the
+        // step's `name` is the label a reader of the file sees.
+        const esc = window.PAUtils.escapeHtml;
+        const choices = phraseChoices();
+        fieldsContainer.innerHTML = `
+          <div class="seq-rows">
+            <span class="seq-row-label">Sequence</span>
+            <div class="seq-row-ctl">
+              <span class="seq-pills" role="radiogroup" aria-label="sequence">
+                ${choices
+                  .map(
+                    (o) =>
+                      `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="ref" data-value="${esc(o.id)}" aria-checked="${o.id === step.ref ? "true" : "false"}">${esc(o.label)}</button>`,
+                  )
+                  .join("")}
+              </span>
+              ${choices.length ? "" : `<span class="seq-unit">Save a sequence first.</span>`}
+              <input type="hidden" data-field="ref" value="${esc(step.ref || "")}">
+            </div>
+          </div>`;
+        return;
+      }
+
       case "end":
         html = `<span class="step-field-empty">(terminal step)</span>`;
         fieldsContainer.innerHTML = html;
@@ -2051,6 +2111,13 @@
     // along the same way (their inputs set them directly, setStepBeat()); and
     // a Gesture over a listed set of parts, which the pickers do not offer,
     // keeps its list.
+    // A phrase step keeps a label for a reader of the file: its current name.
+    if (step.type === "sequence") {
+      if (step.ref === "") delete step.ref;
+      const label = step.ref ? phraseName(step) : "";
+      if (label && !label.endsWith("(not on this droid)")) step.name = label;
+      else if (prev.name && prev.ref === step.ref) step.name = prev.name;
+    }
     if (step.type === "gesture" && prev.type === "gesture") {
       ["stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
         if (prev[key] !== undefined) step[key] = prev[key];
@@ -2805,6 +2872,7 @@
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
       audioCat: { category: "alert", fallback: "scream" },
       gesture: { set: "ring", spread: "wave" },
+      sequence: {},
       end: {},
     };
 
@@ -3143,6 +3211,9 @@
     const saveBtn = document.getElementById("seq-editor-save");
     if (saveBtn) saveBtn.disabled = true;
     showEditorFeedback("Saving...", "info");
+    // Every sequence saved from here on has a stable id, so another can hold
+    // it; one loaded without gets its id on this save and keeps it.
+    if (!editorState.current.id) editorState.current.id = mintSequenceId();
     try {
       await PAApi.postJson("/api/seq", editorState.current);
       showRehearsalReport("Saved.", "ok", editorState.current, "list");

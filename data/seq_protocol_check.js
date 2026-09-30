@@ -11,7 +11,9 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "gesture", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "gesture", "sequence", "end"];
+  // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
+  const SEQ_REF = /^(DM:[A-Z0-9_]{1,18}|[0-9a-z]{1,16})$/;
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -310,6 +312,10 @@
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
         case "gesture":  return this._validateGestureStep(step, stepIndex, allSteps);
+        case "sequence":
+          return typeof step.ref === "string" && SEQ_REF.test(step.ref)
+            ? { ok: true }
+            : { ok: false, field: "ref", error: "Pick a sequence" };
         case "end":      return { ok: true };
         default:         return { ok: true };
       }
@@ -1204,6 +1210,15 @@
       if (Array.isArray(seq.steps)) {
         const beatVal = this._validateBeats(seq.steps, seq.tempo);
         if (!beatVal.ok) return beatVal;
+        // A sequence is spliced in where it sits, which a loop body cannot take.
+        const inLoop = loopBodyIndices(seq.steps);
+        const looped = seq.steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
+        if (looped >= 0) {
+          return { ok: false, field: `steps[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
+        }
+        if (seq.steps.filter((step) => step && step.type === "sequence").length > 8) {
+          return { ok: false, field: "steps", error: "A sequence can hold at most 8 others" };
+        }
       }
       const { name, suppressMs, toggleGroup, steps } = this.resolveBeats(seq);
 
