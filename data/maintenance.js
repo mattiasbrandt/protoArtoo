@@ -960,10 +960,49 @@
   };
 
   // ---- FILE PARSE ----
-  // A protoArtoo backup is a JSON object with a schema number. Anything else is
-  // refused with the reason, never half-read, and as not supported rather than
-  // impossible: opening sharing later is a policy change, not a format change
-  // (ADR 0056).
+  // A protoArtoo backup is a JSON object with a schema number, in the shape
+  // Download backup writes it. Anything else is refused with the reason, never
+  // half-read, and as not supported rather than impossible: opening sharing
+  // later is a policy change, not a format change (ADR 0056).
+  //
+  // The shape is checked part by part, because each part a file carries
+  // replaces the droid's: `{"schema":1,"rc_map":{"map":[]}}` would otherwise be
+  // offered and empty the RC Map. A schema 2 file names its board, and one that
+  // does not is refused rather than taken as this droid's own, which would
+  // write another board's pins. The copy saved before a restore carries only
+  // the parts it replaces, so a part may be absent; a part present is whole.
+  const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  const whyNotABackup = (backup) => {
+    if (!isObject(backup)) return 'it is not a backup object';
+    if (!Number.isInteger(backup.schema) || backup.schema < 1) return 'it has no backup schema';
+    const current = backup.schema >= BACKUP_SCHEMA;
+    if (current && (typeof backup.board !== 'string' || backup.board === '')) {
+      return 'it does not say which board wrote it';
+    }
+    const has = (key) => backup[key] !== undefined;
+    if (has('sequences') && !(Array.isArray(backup.sequences)
+        && backup.sequences.every((seq) => isObject(seq) && typeof seq.name === 'string'))) {
+      return 'its Sequences are incomplete';
+    }
+    if (has('rc_map') && !(isObject(backup.rc_map) && Array.isArray(backup.rc_map.map))) {
+      return 'its RC Map is incomplete';
+    }
+    // The Configuration is the config, the Outputs' rows and the sound setup,
+    // read together. Schema 1 wrote the rows only from #417 on.
+    const configuration = current
+      ? ['config', 'servo_outputs', 'audio_tracks', 'audio_mood_map']
+      : ['config', 'audio_tracks', 'audio_mood_map'];
+    if (configuration.some(has) && !(configuration.every((key) => isObject(backup[key]))
+        && (!has('servo_outputs') || Array.isArray(backup.servo_outputs?.outputs)))) {
+      return 'its Configuration is incomplete';
+    }
+    // Download wrote schema 1 whole: the Configuration and the RC Map, always.
+    if (!current && !has('config')) return 'it has no Configuration';
+    if (!current && !has('rc_map')) return 'it has no RC Map';
+    if (!has('sequences') && !has('config') && !has('rc_map')) return 'it holds no Sequences, Configuration or RC Map';
+    return null;
+  };
+
   const refuseFile = (why) => {
     setFeedback(`Not a protoArtoo backup: ${why}. Restoring it is not supported; choose a file Download backup saved.`, 'error');
     parsedBackup = null;
@@ -988,12 +1027,9 @@
         refuseFile('it is not JSON');
         return;
       }
-      if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
-        refuseFile('it is not a backup object');
-        return;
-      }
-      if (!Number.isInteger(backup.schema) || backup.schema < 1) {
-        refuseFile('it has no backup schema');
+      const why = whyNotABackup(backup);
+      if (why) {
+        refuseFile(why);
         return;
       }
 

@@ -483,10 +483,28 @@ test("the RC Map never goes out with a binding the droid would refuse, and a ref
   assert.match(receipt(), /RC Channel 5: DM:SIXTH is not on this droid/);
 
   const refusing = makeDroid();
-  const bad = { schema: 2, rc_map: { map: [{ source: "sbus1", channel: 4, action: "dome_marcduino", payload: ":SM01" }] } };
+  const bad = { schema: 2, board: "artoo_esp32", rc_map: { map: [{ source: "sbus1", channel: 4, action: "dome_marcduino", payload: ":SM01" }] } };
   const refused = await restoreOn(refusing, bad);
   assert.match(refused.receipt(), /RC Map: FAILED — :SM is diagnostic only/);
   assert.doesNotMatch(refused.receipt(), /RC Map: (restored|partial)/);
+});
+
+// A file is offered only in the shape Download backup writes. Any object with
+// a schema used to pass: an RC Map alone emptied the droid's, and a schema 2
+// file without its board was taken as this droid's own and wrote the whole
+// Configuration, pins included (Codex review of #448 slice 1).
+test("a file not in the shape Download backup writes is refused, and nothing is offered", async () => {
+  const boardless = { ...OLDER_BACKUP, schema: 2 };
+  for (const file of [boardless, { schema: 1, rc_map: { map: [] } }]) {
+    const page = openPage(makeDroid());
+    await page.env.settle();
+    page.env.element("backup-file-input").files = [{ text: JSON.stringify(file) }];
+    page.env.emitOn("backup-file-input", "change");
+    await page.env.settle();
+
+    assert.match(page.receipt(), /^Not a protoArtoo backup: /, `${JSON.stringify(file).slice(0, 60)} was offered`);
+    assert.equal(page.env.element("restore-sections").hidden, true, "no part is offered");
+  }
 });
 
 test("a copy of what is about to be replaced that cannot be built replaces nothing", async () => {
