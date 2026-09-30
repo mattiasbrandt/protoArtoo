@@ -44,3 +44,19 @@ bool servoTaskWiredAtStart(uint8_t armId);
 // boot - wired at start, no light on its wire at start, and LEDC came up. An
 // Output this answers false for is one every servo command is dropped for.
 bool servoTaskDrivesOutput(uint8_t armId);
+
+// servoTaskMayTakeForRun(): a Find by Moving run may take this Output now - a
+// free servo Output, one nothing drives, no Part is on and no light is on the
+// wire of (include/servo_run.h servoRunMayTake(), #411). The servo route and
+// the Console admit a nudge and a release on it for that reason, and ServoTask
+// asks the same question before it takes one. Reads the boot snapshot above
+// and the live config cache, so it is current as of the call.
+bool servoTaskMayTakeForRun(uint8_t armId);
+
+// servoTaskRunHolds(): a Find by Moving run holds this Output now, so a
+// release for it lets it go. A release on a free Output nobody holds would be
+// dropped, and the route must not answer ok for it (include/api_servo.h). Read
+// from Core 0 without a lock: the flag is one byte ServoTask writes, and a
+// stale read can only be a release landing just as a bound let go, which the
+// task then drops.
+bool servoTaskRunHolds(uint8_t armId);

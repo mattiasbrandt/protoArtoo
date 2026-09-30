@@ -370,14 +370,14 @@ void typeEndpoints(uint8_t channel, uint16_t openUs, uint16_t closeUs) {
 
 // What loadConfigToState() does with what is in NVS (src/main.cpp, which the
 // native build does not compile), in its order: the snapshot, the rows beside
-// it, the lit wire's tick, then the cache.
+// it, every wired tick from the Parts on its row, then the cache.
 void bootFrom(Preferences& prefs, ConfigSnapshot* snap) {
     prefs.begin(NVS_NAMESPACE, true);
     configLoad(prefs, snap);
     ServoOutputRepairReport report = {};
     configLoadServoOutputs(prefs, &report);
     prefs.end();
-    boardOutputTickAdoptedLight(report, &snap->system);
+    configCacheTicksFollowParts(&snap->system);
     configCacheReplace(*snap);
 }
 
@@ -463,6 +463,12 @@ void test_a_narrowed_pair_keeps_its_keys_until_that_output_is_saved() {
 // had exactly one: lit from the stored slot, typed as a strip, and ticked or
 // not, since `main` never asked the tick. An MG996R pair `main` held legally
 // and the band cannot, and one it can.
+//
+// The wire keeps its strip and its LED count on its row, and waits for a
+// light Part: `main` had no Parts, and an Output with no Part on it is free
+// (CONTEXT.md "Wiring", "Lights"; #411), so its tick is cleared at start and
+// the strip is dark until a light Part is put on that Output on Wiring. Until
+// #411 the adoption ticked it so the strip stayed lit (#417).
 static void walkTheUpgradeFromMain(bool litWireTicked) {
     const size_t lit = outputForRetiredSlot(2);
     TEST_ASSERT_TRUE(lit < BOARD_OUTPUT_COUNT);
@@ -491,7 +497,10 @@ static void walkTheUpgradeFromMain(bool litWireTicked) {
 
     ConfigSnapshot snap = {};
     bootFrom(prefs, &snap);
-    TEST_ASSERT_TRUE(stripDriven(snap, lit));
+    TEST_ASSERT_FALSE_MESSAGE(stripDriven(snap, lit), "no Part is on the wire, so it waits for one");
+    TEST_ASSERT_EQUAL_UINT8(SERVO_COMP_RGB, (uint8_t)configCacheReadServoOutputComponent(
+                                                SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel));
+    TEST_ASSERT_FALSE(snap.system.enable_arm1);
     TEST_ASSERT_EQUAL_UINT8(
         40, configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel));
     expectEndpoints(LEDC_CH_ARM1, 2000, 2000);
@@ -505,7 +514,7 @@ static void walkTheUpgradeFromMain(bool litWireTicked) {
     prefs.begin(NVS_NAMESPACE, true);
     TEST_ASSERT_FALSE(prefs.isKey(NVS_KEY_RETIRED_AUX_LED_PIN));
     TEST_ASSERT_FALSE(prefs.isKey(NVS_KEY_RETIRED_AUX_LED_COUNT));
-    TEST_ASSERT_TRUE(prefs.getBool(tickKey, false));
+    TEST_ASSERT_FALSE(prefs.getBool(tickKey, true));
     TEST_ASSERT_TRUE(prefs.isKey("arm1_op"));
     TEST_ASSERT_FALSE(prefs.isKey("arm2_op"));
     prefs.end();
@@ -513,7 +522,7 @@ static void walkTheUpgradeFromMain(bool litWireTicked) {
     // The next boot finds it all on the rows and the tick.
     ConfigSnapshot again = {};
     bootFrom(prefs, &again);
-    TEST_ASSERT_TRUE(stripDriven(again, lit));
+    TEST_ASSERT_FALSE(stripDriven(again, lit));
     TEST_ASSERT_EQUAL_UINT8(
         40, configCacheReadServoOutputLedCount(SERVO_DRIVER_LEDC, BOARD_OUTPUTS[lit].channel));
     expectEndpoints(LEDC_CH_ARM1, 2000, 2000);
@@ -521,12 +530,46 @@ static void walkTheUpgradeFromMain(bool litWireTicked) {
     expectEndpoints(LEDC_CH_ARM2, 1850, 1150);
 }
 
-void test_the_upgrade_from_main_keeps_a_ticked_lit_wire_and_both_pairs() {
+void test_the_upgrade_from_main_keeps_a_ticked_lit_wires_strip_and_both_pairs() {
     walkTheUpgradeFromMain(true);
 }
 
-void test_the_upgrade_from_main_keeps_an_unticked_lit_wire_lit() {
+void test_the_upgrade_from_main_keeps_an_unticked_lit_wires_strip_waiting_for_a_part() {
     walkTheUpgradeFromMain(false);
+}
+
+// Test: every start sets each wired tick from the Parts on its row (#411)
+//
+// An Output with a Part on it is wired and one with none is free (CONTEXT.md
+// "Wiring"). A tick stored before the tick followed the Parts - ARM1 ticked
+// with nothing on it - is cleared, so its pin carries no pulse; an Output a
+// Part is on but whose tick was never set - ARM4 - is ticked. Both before the
+// cache is taken, so ServoTask's start-up read already sees them.
+void test_a_start_sets_every_wired_tick_from_the_parts_on_its_row() {
+    Preferences prefs;
+    prefs.begin(NVS_NAMESPACE, false);
+    prefs.clear();
+    ServoOutputTable table = {};
+    servoOutputTableDefaults(&table);
+    TEST_ASSERT_TRUE(servoOutputAddPart(&table.rows[3], "doorFL"));
+    PrefsWriter writer(prefs);
+    TEST_ASSERT_TRUE(writeServoOutputTableForTest(table, writer));
+    ConfigSnapshot stored = {};
+    stored.system.enable_arm1 = true;   // ticked, and no Part on it
+    stored.system.enable_aux2 = false;  // doorFL is on it
+    TEST_ASSERT_TRUE(configSave(prefs, stored));
+    prefs.end();
+
+    ConfigSnapshot snap = {};
+    bootFrom(prefs, &snap);
+    for (size_t i = 0; i < BOARD_OUTPUT_COUNT; ++i) {
+        TEST_ASSERT_EQUAL_MESSAGE(BOARD_OUTPUTS[i].channel == table.rows[3].channel,
+                                  boardOutputIsWired(snap.system, i), BOARD_OUTPUTS[i].id);
+    }
+    ConfigSnapshot cached = {};
+    configCacheRead(&cached);
+    TEST_ASSERT_FALSE(cached.system.enable_arm1);
+    TEST_ASSERT_TRUE(cached.system.enable_aux2);
 }
 
 // Test: the two zeros putString() returns are told apart (#375)
@@ -1753,8 +1796,9 @@ int main() {
     RUN_TEST(test_a_failed_row_write_keeps_the_legacy_keys);
     RUN_TEST(test_a_failed_row_write_stops_the_save_before_the_fixed_field_sets);
     RUN_TEST(test_a_narrowed_pair_keeps_its_keys_until_that_output_is_saved);
-    RUN_TEST(test_the_upgrade_from_main_keeps_a_ticked_lit_wire_and_both_pairs);
-    RUN_TEST(test_the_upgrade_from_main_keeps_an_unticked_lit_wire_lit);
+    RUN_TEST(test_the_upgrade_from_main_keeps_a_ticked_lit_wires_strip_and_both_pairs);
+    RUN_TEST(test_the_upgrade_from_main_keeps_an_unticked_lit_wires_strip_waiting_for_a_part);
+    RUN_TEST(test_a_start_sets_every_wired_tick_from_the_parts_on_its_row);
     RUN_TEST(test_an_empty_string_stores_and_a_failed_write_does_not);
     RUN_TEST(test_configLoad_legacy_schema_v0);
     RUN_TEST(test_configLoad_schema_v1_migrates_info_log_level);

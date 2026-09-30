@@ -566,10 +566,21 @@ Queues servo command.
   the controller computes the pair from the width on the pin, keeps both
   sides inside the cautious 1000–2000 µs band by shifting the pair inward,
   and runs the whole out-and-back itself, so the output returns even if the
-  browser that asked has gone. Each side rests about 0.6 s. An output with no
-  pulse on it, or sitting outside that band, is not nudged, and an estop ends
-  a nudge where it is. `arm=both` is refused. `GET /api/servo/outputs`'s
-  `nudgesDone` says when a nudge has ended.
+  browser that asked has gone. Each side rests about 0.6 s. An output sitting
+  outside that band is not nudged, and an estop ends a nudge where it is.
+  `arm=both` is refused. `GET /api/servo/outputs`'s `nudgesDone` says when a
+  nudge has ended.
+  A nudge may name a **free** output - no Part on it, nothing on its wire that
+  is a light's, and nothing driving it since the droid started (#411). A Find
+  by Moving run is how a free output is found, so the controller takes it for
+  the run: it puts the output's recorded centre on the pin (a first width on a
+  servo nobody has driven, so a jump), nudges about it, and lets it go again
+  with no pulse - by `action=release`, by any estop or Sleep Mode, or on its
+  own a few seconds after nudges for it stop arriving, and in any case within
+  ten minutes of taking it (the calibration dial's two bounds, ADR 0064). The
+  page cannot extend either. Nothing is saved: the output's wired tick still
+  follows its Parts, and while the run holds it `held` stays `false`, which is
+  the dial's.
 - `action=travel` (a body view's press, ADR 0063): run the Part on this
   output through its recorded travel and back — out to the end recorded as
   **open**, across to the end recorded as **close**, and back to the width the
@@ -622,11 +633,14 @@ Queues servo command.
 - `400` missing/invalid `positionUs`, with `field`, `reason` and `accepts` (`500..2500`) as in "Refusals from a settings write"
 - `400` `{"ok":false,"error":"refresh=1 is for a hold only"}`
 - `409` the droid has not used the Output since it started, whatever the action
-  (pulses off included; for `both`, either of the two). The wired ticks are read
+  (pulses off included; for `both`, either of the two) - except a nudge on a
+  free output, which a Find by Moving run takes (`action=nudge`), and a release
+  on one a run holds. A release on a free output no run holds is refused like
+  any other: there is nothing to let go. The wired ticks are read
   once at start (ADR 0027), so an Output ticked since has nothing behind it until
   a restart. The sentence says what would let it be used:
   `{"ok":false,"error":"Restart the droid to use ARM2."}` when it is ticked now,
-  `"ARM2 is not wired. Mark it on Wiring."` when it is not, and
+  `"ARM2 has no Part on it. Put one on it on Wiring."` when it is not, and
   `"ARM3 carries a light, not a servo."` when its wire carries a light.
   `GET /api/servo/outputs` `driven` says the same thing ahead of time. The
   Controller Console's `servo.action.*` rows refuse the same Outputs with
@@ -747,9 +761,10 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     builder. Absent for an expander's row.
   - `switchable`: whether the Output has a wired tick. `wired`: whether that
     tick is on, as saved; an Output with no tick - an expander's - reports
-    `true`, since nothing could have switched it off. A Part move writes it
-    (on while a Part is on the Output, `movePart` below). The droid reads it
-    once at start (ADR 0027), so a tick saved since waits for a restart.
+    `true`, since nothing could have switched it off. It follows the Parts: on
+    while a Part is on the Output, set after every write and at every start
+    (`movePart` below), and no door writes it on its own. The droid reads it
+    once at start (ADR 0027), so a tick changed since waits for a restart.
   - `activeWired`: the wired tick the droid started with. It differs from
     `wired` exactly while a saved tick waits for a restart. `true` on an
     expander's row, like `wired`.
@@ -839,14 +854,14 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
 curl -s http://artoo.local/api/servo/outputs
 ```
 
-#### Example response (an Artoo PCB, fresh, with ARM1 and ARM2 switched on; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 let go with pulses off after a nudge, and ARM5 released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
+#### Example response (an Artoo PCB, fresh, with the two utility arms on ARM1 and ARM2; then the same droid with a door ganged to an arm part way through opening, a dial holding a calibrated ARM2, ARM3 - free, no Part on it - let go by a Find by Moving run after its nudge, and ARM5, with a door on it, released by the estop. A FireBeetle 2 answers the same rows named `GPIO 49` .. `GPIO 51`)
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilUp"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilLo"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1500,"targetUs":1500,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1}]}
 ```
 
 ```json
-{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1}]}
+{"outputs":[{"address":"ledc:0","name":"ARM1","id":"arm1","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilUp","doorFL"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":1620,"targetUs":2000,"held":false,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:1","name":"ARM2","id":"arm2","switchable":true,"wired":true,"lightCapable":false,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["utilLo"],"bandLoUs":1000,"bandHiUs":2000,"component":"mg996r","openUs":1150,"centreUs":1500,"closeUs":1850,"calibrated":true,"narrowedFrom":null,"commandedUs":1450,"targetUs":1450,"held":true,"limp":"off","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null},{"address":"ledc:3","name":"ARM3","id":"aux1","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"pulses-off","nudgesDone":1,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:4","name":"ARM4","id":"aux2","switchable":true,"wired":false,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":[],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"off","nudgesDone":0,"activeWired":false,"driven":false,"activeLight":null,"activeLedCount":1},{"address":"ledc:5","name":"ARM5","id":"aux3","switchable":true,"wired":true,"lightCapable":true,"ledCount":1,"throwMs":1000,"accelMs":250,"ease":"none","boot":"limp","parts":["doorRR"],"bandLoUs":1000,"bandHiUs":2000,"component":"none","openUs":2000,"centreUs":1500,"closeUs":1000,"calibrated":false,"narrowedFrom":null,"commandedUs":null,"targetUs":null,"held":false,"limp":"estop","nudgesDone":0,"activeWired":true,"driven":true,"activeLight":null,"activeLedCount":1}]}
 ```
 
 ### POST /api/aux-led/color
@@ -1672,7 +1687,12 @@ Updates supported config fields and persists to NVS.
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - system: `logLevel(1..4|error|warning|info|debug)` — 1 Error, 2 Warning, 3 Info, 4 Debug; the words are taken as well as the numbers, at every door (the Console's `system.config.log-level` takes the same), and GET always reads the number. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs|not_fitted)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver. `not_fitted`: no Radio Controller at all, a droid driven from the web alone; storing it also clears `rcMember` and sets `enableRcCh1`..`enableRcCh6` false, each unless the same request states it, and the RC path starts nothing, so the SBUS boot lock and the two radio failsafe layers stand down), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
-- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`. The first five are the Outputs' wired ticks - the Controller Console's form names for them - and an Output row's `wired` (below) reaches the same check
+- components (bool): `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`.
+  `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2` and `enableAux3` name the
+  Outputs' wired ticks, and **every write of one is refused**, `400` with `field`
+  the name and `reason` `conflict`: a tick follows the Parts on its Output (an
+  Output with a Part on it is wired, one with none is free, #411), so the Parts
+  are the only way to set it
 - components (Component Member): `soundMember` — a Component Registry part id
   (`dy_sv5w`, `mp3_trigger`, `chirp`), from the `sound` category of
   `GET /api/identity/components`. Only a `supported` sound part this image
@@ -1756,8 +1776,10 @@ Updates supported config fields and persists to NVS.
   which is how the Controller Console's `aux.config.led-count` writes one; it is
   checked exactly as a row in `outputs` is, and counts against one row per
   Output.
-  - `wired`: its wired tick (the same check as `enableArm1` and its siblings);
-    an Output with no tick takes only `true`.
+  - `wired`: its wired tick, read and checked but never written: the Parts on
+    the Output win, so after the write every board Output's tick follows the
+    Parts it holds (#411). A restore's `wired` beside its `parts` therefore
+    lands whole. An Output with no tick takes only `true`.
   - `component`: what is on the wire, `none|mg996r|mg90s|rgb`. `rgb` is a
     **Light Type**, not a servo model (ADR 0067): naming it on an Output is
     what says that wire carries a light, and several Outputs may carry one.
@@ -1799,11 +1821,12 @@ Updates supported config fields and persists to NVS.
   destination keeps the Parts already on it. Naming the origin is required
   on purpose: a surface can only take a Part off an Output it has read the Part
   on, which is the moment it must tell the builder so before sending (#347). A
-  move that changes nothing — the Part is already there — succeeds. A move
-  that lands also writes the `wired` tick of each board Output it touched, from
-  the Parts that Output holds now: on for one with a Part, off for one left
-  with none (an Output with a Part on it is wired, #411). The tick is read at
-  start, so a Part put on a free Output moves from the next start. A shape
+  move that changes nothing — the Part is already there — succeeds. After a
+  write lands - a move, or a row's `parts` - every board Output's `wired` tick
+  is set from the Parts it holds: on for one with a Part, off for one with
+  none (an Output with a Part on it is wired, #411). The same happens at every
+  start, so a tick stored with no Part is cleared. The tick is read at start,
+  so a Part put on a free Output moves from the next start. A shape
   error is `400` `{"ok":false,"error":"movePart, movePartFrom and movePartTo must
   be sent together: a Part this build models, and each end an Output Address or
   none"}`.
@@ -1857,7 +1880,7 @@ Updates supported config fields and persists to NVS.
 
 ```bash
 curl -s -X POST http://artoo.local/api/config \
-  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDomeEsc=true&domeEscNeutralUs=1500'
+  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableDomeEsc=true&domeEscNeutralUs=1500'
 ```
 
 #### Example response (abridged)

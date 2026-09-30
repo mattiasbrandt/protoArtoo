@@ -849,14 +849,22 @@
       </div>`;
   };
 
-  const badgeHtml = (report) => {
+  // The badge's one line as plain text, for a place that carries words rather
+  // than markup: a restore's receipt says it for each Sequence it wrote
+  // (data/maintenance.js, #448). One line, so the badge and the receipt cannot
+  // word the same report two ways.
+  const summaryText = (report) => {
     const said =
       report.findings.length === 0
         ? "nothing to flag"
         : `${plural(report.counts.warning, "warning", "warnings")}, ${plural(report.counts.note, "note", "notes")}`;
+    return `Rehearsal: ${said}`;
+  };
+
+  const badgeHtml = (report) => {
     return `
       <details class="seq-rehearsal-badge${report.counts.warning > 0 ? " seq-rehearsal-badge-warning" : ""}" data-rehearsal-badge>
-        <summary>Rehearsal: ${said}</summary>
+        <summary>${escapeHtml(summaryText(report))}</summary>
         ${listHtml(report)}
       </details>`;
   };
@@ -882,6 +890,7 @@
     unmeasuredOutputs,
     countsHtml,
     listHtml,
+    summaryText,
     badgeHtml,
     unmeasuredHtml,
   });

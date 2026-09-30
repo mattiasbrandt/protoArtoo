@@ -643,25 +643,6 @@ bool refusePartMove(ServoPartMoveOutcome outcome, ConfigCommitOutcome* commit) {
 }
 
 // -----------------------------------------------------------------------------
-// tickFollowsMove()
-// The wired tick of each end of a landed Part move, from the Parts that end
-// holds now (include/board_output_enabled.h boardOutputTickFollowsParts()). An
-// end that is "none", or an Output the board does not declare, has no tick.
-// -----------------------------------------------------------------------------
-void tickFollowsEnd(bool isOutput, ServoOutputDriver driver, uint8_t channel, SystemConfig* system) {
-    if (!isOutput || driver != SERVO_DRIVER_LEDC) {
-        return;
-    }
-    boardOutputTickFollowsParts(system, boardOutputOnChannel(channel),
-                                configCacheServoOutputPartCountAt(driver, channel));
-}
-
-void tickFollowsMove(const ServoOutputPartMove& move, SystemConfig* system) {
-    tickFollowsEnd(move.fromOutput, move.fromDriver, move.fromChannel, system);
-    tickFollowsEnd(move.toOutput, move.toDriver, move.toChannel, system);
-}
-
-// -----------------------------------------------------------------------------
 // addRecordFields()
 // Every Record, each under its own key and in its own module's words
 // (include/config_records.h). Out here with the others because a Record lives
@@ -802,18 +783,10 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     // lock across this call, so no other writer can move the Part between this
     // answer and the write.
     if (result.partMove.requested) {
-        const ServoPartMoveOutcome moved = configCacheMoveServoOutputPart(result.partMove.move);
-        if (refusePartMove(moved, &outcome)) {
+        if (refusePartMove(configCacheMoveServoOutputPart(result.partMove.move), &outcome)) {
             PA_LOG_WARN(TAG, "movePart %s refused: %s", result.partMove.move.part,
                         outcome.refusal);
             return outcome;
-        }
-        // An Output with a Part on it is wired and one with none is free
-        // (boardOutputTickFollowsParts()): each Output the move touched takes
-        // its tick from the Parts it holds now, onto `working`, which this
-        // commit applies and saves below with everything else.
-        if (moved == SERVO_PART_MOVED) {
-            tickFollowsMove(result.partMove.move, &working->system);
         }
     }
 
@@ -823,14 +796,6 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     if (result.applied.dropped > 0) {
         PA_LOG_INFO(TAG, "[CFG] and %u more field(s) updated", (unsigned)result.applied.dropped);
     }
-
-    // Not configCacheApply(), which keeps both: this request can state the
-    // speed group and stationary, and a stated one must land. They are also
-    // written at runtime by RC input on Core 1, which cannot take the config
-    // write lock this commit holds, so `working` may carry a value from before
-    // one landed. Whichever of them the request did not state keeps its live
-    // value (#417).
-    configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
 
     // An Output's settings arrive as rows (ADR 0068) and as the capture and
     // reverse acts, and the Apply Core that validated them is pure, so this is
@@ -855,6 +820,24 @@ ConfigCommitOutcome configCommitApplied(ConfigSnapshot* working, const ConfigApp
     outcome.openClampedRows = servoOutputRepair.openMovedRows;
     outcome.closeClampedRows = servoOutputRepair.closeMovedRows;
     outcome.centreClampedRows = servoOutputRepair.centreMovedRows;
+
+    // Every board Output's wired tick from the Parts its row holds now, after
+    // the move above and the rows' `parts` just applied - and after a row that
+    // took a Part off an Output it did not name
+    // (servoOutputTableEnforcePartOwnership()). The Part wins over any tick the request stated: a row's
+    // `wired` is read but not written (readOutputRow()), and the form names are
+    // refused (configApply()). BEFORE the system apply below, deliberately, so
+    // the ticks land in the cache and in the save with everything else in one
+    // pass (#411).
+    configCacheTicksFollowParts(&working->system);
+
+    // Not configCacheApply(), which keeps both: this request can state the
+    // speed group and stationary, and a stated one must land. They are also
+    // written at runtime by RC input on Core 1, which cannot take the config
+    // write lock this commit holds, so `working` may carry a value from before
+    // one landed. Whichever of them the request did not state keeps its live
+    // value (#417).
+    configCacheApplyKeepingLive(*working, result.speedLimitStated, result.stationaryStated);
 
     // What the request stated of each Record, onto its live copy. Each Record's
     // merge leaves a field the request did not state exactly as it stood: a

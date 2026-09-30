@@ -4163,11 +4163,31 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-2xs);
 }
 
-/* The parts a restore may write, each its own tick. */
+/* The three parts a restore may write, each its own tick with its count and
+   the two lines saying what it replaces and what it leaves. */
 .restore-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--space-sm) var(--space-lg);
+}
+
+.restore-part .hint {
+  margin: var(--space-2xs) 0 0;
+}
+
+.restore-count {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--fs-hint);
+}
+
+#restore-question .button-row {
+  margin-top: var(--space-sm);
+}
+
+/* A restore's receipt is one line per part, joined with newlines. */
+#backup-feedback {
+  white-space: pre-line;
 }
 
 /* The Memory Profiler's own tables and its fragmentation bar. Both carried
@@ -7255,9 +7275,10 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-faint);
 }
 
+/* A Servos row is headed by the Part(s) on it, then the pin its board prints
+   (.outputs-address), on one line. */
 .outputs-parts {
-  display: block;
-  margin-bottom: var(--space-2xs);
+  display: inline;
 }
 
 .outputs-row:not(.is-wired) .outputs-parts {
@@ -7313,26 +7334,41 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* ---------------------------------------------------------------------------
-   Parts (#363): Find by Moving
+   Find by Moving (#363; on Wiring since #411, data/find_by_moving.js)
 
-   The button on an unwired Part's row, and the run that takes its place while
-   the droid nudges the spare Outputs one at a time. A .btn needs its own
-   [hidden] rule, because .btn's display beats the browser's [hidden] default
-   (the same reason .rc-learn-banner[hidden] exists above). A run's text is a
-   status, read in the row where the builder pressed, so it stays inline.
+   The act on a Part-with-no-Output row is the anatomy's own small quiet
+   control (.btn-sm.btn-quiet), and the run's line sits over the table while
+   the droid nudges the free Outputs one at a time. A run's text is a status,
+   so it stays inline.
 
-   is-stale is the estop's mark on the output-first table: the nudged Output's
-   last commanded position is no longer current, so the two marks are held
-   back until the droid has answered again (the freshness-stamp pattern,
+   is-stale is the estop's mark on the output-first table: an Output's last
+   commanded position is no longer current, so the two marks are held back
+   until the droid has answered again (the freshness-stamp pattern,
    r2d2-astromech-simulator v1.79.0, src/js/config/hardware.js:894).
    --------------------------------------------------------------------------- */
-/* An act inside a table row is the anatomy's own small control (.btn-sm), so
-   this rule keeps only what is particular to this one: nothing but its
-   [hidden] behaviour, below. Slice 1's shared .btn sets the rest, and C1c's
-   copy of the 36 px floor and --fs-cell was a second spelling of both. */
 
-.parts-find[hidden] {
-  display: none;
+/* A Part on no Output: its row's find act, as quiet as Servos' + part - a word
+   in the cell, not a box on every row. It lights on hover and focus, and
+   reads dimmer still while it is refused. */
+.parts-carries .parts-find-act {
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: var(--fs-sect);
+}
+
+.parts-carries .parts-find-act svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+.parts-carries .parts-find-act:hover,
+.parts-carries .parts-find-act:focus-visible {
+  border-color: transparent;
+  color: var(--text);
 }
 
 .parts-find-run {
@@ -7404,31 +7440,7 @@ body[data-page="maintenance"] .status-item .hint {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Which servo the Output carries (data/output_settings.js draws it): the
-   shared segmented bar at caption size, sized to its words. An Output that is
-   not wired keeps its pick, which still saves, drawn quieter: there is
-   nothing on the wire for it to drive yet. */
-.outputs-model:not(:empty) {
-  margin-top: var(--space-sm);
-}
-
-.outputs-model .seg {
-  display: inline-flex;
-}
-
-.outputs-model .seg > button {
-  flex: 0 0 auto;
-  min-height: 24px;
-  padding: 0 var(--space-sm);
-  font-size: var(--fs-hint);
-}
-
-.outputs-model:not(.is-on) .seg {
-  opacity: 0.7;
-}
-
 .outputs-table .outputs-drives {
-  min-width: 18ch;
   color: var(--text);
 }
 
@@ -7547,20 +7559,17 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text);
 }
 
-.outputs-more svg.i,
-.outputs-find .parts-find svg.i {
+.outputs-more svg.i {
   width: 14px;
   height: 14px;
   transition: transform 0.15s ease;
 }
 
-.outputs-more[aria-expanded="true"],
-.outputs-find .parts-find[aria-expanded="true"] {
+.outputs-more[aria-expanded="true"] {
   color: var(--text);
 }
 
-.outputs-more[aria-expanded="true"] svg.i,
-.outputs-find .parts-find[aria-expanded="true"] svg.i {
+.outputs-more[aria-expanded="true"] svg.i {
   transform: rotate(90deg);
 }
 
@@ -8145,6 +8154,18 @@ body[data-page="maintenance"] .status-item .hint {
   details.disclose > .disclose-body {
     display: block !important;
   }
+
+  /* Wiring's printed sheet (#411): a page break never lands inside a picture
+     of the wires or a pin chip, so no wire is split across two pages, and
+     each wire's tick box - hidden on screen - is on the paper. */
+  .wd,
+  .wd-pin {
+    break-inside: avoid;
+  }
+
+  .wd .wd-tick {
+    display: inline;
+  }
 }
 
 /* A product shown rather than picked (#412): the RC page's radio and receiver,
@@ -8191,21 +8212,6 @@ body[data-page="maintenance"] .status-item .hint {
   margin: 0;
   max-width: 48ch;
   text-align: right;
-}
-
-.outputs-find-tray {
-  margin-bottom: var(--space-lg);
-  padding: var(--space-md) var(--space-lg);
-  background: color-mix(in srgb, var(--well) 55%, var(--surface));
-  border-radius: var(--radius-plate);
-}
-
-.outputs-find-tray[hidden] {
-  display: none;
-}
-
-.outputs-find-tray > .hint {
-  margin: 0;
 }
 
 .outputs-marks {
@@ -8480,6 +8486,12 @@ body[data-page="wiring"] .card > * + * {
    the wire. */
 .wd-box {
   stroke-width: 1.2;
+}
+
+/* A wire's tick box is the printed sheet's: nothing is ticked on a screen
+   (data/wiring.js svgTick(), shown again under @media print). */
+.wd-tick {
+  display: none;
 }
 
 /* Used and free, at a glance (operator, 2026-09-29 on #411): one chip per
@@ -9754,15 +9766,6 @@ button.droid-build-card:disabled {
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
   letter-spacing: 0.08em;
-}
-
-/* A Part the builder has not fitted still shows, and says so. Dimmed rather
-   than colored: not being fitted is a fact about the droid, not a fault. */
-.light-fitted {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: var(--fs-hint);
-  font-style: italic;
 }
 
 /* The dome's two pickers, stacked (operator, 2026-09-20: the drop-downs "look

@@ -395,9 +395,22 @@
       `height="${BOX_H}" rx="2" fill="${PLATE}" style="stroke:${ink}" stroke-width="1.2"/>` +
       svgText("wd-name", BOX_X + 12, y - 3, name, 36, `fill="${INK}" font-size="12" font-weight="600"`) +
       svgText("wd-role", BOX_X + 12, y + 12, role, 42, SMALL) +
+      svgTick(y) +
       `</g>`
     );
   };
+
+  // One empty box per wire, in the margin past the thing it runs to, for the
+  // builder at the bench to tick once that wire is run (operator, 2026-09-29
+  // on #411, "Ship it."). It is the printed sheet's and not the screen's: the
+  // stylesheet hides it on screen and shows it under @media print, and the
+  // saved bench copy, which has no stylesheet, always shows it - that copy is
+  // the one that goes to the bench. Its paper is its own presentation
+  // attributes, as every picture's is ("The paper beneath the stylesheet").
+  const TICK = 14;
+  const svgTick = (y) =>
+    `<rect class="wd-tick" x="${RIGHT_X + 4}" y="${y - TICK / 2}" width="${TICK}" height="${TICK}" ` +
+    `rx="1" fill="${PLATE}" stroke="${INK}" stroke-width="1.2"/>`;
 
   // ---------------------------------------------------------------------------
   // The board
@@ -757,6 +770,7 @@
     feedback: document.getElementById("wiring-parts-feedback"),
     dialog: document.getElementById("wiring-move-dialog"),
     timing: document.getElementById("wiring-parts-timing"),
+    find: document.getElementById("wiring-find"),
   });
 
   // ---------------------------------------------------------------------------
@@ -919,6 +933,7 @@
       "/wiring.js": "the wiring sheet",
       "/output_settings.js": "the outputs",
       "/dome_command_map.js": "the dome's commands",
+      "/find_by_moving.js": "find by moving",
       "/parts_mapping.js": "the parts on each output",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {

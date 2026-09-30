@@ -139,9 +139,11 @@ them once:
 - **Desktop width only.** Phone and tablet are out of scope; never put those
   widths in a test, a note or a screenshot.
 
-Stop after the first working iteration and hand it to the operator for a LIVE
-look on the staged image. Do not write tests, mutations or run the gate until
-they have approved the design and the look.
+Do NOT stop for a look. Go end to end - tests, mutations, the gate and your
+report - and hand the surface over finished. The operator looks at every
+surface once, live, at the Closing Ticket's bench session, not mid-epic
+(operator, 2026-09-29, the third time it was said). A ticket criterion, a
+handoff or an older brief that says "stop for a look" does not override this.
 
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
@@ -165,6 +167,9 @@ BOUNDARIES
 - Files the ticket fences off are out of scope even if you form a theory
   that involves them. Test the theory without editing the fenced file and
   report the result either way; the gate's --fenced check rejects the edit.
+- Stop a server you started by its PID, never by name: `pkill -f serve_editor_fixture.py`
+  matches every worktree's fixture server, and another worker's browser check
+  loses its server mid-run (2026-09-30, twice in one afternoon).
 - Never edit a shared test harness to accommodate the code under test; fix
   the code or report the conflict.
 - If you opened a browser, close it. Playwright here runs HEADED by default,

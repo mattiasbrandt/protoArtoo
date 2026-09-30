@@ -214,6 +214,22 @@ constexpr const BoardOutput* boardOutputOnChannel(uint8_t channel) {
     return nullptr;
 }
 
+// The Output whose wired tick the POST /api/config form name `form` names
+// (its `enabledField`, enableArm1..enableAux3), or nullptr. A tick follows the
+// Parts on its Output and no door writes it on its own (CONTEXT.md "Wiring",
+// #411), so configApply() refuses a form that names one.
+constexpr const BoardOutput* boardOutputByEnabledField(const char* form) {
+    if (form == nullptr) {
+        return nullptr;
+    }
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        if (board_outputs_detail::equals(output.enabledField, form)) {
+            return &output;
+        }
+    }
+    return nullptr;
+}
+
 // The Output stored under `id` (arm1..aux3), or nullptr.
 constexpr const BoardOutput* boardOutputById(const char* id) {
     if (id == nullptr) {

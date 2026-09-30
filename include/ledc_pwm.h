@@ -158,7 +158,8 @@ inline uint16_t clampPulseWidth(uint8_t channel, uint16_t pulseUs) {
 // enabledMask: bitmask where bit N corresponds to LedcChannel N.
 // A bit set to 1 includes the channel; 0 excludes it.
 // Bit positions: 0=ARM1, 1=ARM2, 2=DOME, 3=AUX1, 4=AUX2, 5=AUX3.
-// Pass 0 to skip initialization entirely.
+// The timer is configured whatever the mask, so a channel left out can be
+// attached later (ledcPwmAttach()); a mask of 0 configures no channel.
 // Servo channels start with no pulse (limp); the DOME channel starts at neutral.
 // Must be called once before using any PWM outputs.
 // Returns true on success, false if LEDC setup fails.
@@ -192,6 +193,16 @@ bool ledcPwmSetNeutral(uint8_t channel);
 // dome_task.cpp drives it to its CONFIGURED neutral instead
 // (setDomeNeutral(), docs/spec-sheets/isdt-esc70-dome-esc.md s.12.3).
 bool ledcPwmRelease(uint8_t channel);
+
+// Attach one servo channel left out at init, with no pulse on it (duty 0), so
+// the next ledcPwmSetPulseWidth() drives it: a Find by Moving run taking a free
+// Output (include/servo_run.h, #411). Safe on ServoTask's Core 1 loop once
+// ledcPwmInit() has run: the timer's init created the driver's context, so
+// ledc_channel_config() allocates nothing here and takes only its own brief
+// locks (read in both IDF pools, esp_driver_ledc/src/ledc.c). Never the DOME
+// channel, which init owns. True when the channel is configured, already or
+// now; false with a log if LEDC refuses.
+bool ledcPwmAttach(uint8_t channel);
 
 // Get the GPIO pin associated with a channel. Returns 0 if channel invalid.
 uint8_t getChannelGpio(uint8_t channel);

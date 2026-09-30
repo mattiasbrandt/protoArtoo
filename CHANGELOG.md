@@ -35,6 +35,17 @@ the patch releases, whose notes live on their own GitHub Release.
   droid to this moment puts every part where the routine had it then, one at a
   time, with the lights and the sound that was playing. It will not while the
   estop is latched or the droid is asleep, and says so.
+- **Your routines are in the backup.** A backup now holds every Sequence you
+  taught the droid, and says which board made it. A restore offers three parts,
+  Sequences, Configuration and RC Map, each saying what it replaces and what
+  it leaves, and replaces the parts you tick rather than merging. Before
+  anything is written you can save a copy of what is about to go; if that copy
+  cannot be made, nothing is replaced. If the droid refuses a Sequence halfway,
+  the ones it had are put back. A droid that stores fewer Sequences keeps the
+  first ones and names the rest, an RC Channel bound to a Sequence the droid
+  will not have is left out and named, and each restored Sequence carries its
+  Rehearsal line. A file from the other board brings its Sequences, RC Map and
+  sound setup and leaves the rest, which names that board's pins.
 - **The Rehearsal says more of what will not happen.** It now flags panel
   moves close enough to brown the dome out, a group command that moves panels
   the routine never touched, a raw light code that shows up in the wrong
@@ -78,8 +89,10 @@ the patch releases, whose notes live on their own GitHub Release.
   and a color - the same ones a sequence sends - and the page says what it asked
   for rather than what the dome then does. A body light says what lights it: put
   an LED strip on a wire in Wiring and the part on that wire reads on, off or
-  flash, with brightness, and the strip's length beside it. A light you have not
-  fitted still shows, so you can choreograph before you wire. The LED strip left
+  flash, with brightness, and the strip's length beside it. The page lists only
+  the lights on your droid: a body light once it is on an output in Wiring, and
+  the dome's lights while the Dome Controller is fitted. With none, one line
+  sends you to Wiring. The LED strip left
   Configuration, and an LED strip is now one kind of light protoArtoo can put on
   a wire rather than a thing of its own.
 - **Your droid, drawn as R2.** The top of Parts is now a line drawing of your
@@ -120,7 +133,10 @@ the patch releases, whose notes live on their own GitHub Release.
   what the board prints. Below that, one table puts each part on an output
   and, on the same row, picks its servo or its LED strip. An output with a
   part on it is wired, with no separate switch, and the page says when that
-  waits for the droid's next start. A light part is only offered the outputs
+  waits for the droid's next start. Nothing else can wire an output: every
+  output is wired from the parts on it each time the droid starts and after
+  every save, and the Console's arm and AUX toggles now refuse a change. A
+  light part is only offered the outputs
   that can light it, and the usual output for each utility arm is marked
   suggested. The dome's parts show the command the dome controller answers
   to instead of an output. Power wiring
@@ -129,7 +145,8 @@ the patch releases, whose notes live on their own GitHub Release.
   page is kept by hand, so it cannot go stale against the firmware.
 - **A printable wiring sheet.** Wiring saves one file you can print anywhere,
   no droid needed: the same drawing, with the board's picture and each wire's
-  color, and the Power wiring notes.
+  color, and the Power wiring notes. Each wire has an empty box to tick at the
+  bench, on paper only, and no wire is split across two pages.
 - **Set the droid up in one guided pass.** A freshly flashed controller now
   walks you through what your droid is made of, one question at a time, starting
   from the WiFi you already gave it. A rail along the top shows the questions,
@@ -218,9 +235,12 @@ the patch releases, whose notes live on their own GitHub Release.
   first: it names the part, the output it leaves and what that output keeps.
   Two parts on one wire, like a pair of doors, both read as driven.
 - **See what every output drives, and where it is told to be.** Servos has
-  one row for every output on the controller, in the order the wires plug in. Each row names every part on that output, so a wire split
-  to two doors names both. Above it, a count of how many outputs are driving
-  parts, wired but switched off, or driving nothing. A bar shows where the
+  one row for every output with a part on it, in the order the wires plug in,
+  named by its parts and the pin the board prints, so a wire split to two
+  doors names both. With no part on any output, it sends you to Wiring. Which
+  servo is on an output is picked on Wiring, on the part's row. Above it, a
+  count of how many outputs are moving a part and how many are wired but
+  switched off. A bar shows where the
   controller is driving each servo right now, and a tick shows where the move
   ends. Both are what the controller told the servo, not a reading: nothing on
   the droid can feel where a servo is, so a jammed one looks like a free one.
@@ -228,17 +248,20 @@ the patch releases, whose notes live on their own GitHub Release.
   that output, and the page asks first if that takes it off another output.
   The same rows, with where each output stands, are on the Controller Console
   as `servo.api.get-outputs`, so a board with no WiFi can read them too.
-- **Find out which output moves a part by making it move.** On Servos, pick a
-  part nothing drives yet and press `Find by moving`, then watch the droid: the
-  controller twitches each spare output a little, one at a time, out one way,
-  across, and back to where it sat, and the page names which one is twitching. Press `That one` when the part moves and it is
-  wired, the same way picking it would have. The twitch is small on purpose,
+- **Find out which output moves a part by making it move.** On Wiring, press
+  `find by moving` on the row of a part that is on no output yet, then watch
+  the droid: the controller takes each free output in turn - no part on it,
+  no light on its wire - puts it at its centre, and twitches it a little, out
+  one way, across, and back, and the page names which one is twitching. Press
+  `That one` when the part moves and it is put on that output, the same way
+  picking it would have. The first move to a free output is a jump to its
+  centre, since nothing has driven it before. The twitch is small on purpose,
   stays inside the cautious 1000-2000 µs band, and never goes to a recorded
-  end, so it is safe on an output nobody has measured yet. The controller
-  runs the whole out-and-back itself, so the output comes back even if your
-  browser goes away mid-run. `Stop` ends a run at any moment and sends
-  nothing more; the estop ends it too, and the button stays refused while the
-  estop is latched. The same twitch is on the Controller Console as
+  end. The controller runs the whole out-and-back itself and lets each free
+  output go limp again a few seconds after the run moves on, so nothing stays
+  driven if your browser goes away mid-run. `Stop` ends a run at any moment
+  and lets go of the output; the estop ends it too, and the act stays refused
+  while the estop is latched. The same twitch is on the Controller Console as
   `servo.action.nudge`, and `POST /api/servo` takes `action=nudge`.
 - **Calibrate a part by driving it and pressing a button.** Press `calibrate`
   on an output on Servos and you get a dial: drag it, or nudge it 5 µs

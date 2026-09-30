@@ -186,6 +186,9 @@ const boot = ({ config = freshConfig(), rows = freshRows(), surface = "configura
         gets.push(path);
         if (path === "/api/config") return { ok: true, data: config };
         if (path === "/api/servo/outputs") return { ok: true, data: { outputs: rows } };
+        // What a restore asks the droid about itself when a file is chosen.
+        if (path === "/api/identity") return { ok: true, data: IDENTITY };
+        if (path === "/api/seq/list" || path === "/api/seq/builtins") return { ok: true, data: [] };
         // A dome on the WiFi link answers with its layout; with none given,
         // the controller's own answer for a dome it cannot reach (docs/api.md).
         if (path === "/api/dome/layout") {
@@ -427,25 +430,28 @@ test("an inert droid with no record is a first run, not a grandfathered one", as
   assert.equal(env.shown(env.id("wizard-head")), true);
 });
 
-// Choose a backup file, tick Core config, press Restore - and hand back the body
-// the controller was actually sent. Shared by the tests below, because a key
-// dropped on the way back in is the same defect whichever key it is.
+// Choose a backup file, tick the Configuration, press Restore and Replace - and
+// hand back the body the controller was actually sent. Shared by the tests
+// below, because a key dropped on the way back in is the same defect whichever
+// key it is.
 const restoreParamsFor = async (patch) => {
   const env = boot({ surface: "maintenance" });
   const backup = { schema: 1, config: { ...freshConfig(), ...patch } };
+  const turns = async (n) => {
+    for (let turn = 0; turn < n; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
 
   const fileInput = env.id("backup-file-input");
   fileInput.files = [{ text: JSON.stringify(backup) }];
   fileInput.fire("change", {});
+  // The droid says which board it is before Restore is offered.
+  await turns(4);
 
-  env.id("restore-chk-config").checked = true;
-  env.id("restore-chk-rc-map").checked = false;
-  env.id("restore-chk-audio-tracks").checked = false;
-  env.id("restore-chk-mood-map").checked = false;
-
+  env.id("restore-chk-configuration").checked = true;
   env.click("backup-restore-btn");
+  env.click("restore-replace-btn");
   // The restore reads the Outputs before it saves (data/outputs.js, #415).
-  for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  await turns(4);
   const restore = env.posts.filter((post) => post.json && post.path === "/api/config").at(-1);
   assert.ok(restore, "the restore must have reached the controller at all");
   return restore.body;
@@ -478,7 +484,7 @@ test("Backup and Restore carries the run's record like any other config key", as
 });
 
 // Riding along: the same flattener was already dropping two answers a builder
-// gave, and the page promises "Core config: restored" over the top of it. Found
+// gave, and the page promised "Core config: restored" over the top of it. Found
 // while wiring the run's record through it.
 test("a restore puts back the sound module and the droid build, which it used to drop", async () => {
   const restored = await restoreParamsFor({

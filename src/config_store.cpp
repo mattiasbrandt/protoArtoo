@@ -8,7 +8,7 @@
 #include "config_cache.h"
 
 #include "audio_dollar_parser.h"
-#include "board_output_enabled.h"  // boardOutputIsWired() - configCacheOutputIsWired()
+#include "board_output_enabled.h"  // boardOutputIsWired(), boardOutputTickFollowsParts() - the wired ticks
 #include "config.h"
 #include "config_serializer.h"
 #include "config_settings.h"  // every Setting's default
@@ -359,6 +359,13 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
     return outcome;
 }
 
+void configCacheTicksFollowParts(SystemConfig* system) {
+    for (const BoardOutput& output : BOARD_OUTPUTS) {
+        boardOutputTickFollowsParts(
+            system, &output, configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, output.channel));
+    }
+}
+
 uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel) {
     uint8_t count = 0;
     taskENTER_CRITICAL(&configCacheMux);
@@ -431,6 +438,26 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     if (found) {
         *openUs = servoOutputCache.rows[index].open_us;
         *closeUs = servoOutputCache.rows[index].close_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
+// The centre recorded for the Output addressed there: where a Find by Moving
+// run puts a free Output before it nudges it (#411). One number, for the same
+// reason as the pair above. False, with *centreUs untouched, when no live row
+// is addressed there.
+bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
+                                      uint16_t* centreUs) {
+    if (centreUs == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *centreUs = servoOutputCache.rows[index].centre_us;
     }
     taskEXIT_CRITICAL(&configCacheMux);
     return found;
@@ -539,16 +566,6 @@ uint32_t configCacheSbusTimeoutMs() {
     const uint32_t timeoutMs = configCache.drive.sbusTimeoutMs;
     taskEXIT_CRITICAL(&configCacheMux);
     return timeoutMs;
-}
-
-bool configCacheServoAnyEnabled() {
-    bool result;
-    taskENTER_CRITICAL(&configCacheMux);
-    result = configCache.system.enable_arm1 || configCache.system.enable_arm2 ||
-             configCache.system.enable_aux1 || configCache.system.enable_aux2 ||
-             configCache.system.enable_aux3;
-    taskEXIT_CRITICAL(&configCacheMux);
-    return result;
 }
 
 void configCacheReadWifi(WifiConfig* out) {

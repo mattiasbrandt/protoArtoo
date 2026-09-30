@@ -285,3 +285,12 @@ The browser keeps its own list of the row fields a page may save; a drift check
 holds it to the declaration. Serving the table was rejected by the first
 decision and is not reopened. `release_ms` stays stored and undeclared: Output
 Release is owed by ADR 0064 and has no door yet.
+
+## Amended 2026-09-30: an Output row's `wired` is read, never written
+
+An Output row's `wired` field is still read and checked on the row door, and an
+expander's row still refuses `false`, but it is **never written**: the Parts on
+the row decide the tick (ADR 0027 as amended 2026-09-30, #411). A row that states
+`parts` moves the tick of that Output and of any Output it takes a Part from; a
+row that states only `wired` changes nothing. `GET /api/config` keeps reporting
+`wired` on every row, so a backup still round-trips.

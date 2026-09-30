@@ -17,6 +17,7 @@ import test from "node:test";
 import assert from "node:assert";
 
 import { bootParts, bootServos, statusFrame, withParts, output, sleep } from "./helpers/parts_surface.js";
+import { wiredOutputs } from "./helpers/fake_droid.js";
 
 // A frame with the other five core fields and no estop.
 const frameWithoutEstop = () => {
@@ -25,7 +26,9 @@ const frameWithoutEstop = () => {
   return frame;
 };
 
-const servoActs = (env) => [env.centreButton(), env.findButton()];
+// Back to centre, and a row's own act that moves its Part. Find by moving
+// left Servos for Wiring's Part rows (#411), where it is gated the same way.
+const servoActs = (env) => [env.centreButton(), env.row("ledc:0").querySelector(".outputs-calibrate")];
 
 const assertOff = (buttons, why) =>
   buttons.forEach((button) => {
@@ -58,7 +61,7 @@ const pickDoor = (env) => {
 const openIt = (env) => env.document.querySelectorAll("[data-act]").find((node) => node.dataset.act === "toggle");
 
 test("Servos: a frame that does not carry the estop leaves every move act off", async () => {
-  const env = await bootServos({ frame: frameWithoutEstop() });
+  const env = await bootServos({ outputs: wiredOutputs(), frame: frameWithoutEstop() });
   await sleep(20);
 
   assertOff(servoActs(env), "a frame that says nothing about the estop has not said it is clear");
@@ -73,7 +76,7 @@ test("Parts: a frame that does not carry the estop leaves Open it off", async ()
 });
 
 test("Servos: losing contact with the droid turns every move act off until it is heard again", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   await sleep(20);
   assertOn(servoActs(env), "a heard, clear estop lets the acts go");
 

@@ -37,7 +37,6 @@ struct RcAudioCategorySnapshot;  // include/rc_action_dispatcher.h
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
-bool configCacheServoAnyEnabled();
 // Whether the Output at `boardOutputIndex` in include/board_outputs.h's
 // BOARD_OUTPUTS is ticked as wired - boardOutputIsWired() on the live config,
 // without copying a 916 B snapshot onto the caller's frame to ask one bit.
@@ -98,6 +97,12 @@ uint16_t configCacheClampServoOutputPulse(ServoOutputDriver driver, uint8_t chan
 bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t channel,
                                          uint16_t* openUs, uint16_t* closeUs);
 
+// The centre recorded for the output addressed there: where a Find by Moving
+// run puts a free Output before its first nudge (#411). Same false-and-untouched
+// rule as the pair above.
+bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
+                                      uint16_t* centreUs);
+
 // The Motion Profile a move is planned from (ADR 0052): the recorded ends in
 // order -- whichever way round the pair was recorded -- how long a full throw
 // takes, how long the move spends getting up to speed, the ease that actually
@@ -153,6 +158,13 @@ ServoPartMoveOutcome configCacheMoveServoOutputPart(const ServoOutputPartMove& m
 // the Commit Step can ask it after a move without a 70 B row on the Console
 // config-write chain the stack recipe measures.
 uint8_t configCacheServoOutputPartCountAt(ServoOutputDriver driver, uint8_t channel);
+
+// configCacheTicksFollowParts: every board Output's wired tick in `system`, set
+// from the Parts its live row holds (boardOutputTickFollowsParts()). Called at
+// start, before the snapshot is taken into the cache, and by the Commit Step
+// after a request's Parts have moved, so an Output with a Part on it is wired
+// and one with none is free whatever wrote the tick before.
+void configCacheTicksFollowParts(SystemConfig* system);
 
 // The Records - the Droid Build and guided Setup's record - are not here:
 // each Record's module keeps its own live copy, filled on the boot path and
