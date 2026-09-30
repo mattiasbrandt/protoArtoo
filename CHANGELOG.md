@@ -26,6 +26,17 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **The Rehearsal says more of what will not happen.** It now flags panel
+  moves close enough to brown the dome out, a group command that moves panels
+  the routine never touched, a raw light code that shows up in the wrong
+  color, steps aimed at hardware that is switched off or a panel the dome says
+  it cannot move, and, as a note, a track that plays on after the show. It
+  times body moves with the droid's own motion model, so it catches a part
+  turned back before it got there. Its figures show warnings, notes, size
+  against the droid's limits, how long the routine runs and its slowest throw.
+- **Know which servos jump before you press Test.** Beside Test on the droid,
+  the editor names every servo the routine moves that nobody has calibrated:
+  its first move is a jump, not a ramp. The button still works.
 - **Point the body at the dome's WiFi from Configuration.** With a Dome
   Controller fitted, its card now takes the dome's IP address for the WiFi
   fallback (leave it empty and the dome is found by name), and states what the
