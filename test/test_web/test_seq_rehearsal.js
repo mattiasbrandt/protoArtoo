@@ -317,7 +317,8 @@ test("ROCKMARCH as it ran on 17 June trips the receipts it paid for", () => {
   assert.equal(byCode(report, "raw-light-code").length, 2);
   const group = byCode(report, "group-panel");
   assert.equal(group.length, 1);
-  assert.match(group[0].msg, /PP1/, "the pies it never touched are not named");
+  // Every panel but P1, which the routine opens itself.
+  assert.match(group[0].msg, /including 12 panels nothing else here moves/);
   const outlives = byCode(report, "audio-outlives-show");
   // A Note, and only the named track: a category rings out on purpose (ADR 0010).
   assert.equal(outlives.length, 1);

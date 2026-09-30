@@ -354,7 +354,9 @@
     const floor = cadenceFloorMs();
     return groups.each(({ n, first }) => {
       const untouched = groupMembers(first.group).filter((id) => !touched.has(id));
-      const wider = untouched.length ? `, including ${untouched.join(", ")}, which nothing else here moves` : "";
+      // A few are named; more than that is a count, or the sentence is a list.
+      const named = untouched.length <= 3 ? untouched.join(", ") : `${untouched.length} panels`;
+      const wider = untouched.length ? `, including ${named} nothing else here moves` : "";
       return finding(
         "warning",
         "group-panel",
