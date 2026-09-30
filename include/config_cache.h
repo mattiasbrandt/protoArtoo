@@ -113,6 +113,14 @@ bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
 bool configCacheReadServoOutputMotionProfile(ServoOutputDriver driver, uint8_t channel,
                                              ServoMotionProfile* profile);
 
+// How long the output addressed there holds after a move arrives before it
+// lets go: its Output Release (ADR 0043, #443), as outputWireReleaseAfterMs()
+// answers it off the live row - never for a light. SERVO_RELEASE_MS_NEVER where
+// no live row is addressed there: an output the table does not describe is
+// one nobody has asked to let go, so it holds where it stops, as every output
+// did before the release was built. One number, for ServoTask's arrival path.
+uint16_t configCacheReadServoOutputReleaseMs(ServoOutputDriver driver, uint8_t channel);
+
 // What is fitted to the output addressed there, and SERVO_COMP_NONE when no
 // live row is addressed there -- "nothing is recorded as fitted here" and "this
 // output does not exist" are the same answer to a surface that only wants to

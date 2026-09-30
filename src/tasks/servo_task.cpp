@@ -29,6 +29,7 @@
 #include "servo_motion_ramp.h"  // a move planned in time from the Output's profile (ADR 0052)
 #include "servo_nudge.h"        // the bounded pair a Find by Moving nudge visits (ADR 0050)
 #include "servo_output_row.h"  // the addressed rows an endpoint lives on (ADR 0041)
+#include "servo_release.h"     // the Output Release a move owes once it arrives (ADR 0043)
 #include "servo_run.h"         // a Find by Moving run's hold on a free Output (#411)
 #include "servo_travel.h"      // the recorded ends a body view's press visits (ADR 0063)
 
@@ -70,6 +71,11 @@ static bool s_ledc_ready = false;
 // `limp` is why there is no pulse, read only while `known` is false, so a
 // surface can say "pulses off" and "the estop let go" differently.
 //
+// `release` is the Output Release the last move to ARRIVE owes (ADR 0043,
+// #443): armed by armReleaseOnArrival() at every place a move arrives, and
+// cancelled by endMove(), which everything that starts a move or takes the
+// pulse off runs first. Never pending under a hold (ADR 0064).
+//
 // An OUT-AND-BACK is one more kind of move on this state, not a second machine
 // beside it. There are two of them and they share every field here: a Find by
 // Moving nudge (ADR 0050, #363) over a small pair about the pin, and a Part run
@@ -109,6 +115,7 @@ static struct {
     bool moving;
     ServoHoldState hold;
     ServoLimpReason limp;
+    ServoReleaseTimer release;  // the Output Release owed since the last arrival
     ServoMotionRamp ramp;
     uint8_t legNo;             // 1..kLegCount while an out-and-back is in progress, else 0
     bool legIsNudge;           // that out-and-back is a nudge, not a travel
@@ -292,6 +299,17 @@ static void publishCommanded(uint8_t armId) {
 // The one place a move stops being in progress, whatever stops it: arrival, a
 // later command on the same arm, or the halt edge.
 //
+// It also ends the Output Release the last arrival left pending (#443). Every
+// command that moves the output ends the move in progress first (driveArmTo(),
+// beginNudge(), beginTravel(), takeForRun()), and so does every way the pulse
+// comes off (releaseArm()), so a pending release is cancelled by exactly the
+// things ADR 0043 says cancel it, and never fires later on a move it did not
+// belong to. An arrival re-arms it straight after (armReleaseOnArrival()). A
+// command refused before it moves anything - a nudge outside the cautious band,
+// a travel on an Output nobody measured - reaches none of these and leaves the
+// release as it was: the Output was not moved, so the hold it is on is still
+// the one the release was counting.
+//
 // A NUDGE that was in progress is counted as ended here, however it ended. The
 // count is what a discovery run waits on -- it cannot watch the nudge itself,
 // because a whole nudge can fall between two of its one-second reads -- so a
@@ -316,7 +334,32 @@ static void endLeg(uint8_t armId) {
 
 static void endMove(uint8_t armId) {
     s_arm[armId].moving = false;
+    servoReleaseCancel(&s_arm[armId].release);
     endLeg(armId);
+}
+
+// -----------------------------------------------------------------------------
+// armReleaseOnArrival()
+// A move on this output has arrived: a snap's one write, a ramp's last frame,
+// an overshoot's settle back, or an out-and-back's last leg. Start its Output
+// Release counting from now (ADR 0043, #443) - the row's release time, read as
+// one number (configCacheReadServoOutputReleaseMs(), never for a light), not as
+// the row it sits in: this is ServoTask's measured chain (ADR 0040). A row at 0
+// arms nothing and the output holds where it stopped, exactly as before the
+// release existed.
+//
+// Nothing is armed while a hold stands (servoReleaseArm()). For the dial that
+// is ADR 0064's suppression: the dial's two bounds end the hold instead. A Find
+// by Moving run's hold on a free Output is left to the same two bounds for the
+// same reason, and every hold ends by releaseArm(), so nothing is owed after it.
+//
+// Called after endMove(), which cancelled whatever the move before owed.
+// -----------------------------------------------------------------------------
+static void armReleaseOnArrival(uint8_t armId, uint32_t nowMs) {
+    servoReleaseArm(&s_arm[armId].release, nowMs,
+                    configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC,
+                                                        servo_arm_id_to_ledc_channel(armId)),
+                    s_arm[armId].hold.held);
 }
 
 // -----------------------------------------------------------------------------
@@ -370,10 +413,15 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
     // way through, and a nudge part way through, alike.
     endMove(armId);
 
+    // A snap arrives in the frame it is written, so its release counts from
+    // here. The boot pass's move home is always one - nothing is `known` at
+    // boot - so a row set to go home and hold holds for its release time and
+    // lets go, like any arrival (operator, 2026-09-30 on #443).
     ServoMotionProfile profile = {};
     if (!s_arm[armId].known ||
         !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile)) {
         writeArmPulse(armId, channel, targetUs);
+        armReleaseOnArrival(armId, millis());
         return;
     }
 
@@ -381,6 +429,7 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
         servoMotionPlan(s_arm[armId].commandedUs, targetUs, profile, millis());
     if (ramp.durationMs == 0) {
         writeArmPulse(armId, channel, targetUs);
+        armReleaseOnArrival(armId, millis());
         return;
     }
     s_arm[armId].ramp = ramp;
@@ -425,6 +474,9 @@ static void legArrived(uint8_t armId, uint32_t nowMs) {
     }
     const bool wasNudge = s_arm[armId].legIsNudge;
     endMove(armId);
+    // The out-and-back is the move, so its release counts from the return, not
+    // from any leg before it (#443).
+    armReleaseOnArrival(armId, nowMs);
     publishCommanded(armId);
     PA_LOG_INFO(TAG, "Arm%d %s returned to %u us", armId + 1, wasNudge ? "nudge" : "travel",
                 (unsigned)s_arm[armId].commandedUs);
@@ -473,8 +525,9 @@ static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
 static void releaseArm(uint8_t armId, ServoLimpReason reason);
 
 // -----------------------------------------------------------------------------
-// sayTheRunLetGo()
-// The log line for a run letting go of the Output it held, and nothing else.
+// sayTheArmLetGo()
+// The log line for an Output being let go - by a run moving on from it, or by
+// its own release time running out (#443) - and nothing else.
 //
 // noinline, and a leaf, deliberately: its PA_LOG_* line buffer must stay out of
 // servoTask()'s frame, which processCommand() and so takeForRun() are inlined
@@ -484,7 +537,7 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason);
 // walked on the ESP32-P4 (#411 slice 4). Its callers release the Output
 // themselves, so the buffer is only ever on the stack for the line.
 // -----------------------------------------------------------------------------
-static void __attribute__((noinline)) sayTheRunLetGo(uint8_t armId, const char* why) {
+static void __attribute__((noinline)) sayTheArmLetGo(uint8_t armId, const char* why) {
     PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1, why);
 }
 
@@ -510,7 +563,7 @@ static bool takeForRun(uint8_t armId, CommandSource source) {
     const ServoRunNudgeStep step = servoRunOnNudge(s_runArm, armId, mayTakeForRun(armId));
     if (step.letGo != SERVO_RUN_NONE) {
         releaseArm(step.letGo, SERVO_LIMP_OFF);
-        sayTheRunLetGo(step.letGo, step.letGo == armId ? "it is not free for a run any more"
+        sayTheArmLetGo(step.letGo, step.letGo == armId ? "it is not free for a run any more"
                                                        : "the run moved on to the next output");
     }
     if (step.act == SERVO_RUN_REFUSE) {
@@ -722,8 +775,11 @@ static void updateMotion() {
         if (stepMove(armId, channel, now)) {
             // The frame stepMove() wrote was published with the move still in
             // progress; this is where it ends, and a reader waiting on
-            // `moving` to fall has to hear it.
+            // `moving` to fall has to hear it. It is also where it arrives - an
+            // overshoot only once it has settled back - so its release counts
+            // from here.
             endMove(armId);
+            armReleaseOnArrival(armId, now);
             publishCommanded(armId);
         }
     }
@@ -792,7 +848,8 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 // Take the pulse off one output: pulses off (ADR 0043, ADR 0064, #364).
 //
 // The one place a pulse comes off a pin, whoever asks -- the builder's pulses
-// off, one of the dial's two bounds, or the halt edge -- so a released output
+// off, one of the dial's two bounds, the halt edge, or the Output's own release
+// time running out after a move arrived (#443) -- so a released output
 // means one thing everywhere on the droid: nothing is driven, the servo goes
 // limp where it is, and its resting position is whatever gravity and friction
 // decide. Nothing is commanded first: driving to a known position before
@@ -865,12 +922,12 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap
 // where the profile cannot plan one.
 //
-// ADR 0064 also says Output Release is SUPPRESSED while a dial holds an output.
-// Nothing is suppressed here, because nothing schedules one: `release_ms` is
-// stored on the row and read by no code (measured at #364). The suppression is
-// owed by whoever builds the release, and include/servo_output_row.h says so at
-// the field. What this function does provide is the bit to test: an output with
-// `hold.held` set is one a release must leave alone.
+// ADR 0064 also says Output Release is SUPPRESSED while a dial holds an output
+// (#443). A hold that stands cancels a release the last arrival left pending
+// here - a press on an output at rest, or the keepalive, which moves nothing
+// and so never reaches endMove() - and armReleaseOnArrival() arms nothing while
+// `hold.held` is set, so a move the dial makes arrives owing nothing. The
+// dial's two bounds (expireHolds()) are what end the hold instead.
 // -----------------------------------------------------------------------------
 static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source, ServoHoldAsk ask) {
     if (armId >= kArmCount) {
@@ -884,6 +941,7 @@ static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source, Se
                      commandSourceToString(source), armId + 1);
         return;
     }
+    servoReleaseCancel(&s_arm[armId].release);
     const bool taken = outcome == SERVO_HOLD_TAKEN;
     if (taken) {
         PA_LOG_INFO(TAG, "[%s] Arm%d held by the dial at %u us", commandSourceToString(source),
@@ -934,6 +992,27 @@ static void expireHolds() {
 }
 
 // -----------------------------------------------------------------------------
+// letGoOnceHeldAfterArriving()
+// One frame of every Output Release pending (ADR 0043, #443): an output whose
+// release time has run out since its move arrived is let go here, through
+// releaseArm() like every other release, and says why (SERVO_LIMP_OUTPUT_RELEASE).
+// Cancelled first, so an output releaseArm() turns away cannot come due again
+// on every frame after. Allocates nothing, blocks on nothing: the release time
+// was read once, at the arrival.
+// -----------------------------------------------------------------------------
+static void letGoOnceHeldAfterArriving() {
+    const uint32_t now = millis();
+    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+        if (!servoReleaseDue(s_arm[armId].release, now)) {
+            continue;
+        }
+        servoReleaseCancel(&s_arm[armId].release);
+        releaseArm(armId, SERVO_LIMP_OUTPUT_RELEASE);
+        sayTheArmLetGo(armId, "held for its release time after it arrived");
+    }
+}
+
+// -----------------------------------------------------------------------------
 // letGoIfTheRunsOutputIsNoLongerFree()
 // A config commit can put a Part or a Light Type on the Output a run holds
 // between two of its nudges - the Part's own picker, "That one", another tab.
@@ -950,7 +1029,7 @@ static void letGoIfTheRunsOutputIsNoLongerFree() {
         return;
     }
     releaseArm(armId, SERVO_LIMP_OFF);
-    sayTheRunLetGo(armId, "a Part or a light is on it now");
+    sayTheArmLetGo(armId, "a Part or a light is on it now");
 }
 
 // -----------------------------------------------------------------------------
@@ -1247,6 +1326,11 @@ void servoTask(void* pvParameters) {
         // Then the dial's two bounds, after this frame's commands have had
         // their say: a hold refreshed this frame is not an expired one.
         expireHolds();
+
+        // Then every Output Release that has come due, after this frame's
+        // commands and arrivals: a command this frame has cancelled its
+        // output's, and an arrival this frame has only just started counting.
+        letGoOnceHeldAfterArriving();
 
         // And a run's Output that a commit took from it since the last frame.
         letGoIfTheRunsOutputIsNoLongerFree();
