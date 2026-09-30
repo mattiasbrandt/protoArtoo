@@ -1,7 +1,8 @@
 // =============================================================================
 // include/dome_math.h
 //
-// Pure-logic dome ESC pulse mapping  --  no hardware, no FreeRTOS.
+// Pure-logic dome ESC pulse mapping and random-move pause arithmetic  --  no
+// hardware, no FreeRTOS.
 // Extracted for testability. Used by DomeTask and native tests.
 //
 // ESC PWM semantics (standard RC PWM, 50 Hz):
@@ -71,4 +72,62 @@ inline uint16_t domeSpeedToPulseUs(float speed, uint16_t neutralUs, uint16_t min
         pulseUs = (int16_t)maxPulseUs;
 
     return (uint16_t)pulseUs;
+}
+
+// -----------------------------------------------------------------------------
+// Random dome movement: the Mood sets how often (#452)
+//
+// The pause window the builder stores (dome_rnd_pause_min/max, whole seconds)
+// is Full-Awake's pace. The other Moods scale both ends of it, by the same
+// proportions the shipped chatter defaults use (30 : 20 : 10 s):
+//
+//   Quiet      (10)          no random move starts
+//   Mid-Awake  (13)          window x 1.5
+//   Full-Awake (11), unset 0 window as stored   (default:, as the chatter does)
+//   Awake+     (14)          window x 0.5
+//
+// Both ends are floored at DOME_RND_MIN_PAUSE_MS before the draw, so a 1-2 s
+// window in Awake+ draws from 1000..1000 ms rather than from 500..1000 ms and
+// then clamping. Speed and move duration do not scale: this is how often, not
+// how much.
+// -----------------------------------------------------------------------------
+static constexpr uint32_t DOME_RND_MIN_PAUSE_MS = 1000;
+
+inline bool domeRndMoodStartsMoves(uint8_t mood) {
+    return mood != 10;
+}
+
+// Next pause in ms, drawn from the Mood-scaled window with the caller's random
+// value (esp_random() on the device; passed in so the endpoints are testable).
+// Returns 0 when the Mood starts no move (Quiet): a real pause is never under
+// DOME_RND_MIN_PAUSE_MS, so 0 cannot be mistaken for one. pauseMax <= pauseMin
+// gives the scaled pauseMin every time, as the task always did.
+inline uint32_t domeRndPauseMsForMood(uint8_t pauseMinS, uint8_t pauseMaxS, uint8_t mood,
+                                      uint32_t randomValue) {
+    if (!domeRndMoodStartsMoves(mood)) {
+        return 0;
+    }
+    uint32_t num = 1;
+    uint32_t den = 1;
+    switch (mood) {
+        case 13:
+            num = 3;
+            den = 2;
+            break;
+        case 14:
+            num = 1;
+            den = 2;
+            break;
+        default:
+            break;
+    }
+    // Scale in ms, never in whole seconds: 7 s x 0.5 is 3500 ms, not 3000.
+    uint32_t minMs = (uint32_t)pauseMinS * 1000UL * num / den;
+    uint32_t maxMs = (uint32_t)pauseMaxS * 1000UL * num / den;
+    if (minMs < DOME_RND_MIN_PAUSE_MS)
+        minMs = DOME_RND_MIN_PAUSE_MS;
+    if (maxMs < DOME_RND_MIN_PAUSE_MS)
+        maxMs = DOME_RND_MIN_PAUSE_MS;
+    const uint32_t rangeMs = (maxMs > minMs) ? (maxMs - minMs) : 0UL;
+    return minMs + (rangeMs > 0 ? (randomValue % rangeMs) : 0UL);
 }
