@@ -45,7 +45,9 @@
 // How a servo moves is set on its row, beside the dial (ADR 0052, #414): time
 // to full throw, time to get up to speed and the ease. Until the Output is
 // calibrated it moves by none of the three - it jumps - so its row offers
-// nothing to set, and says why. What it does at power-up sits beside them and
+// nothing to set, and says why. How long it holds after a move arrives before
+// it lets go - its Output Release (ADR 0043, #443) - is set beside them, on
+// the same terms, and the row says what it will do whether or not it is set. What it does at power-up sits beside them and
 // is offered whether or not it is calibrated: the two are separate decisions
 // (ADR 0052), and calibrating never changes it.
 // =============================================================================
@@ -189,8 +191,18 @@
       `<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>` +
       `</td></tr>` +
       `<tr class="outputs-sub" hidden><td colspan="5"><div class="outputs-settings" hidden>` +
+      // How it lets go (#443): never, or a time after each move arrives,
+      // offered where how it moves is. The state beside it says what the
+      // Output will do, or why it is limp.
       `<div class="outputs-setting"><span class="outputs-setting-name">release</span>` +
-      `<span class="outputs-release"></span></div>` +
+      `<span class="outputs-motion-field"><span class="outputs-release-set">` +
+      `<div class="seg outputs-release-seg" role="radiogroup" aria-label="${esc(`When ${label} lets go`)}">` +
+      `<button type="button" role="radio" aria-checked="false" data-release="never">never</button>` +
+      `<button type="button" role="radio" aria-checked="false" data-release="after">after</button>` +
+      `</div> <label class="outputs-release-after"><input class="number-cell outputs-release-s" type="number" ` +
+      `min="0" max="60" step="0.5" aria-label="${esc(`Seconds ${label} holds after it arrives`)}"> ` +
+      `s after it arrives</label></span>` +
+      `<span class="outputs-release"></span></span></div>` +
       // How it moves (#414). The pill and the controls each sit in a plain
       // wrapper so `hidden` can take them off the line.
       `<div class="outputs-motion">` +
@@ -253,6 +265,10 @@
         width: node.querySelector(".outputs-drive").querySelector(".outputs-width"),
         go: Array.from(node.querySelectorAll(".outputs-go")),
         release: node.querySelector(".outputs-release"),
+        releaseSet: node.querySelector(".outputs-release-set"),
+        releaseChoices: Array.from(node.querySelectorAll("[data-release]")),
+        releaseAfter: node.querySelector(".outputs-release-after"),
+        releaseSeconds: node.querySelector(".outputs-release-s"),
         motion: node.querySelector(".outputs-motion"),
         motionOff: node.querySelector(".outputs-motion-off"),
         motionSet: node.querySelector(".outputs-motion-set"),
@@ -359,11 +375,21 @@
     else row.us.textContent = `${output.commandedUs} → ${output.targetUs} µs`;
     if (light) row.release.textContent = "None - a light has nothing to let go of";
     else if (output.held) row.release.textContent = "The dial is holding it";
-    else if (pulsing) row.release.textContent = "Holds where it stops";
+    // What a pulsing Output will do. Where the control is open it already
+    // says so, and the line stays quiet rather than saying it twice.
+    else if (pulsing) row.release.textContent = row.releaseSet.hidden ? releaseSaid(output) : "";
     // An Output that has gone limp says WHICH of the ways it can happen this
     // was (#364): a bound the dial ran into is not the estop letting go.
     else row.release.textContent = live.word;
   };
+
+  // A release time in the seconds a builder types, from the ms the row holds.
+  const seconds = (ms) => String(Number((ms / 1000).toFixed(3)));
+  const releaseSet = (output) => typeof output.release === "number" && output.release > 0;
+  // What a pulsing servo Output will do once a move arrives (#443). Never
+  // "holds where it stops" for one that will let go.
+  const releaseSaid = (output) =>
+    releaseSet(output) ? `Lets go ${seconds(output.release)} s after it arrives` : "Holds where it stops";
 
   // ---------------------------------------------------------------------------
   // How it moves (ADR 0052, #414)
@@ -388,11 +414,18 @@
         button.setAttribute("aria-checked", on ? "true" : "false");
       });
       row.bootRisk.hidden = output.boot !== "home-hold";
+      // Home and hold with a release time lets go after it gets home, like
+      // any arrival (operator, 2026-09-30 on #443): the grind risk is only
+      // true of a hold with none.
+      row.bootRisk.textContent = releaseSet(output)
+        ? `Lets go ${seconds(output.release)} s after it gets home.`
+        : "Hold keeps the pulse on, so a blocked part grinds.";
     }
     const shown = driveable && output.motionSettable;
     const open = shown && output.calibrated;
     row.motionOff.hidden = !shown || open;
     row.motionSet.hidden = !open;
+    paintRelease(row, output, open && output.releaseSettable);
     if (!open) return;
     // Never the box the builder is typing in.
     if (document.activeElement !== row.throwMs) row.throwMs.value = output.throwMs === null ? "" : String(output.throwMs);
@@ -402,6 +435,27 @@
       button.classList.toggle("active", on);
       button.setAttribute("aria-checked", on ? "true" : "false");
     });
+  };
+
+  // The release control (#443): never, or a time after each move arrives.
+  // "after" on an Output that holds is the builder about to type a time: the
+  // box opens and nothing is asked of the droid until they do.
+  const releaseAsked = new Set();
+  const paintRelease = (row, output, open) => {
+    row.releaseSet.hidden = !open;
+    if (!open) return;
+    if (releaseSet(output)) releaseAsked.delete(output.address);
+    const after = releaseSet(output) || releaseAsked.has(output.address);
+    row.releaseChoices.forEach((button) => {
+      const on = (button.dataset.release === "after") === after;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    row.releaseAfter.hidden = !after;
+    // Never the box the builder is typing in.
+    if (document.activeElement !== row.releaseSeconds) {
+      row.releaseSeconds.value = releaseSet(output) ? seconds(output.release) : "";
+    }
   };
 
   // One field at a time, through the one module that saves an Output's
@@ -487,6 +541,21 @@
     say: showFeedback,
     reload: () => loadOutputs(),
     repaint: () => paint(),
+  });
+
+  // A release time is typed in seconds and saved as the ms the droid counts:
+  // 0 to 60 s, where 0 is never.
+  outputsRegion.addEventListener("change", (event) => {
+    const box = event.target;
+    if (!box?.classList?.contains("outputs-release-s")) return;
+    const address = box.closest?.("[data-output]")?.dataset.output;
+    if (!address) return;
+    const s = Number(box.value);
+    if (box.value === "" || !Number.isFinite(s) || s < 0 || s > 60) {
+      showFeedback("Type a time from 0 to 60 seconds.", "warning");
+      return;
+    }
+    started(saveMotion(address, { release: Math.round(s * 1000) }));
   });
 
   outputsRegion.addEventListener("change", (event) => {
@@ -1108,6 +1177,20 @@
     if (button.dataset.ease) {
       const output = OUTPUTS.at(address);
       if (output && button.dataset.ease !== output.ease) started(saveMotion(address, { ease: button.dataset.ease }));
+      return;
+    }
+    if (button.dataset.release) {
+      const output = OUTPUTS.at(address);
+      if (!output) return;
+      if (button.dataset.release === "never") {
+        releaseAsked.delete(address);
+        if (releaseSet(output)) started(saveMotion(address, { release: 0 }));
+        else paint();
+        return;
+      }
+      releaseAsked.add(address);
+      paint();
+      outputRows.get(address)?.releaseSeconds.focus?.();
       return;
     }
     if (button.dataset.boot) {

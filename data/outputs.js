@@ -158,6 +158,9 @@
     throwMs: number(row.throwMs),
     accelMs: number(row.accelMs),
     ease: text(row.ease),
+    // How long it holds after a move arrives before it lets go, in ms; 0 is
+    // never (#443). null from a firmware that does not say.
+    release: number(row.release),
     boot: text(row.boot),
     parts: Array.isArray(row.parts) ? row.parts.map(String) : [],
     // A firmware older than the output-first table reports no position at
@@ -224,6 +227,8 @@
   //   throwMs, accelMs its Motion Profile's two times, or null where the row
   //   ease             reports none; the ease as the builder chose it
   //   motionSettable   its row carries all three
+  //   release          ms it holds after a move arrives, 0 for never, or null
+  //   releaseSettable  its row carries one
   //   boot             what it does at power-up, as the builder chose it
   //   bootSettable     its row carries one
   //   started          what it was first reported with (above), or null
@@ -248,6 +253,7 @@
       ledCount: table.ledCount || 1,
       ledCountSettable: lightCapable && table.ledCount !== null,
       motionSettable: table.throwMs !== null && table.accelMs !== null && table.ease !== "",
+      releaseSettable: table.release !== null,
       bootSettable: table.boot !== "",
     };
     if (output.fromConfig && !started.has(output.address)) {
@@ -361,6 +367,7 @@
     throwMs: { key: "throwMs", can: (output) => output.motionSettable },
     accelMs: { key: "accelMs", can: (output) => output.motionSettable },
     ease: { key: "ease", can: (output) => output.motionSettable, value: String },
+    release: { key: "release", can: (output) => output.releaseSettable },
     boot: { key: "boot", can: (output) => output.bootSettable, value: String },
   };
 
@@ -440,7 +447,7 @@
 
   /**
    * Save Output settings: `{ [address]: { wired, type, ledCount, throwMs,
-   * accelMs, ease, boot } }`, any of them per Output, through the row door
+   * accelMs, ease, release, boot } }`, any of them per Output, through the row door
    * (POST /api/config `outputs`, ADR 0068). The droid's answer becomes what
    * this module holds.
    *

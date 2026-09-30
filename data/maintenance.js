@@ -397,7 +397,7 @@
   // this droid lacks. The NVS load drops such an id the same way
   // (droidFittedPartsParse).
   const ROW_SETTINGS = [
-    'wired', 'component', 'ledCount', 'throwMs', 'accelMs', 'ease', 'boot',
+    'wired', 'component', 'ledCount', 'throwMs', 'accelMs', 'ease', 'release', 'boot',
     'openUs', 'centreUs', 'closeUs', 'calibrated', 'parts',
   ];
   const OLDER_SETTINGS = [

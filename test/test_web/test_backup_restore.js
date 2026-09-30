@@ -69,7 +69,7 @@ const freshDroid = () => [
 
 // Every setting a row holds, as the droid takes it back.
 const ROW_SETTINGS = [
-  "wired", "component", "ledCount", "throwMs", "accelMs", "ease", "boot",
+  "wired", "component", "ledCount", "throwMs", "accelMs", "ease", "release", "boot",
   "openUs", "centreUs", "closeUs", "calibrated", "parts",
 ];
 
@@ -287,6 +287,30 @@ test("a backup made before the Outputs were their rows restores every row settin
     assert.deepEqual(got, want, `${row.name} is not what the backup holds`);
   });
   assert.match(receipt(), /Configuration: restored/);
+});
+
+// A backup made since an Output was its row carries every setting on the row,
+// in the shape GET /api/servo/outputs answers it, and a restore puts every one
+// of them back: a setting the restore leaves off is one the droid silently
+// keeps from before, which reads as restored and is not - the Output Release
+// time (#443) included.
+test("a backup's rows go back with every setting each row holds", async () => {
+  const backup = structuredClone(OLDER_BACKUP);
+  backup.servo_outputs.outputs.forEach((row, index) => {
+    Object.assign(row, {
+      wired: true, throwMs: 700 + index, accelMs: 120 + index, ease: "soft",
+      release: 1500 + index * 250, boot: "home-hold",
+    });
+  });
+  const { posts } = await restoreOn(makeDroid(), backup);
+
+  const sent = posts("/api/config")[0].outputs;
+  backup.servo_outputs.outputs.forEach((row) => {
+    const back = sent.find((each) => each.address === row.address);
+    ROW_SETTINGS.filter((key) => key in row).forEach((key) => {
+      assert.deepEqual(back?.[key], row[key], `${row.name}'s ${key} did not go back as the backup holds it`);
+    });
+  });
 });
 
 // A backup can name an Output this droid does not have - an expander that is
