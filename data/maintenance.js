@@ -240,6 +240,7 @@
 
   const listOf = (names) => names.join(', ');
   const seqPath = (name) => `/api/seq?name=${encodeURIComponent(name)}`;
+  const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
   // Two JSON values with the same content, whatever order their keys came in:
   // the order a Sequence's keys were written in is not part of the Sequence.
@@ -285,17 +286,18 @@
     }
     const sequences = [];
     for (const { name } of list) {
-      try {
-        sequences.push((await window.PAApi.get(seqPath(name), { timeoutMs: 10000 })).data);
-      } catch {
-        failed.push(name);
-      }
+      const seq = await window.PAApi.get(seqPath(name), { timeoutMs: 10000 }).then((res) => res.data, () => null);
+      if (isObject(seq) && typeof seq.name === 'string') sequences.push(seq);
+      else failed.push(name);
     }
     return sequences;
   };
 
   // A backup of `parts` ('sequences', 'configuration', 'rc_map') read off the
   // droid, with the board that wrote it, or the reads that did not answer.
+  // A read counts only when it returned data: an answer with no JSON body is
+  // a part missing from the copy, and an identity without its board makes a
+  // file this page would refuse to restore.
   const readDroid = async (parts) => {
     const reads = [['identity', '/api/identity'], ...parts.flatMap((part) => PART_READS[part] || [])];
     const [fwRes, ...answers] = await Promise.allSettled([
@@ -306,7 +308,8 @@
     const read = {};
     answers.forEach((res, index) => {
       const [key] = reads[index];
-      if (res.status === 'fulfilled') read[key] = res.value?.data ?? null;
+      const data = res.status === 'fulfilled' ? res.value?.data : null;
+      if (isObject(data) && (key !== 'identity' || typeof data.board === 'string')) read[key] = data;
       else failed.push(key);
     });
     const sequences = parts.includes('sequences') ? await readSequences(failed) : undefined;
@@ -799,7 +802,7 @@
     if (asked !== factsAsked) return;
     const rows = (res) => (res.status === 'fulfilled' && Array.isArray(res.value?.data) ? res.value.data : null);
     const failed = [];
-    if (identity.status !== 'fulfilled') failed.push('which board it is');
+    if (identity.status !== 'fulfilled' || typeof identity.value?.data?.board !== 'string') failed.push('which board it is');
     if (!rows(list)) failed.push('which Sequences it holds');
     if (!rows(builtins)) failed.push('its Factory Sequences');
     if (failed.length > 0) {
@@ -971,7 +974,6 @@
   // does not is refused rather than taken as this droid's own, which would
   // write another board's pins. The copy saved before a restore carries only
   // the parts it replaces, so a part may be absent; a part present is whole.
-  const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   const whyNotABackup = (backup) => {
     if (!isObject(backup)) return 'it is not a backup object';
     if (!Number.isInteger(backup.schema) || backup.schema < 1) return 'it has no backup schema';
