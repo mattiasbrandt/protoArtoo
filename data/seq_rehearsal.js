@@ -2,7 +2,7 @@
 // data/seq_rehearsal.js
 //
 // The Rehearsal: reads a sequence and says what will not happen as its author
-// wrote it (ADR 0044, #287, #354).
+// wrote it (ADR 0044, #287, #354, #439).
 //
 // It is NOT Protocol Check and never sits inside data/seq_protocol_check.js.
 // That file mirrors the device's gate, and a mirror is only trustworthy while it
@@ -11,24 +11,40 @@
 // save or a run, and nothing it returns disables a button.
 //
 // A finding is fields, not a sentence: {level, code, msg, fix}, plus the step
-// and the subject it is about when it is about exactly one. `code` is protocol
-// and `msg`/`fix` are copy (#298), so a finding can be counted by kind without
-// reading prose. finding() refuses a level that is not one of the two, and a
-// finding with no fix -- a finding with no fix is a complaint, and does not ship.
+// and the subject it is about when it is about exactly one, and `n`, how many
+// times it happens. `code` is protocol and `msg`/`fix` are copy (#298), so a
+// finding can be counted by kind without reading prose. finding() refuses a
+// level that is not one of the two, and a finding with no fix -- a finding with
+// no fix is a complaint, and does not ship. Each rule reports ONE finding per
+// subject, carrying the count, so one authoring mistake inside a loop is one
+// line rather than one per iteration (r2d2-astromech-simulator v1.79.0,
+// lint.js:266).
 //
 // Every rule here is paid for by a failure this project has had (#287's
 // admission standard), and each names its receipt:
 //   dispatch-spacing        2026-06-18: the dome's eight-entry command queue
 //                           overflowed and silently dropped a :CL01.
-//   retarget-before-arrival DM:HELLO's five identical :OP01 made one open (#287).
+//   servo-burst             2026-06-17: DM:LOW drove seven ring closes inside
+//                           ~0.9 s and the dome browned out, twice.
+//   group-panel             2026-06-17: ROCKMARCH's blanket :CL00 moved pie
+//                           panels it never touched; they stalled until the
+//                           droid was power-cycled.
+//   retarget-before-arrival DM:HELLO's five identical :OP01 made one open, and a
+//                           close 670 ms after its open left P1 open (#287).
 //   quiet-in-sequence       2026-06-17: DM:ROCKMARCH's $s muted idle chatter
 //                           until reboot on every normal completion.
-//   part-left-open          ADR 0049: the engine undoes nothing a body step did,
-//                           and "this routine leaves the dataport open" is named
-//                           there as a Note, because it performs as written.
+//   raw-light-code          2026-06-17/-18: ROCKMARCH's raw @0T11/@0P11 left the
+//                           logics default blue against the dome's red MARCH.
+//   switched-off            #170/#171/#172: a step aimed at hardware switched
+//                           off is a silent no-op, with nothing telling you.
+//   dome-unavailable        2026-08-04: five pies disabled for a linkage fault.
+//   body-overlap            ADR 0049: the Cadence Floor paces only what the body
+//                           generates, so hand-written overlaps are advised on.
+//   part-left-open          ADR 0049: the engine undoes nothing a body step did.
+//   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
 //
-// One computation behind three appearances (#287 specific 6): the counts in the
-// editor, the full list at save and at clone, and a badge beside a run.
+// One computation behind three appearances (#287 specific 6): the figures in
+// the editor, the full list at save and at clone, and a badge beside a run.
 // =============================================================================
 
 (() => {
@@ -48,8 +64,8 @@
       closes: "It could be, if the dome published its panel times.",
     },
     "body-timing": {
-      msg: "A body part's move time is set on its output, and this page does not read it yet.",
-      closes: "It could be, once the editor reads each output's time to full throw.",
+      msg: "Only a part on a calibrated output can be timed here.",
+      closes: "Calibrate the output it is on, with the droid connected.",
     },
     "random-pick": {
       msg: "A random step picks its panel at run time. Nothing fixed to check.",
@@ -65,6 +81,26 @@
       .replace(/"/g, "&quot;");
 
   const seconds = (ms) => `${Number((ms / 1000).toFixed(2))} s`;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  // The motion model, generated from docs/servo-motion.yaml beside the
+  // firmware's own planner (data/servo_motion.js, #439). Read when a rule runs,
+  // so the load order of the page's modules does not matter.
+  const motion = () => window.ServoMotion || null;
+
+  // The Cadence Floor: 450 ms, the DOME's measured figure, which the body
+  // adopts as a stand-in because nobody has measured the body's own
+  // (include/sequence_bulk_centre.h). Any sentence that quotes it says whose it
+  // is.
+  const cadenceFloorMs = () => motion()?.SEQ_CADENCE_FLOOR_MS ?? null;
+
+  // What a builder calls a Part: its catalog name, or the id where the catalog
+  // does not know it.
+  const partName = (id) => {
+    const parts = window.DroidParts && Array.isArray(window.DroidParts.parts) ? window.DroidParts.parts : [];
+    const entry = parts.find((part) => part.id === id);
+    return entry && entry.name ? entry.name : id;
+  };
 
   // ---------------------------------------------------------------------------
   // finding() -- the only way a finding is made.
@@ -80,8 +116,24 @@
     if (typeof subject.step === "number") out.step = subject.step;
     if (subject.part) out.part = subject.part;
     if (subject.element) out.element = subject.element;
+    if (subject.output) out.output = subject.output;
     if (typeof subject.n === "number") out.n = subject.n;
     return out;
+  };
+
+  // One finding per (rule, subject): occurrences are gathered under a key and
+  // the group keeps its first, so the count survives as `n` on the finding.
+  const grouped = () => {
+    const groups = new Map();
+    return {
+      add(key, occurrence) {
+        const group = groups.get(key) || { n: 0, first: occurrence, all: [] };
+        group.n += 1;
+        group.all.push(occurrence);
+        groups.set(key, group);
+      },
+      each: (make) => [...groups.values()].map(make),
+    };
   };
 
   // ---------------------------------------------------------------------------
@@ -125,22 +177,130 @@
   };
 
   const panelName = (target) => (/^P\d$/.test(target) ? `PP${target.slice(1)}` : `P${Number(target)}`);
-  const panelVerb = { OP: "open", CL: "close" };
+  const panelVerb = { OP: "open", CL: "close", OF: "flutter" };
+
+  // The panels a group target moves, from the body's own command map
+  // (data/dome_command_map.js): every ring panel, every pie, or both.
+  const GROUP_WORDS = { all: "every panel", ring: "every ring panel", pie: "every pie panel" };
+  const groupOf = (cmd) => {
+    const decoded = window.DomeCommandMap?.decodeCommandToElement?.(cmd);
+    return decoded && decoded.kind === "group" ? decoded.id : null;
+  };
+  const groupMembers = (group) => {
+    const targets = window.DomeCommandMap?.PANEL_COMMAND_TARGETS || {};
+    const ring = Object.keys(targets.ring || {});
+    const pie = Object.keys(targets.pie || {});
+    return group === "ring" ? ring : group === "pie" ? pie : [...ring, ...pie];
+  };
+
+  // ---------------------------------------------------------------------------
+  // The body: which Output carries a Part, and where a move of it lands.
+  //
+  // `outputs` are the rows GET /api/servo/outputs answers, as data/outputs.js
+  // reads them. What follows reads a row the way the firmware does, and says at
+  // each step which firmware function it follows; the motion itself is the
+  // generated planner's, never worked out here.
+  // ---------------------------------------------------------------------------
+  const outputOf = (part, context) =>
+    (Array.isArray(context.outputs) ? context.outputs : []).find(
+      (output) => Array.isArray(output.parts) && output.parts.includes(part),
+    ) || null;
+
+  // A light has no ends and no travel: it is never timed and never named as
+  // unmeasured (#287 second pass: "inapplicable is silent").
+  const isServo = (output) => !output.light;
+
+  const numeric = (value) => typeof value === "number" && Number.isFinite(value);
+
+  // servoMotionProfileOf() (include/servo_motion_ramp.h): the pair ordered by
+  // servoOutputLowUs()/servoOutputHighUs(), and the ease that runs --
+  // servoOutputEffectiveEasing() degrades an overshoot on an Output nobody has
+  // measured to `none` (include/servo_output_row.h).
+  const profileOf = (output) => {
+    const model = motion();
+    if (!model || !numeric(output.openUs) || !numeric(output.closeUs) ||
+        !numeric(output.throwMs) || !numeric(output.accelMs)) {
+      return null;
+    }
+    const ease = model.ServoEasing;
+    const words = { none: ease.SERVO_EASE_NONE, soft: ease.SERVO_EASE_SOFT, overshoot: ease.SERVO_EASE_OVERSHOOT };
+    let easing = words[output.ease] ?? ease.SERVO_EASE_NONE;
+    if (easing === ease.SERVO_EASE_OVERSHOOT && !output.calibrated) easing = ease.SERVO_EASE_NONE;
+    return {
+      loUs: Math.min(output.openUs, output.closeUs),
+      hiUs: Math.max(output.openUs, output.closeUs),
+      throwMs: output.throwMs,
+      accelMs: output.accelMs,
+      easing,
+      calibrated: output.calibrated === true,
+    };
+  };
+
+  // seqBodyHowFar() (include/sequence_engine.h): absent is the whole throw, and
+  // a stated value is floored at 5 and capped at 100.
+  const howFarOf = (def) => {
+    const stated = Number(def.howFar) || 0;
+    if (stated === 0) return 100;
+    return Math.min(100, Math.max(5, stated));
+  };
+
+  // seqBodyTargetUs() (include/sequence_body_step.h): how far is measured along
+  // the shape's own direction of travel, rounded half away from zero on a
+  // reversed pair too, and a flutter lands where an open does. Then the row's
+  // component band bounds it (servoOutputClampPulse()).
+  const targetOf = (output, shape, howFar) => {
+    const span = output.openUs - output.closeUs;
+    const bias = span >= 0 ? 50 : -50;
+    const travelled = Math.trunc((span * howFar + bias) / 100);
+    const target = shape === "close" ? output.openUs - travelled : output.closeUs + travelled;
+    const bounded = Math.min(0xffff, Math.max(0, target));
+    return output.bandHiUs > 0 ? Math.min(output.bandHiUs, Math.max(output.bandLoUs, bounded)) : bounded;
+  };
+
+  // A body step, with what the droid in front of the author would do with it.
+  // `timed` is the criterion #439 sets: a Part on a calibrated servo Output.
+  const bodyMove = (def, context) => {
+    const output = outputOf(def.part, context);
+    const shape = def.shape || "open";
+    const profile = output && isServo(output) ? profileOf(output) : null;
+    const timed = Boolean(profile && profile.calibrated);
+    return {
+      part: def.part,
+      shape,
+      output,
+      profile,
+      timed,
+      targetUs: timed ? targetOf(output, shape, howFarOf(def)) : null,
+    };
+  };
 
   // ---------------------------------------------------------------------------
   // The rules. Each reads the expanded events and returns findings.
   // ---------------------------------------------------------------------------
-  const dispatchSpacing = (events) => {
-    const dome = events.filter((event) => event.def.type === "dome");
+
+  // Consecutive pairs closer than `limitMs`, and the tightest of them.
+  const tightPairs = (events, limitMs, same = () => false) => {
     let tight = 0;
     let worst = null;
-    for (let k = 1; k < dome.length; k += 1) {
-      const gap = dome[k].t - dome[k - 1].t;
-      if (gap < DOME_SPACING_MS) {
+    for (let k = 1; k < events.length; k += 1) {
+      if (same(events[k - 1], events[k])) continue;
+      const gap = events[k].t - events[k - 1].t;
+      if (gap < limitMs) {
         tight += 1;
-        if (!worst || gap < worst.gap) worst = { gap, before: dome[k - 1], after: dome[k] };
+        if (!worst || gap < worst.gap) worst = { gap, before: events[k - 1], after: events[k] };
       }
     }
+    return { tight, worst };
+  };
+
+  const pairWords = (worst, name) =>
+    worst.gap === 0
+      ? `${name(worst.before)} and ${name(worst.after)} both at ${seconds(worst.after.t)}`
+      : `${name(worst.after)} ${worst.gap} ms after ${name(worst.before)}`;
+
+  const dispatchSpacing = (events) => {
+    const dome = events.filter((event) => event.def.type === "dome");
+    const { tight, worst } = tightPairs(dome, DOME_SPACING_MS);
     if (!worst) return [];
     const when =
       worst.gap === 0
@@ -157,13 +317,71 @@
     ];
   };
 
-  // The identical re-issue: the same open or close, to the same subject, with
-  // nothing else sent to that subject in between. The target is already on its
-  // way there, so the repeat moves nothing. A flutter is not idempotent and is
-  // never counted; a genuine reversal needs a travel time, which is a Gap.
-  const retargetBeforeArrival = (events) => {
+  // Panel moves closer than the dome's measured cadence: what browned the dome
+  // out was the burst, never a single close.
+  const servoBurst = (events) => {
+    const floor = cadenceFloorMs();
+    if (floor === null) return [];
+    const panels = events.filter((event) => event.def.type === "dome" && panelIntent(event.def.cmd));
+    const { tight, worst } = tightPairs(panels, floor);
+    if (!worst) return [];
+    return [
+      finding(
+        "warning",
+        "servo-burst",
+        `${plural(tight, "panel move follows", "panel moves follow")} the one before by less than ${floor} ms -- ${pairWords(worst, (e) => e.def.cmd)}. The dome browned out driving panels this close together.`,
+        `Space panel moves at least ${floor} ms apart.`,
+        { step: worst.after.step, n: tight },
+      ),
+    ];
+  };
+
+  // A group target moves every member at once -- and the members this sequence
+  // never moves on its own are the ones nobody expected to move.
+  const groupPanel = (events) => {
+    const touched = new Set();
+    events.forEach((event) => {
+      if (event.def.type !== "dome") return;
+      const decoded = window.DomeCommandMap?.decodeCommandToElement?.(event.def.cmd);
+      if (decoded && decoded.kind !== "group") touched.add(decoded.id);
+    });
+    const groups = grouped();
+    events.forEach((event) => {
+      if (event.def.type !== "dome") return;
+      const group = groupOf(event.def.cmd);
+      if (group) groups.add(event.def.cmd, { event, group });
+    });
+    const floor = cadenceFloorMs();
+    return groups.each(({ n, first }) => {
+      const untouched = groupMembers(first.group).filter((id) => !touched.has(id));
+      // A few are named; more than that is a count, or the sentence is a list.
+      const named = untouched.length <= 3 ? untouched.join(", ") : `${untouched.length} panels`;
+      const wider = untouched.length ? `, including ${named} nothing else here moves` : "";
+      return finding(
+        "warning",
+        "group-panel",
+        `${first.event.def.cmd} moves ${GROUP_WORDS[first.group]} at once${wider}${n > 1 ? ` (${n} times)` : ""}.`,
+        floor === null ? "Move the panels you mean one at a time." : `Move the panels you mean one at a time, ${floor} ms apart.`,
+        { step: first.event.step, element: first.group, n },
+      );
+    });
+  };
+
+  // The re-target: a Part or a panel told to go somewhere before it can have
+  // got where it was going.
+  //
+  // Two halves. The identical re-issue -- the same open or close, to the same
+  // subject, with nothing else sent to it in between -- moves nothing, and is
+  // judged on every subject. A reversal needs a travel time: on a body Part
+  // whose Output is calibrated that is the generated planner's, and the unit
+  // judged is the RUN, not the step -- re-targets the same way on extend one
+  // move, and only a turn back is measured, against the time the run it cuts
+  // short needs (r2d2-astromech-simulator v1.79.0, lint.js:109). A dome panel's
+  // travel is the dome's, so its reversal half stays the dome-timing Gap.
+  const retargetBeforeArrival = (events, context) => {
     const last = new Map();
-    const groups = new Map();
+    const runs = new Map();
+    const groups = grouped();
     events.forEach((event) => {
       const def = event.def;
       let key = null;
@@ -184,20 +402,66 @@
         return;
       }
       if (command !== null && last.get(key) === command) {
-        const group = groups.get(key) || { n: 0, first: event, label };
-        group.n += 1;
-        groups.set(key, group);
+        groups.add(key, { event, label, kind: "repeat" });
       }
       last.set(key, command);
+
+      if (def.type !== "body") return;
+      const move = bodyMove(def, context);
+      if (!move.timed) {
+        runs.delete(key);
+        return;
+      }
+      const SM = motion();
+      if (move.shape === "flutter") {
+        // A flutter is no single move: it ends open, flutterMs later (ADR 0049).
+        runs.set(key, { from: move.targetUs, target: move.targetUs, dir: 0, start: event.t + (Number(def.flutterMs) || 0) });
+        return;
+      }
+      // Where the Part starts is where the move before left it; the first move
+      // of a routine starts from the end its shape points away from, the end
+      // seqBodyTargetUs() measures how-far from.
+      const run = runs.get(key) || {
+        from: move.shape === "close" ? move.output.openUs : move.output.closeUs,
+        target: move.shape === "close" ? move.output.openUs : move.output.closeUs,
+        dir: 0,
+        start: event.t,
+      };
+      runs.set(key, run);
+      if (move.targetUs === run.target) return;
+      const dir = Math.sign(move.targetUs - run.target);
+      if (run.dir === dir) {
+        run.target = move.targetUs;
+        return;
+      }
+      if (run.dir !== 0) {
+        const need = SM.servoMotionArrivalMs(run.from, run.target, move.profile);
+        const since = event.t - run.start;
+        if (since < need) groups.add(key, { event, label, kind: "reversal", need, since });
+      }
+      runs.set(key, { from: run.target, target: move.targetUs, dir, start: event.t });
     });
-    return [...groups.values()].map(({ n, first, label }) => {
-      const who = label.element || label.part;
+    return groups.each(({ n, first, all }) => {
+      const { label } = first;
+      const who = label.element || partName(label.part);
+      const reversal = all.find((occurrence) => occurrence.kind === "reversal");
+      const times = n > 1 ? `, ${n} times` : "";
+      const subject = label.element ? { element: label.element } : { part: label.part };
+      if (reversal) {
+        return finding(
+          "warning",
+          "retarget-before-arrival",
+          `${who} turns back at ${seconds(reversal.event.t)}, ${reversal.since} ms into a move that takes ${reversal.need} ms${times}. It never gets there.`,
+          `Give that move ${reversal.need} ms before the next one, or make it shorter.`,
+          { step: reversal.event.step, n, ...subject },
+        );
+      }
       return finding(
         "warning",
         "retarget-before-arrival",
-        `${who} is told to ${label.verb} again at ${seconds(first.t)} with nothing in between${n > 1 ? `, ${n} times` : ""}. It is already on its way, so the repeat moves nothing.`,
+        `${who} is told to ${label.verb} again at ${seconds(first.event.t)} with nothing in between${times}. It is already on its way, so the repeat moves nothing.`,
         `Delete the repeated ${label.verb}, or put the opposite move between them if ${who} should move twice.`,
-        label.element ? { step: first.step, element: label.element, n } : { step: first.step, part: label.part, n },
+        { step: first.event.step, n, ...subject },
       );
     });
   };
@@ -216,6 +480,141 @@
     ];
   };
 
+  // A raw logic, PSI or holo code the dome draws in its default colors, where a
+  // Visual preset draws the dome's own. Raw text (@nM) is not one: no preset
+  // carries text.
+  const isRawLightCode = (cmd) => /^\*/.test(cmd) || (/^@/.test(cmd) && !/^@\d+M/.test(cmd));
+
+  const rawLightCode = (events) => {
+    const groups = grouped();
+    events.forEach((event) => {
+      if (event.def.type === "dome" && isRawLightCode(String(event.def.cmd || ""))) {
+        groups.add(event.def.cmd, { event });
+      }
+    });
+    return groups.each(({ n, first }) =>
+      finding(
+        "warning",
+        "raw-light-code",
+        `${first.event.def.cmd} is a raw light code, so the dome draws it in its default colors${n > 1 ? ` (${n} times)` : ""}.`,
+        "Use a Visual preset step instead.",
+        { step: first.event.step, n },
+      ),
+    );
+  };
+
+  // A step aimed at hardware this droid has switched off does nothing at all.
+  // The toggles are GET /api/config's components; a body Part's is the wired
+  // tick on the Output it is on (data/outputs.js). Nothing is said about a
+  // toggle that was not read.
+  const SWITCHES = [
+    { types: ["dome", "random"], key: "protoR2link", what: "The dome link", steps: ["dome step", "dome steps"] },
+    { types: ["audio", "audioCat"], key: "audio", what: "Sound", steps: ["sound step", "sound steps"] },
+    { types: ["domeRotate"], key: "domeEsc", what: "The dome motor", steps: ["dome turn", "dome turns"] },
+  ];
+
+  const switchedOff = (events, context) => {
+    const components = context.config?.components || null;
+    const groups = grouped();
+    events.forEach((event) => {
+      const def = event.def;
+      if (def.type === "body") {
+        const output = outputOf(def.part, context);
+        if (output && output.wired === false) groups.add(`body:${def.part}`, { event, output, part: def.part });
+        return;
+      }
+      const toggle = SWITCHES.find((entry) => entry.types.includes(def.type));
+      if (toggle && components?.[toggle.key]?.enabled === false) groups.add(toggle.key, { event, toggle });
+    });
+    return groups.each(({ n, first }) => {
+      if (first.part) {
+        const name = partName(first.part);
+        return finding(
+          "warning",
+          "switched-off",
+          `${name} is on ${first.output.name}, which is not wired, so ${n === 1 ? "its step does" : `its ${n} steps do`} nothing.`,
+          `Wire ${first.output.name} on the Wiring page, or delete the ${n === 1 ? "step" : "steps"}.`,
+          { step: first.event.step, part: first.part, output: first.output.name, n },
+        );
+      }
+      const { toggle } = first;
+      return finding(
+        "warning",
+        "switched-off",
+        `${toggle.what} is off on this droid, so ${plural(n, toggle.steps[0], toggle.steps[1])} ${n === 1 ? "does" : "do"} nothing.`,
+        `Turn ${toggle.what.toLowerCase()} on in Configuration, or delete the ${n === 1 ? "step" : "steps"}.`,
+        { step: first.event.step, n },
+      );
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // unavailableMessage() -- what the editor says about a dome element the
+  // connected dome reports it cannot move, or null when it can.
+  //
+  // The state clause is data/dome_layout.js's, where severity is computed and
+  // where the Dashboard's dome control reads it too (#348). This adds the
+  // authoring consequence. It is the ONE source of these words in the editor:
+  // the inline message beside a step and the Rehearsal's finding both come from
+  // here, so the two cannot drift (#287 first pass, #439).
+  // ---------------------------------------------------------------------------
+  const unavailableMessage = (elementId, layout) => {
+    if (!elementId) return null;
+    const elem = layout?.elements?.find((e) => e.id === elementId);
+    if (!elem) return null;
+    const clause = window.DomeLayout?.severityClause?.(elem);
+    if (!clause) return null;
+    // An element out of the selected layout that the dome says is active is a
+    // disagreement worth naming as one, not as either state.
+    if (elem.in_layout === false && elem.active === true) {
+      return `${elementId} is out of the selected layout, but the dome says it is active.`;
+    }
+    // An element nothing maps to cannot be authored at all; every other
+    // severity still writes a step, and the step still runs.
+    return elem.severity === "unmapped" ? clause : `${clause} The step still runs.`;
+  };
+
+  const domeUnavailable = (events, context) => {
+    const groups = grouped();
+    events.forEach((event) => {
+      if (event.def.type !== "dome") return;
+      const decoded = window.DomeCommandMap?.decodeCommandToElement?.(event.def.cmd);
+      if (!decoded || (decoded.kind !== "ring" && decoded.kind !== "pie")) return;
+      const message = unavailableMessage(decoded.id, context.layout);
+      if (message) groups.add(decoded.id, { event, id: decoded.id, message });
+    });
+    return groups.each(({ n, first }) =>
+      finding(
+        "warning",
+        "dome-unavailable",
+        n > 1 ? `${first.message} (${n} steps)` : first.message,
+        `Pick another panel, or bring ${first.id} back on the dome.`,
+        { step: first.event.step, element: first.id, n },
+      ),
+    );
+  };
+
+  // Hand-written body moves on different Parts, started closer together than
+  // the Cadence Floor. The floor paces only what the body generates itself
+  // (ADR 0049); an author's own timing is advised on and never rewritten, and
+  // the number is the dome's, which the sentence says.
+  const bodyOverlap = (events) => {
+    const floor = cadenceFloorMs();
+    if (floor === null) return [];
+    const moves = events.filter((event) => event.def.type === "body" && event.def.part);
+    const { tight, worst } = tightPairs(moves, floor, (a, b) => a.def.part === b.def.part);
+    if (!worst) return [];
+    return [
+      finding(
+        "warning",
+        "body-overlap",
+        `${plural(tight, "body move starts", "body moves start")} less than ${floor} ms after the one before -- ${pairWords(worst, (e) => partName(e.def.part))}. ${floor} ms is the dome's measured spacing; the body's own is unmeasured.`,
+        "Spread the moves out, one part at a time.",
+        { step: worst.after.step, n: tight },
+      ),
+    ];
+  };
+
   const partLeftOpen = (events) => {
     const lastShape = new Map();
     events.forEach((event) => {
@@ -229,45 +628,113 @@
         finding(
           "note",
           "part-left-open",
-          `${part} is still open when the sequence ends, and the body leaves it that way -- nothing closes it for you.`,
-          `Add a close for ${part} near the end, unless it is meant to stay open.`,
+          `${partName(part)} is still open when the sequence ends, and the body leaves it that way -- nothing closes it for you.`,
+          `Add a close for ${partName(part)} near the end, unless it is meant to stay open.`,
           { step: last.step, part },
         ),
       );
   };
 
+  // A named track that rings out past the show. A Note, not a Warning: it plays
+  // exactly as written. A sound category (audioCat) rings out on purpose
+  // (ADR 0010), so it is never counted. A sound picked in this editor carries
+  // no boundAudio, which the droid reads as bounded.
+  const audioOutlivesShow = (events) => {
+    const groups = grouped();
+    events.forEach((event) => {
+      if (event.def.type === "audio" && event.def.boundAudio === false && event.def.cmd !== "$s") {
+        groups.add(event.def.cmd, { event });
+      }
+    });
+    return groups.each(({ n, first }) =>
+      finding(
+        "note",
+        "audio-outlives-show",
+        `${first.event.def.cmd} keeps playing after the sequence ends${n > 1 ? ` (${n} steps)` : ""}.`,
+        "Pick the sound again here: a sound picked in this editor stops when the sequence ends.",
+        { step: first.event.step, n },
+      ),
+    );
+  };
+
+  // ---------------------------------------------------------------------------
+  // The figures (#287 second pass, specific 9): each one true, no headline.
+  // ---------------------------------------------------------------------------
+  // The bytes POST /api/seq sends: the JSON data/web_api.js stringifies, as
+  // UTF-8, which is what the droid's per-file cap counts.
+  const byteLength = (seq) => {
+    let bytes = 0;
+    for (const ch of JSON.stringify(seq)) {
+      const code = ch.codePointAt(0);
+      bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+    }
+    return bytes;
+  };
+
+  // The slowest full throw among the Parts this routine moves: the time an
+  // Output takes end to end, by the generated planner. Parts nobody can time
+  // leave it `null`, and the row says so instead of quoting a number.
+  const slowestThrow = (events, context) => {
+    let slowest = null;
+    let untimed = false;
+    events.forEach((event) => {
+      const def = event.def;
+      if (def.type === "dome" && panelIntent(def.cmd)) untimed = true;
+      if (def.type !== "body" || !def.part) return;
+      const move = bodyMove(def, context);
+      if (move.output && !isServo(move.output)) return;
+      if (!move.timed) {
+        untimed = true;
+        return;
+      }
+      const ms = motion().servoMotionArrivalMs(move.profile.loUs, move.profile.hiUs, move.profile);
+      if (!slowest || ms > slowest.ms) slowest = { ms, part: def.part };
+    });
+    return { slowest, untimed };
+  };
+
   // ---------------------------------------------------------------------------
   // rehearse() -- the one computation.
+  //
+  // `context` is what the droid in front of the author reports, and every part
+  // of it is optional: a rule that needs something not read stays silent, and
+  // the Gap lines say what could not be checked.
+  //   outputs    GET /api/servo/outputs, as data/outputs.js reads each row
+  //   config     GET /api/config (its `components`)
+  //   layout     the connected dome's layout model (data/dome_layout.js)
+  //   maxBytes   the droid's per-file cap (GET /api/identity)
   // ---------------------------------------------------------------------------
-  const rehearse = (seq) => {
+  const rehearse = (seq, context = {}) => {
     const steps = Array.isArray(seq?.steps) ? seq.steps : [];
     const events = expand(steps);
     const findings = [
       ...dispatchSpacing(events),
-      ...retargetBeforeArrival(events),
+      ...servoBurst(events),
+      ...groupPanel(events),
+      ...retargetBeforeArrival(events, context),
       ...quietInSequence(events),
+      ...rawLightCode(events),
+      ...switchedOff(events, context),
+      ...domeUnavailable(events, context),
+      ...bodyOverlap(events),
       ...partLeftOpen(events),
+      ...audioOutlivesShow(events),
     ];
 
-    // A step counts as checked when every rule that applies to it could be
-    // judged. A panel move and a body move each carry a timing question nobody
-    // here can answer, and a random step has no fixed target; those are the
-    // unchecked ones, and each names its Gap. A step no rule applies to is not
-    // a gap and stays silent.
+    // What could not be judged, by step: a panel move's timing is the dome's, a
+    // body move is timed only on a calibrated Output with its Part on it, and a
+    // random step has no fixed target. A step no rule applies to is not a gap
+    // and stays silent.
     const gapCounts = new Map();
-    let total = 0;
-    let unchecked = 0;
     steps.forEach((step) => {
-      if (!step || step.type === "end") return;
-      total += 1;
+      if (!step) return;
       let gap = null;
       if (step.type === "dome" && panelIntent(step.cmd)) gap = "dome-timing";
-      else if (step.type === "body") gap = "body-timing";
-      else if (step.type === "random") gap = "random-pick";
-      if (gap) {
-        unchecked += 1;
-        gapCounts.set(gap, (gapCounts.get(gap) || 0) + 1);
-      }
+      else if (step.type === "body") {
+        const move = bodyMove(step, context);
+        if (!(move.output && !isServo(move.output)) && !move.timed) gap = "body-timing";
+      } else if (step.type === "random") gap = "random-pick";
+      if (gap) gapCounts.set(gap, (gapCounts.get(gap) || 0) + 1);
     });
     const gaps = [...gapCounts.entries()].map(([code, n]) => ({ code, n, ...GAPS[code] }));
 
@@ -275,7 +742,40 @@
     findings.forEach((item) => {
       counts[item.level] += 1;
     });
-    return { findings, gaps, counts, checked: total - unchecked, total };
+    const throws = slowestThrow(events, context);
+    const figures = {
+      steps: steps.length,
+      maxSteps: window.SeqProtocolCheck?.MAX_STEPS ?? null,
+      bytes: byteLength(seq || {}),
+      maxBytes: Number.isInteger(context.maxBytes) && context.maxBytes > 0 ? context.maxBytes : null,
+      durationMs: window.SeqProtocolCheck?.estimateDuration?.(steps) ?? null,
+      slowestThrow: throws.slowest,
+      untimedMoves: throws.untimed,
+    };
+    return { findings, gaps, counts, figures };
+  };
+
+  // ---------------------------------------------------------------------------
+  // unmeasuredOutputs() -- the Servo Outputs this routine moves that nobody has
+  // calibrated. On those the planner sends the Output straight to its target
+  // (servoMotionPlan() snaps an uncalibrated profile), so the first move is a
+  // jump rather than a ramp. Read beside the run control, before the press, and
+  // never standing in its way (#287 specific 6). A light has no ends to measure
+  // and a switched-off Output does not move, so neither is named.
+  // ---------------------------------------------------------------------------
+  const unmeasuredOutputs = (seq, context = {}) => {
+    const steps = Array.isArray(seq?.steps) ? seq.steps : [];
+    const named = new Map();
+    steps.forEach((step) => {
+      if (!step || step.type !== "body" || !step.part) return;
+      const output = outputOf(step.part, context);
+      if (!output || !isServo(output) || output.wired === false || output.calibrated) return;
+      const entry = named.get(output.name) || { name: output.name, parts: [] };
+      const name = partName(step.part);
+      if (!entry.parts.includes(name)) entry.parts.push(name);
+      named.set(output.name, entry);
+    });
+    return [...named.values()];
   };
 
   // ---------------------------------------------------------------------------
@@ -288,15 +788,28 @@
   // the surface whose whole job is telling a builder what will not happen. The
   // badge below already guarded itself this way; the count did not.
   // ---------------------------------------------------------------------------
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const kb = (bytes) => `${Number((bytes / 1024).toFixed(1))} KB`;
 
-  const checkedLine = (report) => `checked ${report.checked} of ${plural(report.total, "step", "steps")}`;
+  const figuresHtml = (report) => {
+    const f = report.figures || {};
+    const cells = [];
+    if (typeof f.steps === "number") {
+      cells.push(f.maxSteps ? `${f.steps} of ${f.maxSteps} steps` : plural(f.steps, "step", "steps"));
+    }
+    if (typeof f.bytes === "number") {
+      cells.push(f.maxBytes ? `${kb(f.bytes)} of ${kb(f.maxBytes)}` : kb(f.bytes));
+    }
+    if (typeof f.durationMs === "number") cells.push(`runs ${seconds(f.durationMs)}`);
+    if (f.slowestThrow) cells.push(`slowest throw ${seconds(f.slowestThrow.ms)}`);
+    else if (f.untimedMoves) cells.push("slowest throw not timed");
+    return cells.map((cell) => `<span class="seq-rehearsal-figure">${escapeHtml(cell)}</span>`).join("");
+  };
 
   const countsHtml = (report) => `
     <div class="seq-rehearsal-counts" data-rehearsal-counts>
       <span class="seq-rehearsal-count${report.counts.warning > 0 ? " seq-rehearsal-count-warning" : ""}" data-count="warning">${plural(report.counts.warning, "warning", "warnings")}</span>
       <span class="seq-rehearsal-count" data-count="note">${plural(report.counts.note, "note", "notes")}</span>
-      <span class="seq-rehearsal-checked">Rehearsal ${checkedLine(report)}</span>
+      ${figuresHtml(report)}
     </div>`;
 
   const listHtml = (report) => {
@@ -320,13 +833,15 @@
         </li>`,
       )
       .join("");
-    const wire =
-      report.findings.length === 0
-        ? `<p class="seq-rehearsal-clear">Nothing to flag in the ${plural(report.checked, "step", "steps")} the Rehearsal could check, out of ${report.total}.</p>`
-        : `<p class="seq-rehearsal-wire">The Rehearsal ${checkedLine(report)}. Nothing here stops a save or a run.</p>`;
+    // An all-clear says what went unchecked, or it claims a clean bill it did
+    // not earn (#287 specific 7): the Gap lines under it do.
+    let wire;
+    if (report.findings.length > 0) wire = "Nothing here stops a save or a run.";
+    else if (report.gaps.length > 0) wire = "Nothing to flag in what the Rehearsal could check.";
+    else wire = "Nothing to flag.";
     return `
       <div class="seq-rehearsal-report" data-rehearsal-report>
-        ${wire}
+        <p class="${report.findings.length === 0 ? "seq-rehearsal-clear" : "seq-rehearsal-wire"}">${wire}</p>
         <ul class="seq-rehearsal-list">${items}${gaps}</ul>
       </div>`;
   };
@@ -343,12 +858,24 @@
       </details>`;
   };
 
+  // The line beside the run control: every uncalibrated Servo Output this
+  // routine moves, by its board label and the Part on it. Empty when there is
+  // none, so a clean routine carries no line at all.
+  const unmeasuredHtml = (outputs) => {
+    if (!outputs.length) return "";
+    const list = outputs.map((o) => `${o.name} (${o.parts.join(", ")})`).join(", ");
+    return `<b>Not calibrated:</b> ${escapeHtml(list)}. First move is a jump, not a ramp.`;
+  };
+
   window.SeqRehearsal = Object.freeze({
     LEVELS,
     finding,
     rehearse,
+    unavailableMessage,
+    unmeasuredOutputs,
     countsHtml,
     listHtml,
     badgeHtml,
+    unmeasuredHtml,
   });
 })();

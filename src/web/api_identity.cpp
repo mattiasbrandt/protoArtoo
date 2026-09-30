@@ -37,11 +37,13 @@ void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // Worst case is a 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (false is 5 chars, true is 4). With today's
     // manifest -- 4 capabilities, 3 flags, 3 Board Lanes (protoR2link's with its
-    // baud and protocol), and the Learned Sequence cap -- that worst case is
-    // 522 B of JSON on firebeetle2, leaving 575 - 522 = 53 B of headroom; the
-    // artoo-esp32 is one byte shorter, its cap being one digit (5) where
-    // firebeetle2's is two (10). Every lane's UART index is one digit and every
-    // lane pin is two on both boards.
+    // baud and protocol), the Learned Sequence cap and its per-file byte cap --
+    // that worst case is 557 B of JSON on firebeetle2, leaving 575 - 557 = 18 B
+    // of headroom; the artoo-esp32 is one byte shorter, its cap being one digit
+    // (5) where firebeetle2's is two (10). The byte cap is five digits on both
+    // (12288, 24576), so ,"learned_sequence_max_bytes":NNNNN costs 35 B on
+    // either (#439). Every lane's UART index is one digit and every lane pin is
+    // two on both boards.
     // A capability or flag row emits ,"<name>":false, so it costs name_len + 9
     // bytes at worst (name_len + 8 for the first row in an object, which has no
     // leading comma). A Board Lane row emits

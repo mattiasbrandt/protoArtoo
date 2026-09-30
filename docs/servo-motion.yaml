@@ -1,0 +1,254 @@
+# =============================================================================
+# docs/servo-motion.yaml
+#
+# The Servo Output motion model: how a move is laid out in time from an
+# Output's Motion Profile (ADR 0052), declared once. It is never read at
+# runtime. It is generated into the two places that run it:
+#
+#     docs/servo-motion.yaml
+#        |-> include/servo_motion_model.h   what ServoTask plans every move with
+#        '-> data/servo_motion.js           what the Rehearsal times a move with
+#
+#     python3 tools/generate_servo_motion.py
+#
+# So the browser is not doing physics of its own - it runs the device's physics
+# (#287 specific 11, #439). What is declared here is the ARITHMETIC, not only
+# its constants: a hand-written second implementation locked by a test was
+# rejected on #287, because "the test only catches drift it thought to
+# compare". tools/check_servo_motion_drift.py fails when either committed output
+# is not what the generator makes of this file today.
+#
+# THE LANGUAGE. Each function body is a small typed subset of Python syntax,
+# parsed with Python's own `ast` and emitted as C++ and as JavaScript:
+#
+#   - every local is declared once with a type (`rampMs: f32 = ...`), and an
+#     assignment whose value is not already that type is refused, so every
+#     conversion is written out as a cast: f32(), i32(), u16(), long();
+#   - integers follow C: u8/u16/i32 arithmetic promotes to i32, `/` on
+#     integers truncates towards zero, and a u16() cast wraps modulo 65536.
+#     Nothing here comes near 2^31, so i32 overflow is not emulated;
+#   - f32 is IEEE single precision in both outputs. The JavaScript wraps every
+#     f32 operation in Math.fround(), which is exact for + - * / and sqrt, and
+#     lroundf() rounds half away from zero, as the C library's does;
+#   - `if`/`else`, `return`, a conditional expression, `and`/`or`/`not`, calls
+#     to the functions below, sqrtf() and lroundf(). Nothing else parses.
+#
+# Constants that already live in a firmware header are READ from it at
+# generation time, never written down here (`imports:`), because a number
+# written down twice is a number that drifts.
+# =============================================================================
+
+imports:
+  # A full throw asked for in less than one 50 Hz ServoTask frame is a snap.
+  - constant: SERVO_THROW_MS_MIN
+    header: include/servo_output_row.h
+  # The shape of a move, as the row stores it and as the planner reads it.
+  - enum: ServoEasing
+    header: include/servo_output_row.h
+  # The spacing the Sequence Coordinator holds between body Outputs it starts
+  # itself. The DOME's measured figure, adopted as a stand-in for the body's,
+  # which nobody has measured: its header says so at length, and every surface
+  # that quotes it has to say so too (include/sequence_bulk_centre.h).
+  - constant: SEQ_CADENCE_FLOOR_MS
+    header: include/sequence_bulk_centre.h
+
+records:
+  ServoMotionProfile:
+    doc: |
+      What a move is planned from, read off the Output's row by
+      servoMotionProfileOf(). The ends are the recorded Endpoint Pair already
+      ordered, so the planner never sorts a directional pair itself (ADR 0041), and
+      the ease is the one that actually runs, never the stored one.
+
+      Ten bytes, answered by value: ServoTask reads it on a measured Core 1 frame
+      (ADR 0040), where a whole ServoOutputRow is the wrong price for five numbers.
+    fields:
+      - {name: loUs, type: u16, doc: the lower recorded end}
+      - {name: hiUs, type: u16, doc: the higher recorded end}
+      - {name: throwMs, type: u16, doc: how long a full throw takes}
+      - {name: accelMs, type: u16, doc: how long the move spends getting up to speed}
+      - {name: easing, type: ServoEasing, doc: "the shape that runs: servoOutputEffectiveEasing()"}
+      - {name: calibrated, type: bool, doc: somebody measured the ends against the linkage}
+
+  ServoMotionRamp:
+    doc: |
+      One planned move: where it starts and ends, when, and how long it spends
+      getting up to speed.
+    fields:
+      - {name: startMs, type: u32}
+      - {name: fromUs, type: u16}
+      - {name: toUs, type: u16, doc: "where this plan ends: the target, or an overshoot's aim"}
+      - name: settleUs
+        type: u16
+        doc: |
+          Where the move comes to rest. Equal to toUs except on the way out of an
+          overshoot, where toUs is the aim and this is the target it settles back
+          to -- which is the number every surface shows as where the move ends.
+      - {name: durationMs, type: u16, doc: "0 = a snap: toUs is where the output is, at once"}
+      - {name: rampMs, type: u16, doc: "time spent getting up to speed, and slowing down"}
+      - {name: softStart, type: bool, doc: "`soft`: the speed rises along a smoothstep"}
+
+functions:
+  servoMotionOvershootAim:
+    doc: |
+      Where an overshoot aims for a move from fromUs to toUs between the recorded
+      ends loUs..hiUs, or toUs itself when the move is not one to overshoot.
+
+      A twelfth of the distance past the target, on a move longer than an eighth of
+      the travel -- a shorter one would read as a wobble rather than as weight --
+      and clamped to the recorded ends, which is the whole fence (ADR 0052). A
+      target already at or outside an end has no room past it, so it gets no aim
+      rather than one pointing back the way the move came, or one clamped onto the
+      nearer end past a target the calibration dial left outside the ends (#417).
+    params:
+      - {name: fromUs, type: u16}
+      - {name: toUs, type: u16}
+      - {name: loUs, type: u16}
+      - {name: hiUs, type: u16}
+    returns: u16
+    body: |
+      if toUs <= loUs or toUs >= hiUs:
+          return toUs
+      delta: i32 = i32(toUs) - i32(fromUs)
+      distance: i32 = -delta if delta < 0 else delta
+      if hiUs <= loUs or distance <= i32(hiUs - loUs) / 8:
+          return toUs
+      over: i32 = distance / 12
+      aim: i32 = i32(toUs) + (over if delta > 0 else -over)
+      if aim < i32(loUs):
+          aim = i32(loUs)
+      if aim > i32(hiUs):
+          aim = i32(hiUs)
+      if (delta > 0 and aim <= i32(toUs)) or (delta < 0 and aim >= i32(toUs)):
+          return toUs
+      return u16(aim)
+
+  servoMotionPlan:
+    doc: |
+      Plan a move from fromUs to toUs by an Output's Motion Profile. The rate comes
+      from the span of the profile's recorded ends; the shape from its ease.
+
+      The profile stores two times, not a rate: accelerate for the profile's own
+      ramp time, cruise at the speed that makes a full throw take exactly
+      throw_ms, and slow down the same way. A move shorter than two ramps never
+      reaches that speed, so it is a triangle -- the same acceleration, turned
+      round half way. A partial move therefore takes less time than a full throw,
+      but not proportionally less: the ramps at each end are paid whatever the
+      distance.
+
+      An overshoot plans the way out, to the aim, with settleUs = toUs; the way back
+      is servoMotionSettleBack()'s. Every snap below goes straight to toUs, never
+      to an aim: a move with no ramp has nothing to overshoot with.
+
+      It snaps -- durationMs 0 -- in four cases, each a statement about what the
+      model knows rather than a tuning choice:
+        - the output is uncalibrated. Full throw is only defined once somebody has
+          measured the ends, so there is no rate to derive and the move is a jump
+          rather than a ramp (ADR 0052). Every row adopted from the fixed field sets
+          is uncalibrated, so an existing droid moves exactly as it did until its
+          builder calibrates an output;
+        - the pair has no span, which is the same missing rate by another route;
+        - there is nowhere to go;
+        - the move would finish inside one 50 Hz ServoTask frame, which cannot
+          resolve a ramp shorter than itself (SERVO_THROW_MS_MIN).
+    params:
+      - {name: fromUs, type: u16}
+      - {name: toUs, type: u16}
+      - {name: profile, type: ServoMotionProfile}
+      - {name: startMs, type: u32}
+    returns: ServoMotionRamp
+    body: |
+      plan: ServoMotionRamp = ServoMotionRamp()
+      plan.startMs = startMs
+      plan.fromUs = fromUs
+      plan.toUs = toUs
+      plan.settleUs = toUs
+      spanUs: u16 = u16(profile.hiUs - profile.loUs) if profile.hiUs > profile.loUs else 0
+      if not profile.calibrated or spanUs == 0 or fromUs == toUs or profile.throwMs < SERVO_THROW_MS_MIN:
+          return plan
+
+      # Decided here, when the target is set: an overshoot changes where this
+      # plan ends and nothing else about it.
+      aimUs: u16 = servoMotionOvershootAim(fromUs, toUs, profile.loUs, profile.hiUs) if profile.easing == SERVO_EASE_OVERSHOOT else toUs
+
+      fullThrowMs: f32 = f32(profile.throwMs)
+      # A ramp longer than half the throw would leave no time to slow down, so
+      # the profile's ramp is held to half -- a full throw is then a triangle and
+      # still takes exactly throw_ms.
+      rampMs: f32 = f32(1 if profile.accelMs == 0 else profile.accelMs)
+      if rampMs > fullThrowMs / 2.0:
+          rampMs = fullThrowMs / 2.0
+      cruiseUsPerMs: f32 = f32(spanUs) / (fullThrowMs - rampMs)
+      accelUsPerMs2: f32 = cruiseUsPerMs / rampMs
+
+      distanceUs: f32 = f32(aimUs - fromUs if aimUs > fromUs else fromUs - aimUs)
+      durationMs: f32 = 0.0
+      usedRampMs: f32 = 0.0
+      if distanceUs >= cruiseUsPerMs * rampMs:
+          usedRampMs = rampMs
+          durationMs = distanceUs / cruiseUsPerMs + rampMs
+      else:
+          usedRampMs = sqrtf(distanceUs / accelUsPerMs2)
+          durationMs = 2.0 * usedRampMs
+
+      if durationMs < f32(SERVO_THROW_MS_MIN):
+          return plan
+      plan.toUs = aimUs
+      plan.softStart = profile.easing == SERVO_EASE_SOFT
+      roundedDuration: long = lroundf(durationMs)
+      plan.durationMs = u16(0xFFFF) if roundedDuration > 0xFFFF else u16(roundedDuration)
+      roundedRamp: long = lroundf(usedRampMs)
+      if roundedRamp < 1:
+          roundedRamp = 1
+      if roundedRamp > plan.durationMs / 2:
+          roundedRamp = long(plan.durationMs / 2)
+      plan.rampMs = u16(roundedRamp)
+      return plan
+
+  servoMotionSettles:
+    doc: |
+      The second half of an overshoot. A plan that settles has ended at its aim
+      rather than its target; the way back is an ordinary move from the aim to the
+      target, shaped `none`, because it is the settle and not a new move with a
+      character of its own. ServoTask chains it when the first plan arrives.
+    params:
+      - {name: ramp, type: ServoMotionRamp}
+    returns: bool
+    body: |
+      return ramp.settleUs != ramp.toUs
+
+  servoMotionSettleBack:
+    doc: |
+      The way back from an overshoot's aim to its target: servoMotionPlan() again,
+      from where the first plan arrived, shaped `none`.
+    params:
+      - {name: arrived, type: ServoMotionRamp}
+      - {name: profile, type: ServoMotionProfile}
+      - {name: nowMs, type: u32}
+    returns: ServoMotionRamp
+    body: |
+      settle: ServoMotionProfile = profile
+      settle.easing = SERVO_EASE_NONE
+      return servoMotionPlan(arrived.toUs, arrived.settleUs, settle, nowMs)
+
+  servoMotionArrivalMs:
+    doc: |
+      How long after it is sent a move from fromUs to toUs comes to rest on toUs:
+      the plan, and on an overshoot the settle ServoTask chains after it. Zero is
+      a snap -- an Output nobody has measured jumps (ADR 0052), and how fast the
+      servo itself gets there is not something this model knows.
+
+      This is the figure the Rehearsal times a body move with (#439): the
+      browser's answer is this function's, generated from this file, so it is
+      the answer ServoTask's own plan gives for the same row and the same move.
+    params:
+      - {name: fromUs, type: u16}
+      - {name: toUs, type: u16}
+      - {name: profile, type: ServoMotionProfile}
+    returns: u32
+    body: |
+      out: ServoMotionRamp = servoMotionPlan(fromUs, toUs, profile, 0)
+      if not servoMotionSettles(out):
+          return u32(out.durationMs)
+      back: ServoMotionRamp = servoMotionSettleBack(out, profile, u32(out.durationMs))
+      return u32(out.durationMs) + u32(back.durationMs)

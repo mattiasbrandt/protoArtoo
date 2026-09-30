@@ -41,6 +41,29 @@
     return Number.isInteger(cap) && cap > 0 ? cap : null;
   };
 
+  // What the Rehearsal reads off the droid in front of the author: its Servo
+  // Output rows and its config (data/outputs.js reads both, GET
+  // /api/servo/outputs and GET /api/config), for the body and switched-off
+  // rules and the line beside Test on the droid. Null until read. A read that
+  // fails leaves them null: the rules that need them stay silent, the Gap lines
+  // say what went unchecked, and nothing waits on them.
+  const rehearsalFacts = { outputs: null, config: null };
+  let lastRehearsalReport = null; // the report on screen, repainted when facts land
+
+  // The droid's per-file byte cap, the size figure's denominator (GET
+  // /api/identity learned_sequence_max_bytes), or null until it has said.
+  const learnedSequenceMaxBytes = () => {
+    const bytes = window.PAIdentity?.learned_sequence_max_bytes;
+    return Number.isInteger(bytes) && bytes > 0 ? bytes : null;
+  };
+
+  const rehearsalContext = () => ({
+    outputs: rehearsalFacts.outputs,
+    config: rehearsalFacts.config,
+    layout: window.DomeLayout?.getModel?.() || null,
+    maxBytes: learnedSequenceMaxBytes(),
+  });
+
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
   let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen
 
@@ -1465,6 +1488,7 @@
           <button id="seq-editor-save" class="btn accent" type="button">Save</button>
           <button id="seq-editor-revert" class="btn" type="button" aria-label="Discard unsaved changes">Revert</button>
           <button id="seq-editor-cancel" class="btn" type="button" aria-label="Cancel editing">Cancel</button>
+          <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
         </div>
 
         <div class="seq-editor-feedback" id="seq-editor-feedback" aria-live="polite" aria-label="Editor feedback">
@@ -1514,9 +1538,40 @@
     const rehearsalEl = document.getElementById("seq-editor-rehearsal");
     if (rehearsalEl && window.SeqRehearsal) {
       rehearsalEl.innerHTML = window.SeqRehearsal.countsHtml(
-        window.SeqRehearsal.rehearse(editorState.current)
+        window.SeqRehearsal.rehearse(editorState.current, rehearsalContext())
       );
     }
+    updatePrerun();
+  };
+
+  // Beside Test on the droid, before the press: the uncalibrated Servo Outputs
+  // this routine moves, whose first move jumps rather than ramps. It never
+  // disables or delays the run and asks nothing (#287 specific 6); it is
+  // absent when there is nothing to name.
+  const updatePrerun = () => {
+    const prerunEl = document.getElementById("seq-editor-prerun");
+    if (!prerunEl || !window.SeqRehearsal || !editorState.current) return;
+    const html = window.SeqRehearsal.unmeasuredHtml(
+      window.SeqRehearsal.unmeasuredOutputs(editorState.current, rehearsalContext())
+    );
+    prerunEl.innerHTML = html;
+    prerunEl.classList.toggle("hidden", html === "");
+  };
+
+  // Read the droid's Outputs and config for the Rehearsal. Not a page section:
+  // a droid that cannot answer costs the Rehearsal its reach, never the page.
+  const loadRehearsalFacts = async () => {
+    if (!window.PAOutputs) return;
+    try {
+      const { config, outputs } = await window.PAOutputs.load();
+      rehearsalFacts.outputs = outputs;
+      rehearsalFacts.config = config;
+    } catch (error) {
+      console.warn("[seq] the Rehearsal could not read the droid's outputs:", error);
+      return;
+    }
+    if (editorState.current && !els.editorView.classList.contains("hidden")) updateValidationSummary();
+    if (lastRehearsalReport) showRehearsalReport(...lastRehearsalReport);
   };
 
   const validateAndUpdateStep = (stepIdx) => {
@@ -1710,31 +1765,11 @@
   // Reusable for both passive (on expand) and click-time advisory updates.
 
   // Helper: Build an advisory message for an element, or null if available
-  const buildAdvisoryMessage = (elementId) => {
-    if (!elementId) return null;
-
-    const model = window.DomeLayout?.getModel?.();
-    const elem = model?.elements?.find((e) => e.id === elementId);
-    if (!elem) return null; // Element not found; no advisory
-
-    // The state clause is data/dome_layout.js's, where severity is computed and
-    // where the Dashboard's dome control reads it too (#348). This surface adds
-    // its own consequence, because authoring a step and pressing a button are
-    // not the same act - and before #348 the two copies had already drifted.
-    const clause = window.DomeLayout?.severityClause?.(elem);
-    if (!clause) return null; // Element is available; no advisory needed
-
-    // An element nothing maps to cannot be authored at all; every other
-    // severity still writes a step, and the step still runs.
-    let message = elem.severity === "unmapped" ? clause : `${clause} The step still runs.`;
-
-    // Special case: excluded-but-active diagnostic
-    if (elem.in_layout === false && elem.active === true) {
-      message = `${elementId} is out of the selected layout, but the dome says it is active.`;
-    }
-
-    return message;
-  };
+  // The words are the Rehearsal's (data/seq_rehearsal.js unavailableMessage()),
+  // so the message beside a step and the finding in the Rehearsal's list are
+  // one sentence from one place; this is only where it is shown (#287, #439).
+  const buildAdvisoryMessage = (elementId) =>
+    window.SeqRehearsal?.unavailableMessage?.(elementId, window.DomeLayout?.getModel?.()) || null;
 
   // Helper: Update the advisory element in a fields container
   // Call this after rendering (passive) or after click/keyboard on non-selectable panel
@@ -2464,6 +2499,9 @@
   const showEditorFeedback = (message, kind = "info") => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
+    // Whatever report was here is replaced, so a later read of the droid must
+    // not paint it back.
+    lastRehearsalReport = null;
     feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${window.PAUtils.escapeHtml(message)}</div>`;
     feedbackEl.classList.remove("hidden");
   };
@@ -2475,8 +2513,9 @@
   const showRehearsalReport = (message, kind, seq, form) => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
+    lastRehearsalReport = [message, kind, seq, form];
     const rehearsal = window.SeqRehearsal;
-    const report = rehearsal ? rehearsal.rehearse(seq) : null;
+    const report = rehearsal ? rehearsal.rehearse(seq, rehearsalContext()) : null;
     const body = !report ? "" : form === "badge" ? rehearsal.badgeHtml(report) : rehearsal.listHtml(report);
     feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${window.PAUtils.escapeHtml(message)}</div>${body}`;
     feedbackEl.classList.remove("hidden");
@@ -2606,7 +2645,7 @@
     if (!badgeEl || !window.SeqRehearsal) return;
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      badgeEl.innerHTML = window.SeqRehearsal.badgeHtml(window.SeqRehearsal.rehearse(result.data));
+      badgeEl.innerHTML = window.SeqRehearsal.badgeHtml(window.SeqRehearsal.rehearse(result.data, rehearsalContext()));
     } catch (error) {
       badgeEl.textContent = `Could not read ${seqName} back to rehearse it: ${PAApi.messageFor(error)}`;
     }
@@ -2930,7 +2969,9 @@
       "/status_stream.js": "live updates",
       "/shell.js": "page layout",
       "/seq_protocol_check.js": "sequence protocol",
+      "/servo_motion.js": "servo motion model",
       "/seq_rehearsal.js": "sequence rehearsal",
+      "/outputs.js": "servo outputs",
       "/seq.js": "sequence editor",
       "/footer.js": "page footer",
     });
@@ -2948,6 +2989,7 @@
     // Paint the waiting list first; each section paints again on its answer.
     renderListView();
     startPageLoad();
+    loadRehearsalFacts();
   };
 
   // Wait for shell and status_stream to be ready
