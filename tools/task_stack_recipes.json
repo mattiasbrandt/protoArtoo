@@ -153,9 +153,9 @@
             "domeTask"
           ],
           "frames": [],
-          "chain_bytes": 3200,
+          "chain_bytes": 3216,
           "stack_bytes": 4096,
-          "note": "setDomeSpeed's log line (384 B frame) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf."
+          "note": "setDomeSpeed's log line (384 B frame) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. domeTask's own frame is 416 B since the random-dome pause reads the Mood (#452: +16 B)."
         },
         "esp32p4": {
           "env": "firebeetle2",

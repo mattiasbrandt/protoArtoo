@@ -258,27 +258,29 @@ void domeTask(void* pvParameters) {
 
             if (rndEnabled && domeRndMoodStartsMoves(mood) && !sleepMode && !estop &&
                 !domeSeqActive) {
-                // A pause is always drawn at the Mood the droid is in now.
-                auto startPause = [&]() {
+                // Every pause below is drawn at the Mood the droid is in now, and
+                // records it in rndPauseMood so a later change can be noticed.
+                if (!rndWasActive) {
+                    // Conditions just became active  --  set initial pause before first move.
                     rndState     = DOME_RND_PAUSING;
                     rndNextMs    = now + domeRndPauseMsForMood(rndPauseMin, rndPauseMax, mood,
                                                                esp_random());
                     rndPauseMood = mood;
-                };
-
-                if (!rndWasActive) {
-                    // Conditions just became active  --  set initial pause before first move.
-                    startPause();
                     rndWasActive = true;
                 } else if (manualCommandThisTick) {
                     // No setDomeNeutral(): the manual command owns the dome now.
-                    startPause();
+                    rndState     = DOME_RND_PAUSING;
+                    rndNextMs    = now + domeRndPauseMsForMood(rndPauseMin, rndPauseMax, mood,
+                                                               esp_random());
+                    rndPauseMood = mood;
                 } else if (rndState == DOME_RND_PAUSING && mood != rndPauseMood) {
                     // The Mood changed mid-pause: the next move comes at the new
                     // Mood's pace, not after the old pause runs out. A change
                     // mid-move needs nothing here - the move keeps its duration
                     // and the pause after it is drawn at the new Mood below.
-                    startPause();
+                    rndNextMs    = now + domeRndPauseMsForMood(rndPauseMin, rndPauseMax, mood,
+                                                               esp_random());
+                    rndPauseMood = mood;
                 } else if (rndState == DOME_RND_PAUSING && (int32_t)(now - rndNextMs) >= 0) {
                     rndSpeed      = ((float)rndSpeedPct / 100.0f) * ((esp_random() & 1) ? 1.0f : -1.0f);
                     currentSpeed  = rndSpeed;
@@ -292,8 +294,11 @@ void domeTask(void* pvParameters) {
                     if ((int32_t)(now - rndNextMs) >= 0) {
                         currentSpeed = 0.0f;
                         setDomeNeutral();
-                        hasCommand = false;
-                        startPause();
+                        hasCommand   = false;
+                        rndState     = DOME_RND_PAUSING;
+                        rndNextMs    = now + domeRndPauseMsForMood(rndPauseMin, rndPauseMax, mood,
+                                                                   esp_random());
+                        rndPauseMood = mood;
                     } else {
                         lastCommandMs = now;  // prevent 500 ms manual timeout during random move
                     }
