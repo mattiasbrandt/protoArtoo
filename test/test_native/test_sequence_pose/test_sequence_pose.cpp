@@ -195,7 +195,7 @@ void test_a_pose_never_starts_two_motions_inside_the_cadence_floor() {
     const uint16_t slowThrowMs = 800;
 
     SeqPoseRun run = {};
-    TEST_ASSERT_TRUE(sequencePoseStart(&run, 1000, false, false, plan.count, 0));
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 1000, false, false, plan.count, 0, nullptr));
 
     uint32_t lastMotion = 0;
     uint16_t lastSpacing = 0;
@@ -233,7 +233,7 @@ void test_a_pose_never_starts_two_motions_inside_the_cadence_floor() {
 // moving, past its throw time if need be.
 void test_the_next_command_waits_for_the_moving_output() {
     SeqPoseRun run = {};
-    TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 3, 0));
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 3, 0, nullptr));
     sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, 2);
     TEST_ASSERT_TRUE(sequencePoseDue(run, SEQ_CADENCE_FLOOR_MS));
     TEST_ASSERT_FALSE(sequencePoseAwaitDone(&run, true));
@@ -246,11 +246,11 @@ void test_the_next_command_waits_for_the_moving_output() {
 // exactly as the first pose's next command would have.
 void test_a_pose_replacing_a_pose_keeps_the_spacing() {
     SeqPoseRun run = {};
-    TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 1, 0));
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 1, 0, nullptr));
     sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, 2);  // its last command: a body Output
     TEST_ASSERT_TRUE(sequencePoseFinished(run));
 
-    TEST_ASSERT_TRUE(sequencePoseStart(&run, 10, false, false, 3, 0));
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 10, false, false, 3, 0, nullptr));
     TEST_ASSERT_FALSE(sequencePoseDue(run, 10));
     TEST_ASSERT_FALSE(sequencePoseDue(run, SEQ_CADENCE_FLOOR_MS - 1));
     TEST_ASSERT_TRUE(sequencePoseDue(run, SEQ_CADENCE_FLOOR_MS));
@@ -259,19 +259,42 @@ void test_a_pose_replacing_a_pose_keeps_the_spacing() {
 
     // A pose that has run out its spacing and ended hands nothing on.
     sequencePoseEnd(&run);
-    TEST_ASSERT_TRUE(sequencePoseStart(&run, 20, false, false, 3, 0));
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 20, false, false, 3, 0, nullptr));
     TEST_ASSERT_TRUE(sequencePoseDue(run, 20));
     TEST_ASSERT_TRUE(sequencePoseAwaitDone(&run, true));
+}
+
+// A resync's staged ring close and a pose never share the dome. Staging a
+// resync ends a pose being reached; a pose that starts supersedes a staged
+// close. A pose that moves nothing -- refused, or empty -- leaves it.
+void test_a_pose_and_a_resync_close_never_share_the_dome() {
+    SeqPoseRun run = {};
+    uint8_t closeIdx = SEQ_RESYNC_CLOSE_NONE;
+    uint32_t closeDueMs = 0;
+
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 3, 0, &closeIdx));
+    TEST_ASSERT_TRUE(sequenceResyncCloseStage(&run, &closeIdx, &closeDueMs, 100));
+    TEST_ASSERT_FALSE(run.active);
+    TEST_ASSERT_FALSE(sequencePoseDue(run, 1000));
+    TEST_ASSERT_EQUAL_UINT8(0, closeIdx);
+    TEST_ASSERT_EQUAL_UINT32(100, closeDueMs);
+
+    TEST_ASSERT_FALSE(sequencePoseStart(&run, 200, true, false, 3, 0, &closeIdx));  // estop
+    TEST_ASSERT_FALSE(sequencePoseStart(&run, 200, false, false, 0, 0, &closeIdx));  // nothing to send
+    TEST_ASSERT_EQUAL_UINT8(0, closeIdx);
+
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 200, false, false, 3, 0, &closeIdx));
+    TEST_ASSERT_EQUAL_UINT8(SEQ_RESYNC_CLOSE_NONE, closeIdx);
 }
 
 // A pose is refused outright under a latched estop and in Sleep Mode, with
 // words for the surface, and nothing starts.
 void test_a_pose_is_refused_under_the_estop_and_in_sleep_mode() {
     SeqPoseRun run = {};
-    TEST_ASSERT_FALSE(sequencePoseStart(&run, 0, true, false, 5, 0));
+    TEST_ASSERT_FALSE(sequencePoseStart(&run, 0, true, false, 5, 0, nullptr));
     TEST_ASSERT_FALSE(run.active);
     TEST_ASSERT_FALSE(sequencePoseDue(run, 0));
-    TEST_ASSERT_FALSE(sequencePoseStart(&run, 0, false, true, 5, 0));
+    TEST_ASSERT_FALSE(sequencePoseStart(&run, 0, false, true, 5, 0, nullptr));
     TEST_ASSERT_FALSE(run.active);
 
     TEST_ASSERT_NOT_NULL(sequencePoseRefusal(true, false));
@@ -291,6 +314,7 @@ int main(int, char**) {
     RUN_TEST(test_a_pose_never_starts_two_motions_inside_the_cadence_floor);
     RUN_TEST(test_the_next_command_waits_for_the_moving_output);
     RUN_TEST(test_a_pose_replacing_a_pose_keeps_the_spacing);
+    RUN_TEST(test_a_pose_and_a_resync_close_never_share_the_dome);
     RUN_TEST(test_a_pose_is_refused_under_the_estop_and_in_sleep_mode);
     return UNITY_END();
 }
