@@ -4,8 +4,11 @@
 // what the builder asked for. Introduced by #410 (data/lights.js keeps each
 // light's ask outside the plates it repaints).
 //
-// PRECONDITION: none beyond a droid that answers; Lights must draw a dome light
-// that takes a command (NOT ASSESSED otherwise). Writes nothing: a pick is sent
+// PRECONDITION: the Dome Controller is fitted (GET /api/config
+// components.protoR2link.enabled): Lights lists the dome's lights only then
+// (#411, CONTEXT.md "Lights"). Offline, the fixture's droid is given one
+// fitted. And Lights must draw a dome light that takes a command (NOT ASSESSED
+// otherwise). Writes nothing: a pick is sent
 // at once as POST /api/dome/cmd, and the guard records it and blocks it, so the
 // dome is never told anything.
 //
@@ -37,6 +40,11 @@ lib.runCheck({
   rule: 'Lights: a dome light\'s picked mode and color survive status frames',
   artifactDir: ARTIFACTS,
   selftests: ['forget'],
+  precondition: async ({ page, fixture }) => {
+    if (fixture) fixture.state.config.components.protoR2link.enabled = true;
+    const link = (await lib.readJson(page, '/api/config')).json?.components?.protoR2link;
+    return link?.enabled === true ? null : `the Dome Controller is not fitted (components.protoR2link ${JSON.stringify(link)})`;
+  },
   run: async ({ page, writes, fixture, report, selftest }) => {
     await lib.loadSurface(page, 'lights');
     const picked = await page.evaluate(() => {
