@@ -748,7 +748,7 @@
         leaves.textContent = carried ? part.leaves : '';
       }
       const count = partEl('count', part.id);
-      if (count) count.textContent = carried ? countFor(part) : 'not in this file';
+      if (count) count.textContent = carried ? countFor(part) : '';
     });
     const n = tickedParts().length;
     if (restoreBtn) {
