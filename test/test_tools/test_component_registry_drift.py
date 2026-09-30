@@ -90,7 +90,8 @@ class ManifestParsing(unittest.TestCase):
 class CapabilityConsumers(unittest.TestCase):
     """The check ADR 0042 scoped to supported rows."""
 
-    VOCABULARY = {"AUDIO_CAP_STATUS_QUERY": "0x01", "AUDIO_CAP_TRACK_COUNT": "0x04"}
+    VOCABULARY = {"AUDIO_CAP_STATUS_QUERY": "0x01", "AUDIO_CAP_TRACK_COUNT": "0x04",
+                  "DRIVE_CAP_REPORTS_FEEDBACK": "0x01"}
 
     def part(self, part_id="dy_sv5w", status=SUPPORTED, capabilities="AudioDriver::AUDIO_CAP_TRACK_COUNT"):
         return [f"18", f'"{part_id}"', '"DY-SV5W"', "COMPONENT_CATEGORY_SOUND",
@@ -155,6 +156,41 @@ class CapabilityConsumers(unittest.TestCase):
         )
         self.assertTrue(any("AUDIO_CAP_INVENTED" in e and "does not define it" in e
                             for e in errors), errors)
+
+    def foot_drive(self, capabilities="DRIVE_CAP_REPORTS_FEEDBACK"):
+        return ["15", '"hoverboard"', '"Hoverboard, hacked firmware"', "COMPONENT_CATEGORY_FOOT_DRIVE",
+                '"hoverboard_gen2_uart"', SUPPORTED, capabilities,
+                '"PA_CAP_DRIVE_BACKEND_HOVERBOARD"', "PA_CAP_DRIVE_BACKEND_HOVERBOARD"]
+
+    def test_a_foot_drive_bit_nothing_reads_is_reported(self):
+        # Before #446 this check read AUDIO_CAP_* and nothing else, so a Foot
+        # Drive bit passed unexamined however few readers it had.
+        errors = self.run_check(
+            [self.part(), self.foot_drive()],
+            "const supports = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;\n"
+            "const DRIVE_CAP_REPORTS_FEEDBACK = 0x01;\n",
+        )
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("DRIVE_CAP_REPORTS_FEEDBACK", errors[0])
+        self.assertIn("consulted by nothing", errors[0])
+
+    def test_a_foot_drive_bit_with_a_reader_passes(self):
+        errors = self.run_check(
+            [self.part(), self.foot_drive()],
+            "const supports = (caps & AUDIO_CAP_TRACK_COUNT) !== 0;\n"
+            "const reports = (caps & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;\n",
+        )
+        self.assertEqual([], errors)
+
+    def test_a_bit_from_a_vocabulary_nobody_registered_is_reported(self):
+        # A family that gains bits without a line in VOCABULARIES would
+        # otherwise be read past, the way the Foot Drive's was.
+        errors = self.run_check(
+            [self.part(capabilities="DOME_CAP_INVENTED")],
+            "const supports = (caps & DOME_CAP_INVENTED) !== 0;\n",
+        )
+        self.assertTrue(any("DOME_CAP_INVENTED" in e and "no vocabulary" in e for e in errors),
+                        errors)
 
     def test_a_registry_with_no_declared_capability_at_all_is_reported(self):
         errors = self.run_check([self.part(capabilities="0")], "")
@@ -267,6 +303,13 @@ class RealTree(unittest.TestCase):
         errors: list[str] = []
         drift.check_capability_consumers(self.parts, errors)
         self.assertEqual([], errors)
+
+    def test_every_familys_vocabulary_is_read(self):
+        errors: list[str] = []
+        names = drift.all_capability_bit_names(errors)
+        self.assertEqual([], errors)
+        self.assertIn("AUDIO_CAP_TRACK_COUNT", names)
+        self.assertIn("DRIVE_CAP_REPORTS_FEEDBACK", names)
 
     def test_every_named_gate_exists_and_is_the_one_the_row_consults(self):
         errors: list[str] = []
