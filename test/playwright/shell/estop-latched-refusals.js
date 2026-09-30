@@ -1,6 +1,6 @@
 // bench-auto: droid estop=latched
 // With the estop latched, a control that would move something is refused,
-// says why, and sends nothing: Servos' "find by moving", the Parts picture's
+// says why, and sends nothing: Wiring's "find by moving", the Parts picture's
 // "Open it" on a body Part and on a dome piece, and a panel press on the
 // Dashboard's dome. Introduced by #363 (the shell's Ignored Input Notice) and
 // #372 (the droid picture's acts).
@@ -13,8 +13,9 @@
 // below is read off what the page TRIED.
 //
 // WHAT IT PROVES.
-//   a  Servos: "find by moving" is refused (disabled + aria-disabled,
-//      data/servo.js gateActs). Three quick presses on it raise the shell's
+//   a  Wiring: "find by moving" on a Part's row is refused (disabled +
+//      aria-disabled, data/parts_mapping.js drawFind; on Servos until #411
+//      moved the run to Wiring). Three quick presses on it raise the shell's
 //      notice once - "That control is switched off right now. The estop is
 //      latched. Press STOP to release it." with no route link, because the
 //      release is STOP on this same screen (data/shell.js showNotice) - and
@@ -62,14 +63,14 @@ lib.runCheck({
     const moves = (since) => writes.slice(since).filter((entry) => MOVES.includes(entry.path));
 
     // a: find by moving -------------------------------------------------------
-    await lib.loadSurface(page, 'servo');
+    await lib.loadSurface(page, 'wiring');
     await page.waitForFunction(() => document.getElementById('shell-estop-state').textContent === 'Estop: latched', null, { timeout: 15000 });
-    // The button itself is the refusal: it is what opens the Parts to find,
-    // so while it is refused there is no Part to press.
-    const find = page.locator('#outputs-find .parts-find');
+    // The first Part on no Output: its row's act is what starts a run.
+    await page.waitForSelector('#wiring-parts-table [data-find]', { timeout: 15000 });
+    const find = page.locator('#wiring-parts-table [data-find]').first();
     if (ungate) {
       await page.evaluate(() => {
-        const button = document.querySelector('#outputs-find .parts-find');
+        const button = document.querySelector('#wiring-parts-table [data-find]');
         button.disabled = false;
         button.setAttribute('aria-disabled', 'false');
         button.addEventListener('click', () => fetch('/api/servo', { method: 'POST', body: 'arm=selftest&action=nudge' }).catch(() => {}));
@@ -107,7 +108,7 @@ lib.runCheck({
     if (notice.routeShown) reasonsA.push('it shows a route link, which would send the operator away from STOP');
     if (first !== 1 || second !== 1) reasonsA.push(`notices per burst: ${first}, then ${second} (want 1 and 1)`);
     moves(sinceFind).forEach((entry) => reasonsA.push(`tried ${lib.describeWrite(entry)}`));
-    report.add('a', 'Servos: find by moving refused, one notice per burst, nothing sent', lib.verdict(reasonsA.length === 0),
+    report.add('a', 'Wiring: find by moving refused, one notice per burst, nothing sent', lib.verdict(reasonsA.length === 0),
       reasonsA.join('; ') || `refused; "${notice.text}", no route link; one notice per burst of three`);
     await lib.step('Find by moving checked.');
 

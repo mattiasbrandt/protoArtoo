@@ -443,6 +443,26 @@ bool configCacheReadServoOutputEndpoints(ServoOutputDriver driver, uint8_t chann
     return found;
 }
 
+// The centre recorded for the Output addressed there: where a Find by Moving
+// run puts a free Output before it nudges it (#411). One number, for the same
+// reason as the pair above. False, with *centreUs untouched, when no live row
+// is addressed there.
+bool configCacheReadServoOutputCentre(ServoOutputDriver driver, uint8_t channel,
+                                      uint16_t* centreUs) {
+    if (centreUs == nullptr) {
+        return false;
+    }
+    bool found;
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint8_t index = servoOutputTableFindByAddress(servoOutputCache, driver, channel);
+    found = index < SERVO_OUTPUT_ROW_MAX;
+    if (found) {
+        *centreUs = servoOutputCache.rows[index].centre_us;
+    }
+    taskEXIT_CRITICAL(&configCacheMux);
+    return found;
+}
+
 // The Motion Profile a move is planned from, read straight out of the live
 // table under the lock like the pair above, by reference rather than as a row
 // copy. servoMotionProfileOf() orders the ends through servoOutputLowUs() /
@@ -546,16 +566,6 @@ uint32_t configCacheSbusTimeoutMs() {
     const uint32_t timeoutMs = configCache.drive.sbusTimeoutMs;
     taskEXIT_CRITICAL(&configCacheMux);
     return timeoutMs;
-}
-
-bool configCacheServoAnyEnabled() {
-    bool result;
-    taskENTER_CRITICAL(&configCacheMux);
-    result = configCache.system.enable_arm1 || configCache.system.enable_arm2 ||
-             configCache.system.enable_aux1 || configCache.system.enable_aux2 ||
-             configCache.system.enable_aux3;
-    taskEXIT_CRITICAL(&configCacheMux);
-    return result;
 }
 
 void configCacheReadWifi(WifiConfig* out) {

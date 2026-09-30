@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/parts_mapping.js,/wiring.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/find_by_moving.js,/parts_mapping.js,/wiring.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -84,6 +84,10 @@
         <span class="sub waiting" id="wiring-parts-summary" role="status" aria-live="polite"></span>
       </div>
       <p class="apply-timing hidden" id="wiring-parts-timing"></p>
+      <!-- A Find by Moving run's line - which free Output is nudging, That one,
+           Stop - while a run started from a Part's row is going
+           (data/find_by_moving.js). Empty otherwise. -->
+      <div class="outputs-find" id="wiring-find"></div>
       <div class="parts-table-wrap" id="wiring-parts-table"></div>
       <p class="feedback" id="wiring-parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>

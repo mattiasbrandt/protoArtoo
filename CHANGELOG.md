@@ -228,17 +228,20 @@ the patch releases, whose notes live on their own GitHub Release.
   that output, and the page asks first if that takes it off another output.
   The same rows, with where each output stands, are on the Controller Console
   as `servo.api.get-outputs`, so a board with no WiFi can read them too.
-- **Find out which output moves a part by making it move.** On Servos, pick a
-  part nothing drives yet and press `Find by moving`, then watch the droid: the
-  controller twitches each spare output a little, one at a time, out one way,
-  across, and back to where it sat, and the page names which one is twitching. Press `That one` when the part moves and it is
-  wired, the same way picking it would have. The twitch is small on purpose,
+- **Find out which output moves a part by making it move.** On Wiring, press
+  `find by moving` on the row of a part that is on no output yet, then watch
+  the droid: the controller takes each free output in turn - no part on it,
+  no light on its wire - puts it at its centre, and twitches it a little, out
+  one way, across, and back, and the page names which one is twitching. Press
+  `That one` when the part moves and it is put on that output, the same way
+  picking it would have. The first move to a free output is a jump to its
+  centre, since nothing has driven it before. The twitch is small on purpose,
   stays inside the cautious 1000-2000 µs band, and never goes to a recorded
-  end, so it is safe on an output nobody has measured yet. The controller
-  runs the whole out-and-back itself, so the output comes back even if your
-  browser goes away mid-run. `Stop` ends a run at any moment and sends
-  nothing more; the estop ends it too, and the button stays refused while the
-  estop is latched. The same twitch is on the Controller Console as
+  end. The controller runs the whole out-and-back itself and lets each free
+  output go limp again a few seconds after the run moves on, so nothing stays
+  driven if your browser goes away mid-run. `Stop` ends a run at any moment
+  and lets go of the output; the estop ends it too, and the act stays refused
+  while the estop is latched. The same twitch is on the Controller Console as
   `servo.action.nudge`, and `POST /api/servo` takes `action=nudge`.
 - **Calibrate a part by driving it and pressing a button.** Press `calibrate`
   on an output on Servos and you get a dial: drag it, or nudge it 5 µs
