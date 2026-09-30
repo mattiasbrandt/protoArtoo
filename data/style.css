@@ -8639,8 +8639,21 @@ body[data-page="wiring"] .card > * + * {
   max-width: var(--measure);
 }
 
-.lineup-why .link-btn {
-  margin-left: var(--space-2xs);
+/* A route, not a control: a quiet link in the interaction accent, never a
+   boxed button beside every row. */
+.lineup-move {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lineup-wrap > .hint:last-child {
+  margin-top: var(--space-sm);
+}
+
+.lineup-move:hover,
+.lineup-move:focus-visible {
+  text-decoration: underline;
 }
 
 /* ---------------------------------------------------------------------------

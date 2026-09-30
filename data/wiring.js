@@ -764,15 +764,19 @@
 
   const row = (fields) => ({ light: null, why: "", move: null, ...fields });
 
+  // What a declared row the droid asked and heard nothing from says: the
+  // answer stands, and the next move is at the far end of the wire.
+  const SILENT = "Asked, and no answer. Check its wire and its power.";
+
   // A Health Signal's answer as a row: its own word and its own light, so the
   // list never reads a signal differently from the Status Plate (CONTEXT.md
   // "Health Signal"). ok is observed; fail and a grey "asked, nobody answered"
   // are declared; anything else nobody could ask is not probed.
-  const signalRow = (base, answer, { askedWithNoAnswer = [] } = {}) => {
+  const signalRow = (base, answer, { askedWithNoAnswer = [], silent = SILENT } = {}) => {
     const { state, word } = answer;
     if (state === "ok") return row({ ...base, observed: word, light: "ok", state: STATES.observed });
     if (state === "fail" || askedWithNoAnswer.includes(word)) {
-      return row({ ...base, observed: word, light: state, state: STATES.declared, move: MOVES.configuration });
+      return row({ ...base, observed: word, light: state, state: STATES.declared, why: silent, move: MOVES.configuration });
     }
     return row({ ...base, observed: word, light: "off", state: STATES.notProbed });
   };
@@ -803,7 +807,7 @@
       ...base,
       observed: "Nothing from the wheel controller yet.",
       state: STATES.declared,
-      why: "Asked, and no answer yet. Check its wire and its power.",
+      why: SILENT,
       move: MOVES.configuration,
     });
   };
@@ -838,7 +842,7 @@
       return row({ ...base, observed: answer.word, light: "off", state: STATES.notProbed,
         why: "Its input is switched off, so the droid is not listening.", move: MOVES.configuration });
     }
-    return signalRow(base, answer);
+    return signalRow(base, answer, { silent: "Asked, and no answer. Check the receiver and the radio." });
   };
 
   // The dome's panels against the stated Dome Design, from the one function
@@ -930,7 +934,7 @@
     key: `off:${part.id}`,
     subject: part.name,
     declared: "Off your droid",
-    observed: `Still on ${output.name}`,
+    observed: `Your wiring: ${output.name}`,
     light: "warn",
     state: STATES.contradicted,
     why:
@@ -1010,7 +1014,7 @@
           `${esc(each.observed)}</td>` +
           `<td class="lineup-state">${esc(each.state)}</td>` +
           `<td class="lineup-why">${esc(each.why)}` +
-          (each.move ? `${each.why ? " " : ""}<a class="btn btn-sm btn-quiet link-btn" href="${escAttr(each.move.href)}">${esc(each.move.label)}</a>` : "") +
+          (each.move ? `${each.why ? " " : ""}<a class="lineup-move" href="${escAttr(each.move.href)}">${esc(each.move.label)}</a>` : "") +
           `</td></tr>`).join("") +
         "</tbody></table>"
       : '<p class="hint">Nothing to check yet: no Part is on an output and nothing is fitted.</p>';
