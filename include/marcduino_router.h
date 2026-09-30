@@ -25,14 +25,8 @@
 #include "dome_rx_parser.h"       // executeMarcduinoBodyCommand()
 #include "logging.h"
 #include "marcduino_ownership.h"  // marcduinoCommandOwner(), MarcduinoRouteOutcome
-#include "mood.h"                 // applyMood()
+#include "mood.h"                 // moodIdFromSeCommand()
 #include "servo_task.h"           // servoTaskDrivesOutput()
-
-// Whether this entry point may apply a Mood. applyMood() writes flash, and
-// the RC binding path runs on RCInputTask (Core 1): a Mood reached that way is
-// answered NotRun rather than stalling the RC loop on an NVS write. Moods have
-// their own control everywhere a binding can reach (system.action.set-mood).
-enum class MarcduinoMoodPolicy : uint8_t { Apply, Refuse };
 
 // -----------------------------------------------------------------------------
 // marcduinoForwardToDome()
@@ -91,21 +85,24 @@ inline MarcduinoRouteOutcome marcduinoRouteFromBody(MarcduinoBodyOutcome body) {
 // did, as the RC droid_seq_* tokens do: estop holds the body routine, never
 // the dome's panels and lights. Its answer is the forward's; a body queue that
 // refused its half turns a Forwarded into QueueFull.
+//
+// A Mood is the body's, and this never applies one: it answers NotRun, and a
+// door that may apply a Mood does so before calling here (executeManualCommand(),
+// src/web/api_drive.cpp). applyMood() writes flash, and the RC binding path
+// runs on RCInputTask (Core 1), so a call to it anywhere in this function would
+// sit on that task's stack chain whether or not the RC path could take it -
+// the P4 walk measured +1920 B on RCInputTask when it did (#449). Moods have
+// their own control everywhere a binding reaches (system.action.set-mood).
 // -----------------------------------------------------------------------------
-inline MarcduinoRouteOutcome routeMarcduinoLine(const char* line, MarcduinoMoodPolicy moodPolicy) {
+inline MarcduinoRouteOutcome routeMarcduinoLine(const char* line) {
     switch (marcduinoCommandOwner(line)) {
         case MarcduinoOwner::Dome:
             return marcduinoForwardToDome(line);
 
         case MarcduinoOwner::Body: {
-            const uint8_t moodId = moodIdFromSeCommand(line);
-            if (moodId != 0) {
-                if (moodPolicy == MarcduinoMoodPolicy::Refuse) {
-                    PA_LOG_WARN("MARCDUINO", "mood %s not applied from this path", line);
-                    return MarcduinoRouteOutcome::NotRun;
-                }
-                applyMood(moodId);
-                return MarcduinoRouteOutcome::Applied;
+            if (moodIdFromSeCommand(line) != 0) {
+                PA_LOG_WARN("MARCDUINO", "mood %s not applied from this path", line);
+                return MarcduinoRouteOutcome::NotRun;
             }
             const uint8_t armId = marcduino_panel_command_arm_id(line);
             if (armId != 254 && !marcduinoPanelOutputDriven(armId)) {

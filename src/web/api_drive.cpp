@@ -41,6 +41,7 @@
 #include "failsafe_gate.h"
 #include "logging.h"
 #include "marcduino_router.h"  // routeMarcduinoLine(), marcduinoForwardToDome()
+#include "mood.h"              // applyMood(), moodIdFromSeCommand()
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "sequence_dispatcher.h"
@@ -303,10 +304,17 @@ ManualCommandResult executeManualCommand(const char* raw) {
     }
 
     // : and # - Command Ownership (ADR 0055): the body runs the lines naming
-    // things it models, a Mood included, and forwards the rest to the dome
-    // (include/marcduino_router.h). Prefix no longer decides who answers.
+    // things it models and forwards the rest to the dome
+    // (include/marcduino_router.h). Prefix no longer decides who answers. A
+    // Mood is the body's and is applied here, ahead of the router, which never
+    // applies one (its header says why).
     if (prefix == ':' || prefix == '#') {
-        return manualCommandResultFor(routeMarcduinoLine(raw, MarcduinoMoodPolicy::Apply));
+        const uint8_t moodId = moodIdFromSeCommand(raw);
+        if (moodId != 0) {
+            applyMood(moodId);
+            return ManualCommandResult::Applied;
+        }
+        return manualCommandResultFor(routeMarcduinoLine(raw));
     }
 
     // * @ % & ! - dome-bound Marcduino, forwarded uninterpreted (ADR 0045) and

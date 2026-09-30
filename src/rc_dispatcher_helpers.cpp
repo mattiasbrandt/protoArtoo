@@ -172,7 +172,7 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
     if (res.marcduinoCmd[0] != '\0') {
         if (res.marcduinoCmd[0] == ':' || res.marcduinoCmd[0] == '#') {
             const RcDispatchOutcome routed = rcDispatchOutcomeForMarcduinoRoute(
-                routeMarcduinoLine(res.marcduinoCmd, MarcduinoMoodPolicy::Refuse));
+                routeMarcduinoLine(res.marcduinoCmd));
             if (routed != RcDispatchOutcome::kQueued) {
                 // A refused queue earlier in this result still reads as one.
                 return queueFull ? RcDispatchOutcome::kQueueFull : routed;
