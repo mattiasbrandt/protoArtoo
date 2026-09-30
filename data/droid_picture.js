@@ -196,8 +196,11 @@
       const servoOutput = wiredPart === null ? null : servoOutputFor(wiredPart);
       const unwired = parts.filter((id) => answered() && outputOf(id) === null);
       // A Part off the droid with an Output still mapped: the two facts disagree,
-      // and neither is wrong, so the panel says both and changes neither.
-      const offButMapped = fitted !== null && !isFitted && output !== null;
+      // and neither is wrong, so the panel says both and changes neither. The
+      // rule is data/parts_mapping.js's, shared with Parts' Drop and Wiring's
+      // list of what does not line up: a marker is off when none of its Parts
+      // is fitted, and it is the Part on the wire that is still claimed.
+      const offButMapped = !isFitted && P.offButMapped(wiredPart, fitted) !== null;
       const mark = markerMark(markerId);
       const cls = marker.panTilt ? null : view.markClass(mark, isFitted);
       const open = cls === "open";

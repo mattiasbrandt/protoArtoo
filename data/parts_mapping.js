@@ -315,6 +315,29 @@
   const unclaimed = (parts, outputs) =>
     parts.filter((part) => thisImageMoves(part) && !window.PAOutputs.forPart(part.id, outputs));
 
+  // ---------------------------------------------------------------------------
+  // A Part off the droid that an Output still claims
+  //
+  // Two of the builder's answers that cannot both be true: the Fitted Parts
+  // say the Part is not on the droid, and the Output rows say its wire is
+  // still on an Output (#328, #373). Neither is wrong on its own - the wire
+  // may still be plugged in, and only the builder knows - so every surface
+  // that meets it says both and changes neither (never an automatic unmap).
+  // The rule lives here once: the droid picture's panel (data/droid_picture.js),
+  // a Drop on Parts (data/parts.js) and Wiring's list of what does not line up
+  // (data/wiring.js) all ask it.
+  //
+  // `fitted` is the Droid Build's Fitted Parts as the droid answered them
+  // (window.DroidBuild.current().fitted), or null before it has: until then
+  // nobody has said the Part is off, so there is nothing to disagree with.
+  // Returns the Output that still claims the Part, or null.
+  // ---------------------------------------------------------------------------
+  const offButMapped = (partId, fitted, outputs) => {
+    if (!Array.isArray(fitted) || partId === null || partId === undefined) return null;
+    if (fitted.indexOf(partId) !== -1) return null;
+    return window.PAOutputs.forPart(partId, outputs);
+  };
+
   // What moves a dome Part: the Dome Controller, told by a command over the
   // dome link, never a wire from this board (operator, 2026-09-29 on #411:
   // "what would make sense is to list the actual action/command instead of the
@@ -714,6 +737,7 @@
     thisImageMoves,
     isDomePart,
     unclaimed,
+    offButMapped,
     routeToOutput,
     picker,
   });
