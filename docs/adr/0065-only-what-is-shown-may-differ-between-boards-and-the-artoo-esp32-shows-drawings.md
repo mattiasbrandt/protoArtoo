@@ -165,3 +165,25 @@ Considered and rejected:
 - **Win the blocks back and keep ten.** It was offered and not chosen. The image
   has shrunk before (#382, 113 to 77 blocks) and grown back to its ceiling within
   two weeks.
+
+## Amended 2026-09-30: an asset set may carry reference content, not only pictures
+
+The operator asked for **product wiring cards** at the foot of **Wiring** and on its
+printout - how to wire and power each product the builder chose - on firebeetle2
+only, because the artoo-esp32's filesystem has no room for them (118 of 132 blocks,
+measured 2026-09-30). As first written, this ADR allowed only *pictures* to differ.
+The operator confirmed on #458 (2026-09-30) that this is an intended exception, and
+it is recorded as a widening of what an **Asset Set** may hold rather than as a
+capability one board lacks:
+
+- **Reference content** - text and pictures that explain how to wire, power or fit a
+  product, and change nothing the droid does - is *shown*, like a photograph, and may
+  ship in one set only. The **default** set carries the wiring cards; the **legacy**
+  set carries none.
+- It never carries a control, a setting, a choice or a behaviour. Everything a
+  builder can *do* is still identical on every board, and the floor stands.
+- A board without the cards shows nothing in their place - no placeholder, no
+  *"not on this board"* line - the way the drawn tier is the finished state on the
+  legacy set, not a missing photograph.
+- The re-evaluation trigger is unchanged: reference content missing from one set is
+  not a breach of the floor, because it is not something a builder does.

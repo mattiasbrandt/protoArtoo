@@ -223,3 +223,14 @@ bytes against a 1.625 MB app partition. That is not the 57–141 KB question.
   choice" states the pre-amendment condition; the condition is what the image
   carries. The filename is linked from #302, #300 and #304, so it is not worth a
   rename — read the title as naming the ADR, not as stating the rule.
+
+## Noted 2026-09-30: an expander adds Outputs beside the board's own
+
+*"A Component Member selects one; it never runs two"* is about a family's backends
+driving the **same** outputs. A servo expander does not replace the board's GPIO
+Outputs: choosing the PCA9685 **adds** its sixteen channels as more Outputs
+(`pca:0-15`), and the board's own Outputs keep working (operator, 2026-09-30 on #444;
+ADR 0043's mixed rows; the operator's *"alot more"* on #306). The PCA9685 is still a
+Component Member of the body servo controller family - what it selects is the
+expander fitted, not which of two backends drives an Output. Each Output is driven by
+exactly one backend, so the rule above holds per Output.
