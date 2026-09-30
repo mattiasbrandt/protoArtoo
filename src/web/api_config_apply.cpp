@@ -517,12 +517,10 @@ bool readRowParts(const OutputRowSetting& setting, const char* text, const char*
     return true;
 }
 
-// One row of the row door, onto the edit for its address and, for its wired
-// tick, onto `working`. False, with the refusal set, on the first Setting it
-// cannot take. `*ticked` says whether it set a wired tick.
+// One row of the row door, onto the edit for its address. False, with the
+// refusal set, on the first Setting it cannot take.
 bool readOutputRow(const RowSource& row, const char* address, const BoardOutput* board,
-                   uint32_t* stated, ServoOutputEdit* edit, ConfigSnapshot* working,
-                   bool* ticked, ConfigApplyResult* result) {
+                   uint32_t* stated, ServoOutputEdit* edit, ConfigApplyResult* result) {
     for (size_t i = 0; i < outputRowSettingCount(); ++i) {
         const OutputRowSetting& setting = outputRowSettingAt(i);
         const char* raw = row.get(row.ctx, setting.key);
@@ -554,21 +552,20 @@ bool readOutputRow(const RowSource& row, const char* address, const BoardOutput*
             outputRowSettingSetOnEdit(setting, value, edit);
             continue;
         }
-        // The wired tick. An Output with one has it stored as the droid Setting
-        // its board Output names; one with none - an expander's - is always
-        // wired, and saying otherwise is refused.
-        const ConfigSetting* tick = board != nullptr ? configSettingByForm(board->enabledField) : nullptr;
-        if (tick == nullptr) {
-            if (value == 0) {
-                setRowError(result, address, setting.key,
-                            "is always true: this Output has no wired tick",
-                            ApplyRefusalReason::OutOfRange, "true");
-                return false;
-            }
-            continue;
+        // The wired tick. It follows the Parts on the Output, and the Part
+        // wins over a `wired` a row states (CONTEXT.md "Wiring", #411): the
+        // Commit Step sets every tick from the Parts once the rows have landed
+        // (configCacheTicksFollowParts()), so it is read and checked here and
+        // never written. A restore sends each row's `wired` beside its `parts`
+        // (data/maintenance.js), and an older backup's `enabled` as `wired`,
+        // so both still land whole. One with no tick - an expander's - is
+        // always wired, and saying otherwise is refused.
+        if (board == nullptr && value == 0) {
+            setRowError(result, address, setting.key,
+                        "is always true: this Output has no wired tick",
+                        ApplyRefusalReason::OutOfRange, "true");
+            return false;
         }
-        configSettingSetNumber(*tick, working, value);
-        *ticked = true;
     }
     return true;
 }
@@ -576,7 +573,7 @@ bool readOutputRow(const RowSource& row, const char* address, const BoardOutput*
 // One addressed row read whole onto the request's edit list. `stated` and the
 // seen-address list span the whole request.
 bool applyOneRow(const RowSource& row, const char* rawAddress, uint32_t* stated, uint16_t* seen,
-                 size_t* seenCount, ConfigSnapshot* working, ConfigApplyResult* result) {
+                 size_t* seenCount, ConfigApplyResult* result) {
     ServoOutputDriver driver = SERVO_DRIVER_LEDC;
     uint8_t channel = 0;
     if (rawAddress == nullptr) {
@@ -616,18 +613,17 @@ bool applyOneRow(const RowSource& row, const char* rawAddress, uint32_t* stated,
     edit.driver = driver;
     edit.channel = channel;
     const BoardOutput* board = driver == SERVO_DRIVER_LEDC ? boardOutputOnChannel(channel) : nullptr;
-    bool ticked = false;
-    if (!readOutputRow(row, address, board, stated, &edit, working, &ticked, result)) {
+    if (!readOutputRow(row, address, board, stated, &edit, result)) {
         return false;
     }
-    if (edit.fields == 0 && !ticked) {
+    // A row that states only its `wired` changes nothing: the tick follows
+    // the Parts (readOutputRow()).
+    if (edit.fields == 0) {
         return true;
     }
-    if (edit.fields != 0) {
-        // Rows number at most SERVO_OUTPUT_ROW_MAX (checked above), which the
-        // list holds with room for a capture and a reverse.
-        result->servoOutputs.edits[result->servoOutputs.count++] = edit;
-    }
+    // Rows number at most SERVO_OUTPUT_ROW_MAX (checked above), which the list
+    // holds with room for a capture and a reverse.
+    result->servoOutputs.edits[result->servoOutputs.count++] = edit;
     appendApplied(&result->applied, "[CFG] output %s updated", address);
     result->changed = true;
     return true;
@@ -638,8 +634,7 @@ bool applyOneRow(const RowSource& row, const char* rawAddress, uint32_t* stated,
 // edits only when this and every other field in the request have passed, so a
 // refused row leaves the scalars beside it unwritten too (ADR 0068, one Write
 // Window).
-bool applyOutputRows(JsonObjectConst body, const ConfigParamSource& form, ConfigSnapshot* working,
-                     ConfigApplyResult* result) {
+bool applyOutputRows(JsonObjectConst body, const ConfigParamSource& form, ConfigApplyResult* result) {
     uint32_t statedParts[(DROID_PART_COUNT + 31) / 32] = {};
     uint16_t seen[SERVO_OUTPUT_ROW_MAX] = {};
     size_t seenCount = 0;
@@ -661,7 +656,7 @@ bool applyOutputRows(JsonObjectConst body, const ConfigParamSource& form, Config
             JsonObjectConst row = item.as<JsonObjectConst>();
             const RowSource source{&row, jsonRowGet};
             if (!applyOneRow(source, row.isNull() ? nullptr : rowText(row, kRowAddressKey),
-                             statedParts, seen, &seenCount, working, result)) {
+                             statedParts, seen, &seenCount, result)) {
                 return false;
             }
         }
@@ -672,7 +667,7 @@ bool applyOutputRows(JsonObjectConst body, const ConfigParamSource& form, Config
     if (configParamHas(form, kFormRowParam)) {
         const RowSource source{&form, formRowGet};
         if (!applyOneRow(source, configParamGet(form, kFormRowParam), statedParts, seen, &seenCount,
-                         working, result)) {
+                         result)) {
             return false;
         }
     }
@@ -711,6 +706,18 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         const char* raw = configParamGet(params, setting.form);
         if (raw == nullptr) {
             continue;
+        }
+        // A board Output's wired tick has no door of its own: it follows the
+        // Parts on that Output, and the Commit Step sets it from them
+        // (CONTEXT.md "Wiring", #411). A write here could only leave a tick
+        // the Parts contradict, so it is refused whatever it says, with where
+        // the answer is made instead.
+        if (boardOutputByEnabledField(setting.form) != nullptr) {
+            setError(result, "", ApplyRefusalReason::Conflict, setting.form);
+            snprintf(result->error.message, sizeof(result->error.message),
+                     "%s follows the Parts on its Output: put a Part on it on Wiring to wire it",
+                     setting.form);
+            return;
         }
         if (!configSettingApply(setting, raw, working, &result->error.refusal,
                                 result->error.message, sizeof(result->error.message))) {
@@ -904,7 +911,7 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
     // only door onto them - pages and a restore send rows in a body, the Console
     // one row on its form - beside the capture, reverse and Part-move acts below
     // and above.
-    if (!applyOutputRows(request.body, form, working, result)) {
+    if (!applyOutputRows(request.body, form, result)) {
         return;
     }
 

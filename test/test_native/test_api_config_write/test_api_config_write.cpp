@@ -1328,6 +1328,53 @@ void test_a_part_move_writes_the_wired_tick_of_each_output_it_touches() {
     TEST_ASSERT_TRUE(stored.system.enable_aux1);
 }
 
+// The rows door moves Parts too, and the tick follows them there as it does
+// after a move (#411). A row that takes a Part another Output holds leaves that
+// one free; a row's own `wired` yields to its Parts (the Part wins), and a row
+// that states only `wired` on an Output with no Part wires nothing.
+void test_the_rows_door_sets_each_tick_from_the_parts_and_the_part_wins() {
+    loadServoOutputTable(rowsLikeSetUp());  // doorFL on ARM2
+    WebRequestTestBackend seed;
+    TEST_ASSERT_EQUAL_INT(200, postMove("doorFR", "none", "ledc:1", &seed));
+    TEST_ASSERT_TRUE(readSnapshot().system.enable_arm2);
+
+    WebRequestTestBackend backend;
+    backend.body =
+        "{\"outputs\":[{\"address\":\"ledc:0\",\"wired\":false,\"parts\":[\"doorFL\",\"doorFR\"]},"
+        "{\"address\":\"ledc:3\",\"wired\":true}]}";
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+    const ConfigSnapshot after = readSnapshot();
+    TEST_ASSERT_TRUE_MESSAGE(after.system.enable_arm1, "ARM1 has two Parts, whatever its row said");
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_arm2, "ARM2 lost both to ARM1's row, so it is free");
+    TEST_ASSERT_FALSE_MESSAGE(after.system.enable_aux1, "ARM3 has no Part, so its row's wired wires nothing");
+}
+
+// No door sets a tick on its own (#411): the Console's and the form's
+// enableArm1..enableAux3 would leave a tick the Parts contradict, so every
+// such write is refused, as a conflict naming the field, and changes nothing -
+// not the tick, and not a field riding beside it.
+void test_a_wired_tick_written_on_its_own_is_refused_and_changes_nothing() {
+    seedUnwiredServoOutputRows();
+    const WebRequestTestParam params[] = {{"enableArm1", "true"}, {"speedLimitMax", "250"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));
+    TEST_ASSERT_EQUAL_STRING("enableArm1", doc["field"] | "");
+    TEST_ASSERT_EQUAL_STRING("conflict", doc["reason"] | "");
+    TEST_ASSERT_NOT_NULL(strstr(doc["error"] | "", "put a Part on it on Wiring"));
+    TEST_ASSERT_FALSE(readSnapshot().system.enable_arm1);
+    TEST_ASSERT_EQUAL_INT(100, readSnapshot().drive.speedLimitMax);
+}
+
 // The steal nobody announced. The request says the door is on nothing, the
 // table says ARM1: the whole request is refused, the field riding beside the
 // move included, and nothing reaches storage.
@@ -1365,6 +1412,8 @@ int main() {
     RUN_TEST(test_a_part_move_takes_it_off_one_output_and_is_committed);
     RUN_TEST(test_a_move_from_an_output_the_part_is_not_on_changes_nothing);
     RUN_TEST(test_a_part_move_writes_the_wired_tick_of_each_output_it_touches);
+    RUN_TEST(test_the_rows_door_sets_each_tick_from_the_parts_and_the_part_wins);
+    RUN_TEST(test_a_wired_tick_written_on_its_own_is_refused_and_changes_nothing);
     RUN_TEST(test_a_part_a_row_states_comes_off_the_output_it_was_on);
     RUN_TEST(test_config_post_applies_a_field_and_echoes_the_snapshot);
     RUN_TEST(test_config_post_rejects_an_out_of_range_value_without_applying_it);

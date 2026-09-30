@@ -59,31 +59,6 @@ inline bool boardOutputIsWired(const SystemConfig& system, size_t index) {
 }
 
 // -----------------------------------------------------------------------------
-// boardOutputTickAdoptedLight()
-// The second half of reading `main`'s one lit wire onto its row (#417).
-//
-// `main` drove its strip from the stored slot alone (`aux_led_pin`) and never
-// asked the wire's own tick; this firmware drives a strip only on a wire that
-// is ticked in AND names a Light Type (outputWireStripDriven()). So the row
-// half of the adoption on its own turns a strip `main` was lighting dark
-// whenever that wire had been left unticked. Ticking it here is what keeps
-// "a controller that was lighting a wire keeps lighting it" true.
-//
-// Only where the loader actually adopted - the same gate as the row half, so a
-// wire whose row already carries the builder's own answer is not ticked behind
-// their back. Before configCacheReplace(), so the tick is in the snapshot the
-// first save writes; configSave() removes the retired keys only once that has
-// landed.
-// -----------------------------------------------------------------------------
-inline void boardOutputTickAdoptedLight(const ServoOutputRepairReport& report,
-                                        SystemConfig* system) {
-    if (system == nullptr || !report.litAdopted || report.litOutput >= BOARD_OUTPUT_COUNT) {
-        return;
-    }
-    system->*BOARD_OUTPUT_ENABLED[report.litOutput].enabled = true;
-}
-
-// -----------------------------------------------------------------------------
 // boardOutputTickFollowsParts()
 // An Output with a Part on it is wired, and one with none is free: there is no
 // separate wired switch any more (CONTEXT.md "Wiring"; operator, 2026-09-29 on
@@ -91,12 +66,13 @@ inline void boardOutputTickAdoptedLight(const ServoOutputRepairReport& report,
 //
 // The tick stays the stored answer every consumer already reads - ServoTask and
 // AuxLedTask at start, the RC mapper, the status frame - so rather than each of
-// them learning to count Parts, a Part move writes the tick of every Output it
-// touched, from how many Parts that Output holds once the move has landed
-// (configCommitApplied()). Every door that moves a Part - Wiring, the Console,
-// guided Setup - reaches that commit, so none of them leaves a tick behind. It
-// is still read at start, so a Part put on a free Output moves from the next
-// start (ADR 0027).
+// them learning to count Parts, every board Output's tick is set from how many
+// Parts it holds (configCacheTicksFollowParts()): at start, before anything
+// reads it, and in every config commit, after the Parts have moved. No door
+// writes a tick on its own: a Part move and a row's `parts` move it, a row's
+// `wired` yields to the Parts, and the Console's enableArm1..enableAux3 are
+// refused (configApply()). It is still read at start, so a Part put on a free
+// Output moves from the next start (ADR 0027).
 //
 // `output` is one of BOARD_OUTPUTS, or nullptr for an Output the board does not
 // declare - an expander's channel, which has no tick and is left alone.

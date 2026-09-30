@@ -617,7 +617,7 @@ Queues servo command.
   once at start (ADR 0027), so an Output ticked since has nothing behind it until
   a restart. The sentence says what would let it be used:
   `{"ok":false,"error":"Restart the droid to use ARM2."}` when it is ticked now,
-  `"ARM2 is not wired. Mark it on Wiring."` when it is not, and
+  `"ARM2 has no Part on it. Put one on it on Wiring."` when it is not, and
   `"ARM3 carries a light, not a servo."` when its wire carries a light.
   `GET /api/servo/outputs` `driven` says the same thing ahead of time. The
   Controller Console's `servo.action.*` rows refuse the same Outputs with
@@ -738,9 +738,10 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     builder. Absent for an expander's row.
   - `switchable`: whether the Output has a wired tick. `wired`: whether that
     tick is on, as saved; an Output with no tick - an expander's - reports
-    `true`, since nothing could have switched it off. A Part move writes it
-    (on while a Part is on the Output, `movePart` below). The droid reads it
-    once at start (ADR 0027), so a tick saved since waits for a restart.
+    `true`, since nothing could have switched it off. It follows the Parts: on
+    while a Part is on the Output, set after every write and at every start
+    (`movePart` below), and no door writes it on its own. The droid reads it
+    once at start (ADR 0027), so a tick changed since waits for a restart.
   - `activeWired`: the wired tick the droid started with. It differs from
     `wired` exactly while a saved tick waits for a restart. `true` on an
     expander's row, like `wired`.
@@ -1629,7 +1630,12 @@ Updates supported config fields and persists to NVS.
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - system: `logLevel(1..4|error|warning|info|debug)` — 1 Error, 2 Warning, 3 Info, 4 Debug; the words are taken as well as the numbers, at every door (the Console's `system.config.log-level` takes the same), and GET always reads the number. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs|not_fitted)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver. `not_fitted`: no Radio Controller at all, a droid driven from the web alone; storing it also clears `rcMember` and sets `enableRcCh1`..`enableRcCh6` false, each unless the same request states it, and the RC path starts nothing, so the SBUS boot lock and the two radio failsafe layers stand down), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
-- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`. The first five are the Outputs' wired ticks - the Controller Console's form names for them - and an Output row's `wired` (below) reaches the same check
+- components (bool): `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`.
+  `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2` and `enableAux3` name the
+  Outputs' wired ticks, and **every write of one is refused**, `400` with `field`
+  the name and `reason` `conflict`: a tick follows the Parts on its Output (an
+  Output with a Part on it is wired, one with none is free, #411), so the Parts
+  are the only way to set it
 - components (Component Member): `soundMember` — a Component Registry part id
   (`dy_sv5w`, `mp3_trigger`, `chirp`), from the `sound` category of
   `GET /api/identity/components`. Only a `supported` sound part this image
@@ -1713,8 +1719,10 @@ Updates supported config fields and persists to NVS.
   which is how the Controller Console's `aux.config.led-count` writes one; it is
   checked exactly as a row in `outputs` is, and counts against one row per
   Output.
-  - `wired`: its wired tick (the same check as `enableArm1` and its siblings);
-    an Output with no tick takes only `true`.
+  - `wired`: its wired tick, read and checked but never written: the Parts on
+    the Output win, so after the write every board Output's tick follows the
+    Parts it holds (#411). A restore's `wired` beside its `parts` therefore
+    lands whole. An Output with no tick takes only `true`.
   - `component`: what is on the wire, `none|mg996r|mg90s|rgb`. `rgb` is a
     **Light Type**, not a servo model (ADR 0067): naming it on an Output is
     what says that wire carries a light, and several Outputs may carry one.
@@ -1756,11 +1764,12 @@ Updates supported config fields and persists to NVS.
   destination keeps the Parts already on it. Naming the origin is required
   on purpose: a surface can only take a Part off an Output it has read the Part
   on, which is the moment it must tell the builder so before sending (#347). A
-  move that changes nothing — the Part is already there — succeeds. A move
-  that lands also writes the `wired` tick of each board Output it touched, from
-  the Parts that Output holds now: on for one with a Part, off for one left
-  with none (an Output with a Part on it is wired, #411). The tick is read at
-  start, so a Part put on a free Output moves from the next start. A shape
+  move that changes nothing — the Part is already there — succeeds. After a
+  write lands - a move, or a row's `parts` - every board Output's `wired` tick
+  is set from the Parts it holds: on for one with a Part, off for one with
+  none (an Output with a Part on it is wired, #411). The same happens at every
+  start, so a tick stored with no Part is cleared. The tick is read at start,
+  so a Part put on a free Output moves from the next start. A shape
   error is `400` `{"ok":false,"error":"movePart, movePartFrom and movePartTo must
   be sent together: a Part this build models, and each end an Output Address or
   none"}`.
@@ -1814,7 +1823,7 @@ Updates supported config fields and persists to NVS.
 
 ```bash
 curl -s -X POST http://artoo.local/api/config \
-  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDomeEsc=true&domeEscNeutralUs=1500'
+  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableDomeEsc=true&domeEscNeutralUs=1500'
 ```
 
 #### Example response (abridged)
