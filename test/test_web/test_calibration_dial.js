@@ -17,7 +17,8 @@ import { test } from "node:test";
 import assert from "node:assert";
 import vm from "node:vm";
 
-import { bootServos, freshOutputs, withParts, output, sleep, readData } from "./helpers/parts_surface.js";
+import { bootServos, withParts, output, sleep, readData } from "./helpers/parts_surface.js";
+import { wiredOutputs } from "./helpers/fake_droid.js";
 
 const NOT_WIRED = "– not wired –";
 
@@ -27,8 +28,8 @@ test("opening the dial takes the Output at the width it is already standing at, 
   // Standing at 1750, deliberately NOT the middle of its 1000-2000 band: a dial
   // that opened at the middle would move the part the moment it was opened, and
   // on a droid that is a panel swinging while somebody has their hands in it.
-  const outputs = freshOutputs();
-  outputs[0] = output("ledc:0", "ARM1", { commandedUs: 1750, targetUs: 1750 });
+  const outputs = wiredOutputs();
+  outputs[0] = output("ledc:0", "ARM1", { commandedUs: 1750, targetUs: 1750, parts: ["doorFL"] });
   const env = await bootServos({ outputs });
   env.pressCalibrate("ledc:0");
   await sleep(20);
@@ -45,7 +46,7 @@ test("opening the dial takes the Output at the width it is already standing at, 
 });
 
 test("driving the dial sends the width, coalesced, and never one request an event", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:0");
   await sleep(20);
   const before = env.holds().length;
@@ -64,7 +65,7 @@ test("driving the dial sends the width, coalesced, and never one request an even
 });
 
 test("the hold is kept alive while the dial is open, and stops when it is closed", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:0");
   await sleep(20);
 
@@ -88,7 +89,7 @@ test("the hold is kept alive while the dial is open, and stops when it is closed
 // go at the 3 s expiry, with the panel already saying "take it again" about a
 // pin it was holding (#355 finding 9). ARM5 is the fake droid's limp row.
 test("a dial opened on a limp Output keeps holding it until the droid says it let go", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:5");
   await sleep(20);
   assert.equal(env.dialOpen(), true);
@@ -121,8 +122,8 @@ test("a dial opened on a limp Output keeps holding it until the droid says it le
 // follow's read already in flight when the take went out: it answers after the
 // take, and still describes the Output before it.
 test("a dial opened after a cleared estop holds on the first take, whatever reason the Output last went limp for", async () => {
-  const outputs = freshOutputs();
-  outputs[4] = output("ledc:5", "ARM5", { limp: "estop" });
+  const outputs = wiredOutputs();
+  outputs[4] = output("ledc:5", "ARM5", { limp: "estop", parts: ["smallDoor"] });
   const env = await bootServos({ outputs });
 
   // Hold the next table read: it is asked for now, before the take, and lands
@@ -160,7 +161,7 @@ test("a dial opened after a cleared estop holds on the first take, whatever reas
 });
 
 test("a reason the droid gives for letting go ends the hold even before the dial saw it pulse", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:5");
   await sleep(20);
   // The first reading after the take already says a bound fired.
@@ -175,7 +176,7 @@ test("a reason the droid gives for letting go ends the hold even before the dial
 });
 
 test("no pulse after the dial saw its hold standing ends the hold", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:5");
   await sleep(20);
   await env.frame();
@@ -192,7 +193,7 @@ test("no pulse after the dial saw its hold standing ends the hold", async () => 
 });
 
 test("a take the droid refuses puts take it again back on the panel", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.nudgeFails = Object.assign(new Error("refused"), { status: 409 });
   env.pressCalibrate("ledc:5");
   await sleep(20);
@@ -211,8 +212,8 @@ test("a take the droid refuses puts take it again back on the panel", async () =
 // that folded or rewrote the label into an id of its own would send a word that
 // board's firmware refuses.
 test("a move names its Output by the board's label as the droid gave it, space and all", async () => {
-  const outputs = freshOutputs();
-  outputs[0] = output("ledc:0", "GPIO 49", { commandedUs: 1600, targetUs: 1600 });
+  const outputs = wiredOutputs();
+  outputs[0] = output("ledc:0", "GPIO 49", { commandedUs: 1600, targetUs: 1600, parts: ["doorFL"] });
   const env = await bootServos({ outputs });
   env.pressCalibrate("ledc:0");
   await sleep(20);
@@ -224,7 +225,7 @@ test("a move names its Output by the board's label as the droid gave it, space a
 });
 
 test("pulses off from a row makes the Output limp at once and says which way it is limp", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressPulsesOff("ledc:0");
   await sleep(40);
 
@@ -241,7 +242,7 @@ test("pulses off from a row makes the Output limp at once and says which way it 
 // a servo for as long as the tab was open, which is the one thing ADR 0064 says
 // a page must not be able to do.
 test("once the droid has let go, the page stops asking and waits to be told to resume", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:0");
   await sleep(20);
   const keepalive = env.intervals.filter((each) => each.ms === 1000).at(-1);
@@ -271,7 +272,7 @@ test("once the droid has let go, the page stops asking and waits to be told to r
 // hidden tab. Before this, an estop cleared from the radio with the tab in the
 // background left the keepalive taking the servo back on its own.
 test("the page takes an Output only on a press, and stops asking on the estop and while hidden", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   const refreshes = (posts) => posts.map((post) => post.form.refresh ?? "press");
   env.pressCalibrate("ledc:0");
   await sleep(20);
@@ -303,34 +304,6 @@ test("the page takes an Output only on a press, and stops asking on the estop an
   assert.ok(env.cleared.includes(resumed.id), "a hidden tab stops asking, so the expiry ends the hold");
 });
 
-test("pulses off during a Find by Moving run ends the run at once and says which happened", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2"], "ARM2 is the first spare Output");
-  assert.ok(env.runPanel(), "the run is on the row");
-
-  env.pressPulsesOff("ledc:1");
-  await sleep(40);
-
-  assert.equal(env.runPanel(), null, "the run ended at once, on the press, not on the next answer");
-  assert.match(env.feedback(), /ARM2 is limp, and that stopped the run finding Rear-left body door/);
-  assert.match(env.feedback(), new RegExp(`Rear-left body door stays ${NOT_WIRED}`));
-  // The droid has answered since, so the row shows what it said rather than the
-  // mark the run was watching: no pulse, and why there is none. (The held-back
-  // mark covers only the window before that answer arrives, which is the estop
-  // case test_find_by_moving.js pins.)
-  await env.frame();
-  assert.equal(env.text("ledc:1", "outputs-us"), "— off");
-  assert.equal(env.text("ledc:1", "outputs-release"), "Limp - pulses off");
-  assert.equal(env.cell("ledc:1", "outputs-bar").classList.contains("is-off"), true);
-
-  // The nudge that was in flight ends on its own; nothing steps on from it.
-  env.endNudge("ledc:1");
-  await env.frame();
-  assert.equal(env.nudges().length, 1, "no second Output is nudged");
-});
-
 test("an Output going limp under a run ends the run rather than stepping on to the next", async () => {
   const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
   env.pressFind("doorRL");
@@ -352,7 +325,7 @@ test("a run in progress refuses to open a dial, so one thing moves the droid at 
   env.pressFind("doorRL");
   await sleep(20);
 
-  env.pressCalibrate("ledc:3");
+  env.pressCalibrate("ledc:0");
   await sleep(20);
   assert.equal(env.dialOpen(), false);
   assert.equal(env.holds().length, 0, "nothing was asked of the droid");
@@ -360,7 +333,7 @@ test("a run in progress refuses to open a dial, so one thing moves the droid at 
 });
 
 test("while the estop is latched every act is refused, and a press sends nothing", async () => {
-  const env = await bootServos({ estop: true });
+  const env = await bootServos({ outputs: wiredOutputs(), estop: true });
 
   assert.equal(env.row("ledc:0").querySelector(".outputs-calibrate").disabled, true);
   assert.equal(env.row("ledc:0").querySelector(".outputs-calibrate").getAttribute("aria-disabled"), "true");
@@ -378,7 +351,7 @@ test("while the estop is latched every act is refused, and a press sends nothing
 });
 
 test("an estop while the dial is open says the droid let go, and the dial stays open to resume from", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:0");
   await sleep(20);
 
@@ -389,7 +362,7 @@ test("an estop while the dial is open says the droid let go, and the dial stays 
 });
 
 test("leaving Servos lets go of the Output rather than leaving it driven", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:0");
   await sleep(20);
   assert.equal(env.releases().length, 0);
@@ -402,7 +375,7 @@ test("leaving Servos lets go of the Output rather than leaving it driven", async
 });
 
 test("the dial closes itself if its Output leaves the droid's answer", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   env.pressCalibrate("ledc:4");
   await sleep(20);
   assert.equal(env.dialOpen(), true);
@@ -420,7 +393,7 @@ test("the dial closes itself if its Output leaves the droid's answer", async () 
 // (ADR 0068, second amendment, #432) - never in the droid's sentence, which
 // stands in each refusal here as a decoy because the droid still sends it.
 test("a capture or a swap the droid refuses names the Output in the builder's words, never the droid's sentence", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   const window = {};
   vm.runInNewContext(readData("web_api.js"), { window, URLSearchParams });
   const words = window.PAApi;

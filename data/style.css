@@ -6964,9 +6964,10 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-faint);
 }
 
+/* A Servos row is headed by the Part(s) on it, then the pin its board prints
+   (.outputs-address), on one line. */
 .outputs-parts {
-  display: block;
-  margin-bottom: var(--space-2xs);
+  display: inline;
 }
 
 .outputs-row:not(.is-wired) .outputs-parts {
@@ -7113,31 +7114,7 @@ body[data-page="maintenance"] .status-item .hint {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Which servo the Output carries (data/output_settings.js draws it): the
-   shared segmented bar at caption size, sized to its words. An Output that is
-   not wired keeps its pick, which still saves, drawn quieter: there is
-   nothing on the wire for it to drive yet. */
-.outputs-model:not(:empty) {
-  margin-top: var(--space-sm);
-}
-
-.outputs-model .seg {
-  display: inline-flex;
-}
-
-.outputs-model .seg > button {
-  flex: 0 0 auto;
-  min-height: 24px;
-  padding: 0 var(--space-sm);
-  font-size: var(--fs-hint);
-}
-
-.outputs-model:not(.is-on) .seg {
-  opacity: 0.7;
-}
-
 .outputs-table .outputs-drives {
-  min-width: 18ch;
   color: var(--text);
 }
 
