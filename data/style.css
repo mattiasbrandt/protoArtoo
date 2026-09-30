@@ -7831,6 +7831,18 @@ body[data-page="maintenance"] .status-item .hint {
   details.disclose > .disclose-body {
     display: block !important;
   }
+
+  /* Wiring's printed sheet (#411): a page break never lands inside a picture
+     of the wires or a pin chip, so no wire is split across two pages, and
+     each wire's tick box - hidden on screen - is on the paper. */
+  .wd,
+  .wd-pin {
+    break-inside: avoid;
+  }
+
+  .wd .wd-tick {
+    display: inline;
+  }
 }
 
 /* A product shown rather than picked (#412): the RC page's radio and receiver,
@@ -8166,6 +8178,12 @@ body[data-page="wiring"] .card > * + * {
    the wire. */
 .wd-box {
   stroke-width: 1.2;
+}
+
+/* A wire's tick box is the printed sheet's: nothing is ticked on a screen
+   (data/wiring.js svgTick(), shown again under @media print). */
+.wd-tick {
+  display: none;
 }
 
 /* Used and free, at a glance (operator, 2026-09-29 on #411): one chip per
