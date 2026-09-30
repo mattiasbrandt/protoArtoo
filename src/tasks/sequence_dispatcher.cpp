@@ -124,7 +124,10 @@ struct BodyMoveOutcome {
     uint16_t throwMs;
 };
 
-static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nullptr) {
+// `throwMs` and `easing` are a Gesture's own words for this move (0 for each:
+// the Output's own Motion Profile); only a Gesture's move passes them (ADR 0049).
+static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nullptr,
+                             uint16_t throwMs = 0, uint8_t easing = 0) {
     ServoOutputRow row = {};
     const ServoOutputRow* driving = rowForPart(act.payload, &row);
 
@@ -140,6 +143,8 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
     cmd.type = SERVO_CMD_POSITION;
     cmd.positionUs = plan.targetUs;
     cmd.source = SRC_SEQ;
+    cmd.motionThrowMs = throwMs;
+    cmd.motionEasing = easing;
     cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         return false;
@@ -147,7 +152,7 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
     if (outcome != nullptr) {
         outcome->sent = true;
         outcome->armId = plan.armId;
-        outcome->throwMs = row.throw_ms;
+        outcome->throwMs = (throwMs != 0) ? throwMs : row.throw_ms;  // the move as asked
     }
     return true;
 }
@@ -357,8 +362,10 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     strncpy(gestureMove.payload, droidPartIdAt(next.part), sizeof(gestureMove.payload) - 1);
     gestureMove.bodyShape = (uint8_t)next.shape;
     gestureMove.bodyHowFar = next.howFar;
+    // Paced by the Output's own throw unless the Gesture states one: the
+    // spacing is how long this move takes.
     BodyMoveOutcome moved = {false, SEQ_BULK_CENTRE_NO_AWAIT, 0};
-    if (!dispatchBodyMove(gestureMove, &moved)) {
+    if (!dispatchBodyMove(gestureMove, &moved, next.speedMs, next.easing)) {
         return;
     }
     sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.armId);

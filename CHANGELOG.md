@@ -31,7 +31,8 @@ the patch releases, whose notes live on their own GitHub Release.
   parts sit, and the droid works out the parts when it runs, so a panel fitted
   later joins in. On the body the droid paces the moves itself, one part at a
   time; on the dome it becomes one dome command, and a move the dome has no
-  command for still saves.
+  command for still saves. A body Gesture can set its own speed and easing
+  for its moves; each part otherwise moves the way its output is set to.
 - **A sequence can hold your own sequences.** Drop a saved phrase into
   another sequence as one step; it stays linked, so improving the phrase
   improves every sequence that uses it. Phrases nest three deep, and a

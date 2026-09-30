@@ -142,6 +142,8 @@ inline int16_t seqGestureStartBearingTenths(uint8_t start) {
 // Easing, the Motion Profile's own three words (CONTEXT.md "Motion Profile").
 // GESTURE_EASING_OUTPUT means the Gesture says nothing and the Output's own
 // profile applies, which is the default and is stored as absence.
+// The values are ServoEasing + 1 on purpose (include/servo_output_row.h), so a
+// Gesture's easing reaches ServoCommand::motionEasing as it is stored.
 enum SeqGestureEasing : uint8_t {
     GESTURE_EASING_OUTPUT    = 0,
     GESTURE_EASING_NONE      = 1,
@@ -528,6 +530,8 @@ struct SeqGestureRunEntry {
     uint8_t  shape;
     uint8_t  spread;
     uint8_t  howFar;      // already resolved through seqBodyHowFar()
+    uint16_t speedMs;     // a full throw's time for its moves; 0 = each Output's own
+    uint8_t  easing;      // SeqGestureEasing (ServoEasing + 1); 0 = each Output's own
     uint16_t stepMs;
     uint16_t repeatMs;
     uint32_t passes;
@@ -580,6 +584,8 @@ inline bool sequenceGestureStart(SeqGestureRun* run, const SeqStep& step, uint32
     e.shape = (uint8_t)seqBodyShape(step.params);
     e.spread = seqGestureSpread(step.params);
     e.howFar = seqBodyHowFar(step.params);
+    e.speedMs = seqGestureSpeedMs(step.params);
+    e.easing = seqGestureEasing(step.params);
     e.stepMs = seqGestureStepMs(step.params);
     e.repeatMs = seqGestureRepeatMs(step.params);
     e.passes = seqGesturePasses(step.params);
@@ -597,6 +603,8 @@ struct SeqGestureNext {
     uint8_t      part;   // a body move's Part, as an index into DROID_PART_IDS
     SeqBodyShape shape;  // a body move's shape: the Gesture's, or its undo
     uint8_t      howFar;
+    uint16_t     speedMs;  // the Gesture's override of the Output's throw time, or 0
+    uint8_t      easing;   // the Gesture's override of the Output's easing, or 0
 };
 
 inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
@@ -632,6 +640,8 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
     out->entry = (uint8_t)best;
     out->dome = e.dome;
     out->howFar = e.howFar;
+    out->speedMs = e.speedMs;
+    out->easing = e.easing;
     if (!e.dome) {
         const SeqGestureMove m = seqGesturePassMove(e.spread, e.n, e.stepMs, e.k);
         out->part = e.members[m.member];

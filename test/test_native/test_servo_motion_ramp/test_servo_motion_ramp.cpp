@@ -261,6 +261,22 @@ void test_an_uncalibrated_overshoot_row_plans_exactly_like_none() {
     TEST_ASSERT_TRUE(servoMotionSettles(servoMotionPlan(1100, 1700, servoMotionProfileOf(row), 1000)));
 }
 
+// A Gesture's speed and easing run in place of the Output's for that one move,
+// and what it leaves unsaid stays the Output's; an overshoot on an Output
+// nobody measured still degrades to none (ADR 0049, #438).
+static void test_a_gesture_overrides_the_profile_for_one_move_only() {
+    ServoMotionProfile p = {1000, 2000, 800, 120, SERVO_EASE_SOFT, true};
+    servoMotionOverride(&p, 400, 0);
+    TEST_ASSERT_EQUAL_UINT16(400, p.throwMs);
+    TEST_ASSERT_EQUAL_UINT16(120, p.accelMs);
+    TEST_ASSERT_EQUAL(SERVO_EASE_SOFT, p.easing);
+    servoMotionOverride(&p, 0, (uint8_t)(SERVO_EASE_OVERSHOOT + 1));
+    TEST_ASSERT_EQUAL(SERVO_EASE_OVERSHOOT, p.easing);
+    ServoMotionProfile unmeasured = {1000, 2000, 800, 120, SERVO_EASE_NONE, false};
+    servoMotionOverride(&unmeasured, 0, (uint8_t)(SERVO_EASE_OVERSHOOT + 1));
+    TEST_ASSERT_EQUAL(SERVO_EASE_NONE, unmeasured.easing);
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_a_full_throw_takes_the_outputs_own_time);
@@ -279,5 +295,6 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_overshoot_gives_no_aim_to_a_target_outside_the_ends);
     RUN_TEST(test_overshoot_is_skipped_under_an_eighth_of_travel);
     RUN_TEST(test_an_uncalibrated_overshoot_row_plans_exactly_like_none);
+    RUN_TEST(test_a_gesture_overrides_the_profile_for_one_move_only);
     return UNITY_END();
 }

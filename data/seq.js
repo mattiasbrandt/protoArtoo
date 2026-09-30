@@ -1695,8 +1695,8 @@
             <span class="seq-row-label">How far</span>
             <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", 'min="1" max="100" data-field="howFar"')}<span class="seq-unit">%</span></div>
           </div>
-          <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs ? " open" : ""}>
-            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace and repeat</summary>
+          <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs || step.speedMs || step.easing ? " open" : ""}>
+            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace, repeat and feel</summary>
             <div class="seq-rows">
               <span class="seq-row-label">Every</span>
               <div class="seq-row-ctl">${every}</div>
@@ -1704,6 +1704,10 @@
               <div class="seq-row-ctl">${again}</div>
               <span class="seq-row-label">For</span>
               <div class="seq-row-ctl">${num("extentMs", step.extentMs, "end", "Repeat for milliseconds, to the end when empty", 'min="0" max="120000" data-field="extentMs"')}<span class="seq-unit">ms</span></div>
+              <span class="seq-row-label">Full throw</span>
+              <div class="seq-row-ctl">${num("speedMs", step.speedMs, "own", "Full throw time for each part, the part's own when empty", 'min="50" max="5000" data-field="speedMs"')}<span class="seq-unit">ms</span></div>
+              <span class="seq-row-label">Easing</span>
+              <div class="seq-row-ctl">${bar("easing", [{ id: "", label: "Own" }, ...G.EASINGS.map((x) => ({ id: x, label: x[0].toUpperCase() + x.slice(1) }))], step.easing || "")}</div>
             </div>
           </details>`;
         return;

@@ -194,7 +194,11 @@
         const t = event.t;
         const meta = { step: event.step, iter: event.iter, generated: true };
         G.bodyMoves(event.def, t).forEach((move) =>
-          events.push({ ...meta, t: move.t, def: { type: "body", part: move.part, shape: move.shape, howFar: event.def.howFar } }),
+          events.push({
+            ...meta,
+            t: move.t,
+            def: { type: "body", part: move.part, shape: move.shape, howFar: event.def.howFar, speedMs: event.def.speedMs, easing: event.def.easing },
+          }),
         );
         domePanelsOf(event.def).forEach((cmd) => events.push({ ...meta, t, def: { type: "dome", cmd } }));
       });
@@ -292,6 +296,23 @@
     };
   };
 
+  // A Gesture's move may state its own full-throw time and easing, which run in
+  // place of the Output's for that move (servoMotionOverride(),
+  // include/servo_motion_ramp.h); an overshoot still never passes an
+  // unmeasured Output's ends.
+  const overridden = (profile, def) => {
+    if (!profile) return profile;
+    const model = motion();
+    const out = { ...profile };
+    if (Number(def.speedMs) > 0) out.throwMs = Number(def.speedMs);
+    const ease = model?.ServoEasing;
+    const words = ease ? { none: ease.SERVO_EASE_NONE, soft: ease.SERVO_EASE_SOFT, overshoot: ease.SERVO_EASE_OVERSHOOT } : {};
+    if (def.easing in words) {
+      out.easing = def.easing === "overshoot" && !out.calibrated ? ease.SERVO_EASE_NONE : words[def.easing];
+    }
+    return out;
+  };
+
   // seqBodyHowFar() (include/sequence_engine.h): absent is the whole throw, and
   // a stated value is floored at 5 and capped at 100.
   const howFarOf = (def) => {
@@ -318,7 +339,7 @@
   const bodyMove = (def, context) => {
     const output = outputOf(def.part, context);
     const shape = def.shape || "open";
-    const profile = output && isServo(output) ? profileOf(output) : null;
+    const profile = output && isServo(output) ? overridden(profileOf(output), def) : null;
     const timed = Boolean(profile && profile.calibrated);
     return {
       part: def.part,
