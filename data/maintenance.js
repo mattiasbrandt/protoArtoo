@@ -232,6 +232,8 @@
   let parsedBackup = null;
   let facts = null;
   let factsAsked = 0;
+  // True from the answer to the question until the restore's receipt is in.
+  let restoring = false;
 
   const setFeedback = (msg, variant = '') => {
     feedback.textContent = msg;
@@ -863,7 +865,6 @@
   // the live ones: the copy's reads take seconds, and a file chosen meanwhile
   // must not become the one written.
   const applyRestore = async (file, known, parts, withCopy) => {
-
     // The copy is built from the droid's own answers for every part about to
     // be replaced, and a download the browser blocked still reads as saved -
     // so what can be checked is the reads: if any fails, there is no copy and
@@ -972,7 +973,6 @@
 
   // The chooser is locked from the answer until the receipt is in, and a file
   // whose read lands meanwhile is dropped (handleFile()).
-  let restoring = false;
   const lockChooser = (locked) => {
     restoring = locked;
     fileInput.disabled = locked;
