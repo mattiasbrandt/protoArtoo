@@ -84,7 +84,9 @@ A line the body owns is refused, and not forwarded, when:
   the Output on Wiring, or the Output carries a light.
 - **the droid is asleep.** On the manual command and the Console, every
   prefixed line is held until you wake it (`423 sleeping`).
-- **the line is not one the body can run**, such as an `:MV` with no value.
+- **the line is not one the body can run**, such as an `:MV` with no value,
+  or a panel number that is not all digits: `:OPxx` is refused, never read as
+  `:OP00`.
 
 A Mood sent through a `dome.action.marcduino-command` binding is not applied:
 setting a Mood stores it, and the RC loop does not stop to write storage. Use
@@ -107,6 +109,12 @@ protoR2link not connected the answer is `503 dome link not connected`
 (`unavailable`, `temporarily-unavailable` on the Console), and with its queue
 full it is `503 dome TX queue full` (`queue-full`).
 
+## Line length
+
+A Marcduino line longer than 63 characters is refused before any of it runs,
+on every door: the dome TX queue carries no longer a line whole, and a line
+cut short would be a different command.
+
 ## The other prefixes
 
 - `*`, `@`, `%`, `&`, `!` are always forwarded to the dome uninterpreted
@@ -117,7 +125,8 @@ full it is `503 dome TX queue full` (`queue-full`).
     has not. The CHIRP Audio Trigger reads banks 1 to 6
     (`docs/spec-sheets/chirp-audio-trigger-sound.md`) and the other modules
     have no banks, so on every module protoArtoo drives today `$8nn` is
-    refused. It never plays raw track 8nn.
+    refused. It never plays raw track 8nn. `$800` names sound 00, which no bank
+    has, and is refused everywhere.
   - Every other number, `$nnn`, is a raw track number: `$001`, `$126`.
   - The letters are named sounds and controls: `include/audio_dollar_parser.h`
     lists them.

@@ -475,11 +475,13 @@ The command is routed based on its prefix:
 - Otherwise — queued as a raw command to the dome link
 
 - Body fields:
-- `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters
+- `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters, and a raw
+  string for the dome at most 63 (the dome TX queue carries no longer a line whole)
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` `{"ok":false,"error":"missing cmd parameter"}`
 - `400` `{"ok":false,"error":"cmd too long (max 127)"}`
+- `400` `{"ok":false,"error":"cmd too long (max 63)"}` -- a raw line for the dome
 - `503` `{"ok":false,"error":"sequence queue full"}` (when `cmd` starts with `DM:`)
 - `503` `{"ok":false,"error":"dome TX queue full or link not ready"}` (raw command)
 
@@ -2441,6 +2443,9 @@ Executes supported manual command.
 - `409` `{"ok":false,"error":"estop active"}` -- a line the body owns, refused and not forwarded
 - `409` `{"ok":false,"error":"<why nothing drives that Output>"}` -- a panel line for an Output nothing drives this boot; the sentence `POST /api/servo` gives
 - `409` `{"ok":false,"error":"a $8nn line is bank 8, sound nn, and the fitted sound module has no bank 8","field":"command"}`
+- `400` `{"ok":false,"error":"a $8nn line is bank 8, sound nn, and no bank has a sound 00","field":"command"}`
+- `400` `{"ok":false,"error":"command too long (max 63)","field":"command"}` -- a Marcduino line longer than the dome TX queue carries whole; refused before any of it runs
+- `503` `{"ok":false,"error":"sound catalog is refreshing"}` -- a `$8nn` line while the sound module's catalog is being read again
 - `503` `{"ok":false,"error":"dome link not connected"}` -- a line for the dome, not queued
 - `503` `{"ok":false,"error":"dome TX queue full"}` -- a line for the dome, not queued
 - `503` `{"ok":false,"error":"command queue full"}` -- a line the body owns, not queued
