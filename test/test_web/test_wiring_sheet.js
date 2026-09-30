@@ -67,9 +67,10 @@ const rowsSaying = (rows, say = {}) =>
 // GET /api/identity/components, cut to the rows the board's picture and name
 // are found from (docs/api.md): the Body Controller family and the board GPIO
 // product that borrows its picture. `running` is the one this image includes.
-const lineup = (running = "artoo_pcb") => ({
+const lineup = (running = "artoo_pcb", extra = []) => ({
   categories: [],
   parts: [
+    ...extra,
     { id: "artoo_pcb", name: "Artoo PCB (artoo.uk)", category: "body_controller", status: "supported", included: running === "artoo_pcb" },
     { id: "firebeetle2", name: "FireBeetle 2 (ESP32-P4)", category: "body_controller", status: "supported", included: running === "firebeetle2" },
     { id: "esp32_gpio_ledc", name: "Body controller board GPIO", category: "body_servo_controller", status: "supported", included: true },
@@ -82,6 +83,7 @@ const boot = async ({
   lanes = {},
   manifest = identity(),
   running = "artoo_pcb",
+  products = [],
 } = {}) => {
   outputs = rowsSaying(outputs, say);
   // GET /api/config carries the lanes' toggles and no Output (ADR 0068).
@@ -157,7 +159,7 @@ const boot = async ({
         if (path === "/api/config") {
           return { data: { components: structuredClone(env.components) } };
         }
-        if (path === "/api/identity/components") return { data: lineup(running) };
+        if (path === "/api/identity/components") return { data: lineup(running, products) };
         if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
         throw new Error(`unexpected request ${path}`);
       },
@@ -277,6 +279,11 @@ const boot = async ({
     "/apply_timing.js": readData("apply_timing.js"),
     "/product_art.js": readData("product_art.js"),
     "/component_picker.js": readData("component_picker.js"),
+    // The list of what does not line up reads the Health Signal readers and
+    // the Droid Build (#454).
+    "/health_signals.js": readData("health_signals.js"),
+    "/droid_build.js": readData("droid_build.js"),
+    "/dome_layout.js": readData("dome_layout.js"),
   };
   document.onAttach = (node) => {
     if (node.nodeType !== 1 || node.tagName !== "SCRIPT" || !node.src) return;
@@ -561,3 +568,47 @@ test("mounting asks the droid for each answer once, not twice", async () => {
   assert.equal(env.gets.filter((path) => path === "/api/config").length, 1);
 });
 
+
+// What the builder said against what the droid reports (#454). Silence is not
+// a second answer: a fitted sound module the droid asked and heard nothing
+// from stays the builder's answer - declared, in the Health Signal's own word
+// and light, the Status Plate's "No answer" - and is never contradicted. A
+// foot drive that declares it reports nothing cannot be asked at all, so it is
+// not probed rather than declared-and-silent. Every value here is live, so none
+// of it reaches the saved sheet (research 5.3, 9.2; CONTEXT.md "Health Signal").
+test("a fitted part the droid cannot hear from is never read as contradicting you, and the list stays off the saved sheet", async () => {
+  const env = await boot({
+    lanes: {
+      drive: { enabled: true, label: "S1" },
+      audio: { enabled: true, label: "S2", member: "dy_sv5w" },
+    },
+    products: [
+      { id: "dy_sv5w", name: "DY-SV5W", category: "sound", status: "supported", included: true },
+      { id: "hoverboard", name: "Hoverboard", category: "foot_drive", status: "supported", included: true, capabilities: 0 },
+    ],
+  });
+  // A good frame: the six fields the Live Reading needs, and a sound block
+  // whose module did not answer (link_ok false, the line not held).
+  env.window.PAStatusStream.seed({
+    estop: false, sbusHwFailsafe: false, sbusSignalLost: false, webDriveExpired: false,
+    webControlEnabled: false, sleepMode: false,
+    audio: { output: "on", link_ok: false, rx_status: "ok" },
+  });
+  await sleep(40);
+  const row = (key) => env.document.querySelector(`[data-row="${key}"]`);
+
+  const sound = row("lane:audio");
+  assert.ok(sound, "the drawn sound wire has its own row");
+  assert.equal(sound.dataset.state, "declared");
+  assert.match(sound.textContent, /No answer/);
+  assert.ok(sound.querySelector(".indicator").classList.contains("fail"), "red, as on the Status Plate");
+
+  const feet = row("lane:drive");
+  assert.equal(feet.dataset.state, "not probed", "a foot drive that reports nothing cannot be asked");
+
+  assert.equal(env.document.querySelectorAll('[data-state="contradicted"]').length, 0);
+
+  env.document.getElementById("wiring-save").fire("click", {});
+  const saved = await [...env.files.values()].at(-1).text();
+  assert.ok(!/No answer|lineup/.test(saved), "the saved sheet carries no live reading");
+});
