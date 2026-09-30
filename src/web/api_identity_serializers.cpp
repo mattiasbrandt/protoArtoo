@@ -11,7 +11,7 @@
 #include "board_lane_wire.h"  // kBoardLaneWire_<lane>, joined to each lane below
 #include "component_registry.h"
 #include "config.h"
-#include "seq_store_util.h"  // SEQ_STORE_CAP
+#include "seq_store_util.h"  // SEQ_STORE_CAP, SEQ_FILE_MAX_BYTES
 #include "web_json_slice_writer.h"
 
 #include <cstdarg>
@@ -88,10 +88,15 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
     // amended 2026-09-25), reported here because it is a board fact beside
     // `board`, and the shell already fetches this payload once for every page.
     // The Sequences page reads it rather than keeping a number of its own.
+    // learned_sequence_max_bytes is the per-file cap beside it (12 KB on the
+    // artoo-esp32, 24 KB on firebeetle2): the byte count POST /api/seq refuses
+    // above, which the Rehearsal's size figure measures a sequence against
+    // (#287 specific 9, #439).
     writer.append("{\"droidName\":\"%s\",\"mdnsUseName\":%s,\"board\":\"%s\","
-                  "\"learned_sequence_cap\":%u,\"board_capabilities\":{",
+                  "\"learned_sequence_cap\":%u,\"learned_sequence_max_bytes\":%u,"
+                  "\"board_capabilities\":{",
                   droidName, mdnsUseName ? "true" : "false", boardVariantId(),
-                  (unsigned)SEQ_STORE_CAP);
+                  (unsigned)SEQ_STORE_CAP, (unsigned)SEQ_FILE_MAX_BYTES);
 
     bool first = true;
 #define PA_BOARD_CAPABILITY(name)                                                \
@@ -134,7 +139,7 @@ bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool m
 // no name to put in front of a builder.
 //
 // It gets its own route rather than a key in GET /api/identity: that payload is
-// bounded at IDENTITY_JSON_MAX_BYTES (576 B) with 53 B of headroom, and the
+// bounded at IDENTITY_JSON_MAX_BYTES (576 B) with 18 B of headroom, and the
 // lineup is roughly 3 KB. Written by offset through JsonSliceWriter for the
 // same reason GET /api/actions is, so no backend holds the body whole.
 // -----------------------------------------------------------------------------

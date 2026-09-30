@@ -145,6 +145,11 @@ routes each signal over.
     (`POST /api/seq`), not a bound on what `GET /api/seq/list` returns: a droid
     a firmware-only update left holding more than its cap lists and plays every
     one it holds
+  - `learned_sequence_max_bytes`: the largest Learned Sequence file this droid
+    saves, in bytes - `12288` on `artoo_esp32`, `24576` on `firebeetle2`
+    (`PA_SEQ_FILE_MAX_KB`, `include/seq_store_util.h`). It is the byte count
+    `POST /api/seq` refuses a body above, and the Sequences editor's Rehearsal
+    measures a sequence's size against it rather than keeping a copy (#439)
   - `board_capabilities`: an object containing every `PA_CAP_*` declaration
     from `include/board_capabilities.inc`, with boolean values
   - `board_lanes`: an object containing every Board Lane from
@@ -174,7 +179,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34,"baud":9600,"protocol":"marcduino"}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"learned_sequence_max_bytes":12288,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true,"PA_CAP_DEDICATED_AUDIO_UART":false},"board_lanes":{"drive":{"uart":1,"tx":16,"rx":17},"audio":{"uart":2,"tx":26,"rx":35},"protor2link":{"uart":2,"tx":33,"rx":34,"baud":9600,"protocol":"marcduino"}},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity
@@ -185,8 +190,8 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
   - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
   - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
 - Success: `200` JSON with the updated identity and the same `board`,
-  `learned_sequence_cap`, `board_capabilities`, `board_lanes`, and
-  `build_flags` fields as GET
+  `learned_sequence_cap`, `learned_sequence_max_bytes`, `board_capabilities`,
+  `board_lanes`, and `build_flags` fields as GET
 - Errors:
   - `400` `{"ok":false,"error":"droidName is required"}`
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
@@ -204,7 +209,7 @@ curl -s -X POST http://artoo.local/api/identity \
 #### Example response
 
 ```json
-{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","learned_sequence_cap":5,"learned_sequence_max_bytes":12288,"board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### GET /api/identity/components

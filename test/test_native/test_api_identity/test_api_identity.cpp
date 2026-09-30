@@ -16,6 +16,7 @@
 #include "component_registry.h"
 #include "config.h"
 #include "config_cache.h"
+#include "seq_store_util.h"  // seqStoreCapacityCheck() - what refuses a file over the cap
 #include "web_request_test_backend.h"
 #include "config_write_window_check.h"  // the holder check this suite arms (#418)
 #include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
@@ -24,9 +25,11 @@ namespace {
 
 // learned_sequence_cap is written out, not composed from SEQ_STORE_CAP: it is
 // the board fact the Sequences page reads (ADR 0065, amended 2026-09-25), and
-// the native env builds the artoo-esp32, which stores five.
+// the native env builds the artoo-esp32, which stores five. Its per-file byte
+// cap is written out the same way: 12 KB on the artoo-esp32.
 constexpr const char* kCapabilities =
-    ",\"board\":\"artoo_esp32\",\"learned_sequence_cap\":5,\"board_capabilities\":{"
+    ",\"board\":\"artoo_esp32\",\"learned_sequence_cap\":5,"
+    "\"learned_sequence_max_bytes\":12288,\"board_capabilities\":{"
     "\"PA_CAP_NATIVE_WIFI\":true,\"PA_CAP_HOSTED_WIFI\":false,"
     "\"PA_CAP_DRIVE_BACKEND_HOVERBOARD\":true,"
     "\"PA_CAP_DEDICATED_AUDIO_UART\":false}";
@@ -180,7 +183,8 @@ void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
 // what a 512 B budget carries, leaving 50, and the Learned Sequence cap
 // (#426) spent 26 of those, leaving 24 on firebeetle2 (25 on the artoo-esp32,
 // whose cap is one digit). protoR2link's baud and protocol (#369) cost 35,
-// so the bound went to 576 B, leaving 53. Assert the worst case directly: the
+// so the bound went to 576 B, leaving 53, and the per-file byte cap (#439)
+// cost 35 more, leaving 18. Assert the worst case directly: the
 // next manifest row must not be able to overflow at 32 characters while a
 // short name still fits.
 void test_identity_manifest_fits_with_longest_droid_name() {
@@ -195,12 +199,32 @@ void test_identity_manifest_fits_with_longest_droid_name() {
     // manifest row is the real one. This build reports three manifest values
     // true (NATIVE_WIFI, DRIVE_BACKEND_HOVERBOARD, ADMISSION_TRACE), each a byte
     // shorter than false, so it is 3 B under that comment's all-false worst
-    // case of 521 B for the artoo-esp32.
-    TEST_ASSERT_EQUAL_UINT(518, strlen(body));
+    // case of 556 B for the artoo-esp32.
+    TEST_ASSERT_EQUAL_UINT(553, strlen(body));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"PA_CAP_DEDICATED_AUDIO_UART\":false"));
     // The last Board Lane row is the first thing an overflow would eat, and a
     // truncated payload must not reach the browser as a shorter valid one.
     TEST_ASSERT_NOT_NULL(strstr(body, "\"protor2link\":{"));
+}
+
+// The per-file cap the droid reports is the byte count its store refuses above,
+// so the Rehearsal's size figure cannot tell a builder a sequence fits when the
+// save would be refused, or the other way round (#439). Read back out of the
+// payload rather than compared with SEQ_FILE_MAX_BYTES, because the number the
+// browser sees is the one that has to agree with the refusal.
+void test_identity_byte_cap_is_the_size_a_save_is_refused_above() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "artoo", false));
+    const char* key = strstr(body, "\"learned_sequence_max_bytes\":");
+    TEST_ASSERT_NOT_NULL(key);
+    unsigned reported = 0;
+    TEST_ASSERT_EQUAL_INT(1, sscanf(key, "\"learned_sequence_max_bytes\":%u", &reported));
+
+    const size_t plenty = 1024u * 1024u;
+    TEST_ASSERT_TRUE(seqStoreCapacityCheck(false, 0, reported, plenty).ok);
+    const ProtocolCheckResult over = seqStoreCapacityCheck(false, 0, reported + 1u, plenty);
+    TEST_ASSERT_FALSE(over.ok);
+    TEST_ASSERT_EQUAL_STRING("json", over.field);
 }
 
 // A Board Lane must report what the board's own pin-map arm declares. The
@@ -329,6 +353,7 @@ int main() {
     RUN_TEST(test_post_valid_name_applies_and_echoes);
     RUN_TEST(test_identity_manifest_fits_fixed_budget_and_overflow_fails);
     RUN_TEST(test_identity_manifest_fits_with_longest_droid_name);
+    RUN_TEST(test_identity_byte_cap_is_the_size_a_save_is_refused_above);
     RUN_TEST(test_identity_reports_the_drive_lane_from_the_pin_map);
     RUN_TEST(test_identity_protor2link_lane_carries_its_wire_contract);
     RUN_TEST(test_components_payload_carries_every_row_with_its_name);
