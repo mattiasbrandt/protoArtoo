@@ -27,8 +27,8 @@ the patch releases, whose notes live on their own GitHub Release.
 
 ### Added
 - **Your routines are in the backup.** A backup now holds every Sequence you
-  taught the droid, and says which board made it. A restore offers three parts
-  - Sequences, Configuration and RC Map - each saying what it replaces and what
+  taught the droid, and says which board made it. A restore offers three parts,
+  Sequences, Configuration and RC Map, each saying what it replaces and what
   it leaves, and replaces the parts you tick rather than merging. Before
   anything is written you can save a copy of what is about to go; if that copy
   cannot be made, nothing is replaced. If the droid refuses a Sequence halfway,
