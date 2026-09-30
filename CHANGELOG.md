@@ -35,6 +35,17 @@ the patch releases, whose notes live on their own GitHub Release.
   droid to this moment puts every part where the routine had it then, one at a
   time, with the lights and the sound that was playing. It will not while the
   estop is latched or the droid is asleep, and says so.
+- **Your ShadowMD and Padawan360 bindings reach the dome.** A `:` or `#`
+  command the body has nothing for now goes to the Dome Controller instead of
+  vanishing, so 23 commands the dome firmware already runs - `:SE50` to
+  `:SE58`, `:OP06` to `:OP12` and more - work again. `:SE01` to `:SE09` fire
+  the dome's panels, lights and holos as well as the body's half, and `:OF`
+  on a body arm opens it. Every command now answers what happened: done
+  here, sent to the dome, or no and why. `docs/marcduino_commands.md` lists
+  which commands the body answers.
+- **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
+  as that, not as track 803. A sound module with no bank 8 says so instead of
+  playing the wrong file.
 - **Your routines are in the backup.** A backup now holds every Sequence you
   taught the droid, and says which board made it. A restore offers three parts,
   Sequences, Configuration and RC Map, each saying what it replaces and what

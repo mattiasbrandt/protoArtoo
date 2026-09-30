@@ -49,7 +49,7 @@ struct RcActionResult {
     uint8_t servoSequenceId;    // sequence ID (e.g. 30-36) when servoIsSequence
 
     char domeTxCmd[20];         // [0]=='\0' = none; command for domeQueueTx
-    char marcduinoCmd[20];      // [0]=='\0' = none; command for parseMarcduinoCommand
+    char marcduinoCmd[20];      // [0]=='\0' = none; a :/#/$ line, routed by rcDispatchSingleAction()
 
     bool triggerEstop;
     bool setSleep;

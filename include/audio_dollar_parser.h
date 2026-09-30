@@ -12,7 +12,10 @@
 // stored under that Setting's NVS key (src/config_settings.cpp).
 //
 // $ command reference (full set handled here):
-//   $nnn   --  play track nnn (1-based integer)
+//   $8nn   --  bank 8, sound nn: ShadowMD's $Bnn, played where the fitted
+//              sound module has a bank 8 and refused where it has not
+//              (audioDollarBankForm() below)
+//   $nnn   --  play track nnn (1-based integer), every other number
 //   $S     --  play scream
 //   $F     --  play short circuit / faint
 //   $L     --  play Leia message
@@ -110,6 +113,7 @@ enum AudioActionType : uint8_t {
     AUDIO_ACTION_VOLUME_SET,   // set absolute volume 0-30 (see AudioAction.volume)
     AUDIO_ACTION_VOLUME_UP,    // increment volume by 1 (AudioTask applies clamp)
     AUDIO_ACTION_VOLUME_DOWN,  // decrement volume by 1 (AudioTask applies clamp)
+    AUDIO_ACTION_PLAY_BANKED,  // sound AudioAction.track in bank AudioAction.bank
 };
 
 // -----------------------------------------------------------------------------
@@ -117,9 +121,41 @@ enum AudioActionType : uint8_t {
 // -----------------------------------------------------------------------------
 struct AudioAction {
     AudioActionType type = AUDIO_ACTION_NONE;
-    uint16_t track       = 0;  // valid when type == AUDIO_ACTION_PLAY_TRACK
+    uint16_t track       = 0;  // PLAY_TRACK: the track; PLAY_BANKED: the sound in the bank
     uint8_t volume       = 0;  // valid when type == AUDIO_ACTION_VOLUME_SET
+    uint8_t bank         = 0;  // valid when type == AUDIO_ACTION_PLAY_BANKED
 };
+
+// -----------------------------------------------------------------------------
+// audioDollarBankForm()
+// Whether cmd is ShadowMD's bank form of '$', and which bank and sound it names.
+//
+// ShadowMD writes $Bnn for "bank B, sound nn" - its template sends $803 and
+// $809-$825 - where '$' here has always meant a raw track number, so $803 used
+// to play track 803: accepted, never an error, and the wrong file (#321). The
+// operator's answer on #449 (2026-09-30): $8nn is bank 8, sound nn, and every
+// other number stays a raw track. Bank 8 alone, because raw $1nn-$7nn are the
+// R2 community's own track numbers ($126 is the scream default above) and
+// reading those as banks would move files that play correctly today.
+//
+// Exactly four characters, '$', '8' and two digits. $800 is the bank form
+// naming sound 0, which no bank has; parseAudioDollar() answers NONE for it.
+// -----------------------------------------------------------------------------
+constexpr uint8_t AUDIO_DOLLAR_BANK = 8;
+
+inline bool audioDollarBankForm(const char* cmd, uint8_t* bankOut, uint16_t* soundOut) {
+    if (cmd == nullptr || cmd[0] != '$' || cmd[1] != (char)('0' + AUDIO_DOLLAR_BANK) ||
+        cmd[2] < '0' || cmd[2] > '9' || cmd[3] < '0' || cmd[3] > '9' || cmd[4] != '\0') {
+        return false;
+    }
+    if (bankOut != nullptr) {
+        *bankOut = AUDIO_DOLLAR_BANK;
+    }
+    if (soundOut != nullptr) {
+        *soundOut = (uint16_t)(((cmd[2] - '0') * 10) + (cmd[3] - '0'));
+    }
+    return true;
+}
 
 // -----------------------------------------------------------------------------
 // parseAudioDollar()

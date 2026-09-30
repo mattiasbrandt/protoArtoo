@@ -13,6 +13,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
+#include "audio_dollar_parser.h"  // audioDollarBankForm()
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config.h"
@@ -24,6 +25,7 @@
 #include "failsafe_gate.h"
 #include "logging.h"
 #include "marcduino_helpers.h"
+#include "marcduino_router.h"  // routeMarcduinoLine()
 #include "queue_drop_tracker.h"
 #include "rc_action_dispatcher.h"
 #include "rc_input_processor.h"
@@ -161,15 +163,29 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
         }
     }
 
+    // A Marcduino binding's line goes where Command Ownership sends it: the
+    // body runs what it owns and the rest is forwarded to the dome (ADR 0055,
+    // include/marcduino_router.h). A '$' line - the one other prefix
+    // rcPayloadValidForMarcduinoCommand() admits - is audio, queued as such.
+    // The binding carries this line and nothing else, so its outcome is the
+    // answer; the live RC loop still discards it, and the Console action
+    // executor reports it (#221).
     if (res.marcduinoCmd[0] != '\0') {
-        if (!parseMarcduinoCommand(res.marcduinoCmd)) {
-            PA_LOG_DEBUG(TAG, "marcduino command not recognized: %s", res.marcduinoCmd);
-            // Not a queue-full - the payload itself failed validation. This
-            // branch is unreachable for #220's in-scope action set
-            // (DOME_ACTION_MARCDUINO_SEQ/CMD require an argument, fenced to
-            // #221/#226); folded into queueFull here only so the live RC
-            // path (which can reach it) still reports a non-silent outcome
-            // rather than a new, #220-unused outcome value.
+        uint16_t bankSound = 0;
+        if (res.marcduinoCmd[0] == ':' || res.marcduinoCmd[0] == '#') {
+            const RcDispatchOutcome routed = rcDispatchOutcomeForMarcduinoRoute(
+                routeMarcduinoLine(res.marcduinoCmd));
+            if (routed != RcDispatchOutcome::kQueued) {
+                // A refused queue earlier in this result still reads as one.
+                return queueFull ? RcDispatchOutcome::kQueueFull : routed;
+            }
+        } else if (audioDollarBankForm(res.marcduinoCmd, nullptr, &bankSound) && bankSound == 0) {
+            // "$800": the bank form naming sound 00, which no bank has.
+            // Whether a bank 8 is fitted is AudioTask's to answer - the bank
+            // table is not read from RCInputTask.
+            return queueFull ? RcDispatchOutcome::kQueueFull : RcDispatchOutcome::kNotExecutable;
+        } else if (!audioQueueDollar(res.marcduinoCmd, src)) {
+            PA_LOG_WARN(TAG, "marcduino audio dropped: %s", res.marcduinoCmd);
             queueFull = true;
         }
     }

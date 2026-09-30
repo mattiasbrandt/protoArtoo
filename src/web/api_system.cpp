@@ -24,9 +24,11 @@
 
 #include "api_drive.h"
 #include "api_json_response.h"
+#include "api_servo.h"          // servoOutputUndriven()
 #include "commanded_modes.h"
 #include "config_store.h"
 #include "logging.h"
+#include "marcduino_helpers.h"  // marcduino_panel_command_arm_id()
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -158,6 +160,63 @@ void handleManualCommandPost(WebRequest& req) {
         // for the same outcome.
         PA_LOG_WARN(TAG, "[WEB] POST /api/manual-command - %s applied, not stored", rawCommand);
         webSendJsonError(req, 500, "command applied but NVS save failed");
+        return;
+    }
+
+    if (result == ManualCommandResult::DomeLinkDown || result == ManualCommandResult::DomeQueueFull) {
+        // A line for the dome that never left: the answer POST /api/dome/cmd
+        // gives the same failure (handleDomeCmdPost(), api_drive.cpp), split
+        // so the builder knows whether to look at the link or retry.
+        webSendJsonError(req, 503,
+                         result == ManualCommandResult::DomeLinkDown ? "dome link not connected"
+                                                                     : "dome TX queue full");
+        return;
+    }
+    if (result == ManualCommandResult::BlockedByEstop) {
+        webSendJsonError(req, 409, "estop active");
+        return;
+    }
+    if (result == ManualCommandResult::OutputUndriven) {
+        // The sentence POST /api/servo refuses the same Output with (#364):
+        // whether a restart, Wiring, or nothing at all would put a servo on it.
+        char undriven[96] = {};
+        servoOutputUndriven(marcduino_panel_command_arm_id(rawCommand), undriven,
+                            sizeof(undriven));
+        webSendJsonError(req, 409, undriven);
+        return;
+    }
+    if (result == ManualCommandResult::BankNotFitted) {
+        webSendJsonError(req, 409,
+                         "a $8nn line is bank 8, sound nn, and the fitted sound module has no bank 8",
+                         nullptr, "command");
+        return;
+    }
+    if (result == ManualCommandResult::BankSoundMissing) {
+        webSendJsonError(req, 400,
+                         "a $8nn line is bank 8, sound nn, and no bank has a sound 00", nullptr,
+                         "command");
+        return;
+    }
+    if (result == ManualCommandResult::SoundCatalogBusy) {
+        webSendJsonError(req, 503, "sound catalog is refreshing");
+        return;
+    }
+    if (result == ManualCommandResult::LineTooLong) {
+        // DOME_TX_LINE_MAX, include/dome_link.h: the longest line the dome TX
+        // queue carries whole.
+        webSendJsonError(req, 400, "command too long (max 63)", nullptr, "command");
+        return;
+    }
+    if (result == ManualCommandResult::QueueFull) {
+        webSendJsonError(req, 503, "command queue full");
+        return;
+    }
+    if (result == ManualCommandResult::Forwarded) {
+        // Handed to the dome and nothing more is claimed: the Marcduino dialect
+        // has no reply channel, so what the dome did is the dome's to report
+        // (ADR 0055).
+        PA_LOG_INFO(TAG, "[WEB] POST /api/manual-command - forwarded %s", rawCommand);
+        req.send(200, "application/json", "{\"ok\":true,\"forwarded\":true}");
         return;
     }
 

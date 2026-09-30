@@ -475,11 +475,13 @@ The command is routed based on its prefix:
 - Otherwise — queued as a raw command to the dome link
 
 - Body fields:
-- `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters
+- `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters, and a raw
+  string for the dome at most 63 (the dome TX queue carries no longer a line whole)
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` `{"ok":false,"error":"missing cmd parameter"}`
 - `400` `{"ok":false,"error":"cmd too long (max 127)"}`
+- `400` `{"ok":false,"error":"cmd too long (max 63)"}` -- a raw line for the dome
 - `503` `{"ok":false,"error":"sequence queue full"}` (when `cmd` starts with `DM:`)
 - `503` `{"ok":false,"error":"dome TX queue full or link not ready"}` (raw command)
 
@@ -2478,25 +2480,48 @@ Executes supported manual command.
 - Rate limit: minimum 100 ms between calls
 - Sleep mode blocks prefixed control commands (`$ : # * @ % & !`)
 - Accepts: the keyword commands `estop`, `clear_estop`, `enable_web_control`,
-  `disable_web_control`, `reboot` (case-insensitive), and any Marcduino line,
-  routed by its prefix (`docs/commands.md`)
+  `disable_web_control`, `reboot` (case-insensitive), and any Marcduino line.
+  A `:` or `#` line is routed by Command Ownership: the body runs the lines
+  naming things it models and forwards the rest to the dome verbatim
+  (`docs/marcduino_commands.md`, which lists both)
 - Refuses: `#st` and `#sm`, in any case -- see below
-- Success: `200` `{"ok":true}`
+- Success: `200` `{"ok":true}` -- the body did it
+- Forwarded: `200` `{"ok":true,"forwarded":true}` -- handed to the dome over
+  protoR2link, and nothing more is claimed: what the dome does with it is the
+  dome's to report
 - Errors:
 - `429` `{"ok":false,"error":"rate limit exceeded"}`
 - `400` `{"ok":false,"error":"missing command"}`
 - `423` `{"error":"sleeping","hint":"POST /api/wake"}`
 - `400` `{"ok":false,"error":"unsupported command"}`
 - `400` `{"ok":false,"error":"a # line goes to the Marcduino body parser, so #st and #sm never change mode","hint":"POST /api/mode with mode=stationary or mode=driving","field":"command"}`
+- `409` `{"ok":false,"error":"estop active"}` -- a line the body owns, refused and not forwarded
+- `409` `{"ok":false,"error":"<why nothing drives that Output>"}` -- a panel line for an Output nothing drives this boot; the sentence `POST /api/servo` gives
+- `409` `{"ok":false,"error":"a $8nn line is bank 8, sound nn, and the fitted sound module has no bank 8","field":"command"}`
+- `400` `{"ok":false,"error":"a $8nn line is bank 8, sound nn, and no bank has a sound 00","field":"command"}`
+- `400` `{"ok":false,"error":"command too long (max 63)","field":"command"}` -- a Marcduino line longer than the dome TX queue carries whole; refused before any of it runs
+- `503` `{"ok":false,"error":"sound catalog is refreshing"}` -- a `$8nn` line while the sound module's catalog is being read again
+- `503` `{"ok":false,"error":"dome link not connected"}` -- a line for the dome, not queued
+- `503` `{"ok":false,"error":"dome TX queue full"}` -- a line for the dome, not queued
+- `503` `{"ok":false,"error":"command queue full"}` -- a line the body owns, not queued
 - `500` `{"ok":false,"error":"command applied but NVS save failed"}`
 
 `#st` and `#sm` read like mode keywords but are refused. Every `#`-prefixed
-line goes to the Marcduino body parser, which has a case for neither, so no
-mode ever changed -- and this route used to answer `{"ok":true}` for that
-anyway. Use `POST /api/mode` with `mode=stationary` or `mode=driving`, which is
+line is a Marcduino line and is routed before the keywords are read, so
+neither ever reached a mode change -- and this route used to answer
+`{"ok":true}` for that anyway. (The error text still says the line goes to
+the body parser; it predates Command Ownership and is kept as the refusal's
+fixed wording.) Use `POST /api/mode` with `mode=stationary` or `mode=driving`, which is
 the same capability the Console offers as `system.action.set-mode`. The Console
 action `dome.action.send-command`, which shares this route's dispatch, refuses
 the same two lines with `status=err outcome=invalid reason=out_of_range`.
+
+On the Console, the same action answers a forward with `status=ok
+outcome=queued`, never `applied`; an estop refusal with `blocked-by-state`; an
+Output nothing drives with `unavailable`, `component-disabled` and a `detail`
+field carrying the sentence above; a line for the dome that was not queued
+with `temporarily-unavailable` (link down) or `queue-full`; and an unfitted
+`$8nn` with `invalid`, `out-of-range` on `command`.
 
 The `500` carries the same meaning as `POST /api/mode`'s: the command ran, its
 config store did not reach flash, and a reboot undoes it.

@@ -13,6 +13,7 @@
 // =============================================================================
 #pragma once
 
+#include "marcduino_ownership.h"  // MarcduinoRouteOutcome
 #include "rc_action_dispatcher.h"
 
 // Forward declarations  --  headers NOT included here to avoid coupling rc_input.cpp
@@ -34,13 +35,47 @@ enum CommandSource : uint8_t;
 // stays adapter-agnostic - it knows nothing about Console Records or JSON;
 // each adapter (console_module.cpp, api_actions.cpp) maps this onto its own
 // wire vocabulary (docs/console-protocol.md s.3.3 for Console; #220).
+//
+// The last three are a Marcduino binding's line the body owns and did not run
+// (Command Ownership, include/marcduino_router.h): never queue-full, which is
+// what that branch used to answer for every line it swallowed (#449).
 enum class RcDispatchOutcome : uint8_t {
     kQueued = 0,       // every side effect the result called for was accepted
-    kQueueFull,        // at least one owning queue/dispatch call refused
+                       // (a Marcduino line forwarded to the dome counts: it
+                       // was handed on, and what the dome does is its own)
+    kQueueFull,        // at least one owning queue/dispatch call refused, or
+                       // a line for the dome could not be queued (link down)
     kBlockedByState,   // the result carried no dispatchable effect at all
                        // (e.g. an unconfigured sound-category range) -
                        // nothing was even attempted, distinct from queue-full
+    kBlockedByEstop,   // the body owns the line and refused it: estop latched
+    kOutputUndriven,   // the body owns the line, and nothing drives the
+                       // Output it names this boot (#364)
+    kNotExecutable,    // a line nothing can run as given: a malformed panel
+                       // number, "$800", or a Mood, which writes flash and is
+                       // not applied from RCInputTask
 };
+
+// A routed Marcduino line's outcome, in this module's vocabulary.
+inline RcDispatchOutcome rcDispatchOutcomeForMarcduinoRoute(MarcduinoRouteOutcome route) {
+    switch (route) {
+        case MarcduinoRouteOutcome::Applied:
+        case MarcduinoRouteOutcome::Forwarded:
+            return RcDispatchOutcome::kQueued;
+        case MarcduinoRouteOutcome::DomeLinkDown:
+        case MarcduinoRouteOutcome::DomeQueueFull:
+        case MarcduinoRouteOutcome::QueueFull:
+            return RcDispatchOutcome::kQueueFull;
+        case MarcduinoRouteOutcome::BlockedByEstop:
+            return RcDispatchOutcome::kBlockedByEstop;
+        case MarcduinoRouteOutcome::OutputUndriven:
+            return RcDispatchOutcome::kOutputUndriven;
+        case MarcduinoRouteOutcome::NotRun:
+        case MarcduinoRouteOutcome::LineTooLong:
+            break;
+    }
+    return RcDispatchOutcome::kNotExecutable;
+}
 
 // Dispatch drive commands from RC backbone intent.
 // Logs queue-full conditions; returns true if dispatch succeeded.

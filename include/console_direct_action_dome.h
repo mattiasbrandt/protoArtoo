@@ -79,6 +79,8 @@
 #include "sequence_dispatcher.h"          // sequenceStart(), sequencePoseRequest()
 #include "sequence_pose.h"                // sequencePoseRefusal()
 #include "api_drive.h"                    // executeManualCommand()
+#include "api_servo.h"                    // servoOutputUndriven()
+#include "marcduino_helpers.h"            // marcduino_panel_command_arm_id()
 #include "seq_store.h"                    // seqStoreDelete()
 #include "seq_store_index.h"              // seqStoreIndexFind()
 
@@ -86,7 +88,7 @@
 // single form field POST /api/manual-command reads (handleManualCommandPost(),
 // src/web/api_system.cpp) before handing it to executeManualCommand()
 // (src/web/api_drive.cpp) - the SAME dispatch core, reused verbatim rather
-// than reimplemented, so every prefix branch it owns ($/audio, :#/body,
+// than reimplemented, so every branch it owns ($/audio, :#/Command Ownership,
 // */@/%/&!/dome-forward, and the keyword commands) stays in that one place.
 // The rate limit handleManualCommandPost() applies (10/s) is an HTTP-abuse
 // guard, not one of this ticket's five safety guards (estop, stationary/
@@ -180,9 +182,79 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         return;
     }
 
+    if (result == ManualCommandResult::BankNotFitted ||
+        result == ManualCommandResult::BankSoundMissing ||
+        result == ManualCommandResult::LineTooLong) {
+        // $8nn with no bank 8 on the fitted module, $800, or a line longer
+        // than the dome TX buffer: the command value is one this droid cannot
+        // run, which is what OUT_OF_RANGE on this key already answers for the
+        // core's other refusals of the line itself.
+        consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE,
+                              sink);
+        return;
+    }
+    if (result == ManualCommandResult::OutputUndriven) {
+        // The detail and reason the servo.action.* rows refuse the same Output
+        // with (consoleRefusedWhileUndriven(), include/
+        // console_direct_action_servo.h): the reason alone cannot say whether a
+        // restart or Wiring is what would drive it.
+        char undriven[96] = {};
+        servoOutputUndriven(marcduino_panel_command_arm_id(command), undriven, sizeof(undriven));
+        if (sink->onRecordBegin) {
+            sink->onRecordBegin(requestId, operationName);
+        }
+        if (sink->onRecordField) {
+            sink->onRecordField(requestId, "detail", undriven);
+        }
+        if (sink->onRecordEnd) {
+            sink->onRecordEnd(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                              CONSOLE_REASON_COMPONENT_DISABLED);
+        }
+        return;
+    }
+
+    // The rest map onto the fixed Reason set (ADR 0036). A forward answers
+    // queued, never applied: handed on, and what the dome does with it is the
+    // dome's to report (ADR 0055).
+    ConsoleStatus status = CONSOLE_STATUS_ERR;
+    ConsoleOutcome outcome = CONSOLE_OUTCOME_INTERNAL_ERROR;
+    ConsoleReason reason = CONSOLE_REASON_NONE;
+    switch (result) {
+        case ManualCommandResult::Applied:
+            status = CONSOLE_STATUS_OK;
+            outcome = CONSOLE_OUTCOME_APPLIED;
+            break;
+        case ManualCommandResult::Forwarded:
+            status = CONSOLE_STATUS_OK;
+            outcome = CONSOLE_OUTCOME_QUEUED;
+            break;
+        case ManualCommandResult::DomeLinkDown:
+        case ManualCommandResult::SoundCatalogBusy:
+            outcome = CONSOLE_OUTCOME_UNAVAILABLE;
+            reason = CONSOLE_REASON_TEMPORARILY_UNAVAILABLE;
+            break;
+        case ManualCommandResult::DomeQueueFull:
+        case ManualCommandResult::QueueFull:
+            outcome = CONSOLE_OUTCOME_QUEUE_FULL;
+            reason = CONSOLE_REASON_QUEUE_FULL;
+            break;
+        case ManualCommandResult::BlockedByEstop:
+            outcome = CONSOLE_OUTCOME_BLOCKED;
+            reason = CONSOLE_REASON_BLOCKED_BY_STATE;
+            break;
+        case ManualCommandResult::Unsupported:
+        case ManualCommandResult::ShadowedModeKeyword:
+        case ManualCommandResult::SaveFailed:
+        case ManualCommandResult::OutputUndriven:
+        case ManualCommandResult::BankNotFitted:
+        case ManualCommandResult::BankSoundMissing:
+        case ManualCommandResult::LineTooLong:
+            // Answered above; a result reaching here is a new value nobody
+            // mapped, and says so rather than claiming success.
+            break;
+    }
     if (sink->onRecordResult) {
-        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,
-                            CONSOLE_REASON_NONE);
+        sink->onRecordResult(requestId, status, outcome, reason);
     }
 }
 

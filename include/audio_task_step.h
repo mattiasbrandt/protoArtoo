@@ -61,6 +61,7 @@ enum AudioStepIgnoreReason : uint8_t {
     AUDIO_STEP_IGNORE_NONE = 0,
     AUDIO_STEP_IGNORE_SLEEP,                // play-type command while sleeping
     AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND,  // catalog command on non-catalog driver
+    AUDIO_STEP_IGNORE_BANK_NOT_FITTED,      // $8nn, and the module has no bank 8
 };
 
 // -----------------------------------------------------------------------------
@@ -102,6 +103,13 @@ struct AudioStepCommandInputs {
     uint32_t nowMs = 0;
     bool sleepMode = false;
     bool catalogCapable = false;
+    // The page of the bank a $8nn line names (AUDIO_DOLLAR_BANK), as the
+    // fitted module reported it (audioCatalogBankPage(), include/
+    // audio_driver.h), or '\0' where it reported no such bank. The answer
+    // rather than the bank table: one byte that sits in this struct's padding,
+    // because AudioTask's stack chain is recorded to the byte
+    // (tools/task_stack_recipes.json) and a pointer and a count cost 16 B.
+    char dollarBankPage = '\0';
     const AudioPlaybackConfig* playback = nullptr;
     const AudioNamedTracks* named = nullptr;
     const AudioBindingCache* bindings = nullptr;

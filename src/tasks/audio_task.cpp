@@ -142,6 +142,19 @@ bool audioIsCatalogReady() {
     return driver()->isCatalogReady();
 }
 
+AudioBankFit audioBankFitted(uint8_t bank) {
+    if ((driver()->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
+        return AudioBankFit::NotFitted;
+    }
+    if (!audioCatalogReaderAcquire()) {
+        return AudioBankFit::CatalogBusy;
+    }
+    const bool found = audioCatalogBankPage(driver()->getCatalogBanks(),
+                                            driver()->getCatalogBankCount(), bank, nullptr);
+    audioCatalogReaderRelease();
+    return found ? AudioBankFit::Fitted : AudioBankFit::NotFitted;
+}
+
 // Audio output is staged at reboot (ADR 0027); when inactive, commands are
 // accepted and discarded so callers (sequence engine, web routes) see the same
 // success semantics as the old drain-and-discard task.
@@ -901,6 +914,8 @@ void audioTask(void* pvParameters) {
             cmdIn.named = &named;
             cmdIn.bindings = &s_audioBindings;
             cmdIn.randomValue = esp_random();
+            audioCatalogBankPage(driver()->getCatalogBanks(), driver()->getCatalogBankCount(),
+                                 AUDIO_DOLLAR_BANK, &cmdIn.dollarBankPage);
             const AudioStepCommandActions ca = audioStepCommand(step, cmdIn, cmd);
 
             if (ca.ignored == AUDIO_STEP_IGNORE_SLEEP) {
@@ -909,6 +924,12 @@ void audioTask(void* pvParameters) {
             } else if (ca.ignored == AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND) {
                 PA_LOG_DEBUG(TAG, "[%s] %s ignored (unsupported backend)",
                              commandSourceToString(cmd.source), playCommandName(cmd.type));
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_BANK_NOT_FITTED) {
+                PA_LOG_WARN(TAG, "[%s] %s is bank %u, sound %s (ShadowMD numbering) - the fitted "
+                                 "sound module has no bank %u, not played",
+                            commandSourceToString(cmd.source), cmd.dollar,
+                            (unsigned)AUDIO_DOLLAR_BANK, cmd.dollar + 2,
+                            (unsigned)AUDIO_DOLLAR_BANK);
             }
             if (ca.hasIntent) {
                 executePlaybackIntent(ca.intent, cmd.source);

@@ -188,6 +188,19 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
             } else if (action.type == AUDIO_ACTION_VOLUME_UP) {
                 request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
                 request.volume = audioClampVolume(state.currentVol + 1);
+            } else if (action.type == AUDIO_ACTION_PLAY_BANKED) {
+                // Played only where the module has the bank: a module that has
+                // none would otherwise be sent a sound it cannot find, and a
+                // raw-track reading is the wrong file this form replaced.
+                if (!in.catalogCapable || action.bank != AUDIO_DOLLAR_BANK ||
+                    in.dollarBankPage == '\0') {
+                    actions.ignored = AUDIO_STEP_IGNORE_BANK_NOT_FITTED;
+                    break;
+                }
+                request.kind = AUDIO_PLAYBACK_REQ_DIRECT_BANKED;
+                request.banked.index = action.track;
+                request.banked.bank = action.bank;
+                request.banked.page = in.dollarBankPage;
             } else if (action.type == AUDIO_ACTION_VOLUME_DOWN) {
                 request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
                 request.volume = (state.currentVol > AUDIO_VOLUME_MIN)

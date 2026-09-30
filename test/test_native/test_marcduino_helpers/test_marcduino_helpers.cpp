@@ -28,6 +28,16 @@ void setUp() {
 void tearDown() {
 }
 
+// --- marcduino_panel_command_arm_id: only digits make a panel number (#449) ---
+
+void test_panel_number_that_is_not_digits_names_no_output() {
+    TEST_ASSERT_EQUAL_UINT8(254, marcduino_panel_command_arm_id(":OPxx"));
+    TEST_ASSERT_EQUAL_UINT8(254, marcduino_panel_command_arm_id(":CL0x"));
+    TEST_ASSERT_EQUAL_UINT8(254, marcduino_panel_command_arm_id(":MV01ab"));
+    TEST_ASSERT_EQUAL_UINT8(255, marcduino_panel_command_arm_id(":OP00"));
+    TEST_ASSERT_EQUAL_UINT8(0, marcduino_panel_command_arm_id(":OF01"));
+}
+
 // --- marcduino_panel_to_arm_id (:OP/:CL) -------------------------------------
 
 void test_panel1_maps_to_arm0() {
@@ -198,6 +208,7 @@ void test_full_droid_body_action_noop_cases() {
 int main() {
     UNITY_BEGIN();
 
+    RUN_TEST(test_panel_number_that_is_not_digits_names_no_output);
     RUN_TEST(test_panel1_maps_to_arm0);
     RUN_TEST(test_panel2_maps_to_arm1);
     RUN_TEST(test_panel3_maps_to_arm2_aux1);

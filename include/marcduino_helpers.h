@@ -9,7 +9,10 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>  // size_t
 #include <stdint.h>
+#include <stdlib.h>  // atoi
+#include <string.h>  // strcmp, strlen, strncmp
 
 #include "ledc_pwm.h"  // SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US
 
@@ -73,12 +76,92 @@ inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
 }
 
 // -----------------------------------------------------------------------------
+// marcduino_is_panel_command()
+// Whether a line has one of the four panel-family heads: :OP, :CL, :OF, :MV.
+// -----------------------------------------------------------------------------
+inline bool marcduino_is_panel_command(const char* line) {
+    return line != nullptr && line[0] == ':' &&
+           (strncmp(line, ":OP", 3) == 0 || strncmp(line, ":CL", 3) == 0 ||
+            strncmp(line, ":OF", 3) == 0 || strncmp(line, ":MV", 3) == 0);
+}
+
+// True when every character of s is a decimal digit and there are at least
+// `minDigits` of them.
+inline bool marcduino_all_digits(const char* s, size_t minDigits) {
+    size_t n = 0;
+    for (; s[n] != '\0'; ++n) {
+        if (s[n] < '0' || s[n] > '9') {
+            return false;
+        }
+    }
+    return n >= minDigits;
+}
+
+// -----------------------------------------------------------------------------
+// marcduino_panel_command_well_formed()
+// Whether a panel-family line carries a number made of digits and nothing
+// else: :OPnn/:CLnn/:OFnn take two or more digits, :MVnn takes two digits and
+// a value of one or more. atoi() reads anything else as 0, and 0 is the
+// ARM1+ARM2 broadcast, so ":OPxx" used to open both arms (#449). A line with a
+// panel head that fails this is malformed: the body refuses it and it is not
+// forwarded (include/marcduino_ownership.h).
+// -----------------------------------------------------------------------------
+inline bool marcduino_panel_command_well_formed(const char* line) {
+    if (!marcduino_is_panel_command(line)) {
+        return false;
+    }
+    if (strncmp(line, ":MV", 3) == 0) {
+        return strlen(line) >= 6 && marcduino_all_digits(line + 3, 3);
+    }
+    return marcduino_all_digits(line + 3, 2);
+}
+
+// -----------------------------------------------------------------------------
+// marcduino_panel_command_arm_id()
+// The Output a well-formed panel-family line (:OPnn, :CLnn, :OFnn, :MVnn...)
+// names, read the one way both the body handler and the ownership resolver
+// read it (include/marcduino_ownership.h). Two readings of one number is how a
+// line the resolver calls the body's could reach a handler that refuses it.
+//
+//   :OP/:CL/:OF  the digits after the head, via marcduino_panel_to_arm_id()
+//                (1-5, and 0/99 broadcast)
+//   :MV          the two digits after the head, via
+//                marcduino_panel_to_arm_id_mv() (1-5, no broadcast)
+//
+// Returns 254 for a line marcduino_panel_command_well_formed() refuses, or a
+// number no Output answers to.
+// -----------------------------------------------------------------------------
+inline uint8_t marcduino_panel_command_arm_id(const char* line) {
+    if (!marcduino_panel_command_well_formed(line)) {
+        return 254;
+    }
+    if (strncmp(line, ":MV", 3) == 0) {
+        return marcduino_panel_to_arm_id_mv(((line[3] - '0') * 10) + (line[4] - '0'));
+    }
+    return marcduino_panel_to_arm_id(atoi(line + 3));
+}
+
+// -----------------------------------------------------------------------------
+// marcduino_is_body_hash_command()
+// The '#' lines the body acts on: the dome's sleep and wake sync, and the
+// body's own heartbeat echoed back. Every other '#' line is the dome's.
+//
+// One home for the three, read by the body handler and the ownership resolver
+// alike, so the list the body answers and the list it executes cannot differ.
+// -----------------------------------------------------------------------------
+inline bool marcduino_is_body_hash_command(const char* line) {
+    return line != nullptr &&
+           (strcmp(line, "#APSL") == 0 || strcmp(line, "#APWU") == 0 ||
+            strcmp(line, "#PAHB") == 0);
+}
+
+// -----------------------------------------------------------------------------
 // marcduino_mv_value_to_pulse_us()
 // Convert `:MVxxdddd` values to servo pulse width in microseconds.
 //
 // Marcduino direct numeric semantics:
 //   - 0000-0180 => degrees across the configured servo pulse range
-//   - >0544     => direct microseconds
+//   - above SERVO_PULSE_MIN_US (500) => direct microseconds
 //
 // Inputs are not clamped here. Caller-side validation decides what ranges are
 // accepted; this helper only models the conversion rule.

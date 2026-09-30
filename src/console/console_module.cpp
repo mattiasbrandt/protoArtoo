@@ -1612,10 +1612,12 @@ static bool consoleFindRobotActionId(const char* canonicalName, RobotActionId* o
 }
 
 // Maps the dispatch core's adapter-agnostic outcome onto a Console outcome +
-// reason. Only the three outcomes rcDispatchSingleAction()/
-// dispatchRcTriggerActionTest() can produce are handled; there is no default
-// case so a future RcDispatchOutcome addition fails this switch at compile
-// time instead of silently falling through to a wrong reason.
+// reason. Every outcome rcDispatchSingleAction()/dispatchRcTriggerActionTest()
+// can produce is handled; there is no default case so a future
+// RcDispatchOutcome addition fails this switch at compile time instead of
+// silently falling through to a wrong reason. The last three are a
+// dome.action.marcduino-command line the body owns and did not run (#449); an
+// undriven Output answers what the servo.action.* rows answer for it.
 static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, ConsoleReason* outReason) {
     switch (outcome) {
         case RcDispatchOutcome::kQueued:
@@ -1626,6 +1628,15 @@ static ConsoleOutcome consoleMapDispatchOutcome(RcDispatchOutcome outcome, Conso
             return CONSOLE_OUTCOME_QUEUE_FULL;
         case RcDispatchOutcome::kBlockedByState:
             *outReason = CONSOLE_REASON_TEMPORARILY_UNAVAILABLE;
+            return CONSOLE_OUTCOME_UNAVAILABLE;
+        case RcDispatchOutcome::kBlockedByEstop:
+            *outReason = CONSOLE_REASON_BLOCKED_BY_STATE;
+            return CONSOLE_OUTCOME_BLOCKED;
+        case RcDispatchOutcome::kOutputUndriven:
+            *outReason = CONSOLE_REASON_COMPONENT_DISABLED;
+            return CONSOLE_OUTCOME_UNAVAILABLE;
+        case RcDispatchOutcome::kNotExecutable:
+            *outReason = CONSOLE_REASON_NOT_EXECUTABLE;
             return CONSOLE_OUTCOME_UNAVAILABLE;
     }
     *outReason = CONSOLE_REASON_NONE;

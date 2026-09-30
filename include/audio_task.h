@@ -154,3 +154,14 @@ uint8_t audioGetCapabilities();
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count);
 const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count);
 bool audioIsCatalogReady();
+// Whether the fitted sound module reported a bank numbered `bank` (Core 0
+// only, like the accessors above). What a $8nn line asks before it is taken:
+// the answer AudioTask gives the same line (audioStepCommand()), asked
+// early so the sender hears it.
+//
+// The bank table is read as a catalog reader (include/audio_catalog_gate.h):
+// a refresh can be replacing it on AudioTask while this runs on the web or
+// Console task. While one holds the gate the answer is CatalogBusy - never a
+// "not fitted" read from storage being rewritten (#449).
+enum class AudioBankFit : uint8_t { Fitted, NotFitted, CatalogBusy };
+AudioBankFit audioBankFitted(uint8_t bank);

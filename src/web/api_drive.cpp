@@ -30,17 +30,18 @@
 #include "config_write_lock.h"  // saveCommandedMode() is the mode save's Write Window
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "audio_dollar_parser.h"  // audioDollarBankForm()
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config_cache.h"
 #include "config_store.h"  // saveConfigToNvs()
 #include "dome_link.h"
-#include "dome_rx_parser.h"
 #include "drive_arbiter.h"
 #include "drive_speed_preset.h"
 #include "failsafe_gate.h"
 #include "logging.h"
-#include "mood.h"
+#include "marcduino_router.h"  // routeMarcduinoLine(), marcduinoForwardToDome()
+#include "mood.h"              // applyMood(), moodIdFromSeCommand()
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "sequence_dispatcher.h"
@@ -239,6 +240,33 @@ bool saveCommandedMode() {
 }
 
 
+// A routed Marcduino line's outcome, in this dispatcher's vocabulary. NotRun is
+// a line the body owns but cannot run - an :MV with no value - which is what
+// Unsupported already answers for a command nothing here will execute.
+static ManualCommandResult manualCommandResultFor(MarcduinoRouteOutcome outcome) {
+    switch (outcome) {
+        case MarcduinoRouteOutcome::Applied:
+            return ManualCommandResult::Applied;
+        case MarcduinoRouteOutcome::Forwarded:
+            return ManualCommandResult::Forwarded;
+        case MarcduinoRouteOutcome::DomeLinkDown:
+            return ManualCommandResult::DomeLinkDown;
+        case MarcduinoRouteOutcome::DomeQueueFull:
+            return ManualCommandResult::DomeQueueFull;
+        case MarcduinoRouteOutcome::BlockedByEstop:
+            return ManualCommandResult::BlockedByEstop;
+        case MarcduinoRouteOutcome::OutputUndriven:
+            return ManualCommandResult::OutputUndriven;
+        case MarcduinoRouteOutcome::QueueFull:
+            return ManualCommandResult::QueueFull;
+        case MarcduinoRouteOutcome::LineTooLong:
+            return ManualCommandResult::LineTooLong;
+        case MarcduinoRouteOutcome::NotRun:
+            break;
+    }
+    return ManualCommandResult::Unsupported;
+}
+
 ManualCommandResult executeManualCommand(const char* raw) {
     if (raw == nullptr || raw[0] == '\0') {
         return ManualCommandResult::Unsupported;
@@ -251,6 +279,24 @@ ManualCommandResult executeManualCommand(const char* raw) {
 
     // $ - audio commands: route to AudioTask
     if (prefix == '$') {
+        // $8nn is bank 8, sound nn. Where the module has no bank 8 it is refused
+        // here, so the sender hears why; AudioTask asks the same of the same
+        // line from the paths that do not come through this door.
+        uint8_t bank = 0;
+        uint16_t sound = 0;
+        if (audioDollarBankForm(raw, &bank, &sound)) {
+            if (sound == 0) {
+                return ManualCommandResult::BankSoundMissing;
+            }
+            switch (audioBankFitted(bank)) {
+                case AudioBankFit::Fitted:
+                    break;
+                case AudioBankFit::NotFitted:
+                    return ManualCommandResult::BankNotFitted;
+                case AudioBankFit::CatalogBusy:
+                    return ManualCommandResult::SoundCatalogBusy;
+            }
+        }
         // A full audio queue lands on Unsupported, which is what this branch has
         // always answered: the bool it returns covers "not a $ command I know"
         // and "queue full" alike, and both reached the caller's single failure
@@ -270,24 +316,24 @@ ManualCommandResult executeManualCommand(const char* raw) {
         return ManualCommandResult::ShadowedModeKeyword;
     }
 
-    // : and # - body-processed Marcduino: servo sequences, panel cmds, config
+    // : and # - Command Ownership (ADR 0055): the body runs the lines naming
+    // things it models and forwards the rest to the dome
+    // (include/marcduino_router.h). Prefix no longer decides who answers. A
+    // Mood is the body's and is applied here, ahead of the router, which never
+    // applies one (its header says why).
     if (prefix == ':' || prefix == '#') {
-        // Mood commands (:SE10/11/13/14) are not valid body sequences so
-        // parseMarcduinoCommand() would silently discard them. Intercept first.
-        uint8_t moodId = moodIdFromSeCommand(raw);
+        const uint8_t moodId = moodIdFromSeCommand(raw);
         if (moodId != 0) {
             applyMood(moodId);
             return ManualCommandResult::Applied;
         }
-        parseMarcduinoCommand(raw);
-        // Always accept - body handles or discards per routing table
-        return ManualCommandResult::Applied;
+        return manualCommandResultFor(routeMarcduinoLine(raw));
     }
 
-    // * @ % & ! - dome-bound Marcduino: forward to dome TX queue
+    // * @ % & ! - dome-bound Marcduino, forwarded uninterpreted (ADR 0045) and
+    // answered with what the forward did, never plain success.
     if (prefix == '*' || prefix == '@' || prefix == '%' || prefix == '&' || prefix == '!') {
-        domeQueueTx(raw);
-        return ManualCommandResult::Applied;
+        return manualCommandResultFor(marcduinoForwardToDome(raw));
     }
 
     // Keyword commands (estop, reboot, etc.) - case-insensitive. Only build the
@@ -470,9 +516,10 @@ void handleDrivePost(WebRequest& req) {
 }
 
 // POST /api/dome/cmd - forward a raw Marcduino command verbatim to the dome
-// over the dome link TX queue (UART2 or WiFi/UDP), bypassing the body's
-// Marcduino prefix router. Use this for dome-native prefixes (:, *, @, etc.)
-// that the body would otherwise consume or reject.
+// over the dome link TX queue (UART2 or WiFi/UDP), bypassing Command Ownership
+// (include/marcduino_router.h). Use this for a line the body owns that is meant
+// for the dome instead - :OP01 is body arm 1 on the manual-command route and
+// dome panel 1 here (ADR 0055).
 void handleDomeCmdPost(WebRequest& req) {
     // Borrowed rather than copied: the length limit below is the contract this
     // endpoint enforces, and a copy-out buffer would silently enforce its own
@@ -491,6 +538,12 @@ void handleDomeCmdPost(WebRequest& req) {
             webSendJsonError(req, 503, "sequence queue full");
             return;
         }
+    } else if (strlen(raw) > DOME_TX_LINE_MAX) {
+        // domeQueueTx() would queue it cut to DOME_TX_LINE_MAX characters and
+        // answer true: a different line from the one sent (#449). The 127 above
+        // bounds every cmd; a line forwarded to the dome is bounded by the queue.
+        webSendJsonError(req, 400, "cmd too long (max 63)");
+        return;
     } else if (!domeQueueTx(raw)) {
         webSendJsonError(req, 503, "dome TX queue full or link not ready");
         return;

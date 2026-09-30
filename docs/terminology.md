@@ -107,16 +107,17 @@ and the wider ecosystem it came from.
 In this repo, "Marcduino command" usually means:
 - ASCII command strings with a prefix (for example `:`, `$`, `#`, `*`, `@`, `%`)
 - carriage-return terminated lines (`\r`)
-- routed based on prefix ownership (body-owned vs dome-owned)
+- routed by Command Ownership: the body runs a line that names something it
+  models and forwards the rest to the dome (`docs/marcduino_commands.md`)
 
 Where it appears:
 - protocol docs: `docs/goal.md`, `docs/commands.md`
-- body parser path: `src/drivers/marcduino_rx.cpp`
+- body parser path: `src/drivers/dome_rx_parser.cpp`; routing: `include/marcduino_router.h`
 - shared helpers: `include/marcduino.h`, `include/marcduino_helpers.h`
 
 Why it matters:
 - It is the language used between body and dome over serial.
-- Prefix routing decisions determine whether commands are executed, forwarded, or ignored.
+- Ownership decides whether a command is executed on the body or forwarded to the dome.
 
 ## ReelTwo (Reeltwo)
 

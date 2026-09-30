@@ -38,47 +38,36 @@ static const char* TAG = "MARCDUINO";
 
 // -----------------------------------------------------------------------------
 // handlePanelCommand()
+// :OPnn / :CLnn / :OFnn / :MVnnvvvv on a body Output. The number is read by
+// marcduino_panel_command_arm_id(), the same reading the ownership resolver
+// takes (include/marcduino_ownership.h), so a line routed here is one this
+// handler can place.
+//
+// :OF is a flutter, a Move Shape the body models (ADR 0049), and it ends
+// open. Until the flutter oscillation is performed it resolves to that open
+// end - the one part of the shape the body can already do.
 // -----------------------------------------------------------------------------
-bool handlePanelCommand(const char* cmd) {
-    if (cmd[0] != ':' || (cmd[1] != 'O' && cmd[1] != 'C' && cmd[1] != 'M')) {
-        return false;
-    }
-
-    if (strlen(cmd) < 5) {
-        return false;
+MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
+    const uint8_t armId = marcduino_panel_command_arm_id(cmd);
+    if (armId == 254) {
+        return MarcduinoBodyOutcome::NotHandled;
     }
 
     ServoCommand servoCmd = {};
     servoCmd.source = SRC_INTERNAL;
     servoCmd.timestampMs = millis();
+    servoCmd.armId = armId;
 
-    if (strncmp(cmd, ":OP", 3) == 0) {
+    if (strncmp(cmd, ":OP", 3) == 0 || strncmp(cmd, ":OF", 3) == 0) {
         servoCmd.type = SERVO_CMD_OPEN;
-        int panel = atoi(cmd + 3);
-        servoCmd.armId = marcduino_panel_to_arm_id(panel);
-        if (servoCmd.armId == 254)
-            return false;
     } else if (strncmp(cmd, ":CL", 3) == 0) {
         servoCmd.type = SERVO_CMD_CLOSE;
-        int panel = atoi(cmd + 3);
-        servoCmd.armId = marcduino_panel_to_arm_id(panel);
-        if (servoCmd.armId == 254)
-            return false;
-    } else if (strncmp(cmd, ":MV", 3) == 0) {
-        servoCmd.type = SERVO_CMD_POSITION;
-        int panel = ((cmd[3] - '0') * 10) + (cmd[4] - '0');
-        const char* value_str = cmd + 5;
-        if (value_str[0] == '\0')
-            return false;
-        int value = atoi(value_str);
-
-        servoCmd.armId = marcduino_panel_to_arm_id_mv(panel);
-        if (servoCmd.armId == 254)
-            return false;
-
-        servoCmd.positionUs = marcduino_mv_value_to_pulse_us(value);
     } else {
-        return false;
+        // :MV - marcduino_panel_command_arm_id() admits no fourth head.
+        // marcduino_panel_command_well_formed() has already required a value
+        // of digits after the two-digit number.
+        servoCmd.type = SERVO_CMD_POSITION;
+        servoCmd.positionUs = marcduino_mv_value_to_pulse_us(atoi(cmd + 5));
     }
 
     taskENTER_CRITICAL(&robotStateMux);
@@ -87,15 +76,15 @@ bool handlePanelCommand(const char* cmd) {
 
     if (estop) {
         PA_LOG_WARN(TAG, "[SERVO] panel command rejected - estop active");
-        return false;
+        return MarcduinoBodyOutcome::BlockedByEstop;
     }
 
     if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
         logQueueDrop(QUEUE_SERVO_CMD, "servo panel command");
-    } else {
-        PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
+        return MarcduinoBodyOutcome::QueueFull;
     }
-    return true;
+    PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
+    return MarcduinoBodyOutcome::Applied;
 }
 
 // -----------------------------------------------------------------------------
@@ -103,43 +92,51 @@ bool handlePanelCommand(const char* cmd) {
 // Parse Marcduino sequence commands for body-owned behavior.
 //
 // Direct body sequence IDs: :SE30-:SE36
-// Full-droid sequence IDs:  :SE01-:SE09, :SE15, :SE16 (decomposed locally)
+// Full-droid sequence IDs:  :SE01-:SE09, :SE15, :SE16 (the body half, from
+//                           marcduino_full_droid_body_actions(); the dome half
+//                           is the router's to forward, never this handler's)
 //
 // A body sequence is a Factory Sequence built from Body Steps (ADR 0049), so it
 // starts through the Sequence Coordinator under its DM:SE<nn> name rather than
 // as a command to ServoTask.
+//
+// A full-droid half that could do nothing at all - no audio in it, and its body
+// routine held by estop - answers BlockedByEstop; one that played its audio
+// with the routine held answers Applied, as the RC droid_seq_* tokens do.
 // -----------------------------------------------------------------------------
-bool handleSequenceCommand(const char* cmd) {
+MarcduinoBodyOutcome handleSequenceCommand(const char* cmd) {
     if (cmd[0] != ':' || cmd[1] != 'S' || cmd[2] != 'E') {
-        return false;
+        return MarcduinoBodyOutcome::NotHandled;
     }
 
     const int seqId = atoi(cmd + 3);
-    int mappedSeqId = -1;
     FullDroidBodyAction bodyAction{nullptr, -1};
 
     if (marcduino_sequence_id_valid(seqId)) {
-        mappedSeqId = seqId;
+        bodyAction.bodySeqId = seqId;
     } else {
         bodyAction = marcduino_full_droid_body_actions(seqId);
         if (bodyAction.audioDollarCmd == nullptr && bodyAction.bodySeqId < 0) {
-            return false;
+            return MarcduinoBodyOutcome::NotHandled;
         }
-        mappedSeqId = bodyAction.bodySeqId;
     }
 
-    bool handled = false;
+    bool acted = false;
+    bool queueFull = false;
+    bool heldByEstop = false;
     if (bodyAction.audioDollarCmd != nullptr) {
-        handled = true;
-        if (!audioQueueDollar(bodyAction.audioDollarCmd, SRC_INTERNAL)) {
+        if (audioQueueDollar(bodyAction.audioDollarCmd, SRC_INTERNAL)) {
+            acted = true;
+        } else {
             PA_LOG_WARN(TAG, "[AUDIO] queue full, dropped: %s", bodyAction.audioDollarCmd);
+            queueFull = true;
         }
     }
 
     int queuedSeqId = -1;
-    if (mappedSeqId >= 30) {
-        if (!marcduino_sequence_id_valid(mappedSeqId)) {
-            return false;
+    if (bodyAction.bodySeqId >= 30) {
+        if (!marcduino_sequence_id_valid(bodyAction.bodySeqId)) {
+            return MarcduinoBodyOutcome::NotHandled;
         }
 
         taskENTER_CRITICAL(&robotStateMux);
@@ -148,23 +145,62 @@ bool handleSequenceCommand(const char* cmd) {
 
         if (estop) {
             PA_LOG_WARN(TAG, "[SEQ] body routine rejected - estop active");
-        } else if (!sequenceStart(sequenceBodyRoutineName(mappedSeqId), SRC_INTERNAL)) {
+            heldByEstop = true;
+        } else if (!sequenceStart(sequenceBodyRoutineName(bodyAction.bodySeqId), SRC_INTERNAL)) {
             PA_LOG_WARN(TAG, "[SEQ] body routine :SE%02d not started - sequence queue full",
-                        mappedSeqId);
+                        bodyAction.bodySeqId);
+            queueFull = true;
         } else {
-            handled = true;
-            queuedSeqId = mappedSeqId;
+            acted = true;
+            queuedSeqId = bodyAction.bodySeqId;
         }
-    }
-
-    if (!handled) {
-        return false;
     }
 
     PA_LOG_INFO(TAG, "[MARCDUINO] SE%02d -> audio=%s seq=%d", seqId,
                 bodyAction.audioDollarCmd != nullptr ? bodyAction.audioDollarCmd : "none",
                 queuedSeqId);
-    return true;
+    if (queueFull) {
+        return MarcduinoBodyOutcome::QueueFull;
+    }
+    if (!acted && heldByEstop) {
+        return MarcduinoBodyOutcome::BlockedByEstop;
+    }
+    return MarcduinoBodyOutcome::Applied;
+}
+
+// -----------------------------------------------------------------------------
+// executeMarcduinoBodyCommand()
+// The body's half of a builder's line, once the router has decided the body
+// owns it. ':' and '#' only - '$' and the raw families never reach it.
+// -----------------------------------------------------------------------------
+MarcduinoBodyOutcome executeMarcduinoBodyCommand(const char* line) {
+    if (!line || line[0] == '\0')
+        return MarcduinoBodyOutcome::NotHandled;
+
+    if (line[0] == ':') {
+        if (line[1] == 'S' && line[2] == 'E') {
+            return handleSequenceCommand(line);
+        }
+        return handlePanelCommand(line);
+    }
+
+    if (line[0] == '#') {
+        if (!marcduino_is_body_hash_command(line)) {
+            return MarcduinoBodyOutcome::NotHandled;
+        }
+        if (strcmp(line, "#PAHB") == 0) {
+            PA_LOG_DEBUG(TAG, "[HB] body heartbeat echo ignored");
+            return MarcduinoBodyOutcome::Applied;
+        }
+        const bool syncSleep = strcmp(line, "#APSL") == 0;
+        if (commandedSetSleep(syncSleep, SRC_INTERNAL)) {
+            requestStatusBroadcastNow();
+            PA_LOG_INFO(TAG, "[SYSTEM] sleep sync from dome: %s", syncSleep ? "sleep" : "wake");
+        }
+        return MarcduinoBodyOutcome::Applied;
+    }
+
+    return MarcduinoBodyOutcome::NotHandled;
 }
 
 // -----------------------------------------------------------------------------
@@ -177,12 +213,16 @@ bool parseMarcduinoCommand(const char* line) {
 
     switch (line[0]) {
         case ':':
-            // Panel or sequence command
-            if (line[1] == 'S' && line[2] == 'E') {
-                return handleSequenceCommand(line);
-            } else {
-                return handlePanelCommand(line);
+        case '#': {
+            // Panel, sequence or '#' line. Held by estop reads as not handled,
+            // as it always has here; a queue that refused still recognised it.
+            const MarcduinoBodyOutcome outcome = executeMarcduinoBodyCommand(line);
+            if (outcome == MarcduinoBodyOutcome::NotHandled && line[0] == '#') {
+                PA_LOG_DEBUG(TAG, "[CONFIG] unhandled body command: %s", line);
             }
+            return outcome == MarcduinoBodyOutcome::Applied ||
+                   outcome == MarcduinoBodyOutcome::QueueFull;
+        }
 
         case '$':
             // Route to AudioTask queue (non-blocking). The queue send will fail
@@ -206,34 +246,6 @@ bool parseMarcduinoCommand(const char* line) {
         case '%':
             PA_LOG_DEBUG(TAG, "Slave-out command deferred to dome link: %s", line);
             return false;
-
-        case '#': {
-            bool syncSleep = false;
-            bool syncWake = false;
-            if (strcmp(line, "#APSL") == 0) {
-                syncSleep = true;
-            } else if (strcmp(line, "#APWU") == 0) {
-                syncWake = true;
-            }
-
-            if (syncSleep || syncWake) {
-                bool changed = commandedSetSleep(syncSleep, SRC_INTERNAL);
-
-                if (changed) {
-                    requestStatusBroadcastNow();
-                    PA_LOG_INFO(TAG, "[SYSTEM] sleep sync from dome: %s",
-                                syncSleep ? "sleep" : "wake");
-                }
-                return true;
-            }
-
-            if (strcmp(line, "#PAHB") == 0) {
-                PA_LOG_DEBUG(TAG, "[HB] body heartbeat echo ignored");
-                return true;
-            }
-            PA_LOG_DEBUG(TAG, "[CONFIG] unhandled body command: %s", line);
-            return true;
-        }
 
         case '&':
             PA_LOG_DEBUG(TAG, "Marcduino I2C command not applicable to body controller: %s", line);

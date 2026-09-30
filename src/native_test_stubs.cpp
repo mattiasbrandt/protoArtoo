@@ -75,16 +75,32 @@ void domeUartRelease(DomeUartOwner requester) {
         g_test_dome_uart_owner = DOME_UART_NONE;
     }
 }
-bool domeConnected() { return true; }
+#include "marcduino_test_hooks.h"  // declares the dome link and body handler seams
+bool g_test_dome_connected = true;
+bool g_test_dome_tx_ok = true;
+unsigned g_test_dome_tx_calls = 0;
+char g_test_dome_last_tx[64] = {};
+MarcduinoBodyOutcome g_test_marcduino_body_outcome = MarcduinoBodyOutcome::Applied;
+char g_test_marcduino_last_line[32] = {};
 
-// sequence_dispatcher.cpp needs domeQueueTx.
-// No-op stub: routing tests use sequenceLookup() directly and do not need
-// side-effect capture from this function. audioQueueDollar()'s real stub
+bool domeConnected() { return g_test_dome_connected; }
+
+// sequence_dispatcher.cpp needs domeQueueTx, and Command Ownership's forward
+// (include/marcduino_router.h) is asserted through it: it records the line it
+// was handed and refuses when g_test_dome_tx_ok says so (#449). The sequence
+// routing tests use sequenceLookup() directly and never read it. audioQueueDollar()'s real stub
 // (records calls, respects g_test_audio_queue_ok) lives below with its
 // sibling audio command queue stubs, #258 - it used to be this unconditional
 // no-op, which left g_test_audio_dollar_calls/g_test_audio_last_dollar
 // declared but never written by anything.
-bool domeQueueTx(const char* /*cmd*/) { return true; }
+bool domeQueueTx(const char* cmd) {
+    if (!g_test_dome_tx_ok) {
+        return false;
+    }
+    g_test_dome_tx_calls++;
+    snprintf(g_test_dome_last_tx, sizeof(g_test_dome_last_tx), "%s", cmd != nullptr ? cmd : "");
+    return true;
+}
 
 #include "audio_task.h"
 
@@ -219,9 +235,28 @@ void requestSystemRestart(uint32_t /*delayMs*/) {
 }
 
 #include "dome_rx_parser.h"
-bool parseMarcduinoCommand(const char* /*line*/) {
+bool parseMarcduinoCommand(const char* line) {
     g_test_marcduino_calls++;
+    snprintf(g_test_marcduino_last_line, sizeof(g_test_marcduino_last_line), "%s",
+             line != nullptr ? line : "");
     return true;
+}
+
+MarcduinoBodyOutcome executeMarcduinoBodyCommand(const char* line) {
+    g_test_marcduino_calls++;
+    snprintf(g_test_marcduino_last_line, sizeof(g_test_marcduino_last_line), "%s",
+             line != nullptr ? line : "");
+    return g_test_marcduino_body_outcome;
+}
+
+void marcduinoTestHooksReset() {
+    g_test_dome_connected = true;
+    g_test_dome_tx_ok = true;
+    g_test_dome_tx_calls = 0;
+    g_test_dome_last_tx[0] = '\0';
+    g_test_marcduino_body_outcome = MarcduinoBodyOutcome::Applied;
+    g_test_marcduino_last_line[0] = '\0';
+    g_test_marcduino_calls = 0;
 }
 
 #include "mood.h"
@@ -379,6 +414,24 @@ const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
         *count = g_test_audio_catalog_bank_count;
     }
     return g_test_audio_catalog_banks;
+}
+
+// The real function's own question, asked of the stub's capability word and
+// bank table, so a test fits a bank 8 the way a module would report one.
+#include "audio_catalog_gate.h"  // audioCatalogReaderAcquire()
+// The catalog reader gate is the real one (audio_catalog_gate.cpp is
+// native-built), so a test that closes it sees what a refresh would cause.
+AudioBankFit audioBankFitted(uint8_t bank) {
+    if ((g_test_audio_capabilities & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
+        return AudioBankFit::NotFitted;
+    }
+    if (!audioCatalogReaderAcquire()) {
+        return AudioBankFit::CatalogBusy;
+    }
+    const bool found = audioCatalogBankPage(g_test_audio_catalog_banks,
+                                            g_test_audio_catalog_bank_count, bank, nullptr);
+    audioCatalogReaderRelease();
+    return found ? AudioBankFit::Fitted : AudioBankFit::NotFitted;
 }
 
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {

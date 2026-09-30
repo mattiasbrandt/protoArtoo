@@ -61,6 +61,9 @@ extern uint8_t g_test_audio_capabilities;
 // audioIsCatalogReady() / audioGetCatalogEntries() - sound.api.get-catalog's
 // `ready` field and its item records.
 extern bool g_test_audio_catalog_ready;
+// audioGetCatalogBanks() / audioBankFitted() - the banks the module reported.
+extern AudioCatalogBank g_test_audio_catalog_banks[8];
+extern uint8_t g_test_audio_catalog_bank_count;
 extern AudioCatalogEntry g_test_audio_catalog_entries[16];
 extern uint16_t g_test_audio_catalog_entry_count;
 

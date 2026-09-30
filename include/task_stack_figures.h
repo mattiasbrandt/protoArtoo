@@ -51,8 +51,8 @@ struct TaskStackFigure {
 #if defined(PA_CHIP_TARGET_ESP32P4)
 constexpr uint32_t DRIVE_TASK_MEASURED_CHAIN_BYTES = 5088;
 constexpr uint32_t DRIVE_TASK_STACK_BYTES = 6656;  // the rule: 5088 -> 6360 -> 6656
-constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5568;
-constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // the rule: 5568 -> 6960 -> 7168
+constexpr uint32_t RC_INPUT_TASK_MEASURED_CHAIN_BYTES = 5632;
+constexpr uint32_t RC_INPUT_TASK_STACK_BYTES = 7168;  // the rule: 5632 -> 7040 -> 7168
 constexpr uint32_t SERVO_TASK_MEASURED_CHAIN_BYTES = 3840;
 constexpr uint32_t SERVO_TASK_STACK_BYTES = 5120;  // the rule: 3840 -> 4800 -> 5120
 constexpr uint32_t DOME_TASK_MEASURED_CHAIN_BYTES = 4112;

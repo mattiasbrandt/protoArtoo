@@ -43,6 +43,24 @@ void test_numeric_track_zero_is_none() {
     TEST_ASSERT_EQUAL(AUDIO_ACTION_NONE, a.type);
 }
 
+// $8nn is ShadowMD's bank 8, sound nn - never raw track 8nn - and only that
+// shape: every other number stays the raw track it has always been (#449).
+void test_bank_form_is_bank_8_sound_nn_and_nothing_else_moves() {
+    AudioAction a = parseAudioDollar("$803");
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_PLAY_BANKED, a.type);
+    TEST_ASSERT_EQUAL_UINT8(8, a.bank);
+    TEST_ASSERT_EQUAL_UINT16(3, a.track);
+
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_NONE, parseAudioDollar("$800").type);
+
+    a = parseAudioDollar("$126");
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_PLAY_TRACK, a.type);
+    TEST_ASSERT_EQUAL_UINT16(126, a.track);
+    a = parseAudioDollar("$8030");
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_PLAY_TRACK, a.type);
+    TEST_ASSERT_EQUAL_UINT16(8030, a.track);
+}
+
 // -----------------------------------------------------------------------------
 // Named sound shortcuts — default tracks
 // -----------------------------------------------------------------------------
@@ -410,6 +428,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_numeric_track_100);
     RUN_TEST(test_numeric_track_65535);
     RUN_TEST(test_numeric_track_zero_is_none);
+    RUN_TEST(test_bank_form_is_bank_8_sound_nn_and_nothing_else_moves);
 
     // Named shortcuts
     RUN_TEST(test_scream);
