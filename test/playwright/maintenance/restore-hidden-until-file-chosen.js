@@ -4,8 +4,9 @@
 // Introduced by #399 (the act was on screen, enabled, and did nothing).
 //
 // PRECONDITION: none beyond a droid that answers. Writes nothing: the guard
-// lets no write through, and nothing is restored - the file chosen is a
-// schema-only backup made here, and "Restore" is never pressed.
+// lets no write through, and nothing is restored - the file chosen is the
+// smallest backup the page accepts (an empty RC Map), made here, and
+// "Restore" is never pressed.
 //
 // WHAT IT PROVES.
 //   a  Before a file is chosen, #restore-btn-row, its button and the tick list
@@ -49,9 +50,11 @@ lib.runCheck({
       `act ${before.act ? 'SHOWN' : 'hidden'}, button ${before.button ? 'SHOWN' : 'hidden'}, ticks ${before.ticks ? 'SHOWN' : 'hidden'}`);
     const since = writes.length;
     await page.setInputFiles('#backup-file-input', {
-      name: 'schema-only-backup.json',
+      name: 'empty-rc-map-backup.json',
       mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify({ schema: 1, generated: new Date().toISOString(), fw_version: 'check' })),
+      buffer: Buffer.from(JSON.stringify({
+        schema: 2, board: 'check', generated: new Date().toISOString(), fw_version: 'check', rc_map: { map: [] },
+      })),
     });
     await page.waitForFunction(() => !document.getElementById('restore-btn-row').hidden, null, { timeout: 5000 }).catch(() => {});
     const after = await onScreen(page);
