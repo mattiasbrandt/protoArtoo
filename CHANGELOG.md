@@ -26,6 +26,13 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **See where your answers and the droid disagree.** Wiring lists every wire
+  it draws and everything the droid reports on - the sound module, the dome
+  link, the RC receiver, the Foot Drive, the dome's panels - with what you
+  said beside what the droid reports, and one word for each: declared,
+  observed, contradicted or not probed. A module that has not answered stays
+  your answer rather than a contradiction, and every row that needs a change
+  links to where you make it. Nothing on the list changes the droid.
 - **Read a sequence as time.** Timeline, on any sequence card, draws the
   routine with a lane per part: each move as long as it takes, and whatever the
   routine leaves open running on to the end. Move the marker to any moment and
