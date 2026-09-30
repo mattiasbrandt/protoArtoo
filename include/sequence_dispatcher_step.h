@@ -76,7 +76,9 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
 // Args:
 //   engineActive: true if a sequence is currently running.
 //   resyncClosePending: true if a staged ring-close is waiting in resyncCloseIdx.
-//   bulkCentreActive: true while a bulk centre sweep has rows left (#365). The
+//   bulkCentreActive: true while a bulk centre sweep has rows left (#365), or
+//     a pose press still has commands to send (#440): both are paced by the
+//     Cadence Floor on this task's tick. The
 //     idle 250 ms would round the Cadence Floor up to the next wake, so the
 //     spacing between two Outputs would be whatever the tick allowed rather
 //     than the number the Floor names.

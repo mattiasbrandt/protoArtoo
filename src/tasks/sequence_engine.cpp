@@ -205,6 +205,14 @@ bool seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen) {
     return true;
 }
 
+uint8_t seqEnginePanelTargetCount(void) {
+    return (uint8_t)(sizeof(kAllTargets) / sizeof(kAllTargets[0]));
+}
+
+const char* seqEnginePanelTarget(uint8_t i) {
+    return (i < seqEnginePanelTargetCount()) ? kAllTargets[i] : nullptr;
+}
+
 int seqEngineRingPanelNumber(uint8_t i) {
     if (i >= kRingPanelCount) {
         return -1;
