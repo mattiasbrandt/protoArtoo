@@ -21,7 +21,7 @@ Use these as authoritative:
 | Surface | Input form | Notes |
 |---|---|---|
 | HTTP API commands | `POST /api/...` | Full schemas in `docs/api.md` |
-| Manual commands | `POST /api/manual-command` with `command=<value>` | Fixed keyword set + prefix routing |
+| Manual commands | `POST /api/manual-command` with `command=<value>` | Fixed keyword set + Command Ownership routing |
 | Dome RX commands | UART/WiFi line input from dome | Body handles a bounded subset |
 | RC bindable actions | token-based bindings via `/api/rc/map` | Discover valid tokens via `GET /api/actions` |
 
@@ -57,17 +57,24 @@ Exact supported keyword commands (case-insensitive):
 Refused (case-insensitive):
 
 - `#st`, `#sm` -- these resolve to stationary/driving mode in the keyword
-  table, but the prefix routing below claims every `#` line first, so they
-  reach the Marcduino body parser, which has a case for neither, and no mode
-  ever changes. The route answers `400` and points at `POST /api/mode`
-  (`docs/api.md`). Set the mode there, or with `system.action.set-mode` over
-  the Console.
+  table, but the routing below claims every `#` line first, so they never
+  reach it and no mode ever changes. The route answers `400` and points at
+  `POST /api/mode` (`docs/api.md`). Set the mode there, or with
+  `system.action.set-mode` over the Console.
 
-Prefix routing (case-sensitive):
+Routing (case-sensitive):
 
-- `$...` -> body audio queue
-- `:...` and `#...` -> body Marcduino parser
-- `*...`, `@...`, `%...`, `&...`, `!...` -> forwarded to dome TX
+- `$...` -> body audio queue. `$8nn` is bank 8, sound nn, refused where the
+  sound module has no bank 8; every other `$nnn` is a raw track
+- `:...` and `#...` -> Command Ownership: the body runs the lines naming
+  things it models and forwards every other one to the dome verbatim. A
+  full-droid sequence (`:SE01`-`:SE09`, `:SE15`, `:SE16`) runs its body half
+  and is forwarded too. The list of what the body answers, and what it
+  refuses, is `docs/marcduino_commands.md`
+- `*...`, `@...`, `%...`, `&...`, `!...` -> forwarded to dome TX (ADR 0045)
+
+A forward is answered as a forward (`{"ok":true,"forwarded":true}`), never as
+done, and a forward that could not be queued is answered `503`.
 
 Sleep guard:
 
@@ -87,13 +94,17 @@ Recognized line families from dome ingress:
     ignored when the Dome ESC is not staged active)
 - Cue lines:
   - `BD:<cue>`
-- Marcduino subset routed to body parser:
-  - `:OPxx`, `:CLxx`, `:MVxxdddd`
+- Marcduino subset the body parser runs:
+  - `:OPxx`, `:CLxx`, `:OFxx` (01-05 and 00/99), `:MVxxdddd` (01-05)
   - `:SE30-:SE36` (body routines: each starts the Factory Sequence `DM:SE30`..`DM:SE36`
     through the Sequence Coordinator, so a Retrained Sequence of that name replaces it)
-  - `:SE01-:SE09`, `:SE15`, `:SE16` (decomposed to body-side actions)
+  - `:SE01-:SE09`, `:SE15`, `:SE16` (the body half only)
   - `$...`
-  - `#APSL`, `#APWU`
+  - `#APSL`, `#APWU`, `#PAHB`
+
+A line the dome sends is never forwarded back to it, including a full-droid
+`:SE` line: the dome already has it. A `:` or `#` line the parser does not run
+is counted as an unknown dome RX line.
 
 Intentionally not body-handled by parser path (ignored/deferred by topology):
 
