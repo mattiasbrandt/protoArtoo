@@ -1804,7 +1804,7 @@ static void consoleExecuteAction(uint32_t requestId, const ConsoleCatalogEntry* 
 // ConsoleArgs are reused verbatim, only the schema check is local).
 // =============================================================================
 
-// ConfigApplyResult is 2,060 B on artoo-esp32 (include/api_config_apply.h) -
+// ConfigApplyResult is 2,088 B on artoo-esp32 (include/api_config_apply.h) -
 // more than a stack local should cost the Console task, whose stack is sized
 // against a measured chain (CONSOLE_TASK_STACK_BYTES, include/config.h), and
 // the web server task the header's own warning was written for (pin fact 3).
@@ -2785,7 +2785,7 @@ static void consoleWriteAudioTracksField(uint32_t requestId, const ConsoleCatalo
     params.ctx = &adapter;
     params.get = consoleAudioTracksParamGet;
 
-    // ~270 B, unlike ConfigApplyResult's 2,060 B - small enough to be an
+    // ~270 B, unlike ConfigApplyResult's 2,088 B - small enough to be an
     // ordinary local on the Console task's stack, so it needs neither a
     // module static nor the sharing hazard one would bring (pin fact 4).
     AudioTracksApplyResult result;
