@@ -462,6 +462,10 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.gesture = &step;
             setPayload(a, step.payload);
             break;
+        case STEP_SEQUENCE:
+            // Never spliced in: its sequence is gone. It fires nothing, and the
+            // store reported it when the run was loaded (seqStorePrepare()).
+            return false;
         case STEP_RANDOM: {
             const uint8_t target = pickTarget(st, step, rnd);
             const char* prefix = ":OF";

@@ -169,6 +169,9 @@ void handleSeqListGet(WebRequest& req) {
         if (e == nullptr) continue;
         JsonObject o = arr.add<JsonObject>();
         o["name"] = e->name;
+        // The stable id a phrase refers to this sequence by (ADR 0046); absent
+        // on one saved before phrases existed.
+        if (e->id[0] != '\0') o["id"] = e->id;
         o["toggleGroup"] = seqToggleGroupToString(e->toggleGroup);
         o["suppressMs"] = e->suppressMs;
         o["source"] = e->source;

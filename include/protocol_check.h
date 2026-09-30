@@ -112,6 +112,16 @@ static const uint16_t PC_GESTURE_REPEAT_MS_MIN = PC_LOOP_PERIOD_MIN;
 static const uint16_t PC_GESTURE_REPEAT_MS_MAX = PC_LOOP_PERIOD_MAX;
 static const uint32_t PC_GESTURE_EXTENT_MS_MAX = PC_LOOP_DUR_MAX;
 
+// A sequence inside a sequence (ADR 0046). The depth is the stated bound the
+// engine's "stack" has: a phrase may hold phrases three levels down, and no
+// further. A sequence may name at most eight phrases directly, which bounds
+// the walk that checks them. A Learned Sequence's stable `id` is 1..16
+// lowercase letters and digits, minted by the editor and never changed.
+static const uint8_t PC_NEST_DEPTH_MAX = 3;
+static const uint8_t PC_NEST_REFS_MAX  = 8;
+static const uint8_t PC_SEQ_ID_MAX     = 16;
+static const uint8_t PC_SEQ_REF_MAX    = 23;  // a name ("DM:" + 18) or an id, plus NUL in 24
+
 // -----------------------------------------------------------------------------
 // Staging draft  --  the in-memory form a Learned Sequence takes between JSON parse
 // and engine execution. `steps`/`closeSteps` point at caller-owned buffers
@@ -151,6 +161,38 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 // resolves a single beat against the tempo, because a beat is only a
 // millisecond once the tempo it counts in is known to be well formed.
 ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo);
+
+// Whether `ref` is a well-formed stable reference: a sequence name
+// (DM:[A-Z0-9_]{1,18}) or a Learned Sequence id ([0-9a-z]{1,16}).
+bool protocolCheckSeqRefValid(const char* ref);
+bool protocolCheckSeqIdValid(const char* id);
+
+// What the store knows about one referenced sequence, for the nesting walk:
+// whether it exists, whether it is a toggle (which cannot be nested: it has
+// two branches and a latch, and a phrase is one run), how many steps its main
+// branch has, and the phrases it names in turn.
+struct SeqNestInfo {
+    bool    found;
+    bool    toggle;
+    uint8_t stepCount;
+    uint8_t refCount;
+    char    refs[PC_NEST_REFS_MAX][PC_SEQ_REF_MAX + 1];
+};
+
+// Fills `out` for `ref`, or reports it not found. The store supplies it
+// (seq_store.cpp); tests supply a table.
+typedef void (*SeqNestLookup)(const char* ref, SeqNestInfo* out, void* ctx);
+
+// The rules a sequence holding sequences must keep on save (ADR 0046): every
+// phrase exists on this droid and is not a toggle, nothing reaches back to the
+// sequence being saved or to a phrase already on its own path (a cycle), no
+// path is deeper than PC_NEST_DEPTH_MAX, and the whole run, spliced, fits in
+// PC_MAX_STEPS. `selfId` and `selfName` are the sequence being saved; either
+// may be empty. The walk holds its state on the heap, not on the caller's
+// stack; an allocation failure refuses the save rather than skipping the
+// check.
+ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* selfId,
+                                         const char* selfName, SeqNestLookup lookup, void* ctx);
 
 // Convenience: full check of a draft (meta + main branch + close branch when
 // present). Stamps effectClass on both branches. Returns the first failure.

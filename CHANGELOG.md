@@ -32,6 +32,10 @@ the patch releases, whose notes live on their own GitHub Release.
   later joins in. On the body the droid paces the moves itself, one part at a
   time; on the dome it becomes one dome command, and a move the dome has no
   command for still saves.
+- **A sequence can hold your own sequences.** Drop a saved phrase into
+  another sequence as one step; it stays linked, so improving the phrase
+  improves every sequence that uses it. Phrases nest three deep, and a
+  sequence cannot contain itself.
 - **A dome panel can open part way.** Say how far on a panel open or close,
   and the dome stops it that far along its own travel.
 - **A sequence can have a tempo.** Type the BPM, tap along while the droid

@@ -8,6 +8,7 @@
 
 #include "protocol_check.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
@@ -798,6 +799,111 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
 }
 
 // -----------------------------------------------------------------------------
+// A sequence inside a sequence (ADR 0046)
+// -----------------------------------------------------------------------------
+bool protocolCheckSeqIdValid(const char* id) {
+    if (id == nullptr) return false;
+    const size_t len = strnlen(id, PC_SEQ_ID_MAX + 1);
+    if (len == 0 || len > PC_SEQ_ID_MAX) return false;
+    for (size_t k = 0; k < len; ++k) {
+        if (!(isDigit(id[k]) || (id[k] >= 'a' && id[k] <= 'z'))) return false;
+    }
+    return true;
+}
+
+bool protocolCheckSeqRefValid(const char* ref) {
+    return nameValid(ref) || protocolCheckSeqIdValid(ref);
+}
+
+// The walk: a depth-first path of at most PC_NEST_DEPTH_MAX phrases below the
+// sequence being saved. Each level holds the reference it was entered by, what
+// the store said about that phrase, and which of the phrase's own references
+// is next. On the heap: three levels are ~650 B, which no measured stack is
+// asked to carry.
+namespace {
+struct NestLevel {
+    char        via[PC_SEQ_REF_MAX + 1];
+    SeqNestInfo info;
+    uint8_t     next;
+};
+struct NestWalk {
+    NestLevel level[PC_NEST_DEPTH_MAX];
+};
+}  // namespace
+
+static bool nestSame(const char* a, const char* b) {
+    return a != nullptr && b != nullptr && a[0] != '\0' && strcmp(a, b) == 0;
+}
+
+ProtocolCheckResult protocolCheckNesting(const SeqDraft& draft, const char* selfId,
+                                         const char* selfName, SeqNestLookup lookup, void* ctx) {
+    if (draft.steps == nullptr || lookup == nullptr) return pcOk();
+    bool any = false;
+    for (uint8_t i = 0; i < draft.stepCount; ++i) {
+        if (draft.steps[i].type == STEP_SEQUENCE) any = true;
+    }
+    if (!any) return pcOk();
+
+    NestWalk* walk = (NestWalk*)malloc(sizeof(NestWalk));
+    if (walk == nullptr) return pcFail("steps", "out of memory checking sequences inside");
+
+    ProtocolCheckResult result = pcOk();
+    // Steps the run holds once every phrase is spliced in: each phrase step
+    // becomes its phrase's steps less their end.
+    uint32_t total = draft.stepCount;
+    for (uint8_t i = 0; i < draft.stepCount && result.ok; ++i) {
+        if (draft.steps[i].type != STEP_SEQUENCE) continue;
+        uint8_t depth = 0;  // levels on the path
+        const char* ref = draft.steps[i].payload;
+        while (result.ok) {
+            if (ref != nullptr) {
+                // A reference back to the sequence being saved, or to a phrase
+                // already on this path, is a cycle.
+                bool cycle = nestSame(ref, selfId) || nestSame(ref, selfName);
+                for (uint8_t d = 0; d < depth && !cycle; ++d) cycle = nestSame(ref, walk->level[d].via);
+                if (cycle) {
+                    result = pcFailAt("steps", i, "ref", "a sequence cannot contain itself");
+                    break;
+                }
+                if (depth >= PC_NEST_DEPTH_MAX) {
+                    result = pcFailAt("steps", i, "ref", "sequences nest at most 3 deep");
+                    break;
+                }
+                NestLevel& lv = walk->level[depth];
+                memset(&lv, 0, sizeof(lv));
+                strncpy(lv.via, ref, sizeof(lv.via) - 1);
+                lookup(ref, &lv.info, ctx);
+                if (!lv.info.found) {
+                    result = pcFailAt("steps", i, "ref", "not a sequence on this droid");
+                    break;
+                }
+                if (lv.info.toggle) {
+                    result = pcFailAt("steps", i, "ref", "a toggle sequence cannot sit inside another");
+                    break;
+                }
+                total = total - 1u + (lv.info.stepCount > 0 ? lv.info.stepCount - 1u : 0u);
+                if (total > PC_MAX_STEPS) {
+                    result = pcFailAt("steps", i, "ref", "too many steps once inside (max 96)");
+                    break;
+                }
+                ++depth;
+            }
+            // Into the deepest level's next reference, or back up a level.
+            if (depth == 0) break;
+            NestLevel& cur = walk->level[depth - 1];
+            if (cur.next < cur.info.refCount) {
+                ref = cur.info.refs[cur.next++];
+            } else {
+                --depth;
+                ref = nullptr;
+            }
+        }
+    }
+    free(walk);
+    return result;
+}
+
+// -----------------------------------------------------------------------------
 // Tempo (ADR 0058)
 // -----------------------------------------------------------------------------
 
@@ -1169,6 +1275,25 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 // ring the same staggered close any panel step earns; a body
                 // Gesture is FX_NONE for the reason a Body Step is (ADR 0049).
                 s.effectClass = seqGestureIsDome(s.payload) ? FX_PANEL : FX_NONE;
+                break;
+            }
+            case STEP_SEQUENCE: {
+                // Form: a well-formed reference, and not too many in a branch.
+                // Whether it exists, is not a toggle, closes no cycle and fits
+                // is protocolCheckNesting()'s, which needs the store. FX_NONE:
+                // the spliced steps carry their own classes, and terminal
+                // cleanup unions them with the parent's (ADR 0046).
+                if (!protocolCheckSeqRefValid(s.payload)) {
+                    return pcFailAt(label, i, "ref", "not a sequence name or id");
+                }
+                uint8_t refs = 0;
+                for (uint8_t j = 0; j <= i; ++j) {
+                    if (steps[j].type == STEP_SEQUENCE) ++refs;
+                }
+                if (refs > PC_NEST_REFS_MAX) {
+                    return pcFailAt(label, i, "ref", "at most 8 sequences in one");
+                }
+                s.effectClass = FX_NONE;
                 break;
             }
             case STEP_LOOP:

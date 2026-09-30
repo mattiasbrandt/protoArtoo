@@ -36,6 +36,8 @@ struct SeqIndexEntry {
     bool           modified;      // a guild file edited in place
     char           file[40];      // basename under /data/seq/
     bool           valid;         // false if file fails Protocol Check at boot
+    char           id[17];        // stable id a phrase refers to it by (ADR 0046);
+                                  // "" for one saved before phrases existed
 };
 
 // Empty the index.
@@ -50,6 +52,10 @@ bool seqStoreIndexRemove(const char* name);
 
 // Find by exact name (case-sensitive). nullptr when absent.
 const SeqIndexEntry* seqStoreIndexFind(const char* name);
+
+// Find by a phrase's stable reference: a sequence name ("DM:...") finds by
+// name, anything else by the stable id. nullptr when absent.
+const SeqIndexEntry* seqStoreIndexFindRef(const char* ref);
 
 // Iteration for listings / RC enumeration.
 uint8_t seqStoreIndexCount();

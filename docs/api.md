@@ -1360,6 +1360,9 @@ it holds, up to ten on any board, which can be more than the board's save cap
 
 - Success: `200` JSON array of sequence metadata objects
   - `name`: sequence identifier (e.g., `"DM:ROCKMARCH"`)
+  - `id`: the stable id a sequence inside another refers to it by (1..16
+    lowercase letters or digits); absent on a sequence saved before sequences
+    could hold sequences, until it is saved again
   - `toggleGroup`: toggle group assignment
   - `suppressMs`: suppression interval in milliseconds
   - `source`: where the sequence came from (`"web"`, `"chirp"`, etc.)

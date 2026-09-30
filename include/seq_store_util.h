@@ -122,3 +122,19 @@ bool seqStoreNameToFile(const char* name, char* out, size_t cap);
 // free space. Returns ok when the save may proceed, else a field-level error.
 ProtocolCheckResult seqStoreCapacityCheck(bool isNew, uint8_t count,
                                           size_t fileLen, size_t freeBytes);
+
+// -----------------------------------------------------------------------------
+// seqStoreSplicePhrase()
+// A sequence inside a sequence, spliced when it is loaded to run (ADR 0046):
+// replaces (*buf)[at] - a phrase step - by `child`'s steps without their end
+// step, each timed from the phrase step (a step inside one of the phrase's own
+// loop bodies keeps its pass-relative time), then puts the branch's top-level
+// units back in time order, stably, a loop header travelling with its body.
+// Anything sorted after the branch's end step is cut: the engine never runs
+// it. A null child removes the phrase step - its sequence is gone. On success
+// *buf is a new heap block (the old one freed) and *count its length. Returns
+// false, leaving the branch untouched, when the result would pass PC_MAX_STEPS
+// or the heap refuses the two working blocks.
+// -----------------------------------------------------------------------------
+bool seqStoreSplicePhrase(SeqStep** buf, uint8_t* count, uint8_t at, const SeqStep* child,
+                          uint8_t childCount);

@@ -561,6 +561,18 @@ static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst ob
     if (strcmp(type, "gesture") == 0) {
         return parseGestureFields(label, obj, idx, s);
     }
+    if (strcmp(type, "sequence") == 0) {
+        // A phrase, by its stable reference. A `name` beside it is the label
+        // the editor last showed, for a reader of the file; the droid goes by
+        // the reference alone, so a rename orphans nothing.
+        s.type = STEP_SEQUENCE;
+        const char* ref = obj["ref"] | (const char*)nullptr;
+        if (ref == nullptr || strnlen(ref, sizeof(s.payload)) > PC_SEQ_REF_MAX) {
+            return pcFailAt(label, idx, "ref", "missing or too long");
+        }
+        strncpy(s.payload, ref, sizeof(s.payload) - 1);
+        return pcOk();
+    }
     if (strcmp(type, "end") == 0) {
         s.type = STEP_END;
         return pcOk();
@@ -697,6 +709,11 @@ static ProtocolCheckResult parseBranch(const char* label, JsonArrayConst arr,
         ProtocolCheckResult r =
             parseStep(label, v.as<JsonObjectConst>(), n, tempo, inLoopBody, buf[n]);
         if (!r.ok) return r;
+        // A phrase is spliced in where it sits, which a loop body cannot take
+        // without its own step count changing under the loop header.
+        if (inLoopBody && buf[n].type == STEP_SEQUENCE) {
+            return pcFailAt(label, n, "type", "a sequence cannot sit inside a loop");
+        }
         if (inLoopBody) {
             --loopBodyLeft;
         } else if (buf[n].type == STEP_LOOP) {
@@ -727,6 +744,14 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
     }
     memset(&out, 0, sizeof(out));
     strncpy(out.name, name, sizeof(out.name) - 1);
+
+    // A Learned Sequence's stable id, what a phrase refers to it by. Optional:
+    // one saved before phrases existed has none until the editor saves it
+    // again. The store reads it off the document; it is checked here.
+    JsonVariantConst id = root["id"];
+    if (!id.isNull() && !protocolCheckSeqIdValid(id.as<const char*>())) {
+        return pcFail("id", "id must be 1..16 lowercase letters or digits");
+    }
 
     out.suppressMs = root["suppressMs"] | 0u;
 
@@ -894,6 +919,10 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
                 if (seqGestureExtentMs(s.params) != 0) o["extentMs"] = seqGestureExtentMs(s.params);
                 break;
             }
+            case STEP_SEQUENCE:
+                o["type"] = "sequence";
+                o["ref"] = s.payload;
+                break;
             case STEP_END:
             default:
                 o["type"] = "end";

@@ -70,6 +70,16 @@ enum SeqStepType : uint8_t {
                               // is one `$` command, a body Gesture a paced
                               // expansion on the Coordinator's own cursor, so
                               // it never holds this engine's single cursor.
+    STEP_SEQUENCE       = 11, // A sequence inside a sequence (ADR 0046): payload
+                              // carries the stable reference to it -- a Learned
+                              // Sequence's `id`, or a Factory Sequence's name,
+                              // which is fixed by construction. The store splices
+                              // the referenced steps in when the sequence is
+                              // loaded to RUN (seqStorePrepare()), so what runs
+                              // is always the phrase as it stands and the engine
+                              // never nests its cursor. One that reaches the
+                              // engine was not spliced -- its sequence is gone --
+                              // and fires nothing.
 };
 
 // -----------------------------------------------------------------------------
