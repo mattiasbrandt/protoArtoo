@@ -392,9 +392,11 @@
    *   takes it
    * @param {Element} hosts.timing - the line saying a move waits for the
    *   droid's next start, while one does
+   * @param {Element} [hosts.find] - where a Find by Moving run's line goes
+   *   (data/find_by_moving.js): a Part on no Output offers a run on its row
    * @returns {boolean} whether it mounted
    */
-  const picker = ({ table, summary, feedback, dialog, timing } = {}) => {
+  const picker = ({ table, summary, feedback, dialog, timing, find } = {}) => {
     const OUTPUTS = window.PAOutputs;
     const TIMING = window.PAApplyTiming;
     if (!table || !summary || !feedback || !dialog || !timing || !OUTPUTS || !TIMING) return false;
@@ -486,7 +488,8 @@
       domeRows.set(node.dataset.domePart, node.querySelector(".parts-gang"));
     });
 
-    // Declared before the mover, which is handed a way to repaint.
+    // Declared before the mover and the finder, which are handed a way to
+    // repaint.
     let paint = () => {};
     const move = mover({
       dialog,
@@ -499,20 +502,63 @@
       },
     });
 
+    // Find by Moving, run from a Part's row (data/find_by_moving.js). Its That
+    // one is the same move this row's select makes, question and all. Absent
+    // where the page carries no run, and then no row offers one.
+    const finder = find && window.PAFindByMoving
+      ? window.PAFindByMoving.runner({
+        panel: find,
+        say,
+        move: (partId, address) => move.request(moveFor(OUTPUTS.list(), partId, address), null),
+        pending: () => move.pending(),
+        changed: () => paint(),
+        surface: "Wiring",
+      })
+      : null;
+
+    table.addEventListener("click", (event) => {
+      const act = event.target?.closest?.("[data-find]");
+      if (!act || act.disabled || finder === null) return;
+      finder.start(act.dataset.find);
+    });
+
     // The control the builder has hold of: the one focused, or the one whose
     // move is being asked about or is on its way. Its value and its options
     // are theirs until they let go.
     const held = (id, select) => id === move.pending() || document.activeElement === select;
 
+    // A Part on no Output has no wire yet, and its row offers to find the one
+    // it is on by moving the free Outputs (data/find_by_moving.js; operator,
+    // 2026-09-30 on #411: "Pulse free Outputs in a run"). Refused while the
+    // estop is latched or the droid is out of reach, and while a run is going.
+    const drawFind = (row, id) => {
+      const live = finder !== null && finder.live();
+      const running = finder !== null && finder.running() !== null;
+      const drawn = finder === null ? "none" : `find|${live}|${running}`;
+      if (row.drawn === drawn) return;
+      row.drawn = drawn;
+      if (finder === null) {
+        row.carries.replaceChildren();
+        return;
+      }
+      const act = document.createElement("button");
+      act.type = "button";
+      act.className = "btn btn-sm btn-quiet parts-find-act";
+      act.dataset.find = id;
+      act.textContent = "find by moving";
+      act.setAttribute("aria-label", `Find the output ${row.part.name} is on by moving each free one`);
+      window.PAApi.gateControls([act], live && !running);
+      row.carries.replaceChildren(act);
+    };
+
     // What is on the wire a Part is on, on the Part's own row: which servo
-    // for a servo Part, which Light Type for a light Part, and nothing until
-    // the Part is on an Output. It is the Output's answer (CONTEXT.md
+    // for a servo Part, which Light Type for a light Part, and the find act
+    // until the Part is on an Output. It is the Output's answer (CONTEXT.md
     // "Output"), so two Parts ganged on one wire show the same pick, and a
     // pick saves the Output's row. Redrawn only when what it shows changes.
-    const drawCarries = (row, output) => {
+    const drawCarries = (row, output, id) => {
       if (!output) {
-        if (row.drawn !== null) row.carries.replaceChildren();
-        row.drawn = null;
+        drawFind(row, id);
         return;
       }
       const light = Boolean(kinds?.isLight(row.part));
@@ -532,7 +578,7 @@
       row.node.classList.toggle("is-wired", output !== null);
       const gang = output ? output.parts.filter((other) => other !== id) : [];
       row.gang.textContent = gang.length ? ` moves with ${listParts(gang)}` : "";
-      drawCarries(row, output);
+      drawCarries(row, output, id);
       if (held(id, row.select)) return;
       // The only rebuild, and only of a control nobody is holding: the set of
       // Outputs a Part may go on is fixed from boot, so this runs once per

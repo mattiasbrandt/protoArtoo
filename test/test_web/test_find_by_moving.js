@@ -1,231 +1,304 @@
 // =============================================================================
 // test/test_web/test_find_by_moving.js
 //
-// Find by Moving (ADR 0050, #363; on Servos since #412): a builder who cannot
-// remember which output the rear-left door is on picks that door and presses
-// Find by moving, and watches the droid. The shipped shell mounts the shipped
-// Servos surface against a fake droid; what is asserted is what the page asked
-// the droid for, in what order, what the builder saw, and what the estop did
-// to both -- never a flag the code under test reports on itself.
+// Find by Moving (ADR 0050, #363), run from a Part's row on Wiring since #411
+// (data/find_by_moving.js). The shipped catalog, data/outputs.js,
+// data/parts_mapping.js and the run module are loaded together, as a browser
+// loads them; the droid, the surface's poll and the Live Reading are the only
+// stand-ins. What is asserted is what the page asked the droid for, in what
+// order, what the builder read, and what the estop did to both -- never a
+// flag the code under test reports on itself. The row's act that starts a run
+// is test_parts_table.js's.
 //
-// Servos lists only the Outputs with a Part (#411), so every droid here has
-// one - on ARM5, which has no pulse and is never a spare Output to nudge - and
-// the spare Outputs a run steps through have no row of their own.
+// A run steps through the FREE Outputs: no Part on them, no light on their
+// wire. They have no pulse - nothing drives an Output with no Part - and the
+// firmware takes each one for the run when its nudge arrives (#411), so none
+// of these droids gives a free Output a pulse before its nudge.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
+import vm from "node:vm";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 
-import { bootServos, withParts, output, sleep } from "./helpers/parts_surface.js";
+import { MiniDocument } from "./helpers/mini_dom.js";
+import { servoRow as output, withParts, describe } from "./helpers/fake_droid.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const dataDir = join(__dirname, "../../data");
+const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
 
 const NOT_WIRED = "– not wired –";
+const settle = async () => {
+  for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+};
 
-// ARM1..ARM4 spare, ARM5 carrying a Part and no pulse: the spare set is the
-// four with a pulse, as on a droid with nothing else wired.
-const oneRow = () => withParts({ "ledc:5": ["smallDoor"] });
+// ARM1 and ARM2 carry the utility arms; ARM3, ARM4 and ARM5 are free and limp,
+// as a droid with two Parts wired comes up.
+const twoArmsOn = () => withParts({ "ledc:0": ["utilUp"], "ledc:1": ["utilLo"] }).map((row) =>
+  row.parts.length ? { ...row } : { ...row, wired: false, commandedUs: null, targetUs: null });
+
+const boot = async ({ outputs = twoArmsOn(), estop = "clear" } = {}) => {
+  const document = new MiniDocument();
+  const panel = document.createElement("div");
+  document.body.appendChild(panel);
+  const env = { outputs, posts: [], said: [], moved: [], nudgeFails: null };
+
+  let reading = { estopLatched: estop === "latched", moveActsLive: estop === "clear" };
+  const readers = [];
+  let feed = null;
+  let unmount = null;
+
+  const window = {
+    document,
+    PALiveReading: {
+      WAITING: "Waiting",
+      UNKNOWN: "Unknown",
+      slotText: (word) => (word === "Waiting" ? "" : word),
+      subscribe: (fn) => {
+        readers.push(fn);
+        fn(reading);
+      },
+    },
+    PASurface: {
+      // The run's once-a-second read, handed to a test to fire as the frame.
+      poll: (fn) => {
+        feed = { fn, running: false };
+        return {
+          start: () => {
+            feed.running = true;
+          },
+          stop: () => {
+            feed.running = false;
+          },
+        };
+      },
+      holdUnmount: (decide) => {
+        unmount = decide;
+      },
+    },
+    PAApi: {
+      get: async (path) => {
+        assert.equal(path, "/api/servo/outputs");
+        return { data: { outputs: structuredClone(env.outputs) } };
+      },
+      postForm: async (path, form) => {
+        env.posts.push({ path, form: { ...form } });
+        if (form.action === "nudge" && env.nudgeFails) throw env.nudgeFails;
+        return { ok: true, data: { ok: true } };
+      },
+      messageFor: (error) => error.message,
+    },
+  };
+  const context = { window, document, console, URLSearchParams, structuredClone, setTimeout, clearTimeout };
+  context.globalThis = context;
+  for (const file of ["droid_parts.js", "droid_part_kind.js", "outputs.js", "parts_mapping.js", "find_by_moving.js"]) {
+    vm.runInNewContext(readData(file), context, { filename: file });
+  }
+  await window.PAOutputs.refresh();
+
+  const finder = window.PAFindByMoving.runner({
+    panel,
+    say: (text, level) => env.said.push({ text, level }),
+    move: (partId, address) => env.moved.push({ partId, address }),
+    pending: () => null,
+    surface: "Wiring",
+  });
+
+  env.find = (partId) => finder.start(partId);
+  env.running = () => finder.running();
+  env.nudges = () => env.posts.filter((post) => post.form.action === "nudge").map((post) => post.form.arm);
+  env.releases = () => env.posts.filter((post) => post.form.action === "release").map((post) => post.form.arm);
+  env.feedback = () => env.said.at(-1)?.text ?? "";
+  env.runText = () => panel.querySelector(".parts-find-text")?.textContent ?? null;
+  env.feedRunning = () => feed !== null && feed.running;
+  // The droid's answer, as the run's own read brings it.
+  env.frame = async () => {
+    await feed.fn();
+    await settle();
+  };
+  const row = (address) => env.outputs.find((each) => each.address === address);
+  // The droid took the Output for the run: its pulse is on.
+  env.taken = (address) => Object.assign(row(address), { commandedUs: 1500, targetUs: 1500, limp: "off" });
+  // The droid says the nudge on that Output has ended.
+  env.endNudge = (address) => {
+    row(address).nudgesDone += 1;
+  };
+  env.wentLimp = (address, why) => Object.assign(row(address), { commandedUs: null, targetUs: null, limp: why });
+  env.pushReading = (next) => {
+    reading = next;
+    readers.forEach((fn) => fn(reading));
+  };
+  env.leave = () => unmount?.();
+  env.pressThatOne = () => panel.querySelector(".parts-find-that").fire("click", {});
+  env.pressStop = () => panel.querySelector(".parts-find-stop").fire("click", {});
+  return env;
+};
 
 // ---------------------------------------------------------------------------
 
-test("pressing it nudges the first spare output, one at a time, and steps on only when the droid says the nudge has ended", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
-  env.pressFind("doorRL");
-  await sleep(20);
+test("a run nudges each free output in turn, limp or not, and steps on only when the droid says the nudge ended", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
 
-  assert.deepEqual(env.nudges(), [{ path: "/api/servo", form: { arm: "ARM2", action: "nudge" } }],
-    "ARM1 drives a Part and ARM5 has no pulse, so ARM2 is the first spare Output");
-  assert.equal(env.findButton().hidden, true, "the run takes the button's place");
-  assert.ok(env.runPanel(), "the run is up, in the button's place");
-  assert.match(env.runText(), /Nudging ARM2 \(1 of 3\)/);
+  assert.deepEqual(env.nudges(), ["ARM3"], "ARM1 and ARM2 carry Parts, so ARM3 is the first free Output");
+  assert.equal(env.feedRunning(), true, "the run reads the droid while it goes");
+  assert.match(env.runText(), /Nudging ARM3 \(1 of 3\)/);
   assert.match(env.runText(), /press That one when Rear-left body door moves/);
 
-  // Frames arrive while the nudge is still going: nothing more is sent.
+  // The droid has not taken ARM3 yet: it still reads limp, and that is not a
+  // fault. Nothing more is sent until its nudge has ended.
   await env.frame();
+  env.taken("ledc:3");
   await env.frame();
-  assert.equal(env.nudges().length, 1, "the droid has not said ARM2's nudge ended, so no second nudge");
-
-  // The droid says ARM2's nudge has ended, and only then the next spare
-  // Output is nudged.
-  env.endNudge("ledc:1");
-  await env.frame();
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2", "ARM3"]);
-  assert.match(env.runText(), /Nudging ARM3 \(2 of 3\)/);
-
-  // A count that moved on some other Output is not this nudge ending.
-  env.endNudge("ledc:1");
-  await env.frame();
-  assert.equal(env.nudges().length, 2);
+  assert.notEqual(env.running(), null, "a free Output read limp before it was taken does not end the run");
+  assert.deepEqual(env.nudges(), ["ARM3"]);
 
   env.endNudge("ledc:3");
   await env.frame();
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2", "ARM3", "ARM4"]);
-  assert.equal(env.moves().length, 0, "nothing has been wired: the builder has not said which one");
+  assert.deepEqual(env.nudges(), ["ARM3", "ARM4"]);
+  assert.match(env.runText(), /Nudging ARM4 \(2 of 3\)/);
+
+  // A count that moved on some other Output is not this nudge ending.
+  env.endNudge("ledc:3");
+  await env.frame();
+  assert.deepEqual(env.nudges(), ["ARM3", "ARM4"]);
+  assert.equal(env.moved.length, 0, "nothing is wired: the builder has not said which one");
 });
 
-test("Stop sends nothing further, and the Part stays not wired", async () => {
-  const env = await bootServos({ outputs: oneRow() });
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.equal(env.nudges().length, 1);
+// Never a light's wire, and never an Output a Part is on: those move through
+// their Part (#411). An expander's channel has no name the servo route takes,
+// so it is never a candidate either.
+test("a run never nudges a light's wire, an Output with a Part, or one the route cannot name", async () => {
+  const outputs = describe(twoArmsOn(), { "ledc:4": { lightCapable: true, type: "rgb" } });
+  outputs.push(output("pca:0", "", { commandedUs: 1500, targetUs: 1500 }));
+  const env = await boot({ outputs });
+  env.find("doorRL");
+  await settle();
+  env.endNudge("ledc:3");
+  await env.frame();
+  env.endNudge("ledc:5");
+  await env.frame();
+
+  assert.deepEqual(env.nudges(), ["ARM3", "ARM5"]);
+  assert.equal(env.running(), null, "two free Outputs, two nudges");
+  assert.match(env.feedback(), new RegExp(`None of the 2 free outputs moved Rear-left body door in one pass, so it stays ${NOT_WIRED}`));
+});
+
+// A builder who presses Stop expects stillness now, not when the firmware's
+// expiry lets go, so the run lets go of the Output under the nudge itself.
+test("Stop lets go of the output under the nudge and sends nothing further", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.taken("ledc:3");
+  await env.frame();
 
   env.pressStop();
-  assert.equal(env.runPanel(), null);
-  assert.equal(env.findButton().hidden, false, "the button is back");
-  assert.match(env.feedback(), /Stopped\. Rear-left body door stays – not wired –\./);
-
-  env.endNudge("ledc:0");
-  await env.frame();
-  assert.equal(env.nudges().length, 1, "the nudge in flight finishes on its own; no next one is asked for");
-  assert.equal(env.moves().length, 0);
-  assert.ok(env.outputs.every((each) => !each.parts.includes("doorRL")), "the Part is on no Output");
+  await settle();
+  assert.equal(env.running(), null);
+  assert.equal(env.feedRunning(), false, "the run's reads stop with it");
+  assert.match(env.feedback(), new RegExp(`Stopped\\. Rear-left body door stays ${NOT_WIRED}\\.`));
+  assert.deepEqual(env.releases(), ["ARM3"]);
+  assert.deepEqual(env.nudges(), ["ARM3"], "no next nudge is asked for");
 });
 
-test("a pass through every spare output with no press ends with the Part still not wired", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:0": ["utilUp"], "ledc:3": ["utilDown"] }) });
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2"]);
-  env.endNudge("ledc:1");
-  await env.frame();
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM2", "ARM4"]);
-  env.endNudge("ledc:4");
-  await env.frame();
-
-  assert.equal(env.nudges().length, 2, "two spare Outputs, two nudges, never ARM5 which has no pulse");
-  assert.equal(env.runPanel(), null);
-  assert.match(env.feedback(), /None of the 2 spare outputs moved Rear-left body door in one pass, so it stays – not wired –/);
-  assert.equal(env.moves().length, 0);
-  assert.ok(env.outputs.every((each) => !each.parts.includes("doorRL")), "the Part is on no Output");
+// "That one" is the row's own move, and the run lets go of the Output first:
+// once the Part is on it, it is the Part's.
+test("That one lets go of the output and puts the Part on it", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.pressThatOne();
+  await settle();
+  assert.deepEqual(env.releases(), ["ARM3"]);
+  assert.deepEqual(env.moved, [{ partId: "doorRL", address: "ledc:3" }]);
 });
 
-test("with nothing spare to nudge it says so and sends nothing", async () => {
-  const outputs = withParts({ "ledc:0": ["utilUp"], "ledc:1": ["utilDown"], "ledc:3": ["doorFL"], "ledc:4": ["doorFR"] });
-  const env = await bootServos({ outputs });
-  env.pressFind("doorRL");
-  await sleep(20);
-
-  assert.equal(env.nudges().length, 0);
-  assert.equal(env.runPanel(), null);
-  assert.match(env.feedback(), /Nothing to nudge/);
+test("with no free servo output it says so and sends nothing", async () => {
+  const env = await boot({
+    outputs: withParts({ "ledc:0": ["utilUp"], "ledc:1": ["utilLo"], "ledc:3": ["doorFL"], "ledc:4": ["doorFR"], "ledc:5": ["smallDoor"] }),
+  });
+  env.find("doorRL");
+  await settle();
+  assert.deepEqual(env.nudges(), []);
+  assert.equal(env.running(), null);
+  assert.match(env.feedback(), /Nothing to nudge\. There is no free servo output/);
 });
 
 test("a firmware that does not say when a nudge has ended is refused rather than waited on", async () => {
-  const outputs = oneRow().map(({ nudgesDone, ...rest }) => rest);
-  const env = await bootServos({ outputs });
-  env.pressFind("doorRL");
-  await sleep(20);
-
-  assert.equal(env.nudges().length, 0);
+  const env = await boot({ outputs: twoArmsOn().map(({ nudgesDone, ...rest }) => rest) });
+  env.find("doorRL");
+  await settle();
+  assert.deepEqual(env.nudges(), []);
   assert.match(env.feedback(), /does not say when a nudge has ended/);
 });
 
-test("while the estop is latched the button is refused, disabled and aria-disabled, and a press sends nothing", async () => {
-  const env = await bootServos({ outputs: oneRow(), estop: true });
-  const button = env.findButton();
-  assert.equal(button.disabled, true);
-  assert.equal(button.getAttribute("aria-disabled"), "true");
+// The firmware has already let go of every Output a run drove (ADR 0043), so a
+// run the estop ends sends nothing more - no release, no next nudge.
+test("the estop ends a run at once, and a latched estop starts none", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.pushReading({ estopLatched: true, moveActsLive: false });
+  assert.equal(env.running(), null, "the run ended on the reading");
+  assert.match(env.feedback(), new RegExp(`The estop stopped the run\\. Rear-left body door stays ${NOT_WIRED}\\.`));
+  assert.deepEqual(env.releases(), [], "the estop has already let go");
 
-  // A browser never delivers a click to a disabled button; the shell's notice
-  // fires on the pointerdown instead. This is the handler's own guard should
-  // one arrive: nothing is asked of the droid, and no run starts.
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.equal(env.nudges().length, 0);
-  assert.equal(env.runPanel(), null);
-
-  env.pushStatus({ estop: false });
-  assert.equal(button.disabled, false, "released, the button is live again");
-  assert.equal(button.getAttribute("aria-disabled"), "false");
-  env.pushStatus({ estop: true });
-  assert.equal(button.disabled, true);
-  assert.equal(env.nudges().length, 0);
+  env.find("doorRR");
+  await settle();
+  assert.deepEqual(env.nudges(), ["ARM3"], "nothing is nudged while the estop is latched");
 });
 
-// The nudged Output is a spare one, with no row here, so what the estop does
-// to the table is seen on the rows that are listed: every Output's mark is
-// held back, since the estop edge RELEASES every enabled Output and commands
-// no position (C1d, #364, 075cf487; ADR 0043) - a row left reading its last
-// commanded width would be claiming the droid holds a part it has just let go
-// of (corrected on #365).
-test("an estop mid-run ends the run at once and stops showing any output's last mark as current", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:4": ["doorRR"] }) });
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM1"]);
-  assert.equal(env.text("ledc:4", "outputs-us"), "1500 µs");
-
-  env.pushStatus({ estop: true });
-  assert.equal(env.runPanel(), null, "the run ended on the frame");
-  assert.match(env.feedback(), /The estop stopped the run\. Rear-left body door stays – not wired –\./);
-  assert.equal(env.cell("ledc:4", "outputs-bar").classList.contains("is-stale"), true, "the estop let go of every Output");
-  assert.doesNotMatch(env.text("ledc:4", "outputs-us"), /µs/, "no width is read as current");
-
-  // The firmware ended the nudge where it was and says so on the next answer;
-  // that answer is current and repaints the rows.
-  env.endNudge("ledc:0");
+// Pulses off, a dial's bound, anything that takes a pulse off a pin: an Output
+// that goes limp AFTER the droid took it cannot twitch, so the run ends rather
+// than waiting on a nudge that is not moving anything.
+test("an output that goes limp under its nudge ends the run", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.taken("ledc:3");
   await env.frame();
-  assert.equal(env.cell("ledc:4", "outputs-bar").classList.contains("is-stale"), false);
-  assert.equal(env.text("ledc:4", "outputs-us"), "1500 µs");
-  assert.equal(env.nudges().length, 1, "the count went up, but there is no run to step on");
-  assert.equal(env.findButton().disabled, true, "and the button stays refused while the estop is latched");
+  env.wentLimp("ledc:3", "pulses-off");
+  await env.frame();
+  assert.equal(env.running(), null);
+  assert.match(env.feedback(), /ARM3 is limp, so the run stopped/);
+  assert.deepEqual(env.nudges(), ["ARM3"]);
 });
 
-test("a nudge the droid refuses ends the run and says why, and the Part stays not wired", async () => {
-  const env = await bootServos({ outputs: oneRow() });
+test("a nudge the droid refuses ends the run and says why", async () => {
+  const env = await boot();
   env.nudgeFails = new Error("Servo command queue full");
-  env.pressFind("doorRL");
-  await sleep(30);
-
-  assert.equal(env.runPanel(), null);
-  assert.match(env.feedback(), /did not reach the droid: Servo command queue full\. Rear-left body door stays – not wired –/);
-  env.endNudge("ledc:0");
-  await env.frame();
-  assert.equal(env.nudges().length, 1);
+  env.find("doorRL");
+  await settle();
+  assert.equal(env.running(), null);
+  assert.match(env.feedback(), new RegExp(`did not reach the droid: Servo command queue full\\. Rear-left body door stays ${NOT_WIRED}`));
 });
 
-test("one run at a time: a second press is answered on the page, not sent to the droid", async () => {
-  const env = await bootServos({ outputs: oneRow() });
-  env.pressFind("doorRL");
-  await sleep(20);
-  env.pressFind("doorRR");
-  await sleep(20);
-
-  assert.equal(env.nudges().length, 1);
+test("one run at a time: a second start is answered on the page, not sent to the droid", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  env.find("doorRR");
+  await settle();
+  assert.deepEqual(env.nudges(), ["ARM3"]);
   assert.match(env.feedback(), /One run at a time: Rear-left body door is being found/);
-  assert.match(env.runText(), /Rear-left body door moves/, "the run in progress is still the first one");
 });
 
-test("leaving Servos ends the run, and coming back sends nothing the builder did not press for", async () => {
-  const env = await bootServos({ outputs: oneRow() });
-  env.pressFind("doorRL");
-  await sleep(20);
-  assert.equal(env.nudges().length, 1);
-
-  env.navigate("#home");
-  await sleep(180);
-  assert.equal(env.document.body.dataset.page, "home", "the Dashboard is the mounted surface");
-  env.endNudge("ledc:0");
-
-  env.navigate("#servo");
-  await sleep(180);
-  await env.frame();
-  assert.equal(env.nudges().length, 1, "the run ended when Servos was left; the count going up starts nothing");
-  assert.equal(env.runPanel(), null);
-  assert.equal(env.findButton().hidden, false);
-  assert.match(env.feedback(), /The run stopped when you left Servos/);
-});
-
-// An Output an expander would add: no name the servo route takes, so never a
-// candidate even with a pulse on it.
-test("an Output without a name the servo route takes is not nudged", async () => {
-  const outputs = oneRow();
-  outputs.push(output("pca:0", "", { commandedUs: 1500, targetUs: 1500 }));
-  const env = await bootServos({ outputs });
-  env.pressFind("doorRL");
-  await sleep(20);
-  for (const address of ["ledc:0", "ledc:1", "ledc:3", "ledc:4"]) {
-    env.endNudge(address);
-    await env.frame();
-  }
-  assert.deepEqual(env.nudges().map((post) => post.form.arm), ["ARM1", "ARM2", "ARM3", "ARM4"]);
-  assert.equal(env.runPanel(), null);
+// Leaving Wiring ends a run: its reads stop with the surface (#360), so nothing
+// could step it on, and a nudge on the way back would be motion nobody pressed
+// for. The Output under the nudge is let go as Stop lets it go.
+test("leaving Wiring ends the run and lets go of the output under the nudge", async () => {
+  const env = await boot();
+  env.find("doorRL");
+  await settle();
+  assert.equal(env.leave(), false, "leaving is never held");
+  await settle();
+  assert.equal(env.running(), null);
+  assert.equal(env.feedRunning(), false);
+  assert.deepEqual(env.releases(), ["ARM3"]);
+  assert.match(env.feedback(), /The run stopped when you left Wiring/);
 });

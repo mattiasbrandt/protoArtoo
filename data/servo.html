@@ -36,20 +36,15 @@
          of its own. -->
     <div class="card" id="outputs-card">
       <div class="sect"><h2>Outputs</h2><span class="sub outputs-tiers" id="outputs-tiers" role="status" aria-live="polite"></span></div>
-      <!-- The two acts over every row, on one line: find an Output by moving it
-           on the left, send them all back to centre on the right. Find by
-           moving opens the Parts nothing drives as pills under the line, and
-           pressing one starts the run. -->
+      <!-- The one act over every row: send them all back to centre, on the
+           right. Find by moving starts from Wiring, where a Part with no
+           Output is listed (#411); every row here has a Part. -->
       <div class="outputs-tools">
-        <div class="outputs-find" id="outputs-find">
-          <button class="btn btn-sm btn-quiet parts-find" type="button" aria-expanded="false" aria-controls="outputs-find-tray" disabled aria-disabled="true">find by moving<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>
-        </div>
         <div class="outputs-bulk">
           <p class="feedback" role="status" aria-live="polite"></p>
           <button class="btn btn-sm btn-quiet outputs-centre" type="button" aria-label="Put every output back to the centre recorded for it" disabled aria-disabled="true">back to centre</button>
         </div>
       </div>
-      <div class="outputs-find-tray" id="outputs-find-tray" role="group" aria-label="The part to find the output of" hidden></div>
       <!-- The one visible explanation at the controls that move something
            (ADR 0059), and rule 7 of the maker voice: both marks are what the
            controller told the servo, never where it is. -->

@@ -770,6 +770,7 @@
     feedback: document.getElementById("wiring-parts-feedback"),
     dialog: document.getElementById("wiring-move-dialog"),
     timing: document.getElementById("wiring-parts-timing"),
+    find: document.getElementById("wiring-find"),
   });
 
   // ---------------------------------------------------------------------------
@@ -932,6 +933,7 @@
       "/wiring.js": "the wiring sheet",
       "/output_settings.js": "the outputs",
       "/dome_command_map.js": "the dome's commands",
+      "/find_by_moving.js": "find by moving",
       "/parts_mapping.js": "the parts on each output",
     });
     window.PABootstrap.registerSection("wiring-sheet", loadSheet, {
