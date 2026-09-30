@@ -9,7 +9,9 @@
 // moment of the routine - and nothing reaches the droid. The droid moves only
 // on a separate, deliberate press; nothing follows a dragging finger (ADR
 // 0062: "it streams positions at the speed of a finger, and the first move on
-// an uncalibrated part is a jump rather than a ramp").
+// an uncalibrated part is a jump rather than a ramp"). And that press is one
+// request carrying the name and the instant, never a pose the page worked out:
+// the pose and its pace are the firmware's (include/sequence_pose.h).
 //
 // The harness runs the shipped chain data/seq.html declares, opens the
 // timeline through the Factory card's own Timeline button, and records every
@@ -198,7 +200,7 @@ function openPage() {
   };
 }
 
-test("moving the marker shows that moment of the routine and sends nothing to the droid", async () => {
+test("moving the marker sends nothing; the press sends one request naming the sequence and the instant", async () => {
   const page = openPage();
   await page.settle();
   (page.timelineButton.listeners.click || []).forEach((fn) => fn());
@@ -236,4 +238,11 @@ test("moving the marker shows that moment of the routine and sends nothing to th
   await page.settle();
   assert.deepEqual(page.writes.slice(writesBefore), [], "moving the marker sent something to the droid");
   assert.deepEqual(page.writes, [], "opening the timeline sent something to the droid");
+
+  // The press, at the marker's instant: one request, name and instant only.
+  const press = page.timelineView.querySelector('[data-tl-act="pose"]');
+  assert.ok(press, "the timeline has no pose press");
+  page.timelineView.querySelector(".tl-bar").fire("click", { target: press });
+  await page.settle();
+  assert.deepEqual(page.writes, [`POST /api/seq/pose ${JSON.stringify({ name: ROUTINE.name, t: 3600 })}`]);
 });

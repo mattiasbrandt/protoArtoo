@@ -10,6 +10,10 @@
 // here reaches the droid: there is no PAApi call in this file, and moving the
 // marker only repaints the picture and the readout. The drawing follows the
 // marker freely and silently; nothing follows a dragging finger (ADR 0062).
+// The droid moves only on the separate press beside the marker, and even that
+// is handed to the caller (`onPose`), which sends the one request -- a name
+// and an instant -- and the firmware works out and paces the pose itself
+// (POST /api/seq/pose, include/sequence_pose.h).
 //
 // ONE READING OF THE ROUTINE. The steps are expanded by the Rehearsal's own
 // expand() and a body move is resolved by its bodyMove() (data/seq_rehearsal.js),
@@ -462,6 +466,9 @@
   //   cardsLabel the words on the button back to the card view
   //   onCards   the builder asked for the card view of this sequence
   //   onClose   the builder closed the timeline
+  //   onPose    the builder pressed to send the droid to the marker's instant:
+  //             called with it in ms, and returns a promise of {text, level}
+  //             to show beside the press. Absent, there is no press.
   //
   // Returns {refresh(context), at(), destroy()}.
   // ---------------------------------------------------------------------------
@@ -486,9 +493,13 @@
         : "") +
       `<span class="tl-now" role="status" aria-live="polite"></span>` +
       `<span class="tl-acts">` +
+      (typeof options.onPose === "function"
+        ? `<button type="button" class="btn btn-sm accent" data-tl-act="pose">Move the droid to this moment</button>`
+        : "") +
       `<button type="button" class="btn btn-sm" data-tl-act="cards">${esc(options.cardsLabel || "Edit steps")}</button>` +
       `<button type="button" class="btn btn-sm btn-quiet" data-tl-act="close">Close</button>` +
       `</span></div>` +
+      `<p class="hint tl-said" role="status" aria-live="polite" hidden></p>` +
       `<p class="note note-act tl-unwired" hidden></p>` +
       `<div class="tl-stage">` +
       `<div class="tl-scroll"><div class="tl-grid"></div></div>` +
@@ -627,6 +638,23 @@
       setMarker(next);
     }
 
+    // The pose press: one press, one request, at the marker's instant as it is
+    // when pressed. The answer -- under way, or why not -- is said beside it.
+    const said = host.querySelector(".tl-said");
+    const pose = (button) => {
+      const at = t;
+      button.disabled = true;
+      Promise.resolve(options.onPose(at))
+        .then((answer) => {
+          said.hidden = !answer || !answer.text;
+          said.textContent = answer && answer.text ? answer.text : "";
+          said.className = `hint tl-said${answer && answer.level === "error" ? " is-refused" : ""}`;
+        })
+        .finally(() => {
+          button.disabled = false;
+        });
+    };
+
     host.querySelector(".tl-bar").addEventListener("click", (event) => {
       const target = event.target && event.target.closest ? event.target : null;
       const loopButton = target ? target.closest("[data-tl-loop]") : null;
@@ -640,6 +668,10 @@
       }
       const act = target ? target.closest("[data-tl-act]") : null;
       if (!act) return;
+      if (act.dataset.tlAct === "pose") {
+        pose(act);
+        return;
+      }
       if (act.dataset.tlAct === "cards" && typeof options.onCards === "function") options.onCards();
       if (act.dataset.tlAct === "close" && typeof options.onClose === "function") options.onClose();
     });

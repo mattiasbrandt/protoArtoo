@@ -615,6 +615,14 @@
         closeTimeline();
         renderListView();
       },
+      // The one request the pose press sends: the sequence's name and the
+      // instant. What the droid does at that instant, and how far apart, is the
+      // firmware's to work out from what it stores (include/sequence_pose.h);
+      // a latched estop or Sleep Mode refuses it there, in words this shows.
+      onPose: (atMs) =>
+        PAApi.postJson("/api/seq/pose", { name, t: atMs })
+          .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s, one part at a time.`, level: "ok" }))
+          .catch((error) => ({ text: PAApi.messageFor(error), level: "error" })),
     });
   };
 

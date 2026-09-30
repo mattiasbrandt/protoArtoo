@@ -6700,8 +6700,14 @@ body[data-page="maintenance"] .status-item .hint {
   margin-left: auto;
 }
 
-.tl-unwired {
+.tl-unwired,
+.tl-said {
   margin: 0 0 var(--space-md);
+}
+
+/* A pose the droid refused: the estop or Sleep Mode, in the firmware's words. */
+.tl-said.is-refused {
+  color: var(--danger);
 }
 
 .tl-stage {
