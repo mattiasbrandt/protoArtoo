@@ -31,7 +31,7 @@ the patch releases, whose notes live on their own GitHub Release.
   vanishing, so 23 commands the dome firmware already runs - `:SE50` to
   `:SE58`, `:OP06` to `:OP12` and more - work again. `:SE01` to `:SE09` fire
   the dome's panels, lights and holos as well as the body's half, and `:OF`
-  flutters a body arm open. Every command now answers what happened: done
+  on a body arm opens it. Every command now answers what happened: done
   here, sent to the dome, or no and why. `docs/marcduino_commands.md` lists
   which commands the body answers.
 - **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
