@@ -71,6 +71,13 @@ bool sequenceStart(const char* name, CommandSource src);
 // to take a pose from.
 bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src);
 
+// The non-latching Stop (POST /api/seq/stop, the Console's sequence-stop).
+// Raises the transient flag the Coordinator clears once it has ended what it
+// was doing, and cancels a pose press it has not yet taken: the Stop is the
+// later word. A run started with sequenceStart() cancels a pending pose the
+// same way.
+void sequenceStopRequest();
+
 // Pure routing classification  --  no side effects. Safe to call from any context
 // including native tests. Returns SEQ_FALLBACK for non-DM:* names.
 SequenceLookupResult sequenceLookup(const char* name);

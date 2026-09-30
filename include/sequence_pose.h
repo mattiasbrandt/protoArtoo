@@ -410,7 +410,10 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
 // -----------------------------------------------------------------------------
 // The run: the cursor over a plan. `dueMs` is the earliest the next command
 // may go; `awaitArm` is the body Output the last command moved, which the next
-// waits on until ServoTask no longer reports it moving.
+// waits on until ServoTask no longer reports it moving. A run stays active past
+// its last command until that command's spacing has run and its Output has
+// stopped: the pose owns the motion it started until then, and the
+// Coordinator ends it there (poseOneCommand(), src/tasks/sequence_dispatcher.cpp).
 // -----------------------------------------------------------------------------
 struct SeqPoseRun {
     bool     active;
@@ -423,23 +426,49 @@ struct SeqPoseRun {
     uint8_t  src;       // CommandSource of who pressed
 };
 
+// ONE MOTION OWNER ON THE DOME. A dome resync -- when an estop clears, and
+// when the dome link comes up -- assumes the ring is open and closes it one
+// panel at a time on its own timer, the Coordinator's staged ring close. It
+// and a pose never share the dome, the way a run and a resync do not: staging
+// a resync ends a pose being reached (sequenceResyncCloseStage()), and a pose
+// that starts supersedes a staged close (sequencePoseStart()). Otherwise a
+// resync :CLnn and a pose's panel command go out together, for the same panel.
+
+// The staged ring close's cursor when no close is pending.
+constexpr uint8_t SEQ_RESYNC_CLOSE_NONE = 0xFF;
+
 // Start a pose, or refuse it. Refused under either halt, never queued: the
 // same rule a bulk centre keeps (sequenceBootPassStart()). Returns whether the
-// run started.
+// run started. A pose that starts clears `*resyncCloseIdx`, the staged close
+// it supersedes; a refused or empty one moves nothing and leaves it.
+//
+// A pose that replaces one still active keeps that one's spacing: its first
+// command waits for the pending `dueMs` and for the Output being awaited, as
+// the next command of the same pose would, so a second press never starts a
+// motion inside the Cadence Floor of the first press's last one. A replacement
+// with nothing to command still runs out that spacing, so a third press after
+// it waits too. A refused one ends the run; a halt has let every Output go.
 inline bool sequencePoseStart(SeqPoseRun* run, uint32_t nowMs, bool estopLatched, bool sleepMode,
-                              uint8_t count, uint8_t src) {
+                              uint8_t count, uint8_t src, uint8_t* resyncCloseIdx) {
     if (run == nullptr) return false;
+    const bool replacing = run->active;
+    const uint32_t dueMs = (replacing && (int32_t)(run->dueMs - nowMs) > 0) ? run->dueMs : nowMs;
+    const uint8_t awaitArm = replacing ? run->awaitArm : SEQ_BULK_CENTRE_NO_AWAIT;
     run->active = false;
     run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
     if (sequencePoseRefusal(estopLatched, sleepMode) != nullptr) return false;
-    run->active = count > 0;
+    run->active = count > 0 || replacing;
     run->next = 0;
     run->count = count;
-    run->dueMs = nowMs;
+    run->dueMs = dueMs;
+    run->awaitArm = awaitArm;
     run->sent = 0;
     run->skipped = 0;
     run->src = src;
-    return run->active;
+    if (count > 0 && resyncCloseIdx != nullptr) {
+        *resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;
+    }
+    return count > 0;
 }
 
 // The run is over, whoever ended it. Nothing is commanded on the way out, for
@@ -449,6 +478,18 @@ inline void sequencePoseEnd(SeqPoseRun* run) {
         run->active = false;
         run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
     }
+}
+
+// Stage a resync's ring close from the first ring panel, due now, and end a
+// pose being reached, where it has got to. Both resyncs stage through here.
+// Returns whether a pose was ended, for the log.
+inline bool sequenceResyncCloseStage(SeqPoseRun* pose, uint8_t* closeIdx, uint32_t* closeDueMs,
+                                     uint32_t nowMs) {
+    const bool endedPose = pose != nullptr && pose->active;
+    sequencePoseEnd(pose);
+    if (closeIdx != nullptr) *closeIdx = 0;
+    if (closeDueMs != nullptr) *closeDueMs = nowMs;
+    return endedPose;
 }
 
 // Whether the next command may be looked at now. Unsigned subtraction handles
@@ -489,7 +530,11 @@ inline void sequencePoseAdvance(SeqPoseRun* run, uint32_t nowMs, uint8_t cls, bo
         run->dueMs = nowMs;
     }
     run->next++;
-    if (run->next >= run->count) {
-        run->active = false;
-    }
+}
+
+// Whether every command has been dealt with. The run is then over once it is
+// next due -- its last spacing run, its Output stopped -- and the Coordinator
+// ends it with sequencePoseEnd().
+inline bool sequencePoseFinished(const SeqPoseRun& run) {
+    return run.next >= run.count;
 }

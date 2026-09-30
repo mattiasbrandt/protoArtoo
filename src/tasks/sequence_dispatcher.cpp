@@ -309,8 +309,8 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             return;  // still moving: looked at again on the next tick
         }
     }
-    if (run.next >= posePlan.count) {
-        sequencePoseEnd(&run);
+    if (sequencePoseFinished(run)) {
+        sequencePoseEnd(&run);  // the last command's spacing has run: the pose is reached
         return;
     }
 
@@ -366,6 +366,14 @@ bool sequenceStart(const char* name, CommandSource src) {
             if (sequenceQueue == nullptr) {
                 return false;
             }
+            // A run asked for after a pose press is the later word: the pose
+            // still waiting for the Coordinator is cancelled here, before the
+            // run is queued, so no wake can take the older pose after the run
+            // and abort it (#440). A pose pressed after this is still the later
+            // word and wins, as sequencePoseRequest() writes the slot again.
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.poseRequest = SRC_NONE;
+            taskEXIT_CRITICAL(&robotStateMux);
             SequenceRequest req = {};
             strncpy(req.name, name, sizeof(req.name) - 1);
             req.name[sizeof(req.name) - 1] = '\0';
@@ -422,6 +430,23 @@ bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src) {
     robotState.poseRequest = src;
     taskEXIT_CRITICAL(&robotStateMux);
     return true;
+}
+
+// =============================================================================
+// sequenceStopRequest  --  the non-latching Stop's one way in (#440).
+//
+// A Stop is the later word over a pose still waiting for the Coordinator, the
+// way sequenceStart() is: the pending pose is cleared under the same lock that
+// raises the flag, so no wake can take the pose after the Stop and start it.
+// A pose already being reached is ended by the Coordinator when it reads the
+// flag.
+// =============================================================================
+
+void sequenceStopRequest() {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.poseRequest = SRC_NONE;
+    robotState.seqStopRequested = true;
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // =============================================================================
@@ -531,9 +556,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     // individual ring close per kResyncCloseSpacingMs so single-servo inrush
     // never overlaps. A group :CL15 closes every ring servo at once and browns
     // out the dome from a loaded ring (2026-06-17 hardware finding), so resync
-    // must never send it. resyncCloseIdx == 0xFF means no staged close pending.
+    // must never send it. resyncCloseIdx == SEQ_RESYNC_CLOSE_NONE means no staged
+    // close pending. A resync and a pose never share the dome (include/sequence_pose.h).
     const uint32_t kResyncCloseSpacingMs = 500;
-    uint8_t        resyncCloseIdx = 0xFF;
+    uint8_t        resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;
     uint32_t       resyncCloseDueMs = 0;
     uint32_t       waitMs = 10;  // task wake timeout; computed at end of each iteration
 
@@ -600,7 +626,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // next tick otherwise. That keeps the pose intake and the run intake
         // the two arms of one if/else, which is what lets the compiler lay
         // their staging results in the same stack slot: as two separate ifs
-        // the root frame outgrew its measured chain (ADR 0040).
+        // the root frame outgrew its measured chain (ADR 0040). Deferring is
+        // also the right order: sequenceStart() and sequenceStopRequest()
+        // cancel a pending pose, so a pose still waiting on a tick that
+        // received a run was pressed after that run, and is the later word.
         poseAsk.src = SRC_NONE;
         taskENTER_CRITICAL(&robotStateMux);
         if (!haveReq && robotState.poseRequest != SRC_NONE) {
@@ -670,8 +699,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     if (isRuntime) {
                         seqStoreReleaseRun();  // the plan holds its own copies
                     }
+                    // A pose that starts supersedes a staged resync close, as a
+                    // run does below: one motion owner on the dome at a time.
                     sequencePoseStart(&poseRun, now, poseEstop, poseSleep, posePlan.count,
-                                      (uint8_t)poseAsk.src);
+                                      (uint8_t)poseAsk.src, &resyncCloseIdx);
                     PA_LOG_INFO(TAG, "[%s] pose %s at %u ms - %u commands, motions at least %u ms apart",
                                 commandSourceToString(poseAsk.src), poseAsk.name, (unsigned)poseAsk.atMs,
                                 (unsigned)posePlan.count, (unsigned)SEQ_CADENCE_FLOOR_MS);
@@ -724,7 +755,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 if (entry != nullptr) {
                     seqEngineStart(engine, entry, now);
                     seqEvidenceBegin(req.name, (uint8_t)req.src, now, bodyQueueFullCount());
-                    resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
+                    resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;  // a new run supersedes any staged resync close
                     // ...and so does a bulk centre still sweeping. A sequence
                     // and a sweep both move body Outputs, and two of them
                     // interleaving is the many-at-once shape the Cadence Floor
@@ -797,9 +828,11 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             // :CL15/:CL00: a group close drives every ring servo simultaneously
             // and browns out the dome from a loaded ring (issue #2 hardware
             // finding). Pies are never auto-closed on resync. Logic/PSI reset is
-            // a single non-servo command, so it stays immediate.
-            resyncCloseIdx = 0;
-            resyncCloseDueMs = now;
+            // a single non-servo command, so it stays immediate. A pose taken
+            // on this same tick, before the edge was seen, ends here.
+            if (sequenceResyncCloseStage(&poseRun, &resyncCloseIdx, &resyncCloseDueMs, now)) {
+                PA_LOG_INFO(TAG, "pose ended - dome resync");
+            }
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
@@ -845,10 +878,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
 
         // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
         // dome is unknown after boot or a link gap, so assume closed  --  abort any
-        // running sequence, stage an individual ring-only close (drained below),
-        // and clear the latches. Never a group :CL15/:CL00 (see the estop-clear
-        // resync above  --  a group close browns out the dome from a loaded ring);
-        // pies are never auto-closed on resync.
+        // running sequence, end a pose being reached, stage an individual
+        // ring-only close (drained below), and clear the latches. Never a group
+        // :CL15/:CL00 (see the estop-clear resync above  --  a group close browns
+        // out the dome from a loaded ring); pies are never auto-closed on resync.
         const bool domeConn = domeConnected();
         if (domeConn && !prevDomeConn) {
             PA_LOG_INFO(TAG, "dome (re)connected - panel state resync (staged ring close)");
@@ -860,8 +893,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 clearSuppression();
                 activeName[0] = '\0';
             }
-            resyncCloseIdx = 0;
-            resyncCloseDueMs = now;
+            if (sequenceResyncCloseStage(&poseRun, &resyncCloseIdx, &resyncCloseDueMs, now)) {
+                PA_LOG_INFO(TAG, "pose ended - dome resync");
+            }
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
@@ -871,15 +905,15 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // Drain the staged ring-only resync close: one individual :CLnn per
         // kResyncCloseSpacingMs (best-effort  --  hold the index on a full TX queue
         // and retry next tick). Never a group close; never a pie close.
-        if (resyncCloseIdx != 0xFF && (int32_t)(now - resyncCloseDueMs) >= 0) {
+        if (resyncCloseIdx != SEQ_RESYNC_CLOSE_NONE && (int32_t)(now - resyncCloseDueMs) >= 0) {
             char closeCmd[8];
             if (!seqEngineRingCloseCmd(resyncCloseIdx, closeCmd, sizeof(closeCmd))) {
-                resyncCloseIdx = 0xFF;  // defensive: out-of-range index
+                resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;  // defensive: out-of-range index
             } else if (domeQueueTx(closeCmd)) {
                 resyncCloseIdx++;
                 resyncCloseDueMs = now + kResyncCloseSpacingMs;
                 if (resyncCloseIdx >= seqEngineRingPanelCount()) {
-                    resyncCloseIdx = 0xFF;  // staged close complete
+                    resyncCloseIdx = SEQ_RESYNC_CLOSE_NONE;  // staged close complete
                 }
             }
         }
@@ -1011,7 +1045,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // active, a resync close is pending, a bulk centre is sweeping or a
         // pose is being reached;
         // 250 ms otherwise (task blocks on request queue, wakes on TWDT and edges).
-        waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != 0xFF,
+        waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != SEQ_RESYNC_CLOSE_NONE,
                                              centreRun.active || poseRun.active);
     }
 }

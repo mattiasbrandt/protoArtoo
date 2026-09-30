@@ -312,9 +312,10 @@ static void consoleExecuteDomeSequence(uint32_t requestId, const char* operation
 }
 
 // dome.action.sequence-stop: no arguments, matching POST /api/seq/stop
-// (handleSeqStopPost(), src/web/api_seq.cpp) - a non-latching transient flag
-// set unconditionally, no estop/sleep/component gate in the REST source, so
-// none is added here either.
+// (handleSeqStopPost(), src/web/api_seq.cpp) - both go through the one setter,
+// sequenceStopRequest(), which raises a non-latching transient flag
+// unconditionally and cancels a pose press not yet taken. No estop/sleep/
+// component gate in the REST source, so none is added here either.
 static void consoleExecuteDomeSequenceStop(uint32_t requestId, const char* operationName,
                                            const ConsoleArgs& args, ConsoleCommandSource source,
                                            const ConsoleRecordSink* sink) {
@@ -322,9 +323,7 @@ static void consoleExecuteDomeSequenceStop(uint32_t requestId, const char* opera
     if (!consoleRejectAnyArgument(requestId, operationName, args, sink)) {
         return;
     }
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.seqStopRequested = true;
-    taskEXIT_CRITICAL(&robotStateMux);
+    sequenceStopRequest();
 
     if (sink->onRecordResult) {
         sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_APPLIED,

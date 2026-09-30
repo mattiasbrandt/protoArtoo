@@ -282,6 +282,43 @@ void test_pose_refuses_a_name_the_dome_runs_and_a_negative_instant() {
     TEST_ASSERT_EQUAL_INT(400, negative.sentCode);
 }
 
+namespace {
+void pressPose() {
+    WebRequestTestBackend b = postBackend("{\"name\":\"DM:ROCKMARCH\",\"t\":2500}");
+    WebRequest req(&b);
+    handleSeqPosePost(req);
+    TEST_ASSERT_EQUAL_INT(200, b.sentCode);
+}
+}  // namespace
+
+// The later word wins, whatever the Coordinator's tick: a run or a Stop asked
+// for after a pose press cancels the pose it has not yet taken, so the older
+// pose can never start after them. A pose pressed after a run is the later
+// word and stays.
+void test_a_run_or_a_stop_after_a_pose_press_cancels_the_pending_pose() {
+    setHalts(false, false);
+    robotState.seqStopRequested = false;
+
+    pressPose();
+    const WebRequestTestParam run[] = {{"name", "DM:ROCKMARCH"}};
+    WebRequestTestBackend runB = paramBackend(run, 1);
+    WebRequest runReq(&runB);
+    handleSeqTestPost(runReq);
+    TEST_ASSERT_EQUAL_INT(200, runB.sentCode);
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+
+    pressPose();  // after the run: the later word
+    TEST_ASSERT_EQUAL_INT(SRC_WEB_API, robotState.poseRequest);
+
+    WebRequestTestBackend stopB;
+    WebRequest stopReq(&stopB);
+    handleSeqStopPost(stopReq);
+    TEST_ASSERT_EQUAL_INT(200, stopB.sentCode);
+    TEST_ASSERT_TRUE(robotState.seqStopRequested);
+    TEST_ASSERT_EQUAL_INT(SRC_NONE, robotState.poseRequest);
+    robotState.seqStopRequested = false;
+}
+
 // -----------------------------------------------------------------------------
 // GET /api/seq -- chunked read out of the store
 // -----------------------------------------------------------------------------
@@ -526,6 +563,7 @@ int main(int, char**) {
     RUN_TEST(test_pose_accepts_a_factory_sequence_and_an_instant);
     RUN_TEST(test_pose_is_refused_under_the_estop_and_in_sleep_mode_and_says_why);
     RUN_TEST(test_pose_refuses_a_name_the_dome_runs_and_a_negative_instant);
+    RUN_TEST(test_a_run_or_a_stop_after_a_pose_press_cancels_the_pending_pose);
 
     RUN_TEST(test_get_streams_the_stored_file);
     RUN_TEST(test_get_streams_a_file_larger_than_one_chunk);
