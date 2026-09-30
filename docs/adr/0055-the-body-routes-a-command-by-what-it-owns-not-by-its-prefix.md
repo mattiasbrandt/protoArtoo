@@ -1,7 +1,15 @@
 # The body routes a command by what it owns, not by its prefix
 
-Status: accepted (2026-09-08, issue #321). Describes the **target** routing.
-The raw-family forwarding ADR 0045 settled is unchanged.
+Status: accepted (2026-09-08, issue #321). **Built by #449 (2026-09-30):**
+ownership resolves through what the body's own code models - `:OP`/`:CL`/`:OF`
+1-5 and 0/99, `:MV` 1-5, `:SE30`-`:SE36`, the four Moods, `#APSL`/`#APWU`/`#PAHB`.
+The full-droid `:SE01`-`:SE09`/`:SE15`/`:SE16` run their body half and are
+forwarded; everything else on `:` and `#` is forwarded. A line longer than the
+dome link carries (63 characters) is refused, never cut; a panel number is
+digits only, so malformed text is never the broadcast; `$8nn` is bank 8,
+sound nn, and `$800` is refused. The catalog's `control: dome-link` is not yet
+consulted by firmware (every dome-link row's `dome_link_panel` is TBD). The
+raw-family forwarding ADR 0045 settled is unchanged.
 
 ## Context
 
