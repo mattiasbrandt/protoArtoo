@@ -1909,7 +1909,7 @@ void test_action_marcduino_command_missing_value_answers_missing_argument() {
     TEST_ASSERT_EQUAL_STRING("value", capturedValue("argument"));
 }
 
-// A value not starting with a body-owned prefix (:, $, #) fails the same
+// A value not starting with a prefix a binding may carry (:, $, #) fails the same
 // existing validator (rcPayloadValidForMarcduinoCommand()) the live RC
 // trigger path already enforces - "accept exactly what the existing
 // handlers accept ... no widening".
