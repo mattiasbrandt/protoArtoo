@@ -173,7 +173,7 @@
     // src/web/api_servo.cpp), so a picture and a press say the same thing.
     const undrivenWhy = (output) => {
       if (output.light) return `${output.name} carries a light, not a servo.`;
-      if (!output.wired) return `${output.name} is not wired. Mark it on Wiring.`;
+      if (!output.wired) return `${output.name} has no Part on it. Put one on it on Wiring.`;
       return `Restart the droid to use ${output.name}.`;
     };
 
