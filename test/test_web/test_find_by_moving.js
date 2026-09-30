@@ -44,7 +44,7 @@ const boot = async ({ outputs = twoArmsOn(), estop = "clear" } = {}) => {
   const document = new MiniDocument();
   const panel = document.createElement("div");
   document.body.appendChild(panel);
-  const env = { outputs, posts: [], said: [], moved: [], nudgeFails: null };
+  const env = { outputs, posts: [], said: [], moved: [], nudgeFails: null, nudgeLands: null };
 
   let reading = { estopLatched: estop === "latched", moveActsLive: estop === "clear" };
   const readers = [];
@@ -86,6 +86,8 @@ const boot = async ({ outputs = twoArmsOn(), estop = "clear" } = {}) => {
       },
       postForm: async (path, form) => {
         env.posts.push({ path, form: { ...form } });
+        // A nudge still on its way: the droid has not answered it yet.
+        if (form.action === "nudge" && env.nudgeLands) await env.nudgeLands;
         if (form.action === "nudge" && env.nudgeFails) throw env.nudgeFails;
         return { ok: true, data: { ok: true } };
       },
@@ -206,10 +208,11 @@ test("Stop lets go of the output under the nudge and sends nothing further", asy
   assert.deepEqual(env.nudges(), ["ARM3"], "no next nudge is asked for");
 });
 
-// Letting go is only ever of a FREE Output. If a Part lands on the Output under
-// the nudge while the run goes - from another tab, or the Console - that
-// Output is the Part's now, and Stop must not take the pulse off it.
-test("Stop never lets go of an output a Part has landed on meanwhile", async () => {
+// The pulse under the nudge is the run's, whatever landed on the Output since.
+// If a Part lands on it while the run goes - from another tab, or the Console -
+// Stop still lets go of it: the Part's Output waits for the droid's next start
+// to be driven, so nothing but the run's hold was on it (#411 slice 4).
+test("Stop lets go of the run's output even when a Part has landed on it meanwhile", async () => {
   const env = await boot();
   env.find("doorRL");
   await settle();
@@ -220,7 +223,32 @@ test("Stop never lets go of an output a Part has landed on meanwhile", async () 
   env.pressStop();
   await settle();
   assert.equal(env.running(), null);
-  assert.deepEqual(env.releases(), [], "the Part's Output keeps its pulse");
+  assert.deepEqual(env.releases(), ["ARM3"]);
+});
+
+// Stop always wins over a nudge still on its way. The droid takes a free
+// Output when the nudge reaches it and lets go in the order the two arrive, so
+// a release that overtook the nudge would let go of nothing, and the nudge
+// would then pulse after Stop. The release goes only once the nudge is answered.
+test("Stop pressed while a nudge is on its way sends the release behind it", async () => {
+  const env = await boot();
+  let land;
+  env.nudgeLands = new Promise((resolve) => {
+    land = resolve;
+  });
+  env.find("doorRL");
+  await settle();
+
+  env.pressStop();
+  await settle();
+  assert.equal(env.running(), null);
+  assert.deepEqual(env.releases(), [], "nothing overtakes the nudge");
+  land();
+  await settle();
+  assert.deepEqual(
+    env.posts.map((post) => `${post.form.action} ${post.form.arm}`),
+    ["nudge ARM3", "release ARM3"]
+  );
 });
 
 // "That one" is the row's own move, and the run lets go of the Output first:
