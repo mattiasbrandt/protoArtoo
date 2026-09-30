@@ -1156,11 +1156,12 @@ void test_servo_lets_a_run_nudge_a_free_output_and_nothing_else() {
     WebRequestTestBackend nudge;
     post("ARM3", "nudge", nudge);
     TEST_ASSERT_EQUAL_INT_MESSAGE(200, nudge.sentCode, "a free Output takes a run's nudge");
-    // A release only for an Output a run holds: on a free one nobody holds,
-    // ServoTask would drop it, and the route does not answer ok for nothing.
-    WebRequestTestBackend unheld;
-    post("ARM3", "release", unheld);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(409, unheld.sentCode, "no run holds ARM3, so nothing would let go");
+    // Stop wins over a queued nudge (#411 slice 4): ServoTask has not taken
+    // ARM3 yet - no run holds it - and the release is still let through, so it
+    // lands on the queue behind the nudge and lets go of what the nudge takes.
+    WebRequestTestBackend beforeTake;
+    post("ARM3", "release", beforeTake);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, beforeTake.sentCode, "a release sent before the take still stops it");
     g_test_servo_run_held_mask = 1u << 2;
     WebRequestTestBackend release;
     post("ARM3", "release", release);
@@ -1173,6 +1174,9 @@ void test_servo_lets_a_run_nudge_a_free_output_and_nothing_else() {
     WebRequestTestBackend parted;
     post("ARM4", "nudge", parted);
     TEST_ASSERT_EQUAL_INT_MESSAGE(409, parted.sentCode, "an Output a Part is on moves through its Part");
+    WebRequestTestBackend partedRelease;
+    post("ARM4", "release", partedRelease);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(409, partedRelease.sentCode, "no run holds or may take a Part's Output");
     WebRequestTestBackend lit;
     post("ARM5", "nudge", lit);
     TEST_ASSERT_EQUAL_INT_MESSAGE(409, lit.sentCode, "a light's wire is never a servo's");

@@ -111,7 +111,11 @@ bool servoCommandIsARunsOnAFreeOutput(int16_t armId, ServoCommandType type) {
     if (type == SERVO_CMD_NUDGE) {
         return servoTaskMayTakeForRun((uint8_t)armId);
     }
-    return type == SERVO_CMD_RELEASE && servoTaskRunHolds((uint8_t)armId);
+    // A release is Stop, and Stop always wins: it is taken for an Output the
+    // run holds, and for a free one it may be about to, because the nudge that
+    // takes it can still be queued ahead of this release (include/api_servo.h).
+    return type == SERVO_CMD_RELEASE &&
+           (servoTaskRunHolds((uint8_t)armId) || servoTaskMayTakeForRun((uint8_t)armId));
 }
 
 namespace {
