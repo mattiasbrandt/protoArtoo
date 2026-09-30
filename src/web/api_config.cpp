@@ -1241,7 +1241,9 @@ void handleServoOutputsGet(WebRequest& req) {
     // 9536 B, about 9660 B with those five pairs. Raised to 12288 for that, on
     // the same reasoning as 8192: a per-request bound, not BSS. What the droid
     // started with (#364), `activeWired` and `driven`, adds 33-35 B a row -
-    // about 10.4 KB on the twenty-four, still under it.
+    // about 10.4 KB on the twenty-four, still under it - and its Output
+    // Release time (#443), `"release":0,` to `"release":60000,`, 12-16 B a
+    // row: about 10.8 KB at the most, still under it.
     //
     // What that worst case is NOT is what this controller sends. Twenty-four
     // rows is the expander nobody has fitted; the five LEDC outputs answer in

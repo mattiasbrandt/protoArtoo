@@ -192,6 +192,7 @@ void test_every_output_is_read_whole_from_its_row_and_not_from_the_config() {
         TEST_ASSERT_TRUE(row["throwMs"].is<unsigned>());
         TEST_ASSERT_TRUE(row["accelMs"].is<unsigned>());
         TEST_ASSERT_TRUE(row["ease"].is<const char*>());
+        TEST_ASSERT_TRUE(row["release"].is<unsigned>());
         TEST_ASSERT_TRUE(row["boot"].is<const char*>());
     }
     TEST_ASSERT_EQUAL_UINT(3u, lightCapable);
@@ -504,7 +505,7 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
         backend.sentBody,
         "{\"address\":\"ledc:3\",\"name\":\"ARM3\",\"id\":\"aux1\",\"switchable\":true,"
         "\"lightCapable\":true,\"wired\":false,\"component\":\"none\",\"ledCount\":1,"
-        "\"throwMs\":1000,\"accelMs\":250,\"ease\":\"none\",\"boot\":\"limp\",\"openUs\":2000,"
+        "\"throwMs\":1000,\"accelMs\":250,\"ease\":\"none\",\"release\":0,\"boot\":\"limp\",\"openUs\":2000,"
         "\"centreUs\":1500,\"closeUs\":1000,\"calibrated\":false,\"parts\":[],"
         "\"bandLoUs\":1000,\"bandHiUs\":2000,\"narrowedFrom\":null,\"commandedUs\":null,"
         "\"targetUs\":null,"
@@ -514,7 +515,7 @@ void test_the_servo_outputs_answer_carries_each_commanded_position_and_its_band(
         backend.sentBody,
         "{\"address\":\"ledc:5\",\"name\":\"ARM5\",\"id\":\"aux3\",\"switchable\":true,"
         "\"lightCapable\":true,\"wired\":false,\"component\":\"none\",\"ledCount\":1,"
-        "\"throwMs\":1000,\"accelMs\":250,\"ease\":\"none\",\"boot\":\"limp\",\"openUs\":2000,"
+        "\"throwMs\":1000,\"accelMs\":250,\"ease\":\"none\",\"release\":0,\"boot\":\"limp\",\"openUs\":2000,"
         "\"centreUs\":1500,\"closeUs\":1000,\"calibrated\":false,\"parts\":[],"
         "\"bandLoUs\":1000,\"bandHiUs\":2000,\"narrowedFrom\":null,\"commandedUs\":null,"
         "\"targetUs\":null,"
@@ -726,7 +727,9 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     // route refuses at 12288. #364 then gave every row what the droid started
     // with, `activeWired` and `driven`, 33-35 B a row: 2281 B for this table
     // on artoo-esp32, and about 10.4 KB on the twenty-four (estimated from the
-    // per-row cost, not measured - that case is not built here).
+    // per-row cost, not measured - that case is not built here). #443 gave
+    // every row its release time, 12-16 B: about 10.8 KB there at the most,
+    // estimated the same way.
     //
     // Twenty-four rows is the expander case nobody has fitted, and since #428
     // artoo-esp32 - the chip this suite builds - holds five rows until an
