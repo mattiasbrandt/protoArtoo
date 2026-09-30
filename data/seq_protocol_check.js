@@ -904,7 +904,7 @@
     /**
      * Validate entire sequence.
      * @param {object} seq
-     * @returns {{ok: boolean, field?: string, error?: string, warnings?: string[]}}
+     * @returns {{ok: boolean, field?: string, error?: string}}
      */
     validateSequence(seq) {
       if (!seq || typeof seq !== "object") {
@@ -972,7 +972,6 @@
       }
 
       // Validate each step individually
-      const warnings = [];
       let lastOuterT = -1;
       for (let i = 0; i < steps.length; i++) {
         const isBody = bodyStepIndices.has(i);
@@ -1020,7 +1019,7 @@
         }
       }
 
-      return { ok: true, warnings };
+      return { ok: true };
     },
 
     /**

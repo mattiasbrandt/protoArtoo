@@ -178,3 +178,29 @@ test("a count of zero warnings takes no state color", () => {
   assert.equal(classOf(0), "seq-rehearsal-count", "0 warnings wears the warning color");
   assert.match(classOf(1), /\bseq-rehearsal-count-warning\b/, "1 warning lost its color");
 });
+
+test("Protocol Check's mirror answers with a verdict and carries no advice channel", () => {
+  // ADR 0044 decision 3 deleted the mirror's `warnings` slot "so nothing invites
+  // advice back into the mirror later": advice is the Rehearsal's, and a mirror
+  // with a place for it is how the two would start to diverge.
+  const sandbox = { window: {} };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    fs.readFileSync(path.resolve(__dirname, "../../data/seq_protocol_check.js"), "utf8"),
+    sandbox,
+    { filename: "seq_protocol_check.js" },
+  );
+  const check = sandbox.window.SeqProtocolCheck;
+  const accepted = check.validateSequence(
+    seq([
+      { t: 0, type: "dome", cmd: ":OP01" },
+      { t: 500, type: "dome", cmd: ":CL01" },
+      { t: 1000, type: "end" },
+    ]),
+  );
+  assert.deepEqual(Object.keys(accepted), ["ok"]);
+  assert.equal(accepted.ok, true);
+  const refused = check.validateSequence(seq([{ t: 0, type: "dome", cmd: ":OP01" }]));
+  assert.equal(refused.ok, false);
+  assert.deepEqual(Object.keys(refused).filter((k) => !["ok", "field", "error"].includes(k)), []);
+});
