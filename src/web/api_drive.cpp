@@ -30,6 +30,7 @@
 #include "config_write_lock.h"  // saveCommandedMode() is the mode save's Write Window
 #include "api_helpers.h"
 #include "api_json_response.h"
+#include "audio_dollar_parser.h"  // audioDollarBankForm()
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config_cache.h"
@@ -275,6 +276,13 @@ ManualCommandResult executeManualCommand(const char* raw) {
 
     // $ - audio commands: route to AudioTask
     if (prefix == '$') {
+        // $8nn is bank 8, sound nn. Where the module has no bank 8 it is refused
+        // here, so the sender hears why; AudioTask asks the same of the same
+        // line from the paths that do not come through this door.
+        uint8_t bank = 0;
+        if (audioDollarBankForm(raw, &bank, nullptr) && !audioBankFitted(bank)) {
+            return ManualCommandResult::BankNotFitted;
+        }
         // A full audio queue lands on Unsupported, which is what this branch has
         // always answered: the bool it returns covers "not a $ command I know"
         // and "queue full" alike, and both reached the caller's single failure

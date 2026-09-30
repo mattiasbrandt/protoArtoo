@@ -154,3 +154,8 @@ uint8_t audioGetCapabilities();
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count);
 const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count);
 bool audioIsCatalogReady();
+// Whether the fitted sound module reported a bank numbered `bank` (Core 0
+// only, like the accessors above). What a $8nn line asks before it is taken:
+// the answer AudioTask gives the same line (audioStepCommand()), asked
+// early so the sender hears it.
+bool audioBankFitted(uint8_t bank);

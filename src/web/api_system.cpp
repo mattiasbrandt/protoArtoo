@@ -185,6 +185,12 @@ void handleManualCommandPost(WebRequest& req) {
         webSendJsonError(req, 409, undriven);
         return;
     }
+    if (result == ManualCommandResult::BankNotFitted) {
+        webSendJsonError(req, 409,
+                         "a $8nn line is bank 8, sound nn, and the fitted sound module has no bank 8",
+                         nullptr, "command");
+        return;
+    }
     if (result == ManualCommandResult::QueueFull) {
         webSendJsonError(req, 503, "command queue full");
         return;

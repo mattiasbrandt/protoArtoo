@@ -82,6 +82,8 @@ enum class ManualCommandResult : uint8_t {
     OutputUndriven,       // the body's, and nothing drives the Output it names this boot
                           // (servoOutputUndriven(), include/api_servo.h, says why)
     QueueFull,            // the body's, and the queue that runs it refused it
+    BankNotFitted,        // "$8nn": bank 8, sound nn (ShadowMD's $Bnn), and the fitted
+                          // sound module has no bank 8 -- refused, never raw track 8nn
 };
 
 // Execute one manual command: a Marcduino line, or one of the keyword commands

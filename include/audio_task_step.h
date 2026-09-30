@@ -61,6 +61,7 @@ enum AudioStepIgnoreReason : uint8_t {
     AUDIO_STEP_IGNORE_NONE = 0,
     AUDIO_STEP_IGNORE_SLEEP,                // play-type command while sleeping
     AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND,  // catalog command on non-catalog driver
+    AUDIO_STEP_IGNORE_BANK_NOT_FITTED,      // $8nn, and the module has no bank 8
 };
 
 // -----------------------------------------------------------------------------
@@ -106,6 +107,10 @@ struct AudioStepCommandInputs {
     const AudioNamedTracks* named = nullptr;
     const AudioBindingCache* bindings = nullptr;
     uint32_t randomValue = 0;  // category-play selection entropy
+    // The fitted module's catalog banks, which decide whether a $8nn bank
+    // request can play (audioCatalogBankPage(), include/audio_driver.h).
+    const AudioCatalogBank* catalogBanks = nullptr;
+    uint8_t catalogBankCount = 0;
 };
 
 struct AudioStepCommandActions {

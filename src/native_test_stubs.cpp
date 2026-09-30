@@ -85,9 +85,10 @@ char g_test_marcduino_last_line[32] = {};
 
 bool domeConnected() { return g_test_dome_connected; }
 
-// sequence_dispatcher.cpp needs domeQueueTx.
-// No-op stub: routing tests use sequenceLookup() directly and do not need
-// side-effect capture from this function. audioQueueDollar()'s real stub
+// sequence_dispatcher.cpp needs domeQueueTx, and Command Ownership's forward
+// (include/marcduino_router.h) is asserted through it: it records the line it
+// was handed and refuses when g_test_dome_tx_ok says so (#449). The sequence
+// routing tests use sequenceLookup() directly and never read it. audioQueueDollar()'s real stub
 // (records calls, respects g_test_audio_queue_ok) lives below with its
 // sibling audio command queue stubs, #258 - it used to be this unconditional
 // no-op, which left g_test_audio_dollar_calls/g_test_audio_last_dollar
@@ -384,6 +385,16 @@ const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
         *count = g_test_audio_catalog_bank_count;
     }
     return g_test_audio_catalog_banks;
+}
+
+// The real function's own question, asked of the stub's capability word and
+// bank table, so a test fits a bank 8 the way a module would report one.
+bool audioBankFitted(uint8_t bank) {
+    if ((g_test_audio_capabilities & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
+        return false;
+    }
+    return audioCatalogBankPage(g_test_audio_catalog_banks, g_test_audio_catalog_bank_count, bank,
+                                nullptr);
 }
 
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {

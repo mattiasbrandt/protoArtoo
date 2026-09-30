@@ -77,6 +77,25 @@ struct AudioCatalogBank {
     uint16_t count = 0;
 };
 
+// Whether the fitted module reported a bank numbered `bank`, and the page of
+// the first row it reported for it - the address a bank-and-sound request
+// plays at. False for a module that reported no such bank, or no catalog.
+inline bool audioCatalogBankPage(const AudioCatalogBank* banks, uint8_t count, uint8_t bank,
+                                 char* pageOut) {
+    if (banks == nullptr) {
+        return false;
+    }
+    for (uint8_t i = 0; i < count; ++i) {
+        if (banks[i].bank == bank) {
+            if (pageOut != nullptr) {
+                *pageOut = banks[i].page;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // AudioCatalogCompleteness  --  what the last catalog discovery could NOT see.
 //

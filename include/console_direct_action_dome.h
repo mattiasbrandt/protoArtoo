@@ -180,6 +180,14 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         return;
     }
 
+    if (result == ManualCommandResult::BankNotFitted) {
+        // $8nn with no bank 8 on the fitted module: the command value is one
+        // this droid cannot run, which is what OUT_OF_RANGE on this key
+        // already answers for the core's other refusals of the line itself.
+        consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE,
+                              sink);
+        return;
+    }
     if (result == ManualCommandResult::OutputUndriven) {
         // The detail and reason the servo.action.* rows refuse the same Output
         // with (consoleRefusedWhileUndriven(), include/
@@ -232,6 +240,7 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         case ManualCommandResult::ShadowedModeKeyword:
         case ManualCommandResult::SaveFailed:
         case ManualCommandResult::OutputUndriven:
+        case ManualCommandResult::BankNotFitted:
             // Answered above; a result reaching here is a new value nobody
             // mapped, and says so rather than claiming success.
             break;

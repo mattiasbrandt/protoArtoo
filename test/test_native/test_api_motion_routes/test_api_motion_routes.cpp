@@ -29,6 +29,7 @@
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
 #include "failsafe_gate.h"
+#include "audio_test_hooks.h"      // the sound module's catalog banks (#449)
 #include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
 #include "robot_state.h"
 #include "servo_output_row.h"
@@ -801,6 +802,25 @@ void test_manual_command_forward_that_was_not_queued_is_not_ok() {
     marcduinoTestHooksReset();
     assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand("@0T1"));
     TEST_ASSERT_EQUAL_STRING("@0T1", g_test_dome_last_tx);
+}
+
+// $803 is ShadowMD's bank 8, sound 3. With no bank 8 on the fitted module it is
+// refused with that reason rather than queued to play raw track 803.
+void test_manual_command_bank_form_is_refused_where_the_module_has_no_bank() {
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_bank_count = 0;
+    assertManualCommand(ManualCommandResult::BankNotFitted, executeManualCommand("$803"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_audio_dollar_calls);
+
+    g_test_audio_catalog_banks[0] = AudioCatalogBank{};
+    g_test_audio_catalog_banks[0].bank = 8;
+    g_test_audio_catalog_bank_count = 1;
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("$803"));
+    TEST_ASSERT_EQUAL_UINT(1, g_test_audio_dollar_calls);
+
+    g_test_audio_capabilities = 0;
+    g_test_audio_catalog_bank_count = 0;
 }
 
 void test_manual_command_longer_than_any_keyword_is_unknown_not_truncated() {
@@ -1599,6 +1619,7 @@ int main(int, char**) {
     RUN_TEST(test_manual_command_full_droid_sequence_runs_body_half_and_forwards);
     RUN_TEST(test_manual_command_owned_line_the_body_refuses_is_neither_forwarded_nor_ok);
     RUN_TEST(test_manual_command_forward_that_was_not_queued_is_not_ok);
+    RUN_TEST(test_manual_command_bank_form_is_refused_where_the_module_has_no_bank);
     RUN_TEST(test_manual_command_longer_than_any_keyword_is_unknown_not_truncated);
 
     RUN_TEST(test_dome_speed_rejects_out_of_range);

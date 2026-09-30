@@ -25,6 +25,18 @@ AudioAction parseAudioDollar(const char* cmd, const AudioNamedTracks& named) {
         return action;  // bare '$'  --  NONE
     }
 
+    // Bank form: $8nn  --  sound nn of bank 8, never raw track 8nn
+    uint8_t bank = 0;
+    uint16_t sound = 0;
+    if (audioDollarBankForm(cmd, &bank, &sound)) {
+        if (sound > 0) {
+            action.type = AUDIO_ACTION_PLAY_BANKED;
+            action.bank = bank;
+            action.track = sound;
+        }
+        return action;
+    }
+
     // Numeric argument: $nnn  --  play track by number
     if (*arg >= '0' && *arg <= '9') {
         int track = atoi(arg);
