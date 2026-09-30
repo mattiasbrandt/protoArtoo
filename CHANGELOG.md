@@ -26,6 +26,11 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Read a sequence as time.** Timeline, on any sequence card, draws the
+  routine with a lane per part: each move as long as it takes, and whatever the
+  routine leaves open running on to the end. Move the marker to any moment and
+  the droid picture shows that moment. Moving it never moves the droid. Parts
+  the routine names that are not wired are listed once, above the routine.
 - **The Rehearsal says more of what will not happen.** It now flags panel
   moves close enough to brown the dome out, a group command that moves panels
   the routine never touched, a raw light code that shows up in the wrong

@@ -17,6 +17,7 @@
   let learnedAnswered = false;
   let factoryAnswered = false;
   let currentEditingSeq = null; // The sequence being edited (or null)
+  let timeline = null; // the open timeline's handle (data/seq_timeline.js), or null
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
   // Editor state tracking
@@ -225,6 +226,9 @@
     // Editor view
     editorView: document.getElementById("seq-editor-view"),
 
+    // Timeline view
+    timelineView: document.getElementById("seq-timeline-view"),
+
     // Memory wipe modal
     modalWipe: document.getElementById("seq-modal-memory-wipe"),
     wipeSeqName: document.getElementById("seq-wipe-seq-name"),
@@ -398,7 +402,7 @@
       if (!cardsWritten) return;
 
       // Attach event listeners to Learned sequence action buttons
-      els.cardsContainer.querySelectorAll('.seq-card-actions button:not([data-action="tune"])').forEach((btn) => {
+      els.cardsContainer.querySelectorAll('.seq-card-actions button:not([data-action="tune"]):not([data-action="timeline"])').forEach((btn) => {
         const action = btn.dataset.action;
         const seqName = btn.dataset.seqName;
         const cardEl = btn.closest(".seq-card");
@@ -411,6 +415,17 @@
           const builtinName = btn.dataset.builtinName;
           handleCloneBuiltin(builtinName);
         });
+      });
+
+      // Timeline, on a Learned card and a Factory card alike: the card says
+      // which of the two reads the sequence.
+      els.cardsContainer.querySelectorAll('[data-action="timeline"]').forEach((btn) => {
+        btn.addEventListener("click", () =>
+          handleOpenTimeline(
+            btn.dataset.builtinName ? { builtinName: btn.dataset.builtinName } : { seqName: btn.dataset.seqName },
+            btn.closest(".seq-card")
+          )
+        );
       });
     }
   };
@@ -453,6 +468,7 @@
         <div class="seq-card-actions">
           <button class="btn btn-sm" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
           <button class="btn btn-sm" data-action="test" ${testBtnDisabled}>Test</button>
+          <button class="btn btn-sm" data-action="timeline" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Timeline</button>
           <button class="btn btn-sm" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
           <button class="btn btn-sm" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
           <button class="btn btn-sm" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
@@ -488,7 +504,9 @@
         </div>
         <div class="seq-card-actions">
           <button class="btn btn-sm" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
+          <button class="btn btn-sm" data-action="timeline" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}">Timeline</button>
         </div>
+        <div class="seq-card-test-feedback feedback hidden"></div>
       </div>
     `;
   };
@@ -533,6 +551,67 @@
       full,
       "list"
     );
+  };
+
+  // =========================================================================
+  // Timeline (#440, ADR 0062)
+  //
+  // A saved sequence read as time. It reads what the droid stores - GET
+  // /api/seq for the builder's own, GET /api/seq/builtins for a Factory one -
+  // and the droid facts the Rehearsal reads, and it writes nothing. Its way
+  // back to the cards opens the card view of the same sequence: the editor for
+  // the builder's own, Tune for a Factory one, exactly as the list's own
+  // buttons do.
+  // =========================================================================
+  const closeTimeline = () => {
+    if (timeline) {
+      timeline.destroy();
+      timeline = null;
+    }
+    els.timelineView.classList.add("hidden");
+  };
+
+  const handleOpenTimeline = async ({ seqName = null, builtinName = null }, cardEl = null) => {
+    const name = builtinName || seqName;
+    const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
+    const sayOnCard = (message) => {
+      console.error(`[seq] timeline for ${name}: ${message}`);
+      if (!feedbackEl) return;
+      feedbackEl.textContent = message;
+      feedbackEl.className = "seq-card-test-feedback feedback error";
+    };
+    if (!window.SeqTimeline) {
+      sayOnCard("The timeline did not load. Reload the page to try again.");
+      return;
+    }
+    let seq = null;
+    try {
+      const path = builtinName ? "/api/seq/builtins" : "/api/seq";
+      const result = await PAApi.get(`${path}?name=${encodeURIComponent(name)}`);
+      seq = result.data;
+    } catch (error) {
+      sayOnCard(`Could not read ${name}: ${PAApi.messageFor(error)}`);
+      return;
+    }
+    closeTimeline();
+    els.emptyState.classList.add("hidden");
+    els.populatedState.classList.add("hidden");
+    els.editorView.classList.add("hidden");
+    els.timelineView.classList.remove("hidden");
+    timeline = window.SeqTimeline.mount(els.timelineView, seq, {
+      context: rehearsalContext(),
+      describe: stepPreview,
+      cardsLabel: builtinName ? "Tune" : "Edit steps",
+      onCards: () => {
+        closeTimeline();
+        if (builtinName) handleCloneBuiltin(builtinName);
+        else handleEditSequence(seqName);
+      },
+      onClose: () => {
+        closeTimeline();
+        renderListView();
+      },
+    });
   };
 
   // =========================================================================
@@ -1584,6 +1663,7 @@
     }
     if (editorState.current && !els.editorView.classList.contains("hidden")) updateValidationSummary();
     if (lastRehearsalReport) showRehearsalReport(...lastRehearsalReport);
+    if (timeline) timeline.refresh(rehearsalContext());
   };
 
   const validateAndUpdateStep = (stepIdx) => {
@@ -2870,6 +2950,8 @@
     }
 
     hideModal(els.modalImport);
+    // Restore sits beside the title, so it can be pressed with a timeline open.
+    closeTimeline();
     editorState.isNew = true;
     editorState.original = JSON.parse(JSON.stringify(parsed));
     editorState.current = JSON.parse(JSON.stringify(parsed));
@@ -2983,6 +3065,8 @@
       "/seq_protocol_check.js": "sequence protocol",
       "/servo_motion.js": "servo motion model",
       "/seq_rehearsal.js": "sequence rehearsal",
+      "/seq_timeline.js": "sequence timeline",
+      "/body_view.js": "droid picture",
       "/outputs.js": "servo outputs",
       "/seq.js": "sequence editor",
       "/footer.js": "page footer",

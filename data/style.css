@@ -172,6 +172,9 @@
   --space-lg: 16px;
   --space-xl: 24px;
   --space-2xl: 32px;
+  /* The Sequences timeline's lane-name column (data/seq_timeline.js): the one
+     place its width is written, so nothing else repeats the number. */
+  --tl-lane-w: 200px;
 
   /* Type, by job. Each step carries the job it does, so a new surface picks a
      size by asking what it is rather than by copying whatever the neighbour
@@ -6649,6 +6652,267 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-rehearsal-badge-warning > summary {
   color: var(--warning);
+}
+
+/* ---------------------------------------------------------------------------
+   Sequences: a saved routine read as time (#440, ADR 0062, data/seq_timeline.js)
+
+   Its own block, added whole. Every color is a token from the palette.
+
+   One ink, by weight: a move is the solid block, a Part standing open is the
+   span, and "still open when this finishes" is the lighter run to the edge.
+   The interaction blue is spent on the marker alone, which is the one thing a
+   builder moves here. No block and no lane is amber: a Part this droid cannot
+   move is said once, in the note above the routine, and its lane is dim and
+   italic (ADR 0062).
+
+   The lane column's width is --tl-lane-w, in :root, and nothing else. Every
+   position is a fraction of the track, so the script never needs to know it:
+   the marker and the end line sit in an overlay laid over the tracks alone.
+   --------------------------------------------------------------------------- */
+.tl-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.tl-bar .seg {
+  flex: 0 0 auto;
+}
+
+.tl-bar .seg > button {
+  min-height: 26px;
+  padding: 0 var(--space-md);
+}
+
+.tl-now {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-acts {
+  display: flex;
+  gap: var(--space-sm);
+  margin-left: auto;
+}
+
+.tl-unwired {
+  margin: 0 0 var(--space-md);
+}
+
+.tl-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.tl-scroll {
+  overflow-x: auto;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate);
+}
+
+.tl-grid {
+  position: relative;
+}
+
+.tl-row {
+  display: flex;
+  min-height: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 var(--tl-lane-w);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-sm);
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+  white-space: nowrap;
+}
+
+.tl-short {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+}
+
+.tl-part {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-row.is-unwired .tl-name,
+.tl-row.is-unwired .tl-short {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.tl-track {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.tl-ruler-row {
+  min-height: 28px;
+  border-bottom-color: var(--border-strong);
+}
+
+.tl-ruler-row .tl-name {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tl-ruler {
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.tl-ruler:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tl-tick-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: var(--space-2xs) 0 0 var(--space-2xs);
+  border-left: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl-item {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  min-width: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-plate);
+}
+
+.tl-label {
+  position: absolute;
+  top: 50%;
+  left: var(--space-2xs);
+  transform: translateY(-50%);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl-move {
+  background: var(--text-dim);
+}
+
+.tl-move .tl-label {
+  color: var(--well);
+}
+
+.tl-open,
+.tl-span,
+.tl-light {
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
+}
+
+.tl-left {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--text) 26%, transparent);
+  border-right: 0;
+}
+
+.tl-flutter {
+  min-width: 10px;
+  background: repeating-linear-gradient(90deg, var(--text-dim) 0 2px, transparent 2px 4px);
+}
+
+.tl-maybe {
+  min-width: 10px;
+  border: 1px dashed var(--text-faint);
+}
+
+.tl-tick {
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--text-dim);
+}
+
+.tl-item.is-ghost {
+  opacity: 0.35;
+}
+
+.tl-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--tl-lane-w);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.tl-end,
+.tl-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+}
+
+.tl-end {
+  border-left: 1px dashed var(--text-faint);
+}
+
+.tl-marker {
+  border-left: 2px solid var(--accent);
+}
+
+.tl-side {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.tl-readout {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2xs) var(--space-md);
+  margin: 0;
+  font-size: var(--fs-cell);
+}
+
+.tl-readout dt {
+  color: var(--text-faint);
+}
+
+.tl-readout dd {
+  margin: 0;
+  color: var(--text);
 }
 
 /* ---------------------------------------------------------------------------
