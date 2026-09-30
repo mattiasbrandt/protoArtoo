@@ -107,9 +107,9 @@
             "rcInputTask"
           ],
           "frames": [],
-          "chain_bytes": 5568,
+          "chain_bytes": 5632,
           "stack_bytes": 7168,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: rcInputTask -> dispatchSbusBindingsForSource() -> dispatchProcessorOutput() [clone .constprop.0] -> rcDispatchTriggerResults() -> rcDispatchSingleAction() -> parseMarcduinoCommand() -> ...; widest frames _svfprintf_r 1152 B, rcInputTask 576 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: rcInputTask -> dispatchSbusBindingsForSource() -> dispatchProcessorOutput() [clone .constprop.0] -> rcDispatchTriggerResults() -> rcDispatchSingleAction() -> routeMarcduinoLine() -> executeMarcduinoBodyCommand() -> handleSequenceCommand() -> sequenceStart() -> ...; widest frames _svfprintf_r 1152 B, rcInputTask 576 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. The Marcduino router's frame sits between rcDispatchSingleAction and the body handler since #449 (+64 B); its log line is out of line (marcduinoLogRoute()) because inline it walked 5904 B, past the rule step."
         }
       }
     },
