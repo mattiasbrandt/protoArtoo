@@ -518,8 +518,8 @@
       (typeof options.onPose === "function"
         ? `<button type="button" class="btn btn-sm accent" data-tl-act="pose">Move the droid to this moment</button>`
         : "") +
-      `<button type="button" class="btn btn-sm" data-tl-act="cards">${esc(options.cardsLabel || "Edit steps")}</button>` +
-      `<button type="button" class="btn btn-sm btn-quiet" data-tl-act="close">Close</button>` +
+      `<button type="button" class="seq-act" data-tl-act="cards">${esc(options.cardsLabel || "Edit steps")}</button>` +
+      `<button type="button" class="seq-act" data-tl-act="close">Close</button>` +
       `</span></div>` +
       `<p class="hint tl-said" role="status" aria-live="polite" hidden></p>` +
       `<p class="note note-act tl-unwired" hidden></p>` +

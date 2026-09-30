@@ -456,7 +456,7 @@
     // Share to project: only the operator's own custom sequences (not factory-derived).
     const isCustom = !seq.source || seq.source === "user";
     const shareBtn = isCustom
-      ? `<button class="btn btn-sm" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      ? `<button class="seq-act" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
       : "";
 
     const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${window.PAUtils.escapeAttr(seq.name)}"`;
@@ -467,20 +467,22 @@
           <h4>${window.PAUtils.escapeHtml(seq.name)}</h4>
           <div class="seq-badges">${badges.join("")}</div>
         </div>
-        <div class="seq-card-meta">
-          <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(seq.toggleGroup || "none")}</span>
-          <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
-          <span class="seq-meta-item">Steps: ${stepCount}</span>
-          <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
+        <div class="seq-card-body">
+          <div class="seq-card-meta">
+            <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(seq.toggleGroup || "none")}</span>
+            <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
+            <span class="seq-meta-item">Steps: ${stepCount}</span>
+            <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
+          </div>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
-          <button class="btn btn-sm" data-action="test" ${testBtnDisabled}>Test</button>
-          <button class="btn btn-sm" data-action="timeline" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Timeline</button>
-          <button class="btn btn-sm" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
-          <button class="btn btn-sm" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
-          <button class="btn btn-sm" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
+          <button class="seq-act" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
+          <button class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
+          <button class="seq-act" data-action="timeline" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Timeline</button>
+          <button class="seq-act" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
+          <button class="seq-act" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
           ${shareBtn}
+          <button class="seq-act seq-act-danger" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
         <div class="seq-card-rehearsal"></div>
@@ -504,15 +506,17 @@
             <span class="seq-badge seq-badge-factory" title="Built-in Factory sequence">Factory</span>
           </div>
         </div>
-        ${purposeHtml}
-        <div class="seq-card-meta">
-          <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(toggleGroup)}</span>
-          <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
-          <span class="seq-meta-item">Steps: ${stepCount}</span>
+        <div class="seq-card-body">
+          ${purposeHtml}
+          <div class="seq-card-meta">
+            <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(toggleGroup)}</span>
+            <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
+            <span class="seq-meta-item">Steps: ${stepCount}</span>
+          </div>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
-          <button class="btn btn-sm" data-action="timeline" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}">Timeline</button>
+          <button class="seq-act" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
+          <button class="seq-act" data-action="timeline" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}">Timeline</button>
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
       </div>
@@ -883,48 +887,41 @@
           <span class="step-card-error-text">${window.PAUtils.escapeHtml(validation.error || "Invalid step")}</span>
         </div>` : ""}
         <div class="step-card-expanded-content">
-          <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+          <div class="setting-rows step-rows">
+            <div class="setting-row">
+              <span class="setting-name">Starts at</span>
+              <span class="setting-number">
+                <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+                <span class="setting-unit">ms</span>
+              </span>
+              <span class="setting-value"></span>
+            </div>
+          </div>
           ${renderBeatPicker(step, idx)}
 
-          <!-- Grouped icon cards (Common + Advanced) -->
-          <div class="step-type-picker">
-            <div class="step-type-group">
-              <div class="step-type-group-label">Common</div>
-              <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "gesture", "sequence", "loop"]
+          <!-- What kind of step it is: one row of pills, the dome's four kinds
+               of command among them. -->
+          <div class="setting-rows step-rows">
+            <div class="setting-row">
+              <span class="setting-name">Kind</span>
+              <span class="step-type-picker seq-pills" role="radiogroup" aria-label="Kind of step">
+                ${["audio", "domeRotate", "dome"]
                   .map(
                     (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
-                        <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
-                      </button>`
+                      `<button class="step-type-chip step-type-card ${step.type === type && !(type === "dome" && /^(DL|DT|DH):/.test(step.cmd || "")) ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}"><span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span></button>`
                   )
                   .join("")}
-              </div>
-            </div>
-            <div class="step-type-subgroup">
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}">
-                <span class="step-type-card-name">Logic / PSI Mode</span>
-              </button>
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}">
-                <span class="step-type-card-name">Logic Text</span>
-              </button>
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}">
-                <span class="step-type-card-name">Holo Effect</span>
-              </button>
-            </div>
-
-            <div class="step-type-group">
-              <div class="step-type-group-label">Advanced</div>
-              <div class="step-type-cards">
-                ${["random", "audioCat", "end"]
+                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}"><span class="step-type-card-name">Logic / PSI Mode</span></button>
+                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}"><span class="step-type-card-name">Logic Text</span></button>
+                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}"><span class="step-type-card-name">Holo Effect</span></button>
+                ${["gesture", "sequence", "loop", "random", "audioCat", "end"]
                   .map(
                     (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
-                        <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
-                      </button>`
+                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}"><span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span></button>`
                   )
                   .join("")}
-              </div>
+              </span>
+              <span class="setting-value"></span>
             </div>
           </div>
 
@@ -1220,7 +1217,7 @@
                 .join("")}
             </select>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
-            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
+            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to advanced mode">Advanced</button>
           `;
         } else if (domeMode === "logic") {
           // Logic/PSI Mode (DL:) structured step
@@ -1551,7 +1548,7 @@
               <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
             </select>
             <span class="dome-cmd-preview">:${action}${target}</span>
-            <button class="dome-mode-toggle" aria-label="Switch to visual presets">Presets</button>
+            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
             ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
             <div class="dome-panel-advisory hidden"></div>
@@ -1560,7 +1557,7 @@
           // Advanced mode: raw text input
           behaviorHtml = `
             <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
-            <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
+            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to panel mode">Panel</button>
           `;
         }
         break;
@@ -1859,77 +1856,80 @@
         ${tuneNotice}
 
         <div class="seq-editor-metadata">
-          <!-- Sequence Info (always visible) -->
-          <div class="seq-metadata-section seq-metadata-info">
-            <div class="seq-editor-field">
-              <label for="seq-editor-name">Name</label>
-              <input id="seq-editor-name" type="text" value="${window.PAUtils.escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="20">
-              <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
+          <!-- The sequence's details as setting rows, the family Foot Drive's
+               settings are drawn in: a name, the control, what it is on. -->
+          <div class="setting-rows seq-header">
+            <label class="setting-row">
+              <span class="setting-name">Name</span>
+              <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${window.PAUtils.escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="21">
+              <span class="setting-value"></span>
+            </label>
+            <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
+            <label class="setting-row">
+              <span class="setting-name">Purpose</span>
+              <input id="seq-editor-purpose" class="number-cell text-cell text-cell-wide" type="text" value="${window.PAUtils.escapeHtml(seq.meta?.purpose || "")}" placeholder="optional" aria-label="Purpose of the sequence">
+              <span class="setting-value"></span>
+            </label>
+            <div class="setting-row">
+              <span class="setting-name">Interrupt group</span>
+              <span id="seq-editor-toggle" class="seg seg-sm" role="group" aria-label="Interrupt group for conflict management">
+                ${["none", "pies", "low", "all"]
+                  .map(
+                    (g) =>
+                      `<button type="button" data-value="${g}" aria-pressed="${(seq.toggleGroup || "none") === g ? "true" : "false"}">${g[0].toUpperCase() + g.slice(1)}</button>`,
+                  )
+                  .join("")}
+              </span>
+              <span class="setting-value"></span>
             </div>
-
-            <div class="seq-editor-field">
-              <label for="seq-editor-purpose">Purpose (optional)</label>
-              <input id="seq-editor-purpose" type="text" value="${window.PAUtils.escapeHtml(seq.meta?.purpose || "")}" placeholder="What this sequence does..." aria-label="Purpose of the sequence">
-            </div>
-
-            <div class="seq-editor-field">
-              <label for="seq-editor-toggle">Interrupt group</label>
-              <select id="seq-editor-toggle" aria-label="Interrupt group for conflict management">
-                <option value="none" ${(seq.toggleGroup || "none") === "none" ? "selected" : ""}>none</option>
-                <option value="pies" ${seq.toggleGroup === "pies" ? "selected" : ""}>pies</option>
-                <option value="low" ${seq.toggleGroup === "low" ? "selected" : ""}>low</option>
-                <option value="all" ${seq.toggleGroup === "all" ? "selected" : ""}>all</option>
-              </select>
-            </div>
-
-            <div class="seq-editor-field seq-tempo">
-              <label for="seq-editor-bpm">Tempo</label>
-              <div class="seq-row-ctl">
-                <input id="seq-editor-bpm" class="seq-num" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
-                <span class="seq-unit">BPM</span>
-                <span class="seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
+            <div class="setting-row">
+              <span class="setting-name">Tempo</span>
+              <span class="seq-row-ctl">
+                <span class="setting-number">
+                  <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
+                  <span class="setting-unit">BPM</span>
+                </span>
                 <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
                 <label class="seq-act" for="seq-editor-track">Analyse a track</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
-              </div>
-              <div id="seq-editor-tap" class="seq-row-ctl hidden">
+              </span>
+              <span class="setting-value seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
+            </div>
+            <div id="seq-editor-tap" class="setting-row hidden">
+              <span class="setting-name">Tap on the beat</span>
+              <span class="seq-row-ctl">
                 <button id="seq-editor-tap-play" class="seq-act" type="button">Play on the droid</button>
                 <button id="seq-editor-tap-beat" class="btn btn-sm accent" type="button">Tap</button>
-                <span class="seq-unit" id="seq-editor-tap-count" role="status">0 taps</span>
+                <span class="setting-unit" id="seq-editor-tap-count" role="status">0 taps</span>
                 <button id="seq-editor-tap-use" class="seq-act" type="button" disabled>Use</button>
-              </div>
-              <details id="seq-editor-downbeat" class="seq-more${seq.tempo ? "" : " hidden"}">
-                <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Bar 1</summary>
-                <div class="seq-row-ctl">
-                  <span class="seq-unit">Starts on beat</span>
-                  <input id="seq-editor-downbeat-beat" class="seq-num" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
-                </div>
-              </details>
-              <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
+              </span>
+              <span class="setting-value"></span>
             </div>
+            <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
           </div>
 
-          <!-- Advanced Settings (collapsed by default) -->
-          <div class="seq-metadata-section seq-metadata-advanced">
-            <button id="seq-editor-advanced-toggle" class="seq-advanced-toggle" type="button" aria-expanded="false" aria-controls="seq-editor-advanced-fields">
-              <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Advanced settings
-            </button>
-            <div id="seq-editor-advanced-fields" class="seq-advanced-fields hidden">
-              <div class="seq-editor-field">
-                <label for="seq-editor-suppress">Mute period after this runs (ms)</label>
-                <div class="seq-editor-slider-row">
-                  <input id="seq-editor-suppress" type="range" class="seq-editor-slider" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period milliseconds">
-                  <span class="seq-editor-slider-value">${seq.suppressMs || 8000}</span>
-                </div>
-                <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
-              </div>
-
-              <div class="seq-editor-field">
-                <label for="seq-editor-notes">Notes (optional)</label>
-                <textarea id="seq-editor-notes" placeholder="Add any notes about this sequence..." aria-label="Optional notes about the sequence">${window.PAUtils.escapeHtml((seq.meta?.notes || ""))}</textarea>
-              </div>
+          <!-- What is rarely set, folded away. -->
+          <details class="seq-more seq-header-more">
+            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>More settings</summary>
+            <div class="setting-rows seq-header">
+              <label class="setting-row">
+                <span class="setting-name">Mute period (ms)</span>
+                <input id="seq-editor-suppress" type="range" class="fader" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period milliseconds">
+                <span class="setting-value seq-editor-slider-value">${seq.suppressMs || 8000}</span>
+              </label>
+              <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
+              <label id="seq-editor-downbeat" class="setting-row${seq.tempo ? "" : " hidden"}">
+                <span class="setting-name">Bar 1 starts on beat</span>
+                <input id="seq-editor-downbeat-beat" class="number-cell" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
+                <span class="setting-value"></span>
+              </label>
+              <label class="setting-row">
+                <span class="setting-name">Notes</span>
+                <textarea id="seq-editor-notes" class="number-cell text-cell text-cell-wide seq-notes" placeholder="optional" aria-label="Optional notes about the sequence">${window.PAUtils.escapeHtml((seq.meta?.notes || ""))}</textarea>
+                <span class="setting-value"></span>
+              </label>
             </div>
-          </div>
+          </details>
         </div>
 
         <div class="seq-editor-validation-summary" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
@@ -1947,7 +1947,7 @@
             ${stepRows}
           </div>
           <div class="seq-row-ctl">
-            <button id="seq-editor-add-step" class="btn btn-sm" type="button">Add a step</button>
+            <button id="seq-editor-add-step" class="seq-act" type="button">Add a step</button>
             <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
             <span class="seq-unit" id="seq-editor-retime-receipt" role="status"></span>
             <button id="seq-editor-retime-undo" class="seq-act hidden" type="button">Undo</button>
@@ -1955,10 +1955,10 @@
         </div>
 
         <div class="seq-editor-footer">
-          <button id="seq-editor-test" class="btn" type="button">Test on the droid</button>
-          <button id="seq-editor-save" class="btn accent" type="button">Save</button>
-          <button id="seq-editor-revert" class="btn" type="button" aria-label="Discard unsaved changes">Revert</button>
-          <button id="seq-editor-cancel" class="btn" type="button" aria-label="Cancel editing">Cancel</button>
+          <button id="seq-editor-save" class="btn btn-sm accent" type="button">Save</button>
+          <button id="seq-editor-test" class="seq-act" type="button">Test on the droid</button>
+          <button id="seq-editor-revert" class="seq-act" type="button" aria-label="Discard unsaved changes">Revert</button>
+          <button id="seq-editor-cancel" class="seq-act" type="button" aria-label="Cancel editing">Cancel</button>
           <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
         </div>
 
@@ -2194,9 +2194,13 @@
     }
 
     if (toggleSelect) {
-      toggleSelect.addEventListener("change", () => {
-        editorState.current.toggleGroup = toggleSelect.value;
-        updateValidationSummary();
+      // A joined bar of the four groups: the pressed one is the group.
+      toggleSelect.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          editorState.current.toggleGroup = btn.dataset.value;
+          toggleSelect.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
+          updateValidationSummary();
+        });
       });
     }
 

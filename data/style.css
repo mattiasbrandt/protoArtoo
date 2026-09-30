@@ -990,7 +990,6 @@ body[data-page="firmware"] .card > * + * {
   line-height: 1.5;
 }
 
-
 .hero-grid,
 .status-grid,
 .drive-grid,
@@ -1079,7 +1078,6 @@ body[data-page="firmware"] .card > * + * {
   white-space: nowrap;
 }
 
-
 /* A signal light is a droid LED (operator, 2026-09-16, amending CONTEXT.md
    "Status Color"): 7 px, and a lit one glows, which is what makes it read as
    an LED rather than as a colored pixel.
@@ -1137,7 +1135,6 @@ body[data-page="firmware"] .card > * + * {
   box-shadow: none;
   opacity: 0.4;
 }
-
 
 .button-row {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -3160,7 +3157,6 @@ body.sleep-mode-active {
 /* .info-note is gone too: no served file has referenced it, and the anatomy's
    blue consequence note is .note .note-info. */
 
-
 /* Tooltip styles — exclude buttons and interactive elements. A Status Plate
    chip is one: a press opens the surface where its thing is changed, so it
    carries the pointer, not the help cursor and a dotted underline under its
@@ -3583,9 +3579,6 @@ p.output-parts {
   color: var(--accent-bright);
   font-weight: 600;
 }
-
-
-
 
 .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -4027,7 +4020,6 @@ label.sound-search-field {
 #catalog-rows .catalog-actions-cell {
   min-width: 180px;
 }
-
 
 @media (max-width: 720px) {
   .sound-toolbar {
@@ -4477,7 +4469,6 @@ body[data-page="maintenance"] .status-item .hint {
   }
 }
 
-
 .keyboard-focus {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -4570,7 +4561,6 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--silver-bright);
   letter-spacing: 0.03em;
 }
-
 
 .rc-action-label-head {
   display: block;
@@ -4832,7 +4822,6 @@ body[data-page="maintenance"] .status-item .hint {
 .rc-editor-cond.block {
   display: block;
 }
-
 
 /* Animations */
 @keyframes fadeIn {
@@ -5369,68 +5358,59 @@ body[data-page="maintenance"] .status-item .hint {
   min-width: 160px;
 }
 
-/* Cards list */
+/* The lists, as setting rows (operator, 2026-10-01): one row per sequence -
+   its name, what it is, and its acts as quiet words - divided by seams, in
+   place of a plate per sequence with a row of boxed buttons on it. */
 .seq-cards-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
 }
 
-/* A sequence, as a plate. No blue bar down its edge: slice 1 took that off
-   .card for the reason it comes off here too - a bar on every card spends the
-   accent on nothing at all (ADR 0066). */
 .seq-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-plate);
-  background: var(--surface);
-  padding: var(--space-md);
-  transition: background 0.2s;
-}
-
-.seq-card:hover {
-  background: var(--surface-alt);
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(260px, 1fr) minmax(0, max-content);
+  align-items: center;
+  gap: var(--space-2xs) var(--space-xl);
+  min-height: var(--row);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-cell);
 }
 
 .seq-card-header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md);
-  margin-bottom: var(--space-sm);
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
 }
 
-/* The sequence's own name, in ink. It was the interaction blue, which is
-   selection, the row shown, the primary act and the focus ring - never a name
-   on a list (CONTEXT.md "Status Color"). */
+/* The sequence's own name, in ink and at the row's size: a name on a list,
+   never the interaction blue (CONTEXT.md "Status Color"). */
 .seq-card-header h4 {
   margin: 0;
-  font-size: var(--fs-h2);
   color: var(--text);
-  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-weight: 600;
   word-break: break-word;
 }
 
 .seq-badges {
   display: flex;
-  gap: var(--space-sm);
+  gap: var(--space-2xs);
   flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 /* A badge names a KIND OF THING - retrained, factory - and takes no color at
-   all. "Retrained" wore the accent, which reports nothing; the only one left
-   with a hue is "invalid", and that is a refusal. */
+   all; the only one with a hue is "invalid", and that is a refusal. */
 .seq-badge {
   display: inline-block;
-  padding: 1px var(--space-sm);
-  border-radius: var(--radius-plate);
-  border: 1px solid var(--border-strong);
-  background: transparent;
-  color: var(--text-dim);
+  padding: 0 var(--space-xs);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
-  font-weight: 500;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -5438,30 +5418,24 @@ body[data-page="maintenance"] .status-item .hint {
 /* A sequence Protocol Check would refuse. Amber: the builder can open it and
    repair it, which is exactly what amber promises. */
 .seq-badge-invalid {
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
 }
 
-/* A factory sequence the builder has not made theirs yet. It is told apart by
-   treatment - a dimmer plate - and never by hue, the way every other
-   Availability Family on this product is (CONTEXT.md). */
-.seq-card-factory {
-  opacity: 0.92;
+.seq-card-body {
+  min-width: 0;
 }
 
 .seq-card-purpose {
-  font-size: var(--fs-body);
+  margin: 0 0 2px;
   color: var(--text-dim);
-  margin-bottom: var(--space-sm);
-  line-height: 1.55;
+  font-size: var(--fs-cell);
 }
 
 .seq-card-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-md);
-  margin-bottom: var(--space-md);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
   color: var(--text-faint);
@@ -5473,8 +5447,16 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-card-actions {
   display: flex;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* What a card says back - a test's outcome, its Rehearsal - takes the row's
+   full width under it. */
+.seq-card > .seq-card-test-feedback,
+.seq-card > .seq-card-rehearsal {
+  grid-column: 1 / -1;
 }
 
 /* Modal styles.
@@ -5531,19 +5513,16 @@ body[data-page="maintenance"] .status-item .hint {
   border-bottom: 1px solid var(--border);
 }
 
-.seq-advanced-toggle,
 .step-type-reference-toggle {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
 }
 
-.seq-advanced-toggle svg.i.chev,
 .step-type-reference-toggle svg.i.chev {
   transition: transform 0.15s ease;
 }
 
-.seq-advanced-toggle[aria-expanded="true"] svg.i.chev,
 .step-type-reference-toggle[aria-expanded="true"] svg.i.chev {
   transform: rotate(90deg);
 }
@@ -5715,139 +5694,6 @@ body[data-page="maintenance"] .status-item .hint {
   border-bottom: 1px solid var(--border);
 }
 
-.seq-metadata-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.seq-metadata-info {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.seq-metadata-info > .seq-editor-field:nth-child(3) {
-  grid-column: 1 / -1;
-}
-
-.seq-advanced-toggle {
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--silver-bright);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.2s, border-color 0.2s;
-}
-
-.seq-advanced-toggle:hover {
-  background: color-mix(in srgb, var(--lift) 6%, transparent);
-  border-color: var(--accent);
-}
-
-.seq-advanced-toggle:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.seq-advanced-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.seq-advanced-fields.hidden {
-  display: none;
-}
-
-.seq-editor-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.seq-editor-field label {
-  font-weight: 500;
-  color: var(--silver-bright);
-  font-size: 0.9rem;
-}
-
-.seq-editor-field input[type="text"],
-.seq-editor-field input[type="number"],
-.seq-editor-field select {
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-size: 0.9rem;
-}
-
-.seq-editor-field textarea {
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-size: 0.9rem;
-  min-height: 60px;
-  resize: vertical;
-}
-
-.seq-editor-field input[type="text"]:focus,
-.seq-editor-field input[type="number"]:focus,
-.seq-editor-field select:focus,
-.seq-editor-field textarea:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.seq-editor-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.seq-editor-slider {
-  flex: 1;
-  height: 6px;
-  appearance: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  outline: none;
-}
-
-.seq-editor-slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: 2px solid var(--accent-bright);
-}
-
-.seq-editor-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: 2px solid var(--accent-bright);
-}
-
-.seq-editor-slider-value {
-  min-width: 60px;
-  text-align: right;
-  color: var(--accent-bright);
-  font-weight: 600;
-}
-
 .seq-editor-error-text {
   font-size: 0.8rem;
   color: var(--danger);
@@ -5855,9 +5701,7 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .seq-editor-validation-summary {
-  margin-bottom: 20px;
-  padding: 12px 16px;
-  border-radius: 4px;
+  margin: var(--space-md) 0 var(--space-xs);
 }
 
 .seq-validation-status {
@@ -5867,14 +5711,10 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .seq-validation-valid {
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-  border: 1px solid var(--success);
   color: var(--success);
 }
 
 .seq-validation-error {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  border: 1px solid var(--danger);
   color: var(--danger);
 }
 
@@ -5899,9 +5739,7 @@ body[data-page="maintenance"] .status-item .hint {
 .step-card {
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border-bottom: 1px solid var(--border);
   position: relative;
 }
 
@@ -5918,15 +5756,12 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .step-card.step-row-error-state {
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 5%, transparent);
+  box-shadow: inset 2px 0 0 var(--danger);
 }
 
 /* Per-card validation surfacing */
 .step-card.step-card-invalid {
-  border-color: var(--danger);
-  border-width: 2px;
-  background: color-mix(in srgb, var(--danger) 5%, transparent);
+  box-shadow: inset 2px 0 0 var(--danger);
 }
 
 .step-card-error-badge {
@@ -5979,11 +5814,11 @@ body[data-page="maintenance"] .status-item .hint {
 .step-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-sm);
+  min-height: var(--row);
+  padding: 0 var(--space-sm);
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.2s;
 }
 
 .step-card-header:hover {
@@ -6060,16 +5895,12 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .step-card-expanded {
-  border-top: 1px solid var(--border);
-  padding: 12px;
-  background: var(--surface-alt);
+  padding: 0 var(--space-sm) var(--space-md) var(--space-2xl);
 }
 
 .step-card-expanded-content {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
 }
 
 /* Keep old .step-row styles for backward compatibility during transition */
@@ -6114,15 +5945,20 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text);
 }
 
+/* A step's start, in the house number cell's look (.number-cell). */
 .step-t {
   flex-shrink: 0;
-  width: 70px;
-  padding: 6px 8px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  width: 88px;
+  min-height: 28px;
+  padding: 0 var(--space-sm);
+  background: var(--well);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
   color: var(--text);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .step-t:focus {
@@ -6164,59 +6000,30 @@ body[data-page="maintenance"] .status-item .hint {
 /* Grouped icon card picker (Common + Advanced sections) */
 .step-type-picker {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 8px 0;
-}
-
-.step-type-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.step-type-group-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.step-type-cards {
-  display: flex;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: var(--space-2xs);
 }
 
 /* Icon card styling (richer than flat buttons) */
 .step-type-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 12px 14px;
-  background: var(--surface-alt);
-  border: 2px solid var(--border);
-  border-radius: 6px;
+  padding: 2px var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
   cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 500;
-  transition: all 0.2s;
-  min-width: 70px;
-  text-align: center;
 }
 
 .step-type-card:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent-bright);
+  color: var(--text);
 }
 
 .step-type-card.active {
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-color: var(--accent);
   color: var(--text);
 }
@@ -6228,12 +6035,7 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* Reference panel (What Each Step Type Does) */
 .step-type-reference {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-  margin-top: 8px;
+  padding: var(--space-xs) 0;
 }
 
 .step-type-reference-toggle {
@@ -6303,42 +6105,43 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* Grouped field containers (Target / Behavior / Timing) */
 .step-field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  column-gap: var(--space-xl);
+  align-items: center;
+  min-height: var(--row);
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .step-field-group-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--text);
+  font-size: var(--fs-cell);
 }
 
 .step-field-group-content {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
   align-items: center;
 }
 
 /* Per-card contextual help line */
 .step-help-line {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  font-style: italic;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
+  padding-top: var(--space-xs);
+  color: var(--text-faint);
+  font-size: var(--fs-cell);
 }
 
 .step-field {
-  padding: 6px 8px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  min-height: 28px;
+  padding: 0 var(--space-sm);
+  background: var(--well);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
   color: var(--text);
-  font-size: 0.8rem;
+  font-family: inherit;
+  font-size: var(--fs-cell);
 }
 
 .step-field:focus {
@@ -6374,22 +6177,18 @@ body[data-page="maintenance"] .status-item .hint {
    with no label at all, which is the one thing ADR 0066 does not let it do. */
 .step-remove {
   flex-shrink: 0;
-  min-height: 30px;
-  padding: 0 var(--space-md);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
-  border-radius: var(--radius-xs);
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--danger);
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
-  transition: background 0.2s ease, color 0.2s ease;
+  font-size: var(--fs-cell);
 }
 
 .step-remove:hover {
-  background: color-mix(in srgb, var(--danger) 22%, transparent);
-  color: var(--danger);
-  border-color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .step-row-error {
@@ -6404,9 +6203,10 @@ body[data-page="maintenance"] .status-item .hint {
 .seq-editor-footer {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 20px;
-  padding-top: 12px;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
   border-top: 1px solid var(--border);
 }
 
@@ -8371,7 +8171,6 @@ body[data-page="maintenance"] .status-item .hint {
   margin-block-start: var(--space-xs);
 }
 
-
 /* ---------------------------------------------------------------------------
    Wiring (#350): the bench sheet on a screen
 
@@ -8407,7 +8206,6 @@ body[data-page="maintenance"] .status-item .hint {
 body[data-page="wiring"] .card > * + * {
   margin-top: var(--space-md);
 }
-
 
 /* ---------------------------------------------------------------------------
    The pictures
@@ -9220,7 +9018,6 @@ svg.dome-svg-picker .is-unverified {
   opacity: 0.4;
 }
 
-
 /* ---------------------------------------------------------------------------
    The Droid Build step (#368): a Dome Design and a Body Design, each a row of
    design plates, the chosen one carrying its Design Variants
@@ -10025,18 +9822,25 @@ button.droid-build-card:disabled {
    --------------------------------------------------------------------------- */
 .seq-rows {
   display: grid;
-  grid-template-columns: 11ch minmax(0, 1fr);
-  gap: var(--space-sm) var(--space-md);
-  align-items: center;
-  padding: var(--space-xs) 0;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  column-gap: var(--space-xl);
+  align-items: stretch;
+  font-size: var(--fs-cell);
+}
+
+/* Each row a seam below it, as .setting-row draws them. */
+.seq-rows > .seq-row-label,
+.seq-rows > .seq-row-ctl {
+  min-height: 36px;
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .seq-row-label {
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  color: var(--text);
+  font-size: var(--fs-cell);
 }
 
 .seq-row-ctl {
@@ -10049,28 +9853,76 @@ button.droid-build-card:disabled {
   font-size: var(--fs-cell);
 }
 
+/* A unit or a quiet word beside a control: .setting-unit's voice. */
 .seq-unit {
   color: var(--text-faint);
-  font-size: var(--fs-cell);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
 }
 
+/* A number the width of its digits, in .number-cell's look. */
 .seq-num {
-  width: 7ch;
-  padding: 4px 6px;
+  width: 72px;
+  min-height: 28px;
+  padding: 0 var(--space-sm);
   background: var(--well);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xs);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.seq-num:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.seq-num:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-/* A secondary act, written as a word rather than drawn as a box. */
+/* The editor's header, as setting rows. A text field is the house number
+   cell widened to what it holds: a name, or a line of words. */
+.number-cell.text-cell {
+  width: 24ch;
+  font-family: inherit;
+  text-align: left;
+}
+
+.number-cell.text-cell-wide {
+  width: 100%;
+}
+
+.number-cell.seq-notes {
+  min-height: 64px;
+  padding: var(--space-xs) var(--space-sm);
+  resize: vertical;
+}
+
+.seq-header .setting-value.seq-tempo-source {
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
+  text-align: left;
+}
+
+/* The header's few-choice control is sized to its words, and a feedback line
+   with nothing to say takes no room between the rows. */
+.seq-header .seg.seg-sm {
+  justify-self: start;
+}
+
+.seq-header .seq-editor-error-text:empty {
+  display: none;
+}
+
+.seq-header-more {
+  margin-top: var(--space-md);
+}
+
+.seq-header-more > .setting-rows {
+  margin-top: var(--space-xs);
+}
+
 .seq-act {
   padding: 0;
   border: 0;
@@ -10083,7 +9935,7 @@ button.droid-build-card:disabled {
 
 /* A <label> that is an act (the file picker's) keeps the act's look over the
    editor's form-label rule. */
-.seq-editor-field label.seq-act {
+label.seq-act {
   color: var(--accent);
   font-size: var(--fs-cell);
   font-weight: 400;
@@ -10098,6 +9950,12 @@ button.droid-build-card:disabled {
 .seq-act:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Memory Wipe: the one act that cannot be undone, in the refusal's red and
+   kept last in the row. */
+.seq-act.seq-act-danger {
+  color: var(--danger);
 }
 
 .seq-act:disabled {
@@ -10213,15 +10071,4 @@ button.droid-build-card:disabled {
 
 .seq-more > .seq-rows {
   margin-top: var(--space-xs);
-}
-
-/* The tempo line on the editor's details, beside Name and Purpose. */
-.seq-tempo .seq-row-ctl + .seq-row-ctl,
-.seq-tempo .seq-more {
-  margin-top: var(--space-xs);
-}
-
-.seq-tempo-source {
-  color: var(--text-faint);
-  font-size: var(--fs-cell);
 }
