@@ -56,12 +56,21 @@ bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize);
 
 // Whether this command is a Find by Moving run's on a free Output (#411): a
 // nudge on one a run may take (servoTaskMayTakeForRun()), which takes it for
-// the run, or a release on one a run holds (servoTaskRunHolds()), which lets it
-// go. A release on a free Output nobody holds is not one: ServoTask would drop
-// it, and the route answers that with its refusal rather than ok.
+// the run, or a release on one a run holds (servoTaskRunHolds()) or may take.
 // Such a command is not refused for being undriven: ServoTask drives a free
 // Output for the length of a run, bounded like the dial's hold. Every other
 // command on an undriven Output still is.
+//
+// A release on a free Output the run does not hold YET is still one, because
+// Stop must win over a nudge that is queued and not taken (#411 slice 4): the
+// nudge that takes the Output is on servoCmdQueue ahead of the release, so
+// ServoTask takes it and lets go of it in order, in one drain when both are
+// waiting - and LEDC applies a duty only at the next PWM cycle, so the pin
+// never carries that take. Refusing it, as this once did, left the queued
+// nudge pulsing for its whole out-and-back after Stop. Where no nudge was
+// queued, the Output is limp already and stays so: the ok is for what the
+// caller asked, an Output with no pulse. A release on an Output a Part is on
+// and no run holds is still refused.
 bool servoCommandIsARunsOnAFreeOutput(int16_t armId, ServoCommandType type);
 
 // Refuses with 409 and servoOutputUndriven()'s sentence an act on an Output

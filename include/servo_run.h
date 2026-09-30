@@ -20,7 +20,9 @@
 // keepalive: a nudge is over well inside the expiry.
 //
 // What the rule here adds is only what the dial never needed: WHICH Outputs a
-// run may take, and the word a run's Output goes limp with.
+// run may take, that it holds ONE at a time, what it lets go of when a nudge
+// names another, the width it takes a free Output at, and the word a run's
+// Output goes limp with.
 //
 // Pure: no FreeRTOS, no Arduino, no clock - ServoTask and the servo route read
 // the facts and pass them in, the same shape as include/servo_hold.h.
@@ -29,8 +31,14 @@
 
 #include <stdint.h>
 
-#include "robot_state.h"  // ServoLimpReason
-#include "servo_hold.h"   // ServoHoldBound
+#include "robot_state.h"       // ServoLimpReason
+#include "servo_hold.h"        // ServoHoldBound
+#include "servo_output_row.h"  // ServoPulseBand
+
+// No Output is held by a run. A run holds at most one Output, so ServoTask
+// keeps which one as a single index rather than a bit per Output: two held at
+// once is not a state it can be in.
+constexpr uint8_t SERVO_RUN_NONE = 0xFF;
 
 // What decides whether a run may take an Output, each read where it lives.
 struct ServoRunTakeInputs {
@@ -54,6 +62,77 @@ struct ServoRunTakeInputs {
 inline bool servoRunMayTake(const ServoRunTakeInputs& in) {
     return in.ledcReady && !in.drivenNow && !in.wiredAtStart && !in.litAtStart && !in.lightNow &&
            in.partCount == 0;
+}
+
+// What a nudge on a free Output does to the run's hold.
+enum ServoRunNudgeAct : uint8_t {
+    SERVO_RUN_REFUSE = 0,  // the Output is not free: nothing is taken, and nothing nudged
+    SERVO_RUN_KEEP,        // the run holds it already: the nudge refreshes the hold
+    SERVO_RUN_TAKE,        // the run takes it now
+};
+
+struct ServoRunNudgeStep {
+    ServoRunNudgeAct act;
+    uint8_t letGo;  // the Output the run lets go of first, or SERVO_RUN_NONE
+};
+
+// -----------------------------------------------------------------------------
+// servoRunOnNudge()
+// A nudge has named `armId`, which the run holds or not (`heldArm`), and which
+// servoRunMayTake() says is free or not NOW - asked on every nudge, not only
+// the first, because a Part or a Light Type can land on an Output while the
+// run holds it (#411 slice 4).
+//
+//   not free   REFUSE; and if the run held it, it lets go of it: an Output a
+//              Part is on moves through its Part, and a light's wire may have a
+//              strip on the pin.
+//   held       KEEP.
+//   free       TAKE, and let go of the Output the run held before, so stepping
+//              on to the next Output never leaves two free servos energized.
+//              The run holds one Output, and the firmware is what keeps it at
+//              one: the page that steps it on can die between two nudges.
+// -----------------------------------------------------------------------------
+inline ServoRunNudgeStep servoRunOnNudge(uint8_t heldArm, uint8_t armId, bool mayTake) {
+    if (!mayTake) {
+        return {SERVO_RUN_REFUSE, heldArm == armId ? armId : SERVO_RUN_NONE};
+    }
+    if (heldArm == armId) {
+        return {SERVO_RUN_KEEP, SERVO_RUN_NONE};
+    }
+    return {SERVO_RUN_TAKE, heldArm};
+}
+
+// -----------------------------------------------------------------------------
+// servoRunFirstWidthUs()
+// The width a run takes a free Output at: its recorded centre, moved into the
+// part of the band a nudge can be symmetric about - [lo + amplitude,
+// hi - amplitude], 1100-1900 us for the cautious band.
+//
+// A recorded centre can sit anywhere the Output's component takes (up to
+// 2500 us on an MG90S), and a nudge refuses to plan from outside the band
+// (include/servo_nudge.h): taken there, the Output would sit pulsed and never
+// twitch until the expiry let it go. At the band's own edge the nudge would
+// shift its pair inward and read as a one-sided move to an end. So the centre
+// is kept where it is inside the symmetric range - most rows record 1500 us -
+// and clamped onto it otherwise. A band too narrow to hold a pair answers its
+// middle, which the nudge then refuses as it refuses any such band.
+// -----------------------------------------------------------------------------
+inline uint16_t servoRunFirstWidthUs(uint16_t centreUs, ServoPulseBand band, uint16_t amplitudeUs) {
+    if (band.hi < band.lo) {
+        return band.lo;
+    }
+    if ((uint32_t)amplitudeUs * 2u > (uint32_t)(band.hi - band.lo)) {
+        return (uint16_t)(band.lo + (band.hi - band.lo) / 2);
+    }
+    const uint16_t lo = (uint16_t)(band.lo + amplitudeUs);
+    const uint16_t hi = (uint16_t)(band.hi - amplitudeUs);
+    if (centreUs < lo) {
+        return lo;
+    }
+    if (centreUs > hi) {
+        return hi;
+    }
+    return centreUs;
 }
 
 // -----------------------------------------------------------------------------

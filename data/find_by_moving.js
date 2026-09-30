@@ -17,10 +17,12 @@
 // hold the way it bounds the calibration dial's (ADR 0064): it lets the Output
 // go a few seconds after nudges for it stop arriving, and within ten minutes in
 // any case, and this page can extend neither. So a run needs no keepalive, and
-// a browser that dies mid-run leaves nothing driven for long. The page still
-// lets go of the Output under the nudge the moment the run ends by its own hand
-// - Stop, That one, leaving Wiring - because a builder who stopped expects
-// stillness now, not in three seconds.
+// a browser that dies mid-run leaves nothing driven for long. The firmware
+// holds one Output at a time, letting go of the one before when the next nudge
+// takes the next, so stepping on sends no release. The page still lets go of
+// the Output under the nudge the moment the run ends by its own hand - Stop,
+// That one, leaving Wiring - because a builder who stopped expects stillness
+// now, not in three seconds.
 //
 // One Output at a time, and the droid says when. The next nudge goes only
 // when the previous one has ended, and the page knows that from the answer's
@@ -81,22 +83,35 @@
       OUTPUTS.list().filter((output) => output.parts.length === 0 && !output.light && hasServoWord(output));
 
     // Let go of the Output under the nudge, now rather than at the firmware's
-    // bound. The bound still ends it if this does not arrive, so a failure is
-    // said in the log and nothing more is owed.
-    const letGo = (address) => {
+    // bound - a Part landed on it meanwhile included, because it is the run's
+    // pulse that is on it and the run's to take off.
+    //
+    // The release waits for the nudge still on its way, if there is one. The
+    // droid takes a free Output when that nudge reaches it, and lets go of it
+    // in the order the two arrive, so a release that overtook the nudge would
+    // let go of nothing and the nudge would then pulse after Stop. Sent
+    // behind it, the release always wins.
+    //
+    // If it does not arrive, or the droid has already let go (a Part on the
+    // Output is seen within a frame), the firmware's own rules end the hold,
+    // so a refusal is said in the log and nothing more is owed.
+    const letGo = (address, nudging) => {
       const output = address === null ? null : OUTPUTS.at(address);
-      if (!output || output.parts.length > 0) return;
-      window.PAApi.postForm("/api/servo", { arm: servoWord(output), action: "release" }, { timeoutMs: 4000 })
-        .catch((error) => console.warn(`[find] letting go of ${output.name} failed; its bound lets go:`, error));
+      if (!output) return;
+      const arm = servoWord(output);
+      const send = () => window.PAApi.postForm("/api/servo", { arm, action: "release" }, { timeoutMs: 4000 });
+      Promise.resolve(nudging)
+        .then(send, send)
+        .catch((error) => console.warn(`[find] letting go of ${output.name} was not taken; the droid lets go on its own:`, error));
     };
 
     const end = (said, level, { release = true } = {}) => {
       if (run === null) return;
-      const { address } = run;
+      const { address, nudging } = run;
       run = null;
       feed.stop();
       line.remove();
-      if (release) letGo(address);
+      if (release) letGo(address, nudging);
       if (said) say(said, level);
       changed();
     };
@@ -132,8 +147,9 @@
       current.sending = true;
       text.textContent =
         `Nudging ${output.name} (${current.at + 1} of ${count}). Watch the droid, and press That one when ${label} moves.`;
+      current.nudging = window.PAApi.postForm("/api/servo", { arm: servoWord(output), action: "nudge" }, { timeoutMs: 4000 });
       try {
-        await window.PAApi.postForm("/api/servo", { arm: servoWord(output), action: "nudge" }, { timeoutMs: 4000 });
+        await current.nudging;
       } catch (error) {
         if (run === current) {
           end(`The nudge did not reach the droid: ${window.PAApi.messageFor(error)}. ${label} stays ${NOT_WIRED}.`, "error");
@@ -208,6 +224,7 @@
         before: null,
         pulsed: false,
         sending: false,
+        nudging: null,
       };
       panel.appendChild(line);
       feed.start();
