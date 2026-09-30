@@ -134,8 +134,8 @@ constexpr uint16_t SERVO_ACCEL_MS_DEFAULT = SERVO_THROW_MS_DEFAULT / 4;
 
 // Output Release: the bounded hold after the output arrives, after which its
 // drive is cut. Zero means "no release" and is the default, because that is
-// what this firmware does today  --  a released output is a new behaviour a
-// builder asks for, never one a default hands them.
+// what every droid did before the release existed  --  a released output is a
+// behaviour a builder asks for, never one a default hands them.
 constexpr uint16_t SERVO_RELEASE_MS_NEVER = 0;
 constexpr uint16_t SERVO_RELEASE_MS_MAX = 60000;
 
@@ -215,19 +215,17 @@ struct ServoOutputRow {
     uint16_t close_us;    // Endpoint Pair, directional
     uint16_t throw_ms;    // Motion Profile: how long a full throw takes
     uint16_t accel_ms;    // Motion Profile: how long it spends getting up to speed
-    // Output Release: how long this output holds after ARRIVING, 0 = never.
-    // Stored, defaulted, validated and serialised -- and read by nothing:
-    // ServoTask does not schedule a release from arrival today, so the field is
-    // a builder's recorded intention and not yet a behaviour (#364 measured
-    // this; ADR 0043 describes the target).
+    // Output Release: how long this output holds after ARRIVING, 0 = never
+    // (ADR 0043). ServoTask counts it from every arrival and lets go when it
+    // runs out; any new command cancels it (include/servo_release.h, #443). A
+    // light never releases, whatever is stored here (outputWireReleaseAfterMs()).
     //
-    // WHOEVER BUILDS IT: a release must not fire on an output the calibration
-    // dial is holding. That is ADR 0064's suppression, and it is the whole
-    // reason the dial exists -- a release fires exactly when the builder has
-    // stopped moving a Part in order to look at it, and a struggling servo is
-    // only audible while it is being driven. The bit to test is the hold in
-    // src/tasks/servo_task.cpp; the two bounds there are what replaces the
-    // release for as long as the dial has the output.
+    // It never fires on an output the calibration dial is holding. That is
+    // ADR 0064's suppression, and it is the whole reason the dial exists -- a
+    // release fires exactly when the builder has stopped moving a Part in order
+    // to look at it, and a struggling servo is only audible while it is being
+    // driven. The dial's two bounds (src/tasks/servo_task.cpp expireHolds())
+    // are what replace the release for as long as the dial has the output.
     uint16_t release_ms;
     ServoEasing easing;   // Motion Profile: the shape of the move
     ServoBootBehaviour boot;        // what this output does at power-up
@@ -987,8 +985,9 @@ inline uint16_t servoOutputRowNormalise(ServoOutputRow* row, const ServoOutputRo
 // request actually named: `fields` is a mask of SERVO_FIELD_OPEN,
 // SERVO_FIELD_CENTRE, SERVO_FIELD_CLOSE, SERVO_FIELD_COMPONENT,
 // SERVO_FIELD_LED_COUNT, the Motion Profile's SERVO_FIELD_THROW_MS,
-// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, SERVO_FIELD_BOOT,
-// SERVO_FIELD_CALIBRATED and SERVO_FIELD_PARTS, and a field not in it keeps
+// SERVO_FIELD_ACCEL_MS and SERVO_FIELD_EASING, the Output Release's
+// SERVO_FIELD_RELEASE_MS, SERVO_FIELD_BOOT, SERVO_FIELD_CALIBRATED and
+// SERVO_FIELD_PARTS, and a field not in it keeps
 // what the row had. That is the partial-edit door servoOutputRowNormalise()
 // describes, given a shape a pure caller can fill.
 //
@@ -1045,6 +1044,9 @@ struct ServoOutputEdit {
     ServoEasing easing;            // Motion Profile, when the mask names each (#414)
     uint16_t throw_ms;
     uint16_t accel_ms;
+    // How long it holds after arriving, when the mask names it (#443). 2 B on
+    // an edit list sized for the whole table plus two: 14 B on artoo-esp32.
+    uint16_t release_ms;
     ServoBootBehaviour boot;       // what it does at power-up, when the mask names it
     bool calibrated;               // when the mask names it: a restored row's bit
     // The whole Part list, when the mask names it: `partCount` catalog indices,
@@ -1065,9 +1067,9 @@ struct ServoOutputEdit {
 //
 // `name` is the field's one name. Where the field is a row Setting it is the
 // row key GET /api/servo/outputs and a POST row use, and the declaration there
-// is held to it. `driver`, `channel` and `release` are stored but are not
-// Settings - the address names the row, and Output Release has no door yet
-// (ADR 0064) - so theirs are plain words. The repair note says these names.
+// is held to it. `driver` and `channel` are stored but are not Settings - the
+// address names the row - so theirs are plain words. The repair note says
+// these names.
 //
 // `kind` says how the field is held and spelled, and a switch on it calls the
 // existing helpers directly. There are no function pointers here on purpose:
@@ -1111,8 +1113,8 @@ template <>
 struct ServoOutputRowFieldType<SERVO_ROW_FIELD_BOOL> { using type = bool; };
 
 // A field no ServoOutputEdit member carries as it is stored: the address, which
-// names the edit's row rather than changing it; the Part list, which an edit
-// carries as catalog indices; and Output Release, which nothing edits yet.
+// names the edit's row rather than changing it, and the Part list, which an
+// edit carries as catalog indices.
 constexpr uint16_t SERVO_ROW_FIELD_NO_EDIT = 0xFFFF;
 
 struct ServoOutputRowField {
@@ -1163,7 +1165,7 @@ inline constexpr ServoOutputRowField kServoOutputRowFields[SERVO_OUTPUT_FIELD_CO
     SERVO_ROW_FIELD_EDITED("closeUs", SERVO_ROW_FIELD_U16, close_us, SERVO_FIELD_CLOSE),
     SERVO_ROW_FIELD_EDITED("throwMs", SERVO_ROW_FIELD_U16, throw_ms, SERVO_FIELD_THROW_MS),
     SERVO_ROW_FIELD_EDITED("accelMs", SERVO_ROW_FIELD_U16, accel_ms, SERVO_FIELD_ACCEL_MS),
-    SERVO_ROW_FIELD("release", SERVO_ROW_FIELD_U16, release_ms, SERVO_FIELD_RELEASE_MS),
+    SERVO_ROW_FIELD_EDITED("release", SERVO_ROW_FIELD_U16, release_ms, SERVO_FIELD_RELEASE_MS),
     SERVO_ROW_FIELD_EDITED("ease", SERVO_ROW_FIELD_EASING, easing, SERVO_FIELD_EASING),
     SERVO_ROW_FIELD_EDITED("boot", SERVO_ROW_FIELD_BOOT, boot, SERVO_FIELD_BOOT),
     SERVO_ROW_FIELD_EDITED("component", SERVO_ROW_FIELD_COMPONENT, component,
@@ -1491,10 +1493,10 @@ inline uint16_t servoOutputApplyEdit(ServoOutputRow* row, const ServoOutputEdit&
     }
 
     // Every plain field the edit names, as stated: the component, the LED
-    // count, the Motion Profile, the boot behaviour and the two ends. The order
-    // they land in is free - each is one assignment, and the component's band
-    // is applied by the one normalise at the end, over the row as it finally
-    // stands - so the table's order serves.
+    // count, the Motion Profile, the release time, the boot behaviour and the
+    // two ends. The order they land in is free - each is one assignment, and
+    // the component's band is applied by the one normalise at the end, over
+    // the row as it finally stands - so the table's order serves.
     //
     // The Motion Profile is the builder's to set on any row, measured or not:
     // an unmeasured Output keeps what it was given and moves by none of it

@@ -82,8 +82,9 @@
 //     latch let go stay limp until something takes them again.
 //   - A hold under a latched estop is answered 200 and changes nothing: the
 //     route queues it and ServoTask refuses it (src/web/api_servo.cpp).
-//   - POST /api/config with `outputs` rows saves a row's ledCount and answers
-//     the config (sendConfigSnapshot()). POST /api/config with nothing but
+//   - POST /api/config with `outputs` rows saves a row's ledCount and its
+//     release time (0..60000 ms, #443) and answers the config
+//     (sendConfigSnapshot()). POST /api/config with nothing but
 //     guidedSetupVisited=<step> (data/setup.js saveVisited) is taken and kept
 //     in `state.accepted`, so it is never mistaken for nothing having been
 //     written.
@@ -178,6 +179,7 @@ const outputRow = ({ n, id, name, wired, parts, calibrated, lightCapable, compon
   throwMs: 400,
   accelMs: 100,
   ease: 'none',
+  release: 0,
   boot: 'limp',
   parts,
   bandLoUs: 1000,
@@ -592,6 +594,13 @@ const install = async (context, options = {}) => {
           return json(route, { ok: false, error: 'ledCount must be between 1 and 255', field: `${sent.address}.ledCount` }, 400);
         }
         row.ledCount = sent.ledCount;
+      }
+      // The Output Release time, 0 (never) to a minute, as the row door takes it (#443).
+      if ('release' in sent) {
+        if (!Number.isInteger(sent.release) || sent.release < 0 || sent.release > 60000) {
+          return json(route, { ok: false, error: 'release must be 0..60000 ms', field: `${sent.address}.release` }, 400);
+        }
+        row.release = sent.release;
       }
     }
     state.writes.push(`POST /api/config ${body.slice(0, 80)}`);

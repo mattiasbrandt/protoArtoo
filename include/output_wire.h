@@ -8,10 +8,11 @@
 // and three parts of the firmware ask about it, each for its own reason:
 //
 //   ServoTask    may LEDC go on this pin?             outputWirePinKeptForLight()
+//                when does it let go after arriving?  outputWireReleaseAfterMs()
 //   AuxLedTask   is a strip driven on this wire?      outputWireStripDriven()
 //   bulk centre  does this row have a centre?         outputWireCentreable()
 //
-// THE THREE ANSWERS DIFFER ON PURPOSE. Keeping LEDC off a pin is the wide one:
+// THE FIRST THREE ANSWERS DIFFER ON PURPOSE. Keeping LEDC off a pin is the wide one:
 // it reads only the Light Type, so a builder who has declared a strip on a wire
 // has said that pin is not a servo's whether or not they have ticked it in.
 // Driving a strip is the narrow one: the board must allow a light there, and
@@ -102,6 +103,22 @@ inline bool outputWireStripDriven(const OutputWireInputs& in, size_t boardIndex)
 // -----------------------------------------------------------------------------
 inline bool outputWireCentreable(const ServoOutputRow& row) {
     return !output_wire_detail::carriesLight(row.component);
+}
+
+// -----------------------------------------------------------------------------
+// outputWireReleaseAfterMs()
+// How long this row's Output holds after a move arrives before it lets go - its
+// Output Release (ADR 0043, #443) - or SERVO_RELEASE_MS_NEVER.
+//
+// Never for a light, whatever the row stores: release exists so a jammed or
+// fought servo cannot grind, and a light can fight nothing (CONTEXT.md "Output
+// Release"). The stored number is kept rather than cleared, as the LED count is
+// kept on a servo's row, so naming a light by mistake and naming the servo back
+// does not cost the builder the time they set.
+// -----------------------------------------------------------------------------
+inline uint16_t outputWireReleaseAfterMs(const ServoOutputRow& row) {
+    return output_wire_detail::carriesLight(row.component) ? SERVO_RELEASE_MS_NEVER
+                                                           : row.release_ms;
 }
 
 // -----------------------------------------------------------------------------

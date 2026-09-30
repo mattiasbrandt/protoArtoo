@@ -92,6 +92,23 @@ void test_an_index_past_the_table_answers_no() {
     TEST_ASSERT_FALSE(outputWireStripDriven(in, BOARD_OUTPUT_COUNT));
 }
 
+// A light can fight nothing, so it never has an Output Release (CONTEXT.md
+// "Output Release", #443) - even when a time is stored on its row from when it
+// carried a servo. Every servo component lets go at the time its row holds.
+void test_a_light_never_lets_go_and_a_servo_lets_go_at_its_time() {
+    const ServoComponentType servos[] = {SERVO_COMP_NONE, SERVO_COMP_MG996R, SERVO_COMP_MG90S};
+    for (const ServoComponentType component : servos) {
+        ServoOutputRow row = {};
+        row.component = component;
+        row.release_ms = 2000;
+        TEST_ASSERT_EQUAL_UINT16(2000, outputWireReleaseAfterMs(row));
+    }
+    ServoOutputRow light = {};
+    light.component = SERVO_COMP_RGB;
+    light.release_ms = 2000;
+    TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER, outputWireReleaseAfterMs(light));
+}
+
 // One mapping: armId i is BOARD_OUTPUTS index i, and both directions of the
 // armId <-> Output Address bridge agree with the table's channel for it.
 void test_arm_id_index_and_address_are_one_mapping() {
@@ -113,6 +130,7 @@ int main() {
     RUN_TEST(test_every_combination_answers_as_the_tasks_did);
     RUN_TEST(test_an_unticked_strip_leaves_neither_side_driving_the_pin);
     RUN_TEST(test_an_index_past_the_table_answers_no);
+    RUN_TEST(test_a_light_never_lets_go_and_a_servo_lets_go_at_its_time);
     RUN_TEST(test_arm_id_index_and_address_are_one_mapping);
     return UNITY_END();
 }

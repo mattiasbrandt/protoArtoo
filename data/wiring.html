@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/find_by_moving.js,/parts_mapping.js,/wiring.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_layout.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/find_by_moving.js,/parts_mapping.js,/wiring.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -64,7 +64,6 @@
         <span class="sub waiting" id="wiring-wires-summary" role="status" aria-live="polite"></span>
       </div>
       <div id="wiring-wires"></div>
-      <p class="hint">The dome ESC and the RC receiver have no lane yet, so this sheet gives them no pin.</p>
     </div>
 
     <!-- The Outputs, part-first: what writes on this surface. Each row is a
@@ -90,6 +89,23 @@
       <div class="outputs-find" id="wiring-find"></div>
       <div class="parts-table-wrap" id="wiring-parts-table"></div>
       <p class="feedback" id="wiring-parts-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+    </div>
+
+    <!-- What you said against what the droid reports (#454): one row per
+         wire the drawing shows and per thing the droid reports on, each in
+         one of four states - declared, observed, contradicted, not probed.
+         Written by data/wiring.js lineUp() from the Live Reading and the
+         answers above, and never by wiringDocument(): every value in it is
+         live, so the printed sheet carries none of it. It reads, and each
+         route is a link to where an answer is changed. Its last line says
+         what it cannot see: the dome ESC and the RC receiver report no pins,
+         which is also why the drawing above has no wire for them. -->
+    <div class="card wiring-lineup-card">
+      <div class="sect">
+        <h2>Answers and readings</h2>
+        <span class="sub waiting" id="wiring-lineup-summary" role="status" aria-live="polite"></span>
+      </div>
+      <div class="lineup-wrap" id="wiring-lineup"></div>
     </div>
 
     <!-- Power wiring: described, never drawn (CONTEXT.md "Wiring"). Its prose

@@ -354,7 +354,8 @@ constexpr SettingStorage rowStorageOf(ServoOutputRowFieldKind kind) {
         servoOutputRowFieldOf(bit).editOffset, (uint16_t)(bit)
 
 // When each takes effect: the Motion Profile, the ends, the calibrated bit and
-// the Parts are read off the live row on every move, and so is the servo model
+// the Parts are read off the live row on every move, the release time at every
+// arrival (0 is never, and a light never releases), and so is the servo model
 // `component` names, which bounds the very next move. Whether an Output is
 // wired, its LED count and its power-up setting are read once at start
 // (servoTaskInit(), auxLedTask(), the boot pass). A `component` change between
@@ -373,6 +374,8 @@ constexpr OutputRowSetting kOutputRowSettings[] = {
      SettingRule::Range, SERVO_ACCEL_MS_MIN, SERVO_ACCEL_MS_MAX, nullptr},
     {"ease", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_EASING),
      SettingRule::Words, 0, 0, &kEasingWords},
+    {"release", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_RELEASE_MS),
+     SettingRule::Range, SERVO_RELEASE_MS_NEVER, SERVO_RELEASE_MS_MAX, nullptr},
     {"boot", ApplyTiming::AtReboot, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_BOOT),
      SettingRule::Words, 0, 0, &kBootWords},
     {"openUs", ApplyTiming::Immediate, RowSettingStore::Row, RowSettingOn::Every, PA_ROW_FIELD(SERVO_FIELD_OPEN),

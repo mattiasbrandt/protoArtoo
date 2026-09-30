@@ -3,7 +3,7 @@
 Status: accepted (2026-09-09, issue #291). Describes the **target** model; none of
 it is implemented yet.
 
-**Status as of 2026-09-29 (#175 audit): built** (C1d #364, C1f #400), except *"Output Release suppressed while held"*, which waits for the timed release of ADR 0043.
+**Status as of 2026-10-01: built** (C1d #364, C1f #400), and *"Output Release suppressed while held"* with it: #443 built ADR 0043's timed release, and a release arms nothing while the dial holds an Output.
 
 ## Context
 

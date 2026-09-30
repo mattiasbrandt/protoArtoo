@@ -676,6 +676,22 @@
     return plate;
   };
 
+  // Whether the fitted Foot Drive reports readings back: its family's
+  // capability word, DRIVE_CAP_REPORTS_FEEDBACK (include/drive_capabilities.h,
+  // #446), mirrored because a page cannot include a header. The family has no
+  // Component Member, so the lineup's supported, included row is the one on
+  // the droid. null until the lineup has answered; false for none, or for a
+  // lineup that cannot say. data/drive.js reads the same bit for its wheel
+  // controller card (fittedFootDriveReportsFeedback()), from a lineup read of
+  // its own, because Foot Drive does not load this file.
+  const DRIVE_CAP_REPORTS_FEEDBACK = 0x01;
+  const footDriveReportsFeedback = () => {
+    if (!lineup) return null;
+    const fitted = partsOf("foot_drive").filter((part) => part.status === KIND_SUPPORTED && part.included === true);
+    if (fitted.length !== 1) return false;
+    return (Number(fitted[0].capabilities) & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;
+  };
+
   // artIdFor and artPartFor are exported for Wiring, whose diagram pictures and
   // names the board the same way a card here does (#411), so there is one
   // board-to-picture lookup.
@@ -690,6 +706,7 @@
     chosenPart,
     chosenReceiverPart,
     isRadioNotFitted,
+    footDriveReportsFeedback,
     shownCard,
   };
 })();

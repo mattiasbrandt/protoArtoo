@@ -991,6 +991,41 @@ void test_a_motion_profile_round_trips_on_its_row() {
     TEST_ASSERT_EQUAL_STRING("limp", arm1Row["boot"] | "");
 }
 
+// An Output's release time goes out on its row, comes back on it, and is the
+// one number ServoTask reads at an arrival (#443) - except on a light, which
+// can fight nothing and so never lets go, though the row keeps the time.
+void test_a_release_time_round_trips_and_a_light_never_lets_go() {
+    seedServoOutputRows();
+
+    WebRequestTestBackend backend;
+    backend.body = "{\"outputs\":[{\"address\":\"ledc:1\",\"release\":2000},"
+                   "{\"address\":\"ledc:3\",\"component\":\"rgb\",\"release\":2000}]}";
+    WebRequest req(&backend);
+
+    handleConfigPost(req);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(200, backend.sentCode, backend.sentBody);
+    ServoOutputRow row = {};
+    TEST_ASSERT_TRUE(configCacheReadServoOutput(1, &row));
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_ARM2, row.channel);
+    TEST_ASSERT_EQUAL_UINT16(2000, row.release_ms);
+    TEST_ASSERT_EQUAL_UINT16(2000, configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC, LEDC_CH_ARM2));
+    TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER,
+                             configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC, LEDC_CH_AUX1));
+    // A neighbour nobody set holds where it stops, as every droid did.
+    TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER,
+                             configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC, LEDC_CH_ARM1));
+
+    WebRequestTestBackend rowsBackend;
+    WebRequest rowsReq(&rowsBackend);
+    handleServoOutputsGet(rowsReq);
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, rowsBackend.sentBody));
+    TEST_ASSERT_EQUAL_UINT(2000, doc["outputs"][1]["release"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT(0, doc["outputs"][0]["release"].as<unsigned>());
+    TEST_ASSERT_TRUE(doc["outputs"][0]["release"].is<unsigned>());
+}
+
 // Out of range is refused with the field and its range, never clamped into it:
 // the bounds are the stored row's own, and nothing of the request lands.
 void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
@@ -1005,6 +1040,7 @@ void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
         {"accelMs", "0"},         // no time at all to get up to speed
         {"ease", "\"wobble\""},   // not one of the three
         {"boot", "\"home\""},     // not one of the three boot modes
+        {"release", "60001"},     // over a minute, SERVO_RELEASE_MS_MAX
     };
     for (const auto& refused : kRefused) {
         // A good ease rides along with every bad value, so a refusal that let
@@ -1031,6 +1067,7 @@ void test_a_motion_profile_out_of_range_is_refused_not_clamped() {
         TEST_ASSERT_EQUAL_UINT16(SERVO_ACCEL_MS_DEFAULT, row.accel_ms);
         TEST_ASSERT_EQUAL_UINT8(SERVO_EASE_NONE, row.easing);
         TEST_ASSERT_EQUAL_UINT8(SERVO_BOOT_LIMP, row.boot);
+        TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER, row.release_ms);
     }
 }
 
@@ -1432,6 +1469,7 @@ int main() {
     RUN_TEST(test_the_echo_reports_what_the_row_holds_not_what_was_asked);
     RUN_TEST(test_the_answer_names_every_end_the_band_moved);
     RUN_TEST(test_a_motion_profile_round_trips_on_its_row);
+    RUN_TEST(test_a_release_time_round_trips_and_a_light_never_lets_go);
     RUN_TEST(test_a_motion_profile_out_of_range_is_refused_not_clamped);
     RUN_TEST(test_a_stated_droid_build_reaches_the_live_answer_and_the_echo);
     RUN_TEST(test_a_restored_legacy_variant_lands_as_the_variant_it_became);

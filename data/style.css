@@ -8166,6 +8166,12 @@ body[data-page="maintenance"] .status-item .hint {
   .wd .wd-tick {
     display: inline;
   }
+
+  /* What the droid reports is live, and paper cannot carry a live value
+     without freezing a lie on it (#293): the list stays on the screen. */
+  .wiring-lineup-card {
+    display: none;
+  }
 }
 
 /* A product shown rather than picked (#412): the RC page's radio and receiver,
@@ -8560,6 +8566,94 @@ body[data-page="wiring"] .card > * + * {
   margin: 0;
   max-width: 36ch;
   text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+   Wiring: what you said against what the droid reports (#454)
+
+   A table, one row per thing either side speaks about, in the engraved
+   column-head voice of the Unused table on Parts. The state is a word, and
+   the only color is the Status Color dot beside what the droid reports
+   (.indicator, reused as the Health grid lights it): a builder's answer takes
+   none, and neither does the state word. A contradicted row is told apart by
+   the word's weight, and its dot is the amber one.
+   --------------------------------------------------------------------------- */
+.lineup-wrap {
+  overflow-x: auto;
+}
+
+.lineup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cell);
+}
+
+.lineup-table thead th {
+  text-align: left;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.lineup-row th,
+.lineup-row td {
+  text-align: left;
+  font-weight: 400;
+  vertical-align: middle;
+  padding: var(--space-2xs) var(--space-sm);
+  height: var(--row);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.lineup-observed {
+  white-space: nowrap;
+}
+
+.lineup-observed .indicator {
+  display: inline-block;
+  margin-right: var(--space-xs);
+  vertical-align: middle;
+}
+
+/* The state is a marking, not prose. */
+.lineup-state {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.lineup-row[data-state="contradicted"] .lineup-state {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.lineup-why {
+  color: var(--text-dim);
+  max-width: var(--measure);
+}
+
+/* A route, not a control: a quiet link in the interaction accent, never a
+   boxed button beside every row. */
+.lineup-move {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lineup-wrap > .hint:last-child {
+  margin-top: var(--space-sm);
+}
+
+.lineup-move:hover,
+.lineup-move:focus-visible {
+  text-decoration: underline;
 }
 
 /* ---------------------------------------------------------------------------

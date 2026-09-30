@@ -26,6 +26,7 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+<<<<<<< HEAD
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted
@@ -47,6 +48,15 @@ the patch releases, whose notes live on their own GitHub Release.
   placed on a beat stays on it: change the tempo and every step on a beat moves
   with it, while steps placed in milliseconds stay put. A tempo that is only a
   guess is flagged, never refused.
+=======
+- **See where your answers and the droid disagree.** Wiring lists every wire
+  it draws and everything the droid reports on - the sound module, the dome
+  link, the RC receiver, the Foot Drive, the dome's panels - with what you
+  said beside what the droid reports, and one word for each: declared,
+  observed, contradicted or not probed. A module that has not answered stays
+  your answer rather than a contradiction, and every row that needs a change
+  links to where you make it. Nothing on the list changes the droid.
+>>>>>>> origin/epic/operator-experience
 - **Read a sequence as time.** Timeline, on any sequence card, draws the
   routine with a lane per part: each move as long as it takes, and whatever the
   routine leaves open running on to the end. Move the marker to any moment and
@@ -64,6 +74,13 @@ the patch releases, whose notes live on their own GitHub Release.
   on a body arm opens it. Every command now answers what happened: done
   here, sent to the dome, or no and why. `docs/marcduino_commands.md` lists
   which commands the body answers.
+- **A servo lets go once it has got there.** On Servos, set how long a
+  calibrated part holds after each move arrives, up to a minute, or never.
+  After that it goes limp, so a jammed or fought part stops grinding instead
+  of pushing until somebody notices. Any new move starts the count again, and
+  the calibration dial keeps holding while you look. A part set to go home
+  and hold at power-up lets go the same way. Nothing changes until you set a
+  time.
 - **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
   as that, not as track 803. A sound module with no bank 8 says so instead of
   playing the wrong file.

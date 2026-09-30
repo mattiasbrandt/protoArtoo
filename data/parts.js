@@ -406,9 +406,11 @@
           paintBody();
           return;
         }
+        // The Parts that left and that an Output still claims, by the one rule
+        // every surface reads that disagreement with (data/parts_mapping.js).
         const mapped = [];
         leaving.forEach((id) => {
-          const output = picture.answered() ? picture.outputOf(id) : null;
+          const output = picture.answered() ? P.offButMapped(id, now) : null;
           if (output && mapped.indexOf(output.name) === -1) mapped.push(output.name);
         });
         const off = `${names} ${leaving.length === 1 ? "is" : "are"} off your droid now.`;
