@@ -1512,6 +1512,7 @@
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button class="dome-mode-toggle" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
+            ${action === "OF" ? "" : `<label class="step-field-checkbox">How far <input class="step-field" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"> %</label>`}
             <div class="dome-panel-advisory hidden"></div>
           `;
         } else {

@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sequence_dome_how_far.h"
 #include "sequence_engine.h"
 #include "sequence_gesture.h"
 
@@ -139,6 +140,7 @@ static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     }
     bool open;
     if (cmd[1] == 'O' && cmd[2] == 'P')      open = true;   // :OP  --  open
+    else if (cmd[1] == 'M' && cmd[2] == 'V') open = true;   // :MV  --  part open: still owes a close
     else if (cmd[1] == 'C' && cmd[2] == 'L') open = false;  // :CL  --  close
     else return;                                            // :OF / non-panel  --  no change
     const char* t = cmd + 3;
@@ -416,7 +418,12 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
     switch (step.type) {
         case STEP_DOME_CMD:
             a.kind = SEQ_ACT_DOME_CMD;
-            setPayload(a, step.payload);
+            // A panel open or close that says how far goes out as the fork's
+            // `:MV` line, which the dome resolves against that panel's own
+            // throw; everything else goes as written.
+            if (!seqDomeHowFarCommand(step.payload, step.params.howFar, a.payload, sizeof(a.payload))) {
+                setPayload(a, step.payload);
+            }
             break;
         case STEP_AUDIO:
             a.kind = SEQ_ACT_AUDIO_DOLLAR;

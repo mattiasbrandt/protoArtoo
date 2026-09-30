@@ -62,6 +62,7 @@
 #include <string.h>
 
 #include "sequence_bulk_centre.h"  // SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs()
+#include "sequence_dome_how_far.h" // a panel move's how far, as the run sends it
 #include "sequence_engine.h"       // SequenceEntry, SeqStep, SeqAction, panel targets
 #include "sequence_gesture.h"      // a Gesture's members, order and spread
 
@@ -189,8 +190,9 @@ inline uint32_t secondsField(const char* cmd, uint8_t field) {
 }
 
 // :OP / :CL / :OF on a panel target, expanded to one command per member
-// panel. Returns false when cmd is not a panel intent.
-inline bool visitPanel(SeqPosePlan& plan, const char* cmd, uint32_t fireMs) {
+// panel, each saying how far as a run's would (seqDomeHowFarCommand()).
+// Returns false when cmd is not a panel intent.
+inline bool visitPanel(SeqPosePlan& plan, const char* cmd, uint32_t fireMs, uint8_t howFar) {
     if (cmd[0] != ':' || strlen(cmd) != 5) return false;
     const char* word = cmd + 1;
     if (strncmp(word, "OP", 2) != 0 && strncmp(word, "CL", 2) != 0 && strncmp(word, "OF", 2) != 0) {
@@ -221,7 +223,9 @@ inline bool visitPanel(SeqPosePlan& plan, const char* cmd, uint32_t fireMs) {
         const char* member = seqEnginePanelTarget(i);
         char one[8];
         snprintf(one, sizeof(one), ":%c%c%s", word[0], word[1], member);
-        upsert(plan, SEQ_POSE_PANEL, member, blankAction(SEQ_ACT_DOME_CMD, one), fireMs, 0);
+        char moved[12];
+        const char* sent = seqDomeHowFarCommand(one, howFar, moved, sizeof(moved)) ? moved : one;
+        upsert(plan, SEQ_POSE_PANEL, member, blankAction(SEQ_ACT_DOME_CMD, sent), fireMs, 0);
     }
     return true;
 }
@@ -336,7 +340,7 @@ inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs
 inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs) {
     switch (step.type) {
         case STEP_DOME_CMD:
-            if (!visitPanel(plan, step.payload, fireMs)) {
+            if (!visitPanel(plan, step.payload, fireMs, step.params.howFar)) {
                 visitLight(plan, step.payload, fireMs);
             }
             break;
@@ -443,9 +447,11 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
             for (uint8_t r = 0; r < ring; ++r) {
                 if (strcmp(seqEnginePanelTarget(r), cmd.key) == 0) isRing = true;
             }
-            if (ended && isRing && !toggleOpenHalf && strncmp(cmd.act.payload, ":OP", 3) == 0) {
-                cmd.act.payload[1] = 'C';
-                cmd.act.payload[2] = 'L';
+            // A ring panel left open - all the way (:OP) or part way (:MV) -
+            // is closed by the engine's ending, all the way.
+            const bool leftOpen = strncmp(cmd.act.payload, ":OP", 3) == 0 || strncmp(cmd.act.payload, ":MV", 3) == 0;
+            if (ended && isRing && !toggleOpenHalf && leftOpen) {
+                snprintf(cmd.act.payload, sizeof(cmd.act.payload), ":CL%s", cmd.key);
             }
         }
     }

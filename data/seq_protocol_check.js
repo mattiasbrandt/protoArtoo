@@ -389,6 +389,16 @@
       if (!cmd || typeof cmd !== "string") {
         return { ok: false, field: "cmd", error: "Choose a dome action for this step" };
       }
+      // How far is said on a panel open or close (include/sequence_dome_how_far.h).
+      if (step.howFar !== undefined) {
+        const panel = /^:(OP|CL)([0-9A-Z]{2})$/.exec(cmd);
+        if (!panel || !PANEL_INTENT_TARGETS.has(panel[2])) {
+          return { ok: false, field: "howFar", error: "Only a panel open or close says how far" };
+        }
+        if (!isWhole(step.howFar) || step.howFar < 1 || step.howFar > 100) {
+          return { ok: false, field: "howFar", error: "How far is 1 to 100 percent" };
+        }
+      }
 
       // Explicit rejection with clear actionable message
       if (cmd.startsWith(":SM")) {

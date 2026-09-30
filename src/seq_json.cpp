@@ -411,6 +411,18 @@ static ProtocolCheckResult parseStepFields(const char* label, JsonObjectConst ob
         strncpy(s.payload, cmd, sizeof(s.payload) - 1);
         bool isAudio = strcmp(type, "audio") == 0;
         s.type = isAudio ? STEP_AUDIO : STEP_DOME_CMD;
+        // A dome panel step's howFar, as a Body Step's: 1..100, absent the
+        // whole throw, zero refused here where "said 0" and "said nothing"
+        // can still be told apart. Which commands may carry it is Protocol
+        // Check's (include/sequence_dome_how_far.h).
+        JsonVariantConst howFar = obj["howFar"];
+        if (!howFar.isNull()) {
+            long long v = 0;
+            if (isAudio || !wholeNumber(howFar, v) || v < 1 || v > (long long)SEQ_BODY_HOWFAR_MAX) {
+                return pcFailAt(label, idx, "howFar", "howFar must be 1..100 on a panel move");
+            }
+            s.params.howFar = (uint8_t)v;
+        }
         if (isAudio) {
             JsonVariantConst boundAudio = obj["boundAudio"];
             if (!boundAudio.isNull() && !boundAudio.is<bool>()) {
@@ -801,6 +813,7 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
             case STEP_DOME_CMD:
                 o["type"] = "dome";
                 o["cmd"] = s.payload;
+                if (s.params.howFar != SEQ_BODY_HOWFAR_UNSET) o["howFar"] = s.params.howFar;
                 break;
             case STEP_AUDIO:
                 o["type"] = "audio";

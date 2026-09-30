@@ -32,6 +32,8 @@ the patch releases, whose notes live on their own GitHub Release.
   later joins in. On the body the droid paces the moves itself, one part at a
   time; on the dome it becomes one dome command, and a move the dome has no
   command for still saves.
+- **A dome panel can open part way.** Say how far on a panel open or close,
+  and the dome stops it that far along its own travel.
 - **A sequence can have a tempo.** Type the BPM, tap along while the droid
   plays the track, or drop your own copy of the track in to have its beat
   read. You set where bar 1 starts. Put a step on a beat by picking it from

@@ -37,7 +37,8 @@ static int ringBitForNumber(int n) {
 static void applyScope(SeqRunEvidence& r, const char* cmd) {
     if (cmd[0] == ':') {
         if ((cmd[1] == 'O' && (cmd[2] == 'P' || cmd[2] == 'F')) ||
-            (cmd[1] == 'C' && cmd[2] == 'L')) {
+            (cmd[1] == 'C' && cmd[2] == 'L') ||
+            (cmd[1] == 'M' && cmd[2] == 'V')) {  // a panel moved part way (#438)
             r.fxScopes |= SEQ_EVID_FX_PANEL;
         } else if (cmd[1] == 'S' && cmd[2] == 'E') {
             r.fxScopes |= SEQ_EVID_FX_DOME_SEQ;

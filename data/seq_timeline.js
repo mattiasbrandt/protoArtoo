@@ -223,9 +223,15 @@
             panel.ids.forEach((id) => {
               const lane = partLane(id);
               add(lane, { kind: "tick", t0: t, t1: t, label, ghost });
+              // How far, where the step says it: an open that far from
+              // closed, a close that far from open (sequence_dome_how_far.h).
+              const part = Number(def.howFar) > 0 ? Math.min(100, Number(def.howFar)) / 100 : 1;
               if (panel.word === "open") {
                 openFrom(lane, t, ghost);
-                lane.changes.push({ t, at: 1 });
+                lane.changes.push({ t, at: part });
+              } else if (panel.word === "close" && part < 1) {
+                openFrom(lane, t, ghost);
+                lane.changes.push({ t, at: 1 - part });
               } else if (panel.word === "close") {
                 closeAt(lane, t);
                 lane.changes.push({ t, at: 0 });

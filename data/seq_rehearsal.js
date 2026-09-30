@@ -42,6 +42,8 @@
 //                           generates, so hand-written overlaps are advised on.
 //   part-left-open          ADR 0049: the engine undoes nothing a body step did.
 //   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
+//   dome-how-far            ADR 0046: how far is resolved by the dome, and
+//                           our fork has no part-way move for PP3 and PP5.
 //   gesture-dome            ADR 0046: a dome Gesture is the dome's `$` command,
 //                           and a pair the dome has no command for saves.
 //   tempo-confidence        ADR 0058: the analyser read Cantina's ~200 BPM as
@@ -710,6 +712,23 @@
     );
   };
 
+  // A dome panel move that says how far, on a panel our fork has no part-way
+  // move for (PP3 and PP5, include/sequence_dome_how_far.h): it goes all the
+  // way, and saying so is what the author needs.
+  const domeHowFar = (events) =>
+    events
+      .filter((event) => event.def.type === "dome" && !event.generated && Number(event.def.howFar) > 0 && Number(event.def.howFar) < 100)
+      .filter((event) => /^:(OP|CL)P[35]$/.test(String(event.def.cmd || "")) && !(event.iter > 0))
+      .map((event) =>
+        finding(
+          "warning",
+          "dome-how-far",
+          `${panelName(event.def.cmd.slice(3))} has no part-way move on the dome, so it goes all the way.`,
+          "Use the full move, or a panel the dome can stop part way.",
+          { step: event.step, element: panelName(event.def.cmd.slice(3)) },
+        ),
+      );
+
   // A dome Gesture the connected dome performs only in part, or not at all
   // (ADR 0046): Coordinator Resolution maps it onto the dome's `$` family, and
   // the body never breaks it into single panel commands. It still saved; this
@@ -841,6 +860,7 @@
       ...partLeftOpen(events),
       ...audioOutlivesShow(events),
       ...gestureDome(events),
+      ...domeHowFar(events),
       ...tempoConfidence(seq),
       ...tempoHash(seq, context),
     ];

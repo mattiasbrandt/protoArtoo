@@ -1014,6 +1014,14 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 uint8_t fx = FX_NONE;
                 ProtocolCheckResult r = classifyDome(label, i, s.payload, fx);
                 if (!r.ok) return r;
+                // How far is said on an open or a close of panels, the Panel
+                // Intent it travels with (include/sequence_dome_how_far.h).
+                if (s.params.howFar != SEQ_BODY_HOWFAR_UNSET) {
+                    const PanelIntent moved = parsePanelIntent(s.payload);
+                    if (!moved.valid || moved.action == 'F' || s.params.howFar > SEQ_BODY_HOWFAR_MAX) {
+                        return pcFailAt(label, i, "howFar", "only a panel open or close says how far");
+                    }
+                }
                 if (strncmp(s.payload, ":SE", 3) == 0 && inBody[i]) {
                     return pcFailAt(label, i, "cmd", ":SE not allowed inside loops");
                 }
