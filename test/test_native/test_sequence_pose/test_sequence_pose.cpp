@@ -203,6 +203,10 @@ void test_a_pose_never_starts_two_motions_inside_the_cadence_floor() {
     uint8_t instantsBeforeMotion = 0;
     for (uint32_t now = 1000; run.active && now < 60000; now += 10) {
         if (!sequencePoseDue(run, now)) continue;
+        if (sequencePoseFinished(run)) {
+            sequencePoseEnd(&run);
+            break;
+        }
         const SeqPoseCmd& cmd = plan.cmds[run.next];
         const bool motion = cmd.cls != SEQ_POSE_INSTANT;
         if (motion) {
@@ -236,6 +240,30 @@ void test_the_next_command_waits_for_the_moving_output() {
     TEST_ASSERT_TRUE(sequencePoseAwaitDone(&run, false));
 }
 
+// A second press while the first pose is still being reached -- here, just
+// after the first sent its last motion -- keeps that motion's spacing: the new
+// pose's first command waits for the Floor and for the Output to stop moving,
+// exactly as the first pose's next command would have.
+void test_a_pose_replacing_a_pose_keeps_the_spacing() {
+    SeqPoseRun run = {};
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 1, 0));
+    sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, 2);  // its last command: a body Output
+    TEST_ASSERT_TRUE(sequencePoseFinished(run));
+
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 10, false, false, 3, 0));
+    TEST_ASSERT_FALSE(sequencePoseDue(run, 10));
+    TEST_ASSERT_FALSE(sequencePoseDue(run, SEQ_CADENCE_FLOOR_MS - 1));
+    TEST_ASSERT_TRUE(sequencePoseDue(run, SEQ_CADENCE_FLOOR_MS));
+    TEST_ASSERT_FALSE(sequencePoseAwaitDone(&run, true));  // Output 2 still moving
+    TEST_ASSERT_TRUE(sequencePoseAwaitDone(&run, false));
+
+    // A pose that has run out its spacing and ended hands nothing on.
+    sequencePoseEnd(&run);
+    TEST_ASSERT_TRUE(sequencePoseStart(&run, 20, false, false, 3, 0));
+    TEST_ASSERT_TRUE(sequencePoseDue(run, 20));
+    TEST_ASSERT_TRUE(sequencePoseAwaitDone(&run, true));
+}
+
 // A pose is refused outright under a latched estop and in Sleep Mode, with
 // words for the surface, and nothing starts.
 void test_a_pose_is_refused_under_the_estop_and_in_sleep_mode() {
@@ -262,6 +290,7 @@ int main(int, char**) {
     RUN_TEST(test_a_body_part_takes_its_last_step);
     RUN_TEST(test_a_pose_never_starts_two_motions_inside_the_cadence_floor);
     RUN_TEST(test_the_next_command_waits_for_the_moving_output);
+    RUN_TEST(test_a_pose_replacing_a_pose_keeps_the_spacing);
     RUN_TEST(test_a_pose_is_refused_under_the_estop_and_in_sleep_mode);
     return UNITY_END();
 }

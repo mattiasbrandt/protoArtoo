@@ -309,8 +309,8 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             return;  // still moving: looked at again on the next tick
         }
     }
-    if (run.next >= posePlan.count) {
-        sequencePoseEnd(&run);
+    if (sequencePoseFinished(run)) {
+        sequencePoseEnd(&run);  // the last command's spacing has run: the pose is reached
         return;
     }
 
