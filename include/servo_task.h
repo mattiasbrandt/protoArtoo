@@ -54,9 +54,8 @@ bool servoTaskDrivesOutput(uint8_t armId);
 bool servoTaskMayTakeForRun(uint8_t armId);
 
 // servoTaskRunHolds(): a Find by Moving run holds this Output now, so a
-// release for it lets it go. A release on a free Output nobody holds would be
-// dropped, and the route must not answer ok for it (include/api_servo.h). Read
-// from Core 0 without a lock: the flag is one byte ServoTask writes, and a
-// stale read can only be a release landing just as a bound let go, which the
-// task then drops.
+// release for it lets it go (a run holds one Output at most; include/
+// servo_run.h). Read from Core 0 without a lock: which Output a run holds is
+// one byte ServoTask writes, and a stale read can only be a release landing
+// just as the run let go, which the task then drops.
 bool servoTaskRunHolds(uint8_t armId);

@@ -62,13 +62,13 @@ static bool s_ledc_ready = false;
 //
 // `hold` is the calibration dial's hold on the output (ADR 0064, #364): while
 // it stands the pulse stays on until one of its two bounds fires, the builder
-// lets go, or the halt edge releases it. `runHeld` says the hold is a Find by
-// Moving run's on a FREE Output instead (include/servo_run.h, #411): nothing
-// drives that Output this boot, so while the run holds it this task drives it
-// anyway, the same two bounds let it go, and the flag is what lets a halt, a
-// release and a bound reach an Output isArmEnabled() says no to. `limp` is why there is no pulse, read
-// only while `known` is false, so a surface can say "pulses off" and "the
-// estop let go" differently.
+// lets go, or the halt edge releases it. When s_runArm below names the arm, the
+// hold is a Find by Moving run's on a FREE Output instead (include/servo_run.h,
+// #411): nothing drives that Output this boot, so while the run holds it this
+// task drives it anyway, the same two bounds let it go, and s_runArm is what
+// lets a halt, a release and a bound reach an Output isArmEnabled() says no to.
+// `limp` is why there is no pulse, read only while `known` is false, so a
+// surface can say "pulses off" and "the estop let go" differently.
 //
 // An OUT-AND-BACK is one more kind of move on this state, not a second machine
 // beside it. There are two of them and they share every field here: a Find by
@@ -108,7 +108,6 @@ static struct {
     bool known;
     bool moving;
     ServoHoldState hold;
-    bool runHeld;              // `hold` is a Find by Moving run's on a free Output
     ServoLimpReason limp;
     ServoMotionRamp ramp;
     uint8_t legNo;             // 1..kLegCount while an out-and-back is in progress, else 0
@@ -118,6 +117,13 @@ static struct {
     uint16_t legTargetUs[kLegCount];  // where each leg ends, from whichever planner started it
     uint8_t nudgesDone;        // mirrored to robotState; see ServoCommandedPosition
 } s_arm[kArmCount] = {};
+
+// The one free Output a Find by Moving run holds, or SERVO_RUN_NONE (#411). One
+// index, not a flag per arm: a run holds at most one Output, and taking the
+// next lets go of this one first (takeForRun()), so two free servos energized
+// at once is not a state this task can be in. Written only on Core 1, by this
+// task; servoTaskRunHolds() reads the byte from Core 0 (include/servo_task.h).
+static uint8_t s_runArm = SERVO_RUN_NONE;
 
 // Forward declaration for functions used in static helpers below.
 static bool isArmEnabled(uint8_t armId);
@@ -170,7 +176,7 @@ static bool isArmEnabled(uint8_t armId) {
 // same paths as any other - the estop's release included.
 // -----------------------------------------------------------------------------
 static bool isArmLive(uint8_t armId) {
-    return servoRunArmLive(isArmEnabled(armId), armId < kArmCount && s_arm[armId].runHeld);
+    return servoRunArmLive(isArmEnabled(armId), armId < kArmCount && s_runArm == armId);
 }
 
 // -----------------------------------------------------------------------------
@@ -272,7 +278,7 @@ static void publishCommanded(uint8_t armId) {
         s_arm[armId].nudgesDone,
         // `held` is the dial's (GET /api/servo/outputs): a run's hold on a free
         // Output is not a dial holding it.
-        s_arm[armId].hold.held && !s_arm[armId].runHeld,
+        s_arm[armId].hold.held && s_runArm != armId,
         s_arm[armId].limp,
         s_arm[armId].moving,
     };
@@ -464,23 +470,40 @@ static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
     publishCommanded(armId);
 }
 
+static void releaseArm(uint8_t armId, ServoLimpReason reason);
+
 // -----------------------------------------------------------------------------
 // takeForRun()
-// A nudge has named a free Output (#411): the run holds it, or refreshes the
-// hold it already has (servo_run.h - a nudge is the arrival, and not even one
-// moves the ceiling). Taking it attaches its channel with no pulse and puts the
-// Output's recorded centre on the pin, through the component clamp, so the
-// nudge has a width to be about. A free servo has never been driven, so that
-// first width is a jump, as every first move after boot is (#364). False, with
-// nothing driven, when the run may not take it or LEDC will not attach it.
+// A nudge has named a free Output (#411). Whether it is still free is asked on
+// every nudge, not only the first (servoRunOnNudge()): the run takes it, keeps
+// the hold it has (a nudge is the arrival, and not even one moves the ceiling),
+// or refuses it, letting go of it if a Part or a Light Type has landed on it
+// since. Taking a new Output lets go of the one the run held before FIRST:
+// releaseArm() reaches only an arm isArmLive() calls driven, and s_runArm
+// still names the old one until this moves it on.
+//
+// Taking it attaches its channel with no pulse and puts a first width on the
+// pin, through the component clamp, so the nudge has a width to be about: the
+// Output's recorded centre, kept inside the part of the cautious band a nudge
+// can be symmetric about (servoRunFirstWidthUs()). A free servo has never been
+// driven, so that first width is a jump, as every first move after boot is
+// (#364). False, with nothing driven, when the run may not take it or LEDC
+// will not attach it.
 // -----------------------------------------------------------------------------
 static bool takeForRun(uint8_t armId, CommandSource source) {
-    if (s_arm[armId].runHeld) {
+    const ServoRunNudgeStep step = servoRunOnNudge(s_runArm, armId, mayTakeForRun(armId));
+    if (step.letGo != SERVO_RUN_NONE) {
+        releaseArm(step.letGo, SERVO_LIMP_OFF);
+        PA_LOG_INFO(TAG, "[%s] Arm%d let go - %s", commandSourceToString(source), step.letGo + 1,
+                    step.letGo == armId ? "it is not free for a run any more"
+                                        : "the run moved on to the next output");
+    }
+    if (step.act == SERVO_RUN_REFUSE) {
+        return false;
+    }
+    if (step.act == SERVO_RUN_KEEP) {
         servoHoldCommand(&s_arm[armId].hold, millis(), SERVO_HOLD_ASK_TAKE);
         return true;
-    }
-    if (!mayTakeForRun(armId)) {
-        return false;
     }
     const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     if (channel >= LEDC_CH_MAX || !ledcPwmAttach(channel)) {
@@ -490,16 +513,17 @@ static bool takeForRun(uint8_t armId, CommandSource source) {
     }
     uint16_t centreUs = SERVO_PULSE_NEUTRAL_US;
     configCacheReadServoOutputCentre(SERVO_DRIVER_LEDC, channel, &centreUs);
+    const uint16_t firstUs = servoRunFirstWidthUs(centreUs, SERVO_BAND_STD, SERVO_NUDGE_AMPLITUDE_US);
     servoHoldCommand(&s_arm[armId].hold, millis(), SERVO_HOLD_ASK_TAKE);
-    s_arm[armId].runHeld = true;
+    s_runArm = armId;
     uint8_t resolvedChannel = 0;
     uint16_t commandedUs = 0;
-    if (resolveArmPulse(armId, centreUs, &resolvedChannel, &commandedUs)) {
+    if (resolveArmPulse(armId, firstUs, &resolvedChannel, &commandedUs)) {
         endMove(armId);
         writeArmPulse(armId, resolvedChannel, commandedUs);
     }
-    PA_LOG_INFO(TAG, "[%s] Arm%d taken for a Find by Moving run at %u us",
-                commandSourceToString(source), armId + 1, (unsigned)commandedUs);
+    PA_LOG_INFO(TAG, "[%s] Arm%d taken for a Find by Moving run at %u us (recorded centre %u us)",
+                commandSourceToString(source), armId + 1, (unsigned)commandedUs, (unsigned)centreUs);
     return true;
 }
 
@@ -778,7 +802,9 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason) {
     // A run's Output is free again: nothing drives it until a run takes it once
     // more. Its channel stays attached with no pulse, which is what the gates
     // above read rather than the channel.
-    s_arm[armId].runHeld = false;
+    if (s_runArm == armId) {
+        s_runArm = SERVO_RUN_NONE;
+    }
     ledcPwmRelease(channel);
     s_arm[armId].known = false;
     s_arm[armId].limp = reason;
@@ -880,7 +906,7 @@ static void expireHolds() {
             continue;
         }
         const bool ceiling = bound == SERVO_HOLD_BOUND_CEILING;
-        const bool run = s_arm[armId].runHeld;
+        const bool run = s_runArm == armId;
         releaseArm(armId, servoRunLimpReason(run, bound));
         if (run) {
             PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1,
@@ -890,6 +916,26 @@ static void expireHolds() {
                         ceiling ? "held for the most a dial may" : "the dial's commands stopped arriving");
         }
     }
+}
+
+// -----------------------------------------------------------------------------
+// letGoIfTheRunsOutputIsTaken()
+// A config commit can put a Part or a Light Type on the Output a run holds
+// between two of its nudges - the Part's own picker, "That one", another tab.
+// That Output is not free any more: a Part's Output moves through its Part,
+// and a light's wire may have a strip on the pin. So every frame a run holds
+// an Output, the same question the take asked (servoRunMayTake()) is asked
+// again, and the run lets go of it within a frame of the commit rather than at
+// the expiry. Two cache reads under configCacheMux, a critical section, and
+// only while a run holds something: no heap and no blocking on Core 1.
+// -----------------------------------------------------------------------------
+static void letGoIfTheRunsOutputIsTaken() {
+    const uint8_t armId = s_runArm;
+    if (armId == SERVO_RUN_NONE || mayTakeForRun(armId)) {
+        return;
+    }
+    releaseArm(armId, SERVO_LIMP_OFF);
+    PA_LOG_INFO(TAG, "Arm%d let go - a Part or a light is on it now", armId + 1);
 }
 
 // -----------------------------------------------------------------------------
@@ -921,10 +967,12 @@ static void processCommand(const ServoCommand& cmd) {
     // subsystems. Two exceptions, both a Find by Moving run's on a free Output
     // (#411): a nudge may take one, and a release lets go of one a run holds.
     // Nothing else reaches an Output this task does not drive.
+    // A nudge on the Output a run holds always reaches beginNudge(), which asks
+    // again whether it is still free and lets go of it if not.
     const bool runNudge = cmd.type == SERVO_CMD_NUDGE && cmd.armId < kArmCount &&
-                          (s_arm[cmd.armId].runHeld || mayTakeForRun(cmd.armId));
+                          (s_runArm == cmd.armId || mayTakeForRun(cmd.armId));
     const bool runRelease = cmd.type == SERVO_CMD_RELEASE && cmd.armId < kArmCount &&
-                            s_arm[cmd.armId].runHeld;
+                            s_runArm == cmd.armId;
     if (!isArmEnabled(cmd.armId) && !runNudge && !runRelease) {
         PA_LOG_DEBUG(TAG, "[%s] Command rejected - arm%d disabled or reserved",
                      commandSourceToString(cmd.source), cmd.armId);
@@ -1113,7 +1161,7 @@ bool servoTaskMayTakeForRun(uint8_t armId) {
 }
 
 bool servoTaskRunHolds(uint8_t armId) {
-    return armId < kArmCount && s_arm[armId].runHeld;
+    return armId < kArmCount && s_runArm == armId;
 }
 
 // -----------------------------------------------------------------------------
@@ -1176,6 +1224,9 @@ void servoTask(void* pvParameters) {
         // Then the dial's two bounds, after this frame's commands have had
         // their say: a hold refreshed this frame is not an expired one.
         expireHolds();
+
+        // And a run's Output that a commit took from it since the last frame.
+        letGoIfTheRunsOutputIsTaken();
 
         // Feed watchdog
         esp_task_wdt_reset();
