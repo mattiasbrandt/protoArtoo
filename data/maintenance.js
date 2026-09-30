@@ -253,6 +253,18 @@
       && keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && sameJson(a[key], b[key]));
   };
 
+  // The receipt line for a write the droid did not take. POST /api/config, the
+  // RC Map and the mood map answer 4xx and 503 before anything changes. Their
+  // 500 comes later: the config and the RC Map apply to the live settings
+  // before they persist (src/web/api_config.cpp), and the mood map's NVS save
+  // writes key by key (configSaveAudio()). So a 500, or no answer at all, can
+  // leave that part changed in part.
+  const failedLine = (label, error) => {
+    const refusedWhole = error?.kind === 'http' && ((error.status >= 400 && error.status < 500) || error.status === 503);
+    const said = `${label}: FAILED — ${window.PAApi.messageFor(error)}`;
+    return refusedWhole ? said : `${said}; it may have partly changed`;
+  };
+
   // ---- READ THE DROID: the reads a backup is made of, by part ----
   // Download reads every part; the copy offered before a restore reads the
   // parts about to be replaced. One function, so the copy is a backup like any
@@ -451,6 +463,8 @@
     return { config: { ...config, droidBuild }, retired };
   };
 
+  // The Configuration's receipt line: "restored" only when all of it landed.
+  // A read of the droid's Outputs that fails throws, before anything is sent.
   const restoreConfiguration = async (backup) => {
     const { outputs } = await window.PAOutputs.load();
     const { rows, missing } = rowsToRestore(backup, outputs);
@@ -461,14 +475,14 @@
       // A refusal about an Output's row is worded by the module that knows the
       // Outputs, from the rows this restore sent; anything else is said as the
       // droid said it.
-      throw window.PAOutputs.sayRefusal(error, rows);
+      return failedLine('Configuration', window.PAOutputs.sayRefusal(error, rows));
     }
     const gaps = missing.map((name) => `${name} not on this droid`);
     retired.forEach((id) => gaps.push(`${id} is no longer a Part`));
     // A file from before backups carried the Outputs' rows has no centre,
     // calibration or Part map to give back.
     if (!Array.isArray(backup.servo_outputs?.outputs)) gaps.push('no centre, calibration or Part map in this file');
-    return gaps;
+    return gaps.length === 0 ? 'Configuration: restored' : `Configuration: partial — ${gaps.join(', ')}`;
   };
 
   // ---- RESTORE: audio tracks (one POST per key) ----
@@ -676,7 +690,7 @@
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify(body) }, { timeoutMs: 10000 });
     } catch (err) {
-      return [`RC Map: FAILED — ${window.PAApi.messageFor(err)}`];
+      return [failedLine('RC Map', err)];
     }
     if (leftOut.length === 0) return ['RC Map: restored'];
     return [`RC Map: partial — ${leftOut.length} left out`, ...leftOut];
@@ -897,9 +911,7 @@
         lines.push('Configuration: partial — the sound setup only; the rest names another board\'s pins and stays');
       } else {
         try {
-          // "restored" only when all of it landed.
-          const gaps = await restoreConfiguration(file);
-          lines.push(gaps.length === 0 ? 'Configuration: restored' : `Configuration: partial — ${gaps.join(', ')}`);
+          lines.push(await restoreConfiguration(file));
         } catch (err) {
           lines.push(`Configuration: FAILED — ${window.PAApi.messageFor(err)}`);
         }
@@ -917,7 +929,7 @@
           await window.PAApi.postForm('/api/audio/mood-map', file.audio_mood_map, { timeoutMs: 5000 });
           lines.push('Audio mood map: restored');
         } catch (err) {
-          lines.push(`Audio mood map: FAILED — ${window.PAApi.messageFor(err)}`);
+          lines.push(failedLine('Audio mood map', err));
         }
       }
     }
