@@ -473,17 +473,19 @@ static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
 static void releaseArm(uint8_t armId, ServoLimpReason reason);
 
 // -----------------------------------------------------------------------------
-// letGoOfTheRunsOutput()
-// A run lets go of the Output it held, back to limp-since-start, and says why.
+// sayTheRunLetGo()
+// The log line for a run letting go of the Output it held, and nothing else.
 //
-// noinline, deliberately: its PA_LOG_* line buffer must stay out of
-// processCommand()'s and servoTask()'s frames. Both callers sit on ServoTask's
-// measured chain (ADR 0040), and inlined here the log line grew processCommand()
-// past what GCC folds into servoTask(), which stacked the two 352 B frames and
-// added 352 B to the walked chain (#411 slice 4).
+// noinline, and a leaf, deliberately: its PA_LOG_* line buffer must stay out of
+// every frame on ServoTask's measured chain (ADR 0040). Written in place in
+// takeForRun(), the line grew processCommand() past what GCC folds into
+// servoTask() on the ESP32, which stacked the two 352 B frames (+352 B walked);
+// with releaseArm() called from inside this helper, its frame sat over the LEDC
+// driver's log route on the ESP32-P4 (+208 B walked). Its callers release the
+// Output themselves, so the buffer is only ever on the stack for the line
+// (#411 slice 4).
 // -----------------------------------------------------------------------------
-static void __attribute__((noinline)) letGoOfTheRunsOutput(uint8_t armId, const char* why) {
-    releaseArm(armId, SERVO_LIMP_OFF);
+static void __attribute__((noinline)) sayTheRunLetGo(uint8_t armId, const char* why) {
     PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1, why);
 }
 
@@ -508,8 +510,9 @@ static void __attribute__((noinline)) letGoOfTheRunsOutput(uint8_t armId, const 
 static bool takeForRun(uint8_t armId, CommandSource source) {
     const ServoRunNudgeStep step = servoRunOnNudge(s_runArm, armId, mayTakeForRun(armId));
     if (step.letGo != SERVO_RUN_NONE) {
-        letGoOfTheRunsOutput(step.letGo, step.letGo == armId ? "it is not free for a run any more"
-                                                             : "the run moved on to the next output");
+        releaseArm(step.letGo, SERVO_LIMP_OFF);
+        sayTheRunLetGo(step.letGo, step.letGo == armId ? "it is not free for a run any more"
+                                                       : "the run moved on to the next output");
     }
     if (step.act == SERVO_RUN_REFUSE) {
         return false;
@@ -947,15 +950,24 @@ static void letGoIfTheRunsOutputIsNoLongerFree() {
     if (armId == SERVO_RUN_NONE || mayTakeForRun(armId)) {
         return;
     }
-    letGoOfTheRunsOutput(armId, "a Part or a light is on it now");
+    releaseArm(armId, SERVO_LIMP_OFF);
+    sayTheRunLetGo(armId, "a Part or a light is on it now");
 }
 
 // -----------------------------------------------------------------------------
 // processCommand()
 // Process incoming servo command.
 // Every command is gated per isArmEnabled() (ADR 0027).
+//
+// always_inline, deliberately: servoTask() is its only caller, and ServoTask's
+// measured chain (ADR 0040) is walked through the two as one frame. Left to
+// GCC, the ESP32 build folded it in only while it stayed under the inliner's
+// size limit, and the ESP32-P4 build never did; out of line its 352 B frame
+// stacks under servoTask()'s and the walked chain grows by that much (#411
+// slice 4 measured +352 B from a few lines added below). Forced, both chips
+// walk the same shape whatever this function grows by.
 // -----------------------------------------------------------------------------
-static void processCommand(const ServoCommand& cmd) {
+static inline __attribute__((always_inline)) void processCommand(const ServoCommand& cmd) {
     // Safety: Check estop  --  reject all commands while emergency stopped
     taskENTER_CRITICAL(&robotStateMux);
     bool estop = robotState.estop;
