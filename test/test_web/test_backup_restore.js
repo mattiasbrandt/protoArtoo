@@ -91,6 +91,10 @@ const httpError = (status, message) => Object.assign(new Error(message), { kind:
  * A droid behind the routes a backup and a restore use. `library` is its
  * Learned Sequences in list order; `refuse(seq)` returns the droid's reason
  * to refuse a save, or null; `fail(path, method)` fails a request outright.
+ * `breaks(path, method)` fails a write AFTER the store changed, the two ways
+ * the firmware can: "rename" is a save that removed the old file and then
+ * could not rename the new one into place (src/seq_store.cpp), answering 500;
+ * "no-reply" is a write that landed and whose answer never arrived.
  */
 const makeDroid = ({
   board = "artoo_esp32",
@@ -99,6 +103,7 @@ const makeDroid = ({
   rcMap = { mode: "dual_sbus", map: [] },
   refuse = () => null,
   fail = () => false,
+  breaks = () => null,
   soundOff = false,
 } = {}) => {
   const { DroidParts } = partsGlobals();
@@ -123,6 +128,7 @@ const makeDroid = ({
       if (!droid.store.has(name)) throw httpError(404, "not found");
       if (method === "DELETE") {
         droid.store.delete(name);
+        if (breaks(path, method) === "no-reply") throw httpError(0, `no answer from ${path}`);
         const danglingBindings = droid.rcMap.map
           .filter((entry) => entry.action === "dome_seq" && entry.payload === name)
           .map((entry) => ({ source: entry.source, channel: entry.channel }));
@@ -135,7 +141,13 @@ const makeDroid = ({
       const reason = refuse(seq);
       if (reason) throw httpError(400, reason);
       if (!droid.store.has(seq.name) && droid.store.size >= cap) throw httpError(400, `store full (${cap} sequences max)`);
+      const broken = breaks(path, method);
+      if (broken === "rename") {
+        droid.store.delete(seq.name);
+        throw httpError(500, "rename failed");
+      }
       droid.store.set(seq.name, structuredClone(seq));
+      if (broken === "no-reply") throw httpError(0, `no answer from ${path}`);
       return { data: { ok: true } };
     }
     if (path === "/api/rc/map" && method === "POST") {
@@ -411,6 +423,46 @@ test("a Sequence the droid refuses partway through leaves the droid's library ex
   assert.match(receipt(), /Sequences: FAILED — the droid refused DM:BIG: payload too large\. The Sequences the droid had are put back\./);
 });
 
+// The droid changes its store before it answers. A save that fails at the
+// rename has already removed the Sequence it was replacing, and a delete whose
+// answer is lost has still deleted. Recording a name only on a good answer
+// left both out of the put-back, and the receipt said the library was back
+// (Codex review of #448 slice 1).
+const byName = (seqs) => seqs.slice().sort((a, b) => a.name.localeCompare(b.name));
+const heldAfter = (droid) => byName([...droid.store.values()]);
+
+test("a save that fails after the droid removed the old Sequence still puts it back", async () => {
+  const mine = sequence("DM:MINE", [{ type: "dome", cmd: ":OP01", ms: 0 }]);
+  let broken = false;
+  const droid = makeDroid({
+    library: [mine],
+    breaks: (path, method) => {
+      if (method !== "POST" || broken) return null;
+      broken = true;
+      return "rename";
+    },
+  });
+  const backup = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:MINE")] };
+  const { receipt } = await restoreOn(droid, backup);
+
+  assert.deepEqual(heldAfter(droid), [mine], "the droid holds the Sequence it had, as it was");
+  assert.match(receipt(), /Sequences: FAILED — the droid refused DM:MINE: rename failed\. The Sequences the droid had are put back\./);
+});
+
+test("a delete whose answer is lost still puts the Sequence back", async () => {
+  const library = [sequence("DM:GONE", [{ type: "dome", cmd: ":OP02", ms: 0 }]), sequence("DM:KEEP")];
+  const droid = makeDroid({
+    library,
+    breaks: (path, method) => (method === "DELETE" && path.includes("GONE") ? "no-reply" : null),
+  });
+  const backup = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:KEEP"), sequence("DM:NEW")] };
+  const { receipt } = await restoreOn(droid, backup);
+
+  assert.deepEqual(heldAfter(droid), byName(library),
+    "the droid holds the Sequences it had, each as it was");
+  assert.match(receipt(), /Sequences: FAILED — the droid refused DM:GONE: no answer[^\n]*The Sequences the droid had are put back\./);
+});
+
 test("the RC Map never goes out with a binding the droid would refuse, and a refused map is never called restored", async () => {
   // Six Sequences onto a droid that stores five: the sixth is left out, and
   // the RC Map's binding to it with it.
@@ -431,10 +483,64 @@ test("the RC Map never goes out with a binding the droid would refuse, and a ref
   assert.match(receipt(), /RC Channel 5: DM:SIXTH is not on this droid/);
 
   const refusing = makeDroid();
-  const bad = { schema: 2, rc_map: { map: [{ source: "sbus1", channel: 4, action: "dome_marcduino", payload: ":SM01" }] } };
+  const bad = { schema: 2, board: "artoo_esp32", rc_map: { map: [{ source: "sbus1", channel: 4, action: "dome_marcduino", payload: ":SM01" }] } };
   const refused = await restoreOn(refusing, bad);
   assert.match(refused.receipt(), /RC Map: FAILED — :SM is diagnostic only/);
   assert.doesNotMatch(refused.receipt(), /RC Map: (restored|partial)/);
+});
+
+// A file is offered only in the shape Download backup writes. Any object with
+// a schema used to pass: an RC Map alone emptied the droid's, and a schema 2
+// file without its board was taken as this droid's own and wrote the whole
+// Configuration, pins included (Codex review of #448 slice 1).
+test("a file not in the shape Download backup writes is refused, and nothing is offered", async () => {
+  const boardless = { ...OLDER_BACKUP, schema: 2 };
+  for (const file of [boardless, { schema: 1, rc_map: { map: [] } }]) {
+    const page = openPage(makeDroid());
+    await page.env.settle();
+    page.env.element("backup-file-input").files = [{ text: JSON.stringify(file) }];
+    page.env.emitOn("backup-file-input", "change");
+    await page.env.settle();
+
+    assert.match(page.receipt(), /^Not a protoArtoo backup: /, `${JSON.stringify(file).slice(0, 60)} was offered`);
+    assert.equal(page.env.element("restore-sections").hidden, true, "no part is offered");
+  }
+});
+
+// Save a copy first reads the droid for seconds before the first write, and
+// the chooser stayed usable: a file chosen meanwhile became the one written,
+// not the one the builder confirmed (Codex review of #448 slice 1).
+test("a file chosen while the copy is read is not the one written", async () => {
+  const confirmed = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:CONFIRMED")] };
+  const other = { schema: 2, board: "artoo_esp32", sequences: [sequence("DM:OTHER")] };
+  const droid = makeDroid({ library: [sequence("DM:MINE")] });
+  let page = null;
+  let identityReads = 0;
+  let lockedWhileCopying = null;
+  const answer = droid.respond;
+  droid.respond = (path, opts) => {
+    // The first identity read is the droid being asked about the chosen file;
+    // the second is the copy's.
+    if (path === "/api/identity" && ++identityReads === 2) {
+      lockedWhileCopying = page.env.element("backup-file-input").disabled;
+      page.env.element("backup-file-input").files = [{ text: JSON.stringify(other) }];
+      page.env.emitOn("backup-file-input", "change");
+    }
+    return answer(path, opts);
+  };
+  page = openPage(droid);
+  const { env } = page;
+  await env.settle();
+  env.element("backup-file-input").files = [{ text: JSON.stringify(confirmed) }];
+  env.emitOn("backup-file-input", "change");
+  await page.until(() => env.element("backup-restore-btn").disabled === false);
+  env.emitOn("backup-restore-btn", "click");
+  env.emitOn("restore-copy-btn", "click");
+  await page.until(() => !["", "Restoring..."].includes(page.receipt()));
+
+  assert.deepEqual([...droid.store.keys()], ["DM:CONFIRMED"], "the droid holds what the confirmed file holds");
+  assert.equal(lockedWhileCopying, true, "the chooser is locked while the restore runs");
+  assert.equal(env.element("backup-file-input").disabled, false, "and unlocked once the receipt is in");
 });
 
 test("a copy of what is about to be replaced that cannot be built replaces nothing", async () => {

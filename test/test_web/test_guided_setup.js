@@ -436,7 +436,16 @@ test("an inert droid with no record is a first run, not a grandfathered one", as
 // key it is.
 const restoreParamsFor = async (patch) => {
   const env = boot({ surface: "maintenance" });
-  const backup = { schema: 1, config: { ...freshConfig(), ...patch } };
+  // The Configuration part as Download backup writes it (data/maintenance.js
+  // refuses a file in any other shape), from this droid's own board.
+  const backup = {
+    schema: 2,
+    board: IDENTITY.board,
+    config: { ...freshConfig(), ...patch },
+    servo_outputs: { outputs: [] },
+    audio_tracks: {},
+    audio_mood_map: {},
+  };
   const turns = async (n) => {
     for (let turn = 0; turn < n; turn += 1) await new Promise((resolve) => setImmediate(resolve));
   };

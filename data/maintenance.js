@@ -232,6 +232,8 @@
   let parsedBackup = null;
   let facts = null;
   let factsAsked = 0;
+  // True from the answer to the question until the restore's receipt is in.
+  let restoring = false;
 
   const setFeedback = (msg, variant = '') => {
     feedback.textContent = msg;
@@ -240,6 +242,30 @@
 
   const listOf = (names) => names.join(', ');
   const seqPath = (name) => `/api/seq?name=${encodeURIComponent(name)}`;
+  const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  // Two JSON values with the same content, whatever order their keys came in:
+  // the order a Sequence's keys were written in is not part of the Sequence.
+  const sameJson = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length
+      && keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && sameJson(a[key], b[key]));
+  };
+
+  // The receipt line for a write the droid did not take. POST /api/config, the
+  // RC Map and the mood map answer 4xx and 503 before anything changes. Their
+  // 500 comes later: the config and the RC Map apply to the live settings
+  // before they persist (src/web/api_config.cpp), and the mood map's NVS save
+  // writes key by key (configSaveAudio()). So a 500, or no answer at all, can
+  // leave that part changed in part.
+  const failedLine = (label, error) => {
+    const refusedWhole = error?.kind === 'http' && ((error.status >= 400 && error.status < 500) || error.status === 503);
+    const said = `${label}: FAILED — ${window.PAApi.messageFor(error)}`;
+    return refusedWhole ? said : `${said}; it may have partly changed`;
+  };
 
   // ---- READ THE DROID: the reads a backup is made of, by part ----
   // Download reads every part; the copy offered before a restore reads the
@@ -274,17 +300,18 @@
     }
     const sequences = [];
     for (const { name } of list) {
-      try {
-        sequences.push((await window.PAApi.get(seqPath(name), { timeoutMs: 10000 })).data);
-      } catch {
-        failed.push(name);
-      }
+      const seq = await window.PAApi.get(seqPath(name), { timeoutMs: 10000 }).then((res) => res.data, () => null);
+      if (isObject(seq) && typeof seq.name === 'string') sequences.push(seq);
+      else failed.push(name);
     }
     return sequences;
   };
 
   // A backup of `parts` ('sequences', 'configuration', 'rc_map') read off the
   // droid, with the board that wrote it, or the reads that did not answer.
+  // A read counts only when it returned data: an answer with no JSON body is
+  // a part missing from the copy, and an identity without its board makes a
+  // file this page would refuse to restore.
   const readDroid = async (parts) => {
     const reads = [['identity', '/api/identity'], ...parts.flatMap((part) => PART_READS[part] || [])];
     const [fwRes, ...answers] = await Promise.allSettled([
@@ -295,7 +322,8 @@
     const read = {};
     answers.forEach((res, index) => {
       const [key] = reads[index];
-      if (res.status === 'fulfilled') read[key] = res.value?.data ?? null;
+      const data = res.status === 'fulfilled' ? res.value?.data : null;
+      if (isObject(data) && (key !== 'identity' || typeof data.board === 'string')) read[key] = data;
       else failed.push(key);
     });
     const sequences = parts.includes('sequences') ? await readSequences(failed) : undefined;
@@ -437,6 +465,8 @@
     return { config: { ...config, droidBuild }, retired };
   };
 
+  // The Configuration's receipt line: "restored" only when all of it landed.
+  // A read of the droid's Outputs that fails throws, before anything is sent.
   const restoreConfiguration = async (backup) => {
     const { outputs } = await window.PAOutputs.load();
     const { rows, missing } = rowsToRestore(backup, outputs);
@@ -447,14 +477,14 @@
       // A refusal about an Output's row is worded by the module that knows the
       // Outputs, from the rows this restore sent; anything else is said as the
       // droid said it.
-      throw window.PAOutputs.sayRefusal(error, rows);
+      return failedLine('Configuration', window.PAOutputs.sayRefusal(error, rows));
     }
     const gaps = missing.map((name) => `${name} not on this droid`);
     retired.forEach((id) => gaps.push(`${id} is no longer a Part`));
     // A file from before backups carried the Outputs' rows has no centre,
     // calibration or Part map to give back.
     if (!Array.isArray(backup.servo_outputs?.outputs)) gaps.push('no centre, calibration or Part map in this file');
-    return gaps;
+    return gaps.length === 0 ? 'Configuration: restored' : `Configuration: partial — ${gaps.join(', ')}`;
   };
 
   // ---- RESTORE: audio tracks (one POST per key) ----
@@ -543,26 +573,33 @@
   // droid just before, and the receipt says so. `held` and `changed` track what
   // the droid holds now, so the put-back deletes only what this restore added
   // and re-posts only what it removed or overwrote.
+  //
+  // Both are written BEFORE each request, never after its answer. The droid
+  // changes its store before it answers (src/web/api_seq.cpp), and a save that
+  // fails at the rename has already removed the old file (src/seq_store.cpp,
+  // LittleFS.remove before rename). So a refusal, a lost reply or a timeout can
+  // each leave a name changed, and only a name recorded up front is put back.
   const restoreSequences = async (fileSequences, prior, cap) => {
     const keep = cap ? fileSequences.slice(0, cap) : fileSequences.slice();
     const leftOut = fileSequences.slice(keep.length).map((seq) => seq?.name);
     const keepNames = new Set(keep.map((seq) => seq?.name));
     const priorNames = new Set(prior.map((seq) => seq.name));
+    const priorByName = new Map(prior.map((seq) => [seq.name, seq]));
     const held = new Set(priorNames);
     const changed = new Set();
     const dangling = [];
     let refused = null;
 
     const remove = async (name) => {
-      const answer = await window.PAApi.request(seqPath(name), { method: 'DELETE', timeoutMs: 10000 });
       held.delete(name);
       changed.add(name);
+      const answer = await window.PAApi.request(seqPath(name), { method: 'DELETE', timeoutMs: 10000 });
       return answer?.data?.danglingBindings || [];
     };
     const save = async (seq) => {
-      await window.PAApi.postJson('/api/seq', seq, { timeoutMs: 15000 });
       held.add(seq.name);
       changed.add(seq.name);
+      await window.PAApi.postJson('/api/seq', seq, { timeoutMs: 15000 });
     };
 
     let step = null;
@@ -573,6 +610,11 @@
         (await remove(seq.name)).forEach((binding) => dangling.push({ ...binding, name: seq.name }));
       }
       for (const seq of keep) {
+        // A Sequence the droid already holds exactly is left alone: on a full
+        // store every save can be refused for room (src/seq_store_util.cpp),
+        // and re-posting an identical copy would fail a restore that changes
+        // nothing about it.
+        if (sameJson(seq, priorByName.get(seq?.name))) continue;
         step = seq?.name;
         await save(seq);
       }
@@ -582,12 +624,16 @@
     if (!refused) return { restored: keep, leftOut, dangling, held };
 
     // Put back. What this restore added goes first, so a full store has room
-    // for what it removed.
+    // for what it removed. A name recorded before a save whose reply was lost
+    // may never have reached the droid: its "not found" means it is gone,
+    // which is what the put-back wants.
     const notBack = [];
     for (const name of [...held].filter((each) => !priorNames.has(each))) {
       try {
         await remove(name);
-      } catch {
+      } catch (error) {
+        if (error?.kind === 'http' && error.status === 404) continue;
+        held.add(name);
         notBack.push(name);
       }
     }
@@ -595,6 +641,7 @@
       try {
         await save(seq);
       } catch {
+        held.delete(seq.name);
         notBack.push(seq.name);
       }
     }
@@ -645,7 +692,7 @@
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify(body) }, { timeoutMs: 10000 });
     } catch (err) {
-      return [`RC Map: FAILED — ${window.PAApi.messageFor(err)}`];
+      return [failedLine('RC Map', err)];
     }
     if (leftOut.length === 0) return ['RC Map: restored'];
     return [`RC Map: partial — ${leftOut.length} left out`, ...leftOut];
@@ -686,8 +733,8 @@
   // A file from the other Board Variant writes only what names no pin: the
   // Sequences, the RC Map and the sound setup (ADR 0056). A file that does not
   // say which board wrote it (schema 1) is this droid's own.
-  const fromOtherBoard = () =>
-    typeof parsedBackup?.board === 'string' && typeof facts?.board === 'string' && parsedBackup.board !== facts.board;
+  const fromOtherBoard = (file = parsedBackup, known = facts) =>
+    typeof file?.board === 'string' && typeof known?.board === 'string' && file.board !== known.board;
 
   // The Learned Sequences the droid will hold once this restore is done, as far
   // as it can be known before it runs: the file's first `cap` when Sequences is
@@ -753,7 +800,7 @@
     const n = tickedParts().length;
     if (restoreBtn) {
       restoreBtn.textContent = `Restore ${n} ticked part${n === 1 ? '' : 's'}`;
-      restoreBtn.disabled = n === 0 || !facts?.library;
+      restoreBtn.disabled = restoring || n === 0 || !facts?.library;
     }
     if (question) question.hidden = true;
   };
@@ -771,7 +818,7 @@
     if (asked !== factsAsked) return;
     const rows = (res) => (res.status === 'fulfilled' && Array.isArray(res.value?.data) ? res.value.data : null);
     const failed = [];
-    if (identity.status !== 'fulfilled') failed.push('which board it is');
+    if (identity.status !== 'fulfilled' || typeof identity.value?.data?.board !== 'string') failed.push('which board it is');
     if (!rows(list)) failed.push('which Sequences it holds');
     if (!rows(builtins)) failed.push('its Factory Sequences');
     if (failed.length > 0) {
@@ -813,14 +860,11 @@
   };
 
   // ---- RESTORE: apply the ticked parts ----
-  const performRestore = async ({ withCopy }) => {
-    if (!parsedBackup || !facts?.library || !window.PAApi) return;
-    const parts = tickedParts().map((part) => part.id);
-    if (parts.length === 0) return;
-    if (question) question.hidden = true;
-    if (restoreBtn) restoreBtn.disabled = true;
-    setFeedback('Restoring...');
-
+  // `file` and `known` are the chosen file and what the droid said about
+  // itself, as they stood when the question was answered. Nothing below reads
+  // the live ones: the copy's reads take seconds, and a file chosen meanwhile
+  // must not become the one written.
+  const applyRestore = async (file, known, parts, withCopy) => {
     // The copy is built from the droid's own answers for every part about to
     // be replaced, and a download the browser blocked still reads as saved -
     // so what can be checked is the reads: if any fails, there is no copy and
@@ -835,7 +879,6 @@
         setFeedback(withCopy
           ? `No copy saved: the droid did not send ${listOf(failed)}. Nothing was replaced.`
           : `The droid did not send its Sequences (${listOf(failed)}). Nothing was replaced.`, 'error');
-        renderParts();
         return;
       }
       before = backup;
@@ -850,7 +893,7 @@
     let sequencesDone = null;
 
     if (parts.includes('sequences')) {
-      const result = await restoreSequences(parsedBackup.sequences, before.sequences, facts.cap);
+      const result = await restoreSequences(file.sequences, before.sequences, known.cap);
       sequencesDone = result;
       if (result.refused) {
         const back = result.notBack.length === 0
@@ -860,43 +903,41 @@
       } else if (result.leftOut.length === 0) {
         lines.push(`Sequences: restored ${result.restored.length}`);
       } else {
-        lines.push(`Sequences: partial — ${result.restored.length} restored; left out, this droid holds ${facts.cap}: ${listOf(result.leftOut)}`);
+        lines.push(`Sequences: partial — ${result.restored.length} restored; left out, this droid holds ${known.cap}: ${listOf(result.leftOut)}`);
       }
     }
 
     if (parts.includes('configuration')) {
-      if (fromOtherBoard()) {
+      if (fromOtherBoard(file, known)) {
         lines.push('Configuration: partial — the sound setup only; the rest names another board\'s pins and stays');
       } else {
         try {
-          // "restored" only when all of it landed.
-          const gaps = await restoreConfiguration(parsedBackup);
-          lines.push(gaps.length === 0 ? 'Configuration: restored' : `Configuration: partial — ${gaps.join(', ')}`);
+          lines.push(await restoreConfiguration(file));
         } catch (err) {
           lines.push(`Configuration: FAILED — ${window.PAApi.messageFor(err)}`);
         }
       }
       // The sound setup follows on its own routes, with its own lines.
-      if (parsedBackup.audio_tracks) {
-        const { failed, skipped } = await restoreAudioTracks(parsedBackup.audio_tracks);
+      if (file.audio_tracks) {
+        const { failed, skipped } = await restoreAudioTracks(file.audio_tracks);
         const line = failed.length === 0
           ? 'Audio tracks: restored'
           : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`;
         lines.push(skipped.length === 0 ? line : `${line}; ${skipped.join(', ')}`);
       }
-      if (parsedBackup.audio_mood_map) {
+      if (file.audio_mood_map) {
         try {
-          await window.PAApi.postForm('/api/audio/mood-map', parsedBackup.audio_mood_map, { timeoutMs: 5000 });
+          await window.PAApi.postForm('/api/audio/mood-map', file.audio_mood_map, { timeoutMs: 5000 });
           lines.push('Audio mood map: restored');
         } catch (err) {
-          lines.push(`Audio mood map: FAILED — ${window.PAApi.messageFor(err)}`);
+          lines.push(failedLine('Audio mood map', err));
         }
       }
     }
 
     let rcMapLanded = false;
     if (parts.includes('rc-map')) {
-      const rcLines = await restoreRcMap(parsedBackup.rc_map, facts.factory);
+      const rcLines = await restoreRcMap(file.rc_map, known.factory);
       rcMapLanded = !rcLines[0].includes('FAILED');
       lines.push(...rcLines);
     }
@@ -916,7 +957,7 @@
     // need the droid's rows silent, exactly as in the editor.
     if (sequencesDone?.restored?.length > 0 && window.SeqRehearsal) {
       const droid = await window.PAOutputs?.load().catch(() => null);
-      const context = { outputs: droid?.outputs || null, config: droid?.config || null, maxBytes: facts.maxBytes };
+      const context = { outputs: droid?.outputs || null, config: droid?.config || null, maxBytes: known.maxBytes };
       sequencesDone.restored.forEach((seq) => {
         lines.push(`${seq.name} — ${window.SeqRehearsal.summaryText(window.SeqRehearsal.rehearse(seq, context))}`);
       });
@@ -927,15 +968,76 @@
     if (anyRestored) lines.push('Restart the Body Controller to apply everything restored.');
     setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
     // The library the parts are counted against is the one the droid holds now.
-    if (sequencesDone && facts) facts.library = [...sequencesDone.held];
-    renderParts();
+    if (sequencesDone) known.library = [...sequencesDone.held];
+  };
+
+  // The chooser is locked from the answer until the receipt is in, and a file
+  // whose read lands meanwhile is dropped (handleFile()).
+  const lockChooser = (locked) => {
+    restoring = locked;
+    fileInput.disabled = locked;
+    if (fileTrigger) fileTrigger.disabled = locked;
+  };
+
+  const performRestore = async ({ withCopy }) => {
+    if (restoring || !parsedBackup || !facts?.library || !window.PAApi) return;
+    const parts = tickedParts().map((part) => part.id);
+    if (parts.length === 0) return;
+    if (question) question.hidden = true;
+    if (restoreBtn) restoreBtn.disabled = true;
+    setFeedback('Restoring...');
+    lockChooser(true);
+    try {
+      await applyRestore(parsedBackup, facts, parts, withCopy);
+    } finally {
+      lockChooser(false);
+      renderParts();
+    }
   };
 
   // ---- FILE PARSE ----
-  // A protoArtoo backup is a JSON object with a schema number. Anything else is
-  // refused with the reason, never half-read, and as not supported rather than
-  // impossible: opening sharing later is a policy change, not a format change
-  // (ADR 0056).
+  // A protoArtoo backup is a JSON object with a schema number, in the shape
+  // Download backup writes it. Anything else is refused with the reason, never
+  // half-read, and as not supported rather than impossible: opening sharing
+  // later is a policy change, not a format change (ADR 0056).
+  //
+  // The shape is checked part by part, because each part a file carries
+  // replaces the droid's: `{"schema":1,"rc_map":{"map":[]}}` would otherwise be
+  // offered and empty the RC Map. A schema 2 file names its board, and one that
+  // does not is refused rather than taken as this droid's own, which would
+  // write another board's pins. The copy saved before a restore carries only
+  // the parts it replaces, so a part may be absent; a part present is whole.
+  const whyNotABackup = (backup) => {
+    if (!isObject(backup)) return 'it is not a backup object';
+    if (!Number.isInteger(backup.schema) || backup.schema < 1) return 'it has no backup schema';
+    const current = backup.schema >= BACKUP_SCHEMA;
+    if (current && (typeof backup.board !== 'string' || backup.board === '')) {
+      return 'it does not say which board wrote it';
+    }
+    const has = (key) => backup[key] !== undefined;
+    if (has('sequences') && !(Array.isArray(backup.sequences)
+        && backup.sequences.every((seq) => isObject(seq) && typeof seq.name === 'string'))) {
+      return 'its Sequences are incomplete';
+    }
+    if (has('rc_map') && !(isObject(backup.rc_map) && Array.isArray(backup.rc_map.map))) {
+      return 'its RC Map is incomplete';
+    }
+    // The Configuration is the config, the Outputs' rows and the sound setup,
+    // read together. Schema 1 wrote the rows only from #417 on.
+    const configuration = current
+      ? ['config', 'servo_outputs', 'audio_tracks', 'audio_mood_map']
+      : ['config', 'audio_tracks', 'audio_mood_map'];
+    if (configuration.some(has) && !(configuration.every((key) => isObject(backup[key]))
+        && (!has('servo_outputs') || Array.isArray(backup.servo_outputs?.outputs)))) {
+      return 'its Configuration is incomplete';
+    }
+    // Download wrote schema 1 whole: the Configuration and the RC Map, always.
+    if (!current && !has('config')) return 'it has no Configuration';
+    if (!current && !has('rc_map')) return 'it has no RC Map';
+    if (!has('sequences') && !has('config') && !has('rc_map')) return 'it holds no Sequences, Configuration or RC Map';
+    return null;
+  };
+
   const refuseFile = (why) => {
     setFeedback(`Not a protoArtoo backup: ${why}. Restoring it is not supported; choose a file Download backup saved.`, 'error');
     parsedBackup = null;
@@ -951,8 +1053,13 @@
 
   const handleFile = (file) => {
     if (!file) return;
+    if (restoring) {
+      fileInput.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
+      if (restoring) return;
       let backup;
       try {
         backup = JSON.parse(e.target.result);
@@ -960,12 +1067,9 @@
         refuseFile('it is not JSON');
         return;
       }
-      if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
-        refuseFile('it is not a backup object');
-        return;
-      }
-      if (!Number.isInteger(backup.schema) || backup.schema < 1) {
-        refuseFile('it has no backup schema');
+      const why = whyNotABackup(backup);
+      if (why) {
+        refuseFile(why);
         return;
       }
 
