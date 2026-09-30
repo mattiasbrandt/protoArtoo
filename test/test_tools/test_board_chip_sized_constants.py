@@ -48,6 +48,7 @@ PROBE_HEADER_SET = (
     "firebeetle_required_pins.inc",
     "log_buffer.h",
     "protocol_check.h",
+    "seq_tempo.h",
     "seq_store_index.h",
     "seq_store_util.h",
     "sequence_engine.h",
