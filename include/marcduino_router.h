@@ -20,6 +20,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h>  // strlen
 
 #include "dome_link.h"            // domeConnected(), domeQueueTx()
 #include "dome_rx_parser.h"       // executeMarcduinoBodyCommand()
@@ -35,8 +36,28 @@
 // the stack rule's step for its 7168 B stack; out of line it walks 5632 B
 // (#449, tools/check_task_stack_chains.py). The buffer then lives only while a
 // line is logged, beside the handler rather than under it.
+//
+// Rate-limited: one line per outcome per kMarcduinoRouteLogIntervalMs. The RC
+// path reaches this from RCInputTask, and a binding held against a dome that
+// is not connected would otherwise write a warning on every press it repeats
+// (#449). Two static words and millis(), no heap, no lock: two tasks racing on
+// them can at worst let one extra line through, which is a log line and
+// nothing more.
+constexpr uint32_t kMarcduinoRouteLogIntervalMs = 5000;
+
 __attribute__((noinline)) inline void marcduinoLogRoute(MarcduinoRouteOutcome outcome,
                                                         const char* line) {
+    static uint32_t lastLoggedMs[16] = {};
+    static uint16_t loggedOnce = 0;  // one bit per outcome: logged at least once
+    const uint8_t slot = (uint8_t)outcome & 0x0F;
+    const uint32_t nowMs = millis();
+    if ((loggedOnce & (1u << slot)) != 0 &&
+        (uint32_t)(nowMs - lastLoggedMs[slot]) < kMarcduinoRouteLogIntervalMs) {
+        return;
+    }
+    loggedOnce |= (uint16_t)(1u << slot);
+    lastLoggedMs[slot] = nowMs;
+
     switch (outcome) {
         case MarcduinoRouteOutcome::Forwarded:
             PA_LOG_DEBUG("MARCDUINO", "forwarded to dome: %s", line);
@@ -51,7 +72,11 @@ __attribute__((noinline)) inline void marcduinoLogRoute(MarcduinoRouteOutcome ou
             PA_LOG_WARN("MARCDUINO", "%s refused - nothing drives that Output", line);
             break;
         case MarcduinoRouteOutcome::NotRun:
-            PA_LOG_WARN("MARCDUINO", "%s not run from this path", line);
+            PA_LOG_WARN("MARCDUINO", "%s not run", line);
+            break;
+        case MarcduinoRouteOutcome::LineTooLong:
+            PA_LOG_WARN("MARCDUINO", "refused, longer than %u characters: %.24s...",
+                        (unsigned)DOME_TX_LINE_MAX, line);
             break;
         case MarcduinoRouteOutcome::Applied:
         case MarcduinoRouteOutcome::BlockedByEstop:
@@ -70,9 +95,17 @@ __attribute__((noinline)) inline void marcduinoLogRoute(MarcduinoRouteOutcome ou
 // asked first, the way the RC droid_seq_* forward already does
 // (src/rc_dispatcher_helpers.cpp).
 // -----------------------------------------------------------------------------
+// A line the dome TX buffer holds whole. Asked before anything runs, so a
+// line too long to forward is never half acted on.
+inline bool marcduinoLineFitsDomeTx(const char* line) {
+    return strlen(line) <= DOME_TX_LINE_MAX;
+}
+
 inline MarcduinoRouteOutcome marcduinoForwardToDome(const char* line) {
     MarcduinoRouteOutcome outcome = MarcduinoRouteOutcome::Forwarded;
-    if (!domeConnected()) {
+    if (!marcduinoLineFitsDomeTx(line)) {
+        outcome = MarcduinoRouteOutcome::LineTooLong;
+    } else if (!domeConnected()) {
         outcome = MarcduinoRouteOutcome::DomeLinkDown;
     } else if (!domeQueueTx(line)) {
         outcome = MarcduinoRouteOutcome::DomeQueueFull;
@@ -126,12 +159,22 @@ inline MarcduinoRouteOutcome marcduinoRouteFromBody(MarcduinoBodyOutcome body) {
 // their own control everywhere a binding reaches (system.action.set-mood).
 // -----------------------------------------------------------------------------
 inline MarcduinoRouteOutcome routeMarcduinoLine(const char* line) {
+    if (!marcduinoLineFitsDomeTx(line)) {
+        marcduinoLogRoute(MarcduinoRouteOutcome::LineTooLong, line);
+        return MarcduinoRouteOutcome::LineTooLong;
+    }
     switch (marcduinoCommandOwner(line)) {
         case MarcduinoOwner::Dome:
             return marcduinoForwardToDome(line);
 
         case MarcduinoOwner::Body: {
             if (moodIdFromSeCommand(line) != 0) {
+                marcduinoLogRoute(MarcduinoRouteOutcome::NotRun, line);
+                return MarcduinoRouteOutcome::NotRun;
+            }
+            // A panel head whose number is not all digits: refused here, before
+            // the handler, so no reading of it can reach an Output.
+            if (marcduino_is_panel_command(line) && !marcduino_panel_command_well_formed(line)) {
                 marcduinoLogRoute(MarcduinoRouteOutcome::NotRun, line);
                 return MarcduinoRouteOutcome::NotRun;
             }

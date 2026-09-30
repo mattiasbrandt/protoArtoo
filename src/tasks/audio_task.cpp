@@ -142,12 +142,17 @@ bool audioIsCatalogReady() {
     return driver()->isCatalogReady();
 }
 
-bool audioBankFitted(uint8_t bank) {
+AudioBankFit audioBankFitted(uint8_t bank) {
     if ((driver()->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
-        return false;
+        return AudioBankFit::NotFitted;
     }
-    return audioCatalogBankPage(driver()->getCatalogBanks(), driver()->getCatalogBankCount(), bank,
-                                nullptr);
+    if (!audioCatalogReaderAcquire()) {
+        return AudioBankFit::CatalogBusy;
+    }
+    const bool found = audioCatalogBankPage(driver()->getCatalogBanks(),
+                                            driver()->getCatalogBankCount(), bank, nullptr);
+    audioCatalogReaderRelease();
+    return found ? AudioBankFit::Fitted : AudioBankFit::NotFitted;
 }
 
 // Audio output is staged at reboot (ADR 0027); when inactive, commands are

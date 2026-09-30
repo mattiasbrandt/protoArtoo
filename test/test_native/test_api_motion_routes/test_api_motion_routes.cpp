@@ -30,6 +30,9 @@
 #include "drive_arbiter.h"
 #include "failsafe_gate.h"
 #include "audio_test_hooks.h"      // the sound module's catalog banks (#449)
+#include "audio_catalog_gate.h"     // the catalog reader gate a refresh closes
+#include "log_buffer_test_hooks.h"  // the log sink ring, to count the router's warnings
+#include "marcduino_router.h"      // kMarcduinoRouteLogIntervalMs
 #include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
 #include "robot_state.h"
 #include "servo_output_row.h"
@@ -821,6 +824,93 @@ void test_manual_command_bank_form_is_refused_where_the_module_has_no_bank() {
 
     g_test_audio_capabilities = 0;
     g_test_audio_catalog_bank_count = 0;
+}
+
+// A Marcduino line longer than the dome TX buffer holds is refused before any
+// of it runs. domeQueueTx() would have queued it cut short and answered true,
+// so the route said "forwarded" for a line the dome never got (#449).
+void test_manual_command_line_longer_than_the_dome_buffer_is_refused_not_cut() {
+    char longLine[DOME_TX_LINE_MAX + 2] = {};
+    memset(longLine, '0', sizeof(longLine) - 1);
+    memcpy(longLine, ":SE52", 5);
+    assertManualCommand(ManualCommandResult::LineTooLong, executeManualCommand(longLine));
+    longLine[0] = '*';
+    assertManualCommand(ManualCommandResult::LineTooLong, executeManualCommand(longLine));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_dome_tx_calls);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_marcduino_calls);
+
+    // The longest line the buffer carries whole still goes.
+    longLine[DOME_TX_LINE_MAX] = '\0';
+    longLine[0] = ':';
+    assertManualCommand(ManualCommandResult::Forwarded, executeManualCommand(longLine));
+    TEST_ASSERT_EQUAL_STRING(longLine, g_test_dome_last_tx);
+}
+
+// A panel number made of anything but digits moves nothing. atoi() read
+// ":OPxx" as panel 0, the ARM1+ARM2 broadcast, and opened both arms (#449).
+void test_manual_command_panel_number_that_is_not_digits_moves_nothing() {
+    const char* const kMalformed[] = {":OPxx", ":CLxx", ":OFxx", ":OP1x", ":MV01", ":MV01ab"};
+    for (const char* line : kMalformed) {
+        marcduinoTestHooksReset();
+        assertManualCommand(ManualCommandResult::Unsupported, executeManualCommand(line));
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_marcduino_calls, line);
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0, g_test_dome_tx_calls, line);
+    }
+}
+
+// $800 is the bank form naming sound 00, which no bank has: refused, never
+// accepted as a line that then plays nothing (#449).
+void test_manual_command_bank_form_sound_zero_is_refused() {
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_banks[0] = AudioCatalogBank{};
+    g_test_audio_catalog_banks[0].bank = 8;
+    g_test_audio_catalog_bank_count = 1;
+    assertManualCommand(ManualCommandResult::BankSoundMissing, executeManualCommand("$800"));
+    TEST_ASSERT_EQUAL_UINT(0, g_test_audio_dollar_calls);
+    g_test_audio_capabilities = 0;
+    g_test_audio_catalog_bank_count = 0;
+}
+
+// The bank table is read as a catalog reader. While a refresh holds the gate
+// the answer is "busy", never a read of storage being replaced (#449).
+void test_manual_command_bank_check_waits_for_a_catalog_refresh() {
+    g_test_audio_dollar_calls = 0;
+    g_test_audio_capabilities = AudioDriver::AUDIO_CAP_CATALOG;
+    g_test_audio_catalog_banks[0] = AudioCatalogBank{};
+    g_test_audio_catalog_banks[0].bank = 8;
+    g_test_audio_catalog_bank_count = 1;
+    audioCatalogGateClose();
+    const ManualCommandResult whileRefreshing = executeManualCommand("$803");
+    audioCatalogGateOpen();
+    assertManualCommand(ManualCommandResult::SoundCatalogBusy, whileRefreshing);
+    TEST_ASSERT_EQUAL_UINT(0, g_test_audio_dollar_calls);
+    TEST_ASSERT_EQUAL_UINT8(0, audioCatalogReadersInside());
+
+    assertManualCommand(ManualCommandResult::Applied, executeManualCommand("$803"));
+    TEST_ASSERT_EQUAL_UINT8(0, audioCatalogReadersInside());
+    g_test_audio_capabilities = 0;
+    g_test_audio_catalog_bank_count = 0;
+}
+
+// A refusal repeated faster than the interval writes one warning, not one per
+// press: the RC path reaches the same logger from RCInputTask (#449).
+void test_manual_command_repeated_refusal_logs_once_per_interval() {
+    g_test_millis += kMarcduinoRouteLogIntervalMs + 1;  // past any earlier test's line
+    g_test_dome_connected = false;
+    // totalWritten, not count: the ring is shared by the whole suite and may
+    // already be full, and a full ring's count does not move.
+    const uint32_t before = g_test_log_sink_buffer.totalWritten;
+    executeManualCommand(":SE52");
+    const uint32_t afterFirst = g_test_log_sink_buffer.totalWritten;
+    executeManualCommand(":SE52");
+    executeManualCommand(":SE53");
+    TEST_ASSERT_EQUAL_UINT32(before + 1, afterFirst);
+    TEST_ASSERT_EQUAL_UINT32(afterFirst, g_test_log_sink_buffer.totalWritten);
+
+    g_test_millis += kMarcduinoRouteLogIntervalMs;
+    executeManualCommand(":SE52");
+    TEST_ASSERT_EQUAL_UINT32(afterFirst + 1, g_test_log_sink_buffer.totalWritten);
 }
 
 void test_manual_command_longer_than_any_keyword_is_unknown_not_truncated() {
@@ -1620,6 +1710,11 @@ int main(int, char**) {
     RUN_TEST(test_manual_command_owned_line_the_body_refuses_is_neither_forwarded_nor_ok);
     RUN_TEST(test_manual_command_forward_that_was_not_queued_is_not_ok);
     RUN_TEST(test_manual_command_bank_form_is_refused_where_the_module_has_no_bank);
+    RUN_TEST(test_manual_command_line_longer_than_the_dome_buffer_is_refused_not_cut);
+    RUN_TEST(test_manual_command_panel_number_that_is_not_digits_moves_nothing);
+    RUN_TEST(test_manual_command_bank_form_sound_zero_is_refused);
+    RUN_TEST(test_manual_command_bank_check_waits_for_a_catalog_refresh);
+    RUN_TEST(test_manual_command_repeated_refusal_logs_once_per_interval);
     RUN_TEST(test_manual_command_longer_than_any_keyword_is_unknown_not_truncated);
 
     RUN_TEST(test_dome_speed_rejects_out_of_range);

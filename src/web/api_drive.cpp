@@ -259,6 +259,8 @@ static ManualCommandResult manualCommandResultFor(MarcduinoRouteOutcome outcome)
             return ManualCommandResult::OutputUndriven;
         case MarcduinoRouteOutcome::QueueFull:
             return ManualCommandResult::QueueFull;
+        case MarcduinoRouteOutcome::LineTooLong:
+            return ManualCommandResult::LineTooLong;
         case MarcduinoRouteOutcome::NotRun:
             break;
     }
@@ -281,8 +283,19 @@ ManualCommandResult executeManualCommand(const char* raw) {
         // here, so the sender hears why; AudioTask asks the same of the same
         // line from the paths that do not come through this door.
         uint8_t bank = 0;
-        if (audioDollarBankForm(raw, &bank, nullptr) && !audioBankFitted(bank)) {
-            return ManualCommandResult::BankNotFitted;
+        uint16_t sound = 0;
+        if (audioDollarBankForm(raw, &bank, &sound)) {
+            if (sound == 0) {
+                return ManualCommandResult::BankSoundMissing;
+            }
+            switch (audioBankFitted(bank)) {
+                case AudioBankFit::Fitted:
+                    break;
+                case AudioBankFit::NotFitted:
+                    return ManualCommandResult::BankNotFitted;
+                case AudioBankFit::CatalogBusy:
+                    return ManualCommandResult::SoundCatalogBusy;
+            }
         }
         // A full audio queue lands on Unsupported, which is what this branch has
         // always answered: the bool it returns covers "not a $ command I know"
@@ -525,6 +538,12 @@ void handleDomeCmdPost(WebRequest& req) {
             webSendJsonError(req, 503, "sequence queue full");
             return;
         }
+    } else if (strlen(raw) > DOME_TX_LINE_MAX) {
+        // domeQueueTx() would queue it cut to DOME_TX_LINE_MAX characters and
+        // answer true: a different line from the one sent (#449). The 127 above
+        // bounds every cmd; a line forwarded to the dome is bounded by the queue.
+        webSendJsonError(req, 400, "cmd too long (max 63)");
+        return;
     } else if (!domeQueueTx(raw)) {
         webSendJsonError(req, 503, "dome TX queue full or link not ready");
         return;

@@ -37,6 +37,7 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -64,6 +65,11 @@ struct DomeLayoutCacheStatus {
 struct DomeTxCmd {
     char buf[64];
 };
+
+// The longest line domeQueueTx() carries whole. It copies into buf with
+// strncpy and would queue a longer line cut short, so every door that
+// forwards a builder's line refuses one longer than this instead (#449).
+constexpr size_t DOME_TX_LINE_MAX = sizeof(DomeTxCmd::buf) - 1;
 
 // Queue handle  --  defined in main.cpp alongside other queues.
 extern QueueHandle_t domeTxQueue;

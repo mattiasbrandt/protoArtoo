@@ -191,6 +191,22 @@ void handleManualCommandPost(WebRequest& req) {
                          nullptr, "command");
         return;
     }
+    if (result == ManualCommandResult::BankSoundMissing) {
+        webSendJsonError(req, 400,
+                         "a $8nn line is bank 8, sound nn, and no bank has a sound 00", nullptr,
+                         "command");
+        return;
+    }
+    if (result == ManualCommandResult::SoundCatalogBusy) {
+        webSendJsonError(req, 503, "sound catalog is refreshing");
+        return;
+    }
+    if (result == ManualCommandResult::LineTooLong) {
+        // DOME_TX_LINE_MAX, include/dome_link.h: the longest line the dome TX
+        // queue carries whole.
+        webSendJsonError(req, 400, "command too long (max 63)", nullptr, "command");
+        return;
+    }
     if (result == ManualCommandResult::QueueFull) {
         webSendJsonError(req, 503, "command queue full");
         return;

@@ -13,6 +13,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
+#include "audio_dollar_parser.h"  // audioDollarBankForm()
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config.h"
@@ -170,6 +171,7 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
     // answer; the live RC loop still discards it, and the Console action
     // executor reports it (#221).
     if (res.marcduinoCmd[0] != '\0') {
+        uint16_t bankSound = 0;
         if (res.marcduinoCmd[0] == ':' || res.marcduinoCmd[0] == '#') {
             const RcDispatchOutcome routed = rcDispatchOutcomeForMarcduinoRoute(
                 routeMarcduinoLine(res.marcduinoCmd));
@@ -177,6 +179,11 @@ RcDispatchOutcome rcDispatchSingleAction(const RcActionResult& res, CommandSourc
                 // A refused queue earlier in this result still reads as one.
                 return queueFull ? RcDispatchOutcome::kQueueFull : routed;
             }
+        } else if (audioDollarBankForm(res.marcduinoCmd, nullptr, &bankSound) && bankSound == 0) {
+            // "$800": the bank form naming sound 00, which no bank has.
+            // Whether a bank 8 is fitted is AudioTask's to answer - the bank
+            // table is not read from RCInputTask.
+            return queueFull ? RcDispatchOutcome::kQueueFull : RcDispatchOutcome::kNotExecutable;
         } else if (!audioQueueDollar(res.marcduinoCmd, src)) {
             PA_LOG_WARN(TAG, "marcduino audio dropped: %s", res.marcduinoCmd);
             queueFull = true;

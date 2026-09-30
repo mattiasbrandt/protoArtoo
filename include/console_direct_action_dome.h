@@ -180,10 +180,13 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         return;
     }
 
-    if (result == ManualCommandResult::BankNotFitted) {
-        // $8nn with no bank 8 on the fitted module: the command value is one
-        // this droid cannot run, which is what OUT_OF_RANGE on this key
-        // already answers for the core's other refusals of the line itself.
+    if (result == ManualCommandResult::BankNotFitted ||
+        result == ManualCommandResult::BankSoundMissing ||
+        result == ManualCommandResult::LineTooLong) {
+        // $8nn with no bank 8 on the fitted module, $800, or a line longer
+        // than the dome TX buffer: the command value is one this droid cannot
+        // run, which is what OUT_OF_RANGE on this key already answers for the
+        // core's other refusals of the line itself.
         consoleEmitArgFailure(requestId, operationName, "command", CONSOLE_REASON_OUT_OF_RANGE,
                               sink);
         return;
@@ -224,6 +227,7 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
             outcome = CONSOLE_OUTCOME_QUEUED;
             break;
         case ManualCommandResult::DomeLinkDown:
+        case ManualCommandResult::SoundCatalogBusy:
             outcome = CONSOLE_OUTCOME_UNAVAILABLE;
             reason = CONSOLE_REASON_TEMPORARILY_UNAVAILABLE;
             break;
@@ -241,6 +245,8 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         case ManualCommandResult::SaveFailed:
         case ManualCommandResult::OutputUndriven:
         case ManualCommandResult::BankNotFitted:
+        case ManualCommandResult::BankSoundMissing:
+        case ManualCommandResult::LineTooLong:
             // Answered above; a result reaching here is a new value nobody
             // mapped, and says so rather than claiming success.
             break;

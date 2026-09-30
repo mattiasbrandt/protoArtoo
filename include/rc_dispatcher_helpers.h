@@ -51,9 +51,9 @@ enum class RcDispatchOutcome : uint8_t {
     kBlockedByEstop,   // the body owns the line and refused it: estop latched
     kOutputUndriven,   // the body owns the line, and nothing drives the
                        // Output it names this boot (#364)
-    kNotExecutable,    // the body owns the line but this path cannot run it:
-                       // a malformed one (an :MV with no value), or a Mood,
-                       // which writes flash and is not applied from RCInputTask
+    kNotExecutable,    // a line nothing can run as given: a malformed panel
+                       // number, "$800", or a Mood, which writes flash and is
+                       // not applied from RCInputTask
 };
 
 // A routed Marcduino line's outcome, in this module's vocabulary.
@@ -71,6 +71,7 @@ inline RcDispatchOutcome rcDispatchOutcomeForMarcduinoRoute(MarcduinoRouteOutcom
         case MarcduinoRouteOutcome::OutputUndriven:
             return RcDispatchOutcome::kOutputUndriven;
         case MarcduinoRouteOutcome::NotRun:
+        case MarcduinoRouteOutcome::LineTooLong:
             break;
     }
     return RcDispatchOutcome::kNotExecutable;

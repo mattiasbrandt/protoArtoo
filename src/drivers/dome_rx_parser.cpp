@@ -64,11 +64,10 @@ MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
         servoCmd.type = SERVO_CMD_CLOSE;
     } else {
         // :MV - marcduino_panel_command_arm_id() admits no fourth head.
+        // marcduino_panel_command_well_formed() has already required a value
+        // of digits after the two-digit number.
         servoCmd.type = SERVO_CMD_POSITION;
-        const char* value_str = cmd + 5;
-        if (value_str[0] == '\0')
-            return MarcduinoBodyOutcome::NotHandled;
-        servoCmd.positionUs = marcduino_mv_value_to_pulse_us(atoi(value_str));
+        servoCmd.positionUs = marcduino_mv_value_to_pulse_us(atoi(cmd + 5));
     }
 
     taskENTER_CRITICAL(&robotStateMux);

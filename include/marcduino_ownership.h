@@ -9,6 +9,8 @@
 //
 //   :OPnn :CLnn :OFnn  an Output marcduino_panel_to_arm_id() maps (1-5, 0/99)
 //   :MVnn              an Output marcduino_panel_to_arm_id_mv() maps (1-5)
+//   a malformed panel  a panel head whose number is not all digits: the body's,
+//                      and refused (marcduino_panel_command_well_formed())
 //   :SE10/11/13/14     a Mood (moodIdFromSeCommand(), include/mood.h)
 //   :SE30-:SE36        a body routine (marcduino_sequence_id_valid())
 //   :SE01-09, 15, 16   a full-droid sequence: the body runs its half from
@@ -72,8 +74,17 @@ inline MarcduinoOwner marcduinoCommandOwner(const char* line) {
         }
         return MarcduinoOwner::Dome;
     }
-    return marcduino_panel_command_arm_id(line) != 254 ? MarcduinoOwner::Body
-                                                       : MarcduinoOwner::Dome;
+    if (marcduino_is_panel_command(line)) {
+        // A panel number made of anything but digits is the body's to refuse,
+        // never the dome's to guess at and never the broadcast atoi() would
+        // make of it (marcduino_panel_command_well_formed()).
+        if (!marcduino_panel_command_well_formed(line)) {
+            return MarcduinoOwner::Body;
+        }
+        return marcduino_panel_command_arm_id(line) != 254 ? MarcduinoOwner::Body
+                                                           : MarcduinoOwner::Dome;
+    }
+    return MarcduinoOwner::Dome;
 }
 
 // -----------------------------------------------------------------------------
@@ -91,6 +102,7 @@ enum class MarcduinoRouteOutcome : uint8_t {
     BlockedByEstop,  // the body owns it and refused: estop is latched
     OutputUndriven,  // the body owns it, and nothing drives the Output it names this boot
     QueueFull,       // the body owns it, and the queue that runs it refused
-    NotRun,          // the body owns the family and number but cannot run this line
-                     // (an :MV with no value, a Mood through a path that may not apply one)
+    NotRun,          // the body owns the line but cannot run it (a malformed panel
+                     // number, a Mood through a path that may not apply one)
+    LineTooLong,     // longer than the dome TX buffer holds: refused before anything ran
 };

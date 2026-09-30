@@ -389,12 +389,20 @@ const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
 
 // The real function's own question, asked of the stub's capability word and
 // bank table, so a test fits a bank 8 the way a module would report one.
-bool audioBankFitted(uint8_t bank) {
+#include "audio_catalog_gate.h"  // audioCatalogReaderAcquire()
+// The catalog reader gate is the real one (audio_catalog_gate.cpp is
+// native-built), so a test that closes it sees what a refresh would cause.
+AudioBankFit audioBankFitted(uint8_t bank) {
     if ((g_test_audio_capabilities & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
-        return false;
+        return AudioBankFit::NotFitted;
     }
-    return audioCatalogBankPage(g_test_audio_catalog_banks, g_test_audio_catalog_bank_count, bank,
-                                nullptr);
+    if (!audioCatalogReaderAcquire()) {
+        return AudioBankFit::CatalogBusy;
+    }
+    const bool found = audioCatalogBankPage(g_test_audio_catalog_banks,
+                                            g_test_audio_catalog_bank_count, bank, nullptr);
+    audioCatalogReaderRelease();
+    return found ? AudioBankFit::Fitted : AudioBankFit::NotFitted;
 }
 
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {

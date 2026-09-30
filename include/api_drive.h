@@ -84,6 +84,10 @@ enum class ManualCommandResult : uint8_t {
     QueueFull,            // the body's, and the queue that runs it refused it
     BankNotFitted,        // "$8nn": bank 8, sound nn (ShadowMD's $Bnn), and the fitted
                           // sound module has no bank 8 -- refused, never raw track 8nn
+    BankSoundMissing,     // "$800": the bank form naming sound 00, which no bank has
+    SoundCatalogBusy,     // "$8nn" while a catalog refresh holds the bank table
+    LineTooLong,          // longer than the dome TX buffer holds (DOME_TX_LINE_MAX):
+                          // refused before any of it ran, never forwarded cut short
 };
 
 // Execute one manual command: a Marcduino line, or one of the keyword commands
