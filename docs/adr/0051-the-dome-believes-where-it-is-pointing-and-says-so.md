@@ -55,7 +55,8 @@ it is an angle **from the droid's own front** — never a heading in the room.
 **Home is front**, the orientation `bearing_deg` already anchors.
 
 **The belief decays honestly.** Any manual turn, any coast, any estop or **Sleep
-Mode** leaves the bearing **unknown**. It is restored the way this project restores
+Mode** leaves the bearing **unknown**. *(Narrowed 2026-09-30, below: only estop,
+Sleep Mode and a boot.)* It is restored the way this project restores
 every other unmeasured fact: the builder turns the dome to front and **says so**.
 A separate go-home command drives to the believed front, and is the end-of-show
 act rather than the recovery one.
@@ -247,3 +248,27 @@ about a viewer is stored on the droid.
   the FRONT indicator and where the control sits.
 - Two rotating indicators on one picture is a real confusion risk and a copy
   problem: the marker and the drawing must not read as the same kind of thing.
+
+## Amended 2026-09-30 — a commanded turn and its coast are integrated; only estop, Sleep Mode and a boot forget
+
+Decided by the operator on 2026-09-30 while the Dome Bearing build ticket (#445) was
+grilled. The Decision above said *"any manual turn, any coast, any estop or Sleep
+Mode leaves the bearing unknown"*. Read literally against the firmware, that
+forgets the bearing constantly: an RC ESC at neutral freewheels, so every
+`setDomeNeutral()` is a coast, and DomeTask writes one on the 500 ms command
+timeout, at the end of every timed sequence turn and at the end of every random
+idle move. Go-home and the bearing step would almost never be usable.
+
+**The bearing becomes unknown only on estop, Sleep Mode and a boot.** Stick, web,
+sequence, dome-link and idle turns all pass through DomeTask and are integrated,
+and the short coast after a commanded stop is part of what *believed* already
+admits. Small coast drift is accepted until the builder sends the dome home.
+
+**"Manual turn" means a turn by hand**, which the firmware cannot see. It stays
+what the honesty tier covers: the readout says *believed*, and the builder turns
+the dome to front and says so, as before. Switching the Dome ESC off takes effect
+at a restart, so it is a boot.
+
+Considered and rejected: every neutral written while the dome was turning marks
+the bearing unknown. Honest to the letter, but the bearing would go unknown after
+every stick release and every sequence turn.
