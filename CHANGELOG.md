@@ -26,6 +26,17 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Your routines are in the backup.** A backup now holds every Sequence you
+  taught the droid, and says which board made it. A restore offers three parts,
+  Sequences, Configuration and RC Map, each saying what it replaces and what
+  it leaves, and replaces the parts you tick rather than merging. Before
+  anything is written you can save a copy of what is about to go; if that copy
+  cannot be made, nothing is replaced. If the droid refuses a Sequence halfway,
+  the ones it had are put back. A droid that stores fewer Sequences keeps the
+  first ones and names the rest, an RC Channel bound to a Sequence the droid
+  will not have is left out and named, and each restored Sequence carries its
+  Rehearsal line. A file from the other board brings its Sequences, RC Map and
+  sound setup and leaves the rest, which names that board's pins.
 - **The Rehearsal says more of what will not happen.** It now flags panel
   moves close enough to brown the dome out, a group command that moves panels
   the routine never touched, a raw light code that shows up in the wrong

@@ -174,6 +174,9 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
       // The shipped words table's lookups (helpers/shipped_words.cjs).
       ...shippedWords(),
       ApiError,
+      // data/web_api.js's own request(): the method is the caller's, as a
+      // DELETE is sent (data/seq.js, data/maintenance.js).
+      request: (path, opts = {}) => call(opts.method || "GET", path, opts),
       get: (path, opts) => call("GET", path, opts),
       postForm: (path, body, opts) => call("POST", path, { ...opts, body }),
       postJson: (path, body, opts) => call("POST", path, { ...opts, body }),
