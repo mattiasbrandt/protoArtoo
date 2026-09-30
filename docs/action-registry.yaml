@@ -2728,7 +2728,7 @@ entries:
   executor: applyMood
 - name: system.config.enable_arm1
   display_name: '{output}'
-  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
+  description: Whether {output} has a Part on it. It follows the Parts, so put one on it on Wiring.
   output: arm1
   domain: system
   type: config
@@ -2744,7 +2744,7 @@ entries:
   executor: configApply
 - name: system.config.enable_arm2
   display_name: '{output}'
-  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
+  description: Whether {output} has a Part on it. It follows the Parts, so put one on it on Wiring.
   output: arm2
   domain: system
   type: config
@@ -2760,7 +2760,7 @@ entries:
   executor: configApply
 - name: system.config.enable_aux1
   display_name: '{output}'
-  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
+  description: Whether {output} has a Part on it. It follows the Parts, so put one on it on Wiring.
   output: aux1
   domain: system
   type: config
@@ -2776,7 +2776,7 @@ entries:
   executor: configApply
 - name: system.config.enable_aux2
   display_name: '{output}'
-  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
+  description: Whether {output} has a Part on it. It follows the Parts, so put one on it on Wiring.
   output: aux2
   domain: system
   type: config
@@ -2792,7 +2792,7 @@ entries:
   executor: configApply
 - name: system.config.enable_aux3
   display_name: '{output}'
-  description: Whether a wire is plugged into {output}. Off, nothing on it moves.
+  description: Whether {output} has a Part on it. It follows the Parts, so put one on it on Wiring.
   output: aux3
   domain: system
   type: config

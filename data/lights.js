@@ -3,10 +3,18 @@
 //
 // Lights: what lights this droid has, how each one is lit, and what it can be
 // told to do (CONTEXT.md "Lights", ADR 0067). The page is every Part whose
-// Part Kind is a light, read from the catalog and grouped by where it sits, so
-// a row added to docs/droid-parts.yaml appears here with no code change - and
-// a light nobody has fitted still appears, because a builder choreographs
-// before they wire.
+// Part Kind is a light and is on this droid, read from the catalog and grouped
+// by where it sits, so a row added to docs/droid-parts.yaml appears here with
+// no code change once it is on the droid (operator, 2026-09-29 on #411: "we
+// have hardcoded listing of these two lights even when there is no such things
+// defined in the wiring config"; CONTEXT.md "Lights"):
+//
+//   a body light   once a Part-first row on Wiring puts it on an Output
+//   a dome light   while the Dome Controller is fitted, because it never goes
+//                  through Wiring
+//
+// A Sequence may still name a light that is on neither; this page does not
+// list it. With no light on the droid, one line sends the builder to Wiring.
 //
 // AN LED STRIP IS NOT A THING ON THE DROID. It is a Light Type: what protoArtoo
 // puts on one of its own wires to light a Part (ADR 0067). So it is never a row
@@ -118,14 +126,14 @@
     return wire && wire.light ? wire : null;
   };
 
-  // A light the builder has not fitted still shows - the droid design carries
-  // it, and a list that hides what is not fitted reads as empty on a droid
-  // mid-build. It says so instead.
-  const fittedNote = (part) => {
-    const build = window.DroidBuild?.current?.();
-    if (!build || !Array.isArray(build.fitted)) return "";
-    return build.fitted.indexOf(part.id) === -1 ? "Not on your droid" : "";
-  };
+  // Whether the Dome Controller is fitted: the dome link's Component Toggle on
+  // GET /api/config (components.protoR2link). null until the config answers,
+  // and the dome's lights wait with it rather than guessing either way.
+  let domeFitted = null;
+
+  // A body light is on the droid once it is on an Output: the Part-first row
+  // on Wiring is where it is put there, whatever its wire carries yet.
+  const onTheDroid = (part) => OUTPUTS.forPart(part.id) !== null;
 
   const feedbackNode = () => {
     const node = element("div", "feedback");
@@ -151,8 +159,6 @@
     node.appendChild(head);
     const where = [shortName(part), seat(part)].filter(Boolean).join(" · ");
     if (where) node.appendChild(element("p", "light-where", where));
-    const fitted = fittedNote(part);
-    if (fitted) node.appendChild(element("p", "light-fitted", fitted));
     return node;
   };
 
@@ -578,9 +584,13 @@
   // ---------------------------------------------------------------------------
   // Drawing
   // ---------------------------------------------------------------------------
+  // With no light on the droid at all, one line, and it goes where a light is
+  // put on the droid.
+  const NONE_ON_THE_DROID = "No light is on your droid yet.";
+
   const paint = () => {
-    const dome = lights.filter((part) => part.half === "dome");
-    const body = lights.filter((part) => part.half !== "dome");
+    const dome = domeFitted === true ? lights.filter((part) => part.half === "dome") : [];
+    const body = lights.filter((part) => part.half !== "dome" && onTheDroid(part));
 
     if (domeHost) {
       const plates = element("div", "light-plates");
@@ -589,16 +599,28 @@
     }
     if (domeCount) {
       const commandable = dome.filter((part) => domeTarget(part)).length;
-      domeCount.textContent = `${dome.length} lights · ${commandable} take a command`;
+      domeCount.classList.toggle("waiting", domeFitted === null);
+      domeCount.textContent =
+        domeFitted === null ? window.PALiveReading.slotText(window.PALiveReading.WAITING)
+          : domeFitted ? `${dome.length} lights · ${commandable} take a command`
+            : "Dome Controller not fitted";
     }
 
     if (bodyHost) {
-      const plates = element("div", "light-plates");
-      body.forEach((part) => {
-        const wire = wireFor(part);
-        plates.appendChild(wire ? litPlate(part, wire) : unlitPlate(part));
-      });
-      bodyHost.replaceChildren(plates);
+      if (body.length === 0 && dome.length === 0 && domeFitted !== null && OUTPUTS.known().table) {
+        const line = element("p", "hint lights-none", `${NONE_ON_THE_DROID} `);
+        const link = element("a", "link-btn", "Put one on an output on Wiring");
+        link.setAttribute("href", "#wiring");
+        line.appendChild(link);
+        bodyHost.replaceChildren(line);
+      } else {
+        const plates = element("div", "light-plates");
+        body.forEach((part) => {
+          const wire = wireFor(part);
+          plates.appendChild(wire ? litPlate(part, wire) : unlitPlate(part));
+        });
+        bodyHost.replaceChildren(plates);
+      }
     }
     const lit = body.filter((part) => wireFor(part)).length;
     if (bodyCount) {
@@ -635,12 +657,11 @@
   // Parts and Servos make.
   const loadWires = ({ handle = null } = {}) => OUTPUTS.refresh({ handle });
 
-  // The Droid Build a light reads "Not on your droid" from is the config's,
-  // adopted from the answer rather than fetched again - which is what
-  // DroidBuild.adopt() exists for. The config says nothing about a wire.
+  // Whether the Dome Controller is fitted is the config's answer: the dome
+  // link's Component Toggle. The config says nothing about a wire.
   const loadConfig = async ({ handle = null } = {}) => {
     const answer = await (handle || window.PAApi).get("/api/config");
-    window.DroidBuild?.adopt?.(answer?.data);
+    domeFitted = answer?.data?.components?.protoR2link?.enabled === true;
     paint();
   };
 
@@ -674,7 +695,6 @@
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "the parts catalog",
       "/droid_part_kind.js": "the parts catalog",
-      "/droid_build.js": "this droid's build",
       "/seq_protocol_check.js": "the dome's commands",
       "/outputs.js": "what each wire carries",
       "/lights.js": "the lights",

@@ -33,7 +33,7 @@ artefact or bench test that would settle them.
 > **Five findings change what this ticket is about before any code is written.**
 >
 > 1. **The protocol name is wrong, and the wire is right.** The registry calls
->    this `hoverboard_gen2_uart` and `include/drive_backend.h:61` calls it
+>    this `hoverboard_gen2_uart` and `include/drive_backend.h:78` calls it
 >    `hoverboard_gen2x`, both citing RoboDurden. The bytes protoArtoo actually
 >    sends -- 8 bytes, `0xABCD` start, XOR checksum -- are **EFeru's Gen1
 >    protocol**. The Gen2 lineage's *own* protocol (flo199213 -> krisstakos ->
@@ -52,7 +52,7 @@ artefact or bench test that would settle them.
 > 4. **Starvation is not "holds the last command", and it is not the same rule
 >    twice.** EFeru holds for `SERIAL_TIMEOUT` (0.8 s) then drops to open-loop
 >    zero and **coasts**; RoboDurden holds for 500 ms then ramps down under
->    power (**soft brake**) and disables the bridge. `include/drive_backend.h:56`
+>    power (**soft brake**) and disables the bridge. `include/drive_backend.h:73`
 >    says the mainboard "holds its last command when the stream stops", which is
 >    true only for the first half-second. Section 8.
 > 5. **The Board Temp on the dashboard is not a measurement.** RoboDurden
@@ -118,7 +118,7 @@ Everything below is in `Inc/config.h` of
 | 1 | `#define VARIANT_USART` | uncommented, **and every other `VARIANT_*` commented out** | selects serial control. PlatformIO offers it as the `VARIANT_USART` environment. |
 | 2 | `CONTROL_SERIAL_USART2 0` **and** `FEEDBACK_SERIAL_USART2` | both, for the **left** cable | `CONTROL_` is the droid commanding the board; `FEEDBACK_` is the board answering. Without the second one the droid drives fine and the Drive page never shows telemetry. |
 | | *or* `CONTROL_SERIAL_USART3 0` **and** `FEEDBACK_SERIAL_USART3` | both, for the **right** cable | the right cable is the 5 V-tolerant one and the one EFeru's own example recommends. Either works with a 3.3 V ESP32. Pick one cable and set both defines for it. |
-| 3 | `USART2_BAUD` / `USART3_BAUD` | leave at **115200** | protoArtoo's lane is fixed at 115200 (`include/drive_backend.h:62`). |
+| 3 | `USART2_BAUD` / `USART3_BAUD` | leave at **115200** | protoArtoo's lane is fixed at 115200 (`include/drive_backend.h:79`). |
 | 4 | `PRI_INPUT1` and `PRI_INPUT2` | leave at `3, -1000, 0, 1000, 0` | `TYPE 3` is auto-detect, the range is +/-1000 (which is what protoArtoo's +/-600 is a fraction of), and `DEADBAND 0` leaves deadband to the droid, which already has one. |
 
 **Must NOT be set:**
@@ -400,29 +400,29 @@ builder:
 | **Category** | Foot Drive |
 | **Registry row** | `include/component_registry.inc:145`, part id **15** |
 | **Registry protocol token** | `hoverboard_gen2_uart` |
-| **Backend profile protocol** | `hoverboard_gen2x` (`include/drive_backend.h:61`) -- **a second, different spelling**, see Section 14.1 |
+| **Backend profile protocol** | `hoverboard_gen2x` (`include/drive_backend.h:78`) -- **a second, different spelling**, see Section 14.1 |
 | **Lineup status** | `supported` |
 | **Board Capability Gate** | `PA_CAP_DRIVE_BACKEND_HOVERBOARD` -- the only registry row carrying one |
-| **Capability bitmask** | `0` (the Foot Drive category declares no capability words) |
+| **Capability bitmask** | `DRIVE_CAP_REPORTS_FEEDBACK` (`0x01`, `include/drive_capabilities.h`): it reports battery, board temperature, wheel speed and current back. The backend profile reads this bit from the row rather than restating it (#446) |
 | **Driver** | `src/drivers/drive_backend_hoverboard.cpp`, `src/drivers/hoverboard_uart.cpp` |
 | **Seam** | `include/drive_backend.h` (#339, from #304) |
 | **Owning task** | `DriveTask`, Core 1, 50 Hz (`src/tasks/drive.cpp`) |
 | **Lane** | `UART_PORT_DRIVE`; GPIO 16 TX / 17 RX on artoo-esp32, GPIO 20/21 on firebeetle2 |
 | **Baud** | 115200 8N1 |
 | **Native tests** | `test/test_native/test_hoverboard_frame`, `test_hoverboard_feedback`, `test_drive_backend` |
-| **Operator surface** | `data/drive.html` card `#hoverboard-card`, rendered by `renderHoverboard()` in `data/drive.js:309` |
+| **Operator surface** | `data/drive.html` card `#wheel-controller-card`, shown only when the fitted Foot Drive declares `DRIVE_CAP_REPORTS_FEEDBACK` in `GET /api/identity/components` (`loadFootDrive()`), rendered by `renderHoverboard()` in `data/drive.js:343` |
 | **API** | `hoverboard` object in `GET /api/status`, present only when feedback is valid (`docs/api.md:1628`) |
 
-The backend profile it declares (`include/drive_backend.h:59-66`):
+The backend profile it declares (`include/drive_backend.h:76-83`):
 
 ```c
 inline constexpr DriveBackendProfile kDriveBackend = {
-    .id = "hoverboard",
+    .id = kHoverboardRegistryId,
     .protocol = "hoverboard_gen2x",
     .baud = 115200,
     .continuityDeadlineMs = 20,
     .starvation = DriveStarvation::Drifts,
-    .reportsFeedback = true,
+    .reportsFeedback = driveBackendReportsFeedback(kHoverboardRegistryId),
 };
 ```
 
@@ -857,7 +857,7 @@ Speeds assume a 6.5" wheel; scale by wheel diameter.
 
 ## 8. Starvation, timeouts, and what the wheels actually do
 
-`include/drive_backend.h:36-40` classifies a backend's starved behaviour as
+`include/drive_backend.h:38-42` classifies a backend's starved behaviour as
 either `Stops` ("the controller cuts its own motors") or `Drifts` ("the
 controller holds the last command it was given"), and declares this backend
 `Drifts` with a 20 ms deadline. The classification is the right one to design
@@ -950,7 +950,7 @@ rather than "within 800 ms", since a zero frame at 50 Hz reaches the wheels in
 one tick rather than waiting for a timeout to notice silence. The zero-frame
 continuity rule earns its cost here.
 
-The number to correct is the *reason* written at `include/drive_backend.h:56`,
+The number to correct is the *reason* written at `include/drive_backend.h:73`,
 not the deadline. Finding 14.4.
 
 ### 8.4 Protections the board keeps to itself
@@ -1346,7 +1346,7 @@ and are correct.
 ### 14.1 REPORTED -- the Component Protocol is spelled two ways and neither is accurate
 
 `include/component_registry.inc:145` declares `hoverboard_gen2_uart`.
-`include/drive_backend.h:61` declares `hoverboard_gen2x`. Both reach operators:
+`include/drive_backend.h:78` declares `hoverboard_gen2x`. Both reach operators:
 the first through `/api/identity` (`docs/api.md:200`), the second through
 `DriveTask`'s startup log line (`src/tasks/drive.cpp:71-73`).
 
@@ -1395,7 +1395,7 @@ and it would close the gap identified in 14.5 for EFeru boards at the same time.
 The project supports two firmware families and treats them as one everywhere
 above the parser. Three consequences:
 
-1. **`include/drive_backend.h:56`** -- *"the mainboard holds its last command
+1. **`include/drive_backend.h:73`** -- *"the mainboard holds its last command
    when the stream stops"* -- is true for 800 ms (EFeru) or 500 ms (RoboDurden),
    after which one coasts and the other soft-brakes. The
    `DriveStarvation::Drifts` classification and the 20 ms deadline are both
@@ -1499,7 +1499,7 @@ the second Foot Drive backend.
 | Starved: holds for | 800 ms (EFeru) / 500 ms (RoboDurden) | `Inc/config.h:654`, `Inc/RemoteROS2.h` |
 | Starved: then | coast (EFeru) / soft brake (RoboDurden) | `util.c:1032`, `bldc.c:220` |
 | Hard cutoff | none / 2000 ms | `Inc/defines.h:242` |
-| protoArtoo tick | 50 Hz, 20 ms deadline | `include/drive_backend.h:63` |
+| protoArtoo tick | 50 Hz, 20 ms deadline | `include/drive_backend.h:80` |
 | Motor enable gate, EFeru | both inputs `< 50` at boot | `Src/main.c:270` |
 | Which RoboDurden build | **`REMOTE_ROS2` only** | Section 5.2 |
 | RoboDurden prebuilt ROS2 image | **none exists** | Section 5.2 |

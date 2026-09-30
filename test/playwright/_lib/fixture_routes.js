@@ -309,6 +309,7 @@ const identityOf = (droid) => {
     mdnsUseName: true,
     board: 'artoo_esp32',
     learned_sequence_cap: 5,
+    learned_sequence_max_bytes: 12288,
     board_capabilities: {
       PA_CAP_NATIVE_WIFI: true,
       PA_CAP_HOSTED_WIFI: false,

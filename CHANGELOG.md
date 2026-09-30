@@ -37,6 +37,17 @@ the patch releases, whose notes live on their own GitHub Release.
 - **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
   as that, not as track 803. A sound module with no bank 8 says so instead of
   playing the wrong file.
+- **The Rehearsal says more of what will not happen.** It now flags panel
+  moves close enough to brown the dome out, a group command that moves panels
+  the routine never touched, a raw light code that shows up in the wrong
+  color, steps aimed at hardware that is switched off or a panel the dome says
+  it cannot move, and, as a note, a track that plays on after the show. It
+  times body moves with the droid's own motion model, so it catches a part
+  turned back before it got there. Its figures show warnings, notes, size
+  against the droid's limits, how long the routine runs and its slowest throw.
+- **Know which servos jump before you press Test.** Beside Test on the droid,
+  the editor names every servo the routine moves that nobody has calibrated:
+  its first move is a jump, not a ramp. The button still works.
 - **Point the body at the dome's WiFi from Configuration.** With a Dome
   Controller fitted, its card now takes the dome's IP address for the WiFi
   fallback (leave it empty and the dome is found by name), and states what the
@@ -69,8 +80,10 @@ the patch releases, whose notes live on their own GitHub Release.
   and a color - the same ones a sequence sends - and the page says what it asked
   for rather than what the dome then does. A body light says what lights it: put
   an LED strip on a wire in Wiring and the part on that wire reads on, off or
-  flash, with brightness, and the strip's length beside it. A light you have not
-  fitted still shows, so you can choreograph before you wire. The LED strip left
+  flash, with brightness, and the strip's length beside it. The page lists only
+  the lights on your droid: a body light once it is on an output in Wiring, and
+  the dome's lights while the Dome Controller is fitted. With none, one line
+  sends you to Wiring. The LED strip left
   Configuration, and an LED strip is now one kind of light protoArtoo can put on
   a wire rather than a thing of its own.
 - **Your droid, drawn as R2.** The top of Parts is now a line drawing of your
@@ -111,7 +124,10 @@ the patch releases, whose notes live on their own GitHub Release.
   what the board prints. Below that, one table puts each part on an output
   and, on the same row, picks its servo or its LED strip. An output with a
   part on it is wired, with no separate switch, and the page says when that
-  waits for the droid's next start. A light part is only offered the outputs
+  waits for the droid's next start. Nothing else can wire an output: every
+  output is wired from the parts on it each time the droid starts and after
+  every save, and the Console's arm and AUX toggles now refuse a change. A
+  light part is only offered the outputs
   that can light it, and the usual output for each utility arm is marked
   suggested. The dome's parts show the command the dome controller answers
   to instead of an output. Power wiring
@@ -120,7 +136,8 @@ the patch releases, whose notes live on their own GitHub Release.
   page is kept by hand, so it cannot go stale against the firmware.
 - **A printable wiring sheet.** Wiring saves one file you can print anywhere,
   no droid needed: the same drawing, with the board's picture and each wire's
-  color, and the Power wiring notes.
+  color, and the Power wiring notes. Each wire has an empty box to tick at the
+  bench, on paper only, and no wire is split across two pages.
 - **Set the droid up in one guided pass.** A freshly flashed controller now
   walks you through what your droid is made of, one question at a time, starting
   from the WiFi you already gave it. A rail along the top shows the questions,
@@ -209,9 +226,12 @@ the patch releases, whose notes live on their own GitHub Release.
   first: it names the part, the output it leaves and what that output keeps.
   Two parts on one wire, like a pair of doors, both read as driven.
 - **See what every output drives, and where it is told to be.** Servos has
-  one row for every output on the controller, in the order the wires plug in. Each row names every part on that output, so a wire split
-  to two doors names both. Above it, a count of how many outputs are driving
-  parts, wired but switched off, or driving nothing. A bar shows where the
+  one row for every output with a part on it, in the order the wires plug in,
+  named by its parts and the pin the board prints, so a wire split to two
+  doors names both. With no part on any output, it sends you to Wiring. Which
+  servo is on an output is picked on Wiring, on the part's row. Above it, a
+  count of how many outputs are moving a part and how many are wired but
+  switched off. A bar shows where the
   controller is driving each servo right now, and a tick shows where the move
   ends. Both are what the controller told the servo, not a reading: nothing on
   the droid can feel where a servo is, so a jammed one looks like a free one.

@@ -62,3 +62,15 @@ Shortcut posture) remains the only compile-time flag.
   reads to boot-time reads.
 - Defect issues filed from the #169 audit cite this ADR as their spec.
 - Follows the Staged Network Switch precedent for apply/reboot handoffs.
+
+## Amended 2026-09-30: the Output toggles follow the Parts
+
+`enableArm1`..`enableAux3` - each board Output's wired tick - are no longer set by
+a builder. An **Output** with a **Part** on it is wired and one with none is free
+(`CONTEXT.md` **Wiring**, operator 2026-09-29 on #411), so the firmware sets every
+board Output's tick from the Parts its row holds, at every start and in every
+config commit (`configCacheTicksFollowParts()`, #411). A write of one of those form
+names, from the form or the Controller Console, is refused as a conflict with a
+pointer to Wiring. What this ADR decides still holds for them: the tick is read at
+start, so a Part put on a free Output moves from the next start. Every other
+Component Toggle is unchanged.

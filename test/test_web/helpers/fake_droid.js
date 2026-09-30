@@ -101,6 +101,21 @@ export const freshOutputs = () => [
   servoRow("ledc:5", "ARM5"),
 ];
 
+/**
+ * The same board with a body door on each of its five Outputs: every Output
+ * wired, since an Output with a Part on it is wired (CONTEXT.md "Wiring",
+ * #411). What a surface that lists only Outputs with a Part - Servos - is
+ * booted against when a test acts on the rows rather than on the Parts.
+ */
+export const wiredOutputs = () =>
+  withParts({
+    "ledc:0": ["doorFL"],
+    "ledc:1": ["doorFR"],
+    "ledc:3": ["doorRL"],
+    "ledc:4": ["doorRR"],
+    "ledc:5": ["smallDoor"],
+  });
+
 /** Parts put on the rows, by address: `{ "ledc:0": ["doorFL"] }`. */
 export const withParts = (assignments, outputs = freshOutputs()) => {
   Object.entries(assignments).forEach(([address, parts]) => {

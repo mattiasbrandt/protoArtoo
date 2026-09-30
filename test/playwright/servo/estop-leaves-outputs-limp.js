@@ -13,7 +13,11 @@
 // WHAT IT PROVES, for every enabled Output:
 //   a  GET /api/servo/outputs reports commandedUs null and limp "estop";
 //   b  its row on Servos reads "Limp - the estop let go" in the release cell
-//      (data/outputs.js LIMP_WORDS, data/servo.js paintOutputRow).
+//      (data/outputs.js LIMP_WORDS, data/servo.js paintOutputRow). Servos
+//      lists only the Outputs with a Part on them (#411), so b is read on
+//      those; on a droid the tick follows the Parts, so they are every
+//      enabled Output, and the fixture's ARM2 - ticked with nothing on it -
+//      is the state a start now clears.
 //
 // WHY A REAL BROWSER. The row's word is data/outputs.js's answer to the droid's
 // own table, painted on the real surface.
@@ -58,8 +62,9 @@ lib.runCheck({
     const cells = await page.evaluate(() =>
       Object.fromEntries([...document.querySelectorAll('.outputs-row[data-output]')].map((row) => [row.dataset.output, row.querySelector('.outputs-release')?.textContent || ''])));
     await page.locator('#outputs-card').screenshot({ path: `${ARTIFACTS}/estop-limp-rows.png` });
-    const off = enabled.filter((row) => cells[row.address] !== LIMP_ESTOP);
-    report.add('b', `Servos reads "${LIMP_ESTOP}" on every enabled Output`, lib.verdict(off.length === 0),
-      off.map((row) => `${row.name || row.address}: "${cells[row.address]}"`).join('; ') || enabled.map((row) => `${row.name || row.address}: "${cells[row.address]}"`).join('; '));
+    const listed = enabled.filter((row) => (row.parts || []).length > 0);
+    const off = listed.filter((row) => cells[row.address] !== LIMP_ESTOP);
+    report.add('b', `Servos reads "${LIMP_ESTOP}" on every enabled Output it lists`, lib.verdict(listed.length > 0 && off.length === 0),
+      off.map((row) => `${row.name || row.address}: "${cells[row.address]}"`).join('; ') || listed.map((row) => `${row.name || row.address}: "${cells[row.address]}"`).join('; '));
   },
 });

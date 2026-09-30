@@ -32,6 +32,7 @@
 #include <stdint.h>
 
 #include "audio_driver.h"  // AudioDriver::AUDIO_CAP_* -- the Sound family's vocabulary
+#include "drive_capabilities.h"  // DRIVE_CAP_* -- the Foot Drive family's vocabulary
 #include "config.h"        // PA_BOARD, PA_CAP_* -- what the `included` expressions consult
 
 // -----------------------------------------------------------------------------

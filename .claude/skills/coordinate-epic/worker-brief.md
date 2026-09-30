@@ -139,9 +139,11 @@ them once:
 - **Desktop width only.** Phone and tablet are out of scope; never put those
   widths in a test, a note or a screenshot.
 
-Stop after the first working iteration and hand it to the operator for a LIVE
-look on the staged image. Do not write tests, mutations or run the gate until
-they have approved the design and the look.
+Do NOT stop for a look. Go end to end - tests, mutations, the gate and your
+report - and hand the surface over finished. The operator looks at every
+surface once, live, at the Closing Ticket's bench session, not mid-epic
+(operator, 2026-09-29, the third time it was said). A ticket criterion, a
+handoff or an older brief that says "stop for a look" does not override this.
 
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or

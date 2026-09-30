@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/parts_mapping.js,/apply_timing.js,/output_settings.js,/servo.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/parts_mapping.js,/servo.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,14 +24,16 @@
       </div>
     </div>
 
-    <!-- The Outputs, one row each, named by what the board prints beside the
-         pin and by the Part(s) on it: the output-first side of the mapping
-         Parts reads from the part's end (CONTEXT.md "Servos"). Driving an
+    <!-- The Outputs with a Part on them, one row each, named by the Part(s)
+         and by what the board prints beside the pin: the output-first side of
+         the mapping Parts reads from the part's end (CONTEXT.md "Servos"). An
+         Output with no Part is free and not listed, and with none the table
+         sends the builder to Wiring (operator, 2026-09-29 on #411). Driving an
          Output, calibrating it, Find by Moving and back to centre are all here
-         (operator, 2026-09-19 on #412), and so is which servo each Output
-         carries, on its own row (#399, operator 2026-09-28: "clean and nice").
-         The rows, the run and the dial are drawn by data/servo.js from the
-         firmware's answer; this page names no Output of its own. -->
+         (operator, 2026-09-19 on #412); which servo it carries is picked on
+         Wiring, on the Part's row. The rows, the run and the dial are drawn by
+         data/servo.js from the firmware's answer; this page names no Output
+         of its own. -->
     <div class="card" id="outputs-card">
       <div class="sect"><h2>Outputs</h2><span class="sub outputs-tiers" id="outputs-tiers" role="status" aria-live="polite"></span></div>
       <!-- The two acts over every row, on one line: find an Output by moving it
@@ -55,7 +57,6 @@
       <div class="parts-table-wrap" id="outputs-table"></div>
       <!-- The calibration dial opens here, under the rows, for one Output at a time. -->
       <div id="outputs-dial"></div>
-      <p class="apply-timing" id="servo-types-timing"></p>
       <p class="feedback" id="outputs-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
     </div>
 

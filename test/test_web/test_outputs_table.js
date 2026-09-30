@@ -12,6 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { bootServos, freshOutputs, withParts, sleep } from "./helpers/parts_surface.js";
+import { wiredOutputs } from "./helpers/fake_droid.js";
 
 // ---------------------------------------------------------------------------
 
@@ -42,7 +43,7 @@ test("taking a Part off another Output from Servos is asked in the part-first ta
 });
 
 test("cancelling from this table sends nothing and leaves both Outputs as they were", async () => {
-  const env = await bootServos({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  const env = await bootServos({ outputs: withParts({ "ledc:0": ["doorFL"], "ledc:4": ["doorRR"] }) });
 
   env.pickOnOutput("ledc:4", "doorFL");
   assert.equal(env.dialog.open, true);
@@ -51,11 +52,26 @@ test("cancelling from this table sends nothing and leaves both Outputs as they w
   assert.equal(env.posts.length, 0);
   assert.equal(env.dialog.open, false);
   assert.equal(env.text("ledc:0", "outputs-parts"), "Left body door");
-  assert.equal(env.text("ledc:4", "outputs-parts"), "– not wired –");
+  assert.equal(env.text("ledc:4", "outputs-parts"), "Rear-right body door");
+});
+
+// An Output with no Part is free and not a row (CONTEXT.md "Servos"), so when
+// the last Part leaves, the table goes and one line sends the builder to
+// Wiring, where Parts are put on Outputs.
+test("with no Part on any Output, the table is one line that routes to Wiring", async () => {
+  const env = await bootServos({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
+  assert.equal(env.rows().length, 1);
+
+  env.outputs[0].parts = [];
+  await env.frame();
+  assert.equal(env.rows().length, 0, "no Output is listed");
+  const line = env.region().querySelector(".outputs-none");
+  assert.match(line.textContent, /No part is on an output yet/);
+  assert.equal(line.querySelector("a").getAttribute("href"), "#wiring");
 });
 
 test("one read of the droid's answer a second feeds the table, and stops when Servos is left", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
 
   const before = env.gets.get("/api/servo/outputs");
   await env.frame();
@@ -80,7 +96,7 @@ test("one read of the droid's answer a second feeds the table, and stops when Se
 // row through the page's onChange listener) and then the feed painted the rows
 // again itself, so each row was written twice a second.
 test("one read of the droid's answer paints each row once", async () => {
-  const env = await bootServos();
+  const env = await bootServos({ outputs: wiredOutputs() });
   const cell = env.cell("ledc:0", "outputs-release");
   const shown = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(cell), "textContent");
   let paints = 0;
@@ -117,7 +133,7 @@ test("a firmware that reports no position is not shown as an Output with no puls
 // it hides, and not from an event that reaches the table anyway - while a
 // measured Output's row saves it, through the row door (ADR 0068).
 test("an Output nobody has measured cannot send a shape, and a measured one saves it on its row", async () => {
-  const outputs = freshOutputs();
+  const outputs = wiredOutputs();
   outputs[0].calibrated = true;
   const env = await bootServos({ outputs });
   const pickEase = (address, ease) =>
@@ -148,7 +164,7 @@ test("an Output nobody has measured cannot send a shape, and a measured one save
 // decisions, and calibrating never changes it. So an unmeasured Output's row
 // saves it, through the row door (ADR 0068).
 test("what an Output does at power-up saves on its row, measured or not", async () => {
-  const env = await bootServos({ outputs: freshOutputs() });
+  const env = await bootServos({ outputs: wiredOutputs() });
 
   env.region().fire("click", { target: env.row("ledc:1").querySelector('[data-boot="home-hold"]') });
   await sleep(20);
@@ -163,7 +179,7 @@ test("what an Output does at power-up saves on its row, measured or not", async 
 // numbers - the page never decides a narrowing of its own, from the band, the
 // component or which Output it is.
 test("a row shows narrowed ends only while the droid reports them, with the droid's numbers", async () => {
-  const outputs = freshOutputs();
+  const outputs = wiredOutputs();
   outputs[1].narrowedFrom = { openUs: 2200, closeUs: 2100 };
   const env = await bootServos({ outputs });
   const note = (address) => env.cell(address, "outputs-narrowed");
@@ -184,7 +200,7 @@ test("a row shows narrowed ends only while the droid reports them, with the droi
 // row offers no act at all: no drive, no calibrate, no pulses off. It says why
 // instead. Its neighbour, driven, keeps every act.
 test("an Output the droid does not drive offers no act on its row, and says why", async () => {
-  const outputs = freshOutputs();
+  const outputs = wiredOutputs();
   Object.assign(outputs[2], { activeWired: false, driven: false, commandedUs: null, targetUs: null });
   const env = await bootServos({ outputs });
   const acts = (address) => ({

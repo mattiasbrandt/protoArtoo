@@ -28,7 +28,9 @@ const PAGE_MODULES = [
   "dome_panel_model.js",
   "dome_layout.js",
   "seq_protocol_check.js",
+  "servo_motion.js",
   "seq_rehearsal.js",
+  "outputs.js",
   "seq.js",
 ];
 
@@ -88,8 +90,9 @@ const helloBefore = () => ({
   ],
 });
 
-function newPage({ sequence = helloBefore(), failRead = false } = {}) {
+function newPage({ sequence = helloBefore(), failRead = false, outputs = [], config = {} } = {}) {
   const calls = [];
+  const dialogs = [];
   const elements = new Map();
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement());
@@ -119,7 +122,8 @@ function newPage({ sequence = helloBefore(), failRead = false } = {}) {
       return failRead ? Promise.reject(new Error("controller not reachable")) : Promise.resolve({ ok: true, data: sequence });
     }
     if (url.startsWith("/api/dome/layout")) return Promise.resolve({ ok: false, status: 503, data: null });
-    return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] });
+    if (url === "/api/servo/outputs") return Promise.resolve({ ok: true, status: 200, data: { outputs } });
+    return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? config : [] });
   };
 
   const sandbox = {
@@ -158,8 +162,11 @@ function newPage({ sequence = helloBefore(), failRead = false } = {}) {
     },
     addEventListener() {},
     removeEventListener() {},
-    alert() {},
-    confirm: () => false,
+    alert: (text) => dialogs.push(["alert", text]),
+    confirm: (text) => {
+      dialogs.push(["confirm", text]);
+      return false;
+    },
     setTimeout,
     clearTimeout,
     setInterval,
@@ -183,6 +190,7 @@ function newPage({ sequence = helloBefore(), failRead = false } = {}) {
   return {
     seam,
     calls,
+    dialogs,
     byId,
     // Every markup the page wrote, joined, for a test about what it says.
     markup: () => [...elements.values()].map((element) => element.innerHTML).join("\n"),
@@ -201,9 +209,8 @@ test("the editor counts the Rehearsal's findings beside Protocol Check, and the 
   page.open();
 
   const counts = page.byId("seq-editor-rehearsal").innerHTML;
-  assert.match(counts, /data-count="warning">2 warnings/);
-  // Three of the nine are checkable; the six panel moves are the dome's to time.
-  assert.match(counts, /checked 3 of 9 steps/);
+  // Its three: the same-timestamp dispatch, the panel burst and the repeated open.
+  assert.match(counts, /data-count="warning">3 warnings/);
   // Protocol Check passes this sequence, so Save stays live however many
   // warnings the Rehearsal has.
   assert.equal(page.byId("seq-editor-save").disabled, false);
@@ -222,7 +229,7 @@ test("Test on Droid runs first, then folds a badge for what the droid holds, not
   const feedback = page.byId("seq-editor-feedback").innerHTML;
   assert.match(feedback, /DM:HELLO dispatched\./);
   assert.match(feedback, /<details class="seq-rehearsal-badge seq-rehearsal-badge-warning"/);
-  assert.match(feedback, /Rehearsal: 2 warnings, 0 notes/);
+  assert.match(feedback, /Rehearsal: 3 warnings, 0 notes/);
 });
 
 test("a card whose sequence cannot be read back says so instead of looking all clear", async () => {
@@ -246,4 +253,55 @@ test("a fallback track is named by its Setting's label, as the Sound page names 
   page.open(sequence);
   const label = shippedWords().labelOf("faint");
   assert.ok(page.markup().includes(`(fallback ${label})`), `the step does not name ${label}`);
+});
+
+// The line beside Test on the droid (#439, #287 specific 6). It names the
+// Servo Outputs nobody has calibrated, whose first move is a jump rather than
+// a ramp -- and it is never a gate: an acknowledgement dialog was rejected
+// because the second time an operator sees it they click through without
+// reading, which turns a Warning into furniture.
+test("an uncalibrated Output is named before a run, and the run is never held or asked about", async () => {
+  const row = (name, parts, calibrated) => ({
+    address: `ledc:${name}`,
+    name,
+    id: name.toLowerCase(),
+    switchable: true,
+    wired: true,
+    component: "mg996r",
+    openUs: 2000,
+    centreUs: 1500,
+    closeUs: 1000,
+    bandLoUs: 1000,
+    bandHiUs: 2000,
+    throwMs: 900,
+    accelMs: 225,
+    ease: "none",
+    calibrated,
+    parts,
+  });
+  const sequence = {
+    name: "DM:DOORS",
+    suppressMs: 4000,
+    toggleGroup: "none",
+    steps: [
+      { t: 0, type: "body", part: "doorFL" },
+      { t: 2000, type: "body", part: "doorFR" },
+      { t: 4000, type: "body", part: "doorFL", shape: "close" },
+      { t: 4000, type: "body", part: "doorFR", shape: "close" },
+      { t: 5000, type: "end" },
+    ],
+  };
+  const page = newPage({ sequence, outputs: [row("ARM1", ["doorFL"], false), row("ARM2", ["doorFR"], true)] });
+  await page.settle();
+  page.open(sequence);
+
+  const prerun = page.byId("seq-editor-prerun");
+  assert.match(prerun.innerHTML, /ARM1/, "the uncalibrated Output is not named");
+  assert.doesNotMatch(prerun.innerHTML, /ARM2/, "a calibrated Output is named as unmeasured");
+  const test = page.byId("seq-editor-test");
+  assert.equal(test.disabled, false);
+
+  await page.click(test);
+  assert.ok(page.calls.some(([method, url]) => method === "post" && url === "/api/seq/test"), "the run was held back");
+  assert.deepEqual(page.dialogs, []);
 });

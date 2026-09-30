@@ -70,18 +70,22 @@
 
   // #293's honesty tiers, as the counts the Outputs section is headed with
   // (#318). A tier is a count, never a place a row moves to: the rows stay in
-  // the order the wires plug in.
+  // the order the wires plug in. Every row has a Part (listed() below), so an
+  // Output with none is no tier of this page's.
   const TIERS = [
     { id: "driving", label: "Moving a part" },
     { id: "switched-off", label: "Wired but switched off" },
-    { id: "no-part", label: "Output with no part" },
   ];
   // A firmware older than this page reports no position at all, and that is
   // not the same as an Output with no pulse, so it is never counted as off.
-  const tierOf = (output) => {
-    if (output.parts.length === 0) return "no-part";
-    return OUTPUTS.live(output).state === "limp" ? "switched-off" : "driving";
-  };
+  const tierOf = (output) => (OUTPUTS.live(output).state === "limp" ? "switched-off" : "driving");
+
+  // The Outputs this page lists: only those with a Part on them, because an
+  // Output with a Part on it is wired and one with none is free (operator,
+  // 2026-09-29 on #411: "why is the servos page hardcoded to list out these
+  // when I have no parts defined with wiring?!"; CONTEXT.md "Servos"). Read
+  // from the Parts, never from the wired tick, as Wiring reads it.
+  const listed = (outputs) => outputs.filter((output) => output.parts.length > 0);
 
   const tiersNode = document.getElementById("outputs-tiers");
   const outputsRegion = document.getElementById("outputs-table");
@@ -116,9 +120,6 @@
   // (data/live_reading.js), false until the droid has said its estop is clear
   // and whenever contact with it is lost.
   let moveActsLive = false;
-  // Draws each row's servo pick again (data/output_settings.js mount(), at
-  // the foot of this file), for after the rows it lives in are rebuilt.
-  let redrawPicks = null;
 
   // ---------------------------------------------------------------------------
   // The table: built once per set of Outputs
@@ -141,15 +142,17 @@
   // Every catalog Part, for each row's "put a part on".
   const addPills = partPills(catalog.parts);
 
-  // An Output nobody has named - an expander's row - shows its address as its
-  // name, and a named one shows the address beside it. Every act starts
-  // refused: none may run on a guess about the estop, and the droid has not
-  // said yet.
+  // A row is headed by the Part(s) on it and the pin the board prints beside
+  // it (CONTEXT.md "Servos"); an Output nobody has named - an expander's row -
+  // shows its address for the pin. The Parts are painted (paintOutputRow()),
+  // since a Part moves without the rows being rebuilt. Which servo it carries
+  // is picked on Wiring, on the Part's row (#411). Every act starts refused:
+  // none may run on a guess about the estop, and the droid has not said yet.
   //
   // One Output is one <tbody> of two lines (#399, operator reviews 2026-09-28:
   // "too many simply ugly square boxes", then "clean and nice"). The first is
-  // what the builder acts on: the Output and which servo it carries, what it
-  // drives, where it was told to go, and the acts on it. The second holds two
+  // what the builder acts on: the Part(s) and the pin, a press to put another
+  // Part on it, where it was told to go, and the acts on it. The second holds two
   // panels, each closed until its own press opens it: the settings (how it
   // lets go, how it moves, what it does at power-up) and the Parts to put on
   // it, which open from the Drives cell they change. The line shows while
@@ -159,15 +162,13 @@
   // by their first match.
   const outputRowHtml = (output) => {
     const label = output.name;
-    const address = output.label ? `<span class="outputs-address">${esc(output.address)}</span>` : "";
     return (
       `<tbody class="parts-row outputs-row" data-output="${esc(output.address)}">` +
       `<tr class="outputs-main">` +
-      `<th scope="row"><span class="parts-name">${esc(label)}</span>${address}` +
-      // Which servo it carries: data/output_settings.js draws the pick here.
-      `<div class="outputs-model"></div>` +
+      `<th scope="row"><span class="parts-name outputs-parts"></span>` +
+      `<span class="outputs-address">${esc(label)}</span>` +
       `<div class="hint outputs-narrowed" hidden></div></th>` +
-      `<td class="outputs-drives"><span class="outputs-parts"></span>` +
+      `<td class="outputs-drives">` +
       `<button class="btn btn-sm btn-quiet outputs-add-open" type="button" aria-expanded="false" ` +
       `aria-label="${esc(`Put a part on ${label}`)}">+ part</button></td>` +
       `<td class="outputs-position"><div class="outputs-bar" aria-hidden="true"><div class="outputs-now"></div><div class="outputs-tick"></div></div>` +
@@ -235,7 +236,8 @@
   // controller does across a reboot, not while this page is reading it (#318).
   const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
-      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Output</th><th scope="col">Moves</th>` +
+      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Part</th>` +
+      `<th scope="col" aria-label="Put another part on it"></th>` +
       `<th scope="col">Commanded position</th><th scope="col">Move it</th>` +
       `<th scope="col" aria-label="Calibrate and settings"></th>` +
       `</tr></thead>` +
@@ -274,15 +276,12 @@
         sub: node.querySelector(".outputs-sub"),
         settings: node.querySelector(".outputs-settings"),
         add: node.querySelector(".outputs-add"),
-        model: node.querySelector(".outputs-model"),
       });
     });
     outputAddresses = addresses;
     // The buttons are built refused; this is what makes them live again on a
     // droid whose estop is clear.
     gateActs();
-    // The servo picks live in the rows just built.
-    redrawPicks?.();
   };
 
   // Both marks against one span, so they cannot disagree about scale and the
@@ -304,16 +303,16 @@
   const isActable = (output) => isDriveable(output) && output.driven !== false;
 
   // Why an Output offers no drive, said the way a builder needs it, or "" when
-  // it does. Whether it is wired and what it carries are Wiring's and the
-  // row's servo pick's answer; the route is refused for a row no board labels. An
-  // Output whose settings nobody can save has nothing set to refuse on.
+  // it does. What it carries is Wiring's answer, on the Part's row there; the
+  // route is refused for a row no board labels. An Output whose settings
+  // nobody can save has nothing set to refuse on. Every row has a Part, so it
+  // is wired (the tick follows the Parts, #411).
   const driveRefusal = (output) => {
     if (!hasServoWord(output)) return "No name the servo route takes";
     if (isLightRow(output)) return "A light has no position";
     if (!output.switchable) return "";
     if (output.light) return `Carries the ${output.light.label}`;
-    if (!output.wired) return "Not wired. Mark it on Wiring";
-    if (!output.servo) return "Pick its servo";
+    if (!output.servo) return "Pick its servo on Wiring";
     // Wired since the droid started: the tick is read at start (#364).
     if (output.driven === false) return "Restart the droid to use it";
     return "";
@@ -335,7 +334,7 @@
     // Whatever the droid has just answered is current, including after an
     // estop cut a nudge short.
     row.bar.classList.remove("is-stale");
-    row.parts.textContent = output.parts.length ? listParts(output.parts) : NOT_WIRED;
+    row.parts.textContent = listParts(output.parts);
     // The ends the upgrade moved into this part's range, and what they were,
     // until the builder saves this Output (#417).
     const was = output.narrowedFrom;
@@ -431,8 +430,20 @@
     }
   };
 
+  // With no Part on any Output there is no row to draw, and one line sends
+  // the builder to where Parts are put on Outputs.
+  const NONE_LISTED = `No part is on an output yet. <a class="link-btn" href="#wiring">Put parts on outputs on Wiring</a>.`;
+
   const paintOutputs = (outputs, addresses) => {
-    if (outputAddresses !== addresses) buildOutputs(outputs, addresses);
+    if (outputs.length === 0) {
+      if (outputAddresses !== "") {
+        outputsRegion.innerHTML = `<p class="hint outputs-none">${NONE_LISTED}</p>`;
+        outputRows.clear();
+        outputAddresses = "";
+      }
+    } else if (outputAddresses !== addresses) {
+      buildOutputs(outputs, addresses);
+    }
     outputs.forEach(paintOutputRow);
     const counts = new Map(TIERS.map((tier) => [tier.id, 0]));
     outputs.forEach((output) => counts.set(tierOf(output), counts.get(tierOf(output)) + 1));
@@ -478,7 +489,7 @@
   // ---------------------------------------------------------------------------
   const paint = () => {
     if (!answered()) return;
-    const outputs = OUTPUTS.list();
+    const outputs = listed(OUTPUTS.list());
     const addresses = outputs.map((output) => output.address).join(",");
     paintOutputs(outputs, addresses);
     paintFindPick();
@@ -1400,18 +1411,6 @@
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Which servo each Output carries, drawn by data/output_settings.js into each
-  // row's own slot and shared with Wiring's wired ticks. A save there - wired,
-  // and what each carries - decides what each row's drive cell offers, so the
-  // rows are repainted in place whenever data/outputs.js's answer changes. Its
-  // save line is the section's one feedback line.
-  // ---------------------------------------------------------------------------
-  redrawPicks = window.PAOutputSettings?.mount("type", {
-    slot: (address) => outputRows.get(address)?.model ?? null,
-    timing: document.getElementById("servo-types-timing"),
-    feedback,
-  }) ?? null;
   // Every read of the Outputs - the follow's, an act's, a save's answer -
   // publishes once, and this is the one place the page paints from it, so a
   // read paints each row once (#421).
@@ -1430,7 +1429,6 @@
       "/droid_part_kind.js": "the parts catalog",
       "/parts_mapping.js": "the parts on each output",
       "/outputs.js": "the outputs",
-      "/output_settings.js": "the outputs",
       "/servo.js": "servo control",
       "/footer.js": "page footer",
     });

@@ -2470,7 +2470,7 @@ void test_component_toggle_read_reports_saved_and_active() {
 void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
     g_test_status_broadcast_count = 0;
 
-    runQuery("system.config.enable_arm2 value=true");
+    runQuery("system.config.enable_drive value=true");
 
     TEST_ASSERT_FALSE_MESSAGE(g_cap.beginCalled, "a write answers a single result record");
     TEST_ASSERT_TRUE(g_cap.resultCalled);
@@ -2480,7 +2480,7 @@ void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
 
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
-    TEST_ASSERT_TRUE_MESSAGE(snap.system.enable_arm2, "the write must reach the config cache");
+    TEST_ASSERT_TRUE_MESSAGE(snap.system.enable_drive, "the write must reach the config cache");
     TEST_ASSERT_EQUAL_UINT_MESSAGE(1, g_test_status_broadcast_count,
                                   "a successful commit broadcasts status, matching the REST path");
 }
@@ -2490,7 +2490,7 @@ void test_component_toggle_write_persists_and_reports_staged_until_reboot() {
 // proving the schema check accepts either spelling verbatim, not just the
 // generic one.
 void test_component_toggle_write_accepts_the_named_key_not_only_value() {
-    runQuery("system.config.enable_aux1 enableAux1=true");
+    runQuery("system.config.enable_audio enableAudio=true");
 
     TEST_ASSERT_TRUE(g_cap.resultCalled);
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
@@ -2498,7 +2498,7 @@ void test_component_toggle_write_accepts_the_named_key_not_only_value() {
 
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
-    TEST_ASSERT_TRUE(snap.system.enable_aux1);
+    TEST_ASSERT_TRUE(snap.system.enable_audio);
 }
 
 void test_component_toggle_write_rejects_an_unknown_argument() {
@@ -2518,7 +2518,7 @@ void test_component_toggle_write_rejects_an_unknown_argument() {
 // Named by the argument the builder typed, not the POST field it saves under
 // (#425), with the words a boolean takes.
 void test_component_toggle_write_rejects_a_malformed_boolean() {
-    runQuery("system.config.enable_aux3 value=maybe");
+    runQuery("system.config.enable_protor2link value=maybe");
 
     TEST_ASSERT_TRUE(g_cap.beginCalled);
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_ERR, g_cap.status);
@@ -2600,12 +2600,18 @@ void test_every_single_field_setting_op_refuses_as_the_http_door_does() {
         TEST_ASSERT_EQUAL_MESSAGE(CONSOLE_OUTCOME_INVALID, g_cap.outcome, op.operationName);
         TEST_ASSERT_EQUAL_MESSAGE(consoleReasonFromApplyRefusal(result.error.refusal.reason),
                                   g_cap.reason, op.operationName);
-        TEST_ASSERT_EQUAL_STRING_MESSAGE(result.error.refusal.accepts, capturedValue("accepts"),
+        // A refusal with no one value to take - an Output's wired tick, which
+        // follows its Parts - carries no accepts at either door.
+        const char* accepts = capturedValue("accepts");
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(result.error.refusal.accepts, accepts ? accepts : "",
                                          op.operationName);
         TEST_ASSERT_EQUAL_STRING_MESSAGE("value", capturedValue("argument"), op.operationName);
     }
 }
 
+// An Output's wired tick follows its Parts (#411): configApply() knows its
+// name and refuses the write by it, and the field does not flip. The refusal
+// naming the paramKey is what proves the two tables still agree for those.
 void test_component_toggle_table_paramkeys_match_config_apply() {
     for (size_t i = 0; i < kComponentToggleFieldCount; ++i) {
         const ComponentToggleField& field = kComponentToggleFields[i];
@@ -2625,6 +2631,13 @@ void test_component_toggle_table_paramkeys_match_config_apply() {
         char message[96];
         snprintf(message, sizeof(message), "operation=%s paramKey=%s", field.operationName,
                  field.paramKey);
+        if (boardOutputByEnabledField(field.paramKey) != nullptr) {
+            TEST_ASSERT_TRUE_MESSAGE(result.error.hasError, message);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(field.paramKey, result.error.refusal.field, message);
+            TEST_ASSERT_EQUAL_MESSAGE(ApplyRefusalReason::Conflict, result.error.refusal.reason, message);
+            TEST_ASSERT_FALSE_MESSAGE(working.system.*(field.field), message);
+            continue;
+        }
         TEST_ASSERT_FALSE_MESSAGE(result.error.hasError, message);
         TEST_ASSERT_TRUE_MESSAGE(working.system.*(field.field), message);
     }
@@ -2907,7 +2920,7 @@ void test_config_write_releases_the_mutex_after_a_successful_write() {
     consoleModuleInit();
     paStubMutexReset();
 
-    runQuery("system.config.enable_arm2 value=true");
+    runQuery("system.config.enable_audio value=true");
 
     TEST_ASSERT_EQUAL(CONSOLE_STATUS_OK, g_cap.status);
     TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_STAGED_UNTIL_REBOOT, g_cap.outcome);
