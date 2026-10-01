@@ -327,7 +327,8 @@ static void gestureEnd(const char* why) {
 // when the run ends, and the Gesture is read on every pass until then
 // (SeqAction, sequence_engine.h).
 static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& act) {
-    // act.domeDurationMs is where the firing run ends: no pass starts after it.
+    // act.domeDurationMs is where the firing run ends: no move of the Gesture
+    // goes out at or after it (sequenceGestureNext()).
     if (act.gesture != nullptr &&
         !sequenceGestureStart(&gestureRun, *act.gesture, millis(), act.domeDurationMs)) {
         PA_LOG_WARN(TAG, "gesture %s not performed - nothing to perform, or four already running",

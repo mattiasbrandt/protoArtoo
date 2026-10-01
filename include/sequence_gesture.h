@@ -390,7 +390,8 @@ inline uint32_t seqGesturePasses(const SeqStepParams& p) {
 // pass at or after endAtMs, whatever its extent says. The first pass always
 // counts -- it starts as the Gesture fires, which the engine only does before
 // the end. endAtMs 0 is a run with no end step, bounded by the extent alone.
-// A pass already under way at the end finishes its moves; none starts after.
+// A pass under way at the end is cut there: sequenceGestureNext() ends the
+// entry at endAtMs, mid-pass, so no move goes out at or after it.
 // Both clocks are the caller's: absolute ms for a run, sequence ms for a pose.
 inline uint32_t seqGesturePassesBefore(const SeqStepParams& p, uint32_t fireMs, uint32_t endAtMs) {
     const uint32_t passes = seqGesturePasses(p);
