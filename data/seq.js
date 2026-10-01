@@ -105,6 +105,10 @@
   // A run still open is an edit not yet on the stack.
   const runChanged = () => history.run !== null && historyCapture() !== history.run;
 
+  // How many characters a sequence's name holds after its DM: (Protocol
+  // Check's name rule, data/seq_protocol_check.js).
+  const SEQ_NAME_CHARS = 18;
+
   // How many Learned Sequences this droid lets a builder save. It is a board
   // fact the droid reports - five on the artoo-esp32, ten elsewhere (ADR 0065,
   // amended 2026-09-25) - as learned_sequence_cap in GET /api/identity, which
@@ -3183,7 +3187,7 @@
             <div class="setting-rows seq-settings">
               <label class="setting-row">
                 <span class="setting-name">Name</span>
-                <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${esc(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="21">
+                <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${esc(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="${"DM:".length + SEQ_NAME_CHARS}">
                 <span class="setting-value"></span>
               </label>
               <div class="setting-row">
@@ -4744,9 +4748,12 @@
     }
     // Auto-rename to NAME_COPY (avoid _COPY_COPY by removing an existing
     // suffix). In capitals: Protocol Check takes no lowercase in a name, so
-    // "_copy" opened every duplicate refused until it was renamed.
-    const baseName = seqName.replace(/_COPY(\d*)$/, "");
-    original.name = `${baseName}_COPY`;
+    // "_copy" opened every duplicate refused until it was renamed. And within
+    // the name's length: a long name gives up its tail to the suffix, or the
+    // duplicate would open refused for being too long.
+    const suffix = "_COPY";
+    const stem = seqName.replace(/^DM:/, "").replace(/_COPY(\d*)$/, "").slice(0, SEQ_NAME_CHARS - suffix.length);
+    original.name = `DM:${stem}${suffix}`;
     // A duplicate is a new sequence, so it gets an id of its own at save. A
     // sequence inside another is found by id, and the droid takes the first
     // match (src/seq_store.cpp): two sequences sharing one would let a

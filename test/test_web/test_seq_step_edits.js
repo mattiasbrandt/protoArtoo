@@ -649,6 +649,23 @@ test("a duplicate is saved under an id of its own, never the original's", async 
   assert.notEqual(saved[0].body.id, "abcd1234", "the duplicate was saved under the original's id");
 });
 
+// A name holds 18 characters after its DM:, and a duplicate adds five. The
+// copy of a long-named sequence used to open under a name Protocol Check
+// refuses, so it could not be saved until it was renamed.
+test("a duplicate of the longest name a sequence can have can be saved as it opens", async () => {
+  const longest = "DM:ABCDEFGHIJKLMNOPQR";
+  const page = newPage({
+    onDroid: { name: longest, id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] },
+  });
+  await page.rowAct("duplicate", longest);
+  assert.notEqual(page.editing()?.name, longest, "the fixture: the copy has a name of its own");
+
+  await page.save();
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "the duplicate opened under a name the droid would refuse");
+  assert.equal(saved[0].body.name, "DM:ABCDEFGHIJKLM_COPY");
+});
+
 // A row act that cannot read its sequence says so on the row. Duplicate used
 // to say it only to the console, so the press did nothing a builder could see.
 test("a Duplicate that cannot read the sequence says so on its row", async () => {
