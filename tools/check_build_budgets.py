@@ -118,6 +118,10 @@ def filesystem_image_bytes(env_name, budgets):
     quoting it as the measurement is the trap this function exists to close. A
     block that has never been written is left erased, all 0xFF, so what the
     filesystem costs is the count of blocks that are not.
+
+    Pricing a directory that is not this build's image, or the same bytes in
+    another write order, is tools/fs_price.py. That number is a question.
+    This function is still the one that can fail a build.
     """
     print(f"Imaging filesystem for {env_name}...", file=sys.stderr)
 

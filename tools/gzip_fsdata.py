@@ -345,7 +345,9 @@ def main():
     # worktree: the same commit imaged as 112 blocks in one worktree and 114 in
     # another. Measured on one stage written in 300 random orders: 112 blocks
     # 297 times, 113 twice, 114 once (#429). Sorted, the count is a function of
-    # the commit alone.
+    # the commit alone. Pricing that order, or a modified copy of the stage,
+    # without buildfs is tools/fs_price.py (--order is required). It is not
+    # the number that can fail a build; make check-build-budgets is.
     for walk_src, in_set in roots:
         for root, dirs, files in os.walk(walk_src):
             dirs.sort()
