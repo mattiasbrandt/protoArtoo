@@ -81,8 +81,8 @@ the patch releases, whose notes live on their own GitHub Release.
   observed, contradicted or not probed. A module that has not answered stays
   your answer rather than a contradiction, and every row that needs a change
   links to where you make it. Nothing on the list changes the droid.
-- **Read a sequence as time.** Timeline, on any sequence card, draws the
-  routine with a lane per part: each move as long as it takes, and whatever the
+- **Read a sequence as time.** A sequence's timeline (Edit on one of yours,
+  Timeline on a factory one) draws the routine with a lane per part: each move as long as it takes, and whatever the
   routine leaves open running on to the end. Move the marker to any moment and
   the droid picture shows that moment. Moving it never moves the droid. Parts
   the routine names that are not wired are listed once, above the routine.
@@ -297,9 +297,9 @@ the patch releases, whose notes live on their own GitHub Release.
   not happen the way you wrote it. Examples: dome commands so close together
   that the dome drops some, a panel told to open again while it is already
   opening, a `$s` that silences idle chatter until reboot, a body part left
-  open. Each one says how to fix it. You get the full list when you save and
-  when you tune a Factory sequence, and a folded summary after a test run. It
-  also says how many steps it could check and why the rest could not be. It
+  open. Each one says how to fix it. The full list is in the editor's
+  Rehearsal tab, which says when it holds a warning, and a folded summary
+  follows a test run. It also says how many steps it could check and why the rest could not be. It
   never stops a save or a run.
 - **See what drives every part on your droid.** The new Parts page lists every
   part, grouped the way you walk the droid, with the output that drives it, and
