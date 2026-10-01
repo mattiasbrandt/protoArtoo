@@ -1173,9 +1173,9 @@
   // here, loudly, rather than drawing a page that quietly lost its hazards.
   //
   // Which product is fitted in a family is the Component Picker's answer, the
-  // one Configuration shows: the family's Component Member where it has one,
-  // else the one product this image carries for it (fittedPart()), and for
-  // the Radio Controller the radio and the RC Receiver it talks to. A family
+  // one Configuration shows (productOf()): the family's Component Member where
+  // it has one, else the one product this image carries for it, and for the
+  // Radio Controller the radio and the RC Receiver it talks to. A family
   // with a Component Toggle is on the droid only while that toggle is on, so
   // a family answered Not fitted has no card. The families are listed in the
   // order Configuration asks them, by their Component Registry ids; no
@@ -1201,7 +1201,7 @@
     const found = [];
     PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false }) => {
       if (toggle && !switchedOn(toggles, toggle)) return;
-      const part = picker.chosenPart(family) || picker.fittedPart(family);
+      const part = picker.productOf(family);
       if (!part) return;
       // A Board Lane's key is its Component Toggle's, folded to lower case
       // (componentIndex() above).

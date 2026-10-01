@@ -662,6 +662,16 @@ test("a product's wiring card follows the droid's own answers, and an image with
   assert.ok(!declined.cards.includes("dy_sv5w"), "sound answered Not fitted has no card");
   assert.doesNotMatch(declined.saved, /data-product="dy_sv5w"/, "on the saved sheet either");
 
+  // A family with a Component Member is answered by that member alone. The
+  // lineup here carries one sound module and the droid holds no member: the
+  // builder chose nothing, so no module's card is drawn for them.
+  const unchosen = await read(await boot({
+    ...droid(true),
+    lanes: { audio: { enabled: true, label: "ROW 41/42" } },
+    assetSet: "default",
+  }));
+  assert.ok(!unchosen.cards.includes("dy_sv5w"), "a sound module nobody chose has no card");
+
   const without = await read(await boot({ ...droid(true), assetSet: "legacy" }));
   assert.deepEqual(without.cards, []);
   assert.equal(without.plate, null, "the page has no plate for them, hidden or otherwise");
