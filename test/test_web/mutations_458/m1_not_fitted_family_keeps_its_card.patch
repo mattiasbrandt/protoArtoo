@@ -1,0 +1,12 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index 7dc8ef0f..338972c8 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -1200,7 +1200,6 @@
+     const toggles = componentIndex(components);
+     const found = [];
+     PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false }) => {
+-      if (toggle && !switchedOn(toggles, toggle)) return;
+       const part = picker.chosenPart(family) || picker.fittedPart?.(family);
+       if (!part) return;
+       // A Board Lane's key is its Component Toggle's, folded to lower case
