@@ -53,12 +53,20 @@ const lineupFor = (board) => {
     ([, enumerator, id, name, key]) => ({ enumerator, id, name, member_key: key === "nullptr" ? null : key.slice(1, -1) }),
   );
   const byEnum = new Map(categories.map((category) => [category.enumerator, category.id]));
-  const parts = [...inc.matchAll(/^PA_COMPONENT_PART\(\s*\d+,\s*"(\w+)",\s*"([^"]+)",\s*(\w+),\s*"(\w+)",\s*COMPONENT_STATUS_(\w+),/gm)].map(
-    ([, id, name, category, protocol, status]) => {
+  const parts = [...inc.matchAll(/^PA_COMPONENT_PART\(\s*\d+,\s*"(\w+)",\s*"([^"]+)",\s*(\w+),\s*"(\w+)",\s*COMPONENT_STATUS_(\w+),\s*COMPONENT_(NOT_)?CONFIRMED_ON_DROID,/gm)].map(
+    ([, id, name, category, protocol, status, notConfirmed]) => {
       let included = status === "SUPPORTED";
       if (id === "artoo_pcb") included = board === "artoo_esp32";
       if (id === "firebeetle2") included = board === "firebeetle2";
-      return { id, name, category: byEnum.get(category), protocol, status: status.toLowerCase(), included };
+      return {
+        id,
+        name,
+        category: byEnum.get(category),
+        protocol,
+        status: status.toLowerCase(),
+        confirmed_on_droid: notConfirmed === undefined,
+        included,
+      };
     },
   );
   return {

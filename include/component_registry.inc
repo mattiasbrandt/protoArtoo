@@ -29,8 +29,8 @@
 //               trusted to whoever edits this file.
 //
 // -----------------------------------------------------------------------------
-// PA_COMPONENT_PART(value, id, name, category, protocol, status, capabilities,
-//                   gate, included)
+// PA_COMPONENT_PART(value, id, name, category, protocol, status,
+//                   confirmed_on_droid, capabilities, gate, included)
 // -----------------------------------------------------------------------------
 //   value         stable numeric id, unique across the whole registry. This is
 //                 what a Component Member setting persists, so a value is never
@@ -53,6 +53,20 @@
 //   status        COMPONENT_STATUS_SUPPORTED (implemented and drivable) or
 //                 COMPONENT_STATUS_ROADMAP (intended, not built). Two values,
 //                 and "might" is deliberately not one of them (#303).
+//   confirmed_on_droid
+//                 COMPONENT_CONFIRMED_ON_DROID where the product has run on a
+//                 real droid, COMPONENT_NOT_CONFIRMED_ON_DROID where it is
+//                 built and drivable but has not yet (CONTEXT.md "Confirmed on
+//                 a Droid", #455). Evidence about a supported row, never a
+//                 third status: a roadmap row has no driver to have run, so it
+//                 cannot carry it (asserted in src/component_registry.cpp and
+//                 reported by tools/check_component_registry_drift.py). A bench
+//                 over USB is not a droid. Each confirmed row says where the
+//                 claim comes from on the line above it - above, because a
+//                 comment after the row's closing parenthesis breaks the
+//                 readers that find a row's end by its line
+//                 (test/playwright/_lib/fixture_routes.js). Confirming a
+//                 product later is this one word and that one line.
 //   capabilities  what this product can be asked, as the family's own bitmask.
 //                 Declared per part, not per family and not per protocol: two
 //                 products on one protocol can genuinely differ in what they
@@ -106,8 +120,9 @@ PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_SOUND,                 "sound",        
 // protocol: the running image IS the answer to which one is fitted, which is
 // why `included` tests PA_BOARD rather than a capability.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART( 1, "artoo_pcb",  "Artoo PCB (artoo.uk)",   COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))
-PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_FIREBEETLE2))
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART( 1, "artoo_pcb",  "Artoo PCB (artoo.uk)",   COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))
+PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGORY_BODY_CONTROLLER, "none", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, (PA_BOARD == PA_BOARD_FIREBEETLE2))
 
 // -----------------------------------------------------------------------------
 // Radio Controller -- the RC Radio a builder holds and the RC Receiver it
@@ -129,12 +144,13 @@ PA_COMPONENT_PART( 2, "firebeetle2", "FireBeetle 2 (ESP32-P4)", COMPONENT_CATEGO
 // renaming them moves the photographs, their handler and the drawings, and is
 // recorded on #369 rather than done here.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART( 3, "hotrc_ds650",         "HotRC DS-650",       COMPONENT_CATEGORY_RADIO_CONTROLLER, "rc_receiver",   COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART(22, "rc_radio",            "RC Radio",           COMPONENT_CATEGORY_RADIO_CONTROLLER, "rc_receiver",   COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",    COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
-PA_COMPONENT_PART( 4, "rc_transmitter_pwm",  "RC Receiver - PWM",  COMPONENT_CATEGORY_RADIO_CONTROLLER, "standard_pwm",  COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 5, "rc_transmitter_sbus", "RC Receiver - SBUS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART( 3, "hotrc_ds650",         "HotRC DS-650",       COMPONENT_CATEGORY_RADIO_CONTROLLER, "rc_receiver",   COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
+PA_COMPONENT_PART(22, "rc_radio",            "RC Radio",           COMPONENT_CATEGORY_RADIO_CONTROLLER, "rc_receiver",   COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
+PA_COMPONENT_PART( 7, "xbox_controller",     "Xbox Controller",    COMPONENT_CATEGORY_RADIO_CONTROLLER, "bluetooth_hid", COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART( 4, "rc_transmitter_pwm",  "RC Receiver - PWM",  COMPONENT_CATEGORY_RADIO_CONTROLLER, "standard_pwm",  COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
+PA_COMPONENT_PART( 5, "rc_transmitter_sbus", "RC Receiver - SBUS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "sbus",          COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
+PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CATEGORY_RADIO_CONTROLLER, "crsf",          COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
 
 // -----------------------------------------------------------------------------
 // Body servo controller -- what drives the body's servos. The first row is the
@@ -143,23 +159,26 @@ PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CAT
 // an operator" (operator, 2026-09-18 on #369). Its card borrows the running
 // board's picture. The spec sheets keep the technical name.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Body controller board GPIO", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
-PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Body controller board GPIO", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
+PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Dome Rotation -- what turns the dome.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART(11, "isdt_esc70", "ISDT ESC70 (RC ESC)", COMPONENT_CATEGORY_DOME_ROTATION, "ledc",              COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART(12, "syren10",    "SyRen 10",            COMPONENT_CATEGORY_DOME_ROTATION, "de_packet_serial",  COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART(11, "isdt_esc70", "ISDT ESC70 (RC ESC)", COMPONENT_CATEGORY_DOME_ROTATION, "ledc",              COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
+PA_COMPONENT_PART(12, "syren10",    "SyRen 10",            COMPONENT_CATEGORY_DOME_ROTATION, "de_packet_serial",  COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Dome Controller -- the dome's own board, panels and lighting, over protoR2link.
 // Teeces' protocol is genuinely undecided and says so rather than guessing;
 // #313 resolves it.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART(13, "astropixels_plus", "AstroPixels Plus", COMPONENT_CATEGORY_DOME_CONTROLLER, "protor2link", COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)
-PA_COMPONENT_PART(14, "teeces",           "Teeces",           COMPONENT_CATEGORY_DOME_CONTROLLER, "tbd",         COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART(13, "astropixels_plus", "AstroPixels Plus", COMPONENT_CATEGORY_DOME_CONTROLLER, "protor2link", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
+PA_COMPONENT_PART(14, "teeces",           "Teeces",           COMPONENT_CATEGORY_DOME_CONTROLLER, "tbd",         COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Foot Drive -- what drives the feet.
@@ -172,11 +191,11 @@ PA_COMPONENT_PART(14, "teeces",           "Teeces",           COMPONENT_CATEGORY
 // a Sabertooth or a VESC reports back over the seam is #304's open follow-up,
 // and a bit on either row would answer it here.
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART(15, "hoverboard",           "Hoverboard, hacked firmware", COMPONENT_CATEGORY_FOOT_DRIVE, "hoverboard_gen2_uart", COMPONENT_STATUS_SUPPORTED,
+PA_COMPONENT_PART(15, "hoverboard",           "Hoverboard, hacked firmware", COMPONENT_CATEGORY_FOOT_DRIVE, "hoverboard_gen2_uart", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID,
                   DRIVE_CAP_REPORTS_FEEDBACK,
                   "PA_CAP_DRIVE_BACKEND_HOVERBOARD", PA_CAP_DRIVE_BACKEND_HOVERBOARD)
-PA_COMPONENT_PART(16, "sabertooth_2x25",      "Sabertooth 2x25",             COMPONENT_CATEGORY_FOOT_DRIVE, "de_packet_serial",     COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
-PA_COMPONENT_PART(17, "flipsky_mini_v6_vesc", "Flipsky Mini V6 VESC",        COMPONENT_CATEGORY_FOOT_DRIVE, "vesc_uart",            COMPONENT_STATUS_ROADMAP,   0, nullptr, 0)
+PA_COMPONENT_PART(16, "sabertooth_2x25",      "Sabertooth 2x25",             COMPONENT_CATEGORY_FOOT_DRIVE, "de_packet_serial",     COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART(17, "flipsky_mini_v6_vesc", "Flipsky Mini V6 VESC",        COMPONENT_CATEGORY_FOOT_DRIVE, "vesc_uart",            COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------
 // Sound -- the sound module, and the only Component Family with more than one
@@ -193,17 +212,19 @@ PA_COMPONENT_PART(17, "flipsky_mini_v6_vesc", "Flipsky Mini V6 VESC",        COM
 // bitmask yet, not because it can be asked nothing. #305 declares its bits when
 // it builds the driver; until then 0 is the honest word for "none declared".
 // -----------------------------------------------------------------------------
-PA_COMPONENT_PART(18, "dy_sv5w",       "DY-SV5W",             COMPONENT_CATEGORY_SOUND, "soft_uart_binary",  COMPONENT_STATUS_SUPPORTED,
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART(18, "dy_sv5w",       "DY-SV5W",             COMPONENT_CATEGORY_SOUND, "soft_uart_binary",  COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,
                   AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_DEVICE_TYPE |
                   AudioDriver::AUDIO_CAP_TRACK_COUNT | AudioDriver::AUDIO_CAP_CURRENT_TRACK,
                   nullptr, 1)
-PA_COMPONENT_PART(19, "mp3_trigger",   "MP3 Trigger",         COMPONENT_CATEGORY_SOUND, "mp3trigger_serial", COMPONENT_STATUS_SUPPORTED,
+PA_COMPONENT_PART(19, "mp3_trigger",   "MP3 Trigger",         COMPONENT_CATEGORY_SOUND, "mp3trigger_serial", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID,
                   AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_TRACK_COUNT |
                   AudioDriver::AUDIO_CAP_CURRENT_TRACK,
                   nullptr, 1)
-PA_COMPONENT_PART(20, "chirp",         "CHIRP Audio Trigger", COMPONENT_CATEGORY_SOUND, "chirp_ascii_uart",  COMPONENT_STATUS_SUPPORTED,
+// Confirmed on a droid: operator, 2026-09-30, #455.
+PA_COMPONENT_PART(20, "chirp",         "CHIRP Audio Trigger", COMPONENT_CATEGORY_SOUND, "chirp_ascii_uart",  COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,
                   AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_DEVICE_TYPE |
                   AudioDriver::AUDIO_CAP_TRACK_COUNT | AudioDriver::AUDIO_CAP_CURRENT_TRACK |
                   AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING | AudioDriver::AUDIO_CAP_CATALOG,
                   nullptr, 1)
-PA_COMPONENT_PART(21, "dfplayer_mini", "DFPlayer Mini",       COMPONENT_CATEGORY_SOUND, "dfplayer_serial",   COMPONENT_STATUS_ROADMAP, 0, nullptr, 0)
+PA_COMPONENT_PART(21, "dfplayer_mini", "DFPlayer Mini",       COMPONENT_CATEGORY_SOUND, "dfplayer_serial",   COMPONENT_STATUS_ROADMAP, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
