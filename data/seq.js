@@ -1479,6 +1479,52 @@
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // The kinds of step, as their fields: what a new step of each kind starts
+  // as, the bounds its numbers are offered within, and the choices its pickers
+  // hold. One set, read by the step list's cards and by the Picked block tab,
+  // so a kind never has two sets of bounds. Protocol Check has the rules
+  // (data/seq_protocol_check.js); these are what the controls offer.
+  // ---------------------------------------------------------------------------
+  const stepTypeDefaults = {
+    audio: { cmd: "$H" },
+    dome: { cmd: ":OP00" },
+    domeRotate: { speedPct: 0, durationMs: 0 },
+    loop: { body: 2, periodMs: 1846, durationMs: 14000 },
+    random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
+    audioCat: { category: "alert", fallback: "scream" },
+    gesture: { set: "ring", spread: "wave" },
+    sequence: {},
+    end: {},
+  };
+
+  const STEP_LIMITS = {
+    t: [0, 120000],
+    howFar: [1, 100],
+    speed: [0, 100],
+    turnMs: [0, 120000],
+    body: [1, 96],
+    periodMs: [100, 60000],
+    loopMs: [100, 120000],
+    moveMs: [0, 5000],
+    jitterMs: [0, 2000],
+  };
+  const limits = ([min, max]) => `min="${min}" max="${max}"`;
+
+  const AUDIO_CATEGORIES = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
+  // A Random Flutter's set - "hold" reuses the pick of the one before it
+  // (SLOTSET_HOLD, include/sequence_engine.h) - and what it does to the pick.
+  const RANDOM_SETS = ["ring", "pie", "all", "hold"];
+  const RANDOM_MODES = ["flutter", "open", "close"];
+
+  // A dome turn is stored as one signed speed: negative left, positive right,
+  // zero the neutral stop, which runs for no time.
+  const turnOf = (direction, speed, durationMs) => {
+    const abs = Math.abs(speed) || 0;
+    if (direction === "stop" || abs === 0) return { speedPct: 0, durationMs: direction === "stop" ? 0 : durationMs };
+    return { speedPct: direction === "left" ? -abs : abs, durationMs };
+  };
+
   // Plain-English type names. There was a parallel map of emoji beside this
   // one, drawn in the step card and in the picker immediately next to the name
   // it stood for, and it is gone: an operator surface carries no pictograph
@@ -1584,7 +1630,7 @@
             <div class="setting-row">
               <span class="setting-name">Starts at</span>
               <span class="setting-number">
-                <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+                <input class="step-t" type="number" value="${step.t || 0}" ${limits(STEP_LIMITS.t)} aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
                 <span class="setting-unit">ms</span>
               </span>
               <span class="setting-value"></span>
@@ -2239,7 +2285,7 @@
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
-            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
+            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" ${limits(STEP_LIMITS.howFar)} placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
             <div class="dome-panel-advisory hidden"></div>
           `;
         } else {
@@ -2270,12 +2316,12 @@
             <option value="left" ${direction === "left" ? "selected" : ""}>Left (reverse)</option>
             <option value="right" ${direction === "right" ? "selected" : ""}>Right (forward)</option>
           </select>
-          <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" min="0" max="100" step="1" aria-label="Speed (0-100%)" placeholder="0-100">
+          <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" ${limits(STEP_LIMITS.speed)} step="1" aria-label="Speed (0-100%)" placeholder="0-100">
           <span class="dome-rotate-label">%</span>
         `;
 
         timingHtml = `
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" min="0" max="120000" step="1" aria-label="Run for (ms)" placeholder="duration ms">
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" ${limits(STEP_LIMITS.turnMs)} step="1" aria-label="Run for (ms)" placeholder="duration ms">
           <span class="dome-rotate-label">ms</span>
         `;
         break;
@@ -2283,12 +2329,12 @@
 
       case "loop": {
         const body = step.body || 1;
-        behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" min="1" max="96" aria-label="Steps to repeat" placeholder="body">`;
+        behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" ${limits(STEP_LIMITS.body)} aria-label="Steps to repeat" placeholder="body">`;
 
         timingHtml = `
-          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${step.periodMs || 1000}" min="100" max="60000" aria-label="Every (ms)" placeholder="periodMs">
+          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${step.periodMs || 1000}" ${limits(STEP_LIMITS.periodMs)} aria-label="Every (ms)" placeholder="periodMs">
           <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${step.durationMs || 10000}" min="100" max="120000" aria-label="For (ms)" placeholder="durationMs">
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${step.durationMs || 10000}" ${limits(STEP_LIMITS.loopMs)} aria-label="For (ms)" placeholder="durationMs">
           <span class="dome-rotate-label">ms total</span>
         `;
         break;
@@ -2296,35 +2342,29 @@
 
       case "random": {
         targetHtml = `<select class="step-field step-field-set" data-field="set" aria-label="Target">
-          <option value="ring" ${step.set === "ring" ? "selected" : ""}>ring</option>
-          <option value="pie" ${step.set === "pie" ? "selected" : ""}>pie</option>
-          <option value="all" ${step.set === "all" ? "selected" : ""}>all</option>
-          <option value="hold" ${step.set === "hold" ? "selected" : ""}>hold</option>
+          ${RANDOM_SETS.map((set) => `<option value="${set}" ${step.set === set ? "selected" : ""}>${set}</option>`).join("")}
         </select>`;
 
         behaviorHtml = `
           <select class="step-field step-field-mode" data-field="mode" aria-label="Action">
-            <option value="flutter" ${(step.mode || "flutter") === "flutter" ? "selected" : ""}>flutter</option>
-            <option value="open" ${step.mode === "open" ? "selected" : ""}>open</option>
-            <option value="close" ${step.mode === "close" ? "selected" : ""}>close</option>
+            ${RANDOM_MODES.map((mode) => `<option value="${mode}" ${(step.mode || "flutter") === mode ? "selected" : ""}>${mode}</option>`).join("")}
           </select>
           <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${step.distinct ? "checked" : ""} aria-label="Distinct"> Distinct</label>
         `;
 
         timingHtml = `
-          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" min="0" max="5000" aria-label="Move time (ms)" placeholder="moveMs">
+          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" ${limits(STEP_LIMITS.moveMs)} aria-label="Move time (ms)" placeholder="moveMs">
           <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" min="0" max="2000" aria-label="Jitter (ms)" placeholder="jitterMs">
+          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" ${limits(STEP_LIMITS.jitterMs)} aria-label="Jitter (ms)" placeholder="jitterMs">
           <span class="dome-rotate-label">ms</span>
         `;
         break;
       }
 
       case "audioCat":
-        const audioCategories = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
         behaviorHtml = `
           <select class="step-field step-field-category" data-field="category" aria-label="Category">
-            ${audioCategories.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
+            ${AUDIO_CATEGORIES.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
           </select>
           <select class="step-field step-field-fallback" data-field="fallback" aria-label="Fallback sound">
             ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${(step.fallback || "none") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
@@ -2986,23 +3026,9 @@
       step[field] = value;
     });
 
-    // Convert domeRotate UI fields (direction + speed) to signed speedPct
+    // The card's direction and speed are one signed speed on the step.
     if (step.type === "domeRotate") {
-      const direction = step.direction || "stop";
-      const speed = step.speed ?? 0;
-      const absSpeed = Math.abs(speed) || 0;
-
-      // Compute signed speedPct from direction and speed
-      if (direction === "stop") {
-        step.speedPct = 0;
-        step.durationMs = 0;  // Stop always has 0 duration
-      } else if (direction === "left") {
-        step.speedPct = -absSpeed;
-      } else if (direction === "right") {
-        step.speedPct = absSpeed;
-      }
-
-      // Clean up UI-only fields
+      Object.assign(step, turnOf(step.direction || "stop", step.speed ?? 0, step.durationMs));
       delete step.direction;
       delete step.speed;
     }
@@ -3793,18 +3819,6 @@
         if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { spanBeats: Number.isInteger(beats) ? beats : null });
       });
     });
-
-    const stepTypeDefaults = {
-      audio: { cmd: "$H" },
-      dome: { cmd: ":OP00" },
-      domeRotate: { speedPct: 0, durationMs: 0 },
-      loop: { body: 2, periodMs: 1846, durationMs: 14000 },
-      random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
-      audioCat: { category: "alert", fallback: "scream" },
-      gesture: { set: "ring", spread: "wave" },
-      sequence: {},
-      end: {},
-    };
 
     // Card expand/collapse listeners
     document.querySelectorAll(".step-card").forEach((card) => {
