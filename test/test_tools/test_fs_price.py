@@ -6,6 +6,9 @@ block count: that number moves whenever data/ does. The budget gate remains
 make check-build-budgets.
 """
 
+import contextlib
+import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -39,6 +42,87 @@ class PartitionResolution(unittest.TestCase):
         self.assertIn("--order", result.stderr)
 
 
+class WriteOrder(unittest.TestCase):
+    def test_name_is_the_sorted_walk_and_size_is_largest_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_bytes(b"a")
+            (root / "z.txt").write_bytes(b"z" * 50)
+            (root / "m").mkdir()
+            (root / "m" / "c.txt").write_bytes(b"c" * 10)
+            name = [path.relative_to(root).as_posix() for path in fs_price.ordered_entries(root, "name")]
+            size = [path.relative_to(root).as_posix() for path in fs_price.ordered_entries(root, "size")]
+        # A flat path sort would write m/c.txt before z.txt. The stager does not.
+        self.assertEqual(name, ["a.txt", "z.txt", "m", "m/c.txt"])
+        self.assertEqual(size, ["m", "z.txt", "m/c.txt", "a.txt"])
+
+
+def _builder(mount, *, formatted, read_size=1):
+    tail = "    fs.format()\n    fs.mount()\n" if formatted else ""
+    return f"""
+def other():
+    fs = LittleFS(mount=False)
+def build_fs_image(target, source, env):
+    fs = LittleFS(
+        block_size=block_size,
+        block_count=block_count,
+        read_size={read_size},
+        prog_size=1,
+        cache_size=block_size,
+        lookahead_size=32,
+        block_cycles=500,
+        name_max=64,
+        disk_version=disk_version,
+        mount={mount},
+    )
+{tail}
+"""
+
+
+class BuilderCall(unittest.TestCase):
+    def test_mounted_and_unmounted_calls(self):
+        self.assertTrue(fs_price.littlefs_mount(_builder(True, formatted=False)))
+        self.assertFalse(fs_price.littlefs_mount(_builder(False, formatted=True)))
+
+    def test_refuses_a_call_that_drifted(self):
+        cases = {
+            "read_size": _builder(True, formatted=False, read_size=16),
+            "mounted and formatted": _builder(True, formatted=True),
+            "unmounted without format": _builder(False, formatted=False),
+        }
+        for label, source in cases.items():
+            with self.subTest(label=label):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        fs_price.littlefs_mount(source)
+
+    def test_uri_selects_the_detached_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plain = root / "espressif32"
+            detached = root / "espressif32@src-abc"
+            plain.mkdir()
+            detached.mkdir()
+            (plain / ".piopm").write_text(json.dumps({"spec": {"uri": "https://example.test/new.zip"}}))
+            (detached / ".piopm").write_text(json.dumps({"spec": {"uri": "https://example.test/old.zip"}}))
+            found = fs_price.platform_dir_for_url(root, "https://example.test/old.zip")
+            self.assertEqual(found, detached)
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    fs_price.platform_dir_for_url(root, "https://example.test/missing.zip")
+
+    def test_installed_pins_disagree_on_mount(self):
+        try:
+            artoo = fs_price.platform_littlefs("artoo_esp32")
+            p4 = fs_price.platform_littlefs("firebeetle2")
+        except SystemExit as exc:
+            self.skipTest(str(exc))
+        self.assertEqual(artoo.version, "55.03.37")
+        self.assertTrue(artoo.mount)
+        self.assertEqual(p4.version, "55.03.311")
+        self.assertFalse(p4.mount)
+
+
 class ImageFixture(unittest.TestCase):
     def setUp(self):
         python = fs_price.penv_python("artoo_esp32")
@@ -51,6 +135,11 @@ class ImageFixture(unittest.TestCase):
         )
         if probe.returncode != 0:
             self.skipTest(f"littlefs is not importable from {python}")
+        try:
+            fs_price.platform_littlefs("artoo_esp32")
+            fs_price.platform_littlefs("firebeetle2")
+        except SystemExit as exc:
+            self.skipTest(str(exc))
 
     def test_both_orders_image_and_compare(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -77,6 +166,8 @@ class ImageFixture(unittest.TestCase):
                 self.assertIn("nested/c.txt", report)
             self.assertIn("order: name", name)
             self.assertIn("order: size", size)
+            self.assertIn("platform_version: 55.03.37", name)
+            self.assertIn("littlefs_mount: true", name)
 
             compared = subprocess.run(
                 [sys.executable, str(SCRIPT), "--env", "artoo_esp32", "--order", "name",
@@ -91,6 +182,8 @@ class ImageFixture(unittest.TestCase):
 
             p4 = self._run(stage, "name", env="firebeetle2")
             self.assertIn(f"partition_blocks: {0x9E0000 // 4096}", p4)
+            self.assertIn("platform_version: 55.03.311", p4)
+            self.assertIn("littlefs_mount: false", p4)
 
     def _run(self, stage: Path, order: str, env: str = "artoo_esp32") -> str:
         result = subprocess.run(

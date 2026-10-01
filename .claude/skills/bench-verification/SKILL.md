@@ -25,7 +25,7 @@ the cheapest axis and skipped the four the bench exists for.
 | Axis | What it means here | How it is checked |
 |---|---|---|
 | **1. The image is what we think** | `firmwareVersion` matches the intended commit; the filesystem image matches `fs-version.json`; no `-dirty` | Console + HTTP, first rows |
-| **2. UI and UX** | Does it look right, work right and read right - at **desktop width**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Headed Playwright, operator watching** (section 5) |
+| **2. UI and UX** | Does it look right, work right and read right - at **desktop width**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Playwright**: scripts headless, an agent's own session headed (section 5) |
 | **3. Performance** | Page load and first paint, whether a surface feels sluggish, SSE under concurrent clients, heap free / min / largest block, per-task stack headroom, fragmentation, admission-floor refusals | `/api/status` and `/api/profiler` rows, Playwright timings, resource-error counts |
 | **4. Regression** | What worked last time still works. Defects this repo has shipped stay fixed | **Replay the existing rows** - see below |
 | **5. API and console behaviour** | Routes answer truthfully, the Console catalog matches its pinned counts, guards and typing hold | Console `send`s |
@@ -59,8 +59,9 @@ close without the third:
 
 1. **Automated - the agents.** Every Console row, HTTP read, Playwright script,
    build and flash (asking before each device session), and the evidence
-   comment. The automated run (`make bench-auto`) is **headless**; any
-   Playwright session an agent drives by hand stays **headed** so the operator
+   comment. The automated run (`make bench-auto`) and every Playwright
+   script run to completion for its report are **headless**; a session an
+   agent drives by hand stays **headed** so the operator
    can watch along. Nothing in this phase waits on him - see section 5.
 2. **Hands-on - the operator.** He uses the new UI and functions himself on the
    running board, at desktop width, and takes every deferred live look. The
@@ -266,11 +267,15 @@ script over a `pause` whenever one can do the job (section 5).
 
 ## 5. The Playwright pass - the automated run headless, an agent's own session headed
 
-> **Standing operator instruction** (2026-09-27, revised 2026-09-29):
+> **Standing operator instruction** (2026-09-27, revised 2026-09-29, widened 2026-10-01):
 > - **The automated half, `make bench-auto`, runs headless.** It is unattended,
 >   runs every script, and its report is what gets read.
+> - **So does every other Playwright script run to completion for its report**
+>   (widened 2026-10-01): a worker's A/B, a regression or comparison run, any
+>   scripted check nobody steps through. Set `HEADLESS=true`.
 > - **Every Playwright session an agent drives by hand stays headed**: the MCP
->   browser, one script run for a visual check, a review browser. The operator
+>   browser, one script run for a visual check someone looks at, a review
+>   browser. The operator
 >   watches those to catch what no assertion was written for - something that
 >   looks wrong, or that he simply does not like. A headless run answers *"did
 >   anything throw"*; a watched run also answers *"is this good"*.
