@@ -1225,34 +1225,34 @@
           + motion;
       }
       case "domeRotate": {
-        const speed = Math.abs(step.speedPct ?? 0);
+        const speed = Math.abs(fieldOf(step, "speedPct"));
         const stopped = speed === 0;
-        return settingRow("Runs for", numberCell("durationMs", step.durationMs ?? 0, STEP_LIMITS.turnMs, "Runs for, in milliseconds"))
+        return settingRow("Runs for", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.turnMs, "Runs for, in milliseconds"))
           + settingRow("Way", segOf("way", [["left", "Left", stopped], ["right", "Right", stopped]], stopped ? "" : step.speedPct < 0 ? "left" : "right", "Way"))
           + settingRow("Speed", faderOf("speed", speed, STEP_LIMITS.speed, "Dome speed, percent"), `${speed}%`);
       }
       case "audio":
         return settingRow("Plays",
-          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd || "")}" placeholder="$H, $N, $D, $A..." data-picked="cmd" aria-label="Sound command">`);
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." data-picked="cmd" aria-label="Sound command">`);
       case "audioCat":
-        return settingRow("Plays", pillsOf("category", AUDIO_CATEGORIES.map((name) => [name, capital(name)]), step.category, "Sound category"))
-          + settingRow("Fallback", pillsOf("fallback", AUDIO_FALLBACK_SLOTS.map((slot) => [slot.value, esc(slot.label)]), step.fallback || "none", "Fallback sound"));
+        return settingRow("Plays", pillsOf("category", AUDIO_CATEGORIES.map((name) => [name, capital(name)]), fieldOf(step, "category"), "Sound category"))
+          + settingRow("Fallback", pillsOf("fallback", AUDIO_FALLBACK_SLOTS.map((slot) => [slot.value, esc(slot.label)]), fieldOf(step, "fallback"), "Fallback sound"));
       case "random": {
         // Same pick reuses the pick of the Random Flutter before it, so it is
         // offered only where there is one - or where the step already says it.
         const before = editorState.current.steps.slice(0, at).some((prior) => prior?.type === "random" && prior.set !== "hold");
         const sets = RANDOM_SETS.filter((set) => set !== "hold" || before || step.set === "hold")
           .map((set) => [set, set === "hold" ? "Same pick" : capital(set)]);
-        return settingRow("Set", segOf("set", sets, step.set, "Which panels it picks from"))
-          + settingRow("Action", segOf("mode", RANDOM_MODES.map((mode) => [mode, capital(mode)]), step.mode || "flutter", "What it does to the pick"))
-          + settingRow("Distinct", `<input class="switch" type="checkbox" data-picked="distinct"${step.distinct ? " checked" : ""} aria-label="Distinct">`)
-          + settingRow("Move", numberCell("moveMs", step.moveMs ?? 0, STEP_LIMITS.moveMs, "Move time, in milliseconds"))
-          + settingRow("Jitter", numberCell("jitterMs", step.jitterMs ?? 0, STEP_LIMITS.jitterMs, "Jitter, in milliseconds"));
+        return settingRow("Set", segOf("set", sets, fieldOf(step, "set"), "Which panels it picks from"))
+          + settingRow("Action", segOf("mode", RANDOM_MODES.map((mode) => [mode, capital(mode)]), fieldOf(step, "mode"), "What it does to the pick"))
+          + settingRow("Distinct", `<input class="switch" type="checkbox" data-picked="distinct"${fieldOf(step, "distinct") ? " checked" : ""} aria-label="Distinct">`)
+          + settingRow("Move", numberCell("moveMs", fieldOf(step, "moveMs"), STEP_LIMITS.moveMs, "Move time, in milliseconds"))
+          + settingRow("Jitter", numberCell("jitterMs", fieldOf(step, "jitterMs"), STEP_LIMITS.jitterMs, "Jitter, in milliseconds"));
       }
       case "loop":
-        return settingRow("Repeats", numberCell("body", step.body ?? 1, STEP_LIMITS.body, "Steps it repeats", "steps"))
-          + settingRow("Every", numberCell("periodMs", step.periodMs ?? 0, STEP_LIMITS.periodMs, "Every, in milliseconds"))
-          + settingRow("For", numberCell("durationMs", step.durationMs ?? 0, STEP_LIMITS.loopMs, "For, in milliseconds"));
+        return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), STEP_LIMITS.body, "Steps it repeats", "steps"))
+          + settingRow("Every", numberCell("periodMs", fieldOf(step, "periodMs"), STEP_LIMITS.periodMs, "Every, in milliseconds"))
+          + settingRow("For", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.loopMs, "For, in milliseconds"));
       default:
         return "";
     }
@@ -1731,7 +1731,7 @@
   const stepPreview = (step) => {
     switch (step.type) {
       case "audio":
-        return `Play sound (${step.cmd || "$H"})`;
+        return `Play sound (${fieldOf(step, "cmd")})`;
       case "dome": {
         const cmd = step.cmd || "";
         // Visual preset mode
@@ -1814,8 +1814,8 @@
         return `Dome command ${cmd || "@0T6"}`;
       }
       case "domeRotate": {
-        const speedPct = step.speedPct ?? 0;
-        const durationMs = step.durationMs ?? 0;
+        const speedPct = fieldOf(step, "speedPct");
+        const durationMs = fieldOf(step, "durationMs");
         if (speedPct === 0) {
           return "Stop dome (neutral)";
         }
@@ -1824,21 +1824,21 @@
         return `Rotate ${direction} at ${speed}% for ${durationMs}ms`;
       }
       case "loop": {
-        const body = step.body || 1;
-        const periodMs = step.periodMs || 1000;
-        const durationMs = step.durationMs || 10000;
+        const body = fieldOf(step, "body");
+        const periodMs = fieldOf(step, "periodMs");
+        const durationMs = fieldOf(step, "durationMs");
         return `Repeat next ${body} steps every ${periodMs}ms for ${durationMs}ms`;
       }
       case "random": {
         const setMap = { ring: "ring panels", pie: "pie panels", all: "all panels", hold: "hold" };
-        const set = step.set || "ring";
-        const moveMs = step.moveMs ?? 300;
+        const set = fieldOf(step, "set");
+        const moveMs = fieldOf(step, "moveMs");
         const setLabel = setMap[set] || set;
         return `Random flutter on ${setLabel} (move ${moveMs}ms)`;
       }
       case "audioCat": {
-        const category = step.category || "alert";
-        return `Play ${aOrAn(category)} sound (fallback ${audioFallbackLabel(step.fallback)})`;
+        const category = fieldOf(step, "category");
+        return `Play ${aOrAn(category)} sound (fallback ${audioFallbackLabel(fieldOf(step, "fallback"))})`;
       }
       case "sequence":
         return phraseName(step);
@@ -1898,6 +1898,11 @@
     jitterMs: [0, 2000],
   };
   const limits = ([min, max]) => `min="${min}" max="${max}"`;
+
+  // A field of a step as anything here reads it - an inspector row, a card,
+  // the words on a block: the step's own value, or what a step of its kind
+  // starts as. The one fallback, so no reader has a default of its own.
+  const fieldOf = (step, field) => step[field] ?? stepTypeDefaults[step.type]?.[field];
 
   const AUDIO_CATEGORIES = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
   // A Random Flutter's set - "hold" reuses the pick of the one before it
@@ -2260,8 +2265,8 @@
       case "visualPreset":
         return "Applies a dome visual preset";
       case "domeRotate": {
-        const speedPct = step.speedPct ?? 0;
-        const durationMs = step.durationMs ?? 0;
+        const speedPct = fieldOf(step, "speedPct");
+        const durationMs = fieldOf(step, "durationMs");
         if (speedPct === 0) {
           return "Stops dome rotation";
         }
@@ -2270,19 +2275,15 @@
         return `Rotates ${direction} at ${speed}% speed for ${durationMs}ms total`;
       }
       case "loop": {
-        const body = step.body || 1;
-        const periodMs = step.periodMs || 1000;
-        const totalMs = (periodMs * (step.durationMs || 10000)) / periodMs || step.durationMs || 10000;
-        return `Repeats ${body} step(s) every ${periodMs}ms for ~${totalMs}ms total`;
+        return `Repeats ${fieldOf(step, "body")} step(s) every ${fieldOf(step, "periodMs")}ms for ~${fieldOf(step, "durationMs")}ms total`;
       }
       case "random": {
-        const set = step.set || "ring";
-        const moveMs = step.moveMs ?? 300;
+        const set = fieldOf(step, "set");
+        const moveMs = fieldOf(step, "moveMs");
         return `Randomly moves ${set} panels with ${moveMs}ms move time`;
       }
       case "audioCat": {
-        const category = step.category || "alert";
-        return `Plays ${aOrAn(category)} sound`;
+        return `Plays ${aOrAn(fieldOf(step, "category"))} sound`;
       }
       case "end":
         return "Marks the end of the sequence";
@@ -2298,7 +2299,7 @@
 
     switch (step.type) {
       case "audio":
-        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
+        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
         break;
 
       case "dome": {
@@ -2690,8 +2691,8 @@
         // Ergonomic operator UI for dome rotation: direction (Left/Right/Stop) + speed + duration
         // Internal storage: speedPct (signed -100..100), durationMs
         // Direction is derived from speedPct sign: negative=left, positive=right, 0=stop
-        const rotateSpeedPct = step.speedPct ?? 0;
-        const rotateDurationMs = step.durationMs ?? 0;
+        const rotateSpeedPct = fieldOf(step, "speedPct");
+        const rotateDurationMs = fieldOf(step, "durationMs");
 
         // Determine direction from speedPct
         let direction = "stop";
@@ -2716,13 +2717,13 @@
       }
 
       case "loop": {
-        const body = step.body || 1;
+        const body = fieldOf(step, "body");
         behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" ${limits(STEP_LIMITS.body)} aria-label="Steps to repeat" placeholder="body">`;
 
         timingHtml = `
-          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${step.periodMs || 1000}" ${limits(STEP_LIMITS.periodMs)} aria-label="Every (ms)" placeholder="periodMs">
+          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${fieldOf(step, "periodMs")}" ${limits(STEP_LIMITS.periodMs)} aria-label="Every (ms)" placeholder="periodMs">
           <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${step.durationMs || 10000}" ${limits(STEP_LIMITS.loopMs)} aria-label="For (ms)" placeholder="durationMs">
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${fieldOf(step, "durationMs")}" ${limits(STEP_LIMITS.loopMs)} aria-label="For (ms)" placeholder="durationMs">
           <span class="dome-rotate-label">ms total</span>
         `;
         break;
@@ -2730,20 +2731,20 @@
 
       case "random": {
         targetHtml = `<select class="step-field step-field-set" data-field="set" aria-label="Target">
-          ${RANDOM_SETS.map((set) => `<option value="${set}" ${step.set === set ? "selected" : ""}>${set}</option>`).join("")}
+          ${RANDOM_SETS.map((set) => `<option value="${set}" ${fieldOf(step, "set") === set ? "selected" : ""}>${set}</option>`).join("")}
         </select>`;
 
         behaviorHtml = `
           <select class="step-field step-field-mode" data-field="mode" aria-label="Action">
-            ${RANDOM_MODES.map((mode) => `<option value="${mode}" ${(step.mode || "flutter") === mode ? "selected" : ""}>${mode}</option>`).join("")}
+            ${RANDOM_MODES.map((mode) => `<option value="${mode}" ${fieldOf(step, "mode") === mode ? "selected" : ""}>${mode}</option>`).join("")}
           </select>
-          <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${step.distinct ? "checked" : ""} aria-label="Distinct"> Distinct</label>
+          <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${fieldOf(step, "distinct") ? "checked" : ""} aria-label="Distinct"> Distinct</label>
         `;
 
         timingHtml = `
-          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" ${limits(STEP_LIMITS.moveMs)} aria-label="Move time (ms)" placeholder="moveMs">
+          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${fieldOf(step, "moveMs")}" ${limits(STEP_LIMITS.moveMs)} aria-label="Move time (ms)" placeholder="moveMs">
           <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" ${limits(STEP_LIMITS.jitterMs)} aria-label="Jitter (ms)" placeholder="jitterMs">
+          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${fieldOf(step, "jitterMs")}" ${limits(STEP_LIMITS.jitterMs)} aria-label="Jitter (ms)" placeholder="jitterMs">
           <span class="dome-rotate-label">ms</span>
         `;
         break;
@@ -2752,10 +2753,10 @@
       case "audioCat":
         behaviorHtml = `
           <select class="step-field step-field-category" data-field="category" aria-label="Category">
-            ${AUDIO_CATEGORIES.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
+            ${AUDIO_CATEGORIES.map((cat) => `<option value="${cat}" ${fieldOf(step, "category") === cat ? "selected" : ""}>${cat}</option>`).join("")}
           </select>
           <select class="step-field step-field-fallback" data-field="fallback" aria-label="Fallback sound">
-            ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${(step.fallback || "none") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
+            ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${fieldOf(step, "fallback") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
           </select>
         `;
         break;
@@ -3726,7 +3727,7 @@
     const addStepBtn = document.getElementById("seq-editor-add-step");
     if (addStepBtn) {
       addStepBtn.addEventListener("click", () => {
-        const newStep = { t: 0, type: "audio", cmd: "$H" };
+        const newStep = { t: 0, type: "audio", ...stepTypeDefaults.audio };
         const steps = editorState.current.steps;
         const terminalIdx = steps.findIndex((step) => step.type === "end");
         historyPush();
