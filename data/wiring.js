@@ -1184,6 +1184,13 @@
   const cardSource = document.getElementById("wiring-product-cards");
   const productCards = cardSource ? JSON.parse(cardSource.textContent) : null;
 
+  // THIS LIST HAS A SECOND HOME. data/configuration.html declares the same
+  // pairing on its picker hosts, as data-component-family beside
+  // data-component-toggle (the toggle's element id there, its GET /api/config
+  // key here). The Component Picker learns it only from those hosts when
+  // Configuration mounts it, and Wiring does not mount Configuration, so it
+  // cannot be read from the picker here. A family added to Configuration is
+  // added to this list too, or its product has no wiring card.
   const PRODUCT_FAMILIES = [
     { family: "body_controller" },
     { family: "foot_drive", toggle: "drive" },
