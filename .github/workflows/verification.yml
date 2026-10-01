@@ -8,15 +8,24 @@ on:
     branches:
       - main
     # A commit that only touches Markdown cannot change what the firmware
-    # does: no .md file is shipped in the filesystem image (data/ has none)
-    # and none is compiled in. Only push is filtered here -- a pull request
-    # is filtered per-PR in the "Decide whether code changed" step, because
-    # GitHub evaluates pull_request path filters against the whole PR diff,
-    # not the commit just pushed, so they would never skip anything on a
-    # branch that also carries code.
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
+    # does, with one exception: docs/spec-sheets/. Each sheet's wiring_card
+    # block is generated into the Wiring page's partial under data/
+    # (tools/generate_wiring_cards.py, #458), so a sheet edited without its
+    # partial regenerated is a stale filesystem image, and the drift check
+    # that catches it has to run. No other .md file is shipped in the image or
+    # compiled in. The list reads top down and the last match wins:
+    # everything, minus Markdown and LICENSE, plus the spec sheets again.
+    #
+    # Only push is filtered here -- a pull request is filtered per-PR in the
+    # "Decide whether code changed" step, because GitHub evaluates
+    # pull_request path filters against the whole PR diff, not the commit
+    # just pushed, so they would never skip anything on a branch that also
+    # carries code.
+    paths:
+      - '**'
+      - '!**/*.md'
+      - '!LICENSE'
+      - 'docs/spec-sheets/**'
   workflow_dispatch:
 
 # Workflow-level default: read-only. Pull-requests: write is scoped to the job
@@ -56,6 +65,9 @@ jobs:
           # runs the full set. The list is deliberately an allow-list of two
           # harmless extensions rather than a deny-list of source directories:
           # a new source directory then fails closed, running everything.
+          # A spec sheet is Markdown that generates part of data/ (#458); the
+          # drift check holding it to its partial is one of the checks that
+          # still run on a documentation-only pull request.
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "Not a pull request - running every check."
