@@ -46,6 +46,28 @@ board rather than assume it matches ours.** All toolchain guidance below is
 written for the v1.x family as a whole; the only split that changes
 configuration is v1.x versus v3.x.
 
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "firebeetle2"
+  supply: "5 V DC, on USB-C or VIN"
+  draw: "80 mA idle. WiFi peaks at 1330 mA as an access point, 1050 mA joined to a network"
+  logic: "3.3 V only"
+  wires:
+    - { from: "VIN", to: "a 5 V supply", note: "sized for the WiFi peak" }
+  hazards:
+    - "No GPIO header pin takes 5 V. The 5 V rail is power only."
+  source: "Electrical Summary"
+```
+
 ## Boards Covered
 
 | Item | SKU | Notes |

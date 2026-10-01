@@ -17,6 +17,8 @@
 // and the lanes' switches from the Component Toggles (GET /api/config).
 // Nothing here keeps a copy of one board's pin numbers, which is the defect a
 // Board Lane exists to close (include/board_lanes.inc).
+// The product wiring cards at its foot are generated too, at build time: the
+// wiring cards the spec sheets carry, where the image holds them (#458).
 //
 // ONE GENERATOR, TWO CALLERS. wiringDocument() returns the whole sheet as
 // markup and nothing else -- no DOM, no fetches, no stylesheet. The screen
@@ -84,6 +86,8 @@
   const PLATES = Object.freeze({
     wires: "The wires",
     rail: "Power wiring",
+    // Only an image that carries the product wiring cards has this plate.
+    products: "Product wiring",
   });
 
   // ---------------------------------------------------------------------------
@@ -496,12 +500,16 @@
     note: "signal on the pin, ground to the board's own ground",
   });
 
+  // Where a Board Lane is routed, as the firmware reports it: on its wire in
+  // the drawing, and beside its product's wiring card.
+  const laneDetail = (lane) => `UART ${lane.uart} - TX ${lane.tx} / RX ${lane.rx}`;
+
   const laneWire = (lane, order) => ({
     key: lane.key,
     ink: wireInk(order, `lane:${lane.key}`),
     pair: true,
     silk: lane.label,
-    detail: `UART ${lane.uart} - TX ${lane.tx} / RX ${lane.rx}`,
+    detail: laneDetail(lane),
     name: lane.name,
     role: "serial, both ways",
     note: laneNote(lane),
@@ -509,10 +517,8 @@
 
   // A UART is crossed: this board's TX lands on the far end's RX (docs/pin_map.md,
   // "Dome Control slip ring wiring").
-  const laneNote = (lane) =>
-    lane.shared
-      ? "shares its UART with the dome link, RX only"
-      : "TX to the far end's RX, RX to its TX, and ground";
+  const LANE_SHARED = "shares its UART with the dome link, RX only";
+  const laneNote = (lane) => (lane.shared ? LANE_SHARED : "TX to the far end's RX, RX to its TX, and ground");
 
   // Only the wires a builder has run are drawn (operator, 2026-09-29 on #411:
   // "the drawing should only draw the actaul lines (wires) currently
@@ -617,6 +623,70 @@
     `idle draw.</div>`;
 
   // ---------------------------------------------------------------------------
+  // Product wiring: how to wire and power each product on the droid (#458)
+  //
+  // One card for each fitted product that has one. A card's facts - supply,
+  // draw, logic level, each wire, the hazards - are the wiring card its spec
+  // sheet carries, generated into the image (tools/generate_wiring_cards.py)
+  // and handed over in the model as `cards`, keyed by Component Registry id.
+  // Nothing here restates one. An image built without them hands over none,
+  // and then there is no section at all: no heading and no placeholder (ADR
+  // 0065, amended 2026-09-30).
+  //
+  // WHICH PRODUCTS are fitted is the Component Picker's answer, read by the
+  // screen caller (fittedProducts() below) and handed over as `products`.
+  //
+  // THE PINS BESIDE A CARD ARE THE RUNNING BOARD'S, never card text: a card is
+  // per product and pins are per board. They are the same answers the drawing
+  // is made from - the product's Board Lane with the label the board prints
+  // for it, or the Outputs it answers for - so a card and the wire above it
+  // cannot name two different pins. A product no lane and no Output reports
+  // (the dome ESC, the RC receiver: UNSEEN below) gets no pins line.
+  //
+  // The markup is plain: a heading, a definition list, two lists. The saved
+  // bench copy has no stylesheet, and this is what reads on paper without one.
+  // ---------------------------------------------------------------------------
+  const productPins = (product, model) => {
+    const lane = product.lane ? loomRows(model).find((each) => each.key === product.lane) : null;
+    // A lane that shares its UART says so here in the drawing's own words,
+    // so the pins beside a card never read as a link of the product's own.
+    if (lane) return [lane.label, laneDetail(lane), lane.shared ? LANE_SHARED : ""].filter(Boolean);
+    if (!product.outputs) return [];
+    // An Output Address opens with the protocol that reaches it (`ledc:3`),
+    // which is the protocol the product's registry row declares.
+    return (model.outputs || [])
+      .filter((output) => output.address.startsWith(`${product.outputs}:`))
+      .map((output) => output.name);
+  };
+
+  const cardFact = (term, html) => `<dt>${esc(term)}</dt><dd>${html}</dd>`;
+
+  const productCardHtml = (product, card, model) => {
+    const pins = productPins(product, model);
+    const wires = card.wires.map((wire) =>
+      `<li><b>${esc(wire.from)}</b> to ${esc(wire.to)}` +
+      (wire.note ? ` <span class="wcard-note">- ${esc(wire.note)}</span>` : "") +
+      `</li>`).join("");
+    const hazards = card.hazards.map((hazard) => `<li>${esc(hazard)}</li>`).join("");
+    return (
+      `<section class="wcard" data-product="${escAttr(product.id)}">` +
+      `<h3 class="wcard-name">${esc(product.name)}</h3>` +
+      `<dl class="wcard-facts">` +
+      (pins.length ? cardFact("Pins", `<span class="wcard-pins">${pins.map(esc).join(" · ")}</span>`) : "") +
+      cardFact("Supply", esc(card.supply)) +
+      cardFact("Draw", esc(card.draw)) +
+      cardFact("Logic", esc(card.logic)) +
+      (wires ? cardFact("Wires", `<ul>${wires}</ul>`) : "") +
+      (hazards ? cardFact("Hazards", `<ul class="wcard-hazards">${hazards}</ul>`) : "") +
+      `</dl></section>`
+    );
+  };
+
+  // The fitted products this image carries a card for, in the order given.
+  const cardedProducts = ({ cards, products = [] } = {}) =>
+    products.filter((product) => cards && Object.hasOwn(cards, product.id));
+
+  // ---------------------------------------------------------------------------
   // wiringDocument()
   // The whole sheet, as markup, from one read of the droid. Pure: the minute it
   // is stamped with arrives in the model as a sheetStamp() string, so the
@@ -631,6 +701,7 @@
     const wires = sheetWires(model);
     // The count is the lines drawn, and the Outputs left free beside it.
     const free = (model.outputs || []).filter((output) => !hasPart(output)).length;
+    const carded = cardedProducts(model);
 
     return {
       promise: PROMISE,
@@ -649,6 +720,10 @@
       wiresHtml:
         (wires.length ? wiresDiagramHtml(wires, made, boardName) : `<p class="hint">Nothing is wired yet.</p>`) +
         pinsHtml(model),
+      // Empty when no fitted product has a card, which is every droid on an
+      // image built without them: both callers then leave the section out.
+      productsSummary: plural(carded.length, ["product", "products"]),
+      productsHtml: carded.map((product) => productCardHtml(product, model.cards[product.id], model)).join(""),
     };
   };
 
@@ -672,7 +747,8 @@
   //
   // WHAT IT LEAVES OUT: everything that writes - the part-first picker is
   // the screen's, mounted beside the sheet and never made by the generator. The bench copy is the wires and their power
-  // (operator, 2026-09-19 on #411).
+  // (operator, 2026-09-19 on #411), and it ends with the product wiring cards
+  // where the image carries them (#458).
   //
   // `boardArt` is the one thing the file is handed besides the sheet: the
   // board's picture, already made standalone by the caller (boardArtForFile()),
@@ -695,6 +771,9 @@
       `<p>${sheet.promiseHtml}</p>` +
       `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.wiresSummary}</p>${pictured(sheet.wiresHtml)}` +
       `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
+      (sheet.productsHtml
+        ? `<h2>${esc(sheet.plates.products)}</h2><p>${sheet.productsSummary}</p>${sheet.productsHtml}`
+        : "") +
       "</body></html>\n"
     );
   };
@@ -1084,6 +1163,65 @@
   const BOARD_GPIO_PRODUCT = "esp32_gpio_ledc";
   const boardArtId = () => window.ComponentPicker?.artIdFor?.(BOARD_GPIO_PRODUCT) || null;
 
+  // ---------------------------------------------------------------------------
+  // The product wiring cards, and which products are on the droid (#458)
+  //
+  // The cards are in this page's own document where the image carries them,
+  // inlined at build time from the asset set's partial, and nowhere where it
+  // does not. That is the whole test: this file never asks which board it is
+  // on (ADR 0065). A card that will not parse is a broken build, and it fails
+  // here, loudly, rather than drawing a page that quietly lost its hazards.
+  //
+  // Which product is fitted in a family is the Component Picker's answer, the
+  // one Configuration shows (productOf()): the family's Component Member where
+  // it has one, else the one product this image carries for it, and for the
+  // Radio Controller the radio and the RC Receiver it talks to. A family
+  // with a Component Toggle is on the droid only while that toggle is on, so
+  // a family answered Not fitted has no card. The families are listed in the
+  // order Configuration asks them, by their Component Registry ids; no
+  // product is named here.
+  // ---------------------------------------------------------------------------
+  const cardSource = document.getElementById("wiring-product-cards");
+  const productCards = cardSource ? JSON.parse(cardSource.textContent) : null;
+
+  // THIS LIST HAS A SECOND HOME. data/configuration.html declares the same
+  // pairing on its picker hosts, as data-component-family beside
+  // data-component-toggle (the toggle's element id there, its GET /api/config
+  // key here). The Component Picker learns it only from those hosts when
+  // Configuration mounts it, and Wiring does not mount Configuration, so it
+  // cannot be read from the picker here. A family added to Configuration is
+  // added to this list too, or its product has no wiring card.
+  const PRODUCT_FAMILIES = [
+    { family: "body_controller" },
+    { family: "foot_drive", toggle: "drive" },
+    { family: "dome_rotation", toggle: "domeEsc" },
+    { family: "dome_controller", toggle: "protoR2link" },
+    { family: "sound", toggle: "audio" },
+    // The one family whose product is reached on the Outputs.
+    { family: "body_servo_controller", outputs: true },
+  ];
+
+  const fittedProducts = () => {
+    const picker = window.ComponentPicker;
+    if (!productCards || !picker?.answered?.()) return [];
+    const toggles = componentIndex(components);
+    const found = [];
+    PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false }) => {
+      if (toggle && !switchedOn(toggles, toggle)) return;
+      const part = picker.productOf(family);
+      if (!part) return;
+      // A Board Lane's key is its Component Toggle's, folded to lower case
+      // (componentIndex() above).
+      found.push({ id: part.id, name: part.name, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
+    });
+    if (!picker.isRadioNotFitted()) {
+      [picker.chosenPart("radio_controller"), picker.chosenReceiverPart()].forEach((part) => {
+        if (part) found.push({ id: part.id, name: part.name, lane: "", outputs: "" });
+      });
+    }
+    return found;
+  };
+
   const model = () => ({
     parts: window.DroidParts?.parts || [],
     outputs: window.PAOutputs.list(),
@@ -1103,6 +1241,7 @@
   write("wiring-rail", railHtml());
   write("wiring-wires-heading", esc(PLATES.wires));
   write("wiring-rail-heading", esc(PLATES.rail));
+  write("wiring-products-heading", esc(PLATES.products));
 
   // And under the sheet the part-first picker, where a Part is put on an
   // Output, moved with the question first, or taken off, and what is on its
@@ -1180,10 +1319,17 @@
   // surface last read the droid, or when its sheet was last saved - so a
   // screenshot of them says when it was true, the same as the saved copy does.
   const paint = (stamp = sheetStamp()) => {
-    const sheet = wiringDocument({ ...model(), stamp });
+    // The cards ride the sheet's model and not model(): the list of what does
+    // not line up reads model() on every Live Reading frame and no card.
+    const sheet = wiringDocument({ ...model(), cards: productCards, products: fittedProducts(), stamp });
     write("wiring-wires-summary", sheet.wiresSummary);
     write("wiring-wires", sheet.wiresHtml);
     fillBoardArt();
+    // The product wiring plate is in the document only where the image carries
+    // the cards, and shows only while a fitted product has one.
+    write("wiring-products-summary", sheet.productsSummary);
+    write("wiring-products", sheet.productsHtml);
+    document.getElementById("wiring-products-card")?.classList.toggle("hidden", sheet.productsHtml === "");
     paintLineUp();
     return sheet;
   };

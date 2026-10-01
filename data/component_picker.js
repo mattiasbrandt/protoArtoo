@@ -703,6 +703,14 @@
     return partsOf("radio_controller").find((part) => isReceiverRow(part) && part.protocol === wire) || null;
   };
 
+  // The product a family holds on the droid, whichever way the family answers
+  // (Wiring's product cards, #458): its Component Member where the family has
+  // one, else the one product this image can drive. A family with a member is
+  // never answered from the lineup: an image carrying a single sound module
+  // would otherwise name a module the builder never chose. null for none, and
+  // until the lineup and the config have both answered.
+  const productOf = (family) => (MEMBER_FIELDS[family] ? chosenPart(family) : fittedPart(family));
+
   const shownCard = (part) => {
     const plate = element("div", "droid-build-plate component-plate is-chosen component-plate-shown");
     plate.dataset.option = part.id;
@@ -750,6 +758,7 @@
     chosenPart,
     chosenReceiverPart,
     fittedPart,
+    productOf,
     isRadioNotFitted,
     footDriveReportsFeedback,
     shownCard,

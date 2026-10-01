@@ -68,7 +68,7 @@ test that would settle them.
 > module. The driver makes them up, and the Sound page shows one of them as a
 > number the API's own enumeration does not define.**
 >
-> `include/component_registry.inc:172-176` declares `AUDIO_CAP_DEVICE_TYPE` and
+> `include/component_registry.inc:225-229` declares `AUDIO_CAP_DEVICE_TYPE` and
 > `AUDIO_CAP_CURRENT_TRACK`. `data/sound.js:343-345` therefore **shows** the
 > Device and Current-track rows. But `queryModuleState()` hardcodes
 > `out.device = 0x03` (`src/drivers/audio_chirp.cpp:628`, and again at `:702`
@@ -85,6 +85,32 @@ test that would settle them.
 > part; this one is a PCB you have made. That is not a reason against it -- it
 > is the reason this sheet leans on firmware source rather than a datasheet, and
 > the reason Open Item 1 asks what the Component Picker card should say.
+
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "chirp"
+  supply: "5 V on the +5V pin or the screw pads, or USB-C: the POWER SELECT jumper picks"
+  draw: "UNKNOWN"
+  logic: "3.3 V"
+  wires:
+    - { from: "TX", to: "the board's sound RX", note: "crossed" }
+    - { from: "RX", to: "the board's sound TX", note: "crossed" }
+    - { from: "G", to: "the board's ground", note: "the grounds must be common" }
+    - { from: "+5V", to: "a 5 V supply" }
+    - { from: "3.5 mm jack", to: "an amplifier", note: "no amplifier on the module" }
+  hazards:
+    - "The droid talks 9600 only, and the stock firmware talks 115200. Hold Prev and press Play/Stop until the module says 9600."
+  source: "2.1, 2.2, 6.1, 6.2"
+```
 
 ## Where this sits in the lineup
 
@@ -339,7 +365,7 @@ interface designed for its competitor -- which is a compliment to the interface.
 
 | Field | Value | Source |
 | --- | --- | --- |
-| Registry value | **20** | `include/component_registry.inc:172` |
+| Registry value | **20** | `include/component_registry.inc:225` |
 | Registry id | `chirp` | same |
 | Operator-visible name | **CHIRP Audio Trigger** | same |
 | Category | `COMPONENT_CATEGORY_SOUND` | same |
@@ -1205,7 +1231,7 @@ on both sides; none has been captured off the wire.
 
 ### 13.1 REPORTED -- two declared capabilities are fabricated, and one prints an undefined value
 
-`include/component_registry.inc:172-176` declares `AUDIO_CAP_DEVICE_TYPE` and
+`include/component_registry.inc:225-229` declares `AUDIO_CAP_DEVICE_TYPE` and
 `AUDIO_CAP_CURRENT_TRACK`. Neither is answered by the module:
 
 - `src/drivers/audio_chirp.cpp:628` and `:702` set `out.device = 0x03`.

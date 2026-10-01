@@ -2,7 +2,7 @@
 
 Working spec for the **HotRC DS-650** as the `supported` Radio Controller member
 ([#389](https://github.com/mattiasbrandt/protoArtoo/issues/389)), reached over
-the **SBUS** Component Protocol, registered at `include/component_registry.inc:115`
+the **SBUS** Component Protocol, registered at `include/component_registry.inc:148`
 as part id **3**.
 
 Research date 2026-09-12. Every number in this document was read this session
@@ -53,6 +53,28 @@ HotRC profile-level -- is unchanged, and this sheet is the third of those.
 > `tasks/phase5-tasks.md:2790` records the result: *"**Final HOTRC binding
 > profile:** `min=172, center=992, max=1811` -- all channels."* There is no
 > HotRC-specific calibration table in firmware, and there should not be one.
+
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "hotrc_ds650"
+  supply: "built-in 1S lithium, 1500 mAh, charged over USB-C"
+  draw: "UNKNOWN. The 1200 mAh handset before it ran out inside a field day"
+  logic: "none: it reaches the droid by radio, through its receiver"
+  wires: []
+  hazards:
+    - "CCS holds the throttle with your thumb off the stick. The droid keeps going and cannot tell."
+    - "The handset will not switch off while its receiver has power. Power the droid down first."
+  source: "5.1, 5.3"
+```
 
 ## Where this sits in the lineup
 
@@ -1011,7 +1033,7 @@ control; `:583` does the same for RC mapping persistence across reboot.
 ## 12. Agent Lookup Quick Reference
 
 - Field: Component Protocol. Required value: **`sbus`**.
-- Field: Registry row. Required value: `include/component_registry.inc:115`, part id **3**, id `hotrc_ds650`, operator-visible name **"HotRC DS-650"**.
+- Field: Registry row. Required value: `include/component_registry.inc:148`, part id **3**, id `hotrc_ds650`, operator-visible name **"HotRC DS-650"**.
 - Field: Lineup status. Required value: **`supported`**. Capabilities bitmask **0** -- nothing to ask, not unknown.
 - Field: Channels the handset transmits. Required value: **6** (CH1-CH2 proportional, CH3-CH6 buttons). CH7-CH16 carry nothing.
 - Field: Receiver protoArtoo runs. Required value: **HotRC SBUS-A**, 16-channel SBUS, 1.7 g, DC 4-9 V, 35 mA.

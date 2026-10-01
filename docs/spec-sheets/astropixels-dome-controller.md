@@ -6,7 +6,7 @@ Poulson -- as the `supported` **Dome Controller** lineup member
 [#303](https://github.com/mattiasbrandt/protoArtoo/issues/303) and
 [#316](https://github.com/mattiasbrandt/protoArtoo/issues/316)), reached over the
 Component Protocol the registry calls `protor2link`, and registered at
-`include/component_registry.inc:139` as part id **13**.
+`include/component_registry.inc:180` as part id **13**.
 
 > [!NOTE]
 > **The Component Registry is not on `main` yet.** `include/component_registry.inc`
@@ -48,6 +48,33 @@ or bench test that would settle them.
 > chooser, and getting it wrong looks like a dome that lights up beautifully and
 > ignores the body completely.
 
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "astropixels_plus"
+  supply: "clean 5 V, 1 A minimum: best from a buck converter in the dome"
+  draw: "about 700 mA in normal use, the vendor's estimate. Measured is UNKNOWN"
+  logic: "3.3 V"
+  wires:
+    - { from: "T", to: "the board's dome link RX", note: "crossed, through the slip ring" }
+    - { from: "R", to: "the board's dome link TX", note: "crossed, through the slip ring" }
+    - { from: "G", to: "the board's ground", note: "common ground is mandatory" }
+    - { from: "V", to: "nothing", note: "no power crosses the slip ring" }
+  hazards:
+    - "V on the dome header stays unconnected. Two supplies joined through the slip ring feed each other."
+    - "A freshly flashed dome talks 2400 and the body talks 9600. Set mserial2 to 9600 on the dome's Setup page, or the link stays silent."
+    - "The USB port on its ESP32 is fragile. Power a fitted dome from the screw terminal."
+  source: "5.1, 7.1, 7.2, 13.5"
+```
+
 ## Where this sits in the lineup
 
 The **Dome Controller** category holds two products, and a builder picks one:
@@ -65,7 +92,7 @@ today. Where they differ, Section 14 says how -- and
 
 > [!NOTE]
 > **The registry row names the firmware, not the product.**
-> `include/component_registry.inc:139` calls part 13 **"AstroPixels Plus"**, and
+> `include/component_registry.inc:180` calls part 13 **"AstroPixels Plus"**, and
 > that is the string a builder reads on the Component Picker card. What they
 > bought is an **AstroPixels** set; AstroPixelsPlus is firmware they then chose
 > to flash onto it. Recorded here as drift rather than corrected: the row's
@@ -1475,7 +1502,7 @@ Section 10 is the difference list from the other side and it is not short.
 | What is the product? | AstroPixels: 9 PCBs, WS2812B, GBP 80, Darren Poulson | 2 |
 | What is AstroPixelsPlus? | third-party firmware for it, by Mimir Reynisson | 6 |
 | Which firmware does protoArtoo need? | `mattiasbrandt/AstroPixelsPlus` | 6.2 |
-| Registry row | `include/component_registry.inc:139`, part id 13, `protor2link`, `supported`, caps 0, no gate, always included | Lineup |
+| Registry row | `include/component_registry.inc:180`, part id 13, `protor2link`, `supported`, caps 0, no gate, always included | Lineup |
 | Dome MCU | 30-pin ESP32 devkit, `board = esp32dev`, Arduino core 2.0.x only | 2.2 |
 | LED total | 269 WS2812B | 2.3 |
 | Supply | 5 V, >= 1 A, ~700 mA typical | 5.1 |

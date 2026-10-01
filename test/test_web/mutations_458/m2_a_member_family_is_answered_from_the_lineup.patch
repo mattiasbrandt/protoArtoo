@@ -1,0 +1,13 @@
+diff --git i/data/component_picker.js w/data/component_picker.js
+index 375a954b..1157f857 100644
+--- i/data/component_picker.js
++++ w/data/component_picker.js
+@@ -709,7 +709,7 @@
+   // never answered from the lineup: an image carrying a single sound module
+   // would otherwise name a module the builder never chose. null for none, and
+   // until the lineup and the config have both answered.
+-  const productOf = (family) => (MEMBER_FIELDS[family] ? chosenPart(family) : fittedPart(family));
++  const productOf = (family) => (chosenPart(family) || fittedPart(family));
+ 
+   const shownCard = (part) => {
+     const plate = element("div", "droid-build-plate component-plate is-chosen component-plate-shown");
