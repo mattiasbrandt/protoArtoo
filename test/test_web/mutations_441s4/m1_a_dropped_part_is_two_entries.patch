@@ -1,0 +1,15 @@
+diff --git i/data/seq.js w/data/seq.js
+index ca226aa1..0ea2c105 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -1501,7 +1501,9 @@
+         { t: Math.min(at + DROPPED_OPEN_MS, last), type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+       ];
+       historyPush();
+-      steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
++      steps.splice(endAt === -1 ? steps.length : endAt, 0, made[0]);
++      historyPush();
++      steps.splice(endAt === -1 ? steps.length : endAt + 1, 0, made[1]);
+       landed(made);
+       return;
+     }

@@ -1,0 +1,14 @@
+diff --git i/data/seq_timeline.js w/data/seq_timeline.js
+index 13a5e718..d82c34aa 100644
+--- i/data/seq_timeline.js
++++ w/data/seq_timeline.js
+@@ -1142,8 +1142,7 @@
+       if (point && editing() && !drag) {
+         const track = ruler.getBoundingClientRect();
+         const lanes = grid.getBoundingClientRect();
+-        const over = track.width > 0 && point.clientX >= track.left && point.clientX <= track.right &&
+-          point.clientY >= lanes.top && point.clientY <= lanes.bottom;
++        const over = track.width > 0 && point.clientX >= track.left && point.clientX <= track.right;
+         if (over) {
+           const at = Math.round(msFrom(point));
+           const near = snapTargets({ writes: [] })
