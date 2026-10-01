@@ -27,11 +27,14 @@
 //     RC channel off, and no later save from this page turns a channel back on
 //     from a tick it still held; a droid holding it reads Not fitted in both
 //     homes (CONTEXT.md "Radio Controller", operator 2026-09-29 on #369).
+//   - a family with no Component Member names the product on the droid only
+//     once the lineup has answered, and never guesses one where there is a
+//     choice: other surfaces draw from that answer (Wiring's cards, #458).
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { ready, configured } from "./helpers/configuration_surface.js";
+import { boot, ready, configured } from "./helpers/configuration_surface.js";
 
 test("a roadmap card is not a control, and pressing it reaches the droid never", async () => {
   const env = await ready();
@@ -134,4 +137,16 @@ test("a droid with no radio fitted reads Not fitted in both homes", async () => 
   assert.ok(env.plate("radio_controller", "not-fitted").classList.contains("is-chosen"));
   assert.equal(env.plate("radio_controller", "hotrc_ds650").classList.contains("is-chosen"), false);
   assert.equal(env.railAnswer("rc"), "Not fitted");
+});
+
+test("a family with no member names its fitted product only once the lineup has answered, and never where there is a choice", async () => {
+  const env = boot();
+  const picker = env.window.ComponentPicker;
+  assert.equal(picker.fittedPart("foot_drive"), null, "not known yet is not a product");
+  await env.runSections();
+  await env.settle();
+
+  assert.equal(picker.fittedPart("foot_drive")?.id, "hoverboard");
+  assert.equal(picker.fittedPart("dome_rotation")?.id, "isdt_esc70", "the roadmap row beside it is not on the droid");
+  assert.equal(picker.fittedPart("sound"), null, "three sound modules are a choice, answered by chosenPart()");
 });

@@ -169,6 +169,15 @@
   // (src/web/api_config_apply.cpp), so this is the same rule, not a second one.
   const isSelectable = (part) => part.status === KIND_SUPPORTED && part.included === true;
 
+  // The product on the droid in a family with no Component Member (Foot Drive,
+  // Dome Rotation, Dome Controller): the one row of it this image can drive.
+  // null until the lineup has answered, and null for none or for more than
+  // one - a family with a choice is answered by chosenPart(), not guessed here.
+  const fittedPart = (family) => {
+    const selectable = partsOf(family).filter(isSelectable);
+    return selectable.length === 1 ? selectable[0] : null;
+  };
+
   const toggleFor = (entry) => (entry.toggleId ? document.getElementById(entry.toggleId) : null);
 
   // The Radio Controller has no Component Toggle: its Not fitted answer is the
@@ -205,8 +214,7 @@
     if (member) return member.saved(config) || null;
     // A toggle and no member: the family has one product this image drives,
     // and the toggle being on is that product being fitted (ADR 0042).
-    const selectable = partsOf(entry.family).filter(isSelectable);
-    return selectable.length === 1 ? selectable[0].id : null;
+    return fittedPart(entry.family)?.id || null;
   };
 
   // The state of one card, and the only thing the badge reads.
@@ -680,16 +688,18 @@
   // capability word, DRIVE_CAP_REPORTS_FEEDBACK (include/drive_capabilities.h,
   // #446), mirrored because a page cannot include a header. The family has no
   // Component Member, so the lineup's supported, included row is the one on
-  // the droid. null until the lineup has answered; false for none, or for a
-  // lineup that cannot say. data/drive.js reads the same bit for its wheel
-  // controller card (fittedFootDriveReportsFeedback()), from a lineup read of
-  // its own, because Foot Drive does not load this file.
+  // the droid (fittedPart()). null until the lineup has answered; false for
+  // none, or for a lineup that cannot say. data/drive.js reads the same bit
+  // for its wheel controller card (fittedFootDriveReportsFeedback()), from a
+  // lineup read of its own, because Foot Drive does not load this file.
   const DRIVE_CAP_REPORTS_FEEDBACK = 0x01;
   const footDriveReportsFeedback = () => {
+    // Asked here, not left to fittedPart(): its null is "not known yet" and
+    // "none" alike, and this answer keeps the two apart.
     if (!lineup) return null;
-    const fitted = partsOf("foot_drive").filter((part) => part.status === KIND_SUPPORTED && part.included === true);
-    if (fitted.length !== 1) return false;
-    return (Number(fitted[0].capabilities) & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;
+    const fitted = fittedPart("foot_drive");
+    if (!fitted) return false;
+    return (Number(fitted.capabilities) & DRIVE_CAP_REPORTS_FEEDBACK) !== 0;
   };
 
   // artIdFor and artPartFor are exported for Wiring, whose diagram pictures and
@@ -705,6 +715,7 @@
     answered,
     chosenPart,
     chosenReceiverPart,
+    fittedPart,
     isRadioNotFitted,
     footDriveReportsFeedback,
     shownCard,
