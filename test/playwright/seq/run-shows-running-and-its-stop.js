@@ -15,8 +15,9 @@
 //
 // WHAT IT PROVES:
 //   1  with nothing started here, the run record is not read at all;
-//   2  Test on the row: the row says Running, with the lamp, and offers
-//      Stop DM:GREET in place of Test;
+//   2  Test on the row, pressed twice in a row: one run is sent, the row
+//      says Running, with the lamp, offers Stop DM:GREET in place of Test,
+//      and its own line under it is clear;
 //   3  it still does after the droid has answered with the earlier run's
 //      record, and once the run's own record is there;
 //   4  the run's Stop is not the estop's red;
@@ -29,7 +30,10 @@
 //      strip says Running DM:GREET, with its Stop;
 //   9  once that run has ended too, the run record is not read again;
 //   10 a run the droid accepts and never starts stops reading as running, and
-//      the row says "The droid did not start DM:GREET.".
+//      the row says "The droid did not start DM:GREET.";
+//   11 a run the estop ends: the row says "The estop stopped DM:GREET.";
+//   12 a droid that stops answering mid-run: the row stops saying Running and
+//      says "Lost touch with the droid; DM:GREET may still be running.".
 //
 // WHY A REAL BROWSER. The real request log against real timers, across the
 // list and the workspace, and the colour a button actually takes.
@@ -107,12 +111,13 @@ lib.runCheck({
     report.add('1', 'Nothing started here: the run record is not read', lib.verdict(droid.reads(RECORD).length === 0),
       `${droid.reads(RECORD).length} read(s) of ${RECORD} in the first ${QUIET_MS} ms`);
 
-    // The row's Test.
-    await page.click(`${ROW} [data-action="test"]`);
+    // The row's Test, pressed twice as a hurried hand does.
+    await page.dblclick(`${ROW} [data-action="test"]`);
     await page.waitForSelector(`${ROW}.is-running`, { timeout: 5000 });
     let row = await rowState(page);
-    report.add('2', `Test on the row: it says Running, with the lamp, and offers Stop ${NAME} in place of Test`,
-      lib.verdict(row.running && row.stop === `Stop ${NAME}` && !row.test), JSON.stringify(row));
+    const sent = writes.filter((entry) => entry.path === '/api/seq/test').length;
+    report.add('2', `Test on the row, pressed twice: one run sent; it says Running, with the lamp, offers Stop ${NAME}, and its own line is clear`,
+      lib.verdict(sent === 1 && row.running && row.stop === `Stop ${NAME}` && !row.test && row.said === ''), `${sent} run(s) sent; ${JSON.stringify(row)}`);
 
     // The earlier run's record has been answered at least once by now, and
     // the run's own arrives after the stand-in's start delay.
@@ -176,11 +181,11 @@ lib.runCheck({
     report.add('8', `Play on the droid, on the tap row, starts the same kind of run: the strip says Running ${NAME}, with its Stop`,
       lib.verdict(played.says === `Running ${NAME}` && played.lamp && played.stop === `Stop ${NAME}` && !played.test), JSON.stringify(played));
 
-    const ended = droid.reads(RECORD).length;
+    const readsAtEnd = droid.reads(RECORD).length;
     if (selftest === 'peek') await peek();
     await page.waitForTimeout(QUIET_MS);
-    report.add('9', 'With both runs ended, the run record is not read', lib.verdict(droid.lastRun.running === false && droid.reads(RECORD).length === ended),
-      `record ${droid.lastRun.outcome}; ${droid.reads(RECORD).length - ended} read(s) of ${RECORD} in the ${QUIET_MS} ms after`);
+    report.add('9', 'With both runs ended, the run record is not read', lib.verdict(droid.lastRun.running === false && droid.reads(RECORD).length === readsAtEnd),
+      `record ${droid.lastRun.outcome}; ${droid.reads(RECORD).length - readsAtEnd} read(s) of ${RECORD} in the ${QUIET_MS} ms after`);
 
     // The droid says ok and never starts the run.
     droid.starts = false;
@@ -191,5 +196,28 @@ lib.runCheck({
     report.add('10', 'A run the droid never starts stops reading as running, and the row says so',
       lib.verdict(!row.running && row.test && row.said === `The droid did not start ${NAME}.`), JSON.stringify(row));
     await page.screenshot({ path: `${ARTIFACTS}/run-not-started.png` });
+
+    // A run the stand-in starts, for the two endings that are not the run's own.
+    const startRun = async () => {
+      droid.starts = true;
+      await page.click(`${ROW} [data-action="test"]`);
+      await page.waitForSelector(`${ROW}.is-running`, { timeout: 5000 });
+      for (let waited = 0; waited < 5000 && !droid.lastRun.running; waited += 100) await page.waitForTimeout(100);
+    };
+    const ended = () => page.waitForSelector(`${ROW}:not(.is-running)`, { timeout: 15000 }).catch(() => {});
+
+    await startRun();
+    droid.lastRun = { ...droid.lastRun, outcome: 'estop', running: false, endMs: droid.lastRun.startMs + 300 };
+    await ended();
+    row = await rowState(page);
+    report.add('11', 'A run the estop ends: the row says so', lib.verdict(!row.running && row.said === `The estop stopped ${NAME}.`), JSON.stringify(row));
+
+    await startRun();
+    droid.silent = true;
+    await ended();
+    row = await rowState(page);
+    report.add('12', 'A droid that stops answering mid-run: the row stops saying Running, and says it lost touch',
+      lib.verdict(!row.running && row.test && row.said === `Lost touch with the droid; ${NAME} may still be running.`), JSON.stringify(row));
+    await page.screenshot({ path: `${ARTIFACTS}/run-lost-touch.png` });
   },
 });

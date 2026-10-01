@@ -14,7 +14,9 @@
 //                        the run up (src/tasks/sequence_dispatcher.cpp). With
 //                        `starts: false` it never is - the refused run.
 //   GET /api/seq/last-run  the record (src/seq_last_run_json.cpp), the fields
-//                        the page reads.
+//                        the page reads. With `silent` set on the droid it is
+//                        a droid that has dropped off the network: the read
+//                        gets no answer.
 //   POST /api/seq/stop   ends a running record as `aborted`; ok either way.
 //
 // Not a bench-auto script: tools/bench_auto.py reads test/playwright/*/*.js,
@@ -26,6 +28,7 @@ const install = async (page, { sequences, lastRun = { valid: false, note: 'no se
     sequences: new Map(sequences.map((seq) => [seq.name, JSON.parse(JSON.stringify(seq))])),
     lastRun,
     starts,
+    silent: false,
     // Every request to /api/seq*, in order.
     requests: [],
     uptimeMs: 100000,
@@ -50,7 +53,7 @@ const install = async (page, { sequences, lastRun = { valid: false, note: 'no se
     if (method === 'GET' && apiPath === '/api/seq' && name) {
       return droid.sequences.has(name) ? json(droid.sequences.get(name)) : json({ error: 'sequence not found' }, 404);
     }
-    if (method === 'GET' && apiPath === '/api/seq/last-run') return json(droid.lastRun);
+    if (method === 'GET' && apiPath === '/api/seq/last-run') return droid.silent ? route.abort('failed') : json(droid.lastRun);
     if (method === 'POST' && apiPath === '/api/seq/test') {
       const run = JSON.parse(request.postData() || '{}').name;
       if (droid.starts) {
