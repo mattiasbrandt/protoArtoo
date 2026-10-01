@@ -5,10 +5,11 @@
 // no other screen can -- "I am holding a servo wire: which output does it go
 // to, and which part will it move?" The sheet is a reference, not a control
 // surface: it writes nothing, and no act on it reaches the droid. What writes
-// is under it, mounted by the screen caller below and never part of the
-// sheet: the part-first picker that puts a Part on an Output and says what is
-// on its wire, with its move question (data/parts_mapping.js picker();
-// operator, 2026-09-28 and 2026-09-29 on #411).
+// is the parts wiring table, mounted by the screen caller below: it puts a
+// Part on an Output and says what is on its wire, with its move question
+// (data/parts_mapping.js picker(); operator, 2026-09-28 and 2026-09-29 on
+// #411). The sheet carries that same table as plain text, and none of its
+// controls (operator, 2026-10-01 on #463).
 //
 // EVERYTHING ON IT IS GENERATED. The wires come from the Board Lanes the
 // running firmware reports (GET /api/identity), the Outputs from
@@ -17,8 +18,10 @@
 // and the lanes' switches from the Component Toggles (GET /api/config).
 // Nothing here keeps a copy of one board's pin numbers, which is the defect a
 // Board Lane exists to close (include/board_lanes.inc).
-// The product wiring cards at its foot are generated too, at build time: the
-// wiring cards the spec sheets carry, where the image holds them (#458).
+// The product wiring cards are generated too, at build time: the wiring cards
+// the spec sheets carry, where the image holds them (#458). On the screen
+// each opens on its product's row of the table; on paper they follow Power
+// wiring.
 //
 // ONE GENERATOR, TWO CALLERS. wiringDocument() returns the whole sheet as
 // markup and nothing else -- no DOM, no fetches, no stylesheet. The screen
@@ -72,7 +75,7 @@
   // changes it in both places.
   const CADENCE = "~450 ms (one servo at a time)";
 
-  // The three plate headings. They are the generator's for the same reason
+  // The plate headings. They are the generator's for the same reason
   // the promise is: the screen writes them into its plates and the saved file
   // prints them, so a heading reworded here is reworded in both, and a heading
   // typed into data/wiring.html as well would be the second copy this whole
@@ -85,6 +88,7 @@
   // 2026-09-28: it "makes more sense to have in the parts page").
   const PLATES = Object.freeze({
     wires: "The wires",
+    parts: "Parts on outputs",
     rail: "Power wiring",
     // Only an image that carries the product wiring cards has this plate.
     products: "Product wiring",
@@ -245,30 +249,41 @@
   // Which color is picked by the wire's place in one order - EVERY Output in
   // data/outputs.js's order, drawn or not, then EVERY Board Lane as the
   // identity lists them - from the numbered palette --wire-1..--wire-8 in
-  // data/style.css, round again past eight. Nothing here knows which wires a
-  // board has: the order is the firmware's answer. A wire left off the drawing
-  // still holds its place, so a wire keeps its color as others come and go:
-  // putting a Part on ARM2 must not recolor ARM3, and the pin strip under the
-  // drawing (pinsHtml()) marks each Output in the color its line wears.
+  // data/style.css (WIRE_INKS), round again past the last. Nothing here knows
+  // which wires a board has: the order is the firmware's answer. A wire left
+  // off the drawing still holds its place, so a wire keeps its color as others
+  // come and go: putting a Part on ARM2 must not recolor ARM3.
   //
   // The colors live in the stylesheet only. This file writes a token's name
   // and never a value, painted as an inline style so it beats nothing and
   // nothing beats it; the bench copy, which has no stylesheet, has each token
-  // resolved into it as it is saved (inkedForFile()).
+  // resolved into it as it is saved (inkedForFile()). Each token is named
+  // here in full, one by one: this file is the palette's only reader, and a
+  // name put together from a number is one nothing can find by searching for
+  // it (test/test_web/test_style_token_layer.js, "no token in :root is
+  // orphaned").
   // ---------------------------------------------------------------------------
-  const WIRE_PALETTE = 8;
+  const WIRE_INKS = Object.freeze([
+    "var(--wire-1)",
+    "var(--wire-2)",
+    "var(--wire-3)",
+    "var(--wire-4)",
+    "var(--wire-5)",
+    "var(--wire-6)",
+    "var(--wire-7)",
+    "var(--wire-8)",
+  ]);
 
   const wireOrder = ({ lanes = {}, outputs = [] } = {}) => [
     ...outputs.map((output) => output.address),
     ...Object.keys(lanes).map((key) => `lane:${key}`),
   ];
 
-  // The palette slot a wire takes: 1..WIRE_PALETTE.
-  const wireSlot = (order, key) => {
+  // The ink a wire takes, by its place in the order.
+  const wireInk = (order, key) => {
     const at = order.indexOf(key);
-    return ((at < 0 ? order.length : at) % WIRE_PALETTE) + 1;
+    return WIRE_INKS[(at < 0 ? order.length : at) % WIRE_INKS.length];
   };
-  const wireInk = (order, key) => `var(--wire-${wireSlot(order, key)})`;
 
   // Sizes in the picture's own units, matching the type tokens the stylesheet
   // gives the same classes (--fs-hint 10, --fs-sect 11, --fs-cell 13).
@@ -468,8 +483,8 @@
   // lane's own wire now, after the board's label.
   //
   // Which part an Output moves is on its box, because that is what is on the
-  // end of the wire. Which Output a part should be on is the picker's under
-  // the sheet, and the sheet itself does not answer it.
+  // end of the wire. Which Output a Part is on is set in the parts wiring
+  // table under the drawing, and never on the drawing.
   // ---------------------------------------------------------------------------
   const partNames = (parts, ids) => {
     const byId = new Map(parts.map((part) => [part.id, part.name]));
@@ -540,37 +555,11 @@
     ];
   };
 
-  // ---------------------------------------------------------------------------
-  // Used and free, at a glance
-  //
-  // Every Output the firmware reports, by what its board prints beside it, and
-  // what is on it or that it is free; then every serial link that is wired,
-  // by its printed pins (operator, 2026-09-29 on #411: "present somehow the
-  // current status of what GPIO we have used and have left"). From the same
-  // answer the drawing is, never a list of this file's: an expander's channels
-  // are more Outputs in it, called by their address. A used Output carries
-  // its line's palette slot (data-wire), which the stylesheet maps to the same
-  // --wire-* color its line wears, so a pin here and its wire above are found
-  // by eye.
-  // ---------------------------------------------------------------------------
-  const FREE = "free";
-
-  const pinsHtml = (model = {}) => {
-    const { parts = [], outputs = [] } = model;
-    const order = wireOrder(model);
-    const pin = (key, printed, what, used) =>
-      `<li class="wd-pin${used ? " is-used" : ""}" data-pin="${escAttr(key)}"` +
-      (used ? ` data-wire="${wireSlot(order, key)}"` : "") +
-      `><span class="wd-pin-name">${esc(printed)}</span><span class="wd-pin-what">${esc(what)}</span></li>`;
-    const items = [
-      ...outputs.map((output) =>
-        pin(output.address, output.name || output.address,
-          hasPart(output) ? partNames(parts, output.parts).join(" + ") : FREE, hasPart(output))),
-      ...loomRows(model).filter((lane) => lane.on).map((lane) =>
-        pin(`lane:${lane.key}`, lane.label || `UART ${lane.uart}`, lane.name, true)),
-    ];
-    return items.length ? `<ul class="wd-pins">${items.join("")}</ul>` : "";
-  };
+  // An Output with no Part on it, in the one word for it (CONTEXT.md "Wiring"),
+  // which is the parts wiring table's own (data/parts_mapping.js). The word is
+  // kept here too for a page where that script did not load: the drawing and
+  // its count stand without the table, and say so in the same word.
+  const FREE = window.PAParts?.FREE ?? "free";
 
   // Titled with the board it draws, by the product name the lineup gives it
   // (operator, 2026-09-19 on #411: "it would make more sense for it to name and
@@ -625,13 +614,16 @@
   // ---------------------------------------------------------------------------
   // Product wiring: how to wire and power each product on the droid (#458)
   //
-  // One card for each fitted product that has one. A card's facts - supply,
-  // draw, logic level, each wire, the hazards - are the wiring card its spec
-  // sheet carries, generated into the image (tools/generate_wiring_cards.py)
-  // and handed over in the model as `cards`, keyed by Component Registry id.
+  // One card for each fitted product that has one: on the screen it opens on
+  // the row of the parts wiring table its product is on, and on paper every
+  // one follows Power wiring (operator, 2026-10-01 on #463). A card's facts -
+  // supply, draw, logic level, each wire, the hazards - are the wiring card
+  // its spec sheet carries, generated into the image
+  // (tools/generate_wiring_cards.py) and handed over in the model as `cards`,
+  // keyed by Component Registry id.
   // Nothing here restates one. An image built without them hands over none,
-  // and then there is no section at all: no heading and no placeholder (ADR
-  // 0065, amended 2026-09-30).
+  // and then no row offers a card and the paper has no section for them: no
+  // heading and no placeholder (ADR 0065, amended 2026-09-30).
   //
   // WHICH PRODUCTS are fitted is the Component Picker's answer, read by the
   // screen caller (fittedProducts() below) and handed over as `products`.
@@ -687,6 +679,116 @@
     products.filter((product) => cards && Object.hasOwn(cards, product.id));
 
   // ---------------------------------------------------------------------------
+  // The parts wiring table, as text
+  //
+  // Wiring has one table of what is on which wire (operator, 2026-10-01 on
+  // #463), and the sheet carries it: every Part on an Output with what is on
+  // its wire, the free Outputs in one row, and every link, fitted or not.
+  // The screen's copy of it is the one a builder sets the wiring in
+  // (data/parts_mapping.js picker()); this is that table with nothing to
+  // press, for paper. Both read the same Outputs and the same links
+  // (linkRows()), count with the same function and are headed with the same
+  // words (PAParts.TABLE), so the page and the paper cannot come to list a
+  // wire differently.
+  //
+  // A box to tick stands before every wire a builder has to run, as one
+  // stands beside every wire of the drawing (svgTick()).
+  // ---------------------------------------------------------------------------
+  const NOT_FITTED = "not fitted";
+
+  // The family whose product is the board itself (Component Registry id).
+  const BOARD_FAMILY = "body_controller";
+
+  // What is on an Output's wire, by its own name: the Light Type's or the
+  // servo model's, as the table's row offers them.
+  const onTheWire = (output) => (output.light ? output.light.label : output.servo ? output.servo.label : "a servo");
+
+  // The links as the table lists them, read only: every Board Lane the
+  // firmware reports, by what the board prints for it, with where it is
+  // routed while its component is fitted. `product` is the fitted product on
+  // the link where this image carries its wiring card (#458), and `route` is
+  // where the link is switched.
+  //
+  // Then a row for each fitted product with a card that no row above carries:
+  // the dome's ESC, the radio and its receiver, which no Board Lane reports
+  // (UNSEEN below). A card opens on the row of the product it belongs to, so
+  // without a row these three had theirs on paper only (operator, 2026-10-01
+  // on #463: they "get read-only rows in the links group ... so every fitted
+  // product's card opens on screen as well as on paper"). Such a row says
+  // what the droid can say: the product, and what the board prints for it
+  // where the config carries a label. Where it is routed nothing reports, so
+  // that cell is empty rather than guessed. The board's own card and the
+  // card of the Outputs on it are the board group's (boardCards()).
+  const ownsBoardCard = (product) => product.family === BOARD_FAMILY || Boolean(product.outputs);
+
+  const linkRows = (model = {}) => {
+    const carded = cardedProducts(model);
+    const lanes = loomRows(model);
+    const toggles = componentIndex(model.components);
+    const route = { href: MOVES.configuration.href, label: "Configuration" };
+    return [
+      ...lanes.map((lane) => {
+        const product = lane.on ? carded.find((each) => each.lane === lane.key) : null;
+        return {
+          key: lane.key,
+          name: lane.name,
+          output: lane.label || `UART ${lane.uart}`,
+          note: lane.on && lane.shared ? LANE_SHARED : "",
+          wire: lane.on ? `serial · ${laneDetail(lane)}` : NOT_FITTED,
+          fitted: lane.on,
+          product: product ? { id: product.id, name: product.name } : null,
+          route,
+        };
+      }),
+      ...carded
+        .filter((product) => !ownsBoardCard(product) && !lanes.some((lane) => lane.on && lane.key === product.lane))
+        .map((product) => ({
+          key: `product:${product.id}`,
+          name: product.title || product.name,
+          output: labelOf(toggles, product.lane),
+          note: "",
+          wire: "",
+          fitted: true,
+          product: { id: product.id, name: product.name },
+          route,
+        })),
+    ];
+  };
+
+  const TICK_BOX =
+    `<svg class="sheet-tick" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<rect x="0.6" y="0.6" width="10.8" height="10.8" fill="${PLATE}" stroke="${INK}" stroke-width="1.2"/></svg>`;
+
+  const sheetRow = (cells, tag = "td") => `<tr>${cells.map((cell) => `<${tag}>${cell}</${tag}>`).join("")}</tr>`;
+
+  const partsSheetHtml = (model = {}) => {
+    const { parts = [], outputs = [] } = model;
+    const words = window.PAParts.TABLE;
+    const group = (label) => `<tr><th colspan="${words.columns.length + 1}">${esc(label)}</th></tr>`;
+    // In the table's own order: the catalog's, then any Part this page has
+    // no name for, by its id, so a wire with a Part on it is never left off.
+    const place = new Map(parts.map((part, index) => [part.id, index]));
+    const wired = outputs
+      .flatMap((output) => output.parts.map((id) => ({ id, output })))
+      .sort((a, b) => (place.get(a.id) ?? parts.length) - (place.get(b.id) ?? parts.length));
+    const free = outputs.filter((output) => !hasPart(output)).map((output) => output.name);
+    const links = linkRows(model);
+    return (
+      `<table class="sheet-table"><thead>${sheetRow(["", ...words.columns.map(esc)], "th")}</thead><tbody>` +
+      group(words.board) +
+      wired.map(({ id, output }) =>
+        sheetRow([TICK_BOX, esc(partNames(parts, [id])[0]), `<b>${esc(output.name)}</b>`, esc(onTheWire(output))])).join("") +
+      sheetRow(["", `<i>${esc(FREE)}</i>`, `<b>${esc(free.join(", ") || "none")}</b>`, ""]) +
+      (links.length
+        ? group(words.links) +
+          links.map((link) =>
+            sheetRow([link.fitted ? TICK_BOX : "", esc(link.name), `<b>${esc(link.output)}</b>`, esc(link.wire)])).join("")
+        : "") +
+      `</tbody></table>`
+    );
+  };
+
+  // ---------------------------------------------------------------------------
   // wiringDocument()
   // The whole sheet, as markup, from one read of the droid. Pure: the minute it
   // is stamped with arrives in the model as a sheetStamp() string, so the
@@ -712,14 +814,19 @@
       plates: PLATES,
       droidName,
       stamp,
+      // Whose sheet and from when, under the title: a printed page loses the
+      // browser's own header first.
+      madeHtml: `${droidName ? `${esc(droidName)} - ` : ""}made ${esc(stampText(stamp))}`,
       fileName: sheetFileName(droidName, stamp),
       wires,
       wiresSummary:
         `${plural(wires.length, ["wire", "wires"])}` +
         (free ? ` · ${plural(free, ["output", "outputs"])} ${FREE}` : ""),
-      wiresHtml:
-        (wires.length ? wiresDiagramHtml(wires, made, boardName) : `<p class="hint">Nothing is wired yet.</p>`) +
-        pinsHtml(model),
+      wiresHtml: wires.length ? wiresDiagramHtml(wires, made, boardName) : `<p class="hint">Nothing is wired yet.</p>`,
+      // Empty where the table's own script did not load: the sheet then has
+      // the wires and their power, and no table section, rather than nothing.
+      partsSummary: window.PAParts ? window.PAParts.wiredSummary(model.outputs || []) : "",
+      partsHtml: window.PAParts ? partsSheetHtml(model) : "",
       // Empty when no fitted product has a card, which is every droid on an
       // image built without them: both callers then leave the section out.
       productsSummary: plural(carded.length, ["product", "products"]),
@@ -745,10 +852,12 @@
   // droid: the Unused list's links to Parts were the last, and that list is
   // Parts' own now (#411).
   //
-  // WHAT IT LEAVES OUT: everything that writes - the part-first picker is
-  // the screen's, mounted beside the sheet and never made by the generator. The bench copy is the wires and their power
-  // (operator, 2026-09-19 on #411), and it ends with the product wiring cards
-  // where the image carries them (#458).
+  // WHAT IT LEAVES OUT: every control. The parts wiring table is in it as
+  // text (partsSheetHtml()), and the controls a builder sets the wiring with
+  // are the screen's alone. So is the list of what does not line up, whose
+  // every value is live (#454). The bench copy is the wires, the table of
+  // them and their power, and it ends with the product wiring cards where the
+  // image carries them (#458).
   //
   // `boardArt` is the one thing the file is handed besides the sheet: the
   // board's picture, already made standalone by the caller (boardArtForFile()),
@@ -767,9 +876,12 @@
       '<link rel="icon" href="data:,">' +
       "</head><body>" +
       `<h1>Wiring</h1>` +
-      `<p>${sheet.droidName ? `${esc(sheet.droidName)} - ` : ""}made ${esc(madeAt)}</p>` +
+      `<p>${sheet.madeHtml}</p>` +
       `<p>${sheet.promiseHtml}</p>` +
       `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.wiresSummary}</p>${pictured(sheet.wiresHtml)}` +
+      (sheet.partsHtml
+        ? `<h2>${esc(sheet.plates.parts)}</h2><p>${esc(sheet.partsSummary)}</p>${sheet.partsHtml}`
+        : "") +
       `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
       (sheet.productsHtml
         ? `<h2>${esc(sheet.plates.products)}</h2><p>${sheet.productsSummary}</p>${sheet.productsHtml}`
@@ -974,9 +1086,8 @@
     const base = {
       key: output.address,
       subject: `${output.name} · ${partNames(parts, output.parts).join(" + ")}`,
-      // What the builder put on the wire, by its own name: the Light Type's
-      // or the servo model's, as the picker's row offers them.
-      declared: output.light ? output.light.label : output.servo ? output.servo.label : "a servo",
+      // What the builder put on the wire, by its own name.
+      declared: onTheWire(output),
     };
     if (output.light) {
       return row({ ...base, observed: "Nothing reads a light back", light: "off", state: STATES.notProbed });
@@ -1179,7 +1290,10 @@
   // with a Component Toggle is on the droid only while that toggle is on, so
   // a family answered Not fitted has no card. The families are listed in the
   // order Configuration asks them, by their Component Registry ids; no
-  // product is named here.
+  // product is named here. Each product carries its family, which is how the
+  // table tells the board's own card from the card of the Outputs on it, and
+  // its `title`: the builder's word for the family, as Configuration heads
+  // it, which is what a row of the table calls a product no Board Lane names.
   // ---------------------------------------------------------------------------
   const cardSource = document.getElementById("wiring-product-cards");
   const productCards = cardSource ? JSON.parse(cardSource.textContent) : null;
@@ -1192,9 +1306,9 @@
   // cannot be read from the picker here. A family added to Configuration is
   // added to this list too, or its product has no wiring card.
   const PRODUCT_FAMILIES = [
-    { family: "body_controller" },
+    { family: BOARD_FAMILY },
     { family: "foot_drive", toggle: "drive" },
-    { family: "dome_rotation", toggle: "domeEsc" },
+    { family: "dome_rotation", toggle: "domeEsc", title: "Dome Rotation" },
     { family: "dome_controller", toggle: "protoR2link" },
     { family: "sound", toggle: "audio" },
     // The one family whose product is reached on the Outputs.
@@ -1206,17 +1320,19 @@
     if (!productCards || !picker?.answered?.()) return [];
     const toggles = componentIndex(components);
     const found = [];
-    PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false }) => {
+    PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false, title = "" }) => {
       if (toggle && !switchedOn(toggles, toggle)) return;
       const part = picker.productOf(family);
       if (!part) return;
       // A Board Lane's key is its Component Toggle's, folded to lower case
       // (componentIndex() above).
-      found.push({ id: part.id, name: part.name, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
+      found.push({ id: part.id, name: part.name, family, title, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
     });
     if (!picker.isRadioNotFitted()) {
-      [picker.chosenPart("radio_controller"), picker.chosenReceiverPart()].forEach((part) => {
-        if (part) found.push({ id: part.id, name: part.name, lane: "", outputs: "" });
+      // The radio and the receiver it talks to are two products of one
+      // family, and each is a row of its own.
+      [[picker.chosenPart("radio_controller"), "Radio Controller"], [picker.chosenReceiverPart(), "RC receiver"]].forEach(([part, title]) => {
+        if (part) found.push({ id: part.id, name: part.name, family: "radio_controller", title, lane: "", outputs: "" });
       });
     }
     return found;
@@ -1240,20 +1356,45 @@
   write("wiring-promise", promiseHtml());
   write("wiring-rail", railHtml());
   write("wiring-wires-heading", esc(PLATES.wires));
+  write("wiring-parts-heading", esc(PLATES.parts));
   write("wiring-rail-heading", esc(PLATES.rail));
   write("wiring-products-heading", esc(PLATES.products));
 
-  // And under the sheet the part-first picker, where a Part is put on an
-  // Output, moved with the question first, or taken off, and what is on its
-  // wire is chosen (data/parts_mapping.js picker(), #347, #411). Mounted here and never made by wiringDocument(): the
-  // printed sheet stays a reference that writes nothing (CONTEXT.md "Wiring").
-  window.PAParts?.picker({
+  // What the sheet is made from: the droid's answers, and the product wiring
+  // cards with the products fitted. The list of what does not line up reads
+  // model() on every Live Reading frame and no card, so the cards ride here.
+  const sheetModel = () => ({ ...model(), cards: productCards, products: fittedProducts() });
+
+  // The cards the board's own group offers: the Body Controller's, and the one
+  // for the Outputs on it. Named for what each is a card of.
+  const boardCards = () =>
+    cardedProducts(sheetModel())
+      .filter(ownsBoardCard)
+      .map((product) => ({ id: product.id, word: product.outputs ? "servo wiring card" : "board card" }));
+
+  const cardHtmlFor = (id) => {
+    const sheet = sheetModel();
+    const product = cardedProducts(sheet).find((each) => each.id === id);
+    return product ? productCardHtml(product, sheet.cards[id], sheet) : "";
+  };
+
+  // The parts wiring table, where a Part is put on an Output, moved with the
+  // question first, or taken off, and what is on its wire is chosen
+  // (data/parts_mapping.js picker(), #347, #411, #463). Mounted here and never
+  // made by wiringDocument(), which makes the same table as text: the printed
+  // sheet stays a reference that writes nothing (CONTEXT.md "Wiring"). The
+  // links and the cards are handed over as this file reads them, and
+  // only once the droid has answered: a lane whose switch has not been read
+  // is not yet known to be fitted.
+  const partsTable = window.PAParts?.picker({
     table: document.getElementById("wiring-parts-table"),
     summary: document.getElementById("wiring-parts-summary"),
     feedback: document.getElementById("wiring-parts-feedback"),
     dialog: document.getElementById("wiring-move-dialog"),
     timing: document.getElementById("wiring-parts-timing"),
     find: document.getElementById("wiring-find"),
+    links: () => (answered ? linkRows(sheetModel()) : []),
+    cards: productCards ? { board: boardCards, html: cardHtmlFor } : null,
   });
 
   // ---------------------------------------------------------------------------
@@ -1319,17 +1460,22 @@
   // surface last read the droid, or when its sheet was last saved - so a
   // screenshot of them says when it was true, the same as the saved copy does.
   const paint = (stamp = sheetStamp()) => {
-    // The cards ride the sheet's model and not model(): the list of what does
-    // not line up reads model() on every Live Reading frame and no card.
-    const sheet = wiringDocument({ ...model(), cards: productCards, products: fittedProducts(), stamp });
+    const sheet = wiringDocument({ ...sheetModel(), stamp });
     write("wiring-wires-summary", sheet.wiresSummary);
     write("wiring-wires", sheet.wiresHtml);
     fillBoardArt();
-    // The product wiring plate is in the document only where the image carries
-    // the cards, and shows only while a fitted product has one.
+    // What only paper shows (data/style.css, @media print): whose sheet and
+    // from when, the parts wiring table as text in place of its controls, and
+    // every fitted product's card after Power wiring. The cards' plate is in
+    // the document only where the image carries them, and prints only while a
+    // fitted product has one. On the screen a card opens on its product's row.
+    write("wiring-made", sheet.madeHtml);
+    write("wiring-parts-sheet", sheet.partsHtml);
     write("wiring-products-summary", sheet.productsSummary);
     write("wiring-products", sheet.productsHtml);
     document.getElementById("wiring-products-card")?.classList.toggle("hidden", sheet.productsHtml === "");
+    // The table's links and cards follow the same answers.
+    partsTable?.repaint();
     paintLineUp();
     return sheet;
   };
@@ -1452,7 +1598,7 @@
 
   saveLink?.addEventListener("click", saveSheet);
 
-  // A Part moved in the picker lands on the droid and is read back, and the
+  // A Part moved in the table lands on the droid and is read back, and the
   // wire it now hangs off names it: the sheet follows every read of the
   // Outputs once the droid has answered. Only while Wiring is on screen - the
   // other surfaces read the same module, and a sheet repainted out of sight
@@ -1466,7 +1612,7 @@
   // and toggles it did not would say a wire is live when it is switched off --
   // so both reads are in the one section run (data/outputs.js load()) and
   // either one failing is the section failing, which is what the Page Recovery
-  // View is for. The same read paints the part-first picker: GET /api/config is
+  // View is for. The same read paints the parts wiring table: GET /api/config is
   // asked once.
   const loadSheet = async ({ handle = null } = {}) => {
     const answer = await window.PAOutputs.load({ handle });

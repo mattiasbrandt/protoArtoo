@@ -1,10 +1,12 @@
 // =============================================================================
 // test/test_web/test_parts_table.js
 //
-// The part-first table (#347, ADR 0050), run for real. It lived on Parts and
-// moved to Wiring's Outputs section with its move question (operator,
-// 2026-09-28 on #411); these tests moved with it, and the file keeps its name
-// so the history of the table stays in one place. The shipped
+// The parts wiring table (#347, ADR 0050), run for real. It lived on Parts and
+// moved to Wiring with its move question (operator, 2026-09-28 on #411), and
+// became Wiring's one table of what is on which wire (operator, 2026-10-01 on
+// #463): a Part is a row while it is on an Output and a pill while it is not,
+// and its Output is a bar of every Output. These tests moved with it, and the
+// file keeps its name so the history of the table stays in one place. The shipped
 // page_bootstrap.js boots the shipped shell.js, which fetches the shipped
 // wiring.html and runs its chain -- droid_parts.js, droid_part_kind.js,
 // outputs.js, parts_mapping.js and wiring.js, which mounts the picker --
@@ -280,26 +282,39 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
   env.window = windowMock;
 
   env.table = () => document.getElementById("wiring-parts-table");
-  env.row = (id) => env.table().querySelectorAll("[data-part]").find((node) => node.dataset.part === id);
-  env.select = (id) => env.row(id)?.querySelector("select");
-  env.optionTexts = (id) => env.select(id).querySelectorAll("option").map((option) => option.textContent);
-  env.heading = (group) =>
-    env.table().querySelectorAll("tbody").find((body) => body.dataset.group === group)?.querySelector("th").textContent;
+  const carrying = (id) => env.table().querySelectorAll("[data-part]").filter((node) => node.dataset.part === id);
+  // A Part's row, while it has one, and its pill among the Parts to add,
+  // while it has that.
+  env.row = (id) => carrying(id).find((node) => node.classList.contains("parts-row"));
+  env.pill = (id) => carrying(id).find((node) => node.dataset.act === "add");
+  // The bar of Outputs on a Part's row, and the Output it shows the Part on.
+  env.bar = (id) => env.row(id)?.querySelector("[data-bar]")?.querySelectorAll("button") ?? [];
+  env.outputButton = (id, address) => env.bar(id).find((button) => button.dataset.value === address);
+  env.on = (id) => env.bar(id).find((button) => button.classList.contains("active"))?.dataset.value ?? "none";
   env.text = (id) => document.getElementById(id).textContent;
-  // What a builder does with a select: choose, and the change reaches the
-  // table's delegated handler.
+  // What a builder does: a press reaches the table's delegated handler, or
+  // the bar's own button.
+  env.press = (node) => env.table().fire("click", { target: node });
+  env.add = (id) => env.press(env.pill(id));
+  // The builder is on the act when they press it, as a click leaves them.
+  env.takeOff = (id) => {
+    const act = env.row(id).querySelectorAll("[data-act]").find((node) => node.dataset.act === "off");
+    act.focus();
+    env.press(act);
+  };
+  // Put a Part on an Output: from its row's bar, adding it to the table
+  // first when it is still a pill.
   env.pick = (id, address) => {
-    const select = env.select(id);
-    select.value = address;
-    env.table().fire("change", { target: select });
+    if (!env.row(id)) env.add(id);
+    env.outputButton(id, address).fire("click", {});
   };
   env.click = (id) => document.getElementById(id).fire("click", {});
 
   windowMock.location.hash = "#wiring";
   // Mounted, and painted from the droid's first answer.
   const deadline = Date.now() + 3000;
-  while (!(env.table() && env.select("doorFL") && env.select("doorFL").disabled === false)) {
-    if (Date.now() > deadline) assert.fail("the picker on Wiring never mounted and painted");
+  while (!env.table()?.querySelector("table")) {
+    if (Date.now() > deadline) assert.fail("the parts table on Wiring never mounted and painted");
     await sleep(5);
   }
 
@@ -349,13 +364,17 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.text("wiring-move-confirm"), "Move it", "the button that agrees is the verb");
 
   env.click("wiring-move-confirm");
+  // While the move is on its way the row's bar takes no press, and no Output
+  // on it is marked refused: it is waiting, and "no light" is a refusal.
+  assert.ok(env.bar("doorFL").every((button) => button.disabled), "the bar waits for the move");
+  assert.ok(!env.bar("doorFL").some((button) => button.classList.contains("is-refused")), "and reads as waiting, not refused");
   await sleep(20);
   assert.deepEqual(env.posts, [
     { path: "/api/config", form: { movePart: "doorFL", movePartFrom: "ledc:0", movePartTo: "ledc:3" } },
   ]);
   assert.equal(env.dialog.open, false);
-  assert.equal(env.select("doorFL").value, "ledc:3", "the table repaints from what the droid now says");
-  assert.equal(env.select("doorFR").value, "ledc:0", "the Part left behind is still on its output");
+  assert.equal(env.on("doorFL"), "ledc:3", "the table repaints from what the droid now says");
+  assert.equal(env.on("doorFR"), "ledc:0", "the Part left behind is still on its output");
   assert.equal(env.text("wiring-parts-feedback"), "Left body door is on ARM3.");
 });
 
@@ -386,7 +405,7 @@ test("Escape cancels the move question", async () => {
   await sleep(20);
   assert.equal(env.dialog.open, false);
   assert.equal(env.posts.length, 0, "a cancel sends nothing");
-  assert.equal(env.select("doorFL").value, "ledc:0");
+  assert.equal(env.on("doorFL"), "ledc:0");
   assert.deepEqual(inertOnPath(env.table()), [], "and gives the surface back");
 });
 
@@ -402,7 +421,7 @@ test("cancelling the question sends nothing and puts the control back", async ()
   await sleep(20);
   assert.equal(env.posts.length, 0);
   assert.equal(env.dialog.open, false);
-  assert.equal(env.select("doorFL").value, "ledc:0");
+  assert.equal(env.on("doorFL"), "ledc:0");
 });
 
 test("a Part renamed in the catalog keeps its id on the row and on the wire", async () => {
@@ -411,8 +430,9 @@ test("a Part renamed in the catalog keeps its id on the row and on the wire", as
   assert.notEqual(renamed, original, "the rename reached the catalog source");
   const env = await bootPicker({ catalogSource: renamed });
 
-  assert.equal(env.row("doorFL").querySelector(".parts-name").textContent, "Front-left breadpan door");
+  assert.equal(env.pill("doorFL").textContent, "Front-left breadpan door");
   env.pick("doorFL", "ledc:3");
+  assert.equal(env.row("doorFL").querySelector(".parts-name").textContent, "Front-left breadpan door");
   await sleep(20);
   assert.equal(env.posts[0].form.movePart, "doorFL");
 });
@@ -432,7 +452,8 @@ test("a move the droid refuses is said in the builder's words and shows the tabl
   const said = env.text("wiring-parts-feedback");
   assert.ok(!said.includes(sentence) && !said.includes("movePartFrom"), `the droid's sentence reached the page: ${said}`);
   assert.match(said, /^Rear-left body door did not move: ARM1 /, "it names the Part and the Output it was on");
-  assert.equal(env.select("doorRL").value, "ledc:0", "the table shows where the droid still has it");
+  assert.equal(env.on("doorRL"), "ledc:0", "the table shows where the droid still has it");
+  assert.ok(!env.outputButton("doorRL", "ledc:3").disabled, "and the row takes a press again");
 });
 
 test("a Part on an output that the page does not know is named, never dropped", async () => {
@@ -444,38 +465,41 @@ test("a Part on an output that the page does not know is named, never dropped", 
 // "Dome wiring is all handled and managed by the dome controller"), whatever
 // the catalog's `control` says: a holoprojector or a fixed side panel reads
 // `control: none`, and it sits on the dome all the same. It gets no Output to
-// choose - an Output select on it would offer a write that means nothing - and
-// shows the command that moves it, or says it has none. Every one keeps a row,
-// so no dome Part vanishes from the page. A dome Part a builder recorded on a
-// body Output anyway is still named with it, so a Part on a wire is never
-// invisible.
-test("every dome Part gets no Output select, and shows its command or that it has none", async () => {
+// choose - a bar on it would offer a write that means nothing - and its row in
+// the Dome Controller's group shows the command that moves it, or says it has
+// none. Every one keeps that row, so no dome Part vanishes from the page. A
+// dome Part a builder recorded on a body Output anyway is a row of the board's
+// group too, named with its Output and offered no other, so a wired Output is
+// never a count with no row under it.
+test("every dome Part gets no Output to choose, and shows its command or that it has none", async () => {
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["panel1"] }) });
   const catalog = env.window.DroidParts.parts;
   const dome = catalog.filter((part) => part.half === "dome");
   assert.ok(dome.some((part) => part.control === "none"), "the catalog has a dome Part whose control is none");
   const domeRow = (id) => env.table().querySelectorAll("[data-dome-part]").find((node) => node.dataset.domePart === id);
+  assert.equal(domeRow("pie1"), undefined, "the dome's group is closed until it is asked for");
+  env.press(env.table().querySelectorAll("[data-act]").find((node) => node.dataset.act === "dome"));
   dome.forEach((part) => {
-    assert.equal(env.row(part.id), undefined, `${part.id} (control ${part.control}) has an Output select`);
     assert.ok(domeRow(part.id), `${part.id} has no row`);
+    assert.equal(env.pill(part.id), undefined, `${part.id} (control ${part.control}) is offered to add`);
+    assert.equal(env.bar(part.id).length, 0, `${part.id} (control ${part.control}) has an Output bar`);
   });
-  catalog
-    .filter((part) => part.half !== "dome")
-    .forEach((part) => assert.ok(env.select(part.id), `${part.id} lost its Output select`));
 
   assert.equal(domeRow("pie1").querySelector(".parts-command").textContent, "Open :OPP1 · Close :CLP1");
   assert.equal(domeRow("hp1Pan").querySelector(".parts-command").textContent, "No command yet");
-  assert.match(domeRow("panel1").textContent, /on ARM1 too/);
-  assert.equal(domeRow("pie1").querySelector("select"), null);
+  assert.match(env.row("panel1").textContent, /ARM1/, "the one on a body Output is named with it");
+  assert.deepEqual(env.row("panel1").querySelectorAll("button").map((button) => button.dataset.act), ["off"],
+    "and offered take off and nothing else: no bar of Outputs, no servo or light to pick");
+  assert.equal(domeRow("pie1").querySelectorAll("button").length, 0);
 });
 
-// The sheet above the picker names the Part on the end of each wire, so a Part
-// moved in the picker is on its new wire the moment the droid has taken it -
+// The drawing above the table names the Part on the end of each wire, so a Part
+// moved in the table is on its new wire the moment the droid has taken it -
 // not on the next visit.
 // The Output it left has no Part on it now, so it is free and draws no line
 // (operator, 2026-09-29 on #411: "the drawing should only draw the actaul
 // lines (wires) currently assigned/wired in").
-test("a Part moved in the picker is on its new wire in the sheet at once", async () => {
+test("a Part moved in the table is on its new wire in the sheet at once", async () => {
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL"] }) });
   const wire = (address) => env.document.querySelectorAll(".wd-link").find((node) => node.dataset.wire === address);
   assert.match(wire("ledc:0").textContent, /Left body door/);
@@ -489,12 +513,14 @@ test("a Part moved in the picker is on its new wire in the sheet at once", async
 
 // The limit and the recommendation (operator, 2026-09-29 on #411: "either we
 // limit what you can define in the wiring page or give recommendations" -
-// both). A light Part is never offered an Output a light cannot go on: its
+// both). A light Part cannot be put on an Output a light cannot go on: its
 // firmware would refuse the Light Type, and the builder would have wired a
-// Part to a line that cannot light it. Which Outputs can, and which Part an
-// Output usually takes, are the rows' own answer - here a mixed set, the
-// board's LEDC Outputs and an expander's channel, so nothing assumes GPIO.
-test("a light Part is offered only the Outputs a light can go on, and a board's suggestion is marked", async () => {
+// Part to a line that cannot light it. Such an Output stays on the bar,
+// refused, and a press on it asks the droid for nothing. Which Outputs can,
+// and which Part an Output usually takes, are the rows' own answer - here a
+// mixed set, the board's LEDC Outputs and an expander's channel, so nothing
+// assumes GPIO.
+test("a light Part cannot be put on an Output a light cannot go on, and a board's suggestion is marked", async () => {
   const outputs = describe([...freshOutputs(), servoRow("pca:0", "")], {
     "ledc:0": { suggestedPart: "utilUp" },
     "ledc:1": { suggestedPart: "utilLo" },
@@ -503,15 +529,25 @@ test("a light Part is offered only the Outputs a light can go on, and a board's 
     "ledc:5": { lightCapable: true },
   });
   const env = await bootPicker({ outputs });
-  const offered = (id) => env.select(id).querySelectorAll("option").map((option) => option.getAttribute("value")).slice(1);
+  ["dataPanel", "utilUp", "utilLo", "doorFL"].forEach((id) => env.add(id));
+  const offered = (id) => env.bar(id).filter((button) => !button.disabled).map((button) => button.dataset.value);
 
   assert.deepEqual(offered("dataPanel"), ["ledc:3", "ledc:4", "ledc:5"], "a light Part: only the lines a light can go on");
   assert.deepEqual(offered("utilUp"), ["ledc:0", "ledc:1", "ledc:3", "ledc:4", "ledc:5", "pca:0"],
     "a servo Part: every Output the droid reports, the expander's channel too");
-  const suggested = (id) => env.optionTexts(id).filter((text) => /suggested$/.test(text));
-  assert.deepEqual(suggested("utilUp"), ["ARM1 · free · suggested"]);
-  assert.deepEqual(suggested("utilLo"), ["ARM2 · free · suggested"]);
+  assert.equal(env.bar("dataPanel").length, 6, "the refused Outputs stay on the bar");
+  assert.deepEqual(env.bar("dataPanel").filter((button) => button.classList.contains("is-refused")).map((button) => button.dataset.value),
+    ["ledc:0", "ledc:1", "pca:0"], "each marked refused");
+
+  env.outputButton("dataPanel", "ledc:0").fire("click", {});
+  await sleep(20);
+  assert.deepEqual(env.posts, [], "a press on a refused Output asks the droid for nothing");
+
+  const suggested = (id) => env.bar(id).filter((button) => button.classList.contains("is-suggested")).map((button) => button.dataset.value);
+  assert.deepEqual(suggested("utilUp"), ["ledc:0"]);
+  assert.deepEqual(suggested("utilLo"), ["ledc:1"]);
   assert.deepEqual(suggested("doorFL"), [], "a Part no Output is suggested for sees no mark");
+  assert.match(env.row("utilUp").textContent, /ARM1: suggested/, "and the row says which one in words");
 });
 
 // Each wire is its own answer (#413, ADR 0067): a droid may have several lit
@@ -527,6 +563,7 @@ test("a light Part's Light Type is saved on its own wire and leaves another lit 
     env.row(id).querySelector(".parts-carries").querySelectorAll("[data-value]").find((node) => node.dataset.value === "rgb");
   assert.equal(lightOn("cbi").classList.contains("active"), true);
   assert.equal(lightOn("dataPanel").classList.contains("active"), false);
+  env.add("doorFL");
   assert.equal(env.row("doorFL").querySelector(".parts-carries").querySelectorAll("[data-value]").length, 0,
     "a Part on no Output has nothing to pick");
 
@@ -552,7 +589,7 @@ test("a Part put on a free Output waits for the next start and says so, until it
   assert.equal(line.dataset.pending, "true", "the droid still runs the wires it started with");
   assert.equal(line.classList.contains("hidden"), false);
 
-  env.pick("doorFL", "none");
+  env.takeOff("doorFL");
   await sleep(40);
   assert.equal(line.classList.contains("hidden"), true, "taken off again, nothing waits");
 });
@@ -593,39 +630,76 @@ test("Parts carries none of the Output pieces that moved to Servos", async () =>
   );
 });
 
-// The part-first picker and its question moved to Wiring, and were deleted
-// from Parts rather than hidden (operator, 2026-09-28 on #411): one picker,
-// one question, one request. With Parts on screen - and Wiring never visited -
+// The parts table and its question moved to Wiring, and were deleted from
+// Parts rather than hidden (operator, 2026-09-28 on #411): one table, one
+// question, one request. With Parts on screen - and Wiring never visited -
 // nothing in the document picks an Output for a Part, and no move is sent.
-test("Parts carries no picker and no move question of its own", async () => {
+test("Parts carries no parts table and no move question of its own", async () => {
   const env = await bootPartsSurface();
   await env.frame();
   await wait(20);
 
   assert.equal(env.window.location.hash, "#parts");
   assert.equal(env.document.querySelectorAll("select").length, 0, "no Output picker on Parts");
+  assert.equal(env.document.querySelectorAll("[data-bar]").length, 0, "and no bar of Outputs");
   assert.equal(env.document.querySelectorAll("dialog").length, 0, "and no move question");
   assert.deepStrictEqual(env.moves().filter((post) => "movePart" in post.form), [], "and no move leaves it");
 });
 
 // Find by Moving starts where a Part with no Output is listed (#411): its row
-// on Wiring, in the cell a Part on an Output uses for what is on its wire. A
+// on Wiring, once it is added, in the cell a Part on an Output uses for what is on its wire. A
 // Part already on an Output has no such act - its wire is known - and a press
 // on the act starts a run, whose first nudge names the first free Output.
 test("a Part on no Output offers find by moving on its row, and a press starts a run", async () => {
   const env = await bootPicker({ outputs: withParts({ "ledc:0": ["utilUp"] }) });
   env.window.PAStatusStream.seed(statusFrame());
   await sleep(20);
+  env.add("doorRL");
+  env.add("doorFR");
   const act = (id) => env.row(id).querySelector(".parts-carries").querySelectorAll("[data-find]")[0];
 
   assert.equal(act("utilUp"), undefined, "a Part on an Output has its wire's pick instead");
   assert.ok(act("doorRL"), "a Part on no Output offers a run");
   assert.equal(act("doorRL").disabled, false, "live once the droid has said its estop is clear");
 
-  env.table().fire("click", { target: act("doorRL") });
+  env.press(act("doorRL"));
   await sleep(20);
   assert.deepEqual(env.posts.filter((post) => post.path === "/api/servo").map((post) => post.form),
     [{ arm: "ARM2", action: "nudge" }], "ARM1 carries a Part, so ARM2 is the first free Output");
   assert.ok(env.document.getElementById("wiring-find").querySelector(".parts-find-run"), "the run's line is up");
   assert.equal(act("doorFR").disabled, true, "one run at a time: no other row starts one");
+});
+
+// No Part is ever missing from the table (#296: hiding a row is how an
+// operator loses an output). A body Part is in it exactly once: a row while it
+// is on an Output, a pill among the Parts to add while it is not. A pill
+// pressed is a row with no Output lit, which is this page's own and asks the
+// droid for nothing; taken off its Output, a Part is a pill again.
+test("every body Part is in the table once, a row on an Output and a pill off one", async () => {
+  const env = await bootPicker({ outputs: withParts({ "ledc:0": ["doorFL", "doorFR"], "ledc:3": ["utilUp"] }) });
+  const body = env.window.DroidParts.parts.filter((part) => part.half !== "dome");
+  const places = (part) => [env.row(part.id) ? "row" : null, env.pill(part.id) ? "pill" : null].filter(Boolean);
+  const onOutput = (id) => env.outputs.some((output) => output.parts.includes(id));
+  const check = (when) =>
+    body.forEach((part) =>
+      assert.deepEqual(places(part), [onOutput(part.id) ? "row" : "pill"], `${part.id} ${when}`));
+  check("as the droid answered");
+  assert.equal(env.text("wiring-parts-summary"), "3 parts on 2 outputs · 3 free");
+
+  env.add("doorRL");
+  assert.deepEqual(places({ id: "doorRL" }), ["row"], "a pill pressed is a row");
+  assert.equal(env.row("doorRL").classList.contains("is-wired"), false, "and is not drawn as wired");
+  assert.equal(env.on("doorRL"), "none");
+  assert.deepEqual(env.posts, [], "nothing is sent until an Output is picked");
+
+  // The same act on a row the droid never held takes it off this page alone.
+  env.takeOff("doorRL");
+  assert.deepEqual(env.posts, [], "removing an added Part sends nothing either");
+  assert.strictEqual(env.document.activeElement, env.pill("doorRL"), "and the cursor goes with the Part, to its pill");
+
+  env.takeOff("utilUp");
+  await sleep(40);
+  assert.deepEqual(env.posts.map((post) => post.form), [{ movePart: "utilUp", movePartFrom: "ledc:3", movePartTo: "none" }]);
+  check("after a Part came off its Output");
+  assert.strictEqual(env.document.activeElement, env.pill("utilUp"), "taken off, the cursor is on its pill too");
 });

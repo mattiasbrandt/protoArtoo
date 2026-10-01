@@ -34,10 +34,16 @@ the patch releases, whose notes live on their own GitHub Release.
   takes the whole sequence back to how it was saved. Leave with edits unsaved
   and the page asks before it drops them.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
-  Wiring ends with a card for each product on the droid: its supply, its
-  draw, its logic level, where each wire goes, and what breaks hardware. Fit
-  a sound module and its card appears; answer Not fitted and it goes. The
-  printable wiring sheet ends with the same cards.
+  Wiring has a card for each product on the droid, opened from the product's
+  own row: its supply, its draw, its logic level, where each wire goes, and
+  what breaks hardware. Fit a sound module and its card appears; answer Not
+  fitted and it goes. The printable wiring sheet ends with the same cards.
+- **Wiring is one table.** Every part on an output, the free outputs, the
+  parts not on an output yet, the serial links, the dome's ESC and the radio
+  are rows of one table, and the list of pins under the drawing is gone. A
+  part's output is a bar of every output on its row; press a part under "add
+  a part" to give it a row. Print the page or save the wiring sheet and you
+  get the same table as plain text, with a box to tick for each wire.
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted

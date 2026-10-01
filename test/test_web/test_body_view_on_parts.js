@@ -188,19 +188,23 @@ test("a holoprojector is offered no Open at all, only its facts", async () => {
   assert.equal(domePosts(env).length, 0);
 });
 
-// The one picker is Wiring's (operator, 2026-09-28 on #411). A Part asked
-// for from Parts arrives with the cursor in its own row there, and the route
-// itself asks the droid to change nothing.
+// The one table a Part is put on an Output in is Wiring's (operator,
+// 2026-09-28 on #411). A Part asked for from Parts arrives with the cursor in
+// its own row there - a row it is given if it is on no Output yet - and the
+// route itself asks the droid to change nothing.
 const landsOnPicker = async (env, partId) => {
   const deadline = Date.now() + 3000;
-  const select = () => env.partsRegion()?.querySelectorAll("[data-part]").find((row) => row.dataset.part === partId)?.querySelector("select");
-  while (env.document.activeElement !== select() || !select()) {
+  // The Part's row, and not its pill among the Parts to add.
+  const row = () =>
+    env.partsRegion()?.querySelectorAll("[data-part]").find((node) => node.dataset.part === partId && node.classList.contains("parts-row"));
+  const inRow = () => env.document.activeElement?.closest?.("[data-part]") === row();
+  while (!row() || !inRow()) {
     if (Date.now() > deadline) break;
     await sleep(5);
   }
   assert.equal(env.window.location.hash, "#wiring", "the route goes to Wiring");
-  assert.ok(select(), `Wiring's picker has a row for ${partId}`);
-  assert.strictEqual(env.document.activeElement, select(), "the cursor is in that Part's own row");
+  assert.ok(row(), `Wiring's table has a row for ${partId}`);
+  assert.ok(inRow(), "the cursor is on a control of that Part's own row");
 };
 
 test("Give it an output routes to the Part's row in the picker on Wiring and writes nothing", async () => {

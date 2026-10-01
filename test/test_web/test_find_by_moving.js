@@ -30,7 +30,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
 const readData = (name) => readFileSync(join(dataDir, name), "utf-8");
 
-const NOT_WIRED = "– not wired –";
+// What a run that ends without an Output says of its Part.
+const STILL_OFF = "Rear-left body door is still not on any output\\.";
 const settle = async () => {
   for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 };
@@ -187,7 +188,7 @@ test("a run never nudges a light's wire, an Output with a Part, or one the route
 
   assert.deepEqual(env.nudges(), ["ARM3", "ARM5"]);
   assert.equal(env.running(), null, "two free Outputs, two nudges");
-  assert.match(env.feedback(), new RegExp(`None of the 2 free outputs moved Rear-left body door in one pass, so it stays ${NOT_WIRED}`));
+  assert.match(env.feedback(), new RegExp(`None of the 2 free outputs moved Rear-left body door in one pass\\. ${STILL_OFF}`));
 });
 
 // A builder who presses Stop expects stillness now, not when the firmware's
@@ -203,7 +204,7 @@ test("Stop lets go of the output under the nudge and sends nothing further", asy
   await settle();
   assert.equal(env.running(), null);
   assert.equal(env.feedRunning(), false, "the run's reads stop with it");
-  assert.match(env.feedback(), new RegExp(`Stopped\\. Rear-left body door stays ${NOT_WIRED}\\.`));
+  assert.match(env.feedback(), new RegExp(`Stopped\\. ${STILL_OFF}`));
   assert.deepEqual(env.releases(), ["ARM3"]);
   assert.deepEqual(env.nudges(), ["ARM3"], "no next nudge is asked for");
 });
@@ -290,7 +291,7 @@ test("the estop ends a run at once, and a latched estop starts none", async () =
   await settle();
   env.pushReading({ estopLatched: true, moveActsLive: false });
   assert.equal(env.running(), null, "the run ended on the reading");
-  assert.match(env.feedback(), new RegExp(`The estop stopped the run\\. Rear-left body door stays ${NOT_WIRED}\\.`));
+  assert.match(env.feedback(), new RegExp(`The estop stopped the run\\. ${STILL_OFF}`));
   assert.deepEqual(env.releases(), [], "the estop has already let go");
 
   env.find("doorRR");
@@ -337,7 +338,7 @@ test("a nudge the droid refuses ends the run and says why", async () => {
   env.find("doorRL");
   await settle();
   assert.equal(env.running(), null);
-  assert.match(env.feedback(), new RegExp(`did not reach the droid: Servo command queue full\\. Rear-left body door stays ${NOT_WIRED}`));
+  assert.match(env.feedback(), new RegExp(`did not reach the droid: Servo command queue full\\. ${STILL_OFF}`));
 });
 
 test("one run at a time: a second start is answered on the page, not sent to the droid", async () => {
