@@ -2858,8 +2858,6 @@
     const suppressValue = document.querySelector(".seq-editor-slider-value");
     const toggleSelect = document.getElementById("seq-editor-toggle");
     const notesInput = document.getElementById("seq-editor-notes");
-    const advancedToggle = document.getElementById("seq-editor-advanced-toggle");
-    const advancedFields = document.getElementById("seq-editor-advanced-fields");
 
     if (nameInput) {
       nameInput.addEventListener("input", () => {
@@ -3050,23 +3048,6 @@
         if (!editorState.current.meta) editorState.current.meta = {};
         editorState.current.meta.notes = notesInput.value;
         paintSession();
-      });
-    }
-
-    // Advanced Settings collapse toggle
-    if (advancedToggle && advancedFields) {
-      advancedToggle.addEventListener("click", () => {
-        const isExpanded = advancedToggle.getAttribute("aria-expanded") === "true";
-        advancedToggle.setAttribute("aria-expanded", !isExpanded);
-        advancedFields.classList.toggle("hidden");
-      });
-
-      // Keyboard support: Space and Enter to toggle
-      advancedToggle.addEventListener("keydown", (e) => {
-        if (e.key === " " || e.key === "Enter") {
-          e.preventDefault();
-          advancedToggle.click();
-        }
       });
     }
 
