@@ -3662,20 +3662,22 @@
           if (pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
         } else inspect(act, pressed.dataset.value);
       });
+      // Which control a field is, read from the markup the inspector wrote.
+      const kindOf = (input) => input?.getAttribute?.("type") || "";
       pickedPane.addEventListener("input", (event) => {
-        if (event.target?.type === "range" && event.target.dataset.picked) faderMoved(event.target);
+        if (kindOf(event.target) === "range" && event.target.dataset.picked) faderMoved(event.target);
       });
       pickedPane.addEventListener("change", (event) => {
         const input = event.target;
         const field = input?.dataset?.picked;
         if (!field || !sessionTimeline) return;
-        if (input.type === "range") faderLetGo();
-        else if (input.type === "checkbox") inspect(field, input.checked);
+        if (kindOf(input) === "range") faderLetGo();
+        else if (kindOf(input) === "checkbox") inspect(field, input.checked);
         // A number left empty is no number: the field goes back to the one
         // the routine holds. So does a start the block could not take - it
         // is held at its limit - because inspect() draws the inspector again
         // from where the block is.
-        else if (input.type === "number" && input.value === "") repaintPicked();
+        else if (kindOf(input) === "number" && input.value === "") repaintPicked();
         else inspect(field, input.value);
       });
     }
