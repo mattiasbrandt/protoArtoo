@@ -1522,31 +1522,40 @@
     }
 
     if (id === "loop") {
-      // A loop is one object over the steps it repeats: the ones that start
-      // inside its first period after the drop. They keep their moments -
-      // a repeated step is timed from the start of a pass, so each is
-      // rewritten from there - and leave their beats, which count from
-      // nothing inside a pass. A loop, a sequence and the end cannot be
-      // repeated, so the run of steps stops at the first of them.
-      const loop = { t: at, type: "loop", ...stepTypeDefaults.loop };
-      const taken = [];
-      for (let index = steps.findIndex((step, i) => !inLoop.has(i) && (Number(step?.t) || 0) >= at); index >= 0 && index < steps.length; index += 1) {
-        const step = steps[index];
-        if (inLoop.has(index) || ["loop", "sequence", "end"].includes(step.type) || step.t >= at + loop.periodMs) break;
-        taken.push(step);
-      }
-      if (taken.length === 0) {
+      // A loop is one object over the steps it repeats: the run of steps that
+      // start inside its first period after the drop, up to the first a loop
+      // cannot repeat. They keep their moments - a repeated step is timed
+      // from the start of a pass, so each is rewritten from there - and leave
+      // their beats, which count from nothing inside a pass.
+      const first = steps.findIndex((step, i) => !inLoop.has(i) && (Number(step?.t) || 0) >= at);
+      let count = 0;
+      for (let step = steps[first]; step && !inLoop.has(first + count) && !NOT_REPEATED.includes(step.type)
+        && step.t < at + stepTypeDefaults.loop.periodMs; step = steps[first + count]) count += 1;
+      if (count === 0) {
         sayOnStage("Servo Loop needs a step after it to repeat.", "error");
         return;
       }
+      const wrap = (list) => {
+        const loop = { t: at, type: "loop", ...stepTypeDefaults.loop, body: count };
+        list.slice(first, first + count).forEach((step) => {
+          step.t -= at;
+          delete step.beat;
+        });
+        list.splice(first, 0, loop);
+        return loop;
+      };
+      // Tried on a copy first. What a loop repeats is checked on its own, as
+      // the routine round it is: a flutter taken into the loop with its close
+      // left outside, or the other way about, is refused by the droid. A drop
+      // never turns a routine it accepts into one it refuses.
+      const trial = JSON.parse(JSON.stringify(editorState.current));
+      wrap(trial.steps);
+      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !SeqProtocolCheck.validateSequence(trial).ok) {
+        sayOnStage("Servo Loop would split a step from the close it owes.", "error");
+        return;
+      }
       historyPush();
-      taken.forEach((step) => {
-        step.t -= at;
-        delete step.beat;
-      });
-      loop.body = taken.length;
-      steps.splice(steps.indexOf(taken[0]), 0, loop);
-      landed([loop]);
+      landed([wrap(steps)]);
       return;
     }
 
