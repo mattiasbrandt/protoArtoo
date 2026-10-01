@@ -388,7 +388,7 @@
       windowMs,
       loops,
       parts: partLanes,
-      rows: ["sound", "dome", "spin", "other"].map((key) => rows.get(key)).filter(Boolean),
+      rows: ["sound", "dome", "spin", "gesture", "phrase", "other"].map((key) => rows.get(key)).filter(Boolean),
     };
   };
 
