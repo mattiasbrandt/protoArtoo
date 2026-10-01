@@ -571,7 +571,7 @@
   //   cardsLabel, onCards, onClose   the read-only view's own way out: the
   //             words on the button back to the card view, and the two presses
   //
-  // Returns {refresh(context), at(), destroy()}.
+  // Returns {refresh(context), at(), dragging(), destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (host, source, options = {}) => {
     const seqNow = typeof source === "function" ? source : () => source;
@@ -932,14 +932,20 @@
       done.alone.forEach((step) => selection.add(step));
       redraw();
     }
-    // A cancelled gesture puts every step back where the press found it.
-    function dragCancel() {
-      if (!drag) return;
+    // A cancelled gesture puts every step back where the press found it. Its
+    // writes went into the caller's own step objects, so they have to be taken
+    // out again by whatever ends it short of a pointerup - Escape, a
+    // pointercancel, or the view being taken down under it.
+    const dragAbandon = () => {
+      if (!drag) return false;
       const undone = drag;
       drag = null;
       dragStop();
       apply(undone.plan, 0);
-      redraw();
+      return true;
+    };
+    function dragCancel() {
+      if (dragAbandon()) redraw();
     }
 
     const clearSelection = () => {
@@ -1109,10 +1115,12 @@
         redraw();
       },
       at: () => t,
+      // A drag is under way: its half-made writes are in the routine and not
+      // yet in the history, so the editor must not undo or redo under it.
+      dragging: () => drag !== null,
       destroy() {
         scrubEnd();
-        dragStop();
-        drag = null;
+        dragAbandon();
         host.innerHTML = "";
       },
     };

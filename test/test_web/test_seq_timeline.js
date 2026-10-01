@@ -310,8 +310,7 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
   (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
 
   const view = page.editorTimeline;
-  const grid = view.querySelector(".tl-grid");
-  assert.ok(grid, "the editor drew no timeline");
+  assert.ok(view.querySelector(".tl-grid"), "the editor drew no timeline");
   const steps = () => Array.from(page.seam.editorState.current.steps, (step) => [step.type, step.t]);
   const turn = () => page.seam.editorState.current.steps.find((step) => step.type === "domeRotate");
 
@@ -326,7 +325,7 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
     const width = (turn().durationMs / windowMs) * 1000;
     block.getBoundingClientRect = () => ({ left, right: left + width, width });
     const at = left + width / 2;
-    grid.fire("pointerdown", { target: block, clientX: at + (clientX || 0), preventDefault() {}, ...extra });
+    view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: at + (clientX || 0), preventDefault() {}, ...extra });
     return { at, pxPerMs: 1000 / windowMs };
   };
 
@@ -343,6 +342,18 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
   // A press that moves nothing only selects.
   press();
   page.fireWindow("pointerup", {});
+
+  // An Undo asked for with a block still held does nothing: the drag's writes
+  // are in the routine and not yet an entry, and the steps a restore would put
+  // back are not the ones the drag is holding. Taking the view down under a
+  // drag puts the block back where the press found it.
+  held = press();
+  page.fireWindow("pointermove", { clientX: held.at + 450 * held.pxPerMs });
+  (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
+  assert.equal(turn().t, 2450, "Undo ran under a drag");
+  (page.byId("seq-editor-show-steps").listeners.click || []).forEach((fn) => fn());
+  assert.equal(turn().t, 2000, "a drag torn down mid-gesture left its half-made move in the routine");
+  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
 
   // Dragged on past the open, out of reach of any edge: it stays where it is put.
   held = press();

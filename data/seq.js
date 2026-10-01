@@ -2127,8 +2127,13 @@
     edited();
   };
 
+  // Neither runs while a block is being dragged on the timeline: the drag's
+  // writes are in the routine but not yet an entry, and restoring a copy
+  // would replace the very steps the drag is holding.
+  const historyBusy = () => !editorState.current || Boolean(sessionTimeline?.dragging());
+
   const undo = () => {
-    if (!editorState.current) return;
+    if (historyBusy()) return;
     historySettle();
     if (history.undo.length === 0) return;
     history.redo.push(history.base);
@@ -2136,7 +2141,7 @@
   };
 
   const redo = () => {
-    if (!editorState.current) return;
+    if (historyBusy()) return;
     historySettle();
     if (history.redo.length === 0) return;
     history.undo.push(history.base);
