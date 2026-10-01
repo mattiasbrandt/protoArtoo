@@ -81,6 +81,11 @@ const fire = (element, name) => (element.listeners[name] || []).forEach((fn) => 
 
 function newPage() {
   const posts = [];
+  // The shell's half of an unmount hold: what the surface registered, and what
+  // it answered with. And every write to browser storage, which an unsaved
+  // edit must never make.
+  const surface = { decide: null, released: 0, stayed: 0 };
+  const stored = [];
   const elements = new Map();
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement());
@@ -176,7 +181,19 @@ function newPage() {
     PAUtils: { escapeHtml, escapeAttr: escapeHtml, showFeedback() {}, debounce: (fn) => fn },
     PABootstrap: { registerSection() {}, setResourceLabels() {}, retryNow() {}, refreshSections() {} },
     PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
-    localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
+    PASurface: {
+      holdUnmount: (decide) => {
+        surface.decide = decide;
+      },
+      releaseUnmount: () => {
+        surface.released += 1;
+      },
+      stayOnSurface: () => {
+        surface.stayed += 1;
+      },
+    },
+    localStorage: { length: 0, key: () => null, getItem: () => null, setItem: (key) => stored.push(key), removeItem() {} },
+    sessionStorage: { length: 0, key: () => null, getItem: () => null, setItem: (key) => stored.push(key), removeItem() {} },
     document: {
       readyState: "complete",
       body: makeElement(),
@@ -214,6 +231,10 @@ function newPage() {
   return {
     posts,
     byId,
+    surface,
+    stored,
+    // The sequence the editor holds, as Save would send it; null with no edit open.
+    editing: () => seam.editorState.current,
     card: (index) => stepCards().find((c) => c.index === String(index)),
     open(sequence, expanded) {
       seam.editorState.expanded = new Set(expanded);
@@ -330,7 +351,7 @@ test("retiming to the grid counts only the steps that landed, and one undo puts 
   fire(page.byId("seq-editor-retime"), "click");
   assert.equal(page.byId("seq-editor-retime-receipt").textContent, "3 of 4 steps landed on a beat.");
 
-  fire(page.byId("seq-editor-retime-undo"), "click");
+  fire(page.byId("seq-editor-undo"), "click");
   await page.save();
   const saved = page.posts.filter((post) => post.url === "/api/seq");
   assert.equal(saved.length, 1, "Save sent nothing");
@@ -375,4 +396,114 @@ test("a sequence opens after another was closed with Cancel", () => {
 
   page.open(sequence, [0]);
   assert.ok(page.card(0), "the sequence opened after a Cancel drew no step");
+});
+
+// Every edit is one Undo and one Redo, on one history (ADR 0057, #441): a run
+// of typing in a field is one edit however many keystrokes it took, a tempo
+// change is one edit although it moves every step on a beat, and what comes
+// back is exactly the routine Save would have sent - the tempo with the steps,
+// because a step on a beat is only where its tempo puts it.
+test("a run of typing and a tempo change are each one Undo, and Redo puts them back", async () => {
+  const page = newPage();
+  page.open(
+    {
+      name: "DM:HISTORY",
+      suppressMs: 8000,
+      toggleGroup: "none",
+      tempo: { bpm: 130, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+      steps: [
+        { t: 0, type: "audio", cmd: "$H" },
+        { t: 923, beat: 2, type: "audio", cmd: "$S" },
+        { t: 3000, type: "end" },
+      ],
+    },
+    [0],
+  );
+  const undo = page.byId("seq-editor-undo");
+  const redo = page.byId("seq-editor-redo");
+  const times = () => Array.from(page.editing().steps, (step) => step.t);
+  assert.equal(undo.disabled, true, "a sequence just opened has nothing to undo");
+
+  // 4, 40, 400: three keystrokes, then the field is left.
+  const time = page.card(0).timeInput;
+  for (const typed of ["4", "40", "400"]) {
+    time.value = typed;
+    fire(time, "input");
+  }
+  fire(time, "change");
+  assert.deepEqual(times(), [400, 923, 3000]);
+
+  const bpm = page.byId("seq-editor-bpm");
+  bpm.value = "120";
+  fire(bpm, "change");
+  assert.deepEqual(times(), [400, 1000, 3000], "the fixture: the step on beat 2 moved with the tempo");
+
+  fire(undo, "click");
+  assert.deepEqual(times(), [400, 923, 3000], "Undo did not take the step on a beat back with the tempo");
+  assert.equal(page.editing().tempo.bpm, 130, "Undo left the new tempo in place");
+
+  fire(undo, "click");
+  assert.deepEqual(times(), [0, 923, 3000], "one Undo did not take back the whole typed time");
+  assert.equal(undo.disabled, true, "three keystrokes left more than one entry behind");
+
+  fire(redo, "click");
+  fire(redo, "click");
+  assert.equal(redo.disabled, true);
+  await page.save();
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  assert.deepEqual(saved[0].body.steps.map((step) => step.t), [400, 1000, 3000], "Redo did not put both edits back");
+  assert.equal(saved[0].body.tempo.bpm, 120);
+});
+
+// An unsaved edit is not kept, and it is never dropped without the builder
+// being asked (operator decision 2026-09-30, #441). Leaving by Cancel and
+// leaving the Sequences surface both ask first; the edit is still there until
+// the answer is Discard; and nothing about it is written to browser storage.
+test("an unsaved edit is dropped only on Discard, whichever way the builder was leaving", () => {
+  const page = newPage();
+  const sequence = {
+    name: "DM:UNSAVED",
+    suppressMs: 8000,
+    toggleGroup: "none",
+    steps: [
+      { t: 0, type: "audio", cmd: "$H" },
+      { t: 1000, type: "end" },
+    ],
+  };
+  const edit = () => {
+    page.open(sequence, [0]);
+    const time = page.card(0).timeInput;
+    time.value = "250";
+    fire(time, "change");
+  };
+  assert.equal(typeof page.surface.decide, "function", "Sequences registered no unmount hold with the shell");
+
+  // With nothing unsaved, both ways out are free.
+  page.open(sequence, []);
+  assert.equal(page.surface.decide(), false, "a clean edit held the surface");
+  fire(page.byId("seq-editor-cancel"), "click");
+  assert.equal(page.editing(), null, "Cancel on a clean edit did not close it");
+
+  // Cancel, then keep editing: the edit is still there.
+  edit();
+  fire(page.byId("seq-editor-cancel"), "click");
+  assert.equal(page.editing()?.steps[0].t, 250, "Cancel dropped an unsaved edit without asking");
+  fire(page.byId("seq-modal-discard-keep"), "click");
+  assert.equal(page.editing()?.steps[0].t, 250, "keeping the edit lost it");
+
+  // Leaving the surface: held while it asks, and keeping puts the address back.
+  assert.equal(page.surface.decide(), true, "the surface let go of an unsaved edit");
+  assert.equal(page.editing()?.steps[0].t, 250);
+  fire(page.byId("seq-modal-discard-keep"), "click");
+  assert.deepEqual([page.surface.stayed, page.surface.released], [1, 0]);
+
+  // Leaving again, and Discard: the edit goes and the navigation goes through.
+  assert.equal(page.surface.decide(), true);
+  fire(page.byId("seq-modal-discard-confirm"), "click");
+  assert.equal(page.editing(), null, "Discard left the edit open");
+  assert.deepEqual([page.surface.stayed, page.surface.released], [1, 1]);
+  assert.equal(page.surface.decide(), false, "nothing is left to hold the surface for");
+
+  assert.deepEqual(page.stored, [], "an unsaved edit was written to browser storage");
 });

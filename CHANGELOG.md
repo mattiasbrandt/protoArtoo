@@ -26,6 +26,13 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Edit a sequence on its timeline.** Open your own sequence and switch
+  from Steps to Timeline: drag a block to move it, drag its edge to make it
+  longer or shorter, drag the end line to give the routine more room. A block
+  that comes close to another block's edge lands on it. Every edit, on the
+  timeline or in the step list, is one Undo and one Redo, and Revert still
+  takes the whole sequence back to how it was saved. Leave with edits unsaved
+  and the page asks before it drops them.
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted
