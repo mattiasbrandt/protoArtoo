@@ -119,9 +119,13 @@ const stub = () => ({
   appendChild() {},
 });
 
-export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true, config = configured() } = {}) => {
+// `lineup` reshapes the controller's answer before the surface reads it: a
+// controller on older firmware, or one whose rows say something the shipped
+// registry does not.
+export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true, config = configured(), lineup: reshape = null } = {}) => {
   const parsed = surfaceDocument(set);
   const lineup = lineupFor(board);
+  if (reshape) reshape(lineup);
   // The droid reports what it started with beside what it saved (#371).
   const report = bootedDroid();
   const posts = [];

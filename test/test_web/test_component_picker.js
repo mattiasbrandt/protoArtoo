@@ -27,6 +27,10 @@
 //     RC channel off, and no later save from this page turns a channel back on
 //     from a tick it still held; a droid holding it reads Not fitted in both
 //     homes (CONTEXT.md "Radio Controller", operator 2026-09-29 on #369).
+//   - a card says a product has run on a droid only where the controller's
+//     own row says so: a controller on older firmware sends no such field
+//     (firmware and web assets are uploaded separately) and claims nothing, a
+//     roadmap row cannot claim it, and the mark never moves a card (#455).
 //   - a family with no Component Member names the product on the droid only
 //     once the lineup has answered, and never guesses one where there is a
 //     choice: other surfaces draw from that answer (Wiring's cards, #458).
@@ -149,4 +153,37 @@ test("a family with no member names its fitted product only once the lineup has 
   assert.equal(picker.fittedPart("foot_drive")?.id, "hoverboard");
   assert.equal(picker.fittedPart("dome_rotation")?.id, "isdt_esc70", "the roadmap row beside it is not on the droid");
   assert.equal(picker.fittedPart("sound"), null, "three sound modules are a choice, answered by chosenPart()");
+});
+
+test("a card says a product has run on a droid only where the controller's row says so, and it never moves a card", async () => {
+  const marked = (plate) => plate.querySelector(".component-confirmed") !== null;
+  const notes = (plate) => plate.querySelectorAll(".droid-build-card-blurb").length;
+  const order = (env) => env.host("sound").querySelector(".component-cards").children.map((plate) => plate.dataset.option);
+  const part = (answer, id) => answer.parts.find((each) => each.id === id);
+
+  // The answers swapped against the shipped registry, so neither "these
+  // products" nor "every supported card" survives; and a roadmap row that
+  // claims a run nothing can have made.
+  const env = await ready({
+    lineup: (answer) => {
+      part(answer, "dy_sv5w").confirmed_on_droid = false;
+      part(answer, "mp3_trigger").confirmed_on_droid = true;
+      part(answer, "dfplayer_mini").confirmed_on_droid = true;
+    },
+  });
+  assert.equal(marked(env.plate("sound", "mp3_trigger")), true, "the row that says so carries the mark");
+  assert.equal(marked(env.plate("sound", "dy_sv5w")), false, "the row that says not yet carries none");
+  assert.equal(marked(env.plate("sound", "dfplayer_mini")), false, "a roadmap card never carries it");
+  assert.equal(marked(env.plate("sound", "not-fitted")), false);
+
+  // A controller whose firmware predates the field: nothing is claimed either
+  // way, so no mark and no note about a run.
+  const older = await ready({ lineup: (answer) => answer.parts.forEach((each) => delete each.confirmed_on_droid) });
+  for (const id of ["dy_sv5w", "mp3_trigger", "chirp"]) {
+    assert.equal(marked(older.plate("sound", id)), false, `${id}: an older controller's card claims no run`);
+    assert.equal(notes(older.plate("sound", id)), 0, `${id}: and does not say it has not run`);
+  }
+
+  // Lineup products are peers: the mark is never a rank.
+  assert.deepEqual(order(env), order(older), "the cards stay in the order the registry gives them");
 });

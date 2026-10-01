@@ -26,6 +26,14 @@
 // A roadmap card is static content, never a disabled button, so there is
 // nothing on it to press.
 //
+// RUN ON A DROID IS A SECOND MARK, NEVER A STATE. The registry says which
+// supported products the project has seen run on a real droid (CONTEXT.md
+// "Confirmed on a Droid", #455). A card that has carries a quiet mark beside
+// whatever its state badge says; it takes no Status Color, and it never
+// orders, preselects or recommends - the cards stay in the registry's order,
+// because lineup products are peers. Read off the row's own field, never off
+// a product id.
+//
 // PICKING IS APPLYING. A pick goes to the controller at once through
 // Configuration's own save (window.PAConfiguration), the same save a toggle
 // uses; there is no staging buffer anywhere, and the cards are redrawn from
@@ -133,6 +141,19 @@
   };
 
   const ROADMAP_SENTENCE = "We intend to carry it. Not yet.";
+
+  // Whether a supported product has run on a real droid: the lineup's
+  // `confirmed_on_droid`, a project fact beside `status` (docs/api.md). A
+  // roadmap row never has - there is no driver to have run - so its own answer
+  // is not asked. The two are compared strictly because a controller whose
+  // firmware is older than its web assets sends no such field at all (the two
+  // are uploaded separately): that card gets neither the mark nor the note,
+  // since the droid has said neither.
+  const CONFIRMED_MARK = "Run on a droid";
+  const NOT_YET_RUN_SENTENCE = "Built. Not yet run on a droid.";
+  const hasRunOnDroid = (part) => part.status === KIND_SUPPORTED && part.confirmed_on_droid === true;
+  const saysNotYetRun = (part) => part.status === KIND_SUPPORTED && part.confirmed_on_droid === false;
+  const confirmedMark = () => element("span", "component-confirmed", CONFIRMED_MARK);
 
   let lineup = null;
   let config = null;
@@ -285,11 +306,12 @@
   const artFrame = (id) => window.PAProductArt.frame(id);
 
   // One option, drawn as one plate: the picture, a pill saying what state it
-  // is in, the product's name, and the one sentence a state owes. The plate
-  // classes are the Droid Build's (#368), which the operator approved as the
-  // look of a picker card.
+  // is in, the mark of a product that has run on a droid, the product's name,
+  // and the notes it owes - each its own short line, never one long one. The
+  // plate classes are the Droid Build's (#368), which the operator approved
+  // as the look of a picker card.
   const optionPlate = (entry, option, chosen, interactive) => {
-    const { kind, id, name, blurb, route, state } = option;
+    const { kind, id, name, notes, route, state, confirmed } = option;
     // A press exists only where a pick writes something; a roadmap card and a
     // card in a family that is shown rather than asked are words and a picture.
     const asButton = kind !== KIND_ROADMAP && isChoosable(entry);
@@ -325,9 +347,10 @@
     const head = element("span", "droid-build-card-head");
     const badge = badgeFor(entry, state);
     if (badge) head.appendChild(pill(badge));
+    if (confirmed) head.appendChild(confirmedMark());
     face.appendChild(head);
     face.appendChild(element("span", "droid-build-card-label", name));
-    if (blurb) face.appendChild(element("span", "droid-build-card-blurb", blurb));
+    notes.forEach((note) => face.appendChild(element("span", "droid-build-card-blurb", note)));
     plate.appendChild(face);
     // Outside the face, which may be a button: a link inside a button is not
     // a link anybody can press.
@@ -414,6 +437,7 @@
     card.appendChild(element("span", "component-receiver-label", part.name));
     const caption = RC_RECEIVER.wires[part.protocol].caption;
     if (caption) card.appendChild(element("span", "component-receiver-caption", caption));
+    if (hasRunOnDroid(part)) card.appendChild(confirmedMark());
     return card;
   };
 
@@ -489,13 +513,17 @@
         // with its own sentence, because a board is not a driver.
         route = window.PAFeatureAvailability?.routeFor("not-in-this-build") || null;
       }
+      // What the state owes, then what the project has not seen yet: two
+      // notes, so a card this image leaves out still says both.
+      const notes = [blurb, saysNotYetRun(part) ? NOT_YET_RUN_SENTENCE : ""].filter(Boolean);
       return {
         kind: part.status === KIND_ROADMAP ? KIND_ROADMAP : KIND_SUPPORTED,
         id: part.id,
         name: part.name,
-        blurb,
+        notes,
         route,
         state,
+        confirmed: hasRunOnDroid(part),
       };
     });
     if (offersNotFitted(entry)) {
@@ -503,8 +531,9 @@
         kind: KIND_NOT_FITTED,
         id: NOT_FITTED,
         name: "Not fitted",
-        blurb: entry.notFitted,
+        notes: [entry.notFitted].filter(Boolean),
         state: chosen === NOT_FITTED ? "declined" : "available",
+        confirmed: false,
       });
     }
     return options;
@@ -679,6 +708,11 @@
     plate.dataset.option = part.id;
     const face = element("div", "droid-build-card component-card");
     face.appendChild(artFrame(artIdFor(part.id)));
+    if (hasRunOnDroid(part)) {
+      const head = element("span", "droid-build-card-head");
+      head.appendChild(confirmedMark());
+      face.appendChild(head);
+    }
     face.appendChild(element("span", "droid-build-card-label", part.name));
     plate.appendChild(face);
     return plate;
