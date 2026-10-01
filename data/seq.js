@@ -754,9 +754,10 @@
     editorState.expanded = new Set([...editorState.expanded].map((from) => order.indexOf(from)));
   };
 
-  // Remove steps by index. A loop is one object: removing it takes the steps it
-  // repeats, removing one of those shortens it, and a loop left repeating
-  // nothing goes too - otherwise it would reach for the step after it.
+  // Remove steps by index: the one removal, for the step list and the timeline
+  // alike. A loop is one object: removing it takes the steps it repeats,
+  // removing one of those shortens it, and a loop left repeating nothing goes
+  // too - otherwise it would reach for the step after it.
   const removeSteps = (indices) => {
     const steps = editorState.current.steps;
     const gone = new Set(indices);
@@ -778,7 +779,12 @@
       loop.body = left;
     });
     editorState.current.steps = steps.filter((_, index) => !gone.has(index));
-    editorState.expanded = new Set();
+    // A card still there stays open, at the place it has moved up to.
+    const removed = [...gone];
+    editorState.expanded = new Set(
+      [...editorState.expanded]
+        .filter((index) => !gone.has(index))
+        .map((index) => index - removed.filter((at) => at < index).length));
     rerenderStepTable();
     edited();
   };
@@ -3321,13 +3327,9 @@
       if (removeBtn) {
         removeBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          if (confirm("Remove this step?")) {
-            historyPush();
-            editorState.current.steps.splice(stepIdx, 1);
-            editorState.expanded.delete(stepIdx);
-            rerenderStepTable();
-            edited();
-          }
+          // The same removal the timeline makes, so a loop is kept whole
+          // from either view.
+          if (confirm("Remove this step?")) removeSteps([stepIdx]);
         });
       }
     });
