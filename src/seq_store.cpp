@@ -378,27 +378,15 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
     for (uint8_t branch = 0; branch < 2 && r.ok; ++branch) {
         SeqStep** buf = (branch == 0) ? &s_staging.main : &s_staging.close;
         uint8_t* count = (branch == 0) ? &s_stagedDraft.stepCount : &s_stagedDraft.closeStepCount;
-        for (uint8_t pass = 0; pass <= PC_NEST_DEPTH_MAX && r.ok && *buf != nullptr; ++pass) {
-            // A pass splices as many phrases as the branch held when it began:
-            // the ones a splice brings in are the next pass's, one level down.
-            // Re-sorting moves steps, so each is found afresh from the front.
-            uint8_t todo = 0;
-            for (uint8_t k = 0; k < *count; ++k) {
-                if ((*buf)[k].type == STEP_SEQUENCE) ++todo;
-            }
-            for (; todo > 0 && r.ok; --todo) {
-                uint8_t at = 0;
-                while (at < *count && (*buf)[at].type != STEP_SEQUENCE) ++at;
-                if (at >= *count) break;
+        const bool fits = seqStoreSplicePhrases(
+            buf, count,
+            [&](const char* ref, bool deep, const SeqStep** child, uint8_t* childCount) {
                 const SequenceEntry* factory = nullptr;
-                const bool deep = pass == PC_NEST_DEPTH_MAX;
-                const bool found = !deep && nestResolve((*buf)[at].payload, path, sizeof(path), &factory);
+                const bool found = !deep && nestResolve(ref, path, sizeof(path), &factory);
                 st = SeqStaging();
-                const SeqStep* child = nullptr;
-                uint8_t childCount = 0;
                 if (factory != nullptr) {
-                    child = factory->steps;
-                    childCount = factory->stepCount;
+                    *child = factory->steps;
+                    *childCount = factory->stepCount;
                 } else if (found) {
                     f = LittleFS.open(path, "r");
                     doc.clear();
@@ -410,21 +398,18 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
                             seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
                         if (cr.ok) cr = protocolCheck(d);  // stamps the phrase's own classes
                         if (cr.ok) {
-                            child = d.steps;
-                            childCount = d.stepCount;
+                            *child = d.steps;
+                            *childCount = d.stepCount;
                         }
                     }
                 }
-                if (child == nullptr) {
-                    PA_LOG_WARN(TAG, "%s: sequence %s left out - %s", name, (*buf)[at].payload,
+                if (*child == nullptr) {
+                    PA_LOG_WARN(TAG, "%s: sequence %s left out - %s", name, ref,
                                 deep ? "nested deeper than 3" : "not on this droid, or it no longer checks");
                 }
-                if (!seqStoreSplicePhrase(buf, count, at, child, childCount)) {
-                    r = pcFail("steps", "too many steps once its sequences are inside, or out of memory");
-                }
-                stagingFree(st);
-            }
-        }
+            },
+            [&]() { stagingFree(st); });
+        if (!fits) r = pcFail("steps", "too many steps once its sequences are inside, or out of memory");
     }
     s_stagedDraft.steps = s_staging.main;
     s_stagedDraft.closeSteps = s_staging.close;
