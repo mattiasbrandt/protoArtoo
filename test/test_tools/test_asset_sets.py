@@ -539,7 +539,10 @@ class RealPagesStage(unittest.TestCase):
                 for page in pages:
                     with gzip.open(page, "rt", encoding="utf-8") as fh:
                         html = fh.read()
-                    self.assertNotIn("PA:INCLUDE", html, page.name)
+                    markup = re.sub(
+                        r"<(script|style|textarea|title)\b[^>]*>[\s\S]*?</\1>", "", html, flags=re.I
+                    )
+                    self.assertNotIn("<!--", markup, "%s ships a markup comment" % page.name)
                     if page.name == "index.html.gz":
                         for block in kernel_blocks:
                             self.assertIn(block, html, "the kernel's style and script are staged as written")
