@@ -604,7 +604,7 @@
         ? `<button type="button" class="btn btn-sm accent" data-tl-act="pose">Move the droid to this moment</button>`
         : "") +
       (edit
-        ? `<button type="button" class="seq-act" data-tl-act="remove" disabled>Delete</button>`
+        ? `<button type="button" class="seq-act" data-tl-act="remove" disabled>Remove</button>`
         : `<button type="button" class="seq-act" data-tl-act="cards">${esc(options.cardsLabel || "Edit steps")}</button>` +
           `<button type="button" class="seq-act" data-tl-act="close">Close</button>`) +
       `</span></div>`;
@@ -701,7 +701,7 @@
       ruler.addEventListener("keydown", onKey);
       if (removeButton) {
         removeButton.disabled = !editing() || selection.size === 0;
-        removeButton.textContent = selection.size > 1 ? `Delete ${selection.size} steps` : "Delete";
+        removeButton.textContent = selection.size > 1 ? `Remove ${selection.size} steps` : "Remove";
       }
     };
 
