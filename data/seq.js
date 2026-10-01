@@ -173,17 +173,26 @@
   // =========================================================================
   const RUN_POLL_MS = 1000;
   // How long the droid gets to take up a run it accepted. It does so within a
-  // dispatcher pass, so this is generous; it is judged only when an answer
-  // lands, never by a timer of its own.
+  // dispatcher pass, so this is generous. Judged when an answer lands: only an
+  // answer can say the record is still the one from before the press.
   const RUN_START_WAIT_MS = 5000;
+  // How long the record may go unanswered before the page stops saying the run
+  // is under way. A droid that drops off the network mid-run answers nothing,
+  // so no answer can end the run: this is judged at each read, before it is
+  // sent, from the first read since the last answer - the time the page has
+  // been asking, never the time a hidden tab or another surface kept it from
+  // asking. The run itself is not stopped, and may still be playing.
+  const RUN_QUIET_MS = 5000;
 
   // `onChange({ name, running, outcome })` is called when a run starts being
   // watched and when it stops being one. `outcome` is the record's own word
   // (completed, aborted, preempted, estop, reconnect), "replaced" when the
-  // record became something else's, or "not-started" when the droid accepted
-  // the run and never began it.
+  // record became something else's, "not-started" when the droid accepted
+  // the run and never began it, or "lost" when the droid stopped answering.
   const createRunWatch = (onChange) => {
-    // { name, before, sentAt, seen } while a run started here is under way.
+    // { name, before, sentAt, seen, unheardSince } while a run started here is
+    // under way. `unheardSince` is when the first read since the last answer
+    // was sent, or null when the last read was answered.
     let run = null;
 
     const sameRecord = (a, b) =>
@@ -194,11 +203,21 @@
     // create the watch in the surface's script body. The rejection of a read
     // that got no answer is left to PASurface.poll(), which reports it.
     const poll = window.PASurface.poll(() => {
+      const now = Date.now();
+      if (run.unheardSince !== null && now - run.unheardSince >= RUN_QUIET_MS) {
+        // Nothing was asked this time, so nothing is handed back to be read
+        // as an answer.
+        end("lost");
+        return undefined;
+      }
+      if (run.unheardSince === null) run.unheardSince = now;
       const asked = run;
       return window.PAApi.get("/api/seq/last-run").then((answer) => {
         // An answer to a question asked about an earlier run says nothing
         // about this one.
-        if (run !== null && run === asked) judge(answer.data || {});
+        if (run === null || run !== asked) return;
+        run.unheardSince = null;
+        judge(answer.data || {});
       });
     }, { cadenceMs: RUN_POLL_MS, runOnStart: true, refreshOnReturn: true });
 
@@ -241,7 +260,7 @@
       await window.PAApi.postJson("/api/seq/test", { name });
       // A run already watched is over the moment the droid accepts this one:
       // the later run preempts it.
-      run = { name, before, sentAt: Date.now(), seen: false };
+      run = { name, before, sentAt: Date.now(), seen: false, unheardSince: null };
       poll.start();
       onChange({ name, running: true });
     };
@@ -255,9 +274,17 @@
 
   // The one run this surface has started: the strip and the list row both
   // show it, and both are painted from it (paintRun() below).
+  // The endings the surface has a sentence for. A run that ends by itself, is
+  // stopped, or gives way to a later run ends without one: the lamp going out
+  // is the word.
+  const RUN_ENDINGS = {
+    "not-started": (name) => `The droid did not start ${name}.`,
+    lost: (name) => `Lost touch with the droid; ${name} may still be running.`,
+  };
+
   const runWatch = createRunWatch(({ name, running, outcome }) => {
     paintRun();
-    if (!running && outcome === "not-started") sayOfRun(name, `The droid did not start ${name}.`);
+    if (!running && RUN_ENDINGS[outcome]) sayOfRun(name, RUN_ENDINGS[outcome](name));
   });
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)

@@ -121,7 +121,9 @@ const record = (name, startMs, outcome) => ({
 // The Sequences surface with DM:GREET open in the workspace, on a droid whose
 // last-run record is `droid.record` - the test changes it as the droid would.
 function newSurface(initialRecord) {
-  const droid = { record: initialRecord };
+  // `answers: false` is a droid that has dropped off the network: a read of the
+  // record gets no answer.
+  const droid = { record: initialRecord, answers: true };
   const requests = []; // every request the page sent, in order: "GET /api/..."
   let clock = 1_000_000;
   const intervals = new Map();
@@ -149,6 +151,7 @@ function newSurface(initialRecord) {
       get: (url) => {
         requests.push(`GET ${url}`);
         if (url === "/api/seq/last-run") {
+          if (!droid.answers) return Promise.reject(Object.assign(new Error("no response"), { kind: "network" }));
           return Promise.resolve({ ok: true, status: 200, data: JSON.parse(JSON.stringify(droid.record)) });
         }
         return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] });
@@ -307,10 +310,11 @@ test("a run under way is not asked about while another surface is on screen, and
   await page.tick();
   assert.ok(page.saysRunning());
 
+  // Long enough away that a page counting the time it was not asking would
+  // call the droid lost on the way back.
   page.shell.showing("dashboard");
   const asked = page.readsOfTheRecord();
-  await page.tick();
-  await page.tick();
+  for (let second = 0; second < 10; second += 1) await page.tick();
   assert.equal(page.readsOfTheRecord(), asked, "the droid was asked about the run from a surface nobody is reading");
 
   // It ended while the builder was elsewhere; the way back reads it at once.
@@ -319,4 +323,25 @@ test("a run under way is not asked about while another surface is on screen, and
   await page.settle();
   assert.equal(page.readsOfTheRecord(), asked + 1);
   assert.equal(page.saysRunning(), false);
+});
+
+test("a droid that stops answering mid-run does not read as running for ever, and the page says it lost touch", async () => {
+  const page = newSurface({ valid: false });
+  await page.press("seq-editor-test");
+  page.droid.record = record("DM:GREET", 5_000, "running");
+  await page.tick();
+  assert.ok(page.saysRunning());
+
+  // The droid drops off the network. Nothing it could answer will end the run.
+  page.droid.answers = false;
+  await page.tick();
+  assert.ok(page.saysRunning(), "one unanswered read ended the run");
+
+  for (let second = 0; second < 6; second += 1) await page.tick();
+  assert.equal(page.saysRunning(), false, "a run on a droid that no longer answers still reads as running");
+  assert.match(page.feedback(), /Lost touch with the droid; DM:GREET may still be running\./);
+
+  const asked = page.readsOfTheRecord();
+  await page.tick();
+  assert.equal(page.readsOfTheRecord(), asked, "the record is still being asked for after the page gave up");
 });
