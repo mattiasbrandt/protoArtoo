@@ -102,7 +102,7 @@ extern const ComponentPartEntry COMPONENT_PARTS[];
 extern const size_t COMPONENT_PART_COUNT;
 
 // -----------------------------------------------------------------------------
-// Lookups. All are O(n) linear scans over a 21-row flash table, called from
+// Lookups. All are O(n) linear scans over a 22-row flash table, called from
 // boot and from Core 0 web handlers -- never from a real-time loop.
 // -----------------------------------------------------------------------------
 

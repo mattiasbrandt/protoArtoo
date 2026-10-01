@@ -11,7 +11,7 @@
 // including it -- define the one you do not need as empty rather than leaving
 // it out, so a missing definition stays a hard error instead of silently
 // dropping half the registry. Adding #pragma once here breaks the mechanism:
-// include/component_registry.h expands this file four times in one translation
+// include/component_registry.h expands this file five times in one translation
 // unit with different macro definitions, and #pragma once would make every
 // expansion after the first a no-op.
 //

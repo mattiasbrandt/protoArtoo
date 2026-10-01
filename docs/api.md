@@ -220,8 +220,8 @@ The controller is the source of the lineup - a browser copy is only a fallback,
 because firmware and web assets are uploaded separately and a controller can
 report a part its own web assets have never heard of.
 
-Separate from `GET /api/identity` because that payload is bounded at 512 B and
-this one runs to roughly 4.7 KB; it is sent chunked.
+Separate from `GET /api/identity` because that payload is bounded at 576 B and
+this one runs to roughly 5.5 KB; it is sent chunked.
 
 - Success: `200` JSON with:
   - `categories`: one entry per Component Family, each carrying
@@ -266,7 +266,7 @@ curl -s http://artoo.local/api/identity/components
 
 #### Example response
 
-Abridged - the real payload carries all 7 categories and all 21 parts. Every
+Abridged - the real payload carries all 7 categories and all 22 parts. Every
 line below is verbatim from an `artoo_esp32` build.
 
 ```json
