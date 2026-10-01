@@ -54,10 +54,14 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         }
       }, testSeq);
       await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
+      // The workspace opens on the timeline; the step cards are in the step list.
+      await page.click('#seq-editor-show-steps');
     });
 
     // Edit name
     await test('Edit name and validate', async () => {
+      // The name is in the drawer's Sequence pane.
+      await page.click('#seq-editor-tab-sequence');
       const nameInput = page.locator('#seq-editor-name');
       await nameInput.fill('DM:TESTCOPY');
 
@@ -71,17 +75,12 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Modify suppress value
     await test('Modify suppressMs via slider', async () => {
-      // Use the testing API to set suppressMs directly; fill() on range inputs
-      // only updates the DOM property (not the attribute), and the event handler
-      // reads editorState rather than the attribute.
-      await page.evaluate(() => {
-        window.__seqEditorForTesting.editorState.current.suppressMs = 9000;
-        const el = document.getElementById('seq-editor-suppress');
-        el.value = '9000';
-        const display = document.querySelector('.seq-editor-slider-value');
-        if (display) display.textContent = '9000';
-        window.__seqEditorForTesting.updateValidationSummary();
-      });
+      // The Mute period slider is folded under the Sequence pane's More
+      // settings. Moving it fires the slider's own input handler, which writes
+      // editorState and the value beside the slider.
+      await page.click('#seq-editor-tab-sequence');
+      await page.click('details.seq-settings-more summary');
+      await page.locator('#seq-editor-suppress').fill('9000');
       await page.waitForTimeout(100);
 
       const newValue = await page.evaluate(() =>
@@ -91,11 +90,11 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         throw new Error(`Expected suppressMs to be 9000, got ${newValue}`);
       }
 
-      // Display should update too
+      // Display should update too, in seconds
       const display = page.locator('.seq-editor-slider-value');
       const displayText = await display.textContent();
-      if (!displayText.includes('9000')) {
-        throw new Error(`Expected slider value display to show 9000, got: ${displayText}`);
+      if (displayText.trim() !== '9.0 s') {
+        throw new Error(`Expected slider value display to show 9.0 s, got: ${displayText}`);
       }
     });
 

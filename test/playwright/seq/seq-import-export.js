@@ -113,27 +113,24 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await page.waitForTimeout(100);
     });
 
-    // Test export button is present when a seq-card is in the list
+    // Test export button is present on a sequence's row in the list
     await test('Export button present in card structure', async () => {
-      // Inject a fake card to verify the export button DOM structure
+      // Render the list the page itself draws, with one of the builder's own
+      // sequences on it.
       await page.evaluate(() => {
-        const container = document.getElementById('seq-cards-container');
-        container.innerHTML = `
-          <div class="seq-card">
-            <div class="seq-card-header"><h4>DM:EXPORTTEST</h4><div class="seq-badges"></div></div>
-            <div class="seq-card-meta"></div>
-            <div class="seq-card-actions">
-              <button class="btn btn-sm btn-action" data-action="export" data-seq-name="DM:EXPORTTEST">Export</button>
-            </div>
-          </div>`;
-        document.getElementById('seq-empty-state').classList.add('hidden');
-        document.getElementById('seq-populated-state').classList.remove('hidden');
+        window.__seqEditorForTesting.renderListWithMocks([
+          { name: 'DM:EXPORTTEST', source: 'user', valid: true, modified: 0 },
+        ], []);
       });
       await page.waitForTimeout(100);
 
-      const exportBtn = page.locator('[data-action="export"]').first();
-      const count = await page.locator('[data-action="export"]').count();
+      const row = page.locator('.seq-item[data-seq-name="DM:EXPORTTEST"]');
+      const exportBtn = row.locator('[data-action="export"]');
+      const count = await exportBtn.count();
       if (count === 0) throw new Error('Export button should be present in card structure');
+      // Export is one of the acts folded behind the row's More.
+      if (await exportBtn.isVisible()) throw new Error('Export button should be folded until More is pressed');
+      await row.locator('[data-action="more"]').click();
       const isVisible = await exportBtn.isVisible();
       if (!isVisible) throw new Error('Export button should be visible');
     });

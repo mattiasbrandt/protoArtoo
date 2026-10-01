@@ -46,6 +46,8 @@ const TARGET_URL = process.env.TARGET_URL || "http://127.0.0.1:4183/seq.html";
       document.getElementById("seq-editor-view").classList.remove("hidden");
     }, factorySeq);
 
+    // The workspace opens on the timeline; Add a step lives in the step list.
+    await page.click("#seq-editor-show-steps");
     await page.click("#seq-editor-add-step");
 
     const state = await page.evaluate(() => {

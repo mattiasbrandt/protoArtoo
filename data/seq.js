@@ -1,8 +1,10 @@
 // =============================================================================
 // data/seq.js
 //
-// Learned Sequence web editor for protoArtoo.
-// Manages list view, modals (clone, import, memory wipe), and editor view.
+// The Sequences surface: the list of what is on the droid, and the workspace
+// a sequence is edited in (#441, variant C) - a strip, the stage with the
+// timeline and the droid, and one drawer under it. Also the dialogs (restore,
+// memory wipe, discard) and a Factory sequence's read-only stage.
 // =============================================================================
 
 (() => {
@@ -18,7 +20,9 @@
   let factoryAnswered = false;
   let currentEditingSeq = null; // The sequence being edited (or null)
   let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
-  let sessionTimeline = null; // the timeline inside the editor, over the sequence being edited, or null
+  let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
+  let pickedBlocks = []; // the blocks picked on that timeline, as it last said them
+  let pickedShown = null; // the Picked block tab's markup as last written
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
   // Editor state tracking. One object for the life of the page: it is reset in
@@ -30,7 +34,9 @@
     isNew: false,     // true for blank/clone/duplicate (unsaved)
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
     expanded: new Set(), // Set of step indices that are expanded (presentation-only)
-    view: "steps",    // which reading of the routine is on screen: "steps" or "timeline"
+    view: "timeline", // which reading of the routine is on the stage: "timeline" or "steps"
+    tab: "block",     // which drawer tab is forward: "block", "parts", "sequence" or "rehearsal"
+    saved: false,     // whether this session has saved, for the strip's state word
   };
 
   // ---------------------------------------------------------------------------
@@ -119,7 +125,8 @@
   // fails leaves them null: the rules that need them stay silent, the Gap lines
   // say what went unchecked, and nothing waits on them.
   const rehearsalFacts = { outputs: null, config: null };
-  let lastRehearsalReport = null; // the report on screen, repainted when facts land
+  let lastRunBadge = null; // the badge beside the last run, repainted when facts land
+  let saidSaved = false; // whether the strip's feedback line is the receipt of a save
 
   // The droid's per-file byte cap, the size figure's denominator (GET
   // /api/identity learned_sequence_max_bytes), or null until it has said.
@@ -282,10 +289,12 @@
 
   const els = {
     // List view
+    title: document.getElementById("seq-title"),
     mainCard: document.getElementById("seq-main-card"),
     emptyState: document.getElementById("seq-empty-state"),
     populatedState: document.getElementById("seq-populated-state"),
-    capacityDisplay: document.getElementById("seq-capacity-display"),
+    countDisplay: document.getElementById("seq-count-display"),
+    filter: document.getElementById("seq-filter"),
     cardsContainer: document.getElementById("seq-cards-container"),
 
     // Top buttons
@@ -421,27 +430,44 @@
   // class, which data/style.css draws as the three moving dots.
   const WAITING_SLOT = '<p class="hint waiting seq-section-waiting" role="status"></p>';
 
-  const renderListView = () => {
-    // The list gives way to whatever is open - the editor, or a Factory
-    // sequence's timeline - and comes back when that closes. Without this a
-    // save, which reads the list again, drew it back in above the editor.
-    els.mainCard.classList.toggle("hidden", editorState.current !== null || timeline !== null);
+  const countOf = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const chevron = '<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>';
 
-    // Update capacity (Learned sequences only). Empty while the list has not
-    // answered, so the slot's waiting class shows the dots instead of a count
-    // of nothing.
-    const cap = learnedSequenceCap();
-    if (!learnedAnswered) {
-      els.capacityDisplay.textContent = "";
-    } else {
-      els.capacityDisplay.textContent = cap === null
-        ? `${sequences.length} saved`
-        : `${sequences.length} / ${cap} saved`;
-    }
+  // Which of the two groups the list shows - "all", "yours" or "factory" - and
+  // the rows whose More is open, by name. Both are kept here, so reading the
+  // list again neither resets the filter nor folds a row shut.
+  let listShow = "all";
+  const moreOpen = new Set();
+
+  // Name, What it does, Steps, Runs, and the row's acts.
+  const LIST_COLUMNS = 5;
+
+  // A group's own row - its name, its count - and under it the one line the
+  // group has to say: that it is waiting, empty, or over the droid's cap.
+  const groupHtml = (name, count, said = "") => `
+      <tbody class="seq-group">
+        <tr><th colspan="${LIST_COLUMNS}" scope="colgroup">${name}${count}</th></tr>
+        ${said ? `<tr class="seq-group-said"><td colspan="${LIST_COLUMNS}">${said}</td></tr>` : ""}
+      </tbody>`;
+
+  const renderListView = () => {
+    // The list is its own view: it gives way, title and all, to whatever is
+    // open - the workspace, or a Factory sequence's stage - and comes back
+    // when that closes. Without this a save, which reads the list again, drew
+    // it back in above the editor.
+    const open = editorState.current !== null || timeline !== null;
+    els.title.classList.toggle("hidden", open);
+    els.mainCard.classList.toggle("hidden", open);
 
     // Compute untuned Factory sequences (those without a Learned override)
     const learnedNames = new Set(sequences.map(s => s.name));
     const untunedFactory = builtins.filter(b => !learnedNames.has(b.name));
+
+    // How many sequences the list holds. Empty until both lists have answered,
+    // so the slot's waiting class shows the dots instead of a count of half.
+    els.countDisplay.textContent = learnedAnswered && factoryAnswered
+      ? countOf(sequences.length + untunedFactory.length, "sequence", "sequences")
+      : "";
 
     // The empty state is a finding, so it needs both answers: nothing learned
     // AND nothing from the factory.
@@ -449,83 +475,105 @@
       els.emptyState.classList.remove("hidden");
       els.populatedState.classList.add("hidden");
       els.cardsContainer.innerHTML = "";
-    } else {
-      // Show populated state
-      els.emptyState.classList.add("hidden");
-      els.populatedState.classList.remove("hidden");
+      return;
+    }
+    els.emptyState.classList.add("hidden");
+    els.populatedState.classList.remove("hidden");
+    els.filter.querySelectorAll("button").forEach((button) =>
+      button.setAttribute("aria-pressed", String(button.dataset.value === listShow)));
 
-      let html = "";
-
-      // "Your sequences" section
+    const cap = learnedSequenceCap();
+    let yours = "";
+    if (listShow !== "factory") {
+      let said = "";
       if (!learnedAnswered) {
-        html += '<h3 class="seq-section-heading">Your sequences</h3>';
-        html += WAITING_SLOT;
-      } else if (sequences.length > 0) {
-        html += '<h3 class="seq-section-heading">Your sequences</h3>';
+        said = WAITING_SLOT;
+      } else if (sequences.length === 0) {
+        // "below" only where the Factory group is on screen under this one.
+        const where = listShow === "yours" ? "" : " below";
+        said = `<p class="hint seq-section-empty"><b>Nothing of your own yet.</b> Tune a factory sequence${where} and it lands here.</p>`;
+      } else if (cap !== null && sequences.length > cap) {
         // A firmware-only update can leave a droid holding more than it now
         // stores. Everything it holds still lists and plays; only a new save
         // waits until the builder is under the cap (ADR 0065).
-        if (cap !== null && sequences.length > cap) {
-          html += `<p class="hint seq-over-cap"><b>This droid stores ${cap}.</b> Delete down to ${cap - 1} to save a new one.</p>`;
-        }
-        html += sequences.map((seq) => renderSeqCard(seq)).join("");
-      } else {
-        html += '<h3 class="seq-section-heading">Your sequences</h3>';
-        html += '<p class="hint seq-section-empty"><b>Nothing of your own yet.</b> Tune a factory sequence below and it lands here.</p>';
+        said = `<p class="hint seq-over-cap"><b>This droid stores ${cap}.</b> Delete down to ${cap - 1} to save a new one.</p>`;
       }
-
-      // "Factory sequences" section
-      if (!factoryAnswered) {
-        html += '<h3 class="seq-section-heading">Factory sequences</h3>';
-        html += WAITING_SLOT;
-      } else if (untunedFactory.length > 0) {
-        html += '<h3 class="seq-section-heading">Factory sequences</h3>';
-        html += untunedFactory.map((builtin) => renderFactoryCard(builtin)).join("");
-      }
-
-      els.cardsContainer.innerHTML = html;
-
-      // A paint of nothing but waiting slots has no buttons to bind.
-      const cardsWritten = (learnedAnswered && sequences.length > 0)
-        || (factoryAnswered && untunedFactory.length > 0);
-      if (!cardsWritten) return;
-
-      // Attach event listeners to Learned sequence action buttons
-      els.cardsContainer.querySelectorAll('.seq-card-actions button:not([data-action="tune"]):not([data-action="timeline"])').forEach((btn) => {
-        const action = btn.dataset.action;
-        const seqName = btn.dataset.seqName;
-        const cardEl = btn.closest(".seq-card");
-        btn.addEventListener("click", () => handleSeqAction(action, seqName, cardEl));
-      });
-
-      // Attach event listeners to Factory "Tune" buttons
-      els.cardsContainer.querySelectorAll('[data-action="tune"]').forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const builtinName = btn.dataset.builtinName;
-          leaveSession(() => handleCloneBuiltin(builtinName));
-        });
-      });
-
-      // Timeline, on a Learned card and a Factory card alike: the card says
-      // which of the two reads the sequence.
-      els.cardsContainer.querySelectorAll('[data-action="timeline"]').forEach((btn) => {
-        btn.addEventListener("click", () =>
-          leaveSession(() =>
-            handleOpenTimeline(
-              btn.dataset.builtinName ? { builtinName: btn.dataset.builtinName } : { seqName: btn.dataset.seqName },
-              btn.closest(".seq-card")
-            )
-          )
-        );
-      });
+      yours = groupHtml("Yours", '<span class="seq-group-count" id="seq-capacity-display" role="status"></span>', said)
+        + (learnedAnswered ? sequences.map((seq) => renderSeqRow(seq)).join("") : "");
     }
+
+    let factory = "";
+    if (listShow !== "yours" && !factoryAnswered) {
+      factory = groupHtml("Factory", "", WAITING_SLOT);
+    } else if (listShow !== "yours" && untunedFactory.length > 0) {
+      factory = groupHtml("Factory", `<span class="seq-group-count">${untunedFactory.length} built in</span>`)
+        + untunedFactory.map((builtin) => renderFactoryRow(builtin)).join("");
+    }
+
+    els.cardsContainer.innerHTML = `
+      <table class="seq-table">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">What it does</th>
+            <th scope="col" class="seq-count-cell">Steps</th>
+            <th scope="col" class="seq-count-cell">Runs</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        ${yours}
+        ${factory}
+      </table>`;
+
+    // How many of the builder's own the droid holds, against the cap it
+    // reports (Learned sequences only). Empty while the list has not answered.
+    const capacityEl = document.getElementById("seq-capacity-display");
+    if (capacityEl) {
+      capacityEl.textContent = !learnedAnswered ? ""
+        : cap === null ? `${sequences.length} saved` : `${sequences.length} / ${cap} saved`;
+    }
+
+    // Every act on a row carries data-action, and nothing else in the table does.
+    els.cardsContainer.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.addEventListener("click", () => handleSeqAction(btn));
+    });
   };
 
-  const renderSeqCard = (seq) => {
+  // When the droid says a sequence was last saved, as the list words it:
+  // "saved 30 Sep 19:42". Nothing when the droid gave no time it can be read as.
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const savedWords = (modified) => {
+    const at = modified ? new Date(modified) : null;
+    if (!at || Number.isNaN(at.getTime())) return "";
+    const two = (n) => String(n).padStart(2, "0");
+    return `saved ${at.getDate()} ${MONTHS[at.getMonth()]} ${two(at.getHours())}:${two(at.getMinutes())}`;
+  };
+
+  // What a list row says about its sequence in the Steps column and beside
+  // its purpose: only what the droid reported. GET /api/seq/builtins sends a
+  // Factory sequence's purpose and step count; GET /api/seq/list sends neither
+  // for a Learned one (src/web/api_seq.cpp), and nothing sends how long a
+  // sequence runs, so those cells stay empty rather than read 0.
+  const reportedSteps = (entry) => (Number.isInteger(entry.stepCount) ? entry.stepCount : "");
+  const purposeHtml = (entry) =>
+    (entry.purpose ? `<span class="seq-purpose">${window.PAUtils.escapeHtml(entry.purpose)}</span> ` : "");
+
+  // What a row says back - a test's outcome, its Rehearsal - on a line of its
+  // own under it.
+  const rowSaidHtml = (rehearsal) => `
+        <tr class="seq-item-said">
+          <td colspan="${LIST_COLUMNS}">
+            <div class="seq-item-feedback feedback hidden"></div>
+            ${rehearsal ? '<div class="seq-item-rehearsal"></div>' : ""}
+          </td>
+        </tr>`;
+
+  const renderSeqRow = (seq) => {
+    const name = window.PAUtils.escapeAttr(seq.name);
     const badges = [];
     if (seq.retrained) {
       badges.push(
-        `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${window.PAUtils.escapeAttr(seq.name)}">Retrained</span>`
+        `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${name}">Retrained</span>`
       );
     }
     if (seq.valid === false) {
@@ -533,76 +581,65 @@
         `<span class="seq-badge seq-badge-invalid" title="This sequence fails Protocol Check and cannot be run until repaired">Invalid</span>`
       );
     }
-    const stepCount = seq.stepCount || 0;
-    const modifiedDate = seq.modified ? new Date(seq.modified).toLocaleString() : "Unknown";
+    const saved = savedWords(seq.modified);
 
     // Share to project: only the operator's own custom sequences (not factory-derived).
     const isCustom = !seq.source || seq.source === "user";
     const shareBtn = isCustom
-      ? `<button class="seq-act" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      ? `<button type="button" class="seq-act" data-action="share" data-seq-name="${name}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
       : "";
 
-    const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${window.PAUtils.escapeAttr(seq.name)}"`;
+    const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${name}"`;
+    const more = moreOpen.has(seq.name);
 
     return `
-      <div class="seq-card">
-        <div class="seq-card-header">
-          <h4>${window.PAUtils.escapeHtml(seq.name)}</h4>
-          <div class="seq-badges">${badges.join("")}</div>
-        </div>
-        <div class="seq-card-body">
-          <div class="seq-card-meta">
-            <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(seq.toggleGroup || "none")}</span>
-            <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
-            <span class="seq-meta-item">Steps: ${stepCount}</span>
-            <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
-          </div>
-        </div>
-        <div class="seq-card-actions">
-          <button class="seq-act" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
-          <button class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
-          <button class="seq-act" data-action="timeline" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Timeline</button>
-          <button class="seq-act" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
-          <button class="seq-act" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
-          ${shareBtn}
-          <button class="seq-act seq-act-danger" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
-        </div>
-        <div class="seq-card-test-feedback feedback hidden"></div>
-        <div class="seq-card-rehearsal"></div>
-      </div>
+      <tbody class="seq-item" data-seq-name="${name}">
+        <tr>
+          <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(seq.name)}</span>${badges.join("")}</th>
+          <td>${purposeHtml(seq)}${saved ? `<span class="seq-meta">${saved}</span>` : ""}</td>
+          <td class="seq-count-cell">${reportedSteps(seq)}</td>
+          <td class="seq-count-cell"></td>
+          <td class="seq-item-acts">
+            <span class="seq-acts">
+              <button type="button" class="seq-act is-strong" data-action="edit" data-seq-name="${name}">Edit</button>
+              <button type="button" class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
+              <button type="button" class="seq-act seq-disclose" data-action="more" data-seq-name="${name}" aria-expanded="${more}">${chevron}More</button>
+              <span class="seq-item-more${more ? "" : " hidden"}">
+                <button type="button" class="seq-act" data-action="duplicate" data-seq-name="${name}">Duplicate</button>
+                <button type="button" class="seq-act" data-action="export" data-seq-name="${name}">Export</button>
+                ${shareBtn}
+                <button type="button" class="seq-act seq-act-danger" data-action="memory-wipe" data-seq-name="${name}">Memory Wipe</button>
+              </span>
+            </span>
+          </td>
+        </tr>
+        ${rowSaidHtml(true)}
+      </tbody>
     `;
   };
 
-  const renderFactoryCard = (builtin) => {
-    const stepCount = builtin.stepCount || 0;
-    const toggleGroup = builtin.toggleGroup || "none";
-    const suppressMs = builtin.suppressMs || 0;
-    const purpose = builtin.purpose || "";
-
-    const purposeHtml = purpose ? `<p class="seq-card-purpose">${window.PAUtils.escapeHtml(purpose)}</p>` : "";
+  const renderFactoryRow = (builtin) => {
+    const name = window.PAUtils.escapeAttr(builtin.name);
+    const group = builtin.toggleGroup && builtin.toggleGroup !== "none"
+      ? `<span class="seq-meta">interrupt group ${window.PAUtils.escapeHtml(builtin.toggleGroup[0].toUpperCase() + builtin.toggleGroup.slice(1))}</span>`
+      : "";
 
     return `
-      <div class="seq-card seq-card-factory">
-        <div class="seq-card-header">
-          <h4>${window.PAUtils.escapeHtml(builtin.name)}</h4>
-          <div class="seq-badges">
-            <span class="seq-badge seq-badge-factory" title="Built-in Factory sequence">Factory</span>
-          </div>
-        </div>
-        <div class="seq-card-body">
-          ${purposeHtml}
-          <div class="seq-card-meta">
-            <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(toggleGroup)}</span>
-            <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
-            <span class="seq-meta-item">Steps: ${stepCount}</span>
-          </div>
-        </div>
-        <div class="seq-card-actions">
-          <button class="seq-act" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
-          <button class="seq-act" data-action="timeline" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}">Timeline</button>
-        </div>
-        <div class="seq-card-test-feedback feedback hidden"></div>
-      </div>
+      <tbody class="seq-item seq-item-factory" data-seq-name="${name}">
+        <tr>
+          <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(builtin.name)}</span></th>
+          <td>${purposeHtml(builtin)}${group}</td>
+          <td class="seq-count-cell">${reportedSteps(builtin)}</td>
+          <td class="seq-count-cell"></td>
+          <td class="seq-item-acts">
+            <span class="seq-acts">
+              <button type="button" class="seq-act is-strong" data-action="tune" data-builtin-name="${name}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
+              <button type="button" class="seq-act" data-action="timeline" data-builtin-name="${name}">Timeline</button>
+            </span>
+          </td>
+        </tr>
+        ${rowSaidHtml(false)}
+      </tbody>
     `;
   };
 
@@ -634,36 +671,62 @@
     renderEditorView(currentEditingSeq);
 
     // The clone is where a factory routine's defects pass into a builder's own
-    // work, so the Rehearsal reads the Factory sequence here, as it ships (#287).
-    showRehearsalReport(
-      `What the Rehearsal found in ${full.name} as it ships:`,
-      "info",
-      full,
-      "list"
-    );
+    // work, so what the Rehearsal finds in the Factory sequence as it ships is
+    // read here (#287): its tab comes forward when it has something to say.
+    const report = window.SeqRehearsal?.rehearse(full, rehearsalContext());
+    if (report && report.findings.length > 0) showTab("rehearsal");
   };
 
   // =========================================================================
-  // Timeline (#440, ADR 0062; #441, ADR 0057)
+  // The stage (#440, ADR 0062; #441, ADR 0057)
   //
-  // A sequence read as time, two ways through one view (data/seq_timeline.js).
+  // A sequence read as time, two ways through one view (data/seq_timeline.js),
+  // on one stage: the routine's lanes, and the droid beside them at the
+  // marker's moment.
   //
   // A Factory sequence opens read-only, from GET /api/seq/builtins: the builder
   // has not made it theirs, and Tune is the act that does.
   //
-  // The builder's own opens in the editor, with the timeline shown in place of
-  // the step list: one sequence object, editorState.current, behind both, so
-  // an edit in one is there in the other and Save sends it either way
+  // The builder's own opens in the workspace: one sequence object,
+  // editorState.current, behind the timeline and the step list alike, so an
+  // edit in one is there in the other and Save sends it either way
   // (showSessionView() below).
   //
   // Neither moves the droid except on the pose press, and that poses what the
   // droid has stored under the name - never the edits on screen.
   // =========================================================================
+
+  // The stage's markup, for both. `ids` names the three places the timeline
+  // draws into, for the workspace, which finds them by id; `above`, `views`
+  // and `below` are what the workspace adds round the routine.
+  const stageHtml = ({ ids = false, above = "", views = "", below = "" } = {}) => `
+      <div class="seq-stage">
+        <div class="seq-stage-main">
+          ${above}
+          <div class="seq-stagebar">
+            ${views}
+            <div class="tl-bar"${ids ? ' id="seq-editor-tlbar"' : ""}></div>
+          </div>
+          <div class="seq-lanes"${ids ? ' id="seq-editor-timeline"' : ""}></div>
+          ${below}
+        </div>
+        <aside class="seq-stage-side"${ids ? ' id="seq-editor-droid"' : ""} aria-label="The droid at the marker"></aside>
+      </div>`;
+
+  // What opens in place of the list starts at its strip, however far down
+  // the list the row that opened it was.
+  const showFromTheTop = () => window.scrollTo?.(0, 0);
+
+  // The way back to the list, as the strip's first act.
+  const backHtml = (attrs) =>
+    `<button type="button" class="seq-act seq-back" ${attrs}><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>All sequences</button>`;
+
   const closeTimeline = () => {
     if (timeline) {
       timeline.destroy();
       timeline = null;
     }
+    els.timelineView.innerHTML = "";
     els.timelineView.classList.add("hidden");
   };
 
@@ -676,14 +739,13 @@
       .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s${which}, one part at a time.`, level: "ok" }))
       .catch((error) => ({ text: PAApi.messageFor(error), level: "error" }));
 
-  const handleOpenTimeline = async ({ seqName = null, builtinName = null }, cardEl = null) => {
-    if (!builtinName) {
-      await handleEditSequence(seqName, "timeline", cardEl);
-      return;
-    }
-    const sayOnCard = cardSayer(builtinName, cardEl);
+  // A Factory sequence's stage: the strip carries the way back and Tune, and
+  // nothing on it edits - the timeline is handed no `edit`, and there is no
+  // drawer.
+  const handleOpenTimeline = async (builtinName, rowEl = null) => {
+    const sayOnRow = rowSayer(builtinName, rowEl);
     if (!window.SeqTimeline) {
-      sayOnCard("The timeline did not load. Reload the page to try again.");
+      sayOnRow("The timeline did not load. Reload the page to try again.");
       return;
     }
     let seq = null;
@@ -691,39 +753,54 @@
       const result = await PAApi.get(`/api/seq/builtins?name=${encodeURIComponent(builtinName)}`);
       seq = result.data;
     } catch (error) {
-      sayOnCard(`Could not read ${builtinName}: ${PAApi.messageFor(error)}`);
+      sayOnRow(`Could not read ${builtinName}: ${PAApi.messageFor(error)}`);
       return;
     }
     if (!seq || !Array.isArray(seq.steps)) {
-      sayOnCard(`The droid sent ${builtinName} back with no steps.`);
+      sayOnRow(`The droid sent ${builtinName} back with no steps.`);
       return;
     }
     closeTimeline();
+    els.timelineView.innerHTML = `
+      <div class="seq-work">
+        <div class="seq-strip">
+          ${backHtml('data-stage-act="back"')}
+          <span class="seq-name">${window.PAUtils.escapeHtml(seq.name || builtinName)}</span>
+          <span class="seq-badge" title="Built-in Factory sequence">Factory</span>
+          <span class="seq-gap"></span>
+          <button type="button" class="seq-act is-strong" data-stage-act="tune" title="Open to edit. Save under the same name to retrain it.">Tune</button>
+        </div>
+        ${stageHtml()}
+      </div>`;
     els.timelineView.classList.remove("hidden");
-    timeline = window.SeqTimeline.mount(els.timelineView, seq, {
-      context: rehearsalContext(),
-      describe: stepPreview,
-      cardsLabel: "Tune",
-      onCards: () => {
-        closeTimeline();
-        handleCloneBuiltin(builtinName);
-      },
-      onClose: () => {
-        closeTimeline();
-        renderListView();
-      },
-      onPose: (atMs) => poseOnDroid(builtinName, atMs),
+    const within = (selector) => els.timelineView.querySelector(selector);
+    within(".seq-strip").addEventListener("click", (event) => {
+      const act = event.target?.closest?.("[data-stage-act]")?.dataset.stageAct;
+      if (!act) return;
+      closeTimeline();
+      renderListView();
+      if (act === "tune") handleCloneBuiltin(builtinName);
     });
+    timeline = window.SeqTimeline.mount(
+      { bar: within(".tl-bar"), lanes: within(".seq-lanes"), side: within(".seq-stage-side") },
+      seq,
+      {
+        context: rehearsalContext(),
+        describe: stepPreview,
+        onPose: (atMs) => poseOnDroid(builtinName, atMs),
+      },
+    );
     renderListView();
+    showFromTheTop();
   };
 
-  // A list card's own feedback line, for an open that failed.
-  const cardSayer = (name, cardEl) => (message) => {
+  // A list row's own feedback line, for an open that failed.
+  const rowSayer = (name, rowEl) => (message) => {
     console.error(`[seq] opening ${name}: ${message}`);
-    const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
+    const feedbackEl = rowEl?.querySelector(".seq-item-feedback");
     if (!feedbackEl) return;
     feedbackEl.textContent = message;
-    feedbackEl.className = "seq-card-test-feedback feedback error";
+    feedbackEl.className = "seq-item-feedback feedback error";
   };
 
   // The steps of a sequence as the units Protocol Check orders: a step, or a
@@ -796,29 +873,21 @@
     }
   };
 
-  // Show the routine being edited as its step list or as its timeline. The
-  // timeline is handed a way to read editorState.current, never a copy of it,
-  // and the three things an edit there needs from the editor: the history's
-  // two brackets, and removal, which changes which steps there are.
-  const showSessionView = (view) => {
-    let shown = view === "timeline" ? "timeline" : "steps";
-    if (shown === "timeline" && !window.SeqTimeline) {
-      showEditorFeedback("The timeline did not load. Reload the page to try again.", "error");
-      shown = "steps";
-    }
-    editorState.view = shown;
-    const onTimeline = shown === "timeline";
-    const host = document.getElementById("seq-editor-timeline");
-    document.getElementById("seq-editor-steps")?.classList.toggle("hidden", onTimeline);
-    host?.classList.toggle("hidden", !onTimeline);
-    ["steps", "timeline"].forEach((name) =>
-      document.getElementById(`seq-editor-show-${name}`)?.setAttribute("aria-pressed", String(name === shown)));
-    if (!onTimeline) {
-      closeSessionTimeline();
-      return;
-    }
-    if (sessionTimeline || !host) return;
-    sessionTimeline = window.SeqTimeline.mount(host, () => editorState.current, {
+  // Put the timeline of the routine being edited on the workspace's stage. It
+  // is handed a way to read editorState.current, never a copy of it, and the
+  // three things an edit there needs from the editor: the history's two
+  // brackets, and removal, which changes which steps there are. It stays
+  // mounted while the step list is shown in its place, because the droid
+  // beside it is its to draw.
+  const mountSessionTimeline = () => {
+    closeSessionTimeline();
+    if (!window.SeqTimeline) return;
+    const hosts = {
+      bar: document.getElementById("seq-editor-tlbar"),
+      lanes: document.getElementById("seq-editor-timeline"),
+      side: document.getElementById("seq-editor-droid"),
+    };
+    sessionTimeline = window.SeqTimeline.mount(hosts, () => editorState.current, {
       context: rehearsalContext(),
       describe: stepPreview,
       onPose: (atMs) => {
@@ -838,7 +907,129 @@
         },
         remove: removeSteps,
       },
+      onPicked: showPicked,
     });
+  };
+
+  // Show the routine being edited as its timeline or as its step list, in the
+  // stage's one column. The droid beside it and the drawer under it stay.
+  const showSessionView = (view) => {
+    let shown = view === "steps" ? "steps" : "timeline";
+    if (shown === "timeline" && !sessionTimeline) {
+      showEditorFeedback("The timeline did not load. Reload the page to try again.", "error");
+      shown = "steps";
+    }
+    editorState.view = shown;
+    const onTimeline = shown === "timeline";
+    document.getElementById("seq-editor-steps")?.classList.toggle("hidden", onTimeline);
+    document.getElementById("seq-editor-timeline")?.classList.toggle("hidden", !onTimeline);
+    ["steps", "timeline"].forEach((name) =>
+      document.getElementById(`seq-editor-show-${name}`)?.setAttribute("aria-pressed", String(name === shown)));
+    // The lanes go out of sight with the timeline still mounted, so a block
+    // held at that moment is let go where the press found it, and the bar
+    // stops offering how a loop is drawn.
+    document.getElementById("seq-editor-tlbar")?.classList.toggle("is-steps", !onTimeline);
+    if (!onTimeline) sessionTimeline?.cancel();
+  };
+
+  // -------------------------------------------------------------------------
+  // The drawer: Picked block, Parts, Sequence, Rehearsal. Every pane is drawn
+  // once when a sequence opens and only shown or hidden after, so the fields
+  // in them keep the listeners bound at open.
+  // -------------------------------------------------------------------------
+  const DRAWER_TABS = ["block", "parts", "sequence", "rehearsal"];
+
+  const showTab = (tab) => {
+    editorState.tab = DRAWER_TABS.includes(tab) ? tab : "block";
+    DRAWER_TABS.forEach((name) => {
+      document.getElementById(`seq-pane-${name}`)?.classList.toggle("hidden", name !== editorState.tab);
+      document.getElementById(`seq-editor-tab-${name}`)?.setAttribute("aria-pressed", String(name === editorState.tab));
+    });
+  };
+
+  // What kind of step this is, as the step list names it.
+  const stepKindName = (step) =>
+    (step.type === "dome" ? domeSubmodeLabel(step.cmd).name : stepTypeName[step.type] || step.type || "Step");
+
+  // The Picked block tab: what the timeline says is picked. One block shows
+  // where it starts, which can be typed; several can be moved together and
+  // removed. What a block of each kind does is edited in the step list until
+  // the inspector's rows for it land here (#441).
+  const pickedHtml = (blocks) => {
+    const esc = window.PAUtils.escapeHtml;
+    const head = (name, sub) =>
+      `<div class="sect seq-picked-head"><h3>${esc(name)}</h3><span class="sub">${esc(sub)}</span></div>`;
+    if (blocks.length === 0) {
+      return head("Nothing picked", "no block")
+        + '<p class="hint">Press a block to change it. Shift-press adds another.</p>';
+    }
+    const stepCount = new Set(blocks.flatMap((block) => block.steps)).size;
+    const remove = `<div class="seq-picked-acts"><button type="button" class="seq-act" data-picked="remove">${stepCount > 1 ? `Remove ${stepCount} steps` : "Remove"}</button></div>`;
+    if (blocks.length > 1) {
+      const nudge = window.SeqTimeline;
+      return head(`${blocks.length} blocks`, countOf(stepCount, "step", "steps"))
+        + `<p class="hint">Drag one and they all move. Arrow keys nudge ${nudge.NUDGE_MS} ms, Shift ${nudge.NUDGE_BIG_MS} ms.</p>`
+        + remove;
+    }
+    const block = blocks[0];
+    const at = block.steps[0];
+    const step = editorState.current.steps[at] || {};
+    const beat = beatWords(step);
+    return head(block.name || block.words || stepKindName(step), `${stepKindName(step)} · step ${at + 1}`)
+      + `<div class="setting-rows seq-picked-rows">
+          <div class="setting-row">
+            <span class="setting-name">Starts at</span>
+            <span class="seq-row-ctl">
+              <span class="setting-number">
+                <input class="number-cell" type="number" min="0" max="120000" step="10" value="${Math.round(block.t0)}" data-picked="start" aria-label="Starts at, in milliseconds">
+                <span class="setting-unit">ms</span>
+              </span>
+              ${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}
+            </span>
+            <span class="setting-value"></span>
+          </div>
+        </div>`
+      + remove;
+  };
+
+  // Called by the timeline whenever it draws the routine: the pane is written
+  // again only when what it says has changed, so a number half typed into it
+  // is not wiped by a redraw. The press that picked a block brings it forward.
+  const showPicked = (blocks, pressed = false) => {
+    pickedBlocks = blocks;
+    const html = pickedHtml(blocks);
+    const pane = document.getElementById("seq-pane-block");
+    if (pane && html !== pickedShown) {
+      pane.innerHTML = html;
+      pickedShown = html;
+    }
+    if (pressed) showTab("block");
+  };
+
+  // The Parts tab: every Part a routine can name, as one flat list, dome and
+  // body together, the ones nothing on this droid can move greyed and counted.
+  // Read-only: a Part is put on the timeline by a step that names it, until
+  // dropping one from here lands (#441). The escape-hatch Output slots and the
+  // dome's buttons are not Parts a routine moves.
+  const UNLISTED_SECTIONS = ["other_slots", "dome_fixtures"];
+
+  const paintParts = () => {
+    const list = document.getElementById("seq-editor-parts");
+    const sub = document.getElementById("seq-editor-parts-sub");
+    if (!list || !sub) return;
+    const esc = window.PAUtils.escapeHtml;
+    const context = rehearsalContext();
+    const parts = (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+    // The timeline's own rule for a lane it dims (data/seq_timeline.js
+    // notWired()), which says nothing of a half the droid has not reported.
+    const off = (part) => Boolean(window.SeqTimeline?.notWired(part.id, part.half, context));
+    const reported = context.outputs !== null;
+    sub.textContent = countOf(parts.length, "part", "parts")
+      + (reported ? ` · ${parts.filter(off).length} not wired` : "");
+    list.innerHTML = parts
+      .map((part) =>
+        `<span class="seq-part${off(part) ? " is-off" : ""}">${part.shorthand ? `<span class="seq-part-short">${esc(part.shorthand)}</span>` : ""}${esc(part.name)}</span>`)
+      .join("");
   };
 
   // =========================================================================
@@ -867,7 +1058,8 @@
     els.editorView.classList.add("hidden");
     currentEditingSeq = null;
     Object.assign(editorState, {
-      original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(), view: "steps",
+      original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(),
+      view: "timeline", tab: "block", saved: false,
     });
     historyReset();
     renderListView();
@@ -1091,6 +1283,7 @@
     audioCat: "Sound Category",
     gesture: "Gesture",
     sequence: "Sequence",
+    body: "Body Step",
     end: "Sequence End",
   };
 
@@ -1249,11 +1442,17 @@
   const routineReachMs = () =>
     Math.max(...(editorState.current?.steps || []).map((step) => Number(step?.t) || 0), 0);
 
-  const beatLabel = (step) => {
+  // The beat a step is placed on, in words, or "" when it is on none.
+  const beatWords = (step) => {
     const tempo = tempoOf();
     if (!tempo || !Number.isInteger(step.beat) || !window.SeqTempo) return "";
     const name = window.SeqTempo.beatName(tempo, step.beat);
-    return name.bar === 0 ? ` &middot; pickup beat ${name.beat}` : ` &middot; bar ${name.bar}, beat ${name.beat}`;
+    return name.bar === 0 ? `pickup beat ${name.beat}` : `bar ${name.bar}, beat ${name.beat}`;
+  };
+
+  const beatLabel = (step) => {
+    const words = beatWords(step);
+    return words ? ` &middot; ${words}` : "";
   };
 
   // Steps whose duration can be a span of beats: a turn that moves, and a
@@ -1348,12 +1547,17 @@
       if (patch[key] === null) delete step[key];
       else step[key] = patch[key];
     });
+    // The steps picked on the timeline, by index: this edit writes new steps
+    // in their place and changes no step's place in the routine, so the same
+    // indices are picked again once it is drawn.
+    const pickedSteps = [...new Set(pickedBlocks.flatMap((block) => block.steps))];
     const before = historyBegin();
     editorState.current.steps[stepIdx] = step;
     editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
     historyCommit(before);
     rerenderStepTable();
     edited();
+    if (pickedSteps.length > 0) sessionTimeline?.pick(pickedSteps);
   };
 
   // Retime to the grid (ADR 0060), with its receipt: how many steps actually
@@ -2088,8 +2292,9 @@
     edited();
   };
 
-  // The header controls that show something the history holds: the tempo and
-  // the interrupt group. Painted by the edit that changes one and by an undo.
+  // The controls that show something the history holds: the tempo on the
+  // ruler and the interrupt group in the drawer. Painted by the edit that
+  // changes one and by an undo.
   const paintAuthoredHeader = () => {
     const tempo = editorState.current.tempo;
     const bpmInput = document.getElementById("seq-editor-bpm");
@@ -2208,11 +2413,12 @@
   // Open `seq` in the editor: a fresh edit, with a fresh history. Revert comes
   // through here too, which is what makes it the whole-session discard.
   const renderEditorView = (seq) => {
-    // isNew, and the view to show, must be set by the caller before calling renderEditorView
+    // isNew must be set by the caller before calling renderEditorView
     closeTimeline();
     closeSessionTimeline();
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
+    editorState.saved = false;
     historyReset();
     droppedTrack = null;
 
@@ -2236,139 +2442,169 @@
       .map((step, idx) => renderStepRow(step, idx))
       .join("");
 
+    const esc = window.PAUtils.escapeHtml;
     const tuneNotice = editorState.tuningFactory
-      ? `<div class="note note-act" role="note">
-           Tuning <b>${window.PAUtils.escapeHtml(editorState.tuningFactory)}</b>: save under the same name and your version replaces the factory one. <em>Memory Wipe</em> brings the original back.
+      ? `<div class="note note-act seq-tuning" role="note">
+           Tuning <b>${esc(editorState.tuningFactory)}</b>: save under the same name and your version replaces the factory one. <em>Memory Wipe</em> brings the original back.
          </div>`
       : "";
 
-    els.editorView.innerHTML = `
-      <div class="card">
-        <div class="sect"><h2>Editing</h2><span class="sub" id="seq-editor-sub">${window.PAUtils.escapeHtml(seq.name || "a new sequence")}</span></div>
-        ${tuneNotice}
+    // The strip: the way back, which sequence this is and whether it has
+    // unsaved edits, the run, Protocol Check's verdict, and the acts that keep
+    // or drop the edit. Save is the one filled act on the page.
+    const strip = `
+        <div class="seq-strip">
+          ${backHtml('id="seq-editor-cancel"')}
+          <span class="seq-name" id="seq-editor-sub">${esc(seq.name || "a new sequence")}</span>
+          <span class="seq-state" id="seq-editor-state" role="status"></span>
+          <span class="seq-gap"></span>
+          <span class="seq-run">
+            <button id="seq-editor-test" class="btn btn-sm" type="button">Test on the droid</button>
+            <span class="hint hidden" id="seq-editor-test-hint">Runs the last saved copy.</span>
+          </span>
+          <span class="seq-strip-seam" aria-hidden="true"></span>
+          <span class="seq-verdict" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
+            <!-- Populated by updateValidationSummary() -->
+          </span>
+          <span class="seq-keep">
+            <button id="seq-editor-save" class="btn btn-sm accent" type="button">Save</button>
+            <button id="seq-editor-undo" class="seq-act" type="button" disabled>Undo</button>
+            <button id="seq-editor-redo" class="seq-act" type="button" disabled>Redo</button>
+            <button id="seq-editor-revert" class="seq-act" type="button" aria-label="Discard unsaved changes">Revert</button>
+          </span>
+          <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
+          <div class="seq-editor-feedback" id="seq-editor-feedback" aria-live="polite" aria-label="Editor feedback"></div>
+        </div>`;
 
-        <div class="seq-editor-metadata">
-          <!-- The sequence's details as setting rows, the family Foot Drive's
-               settings are drawn in: a name, the control, what it is on. -->
-          <div class="setting-rows seq-header">
-            <label class="setting-row">
-              <span class="setting-name">Name</span>
-              <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${window.PAUtils.escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="21">
-              <span class="setting-value"></span>
-            </label>
-            <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
-            <label class="setting-row">
-              <span class="setting-name">Purpose</span>
-              <input id="seq-editor-purpose" class="number-cell text-cell text-cell-wide" type="text" value="${window.PAUtils.escapeHtml(seq.meta?.purpose || "")}" placeholder="optional" aria-label="Purpose of the sequence">
-              <span class="setting-value"></span>
-            </label>
-            <div class="setting-row">
-              <span class="setting-name">Interrupt group</span>
-              <span id="seq-editor-toggle" class="seg seg-sm" role="group" aria-label="Interrupt group for conflict management">
-                ${["none", "pies", "low", "all"]
-                  .map(
-                    (g) =>
-                      `<button type="button" data-value="${g}" aria-pressed="${(seq.toggleGroup || "none") === g ? "true" : "false"}">${g[0].toUpperCase() + g.slice(1)}</button>`,
-                  )
-                  .join("")}
-              </span>
-              <span class="setting-value"></span>
-            </div>
+    // The tempo, riding on the ruler: it is what the bars under the seconds
+    // are counted from, so it sits with the timeline and not in the drawer.
+    const tempoRows = `
+          <div class="setting-rows seq-tempo">
             <div class="setting-row">
               <span class="setting-name">Tempo</span>
               <span class="seq-row-ctl">
                 <span class="setting-number">
-                  <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
+                  <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? esc(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
                   <span class="setting-unit">BPM</span>
                 </span>
                 <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
                 <label class="seq-act" for="seq-editor-track">Analyze a track</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
+                <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
               </span>
               <span class="setting-value seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
             </div>
+            <p class="hint seq-receipt" id="seq-editor-retime-receipt" role="status"></p>
             <div id="seq-editor-tap" class="setting-row hidden">
               <span class="setting-name">Tap on the beat</span>
               <span class="seq-row-ctl">
                 <button id="seq-editor-tap-play" class="seq-act" type="button">Play on the droid</button>
-                <button id="seq-editor-tap-beat" class="btn btn-sm accent" type="button">Tap</button>
+                <button id="seq-editor-tap-beat" class="btn btn-sm" type="button">Tap</button>
                 <span class="setting-unit" id="seq-editor-tap-count" role="status">0 taps</span>
                 <button id="seq-editor-tap-use" class="seq-act" type="button" disabled>Use</button>
               </span>
               <span class="setting-value"></span>
             </div>
             <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
-          </div>
+          </div>`;
 
-          <!-- What is rarely set, folded away. -->
-          <details class="seq-more seq-header-more">
-            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>More settings</summary>
-            <div class="setting-rows seq-header">
-              <label class="setting-row">
-                <span class="setting-name">Mute period (ms)</span>
-                <input id="seq-editor-suppress" type="range" class="fader" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period milliseconds">
-                <span class="setting-value seq-editor-slider-value">${seq.suppressMs || 8000}</span>
-              </label>
-              <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
-              <label id="seq-editor-downbeat" class="setting-row${seq.tempo ? "" : " hidden"}">
-                <span class="setting-name">Bar 1 starts on beat</span>
-                <input id="seq-editor-downbeat-beat" class="number-cell" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
-                <span class="setting-value"></span>
-              </label>
-              <label class="setting-row">
-                <span class="setting-name">Notes</span>
-                <textarea id="seq-editor-notes" class="number-cell text-cell text-cell-wide seq-notes" placeholder="optional" aria-label="Optional notes about the sequence">${window.PAUtils.escapeHtml((seq.meta?.notes || ""))}</textarea>
-                <span class="setting-value"></span>
-              </label>
-            </div>
-          </details>
-        </div>
-
-        <div class="seq-editor-validation-summary" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
-          <!-- Populated by updateValidationSummary() -->
-        </div>
-
-        <div class="seq-editor-rehearsal" id="seq-editor-rehearsal" aria-live="polite" aria-label="Rehearsal">
-          <!-- Populated by updateValidationSummary() -->
-        </div>
-
-        <!-- The routine, read two ways over the one sequence: its steps in
-             the order they run, or as time. -->
-        <div class="seq-editor-routine">
-          <div class="sect"><h3>Routine</h3><span class="sub" id="seq-editor-routine-sub"></span></div>
-          <div class="seq-row-ctl seq-editor-show">
+    // The routine, read two ways over the one sequence. The step list stays
+    // reachable until the timeline can author every kind of step (ADR 0057).
+    const views = `
             <span class="seg seg-sm" role="group" aria-label="How the routine is shown">
-              <button id="seq-editor-show-steps" type="button" aria-pressed="true">Steps</button>
-              <button id="seq-editor-show-timeline" type="button" aria-pressed="false">Timeline</button>
-            </span>
-          </div>
-          <div class="seq-editor-steps" id="seq-editor-steps">
+              <button id="seq-editor-show-steps" type="button" aria-pressed="false">Steps</button>
+              <button id="seq-editor-show-timeline" type="button" aria-pressed="true">Timeline</button>
+            </span>`;
+    const stepList = `
+          <div class="seq-editor-steps hidden" id="seq-editor-steps">
             <p class="hint">Every step starts collapsed. Press one to open it.</p>
             <div class="seq-editor-step-table" id="seq-editor-step-table">
               ${stepRows}
             </div>
             <div class="seq-row-ctl">
               <button id="seq-editor-add-step" class="seq-act" type="button">Add a step</button>
-              <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
-              <span class="seq-unit" id="seq-editor-retime-receipt" role="status"></span>
             </div>
+          </div>`;
+
+    // The drawer's panes. The sequence's own settings are setting rows, the
+    // family Foot Drive's settings are drawn in: a name, the control, what it
+    // is on. What is rarely set is folded away.
+    const tab = (name, label) =>
+      `<button id="seq-editor-tab-${name}" type="button" data-tab="${name}" aria-pressed="${name === editorState.tab}">${label}</button>`;
+    const pane = (name, inner) =>
+      `<div class="seq-pane${name === editorState.tab ? "" : " hidden"}" id="seq-pane-${name}">${inner}</div>`;
+    const drawer = `
+        <div class="seq-drawer">
+          <div class="seq-tabs">
+            <span class="seg seg-sm" role="group" aria-label="What the drawer shows">
+              ${tab("block", "Picked block")}${tab("parts", "Parts")}${tab("sequence", "Sequence")}${tab("rehearsal", "Rehearsal")}
+            </span>
+            <span class="seq-gap"></span>
+            <span class="seq-meta" id="seq-editor-routine-sub"></span>
           </div>
-          <div id="seq-editor-timeline" class="seq-editor-timeline hidden"></div>
-        </div>
+          ${pane("block", "")}
+          ${pane("parts", `
+            <div class="sect"><h3>Parts</h3><span class="sub" id="seq-editor-parts-sub"></span></div>
+            <div class="seq-parts" id="seq-editor-parts"></div>`)}
+          ${pane("sequence", `
+            <div class="sect"><h3>Sequence</h3><span class="sub" id="seq-editor-saved-sub"></span></div>
+            <div class="setting-rows seq-settings">
+              <label class="setting-row">
+                <span class="setting-name">Name</span>
+                <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${esc(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="21">
+                <span class="setting-value"></span>
+              </label>
+              <div class="setting-row">
+                <span class="setting-name">Interrupt group</span>
+                <span id="seq-editor-toggle" class="seg seg-sm" role="group" aria-label="Interrupt group for conflict management">
+                  ${["none", "pies", "low", "all"]
+                    .map(
+                      (g) =>
+                        `<button type="button" data-value="${g}" aria-pressed="${(seq.toggleGroup || "none") === g ? "true" : "false"}">${g[0].toUpperCase() + g.slice(1)}</button>`,
+                    )
+                    .join("")}
+                </span>
+                <span class="setting-value"></span>
+              </div>
+            </div>
+            <details class="seq-more seq-settings-more">
+              <summary>${chevron}More settings</summary>
+              <div class="setting-rows seq-settings">
+                <label class="setting-row">
+                  <span class="setting-name">Purpose</span>
+                  <input id="seq-editor-purpose" class="number-cell text-cell text-cell-wide" type="text" value="${esc(seq.meta?.purpose || "")}" placeholder="optional" aria-label="Purpose of the sequence">
+                  <span class="setting-value"></span>
+                </label>
+                <label class="setting-row">
+                  <span class="setting-name">Mute period</span>
+                  <input id="seq-editor-suppress" type="range" class="fader" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period">
+                  <span class="setting-value seq-editor-slider-value">${mutePeriodWords(seq.suppressMs || 8000)}</span>
+                </label>
+                <label id="seq-editor-downbeat" class="setting-row${seq.tempo ? "" : " hidden"}">
+                  <span class="setting-name">Bar 1 starts on beat</span>
+                  <input id="seq-editor-downbeat-beat" class="number-cell" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
+                  <span class="setting-value"></span>
+                </label>
+                <label class="setting-row">
+                  <span class="setting-name">Notes</span>
+                  <textarea id="seq-editor-notes" class="number-cell text-cell text-cell-wide seq-notes" placeholder="optional" aria-label="Optional notes about the sequence">${esc(seq.meta?.notes || "")}</textarea>
+                  <span class="setting-value"></span>
+                </label>
+              </div>
+            </details>`)}
+          ${pane("rehearsal", `
+            <div class="sect"><h3>Rehearsal</h3><span class="sub" id="seq-editor-figures"></span></div>
+            <div class="seq-editor-rehearsal" id="seq-editor-rehearsal" aria-live="polite" aria-label="Rehearsal">
+              <!-- Populated by updateValidationSummary() -->
+            </div>`)}
+        </div>`;
 
-        <div class="seq-editor-footer">
-          <button id="seq-editor-save" class="btn btn-sm accent" type="button">Save</button>
-          <button id="seq-editor-test" class="seq-act" type="button">Test on the droid</button>
-          <button id="seq-editor-undo" class="seq-act" type="button" disabled>Undo</button>
-          <button id="seq-editor-redo" class="seq-act" type="button" disabled>Redo</button>
-          <button id="seq-editor-revert" class="seq-act" type="button" aria-label="Discard unsaved changes">Revert</button>
-          <button id="seq-editor-cancel" class="seq-act" type="button" aria-label="Cancel editing">Cancel</button>
-          <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
-        </div>
-
-        <div class="seq-editor-feedback" id="seq-editor-feedback" aria-live="polite" aria-label="Editor feedback">
-          <!-- Feedback messages shown here -->
-        </div>
+    els.editorView.innerHTML = `
+      <div class="seq-work">
+        ${strip}
+        ${tuneNotice}
+        ${stageHtml({ ids: true, above: tempoRows, views, below: stepList })}
+        ${drawer}
       </div>
     `;
 
@@ -2382,7 +2618,14 @@
       renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
-    // Attach event listeners (metadata/footer once; step rows on every rerender)
+    // The Picked block pane is the timeline's to fill, as it mounts.
+    pickedBlocks = [];
+    pickedShown = null;
+    showPicked([]);
+    mountSessionTimeline();
+    paintParts();
+
+    // Attach event listeners (the strip, the tempo and the drawer once; step rows on every rerender)
     attachMetadataListeners();
     attachStepListeners();
     updateValidationSummary();
@@ -2390,6 +2633,29 @@
     showSessionView(editorState.view);
     els.editorView.classList.remove("hidden");
     renderListView();
+    showFromTheTop();
+  };
+
+  // How long a sequence mutes the droid's own chatter after it runs, in the
+  // seconds a builder thinks in; it is stored in milliseconds.
+  const mutePeriodWords = (ms) => `${(ms / 1000).toFixed(1)} s`;
+
+  // What the strip and the Sequence tab say about the session: whether it has
+  // edits the droid has not received, and that a run uses the saved copy.
+  const paintSession = () => {
+    const dirty = sessionDirty();
+    // "Saved." is true of the routine it was said about: the next edit takes
+    // it down, so it never stands beside "Unsaved edits".
+    if (dirty && saidSaved) showEditorFeedback("");
+    const stateEl = document.getElementById("seq-editor-state");
+    if (stateEl) stateEl.textContent = dirty ? "Unsaved edits" : editorState.saved ? "Saved" : "No edits";
+    document.getElementById("seq-editor-test-hint")?.classList.toggle("hidden", !dirty);
+    // Revert has nothing to take back until there is an edit. Save stays live
+    // either way: a sequence being tuned or restored is saved with no edit.
+    const revertBtn = document.getElementById("seq-editor-revert");
+    if (revertBtn) revertBtn.disabled = !dirty;
+    const savedEl = document.getElementById("seq-editor-saved-sub");
+    if (savedEl) savedEl.textContent = dirty ? "unsaved edits" : "as saved";
   };
 
   const updateValidationSummary = () => {
@@ -2397,41 +2663,46 @@
     const summaryEl = document.getElementById("seq-editor-validation-summary");
     if (!summaryEl) return;
 
-    // The two subtitles are read off the routine as it is now: its name, and
-    // how many steps it has and how long it runs.
+    // Read off the routine as it is now: its name on the strip, and how many
+    // steps it has beside the drawer's tabs.
     const steps = editorState.current.steps || [];
-    const endStep = steps.find((step) => step && step.type === "end");
     const nameEl = document.getElementById("seq-editor-sub");
     if (nameEl) nameEl.textContent = editorState.current.name || "a new sequence";
     const routineEl = document.getElementById("seq-editor-routine-sub");
-    if (routineEl) {
-      routineEl.textContent = `${steps.length} ${steps.length === 1 ? "step" : "steps"}`
-        + (endStep ? ` \u00b7 ${((Number(endStep.t) || 0) / 1000).toFixed(2)} s` : "");
-    }
+    if (routineEl) routineEl.textContent = countOf(steps.length, "step", "steps");
 
-    // No glyph in front of the verdict. Protocol Check's two outcomes take the
-    // signal colors their own meanings already have - green for a sequence the
-    // droid will accept, red for one it would refuse - and the sentence says
-    // which on its own (CONTEXT.md "Status Color", ADR 0044).
+    // Protocol Check's two outcomes take the signal colors their own meanings
+    // already have - a green lamp for a sequence the droid will accept, red
+    // for one it would refuse - and the sentence says which on its own
+    // (CONTEXT.md "Status Color", ADR 0044).
     const status = validation.ok ? "valid" : "error";
     summaryEl.innerHTML = `
-      <div class="seq-validation-status seq-validation-${status}">
-        ${validation.ok ? "Sequence is valid" : validation.error || "Validation error"}
-      </div>
+      <span class="indicator ${validation.ok ? "ok" : "fail"}" aria-hidden="true"></span>
+      <span class="seq-validation-status seq-validation-${status}">${window.PAUtils.escapeHtml(validation.ok ? "Sequence is valid" : validation.error || "Validation error")}</span>
     `;
 
     // Disable save button if invalid
     const saveBtn = document.getElementById("seq-editor-save");
     if (saveBtn) saveBtn.disabled = !validation.ok;
 
-    // The Rehearsal's counts sit beside Protocol Check's verdict and never feed
-    // it: the save button above answers to Protocol Check alone (ADR 0044).
+    // The Rehearsal's tab: its counts, what it found and the fix for each, and
+    // what the routine weighs. It never feeds the verdict: the save button
+    // above answers to Protocol Check alone (ADR 0044). The tab itself says
+    // when there is a warning to read.
     const rehearsalEl = document.getElementById("seq-editor-rehearsal");
     if (rehearsalEl && window.SeqRehearsal) {
-      rehearsalEl.innerHTML = window.SeqRehearsal.countsHtml(
-        window.SeqRehearsal.rehearse(editorState.current, rehearsalContext())
-      );
+      const report = window.SeqRehearsal.rehearse(editorState.current, rehearsalContext());
+      rehearsalEl.innerHTML = window.SeqRehearsal.countsHtml(report) + window.SeqRehearsal.listHtml(report);
+      const figuresEl = document.getElementById("seq-editor-figures");
+      if (figuresEl) figuresEl.textContent = window.SeqRehearsal.figuresText(report);
+      const tabEl = document.getElementById("seq-editor-tab-rehearsal");
+      if (tabEl) {
+        tabEl.textContent = report.counts.warning > 0
+          ? `Rehearsal · ${countOf(report.counts.warning, "warning", "warnings")}`
+          : "Rehearsal";
+      }
     }
+    paintSession();
     updatePrerun();
   };
 
@@ -2461,8 +2732,11 @@
       console.warn("[seq] the Rehearsal could not read the droid's outputs:", error);
       return;
     }
-    if (editorState.current && !els.editorView.classList.contains("hidden")) updateValidationSummary();
-    if (lastRehearsalReport) showRehearsalReport(...lastRehearsalReport);
+    if (editorState.current && !els.editorView.classList.contains("hidden")) {
+      updateValidationSummary();
+      paintParts();
+    }
+    if (lastRunBadge) showRunBadge(...lastRunBadge);
     if (timeline) timeline.refresh(rehearsalContext());
     if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
   };
@@ -2575,7 +2849,7 @@
     edited();
   };
 
-  // Called once from renderEditorView — persistent metadata + footer elements only.
+  // Called once from renderEditorView — the strip, the tempo row and the drawer only.
   // These elements are NOT re-created on rerenderStepTable, so listeners must not accumulate.
   const attachMetadataListeners = () => {
     const nameInput = document.getElementById("seq-editor-name");
@@ -2584,8 +2858,6 @@
     const suppressValue = document.querySelector(".seq-editor-slider-value");
     const toggleSelect = document.getElementById("seq-editor-toggle");
     const notesInput = document.getElementById("seq-editor-notes");
-    const advancedToggle = document.getElementById("seq-editor-advanced-toggle");
-    const advancedFields = document.getElementById("seq-editor-advanced-fields");
 
     if (nameInput) {
       nameInput.addEventListener("input", () => {
@@ -2598,6 +2870,7 @@
       purposeInput.addEventListener("input", () => {
         if (!editorState.current.meta) editorState.current.meta = {};
         editorState.current.meta.purpose = purposeInput.value;
+        paintSession();
       });
     }
 
@@ -2605,7 +2878,7 @@
       suppressInput.addEventListener("input", () => {
         const val = parseInt(suppressInput.value, 10);
         editorState.current.suppressMs = val;
-        if (suppressValue) suppressValue.textContent = val;
+        if (suppressValue) suppressValue.textContent = mutePeriodWords(val);
         updateValidationSummary();
       });
     }
@@ -2739,6 +3012,29 @@
     document.getElementById("seq-editor-redo")?.addEventListener("click", redo);
     ["steps", "timeline"].forEach((view) =>
       document.getElementById(`seq-editor-show-${view}`)?.addEventListener("click", () => showSessionView(view)));
+    DRAWER_TABS.forEach((tab) =>
+      document.getElementById(`seq-editor-tab-${tab}`)?.addEventListener("click", () => showTab(tab)));
+
+    // The Picked block pane is written again whenever the selection changes,
+    // so its controls are heard on the pane itself.
+    const pickedPane = document.getElementById("seq-pane-block");
+    if (pickedPane) {
+      pickedPane.addEventListener("click", (event) => {
+        const act = event.target?.closest?.("[data-picked]")?.dataset.picked;
+        if (act === "remove") sessionTimeline?.removePicked();
+        if (act === "off-beat" && pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
+      });
+      pickedPane.addEventListener("change", (event) => {
+        const input = event.target;
+        if (input?.dataset?.picked !== "start" || input.value === "" || !sessionTimeline) return;
+        sessionTimeline.movePickedTo(Number(input.value));
+        // A start the block could not take - it is held at its limit - leaves
+        // the routine as it was, so nothing else draws the pane again: draw
+        // it from where the block is, never leave the number that was typed.
+        pickedShown = null;
+        showPicked(sessionTimeline.picked());
+      });
+    }
 
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) {
@@ -2751,23 +3047,7 @@
       notesInput.addEventListener("input", () => {
         if (!editorState.current.meta) editorState.current.meta = {};
         editorState.current.meta.notes = notesInput.value;
-      });
-    }
-
-    // Advanced Settings collapse toggle
-    if (advancedToggle && advancedFields) {
-      advancedToggle.addEventListener("click", () => {
-        const isExpanded = advancedToggle.getAttribute("aria-expanded") === "true";
-        advancedToggle.setAttribute("aria-expanded", !isExpanded);
-        advancedFields.classList.toggle("hidden");
-      });
-
-      // Keyboard support: Space and Enter to toggle
-      advancedToggle.addEventListener("keydown", (e) => {
-        if (e.key === " " || e.key === "Enter") {
-          e.preventDefault();
-          advancedToggle.click();
-        }
+        paintSession();
       });
     }
 
@@ -2793,6 +3073,8 @@
     const testBtn = document.getElementById("seq-editor-test");
     const saveBtn = document.getElementById("seq-editor-save");
     const revertBtn = document.getElementById("seq-editor-revert");
+    // All sequences: the way back to the list, which asks before it drops
+    // unsaved edits.
     const cancelBtn = document.getElementById("seq-editor-cancel");
 
     if (testBtn) testBtn.addEventListener("click", handleTestOnDroid);
@@ -3556,7 +3838,7 @@
       renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
-    // Re-attach only step-row listeners (metadata/footer listeners persist)
+    // Re-attach only step-row listeners (the strip's, the tempo's and the drawer's persist)
     attachStepListeners();
   };
 
@@ -3600,29 +3882,34 @@
     });
   };
 
+  // The strip's feedback line: what just happened to the sequence.
+  const FEEDBACK_CLASS = { ok: " success", error: " error" };
+  const feedbackHtml = (message, kind) =>
+    `<p class="feedback${FEEDBACK_CLASS[kind] || ""}">${window.PAUtils.escapeHtml(message)}</p>`;
+
   const showEditorFeedback = (message, kind = "info") => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
-    // Whatever report was here is replaced, so a later read of the droid must
+    // Whatever badge was here is replaced, so a later read of the droid must
     // not paint it back.
-    lastRehearsalReport = null;
-    feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${window.PAUtils.escapeHtml(message)}</div>`;
-    feedbackEl.classList.remove("hidden");
+    lastRunBadge = null;
+    saidSaved = false;
+    feedbackEl.innerHTML = message ? feedbackHtml(message, kind) : "";
   };
 
-  // A line of feedback with the Rehearsal's report under it: the full list, or
-  // the folded badge a run gets. It is only ever shown after the thing it reports
-  // on has happened -- a save, a clone, a run -- so nothing it finds can stand in
-  // that thing's way (#287 specific 6).
-  const showRehearsalReport = (message, kind, seq, form) => {
+  // A run's line of feedback with the Rehearsal's folded badge under it. The
+  // badge rehearses `seq`, the copy the droid ran - which is not the edits on
+  // screen, and so not what the Rehearsal tab is reading. It is only ever shown
+  // after the run has been sent, so nothing it finds can stand in the run's
+  // way (#287 specific 6).
+  const showRunBadge = (message, seq) => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
-    lastRehearsalReport = [message, kind, seq, form];
+    lastRunBadge = [message, seq];
+    saidSaved = false;
     const rehearsal = window.SeqRehearsal;
-    const report = rehearsal ? rehearsal.rehearse(seq, rehearsalContext()) : null;
-    const body = !report ? "" : form === "badge" ? rehearsal.badgeHtml(report) : rehearsal.listHtml(report);
-    feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${window.PAUtils.escapeHtml(message)}</div>${body}`;
-    feedbackEl.classList.remove("hidden");
+    const badge = rehearsal ? rehearsal.badgeHtml(rehearsal.rehearse(seq, rehearsalContext())) : "";
+    feedbackEl.innerHTML = feedbackHtml(message, "ok") + badge;
   };
 
   const handleSave = async () => {
@@ -3650,10 +3937,15 @@
     const sent = JSON.parse(JSON.stringify(editorState.current));
     try {
       await PAApi.postJson("/api/seq", sent);
-      showRehearsalReport("Saved.", "ok", sent, "list");
+      // What the Rehearsal finds in the saved routine is in its own tab, which
+      // reads the routine as it is; the strip says only that it was saved.
+      showEditorFeedback("Saved.", "ok");
+      saidSaved = true;
       editorState.isNew = false;
       editorState.tuningFactory = null;
       editorState.original = sent;
+      editorState.saved = true;
+      paintSession();
       refreshLearned();
     } catch (error) {
       showEditorFeedback("Save failed: " + PAApi.messageFor(error), "error");
@@ -3667,12 +3959,12 @@
     if (!seqName) return;
     const testBtn = document.getElementById("seq-editor-test");
     if (testBtn) testBtn.disabled = true;
-    showEditorFeedback(`Sending ${window.PAUtils.escapeHtml(seqName)} to droid...`, "info");
+    showEditorFeedback(`Sending ${seqName} to droid...`, "info");
     try {
       await PAApi.postJson("/api/seq/test", { name: seqName });
       // The droid ran what is saved under that name, not the edits on screen,
       // so the badge rehearses the last saved or cloned copy.
-      showRehearsalReport(`${seqName} dispatched.`, "ok", editorState.original, "badge");
+      showRunBadge(`${seqName} dispatched.`, editorState.original);
     } catch (error) {
       showEditorFeedback("Test failed: " + PAApi.messageFor(error), "error");
     } finally {
@@ -3684,16 +3976,28 @@
   // Action Handlers (Edit, Test, Duplicate, Memory Wipe, Export)
   // =========================================================================
 
-  const handleSeqAction = async (action, seqName, cardEl) => {
+  // A press on one of a list row's acts.
+  const handleSeqAction = async (btn) => {
+    const { action, seqName, builtinName } = btn.dataset;
+    const rowEl = btn.closest(".seq-item");
     switch (action) {
       case "edit":
-        leaveSession(() => handleEditSequence(seqName, "steps", cardEl));
+        leaveSession(() => handleEditSequence(seqName, rowEl));
         break;
       case "test":
-        await handleTestSequence(seqName, cardEl);
+        await handleTestSequence(seqName, rowEl);
         break;
+      case "more": {
+        // The acts used less often, folded behind the row's More.
+        const open = !moreOpen.has(seqName);
+        if (open) moreOpen.add(seqName);
+        else moreOpen.delete(seqName);
+        btn.setAttribute("aria-expanded", String(open));
+        rowEl?.querySelector(".seq-item-more")?.classList.toggle("hidden", !open);
+        break;
+      }
       case "duplicate":
-        leaveSession(() => handleDuplicateSequence(seqName));
+        leaveSession(() => handleDuplicateSequence(seqName, rowEl));
         break;
       case "memory-wipe":
         handleMemoryWipePrompt(seqName);
@@ -3704,60 +4008,65 @@
       case "share":
         await handleShareToProject(seqName);
         break;
+      case "tune":
+        leaveSession(() => handleCloneBuiltin(builtinName));
+        break;
+      case "timeline":
+        leaveSession(() => handleOpenTimeline(builtinName, rowEl));
+        break;
     }
   };
 
-  // Open one of the builder's own sequences in the editor, on its step list or
-  // on its timeline. A read that fails says so on the card that was pressed.
-  const handleEditSequence = async (seqName, view = "steps", cardEl = null) => {
-    const sayOnCard = cardSayer(seqName, cardEl);
+  // Open one of the builder's own sequences in the workspace, on its timeline.
+  // A read that fails says so on the row that was pressed.
+  const handleEditSequence = async (seqName, rowEl = null) => {
+    const sayOnRow = rowSayer(seqName, rowEl);
     let seq = null;
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
       seq = result.data;
     } catch (error) {
-      sayOnCard(`Could not read ${seqName}: ${PAApi.messageFor(error)}`);
+      sayOnRow(`Could not read ${seqName}: ${PAApi.messageFor(error)}`);
       return;
     }
     if (!seq || !Array.isArray(seq.steps)) {
-      sayOnCard(`The droid sent ${seqName} back with no steps.`);
+      sayOnRow(`The droid sent ${seqName} back with no steps.`);
       return;
     }
     currentEditingSeq = seq;
     editorState.isNew = false;
-    editorState.view = view;
     renderEditorView(currentEditingSeq);
   };
 
-  const handleTestSequence = async (seqName, cardEl) => {
-    const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
+  const handleTestSequence = async (seqName, rowEl) => {
+    const feedbackEl = rowEl?.querySelector(".seq-item-feedback");
     if (feedbackEl) {
       feedbackEl.textContent = "Running...";
-      feedbackEl.className = "seq-card-test-feedback feedback info";
+      feedbackEl.className = "seq-item-feedback feedback info";
       feedbackEl.classList.remove("hidden");
     }
     try {
       await PAApi.postJson("/api/seq/test", { name: seqName });
       if (feedbackEl) {
         feedbackEl.textContent = "Dispatched.";
-        feedbackEl.className = "seq-card-test-feedback feedback ok";
+        feedbackEl.className = "seq-item-feedback feedback success";
       }
     } catch (error) {
       if (feedbackEl) {
         feedbackEl.textContent = PAApi.messageFor(error);
-        feedbackEl.className = "seq-card-test-feedback feedback error";
+        feedbackEl.className = "seq-item-feedback feedback error";
       }
       return;
     }
-    await showCardRehearsal(seqName, cardEl);
+    await showRowRehearsal(seqName, rowEl);
   };
 
-  // The badge beside a run from the list. The card holds no steps, so the
+  // The badge beside a run from the list. The row holds no steps, so the
   // sequence is read back once the run is already on its way; a read that fails
-  // says so on the card rather than leaving an empty space that looks like an
+  // says so on the row rather than leaving an empty space that looks like an
   // all-clear.
-  const showCardRehearsal = async (seqName, cardEl) => {
-    const badgeEl = cardEl?.querySelector(".seq-card-rehearsal");
+  const showRowRehearsal = async (seqName, rowEl) => {
+    const badgeEl = rowEl?.querySelector(".seq-item-rehearsal");
     if (!badgeEl || !window.SeqRehearsal) return;
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
@@ -3767,21 +4076,37 @@
     }
   };
 
-  const handleDuplicateSequence = async (seqName) => {
+  // Open a copy of one of the builder's own sequences to edit. A read that
+  // fails says so on the row that was pressed.
+  const handleDuplicateSequence = async (seqName, rowEl = null) => {
+    const sayOnRow = rowSayer(seqName, rowEl);
+    let original = null;
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      const original = result.data;
-      // Auto-rename to NAME_copy (avoid _copy_copy by removing existing suffix)
-      const baseName = seqName.replace(/_copy(\d*)$/, "");
-      original.name = `${baseName}_copy`;
-
-      // Open editor with copy
-      currentEditingSeq = original;
-      editorState.isNew = true; // Duplicate is a new sequence
-      renderEditorView(currentEditingSeq);
+      original = result.data;
     } catch (error) {
-      console.error("Error duplicating sequence:", error);
+      sayOnRow(`Could not read ${seqName}: ${PAApi.messageFor(error)}`);
+      return;
     }
+    if (!original || !Array.isArray(original.steps)) {
+      sayOnRow(`The droid sent ${seqName} back with no steps.`);
+      return;
+    }
+    // Auto-rename to NAME_COPY (avoid _COPY_COPY by removing an existing
+    // suffix). In capitals: Protocol Check takes no lowercase in a name, so
+    // "_copy" opened every duplicate refused until it was renamed.
+    const baseName = seqName.replace(/_COPY(\d*)$/, "");
+    original.name = `${baseName}_COPY`;
+    // A duplicate is a new sequence, so it gets an id of its own at save. A
+    // sequence inside another is found by id, and the droid takes the first
+    // match (src/seq_store.cpp): two sequences sharing one would let a
+    // routine that holds the original play the copy.
+    delete original.id;
+
+    // Open editor with copy
+    currentEditingSeq = original;
+    editorState.isNew = true; // Duplicate is a new sequence
+    renderEditorView(currentEditingSeq);
   };
 
   const handleMemoryWipePrompt = (seqName) => {
@@ -3907,12 +4232,12 @@
     );
 
     const showShareFeedback = (msg, level) => {
-      const card = [...els.cardsContainer.querySelectorAll(".seq-card")].find(
-        (c) => c.querySelector("h4")?.textContent === seqName
+      const row = [...els.cardsContainer.querySelectorAll(".seq-item")].find(
+        (item) => item.dataset.seqName === seqName
       );
       // showFeedback() rewrites className to "feedback <level>", dropping the
-      // seq-card-test-feedback class — match either so repeat clicks still resolve it.
-      const fb = card?.querySelector(".seq-card-test-feedback, .feedback");
+      // seq-item-feedback class — match either so repeat clicks still resolve it.
+      const fb = row?.querySelector(".seq-item-feedback, .feedback");
       if (fb) {
         PAUtils.showFeedback(fb, msg, level);
         fb.classList.remove("hidden");
@@ -3996,6 +4321,15 @@
 
     // Empty state buttons
     els.emptyImport.addEventListener("click", showImportModal);
+
+    // Which sequences the list shows: all of them, the builder's own, or the
+    // factory's.
+    els.filter.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        listShow = button.dataset.value;
+        renderListView();
+      });
+    });
 
     // Import modal
     els.modalImportCancel.addEventListener("click", () => hideModal(els.modalImport));

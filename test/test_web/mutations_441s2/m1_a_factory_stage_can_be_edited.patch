@@ -1,0 +1,12 @@
+diff --git i/data/seq.js w/data/seq.js
+index 10d05402..ac24ebf1 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -786,6 +786,7 @@
+         context: rehearsalContext(),
+         describe: stepPreview,
+         onPose: (atMs) => poseOnDroid(builtinName, atMs),
++        edit: { begin: () => "", commit: () => {}, remove: () => {} },
+       },
+     );
+     renderListView();

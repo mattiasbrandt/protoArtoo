@@ -1008,7 +1008,9 @@
   // ---------------------------------------------------------------------------
   const kb = (bytes) => `${Number((bytes / 1024).toFixed(1))} KB`;
 
-  const figuresHtml = (report) => {
+  // What the routine weighs against the droid's limits, as one line of words:
+  // the Rehearsal's subtitle (data/seq.js).
+  const figuresText = (report) => {
     const f = report.figures || {};
     const cells = [];
     if (typeof f.steps === "number") {
@@ -1020,14 +1022,13 @@
     if (typeof f.durationMs === "number") cells.push(`runs ${seconds(f.durationMs)}`);
     if (f.slowestThrow) cells.push(`slowest throw ${seconds(f.slowestThrow.ms)}`);
     else if (f.untimedMoves) cells.push("slowest throw not timed");
-    return cells.map((cell) => `<span class="seq-rehearsal-figure">${escapeHtml(cell)}</span>`).join("");
+    return cells.join(" \u00b7 ");
   };
 
   const countsHtml = (report) => `
     <div class="seq-rehearsal-counts" data-rehearsal-counts>
       <span class="seq-rehearsal-count${report.counts.warning > 0 ? " seq-rehearsal-count-warning" : ""}" data-count="warning">${plural(report.counts.warning, "warning", "warnings")}</span>
       <span class="seq-rehearsal-count" data-count="note">${plural(report.counts.note, "note", "notes")}</span>
-      ${figuresHtml(report)}
     </div>`;
 
   const listHtml = (report) => {
@@ -1104,6 +1105,7 @@
     unavailableMessage,
     unmeasuredOutputs,
     countsHtml,
+    figuresText,
     listHtml,
     summaryText,
     badgeHtml,

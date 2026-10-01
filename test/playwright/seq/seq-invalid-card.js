@@ -55,78 +55,9 @@ async function runTest() {
       },
     ];
 
+    // The page's own list renderer draws the rows (data/seq.js renderSeqRow()).
     await page.evaluate((seqs) => {
-      window.sequences = seqs;
-      // Manually trigger renderListView to render the cards
-      const els = {
-        capacityDisplay: document.getElementById('seq-capacity-display'),
-        emptyState: document.getElementById('seq-empty-state'),
-        populatedState: document.getElementById('seq-populated-state'),
-        cardsContainer: document.getElementById('seq-cards-container'),
-      };
-
-      els.capacityDisplay.textContent = `${seqs.length} / 10 sequences`;
-      els.emptyState.classList.add('hidden');
-      els.populatedState.classList.remove('hidden');
-
-      // Render cards using the same logic as renderSeqCard
-      const escapeHtml = (str) => {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-      };
-
-      const escapeAttr = (str) => {
-        return str.replace(/"/g, '&quot;');
-      };
-
-      els.cardsContainer.innerHTML = seqs.map((seq) => {
-        const badges = [];
-        if (seq.retrained) {
-          badges.push(
-            `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${seq.name}">Retrained</span>`
-          );
-        }
-        if (seq.valid === false) {
-          badges.push(
-            `<span class="seq-badge seq-badge-invalid" title="This sequence fails Protocol Check and cannot be run until repaired">Invalid</span>`
-          );
-        }
-
-        const stepCount = seq.stepCount || 0;
-        const modifiedDate = seq.modified ? new Date(seq.modified).toLocaleString() : 'Unknown';
-
-        const isCustom = !seq.source || seq.source === 'user';
-        const shareBtn = isCustom
-          ? `<button class="btn btn-sm btn-action" data-action="share" data-seq-name="${escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
-          : '';
-
-        const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${escapeAttr(seq.name)}"`;
-
-        return `
-          <div class="seq-card">
-            <div class="seq-card-header">
-              <h4>${escapeHtml(seq.name)}</h4>
-              <div class="seq-badges">${badges.join('')}</div>
-            </div>
-            <div class="seq-card-meta">
-              <span class="seq-meta-item">Toggle: ${escapeHtml(seq.toggleGroup || 'none')}</span>
-              <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
-              <span class="seq-meta-item">Steps: ${stepCount}</span>
-              <span class="seq-meta-item">Modified: ${escapeHtml(modifiedDate)}</span>
-            </div>
-            <div class="seq-card-actions">
-              <button class="btn btn-sm btn-action" data-action="edit" data-seq-name="${escapeAttr(seq.name)}">Edit</button>
-              <button class="btn btn-sm btn-action" data-action="test" ${testBtnDisabled}>Test</button>
-              <button class="btn btn-sm btn-action" data-action="duplicate" data-seq-name="${escapeAttr(seq.name)}">Duplicate</button>
-              <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${escapeAttr(seq.name)}">Memory Wipe</button>
-              <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${escapeAttr(seq.name)}">Export</button>
-              ${shareBtn}
-            </div>
-            <div class="seq-card-test-feedback feedback hidden"></div>
-          </div>
-        `;
-      }).join('');
+      window.__seqEditorForTesting.renderListWithMocks(seqs, []);
     }, mockSequences);
 
     await page.screenshot({ path: '/tmp/seq-invalid-card-list.png', fullPage: true });
@@ -138,8 +69,8 @@ async function runTest() {
     console.log('Test 2: Checking valid sequence card...');
 
     const validSeqState = await page.evaluate(() => {
-      const card = Array.from(document.querySelectorAll('.seq-card')).find(
-        (c) => c.querySelector('h4')?.textContent === 'ValidSeq'
+      const card = Array.from(document.querySelectorAll('.seq-item')).find(
+        (c) => c.querySelector('th[scope="row"] .seq-name')?.textContent === 'ValidSeq'
       );
       if (!card) return { found: false };
 
@@ -167,8 +98,8 @@ async function runTest() {
     console.log('Test 3: Checking invalid sequence card...');
 
     const invalidSeqState = await page.evaluate(() => {
-      const card = Array.from(document.querySelectorAll('.seq-card')).find(
-        (c) => c.querySelector('h4')?.textContent === 'InvalidSeq'
+      const card = Array.from(document.querySelectorAll('.seq-item')).find(
+        (c) => c.querySelector('th[scope="row"] .seq-name')?.textContent === 'InvalidSeq'
       );
       if (!card) return { found: false };
 
@@ -211,8 +142,8 @@ async function runTest() {
     console.log('Test 4: Checking retrained+invalid sequence card...');
 
     const retrainedInvalidState = await page.evaluate(() => {
-      const card = Array.from(document.querySelectorAll('.seq-card')).find(
-        (c) => c.querySelector('h4')?.textContent === 'RetrainedInvalidSeq'
+      const card = Array.from(document.querySelectorAll('.seq-item')).find(
+        (c) => c.querySelector('th[scope="row"] .seq-name')?.textContent === 'RetrainedInvalidSeq'
       );
       if (!card) return { found: false };
 

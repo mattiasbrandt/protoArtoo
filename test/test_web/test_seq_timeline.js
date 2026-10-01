@@ -14,7 +14,7 @@
 // the pose and its pace are the firmware's (include/sequence_pose.h).
 //
 // The harness runs the shipped chain data/seq.html declares, opens the
-// timeline through the Factory card's own Timeline button, and records every
+// timeline through the Factory row's own Timeline act, and records every
 // request. The view is a real mini_dom tree, so the ruler it binds and the
 // window listeners a drag adds are the ones the page really holds; the moment
 // is checked in the readout, so a marker that did not move cannot pass.
@@ -24,6 +24,11 @@
 // edge inside a tolerance that is a time, is one entry in the editor's one
 // history whatever it passed on the way, and what Save sends is in the time
 // order Protocol Check accepts. A press that moves nothing is no edit.
+//
+// The third: a Factory sequence's stage is read-only. The builder has not made
+// the sequence theirs, so nothing on its stage can be taken hold of and a drag
+// across a block leaves the routine exactly as the droid sent it; Tune is the
+// way into the editor.
 // Per test/test_web/README.md: executed, not pattern-matched.
 // =============================================================================
 import test from "node:test";
@@ -120,26 +125,35 @@ function openPage() {
   const requests = [];
   const writes = [];
   const mini = new MiniDocument();
-  const timelineView = mini.createElement("div");
-  mini.body.appendChild(timelineView);
-  // Where the editor mounts the timeline of the sequence being edited: a real
-  // node, found by the id the editor's own markup gives it.
-  const editorTimeline = mini.createElement("div");
-  mini.body.appendChild(editorTimeline);
+  const real = () => mini.body.appendChild(mini.createElement("div"));
+  const timelineView = real();
+  // Where the workspace has the timeline of the sequence being edited drawn -
+  // the bar over it, its lanes, the droid beside it - and the drawer's Picked
+  // block pane: real nodes, found by the ids the editor's own markup gives them.
+  const editorBar = real();
+  const editorTimeline = real();
+  const editorDroid = real();
+  const pickedPane = real();
 
-  // The Factory card and its Timeline button, handed back the way the browser
+  // The Factory row and its Timeline act, handed back the way the browser
   // would find them in the markup renderListView() just wrote.
   const cardFeedback = stub();
-  const card = stub({ querySelector: (selector) => (selector === ".seq-card-test-feedback" ? cardFeedback : null) });
+  const card = stub({ querySelector: (selector) => (selector === ".seq-item-feedback" ? cardFeedback : null) });
   const timelineButton = stub({ dataset: { action: "timeline", builtinName: ROUTINE.name }, closest: () => card });
 
-  const elements = new Map([["seq-timeline-view", timelineView], ["seq-editor-timeline", editorTimeline]]);
+  const elements = new Map([
+    ["seq-timeline-view", timelineView],
+    ["seq-editor-tlbar", editorBar],
+    ["seq-editor-timeline", editorTimeline],
+    ["seq-editor-droid", editorDroid],
+    ["seq-pane-block", pickedPane],
+  ]);
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, stub());
     return elements.get(id);
   };
   byId("seq-cards-container").querySelectorAll = (selector) =>
-    selector === '[data-action="timeline"]' ? [timelineButton] : [];
+    selector === "[data-action]" ? [timelineButton] : [];
 
   const answer = (url) => {
     requests.push(url);
@@ -209,6 +223,7 @@ function openPage() {
     writes,
     timelineView,
     editorTimeline,
+    pickedPane,
     timelineButton,
     byId,
     seam: sandbox.__seqEditorForTesting,
@@ -378,4 +393,133 @@ test("a drag on the timeline is one edit to the sequence the editor saves", asyn
     JSON.parse(saved[0].slice("POST /api/seq ".length)).steps.map((step) => [step.type, step.t]),
     [["audio", 0], ["dome", 2000], ["domeRotate", 2450], ["dome", 3000], ["end", 4000]],
   );
+});
+
+// The Picked block tab draws where the block starts as a number a builder can
+// type over. A field the editor draws and never reads back is the fault #434
+// was (test_seq_step_edits.js): the number on screen changes and Save sends the
+// old one. Typed, it is the same edit a drag of the block makes, on the same
+// history.
+test("a start typed for the picked block moves it, as one edit that Undo takes back", async () => {
+  const page = openPage();
+  await page.settle();
+  page.seam.renderEditorView(JSON.parse(JSON.stringify(EDITED)));
+
+  const view = page.editorTimeline;
+  const turn = () => page.seam.editorState.current.steps.find((step) => step.type === "domeRotate");
+  const startField = () => page.pickedPane.querySelector('[data-picked="start"]');
+  assert.equal(startField(), null, "the fixture: nothing is picked when a sequence opens");
+
+  // A press on the dome turn, let go where it is: it is picked, and no edit.
+  const pick = () => {
+    view.querySelector(".tl-ruler").getBoundingClientRect = () => ({ left: 0, width: 1000 });
+    const block = view.querySelector('[data-lane="spin"]').querySelector(".tl-item");
+    block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+    view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
+    page.fireWindow("pointerup", {});
+  };
+  pick();
+  assert.ok(startField(), "the picked block shows no start to type over");
+  assert.equal(startField().getAttribute("value"), "500");
+  assert.equal(page.byId("seq-editor-undo").disabled, true, "picking a block was recorded as an edit");
+
+  // The builder types a new start, as the browser delivers it.
+  const typed = startField();
+  typed.value = "1200";
+  page.pickedPane.fire("change", { target: typed });
+  assert.equal(turn().t, 1200, "the typed start never reached the routine");
+  assert.equal(startField().getAttribute("value"), "1200", "the tab still shows the old start");
+
+  (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
+  assert.equal(turn().t, 500, "one Undo did not take the typed start back");
+
+  // A start past where the block may go is held at its limit, the end of the
+  // routine - and typed again there it moves nothing. The field still shows
+  // where the block is, never a number that was not applied. (The Undo put
+  // other steps in the routine, so the block is picked again first.)
+  pick();
+  for (let i = 0; i < 2; i += 1) {
+    const past = startField();
+    past.value = "99999";
+    page.pickedPane.fire("change", { target: past });
+    assert.equal(turn().t, 4000, "the block went past the end of the routine");
+    assert.notEqual(startField(), past, "the field was left holding a start that was not applied");
+    assert.equal(startField().getAttribute("value"), "4000");
+  }
+});
+
+// The timeline holds what is picked as the steps themselves, and putting a
+// step on or off a beat writes a new step in its place (the time is resolved
+// again from the tempo). An edit made from the Picked block tab must leave
+// the tab on the block it edited, or the one press empties it.
+test("taking the picked block off its beat leaves it picked", async () => {
+  const page = openPage();
+  await page.settle();
+  page.seam.renderEditorView({
+    ...JSON.parse(JSON.stringify(EDITED)),
+    tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+    steps: [
+      { t: 0, type: "audio", cmd: "$H" },
+      { t: 500, beat: 1, type: "domeRotate", speedPct: 40, durationMs: 1000 },
+      { t: 4000, type: "end" },
+    ],
+  });
+
+  const view = page.editorTimeline;
+  const turn = () => page.seam.editorState.current.steps.find((step) => step.type === "domeRotate");
+  view.querySelector(".tl-ruler").getBoundingClientRect = () => ({ left: 0, width: 1000 });
+  const block = view.querySelector('[data-lane="spin"]').querySelector(".tl-item");
+  block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+  view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
+  page.fireWindow("pointerup", {});
+
+  const offBeat = page.pickedPane.querySelector('[data-picked="off-beat"]');
+  assert.ok(offBeat, "a block on a beat offers no way off it");
+  page.pickedPane.fire("click", { target: offBeat });
+
+  assert.equal(turn().beat, undefined, "the step is still on its beat");
+  assert.equal(turn().t, 500, "taking a step off its beat moved it");
+  assert.ok(page.pickedPane.querySelector('[data-picked="start"]'), "the edit emptied the Picked block tab");
+  assert.equal(page.pickedPane.querySelector('[data-picked="off-beat"]'), null, "the tab still offers Off the beat");
+  assert.ok(
+    view.querySelectorAll("[data-edit]").some((node) => node.getAttribute("data-edit").includes("is-selected")),
+    "the block is no longer drawn as picked",
+  );
+});
+
+test("a Factory sequence's stage offers nothing that edits it", async () => {
+  const page = openPage();
+  await page.settle();
+  const asSent = JSON.parse(JSON.stringify(ROUTINE));
+  (page.timelineButton.listeners.click || []).forEach((fn) => fn());
+  await page.settle();
+
+  const view = page.timelineView;
+  const blocks = view.querySelectorAll(".tl-item");
+  assert.ok(blocks.length > 0, "the Factory sequence drew no blocks");
+  assert.deepEqual(view.querySelectorAll("[data-edit]"), [], "a block of a Factory sequence can be taken hold of");
+
+  // A press on a block and a drag across the stage, as a builder would try it.
+  const ruler = view.querySelector(".tl-ruler");
+  ruler.getBoundingClientRect = () => ({ left: 0, width: 1000 });
+  const block = blocks[0];
+  block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+  view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
+  page.fireWindow("pointermove", { clientX: 600 });
+  page.fireWindow("pointerup", {});
+  assert.deepEqual(ROUTINE, asSent, "a drag on a Factory sequence's stage changed the routine");
+
+  // The strip carries the way back and Tune, and nothing that keeps an edit.
+  const strip = view.querySelector(".seq-strip");
+  assert.ok(strip.querySelector('[data-stage-act="back"]'), "the stage has no way back to the list");
+  assert.equal(view.querySelector("#seq-editor-save"), null, "a read-only stage offers Save");
+  await page.settle();
+  assert.deepEqual(page.writes, [], "looking at a Factory sequence sent something to the droid");
+
+  // Tune is its way into the editor: the Factory sequence is read to be edited.
+  const before = page.requests.length;
+  strip.fire("click", { target: strip.querySelector('[data-stage-act="tune"]') });
+  await page.settle();
+  assert.deepEqual(page.requests.slice(before), [`/api/seq/builtins?name=${encodeURIComponent(ROUTINE.name)}`]);
+  assert.equal(page.seam.editorState.current?.name, ROUTINE.name, "Tune did not open the sequence to edit");
 });

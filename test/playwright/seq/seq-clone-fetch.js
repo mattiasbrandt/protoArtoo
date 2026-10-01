@@ -93,12 +93,16 @@ const TARGET_URL = process.env.TARGET_URL || "http://127.0.0.1:4173/seq.html";
   await page.waitForSelector(tuneHello, { state: "visible", timeout: 8000 });
 
   await test("the factory list renders from a metadata-only response", async () => {
-    const cards = await page.$$eval(".seq-card-factory h4", (els) => els.map((el) => el.textContent));
+    const cards = await page.$$eval(".seq-item-factory .seq-name", (els) => els.map((el) => el.textContent));
     assert(cards.includes("DM:HELLO"), "DM:HELLO card missing");
     assert(cards.includes("DM:PIES"), "DM:PIES card missing");
-    // stepCount renders even though the list payload carries no `steps` array.
-    const meta = await page.$eval(".seq-card-factory .seq-card-meta", (el) => el.textContent);
-    assert(/Steps: \d+/.test(meta), `step count not rendered: ${meta}`);
+    // stepCount renders, in the row's Steps column, even though the list
+    // payload carries no `steps` array.
+    const steps = await page.$eval(
+      '.seq-item-factory[data-seq-name="DM:HELLO"] td.seq-count-cell',
+      (el) => el.textContent.trim()
+    );
+    assert(/^\d+$/.test(steps), `step count not rendered: ${steps}`);
     assert(listCalls >= 1, "builtins list was not fetched");
     assert(fullCalls === 0, "no per-name fetch should happen before Tune");
   });

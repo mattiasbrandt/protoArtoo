@@ -79,7 +79,9 @@ function makeElement(extra = {}) {
 
 const fire = (element, name) => (element.listeners[name] || []).forEach((fn) => fn({ type: name, target: element }));
 
-function newPage() {
+// `onDroid` is what the droid answers a read of one saved sequence with: the
+// sequence, or an Error to refuse the read with.
+function newPage({ onDroid = null } = {}) {
   const posts = [];
   // The shell's half of an unmount hold: what the surface registered, and what
   // it answered with. And every write to browser storage, which an unsaved
@@ -91,6 +93,12 @@ function newPage() {
     if (!elements.has(id)) elements.set(id, makeElement());
     return elements.get(id);
   };
+
+  // The list's row acts, handed back the way the browser would find them in
+  // the markup renderListView() just wrote: each a button with its row behind
+  // it, and the row's own feedback line.
+  const rowButtons = [];
+  byId("seq-cards-container").querySelectorAll = (selector) => (selector === "[data-action]" ? rowButtons : []);
 
   // Each rendered step card, rebuilt whenever the editor's markup changes.
   // Only an expanded card carries a time input and a fields container.
@@ -199,7 +207,14 @@ function newPage() {
     PAAssetsReady: true,
     PAApi: {
       ...shippedWords(),
-      get: (url) => Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] }),
+      get: (url) => {
+        if (onDroid && url.startsWith("/api/seq?name=")) {
+          return onDroid instanceof Error
+            ? Promise.reject(onDroid)
+            : Promise.resolve({ ok: true, status: 200, data: JSON.parse(JSON.stringify(onDroid)) });
+        }
+        return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] });
+      },
       postForm: () => Promise.resolve({ ok: true, data: {} }),
       postJson: (url, body) => {
         posts.push({ url, body: JSON.parse(JSON.stringify(body)) });
@@ -272,6 +287,18 @@ function newPage() {
     async save() {
       fire(byId("seq-editor-save"), "click");
       await settle();
+    },
+    // Press one of a list row's acts; hands back the row's feedback line.
+    async rowAct(action, seqName) {
+      const feedback = makeElement();
+      const row = makeElement({ querySelector: (selector) => (selector === ".seq-item-feedback" ? feedback : null) });
+      const button = makeElement({ dataset: { action, seqName }, closest: () => row });
+      rowButtons.length = 0;
+      rowButtons.push(button);
+      seam.renderListWith([{ name: seqName }]);
+      fire(button, "click");
+      await settle();
+      return feedback;
     },
     settle,
   };
@@ -406,11 +433,11 @@ test("a saved sequence always carries a stable id, and keeps the one it has", as
   assert.equal(second[0].body.id, "abcd1234", "the save replaced the sequence's id");
 });
 
-// Cancel used to swap the editor's state for a new object that had no set of
-// expanded steps, so the next sequence opened from the list threw before it
+// Leaving the editor used to swap its state for a new object that had no set
+// of expanded steps, so the next sequence opened from the list threw before it
 // drew a single step (#441) - and the seam above went on holding the object
-// Cancel had thrown away.
-test("a sequence opens after another was closed with Cancel", () => {
+// that had been thrown away. The way out is All sequences, on the strip.
+test("a sequence opens after another was closed with All sequences", () => {
   const page = newPage();
   const sequence = {
     name: "DM:AGAIN",
@@ -425,7 +452,7 @@ test("a sequence opens after another was closed with Cancel", () => {
   fire(page.byId("seq-editor-cancel"), "click");
 
   page.open(sequence, [0]);
-  assert.ok(page.card(0), "the sequence opened after a Cancel drew no step");
+  assert.ok(page.card(0), "the sequence opened after another was closed drew no step");
 });
 
 // Every edit is one Undo and one Redo, on one history (ADR 0057, #441): a run
@@ -487,8 +514,8 @@ test("a run of typing and a tempo change are each one Undo, and Redo puts them b
 });
 
 // An unsaved edit is not kept, and it is never dropped without the builder
-// being asked (operator decision 2026-09-30, #441). Leaving by Cancel and
-// leaving the Sequences surface both ask first; the edit is still there until
+// being asked (operator decision 2026-09-30, #441). Leaving by All sequences
+// and leaving the Sequences surface both ask first; the edit is still there until
 // the answer is Discard; and nothing about it is written to browser storage.
 test("an unsaved edit is dropped only on Discard, whichever way the builder was leaving", () => {
   const page = newPage();
@@ -513,12 +540,12 @@ test("an unsaved edit is dropped only on Discard, whichever way the builder was 
   page.open(sequence, []);
   assert.equal(page.surface.decide(), false, "a clean edit held the surface");
   fire(page.byId("seq-editor-cancel"), "click");
-  assert.equal(page.editing(), null, "Cancel on a clean edit did not close it");
+  assert.equal(page.editing(), null, "All sequences on a clean edit did not close it");
 
-  // Cancel, then keep editing: the edit is still there.
+  // All sequences, then keep editing: the edit is still there.
   edit();
   fire(page.byId("seq-editor-cancel"), "click");
-  assert.equal(page.editing()?.steps[0].t, 250, "Cancel dropped an unsaved edit without asking");
+  assert.equal(page.editing()?.steps[0].t, 250, "All sequences dropped an unsaved edit without asking");
   fire(page.byId("seq-modal-discard-keep"), "click");
   assert.equal(page.editing()?.steps[0].t, 250, "keeping the edit lost it");
 
@@ -599,4 +626,31 @@ test("a panel picked on one step and then on another is two edits, and Undo take
   assert.deepEqual(commands(), [":OP03", ":OP02", "end"], "one Undo took back more than the last pick");
   fire(page.byId("seq-editor-undo"), "click");
   assert.deepEqual(commands(), [":OP01", ":OP02", "end"]);
+});
+
+// A sequence inside another is found by its id, and the droid takes the first
+// sequence that carries it (src/seq_store.cpp). A duplicate is a new sequence:
+// saved with the original's id, a routine that nests the original could play
+// the copy instead.
+test("a duplicate is saved under an id of its own, never the original's", async () => {
+  const page = newPage({
+    onDroid: { name: "DM:ORIGINAL", id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] },
+  });
+  await page.rowAct("duplicate", "DM:ORIGINAL");
+  assert.equal(page.editing()?.name, "DM:ORIGINAL_COPY", "the fixture: Duplicate opened the copy to edit");
+
+  await page.save();
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  assert.match(saved[0].body.id || "", /^[0-9a-f]{8}$/, "the duplicate was saved with no id");
+  assert.notEqual(saved[0].body.id, "abcd1234", "the duplicate was saved under the original's id");
+});
+
+// A row act that cannot read its sequence says so on the row. Duplicate used
+// to say it only to the console, so the press did nothing a builder could see.
+test("a Duplicate that cannot read the sequence says so on its row", async () => {
+  const page = newPage({ onDroid: new Error("controller not reachable") });
+  const feedback = await page.rowAct("duplicate", "DM:ORIGINAL");
+  assert.equal(page.editing(), null, "a duplicate that was never read opened the editor");
+  assert.match(feedback.textContent, /Could not read DM:ORIGINAL: controller not reachable/);
 });
