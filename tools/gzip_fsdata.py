@@ -343,9 +343,6 @@ def main():
         return
 
     stage = os.path.join(env.subst("$BUILD_DIR"), "fsdata_gz")
-    if os.path.isdir(stage):
-        shutil.rmtree(stage)
-    os.makedirs(stage, exist_ok=True)
 
     set_name = env.GetProjectOption("custom_asset_set", DEFAULT_ASSET_SET)
     sets_root = os.path.join(src, ASSET_SETS_DIR)
@@ -378,18 +375,13 @@ def main():
     partial_count = 0
     set_count = 0
     src_bytes = 0
-    out_bytes = 0
-    # Staged in sorted order, because the order files are created in the stage
-    # is the order they are written into the image, and that moves the block
-    # count. The builder (littlefs-python, in the platform's build_fs_image)
-    # walks the stage with Path.rglob, which lists a directory in readdir
-    # order, and btrfs - like a small ext4 directory - returns entries in
-    # creation order. Unsorted, os.walk hands back data/ in ITS readdir order,
-    # which is whatever order git happened to create those files in in this
-    # worktree: the same commit imaged as 112 blocks in one worktree and 114 in
-    # another. Measured on one stage written in 300 random orders: 112 blocks
-    # 297 times, 113 twice, 114 once (#429). Sorted, the count is a function of
-    # the commit alone.
+    # Every staged file, keyed by its path in the stage, as either the bytes to
+    # write or the source to copy. Built in full before the old stage is
+    # removed, so a page or a tool that refuses fails the build with the last
+    # good stage still on disk; a set file replaces a common file of the same
+    # path, which is what "the set is staged on top" means.
+    staged = {}
+    stage_dirs = [""]
     for walk_src, in_set in roots:
         for root, dirs, files in os.walk(walk_src):
             dirs.sort()
@@ -399,8 +391,9 @@ def main():
             # the common tree -- otherwise every build would carry every set.
             if not in_set and (rel == ASSET_SETS_DIR or rel.startswith(ASSET_SETS_DIR + os.sep)):
                 continue
-            dst_root = stage if rel == "." else os.path.join(stage, rel)
-            os.makedirs(dst_root, exist_ok=True)
+            rel_dir = "" if rel == "." else rel
+            if rel_dir not in stage_dirs:
+                stage_dirs.append(rel_dir)
             for name in files:
                 sp = os.path.join(root, name)
                 # Partials are inlined into the pages that include them; imaging
@@ -412,7 +405,6 @@ def main():
                 if in_set:
                     set_count += 1
                 if _should_gzip(name):
-                    dp = os.path.join(dst_root, name + ".gz")
                     ext = os.path.splitext(name)[1].lower()
                     if ext in HTML_EXTS:
                         payload = _expand_includes(
@@ -425,14 +417,40 @@ def main():
                     else:
                         with open(sp, "rb") as fi:
                             payload = fi.read()
-                    with open(dp, "wb") as fo:
-                        fo.write(_zopfli(sp, payload))
+                    data = _zopfli(sp, payload)
+                    staged[os.path.join(rel_dir, name + ".gz")] = (len(data), data, None)
                     gz_count += 1
                 else:
-                    dp = os.path.join(dst_root, name)
-                    shutil.copy2(sp, dp)
+                    staged[os.path.join(rel_dir, name)] = (os.path.getsize(sp), None, sp)
                     raw_count += 1
-                out_bytes += os.path.getsize(dp)
+
+    if os.path.isdir(stage):
+        shutil.rmtree(stage)
+    for rel_dir in sorted(stage_dirs):
+        os.makedirs(os.path.join(stage, rel_dir), exist_ok=True)
+    # Written largest file first, ties by path, because the order files are
+    # created in the stage is the order they are written into the image, and
+    # that moves the block count. The builder (littlefs-python, in the
+    # platform's build_fs_image) walks the stage with Path.rglob, which lists
+    # a directory in readdir order, and btrfs - like a small ext4 directory -
+    # returns entries in creation order. So the order has to be a function of
+    # the commit alone: written in whatever order os.walk handed back data/,
+    # the same commit imaged as 112 blocks in one worktree and 114 in another,
+    # and one stage written in 300 random orders gave 112 blocks 297 times,
+    # 113 twice and 114 once (#429). Of the deterministic orders, largest first
+    # packs best: big files are laid down while the image is empty, and the
+    # small ones fill in behind them. It imaged 2 blocks under name order on
+    # the stage it was priced on (#461).
+    out_bytes = 0
+    for path in sorted(staged, key=lambda p: (-staged[p][0], p)):
+        size, data, source = staged[path]
+        dp = os.path.join(stage, path)
+        if data is None:
+            shutil.copy2(source, dp)
+        else:
+            with open(dp, "wb") as fo:
+                fo.write(data)
+        out_bytes += size
 
     env.Replace(PROJECT_DATA_DIR=stage)
     print(
