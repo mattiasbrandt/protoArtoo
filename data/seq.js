@@ -2139,13 +2139,37 @@
 
   // A run of typing in one step is one edit. It starts at the first keystroke
   // and ends at the field's change, or when the builder moves to another step.
-  const typed = (stepIdx) => {
+  const openRun = (stepIdx) => {
     if (history.run !== null && history.runStep !== stepIdx) historySettle();
     if (history.run === null) {
       history.run = history.base;
       history.runStep = stepIdx;
     }
+  };
+
+  const typed = (stepIdx) => {
+    openRun(stepIdx);
     validateAndUpdateStep(stepIdx);
+  };
+
+  // A picker writes its step itself and then reads the form back. The run has
+  // to be this step's BEFORE that write: a run still open on another step is
+  // settled against the routine as it stands, and after the write that would
+  // file this step's change under the other step's entry, for one Undo to
+  // take back both.
+  const picked = (stepIdx, write) => {
+    openRun(stepIdx);
+    write();
+    validateAndUpdateStep(stepIdx);
+  };
+
+  // The same, for a picker that is one act and has no field whose `change`
+  // would end the run: a panel pressed on the dome map, a panel or an action
+  // chosen from the list. Each press is its own entry.
+  const pickedOnce = (stepIdx, write) => {
+    picked(stepIdx, write);
+    historySettle();
+    paintHistory();
   };
 
   const bindStepField = (input, stepIdx) => {
@@ -2812,8 +2836,9 @@
         hiddenInput.value = cmd;
         if (targetSelect) targetSelect.value = newTarget;
         if (preview) preview.textContent = cmd;
-        editorState.current.steps[stepIdx].cmd = cmd;
-        typed(stepIdx);
+        pickedOnce(stepIdx, () => {
+          editorState.current.steps[stepIdx].cmd = cmd;
+        });
       }
     };
 
@@ -2831,8 +2856,9 @@
       // Keep the target dropdown in sync by recovering the bare command target
       // from the full command (":OP07" -> "07", ":OPP1" -> "P1").
       if (targetSelect) targetSelect.value = fullCmd.replace(/^:(OP|CL|OF)/, "");
-      editorState.current.steps[stepIdx].cmd = fullCmd;
-      typed(stepIdx);
+      pickedOnce(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = fullCmd;
+      });
     };
 
     // Handle both live (data-element-id) and legacy (data-target) pickers
@@ -3025,16 +3051,22 @@
     // Dome visual preset selector updates the hidden cmd field
     const presetSelect = fieldsContainer.querySelector(".step-field-preset");
     if (presetSelect) {
-      presetSelect.addEventListener("change", () => {
+      // On input as well as change: the select is a form field too, and its
+      // run ends at its change, so the command has to be written before that
+      // or one choice would leave two entries behind.
+      const choosePreset = () => {
         const preset = presetSelect.value;
         const cmd = `DV:${preset}`;
         const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
         if (hiddenInput) {
           hiddenInput.value = cmd;
         }
-        editorState.current.steps[stepIdx].cmd = cmd;
-        typed(stepIdx);
-      });
+        picked(stepIdx, () => {
+          editorState.current.steps[stepIdx].cmd = cmd;
+        });
+      };
+      presetSelect.addEventListener("input", choosePreset);
+      presetSelect.addEventListener("change", choosePreset);
     }
 
     // Dome mode toggle, one cycle: panel -> preset -> advanced -> panel. Each
@@ -3118,8 +3150,9 @@
         cmd += `:DEFAULT:${durationInput.value}`;
       }
       hiddenCmd.value = cmd;
-      editorState.current.steps[stepIdx].cmd = cmd;
-      typed(stepIdx);
+      picked(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = cmd;
+      });
     };
 
     [targetSelect, modeSelect, colorSelect, durationInput].forEach((el) => {
@@ -3154,8 +3187,9 @@
       const speed = speedInput ? speedInput.value : "0";
       const cmd = `DT:${targetSelect.value}:${colorSelect.value}:${duration}:${speed}:${encodedText}`;
       hiddenCmd.value = cmd;
-      editorState.current.steps[stepIdx].cmd = cmd;
-      typed(stepIdx);
+      picked(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = cmd;
+      });
     };
 
     [targetSelect, colorSelect, textInput, durationInput, speedInput].forEach((el) => {
@@ -3187,8 +3221,9 @@
         cmd += `:DEFAULT:${durationInput.value}`;
       }
       hiddenCmd.value = cmd;
-      editorState.current.steps[stepIdx].cmd = cmd;
-      typed(stepIdx);
+      picked(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = cmd;
+      });
     };
 
     [targetSelect, effectSelect, colorSelect, durationInput].forEach((el) => {

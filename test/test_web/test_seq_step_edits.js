@@ -141,11 +141,39 @@ function newPage() {
         }
         return inputs;
       };
-      card.fields.querySelectorAll = (selector) => (selector === "[data-field]" ? card.fieldInputs() : []);
+      // The panel step's two pickers, which are selects and not form fields:
+      // each as the option its markup shows selected, re-derived when the
+      // fields are written again.
+      let pickersFor = null;
+      let pickers = {};
+      card.picker = (name) => {
+        if (card.fields.innerHTML !== pickersFor) {
+          pickersFor = card.fields.innerHTML;
+          pickers = {};
+        }
+        if (!(name in pickers)) {
+          const select = new RegExp(`<select class="[^"]*\\b${name}\\b[^"]*"[^>]*>([\\s\\S]*?)</select>`).exec(pickersFor);
+          const chosen = select ? /<option value="([^"]*)"\s+selected/.exec(select[1]) : null;
+          pickers[name] = select ? makeElement({ value: chosen ? chosen[1] : "" }) : null;
+        }
+        return pickers[name];
+      };
+      const PICKERS = ["dome-action-select", "dome-target-select"];
+      card.fields.querySelector = (selector) => {
+        if (selector === 'input[data-field="cmd"]') return card.fieldInputs().find((input) => input.dataset.field === "cmd") || null;
+        return PICKERS.includes(selector.slice(1)) ? card.picker(selector.slice(1)) : null;
+      };
+      card.fields.querySelectorAll = (selector) => {
+        if (selector === "[data-field]") return card.fieldInputs();
+        if (selector === ".dome-action-select, .dome-target-select") return PICKERS.map(card.picker).filter(Boolean);
+        return [];
+      };
       card.row = makeElement({
         dataset: { stepIndex: mark.index },
         querySelector: (selector) =>
-          selector === ".step-t" ? card.timeInput : selector === ".step-fields" ? card.fields : null,
+          selector === ".step-t" ? card.timeInput
+            : selector === ".step-fields" ? card.fields
+              : selector === ".step-type-chip.active" ? card.chip : null,
         querySelectorAll: (selector) => (selector === ".step-type-chip" ? [card.chip] : []),
       });
       card.fields.closest = (selector) => (selector === ".step-card" ? card.row : null);
@@ -161,6 +189,7 @@ function newPage() {
     const target = tokens[tokens.length - 1];
     const ancestor = tokens.length > 1 ? tokens[0] : null;
     if (target === ".step-t" && (!ancestor || ancestor === ".step-card")) return stepCards().map((c) => c.timeInput);
+    if (target === ".step-card" && !ancestor) return stepCards().map((c) => c.row);
     if (target === ".step-fields" && !ancestor) return stepCards().map((c) => c.fields);
     if (target === "[data-field]" && ancestor === ".step-fields") return stepCards().flatMap((c) => c.fieldInputs());
     return [];
@@ -532,4 +561,42 @@ test("an edit made while a save is on its way is still unsaved when it lands", a
   assert.equal(saved.length, 1, "Save sent nothing");
   assert.equal(saved[0].body.steps[0].t, 250, "the fixture: the save went out before the second edit");
   assert.equal(page.surface.decide(), true, "an edit the droid never received was let go without asking");
+});
+
+// One picker change is one edit, and it is its own step's (#441). A panel
+// picker writes its step before it reads the form back; when that write came
+// before the history looked at the step edited just before, the second
+// step's change was filed under the first one's entry, and one Undo took
+// back both.
+test("a panel picked on one step and then on another is two edits, and Undo takes back only the last", () => {
+  const page = newPage();
+  page.open(
+    {
+      name: "DM:PICKED",
+      suppressMs: 8000,
+      toggleGroup: "none",
+      steps: [
+        { t: 0, type: "dome", cmd: ":OP01" },
+        { t: 500, type: "dome", cmd: ":OP02" },
+        { t: 1000, type: "end" },
+      ],
+    },
+    [0, 1],
+  );
+  const commands = () => Array.from(page.editing().steps, (step) => step.cmd || step.type);
+  const pick = (index, target) => {
+    const select = page.card(index).picker("dome-target-select");
+    assert.ok(select, `step ${index + 1} drew no panel list`);
+    select.value = target;
+    fire(select, "change");
+  };
+
+  pick(0, "03");
+  pick(1, "04");
+  assert.deepEqual(commands(), [":OP03", ":OP04", "end"], "the fixture: both pickers wrote their step");
+
+  fire(page.byId("seq-editor-undo"), "click");
+  assert.deepEqual(commands(), [":OP03", ":OP02", "end"], "one Undo took back more than the last pick");
+  fire(page.byId("seq-editor-undo"), "click");
+  assert.deepEqual(commands(), [":OP01", ":OP02", "end"]);
 });
