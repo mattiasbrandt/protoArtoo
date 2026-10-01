@@ -7092,13 +7092,19 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text);
 }
 
+/* A bar that takes no press: while its Part's move is on its way, every
+   Output on it. Dimmed and nothing more - it is waiting, not refused. */
+.parts-bar .output-seg > button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* An Output this Part cannot go on stays on the bar, struck out; the reason is
    on the row under it. */
-.parts-bar .output-seg > button:disabled {
+.parts-bar .output-seg > button.is-refused {
   color: var(--text-faint);
   opacity: 0.5;
   text-decoration: line-through;
-  cursor: not-allowed;
 }
 
 /* A row's acts: quiet words at row scale, at the row's end. */

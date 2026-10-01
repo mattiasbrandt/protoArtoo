@@ -694,7 +694,9 @@
     // prints, the one it is on lit. An Output another Part is on carries a
     // mark, in ink and never a Status Color: two Parts on one wire move
     // together, which is a choice and not a fault. An Output a light cannot go
-    // on stays on a light Part's bar, refused, with the reason under the bar.
+    // on stays on a light Part's bar, refused and marked so, with the reason
+    // under the bar. A bar whose move is on its way takes no press either, and
+    // is not marked: it is waiting, and nothing on it is refused.
     const outputBar = (part, outputs) => {
       const here = outputOf(part.id);
       const refused = refusedFor(part, outputs, here);
@@ -709,7 +711,11 @@
             id: output.address,
             label: output.name,
             disabled: sending || refused.includes(output),
-            className: [others.length ? "is-taken" : "", usual ? "is-suggested" : ""].filter(Boolean).join(" "),
+            className: [
+              others.length ? "is-taken" : "",
+              usual ? "is-suggested" : "",
+              refused.includes(output) ? "is-refused" : "",
+            ].filter(Boolean).join(" "),
             name: `${output.name}${state}${usual ? `, ${SUGGESTED}` : ""}`,
           };
         }),

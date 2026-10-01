@@ -359,6 +359,10 @@ test("taking a Part off one Output for another is asked first, then sends where 
   assert.equal(env.text("wiring-move-confirm"), "Move it", "the button that agrees is the verb");
 
   env.click("wiring-move-confirm");
+  // While the move is on its way the row's bar takes no press, and no Output
+  // on it is marked refused: it is waiting, and "no light" is a refusal.
+  assert.ok(env.bar("doorFL").every((button) => button.disabled), "the bar waits for the move");
+  assert.ok(!env.bar("doorFL").some((button) => button.classList.contains("is-refused")), "and reads as waiting, not refused");
   await sleep(20);
   assert.deepEqual(env.posts, [
     { path: "/api/config", form: { movePart: "doorFL", movePartFrom: "ledc:0", movePartTo: "ledc:3" } },
@@ -525,6 +529,8 @@ test("a light Part cannot be put on an Output a light cannot go on, and a board'
   assert.deepEqual(offered("utilUp"), ["ledc:0", "ledc:1", "ledc:3", "ledc:4", "ledc:5", "pca:0"],
     "a servo Part: every Output the droid reports, the expander's channel too");
   assert.equal(env.bar("dataPanel").length, 6, "the refused Outputs stay on the bar");
+  assert.deepEqual(env.bar("dataPanel").filter((button) => button.classList.contains("is-refused")).map((button) => button.dataset.value),
+    ["ledc:0", "ledc:1", "pca:0"], "each marked refused");
 
   env.outputButton("dataPanel", "ledc:0").fire("click", {});
   await sleep(20);
