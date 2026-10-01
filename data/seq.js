@@ -280,6 +280,10 @@
   const RUN_ENDINGS = {
     "not-started": (name) => `The droid did not start ${name}.`,
     lost: (name) => `Lost touch with the droid; ${name} may still be running.`,
+    // The droid takes a run even under a latched estop and ends it in the same
+    // pass (src/tasks/sequence_dispatcher.cpp), so the lamp is on for a moment
+    // and then off.
+    estop: (name) => `The estop stopped ${name}.`,
   };
 
   const runWatch = createRunWatch(({ name, running, outcome }) => {
