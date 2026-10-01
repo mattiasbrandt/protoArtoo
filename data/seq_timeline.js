@@ -583,7 +583,7 @@
   //             knows which they are.
   //
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
-  // pick(indices), movePickedTo(ms), removePicked(), aim(point),
+  // pick(indices), movePickedTo(ms), removePicked(), aim(point, isEnd),
   // standing(index), sizeStanding(index, ms), say(answer), destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (hosts, source, options = {}) => {
@@ -1132,11 +1132,12 @@
 
     // Where something dragged in from outside the view would land: the time
     // under `point` ({clientX, clientY}), on the nearest block edge within
-    // the tolerance, as a dragged block lands, and never past the end step.
-    // Null when the pointer is not over the lanes or nothing here is being
-    // edited. While it is over them the landing line shows where; aim(null)
-    // takes the line away.
-    const aim = (point) => {
+    // the tolerance, as a dragged block lands, and never past the end step -
+    // unless it is the end that is being dropped (`isEnd`), which may go on
+    // past where it is. Null when the pointer is not over the lanes or
+    // nothing here is being edited. While it is over them the landing line
+    // shows where; aim(null) takes the line away.
+    const aim = (point, isEnd = false) => {
       const was = aimed;
       aimed = null;
       if (point && editing() && !drag) {
@@ -1149,7 +1150,7 @@
           const near = snapTargets({ writes: [] })
             .filter((target) => Math.abs(target.t - at) <= SNAP_MS)
             .sort((a, b) => Math.abs(a.t - at) - Math.abs(b.t - at))[0];
-          const last = model.end === -1 ? STEP_T_MAX_MS : model.endMs;
+          const last = isEnd || model.end === -1 ? STEP_T_MAX_MS : model.endMs;
           const landed = Math.max(0, Math.min(last, near ? near.t : at));
           aimed = { t: landed, label: near && near.t === landed ? near.label : "" };
         }

@@ -1454,6 +1454,8 @@
   // ---------------------------------------------------------------------------
   const UNLISTED_SECTIONS = ["other_slots", "dome_fixtures"];
   const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "random", "loop", "end"];
+  // The Sequence End pill: the one thing that may be dropped past the end.
+  const END_PILL = "kind:end";
   // How far the pointer goes before a press on a pill is a drag.
   const LIBRARY_DRAG_PX = 6;
   // How long a dropped panel stands open: its close lands this long after.
@@ -1581,8 +1583,8 @@
     }
 
     if (id === "end" && endAt !== -1) {
-      // A routine has one end. Dropped again it is that end, moved, as far as
-      // a drag of it would go.
+      // A routine has one end. Dropped again it is that end, moved - later, or
+      // earlier as far as a drag of it would go, which is to its last step.
       sessionTimeline.pick([endAt]);
       sessionTimeline.movePickedTo(at);
       sayOnStage("");
@@ -1617,7 +1619,7 @@
     }
     if (!libraryDrag.ghost) return;
     libraryDrag.ghost.setAttribute("style", `left:${event.clientX + 10}px;top:${event.clientY + 8}px`);
-    sessionTimeline?.aim(event);
+    sessionTimeline?.aim(event, libraryDrag.lib === END_PILL);
   };
 
   // Let go of the pill. Over the lanes it lands; anywhere else, and when the
@@ -1629,7 +1631,7 @@
     const held = libraryDrag;
     libraryDrag = null;
     held?.ghost?.remove();
-    const at = held?.ghost && event && sessionTimeline ? sessionTimeline.aim(event) : null;
+    const at = held?.ghost && event && sessionTimeline ? sessionTimeline.aim(event, held.lib === END_PILL) : null;
     sessionTimeline?.aim(null);
     return at === null ? null : { lib: held.lib, at };
   };
