@@ -6840,6 +6840,10 @@ body[data-page="maintenance"] .status-item .hint {
   touch-action: none;
 }
 
+.tl-end[data-edit~="is-selected"] {
+  border-left: 2px solid var(--accent);
+}
+
 .tl-end[data-edit~="can-move"]::before {
   content: "";
   position: absolute;
@@ -7138,10 +7142,18 @@ body[data-page="maintenance"] .status-item .hint {
   padding: var(--space-md);
 }
 
-/* The picked block: its lane's name in ink with what kind of step it is under
-   it, then its rows - a narrow mono name column, capitalised the way the
-   decided words are written (STARTS AT, RUNS FOR, OPENS TO, MOTION). */
-#seq-pane-block > * {
+/* The Picked block tab: the inspector, and beside it the Parts to drop. */
+#seq-pane-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-xl);
+}
+
+/* The inspector: the block's lane name in ink with what kind of step it is
+   under it, then its rows - a narrow mono name column, capitalised the way
+   the decided words are written (STARTS AT, RUNS FOR, OPENS TO, MOTION) -
+   each control the size of what it holds. */
+.seq-picked > * {
   max-width: 520px;
 }
 
@@ -7179,6 +7191,29 @@ body[data-page="maintenance"] .status-item .hint {
   text-transform: uppercase;
 }
 
+.seq-picked-rows .setting-row > .seg,
+.seq-picked-rows .setting-row > .seq-pills,
+.seq-picked-rows .setting-row > .switch {
+  justify-self: start;
+}
+
+/* A row of pills runs to several lines: its name stays on the first. */
+.seq-picked-rows .setting-row:has(> .seq-pills) {
+  align-items: start;
+}
+
+.seq-picked-rows .setting-row:has(> .seq-pills) .setting-name {
+  padding-top: 6px;
+}
+
+.seq-picked-rows .fader {
+  width: 140px;
+}
+
+.seq-brick {
+  margin-top: var(--space-sm);
+}
+
 .seq-picked-acts {
   display: flex;
   justify-content: flex-end;
@@ -7186,27 +7221,25 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
-/* The Parts, one flat list. Not pressable yet, so they are drawn as the
-   .part-pill a Part is everywhere else without its pointer or its hover; one
-   nothing on this droid can move is dashed and dim, never colored (#327). */
-.seq-parts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2xs);
+/* The library: the Parts as one flat list of the .part-pill a Part is
+   everywhere else, then the steps that are not a Part. A pill is dragged onto
+   the timeline; one nothing on this droid can move is dashed and dim, never
+   colored (#327). */
+.seq-lib .number-cell {
+  margin-bottom: var(--space-sm);
 }
 
-.seq-part {
-  padding: 3px var(--space-sm);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  background: var(--well);
-  color: var(--text-dim);
-  font-size: var(--fs-hint);
-  line-height: 1.6;
-  white-space: nowrap;
+.seq-lib .part-pills-group {
+  grid-template-columns: 10ch 1fr;
 }
 
-.seq-part.is-off {
+.part-pill.seq-lib-pill {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.part-pill.seq-lib-pill.is-off {
   background: transparent;
   border-style: dashed;
   color: var(--text-faint);
@@ -7216,6 +7249,20 @@ body[data-page="maintenance"] .status-item .hint {
   margin-right: var(--space-2xs);
   color: var(--text-faint);
   font-family: var(--font-mono);
+}
+
+/* The pill under the pointer while it is dragged. */
+.seq-lib-ghost {
+  position: fixed;
+  z-index: 2000;
+  padding: 3px var(--space-sm);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
+  box-shadow: var(--elev-2);
+  color: var(--text);
+  font-size: var(--fs-hint);
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------------------

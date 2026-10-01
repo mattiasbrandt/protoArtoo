@@ -22,7 +22,7 @@
   let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
   let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
   let pickedBlocks = []; // the blocks picked on that timeline, as it last said them
-  let pickedShown = null; // the Picked block tab's markup as last written
+  let pickedShown = null; // the inspector's markup as last written
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
   // Editor state tracking. One object for the life of the page: it is reset in
@@ -1160,10 +1160,100 @@
   const stepKindName = (step) =>
     (step.type === "dome" ? domeSubmodeLabel(step.cmd).name : stepTypeName[step.type] || step.type || "Step");
 
-  // The Picked block tab: what the timeline says is picked. One block shows
-  // where it starts, which can be typed; several can be moved together and
-  // removed. What a block of each kind does is edited in the step list until
-  // the inspector's rows for it land here (#441).
+  // ---------------------------------------------------------------------------
+  // The Picked block tab (#441): what the timeline says is picked, and for one
+  // block the inspector - where it starts, then the rows of its kind. Every
+  // row is a setting row, and every bound and choice in one is the kind
+  // table's (STEP_LIMITS and its neighbours), the same the step list's cards
+  // read. Several blocks can be moved together and removed.
+  //
+  // RUNS FOR, OPENS TO and MOTION are the decided words for a Part standing
+  // open: how long from its open to its close, how far (stored as howFar,
+  // absent meaning the whole throw) and the Move Shape. None of them is a
+  // speed, an acceleration or an easing: those are the Output's (ADR 0052).
+  //
+  // Kinds with no rows of their own yet show where they start and are edited
+  // in the step list until theirs land: the light commands, a Body Step, a
+  // Gesture and a sequence inside this one.
+  // ---------------------------------------------------------------------------
+  const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
+
+  const settingRow = (name, control, value = "") =>
+    `<div class="setting-row"><span class="setting-name">${name}</span>${control}<span class="setting-value">${value}</span></div>`;
+  const numberCell = (field, value, bounds, label, unit = "ms") =>
+    `<span class="setting-number"><input class="number-cell" type="number" ${limits(bounds)} step="${unit === "ms" ? 10 : 1}" value="${value}" data-picked="${field}" aria-label="${label}"><span class="setting-unit">${unit}</span></span>`;
+  // Up to five peers are a joined bar, more are pills that wrap. An option is
+  // [value, words] and, for a bar, whether it cannot be pressed now.
+  const segOf = (field, options, current, label) =>
+    `<span class="seg seg-sm" role="group" aria-label="${label}">${options
+      .map(([value, words, off]) => `<button type="button" data-picked="${field}" data-value="${value}" aria-pressed="${value === current}"${off ? " disabled" : ""}>${words}</button>`)
+      .join("")}</span>`;
+  const pillsOf = (field, options, current, label) =>
+    `<span class="seq-pills" role="radiogroup" aria-label="${label}">${options
+      .map(([value, words]) => `<button type="button" class="seq-pill" role="radio" data-picked="${field}" data-value="${value}" aria-checked="${value === current}">${words}</button>`)
+      .join("")}</span>`;
+  const faderOf = (field, value, bounds, label) =>
+    `<input class="fader" type="range" ${limits(bounds)} step="1" value="${value}" data-picked="${field}" aria-label="${label}">`;
+  const capital = (word) => word[0].toUpperCase() + word.slice(1);
+
+  // A panel command's halves: [":OP07", "OP", "07"], or null.
+  const panelIntent = (step) => (step.type === "dome" ? /^:(OP|CL|OF)(.+)$/.exec(step.cmd || "") : null);
+
+  // The rows of the block's kind, under where it starts.
+  const kindRows = (step, at) => {
+    const esc = window.PAUtils.escapeHtml;
+    switch (step.type) {
+      case "dome": {
+        const intent = panelIntent(step);
+        if (!intent) return "";
+        if (intent[1] === "CL") return settingRow("Motion", segOf("motion", [["close", "Close"]], "close", "Motion"));
+        // A panel flutter has no length the body knows and owes a later close
+        // (Protocol Check), so it is offered where a close already follows:
+        // on a pair, which keeps that close, and on the flutter itself.
+        const pair = sessionTimeline?.standing(at) || null;
+        const flutter = intent[1] === "OF";
+        const motion = settingRow("Motion", segOf("motion",
+          [["open", "Open"], ...(pair || flutter ? [["flutter", "Flutter"]] : [])], flutter ? "flutter" : "open", "Motion"));
+        if (flutter) return motion;
+        const far = step.howFar ?? STEP_LIMITS.howFar[1];
+        return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
+          + settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`)
+          + motion;
+      }
+      case "domeRotate": {
+        const speed = Math.abs(step.speedPct ?? 0);
+        const stopped = speed === 0;
+        return settingRow("Runs for", numberCell("durationMs", step.durationMs ?? 0, STEP_LIMITS.turnMs, "Runs for, in milliseconds"))
+          + settingRow("Way", segOf("way", [["left", "Left", stopped], ["right", "Right", stopped]], stopped ? "" : step.speedPct < 0 ? "left" : "right", "Way"))
+          + settingRow("Speed", faderOf("speed", speed, STEP_LIMITS.speed, "Dome speed, percent"), `${speed}%`);
+      }
+      case "audio":
+        return settingRow("Plays",
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd || "")}" placeholder="$H, $N, $D, $A..." data-picked="cmd" aria-label="Sound command">`);
+      case "audioCat":
+        return settingRow("Plays", pillsOf("category", AUDIO_CATEGORIES.map((name) => [name, capital(name)]), step.category, "Sound category"))
+          + settingRow("Fallback", pillsOf("fallback", AUDIO_FALLBACK_SLOTS.map((slot) => [slot.value, esc(slot.label)]), step.fallback || "none", "Fallback sound"));
+      case "random": {
+        // Same pick reuses the pick of the Random Flutter before it, so it is
+        // offered only where there is one - or where the step already says it.
+        const before = editorState.current.steps.slice(0, at).some((prior) => prior?.type === "random" && prior.set !== "hold");
+        const sets = RANDOM_SETS.filter((set) => set !== "hold" || before || step.set === "hold")
+          .map((set) => [set, set === "hold" ? "Same pick" : capital(set)]);
+        return settingRow("Set", segOf("set", sets, step.set, "Which panels it picks from"))
+          + settingRow("Action", segOf("mode", RANDOM_MODES.map((mode) => [mode, capital(mode)]), step.mode || "flutter", "What it does to the pick"))
+          + settingRow("Distinct", `<input class="switch" type="checkbox" data-picked="distinct"${step.distinct ? " checked" : ""} aria-label="Distinct">`)
+          + settingRow("Move", numberCell("moveMs", step.moveMs ?? 0, STEP_LIMITS.moveMs, "Move time, in milliseconds"))
+          + settingRow("Jitter", numberCell("jitterMs", step.jitterMs ?? 0, STEP_LIMITS.jitterMs, "Jitter, in milliseconds"));
+      }
+      case "loop":
+        return settingRow("Repeats", numberCell("body", step.body ?? 1, STEP_LIMITS.body, "Steps it repeats", "steps"))
+          + settingRow("Every", numberCell("periodMs", step.periodMs ?? 0, STEP_LIMITS.periodMs, "Every, in milliseconds"))
+          + settingRow("For", numberCell("durationMs", step.durationMs ?? 0, STEP_LIMITS.loopMs, "For, in milliseconds"));
+      default:
+        return "";
+    }
+  };
+
   const pickedHtml = (blocks) => {
     const esc = window.PAUtils.escapeHtml;
     const head = (name, sub) =>
@@ -1184,61 +1274,341 @@
     const at = block.steps[0];
     const step = editorState.current.steps[at] || {};
     const beat = beatWords(step);
+    const startsAt = settingRow("Starts at",
+      `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
+      + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
+    const opens = panelIntent(step)?.[1] === "OP";
     return head(block.name || block.words || stepKindName(step), `${stepKindName(step)} · step ${at + 1}`)
-      + `<div class="setting-rows seq-picked-rows">
-          <div class="setting-row">
-            <span class="setting-name">Starts at</span>
-            <span class="seq-row-ctl">
-              <span class="setting-number">
-                <input class="number-cell" type="number" min="0" max="120000" step="10" value="${Math.round(block.t0)}" data-picked="start" aria-label="Starts at, in milliseconds">
-                <span class="setting-unit">ms</span>
-              </span>
-              ${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}
-            </span>
-            <span class="setting-value"></span>
-          </div>
-        </div>`
+      + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
+      + (opens ? `<p class="hint seq-brick">${BRICK_SENTENCE}</p>` : "")
       + remove;
   };
 
-  // Called by the timeline whenever it draws the routine: the pane is written
-  // again only when what it says has changed, so a number half typed into it
-  // is not wiped by a redraw. The press that picked a block brings it forward.
+  // Called by the timeline whenever it draws the routine: the inspector is
+  // written again only when what it says has changed, so a number half typed
+  // into it is not wiped by a redraw, and not at all while a fader in it is
+  // held - writing it would take the fader out from under the pointer. The
+  // press that picked a block brings the tab forward.
   const showPicked = (blocks, pressed = false) => {
     pickedBlocks = blocks;
     const html = pickedHtml(blocks);
-    const pane = document.getElementById("seq-pane-block");
-    if (pane && html !== pickedShown) {
+    const pane = document.getElementById("seq-picked");
+    if (pane && html !== pickedShown && faderRun === null) {
       pane.innerHTML = html;
       pickedShown = html;
     }
     if (pressed) showTab("block");
   };
 
-  // The Parts tab: every Part a routine can name, as one flat list, dome and
-  // body together, the ones nothing on this droid can move greyed and counted.
-  // Read-only: a Part is put on the timeline by a step that names it, until
-  // dropping one from here lands (#441). The escape-hatch Output slots and the
-  // dome's buttons are not Parts a routine moves.
+  // Draw the inspector from the routine as it is, whatever it showed: after
+  // an edit made in it, so a field never keeps a value that was not applied.
+  const repaintPicked = () => {
+    pickedShown = null;
+    showPicked(sessionTimeline ? sessionTimeline.picked() : []);
+  };
+
+  // One field of the picked step, written. `raw` is the control's own value.
+  const PICKED_NUMBERS = ["moveMs", "jitterMs", "body", "periodMs", "durationMs"];
+  const writePicked = (step, field, raw, way = null) => {
+    const number = parseInt(raw, 10);
+    if (field === "howFar") {
+      // Stored only where it differs: the whole throw is absence, so a
+      // sequence that never said how far saves back as it was read.
+      if (!Number.isInteger(number)) return;
+      if (number >= STEP_LIMITS.howFar[1]) delete step.howFar;
+      else step.howFar = number;
+    } else if (field === "motion") {
+      // Open and Flutter are the one step's command, at the same time. Only
+      // an open or a close says how far (Protocol Check).
+      step.cmd = step.cmd.replace(/^:(OP|OF)/, raw === "flutter" ? ":OF" : ":OP");
+      if (raw === "flutter") delete step.howFar;
+    } else if (field === "way") {
+      Object.assign(step, turnOf(raw, step.speedPct, step.durationMs));
+    } else if (field === "speed") {
+      if (Number.isInteger(number)) Object.assign(step, turnOf(way || (step.speedPct < 0 ? "left" : "right"), number, step.durationMs));
+    } else if (field === "distinct") {
+      step.distinct = raw === true;
+    } else if (PICKED_NUMBERS.includes(field)) {
+      if (!Number.isInteger(number)) return;
+      // A duration typed over a span of beats is a millisecond instead
+      // (ADR 0058), as it is in the step list.
+      if (field === "durationMs" && number !== step.durationMs) delete step.spanBeats;
+      step[field] = number;
+    } else {
+      step[field] = raw;
+    }
+  };
+
+  // The step the inspector is showing, with its place in the routine: the one
+  // picked block's first step, or null.
+  const pickedStep = () => {
+    if (pickedBlocks.length !== 1) return null;
+    const at = pickedBlocks[0].steps[0];
+    const step = editorState.current?.steps[at];
+    return step ? { at, step } : null;
+  };
+
+  // An edit made in the inspector in one act - a number typed, a choice
+  // pressed - on the one history. One that changed nothing records nothing.
+  const inspect = (field, raw) => {
+    const picked = pickedStep();
+    if (!picked || historyBusy()) return;
+    const { at, step } = picked;
+    if (field === "start") {
+      sessionTimeline.movePickedTo(Number(raw));
+    } else if (field === "runs") {
+      sessionTimeline.sizeStanding(at, Number(raw));
+    } else {
+      const before = historyBegin();
+      writePicked(step, field, raw);
+      historyCommit(before);
+      rerenderStepTable();
+      edited();
+      // The blocks a step draws change with its Move Shape: a flutter is its
+      // own block and leaves the close it owes as another, and an open takes
+      // that close back as the end of the one block it then is.
+      if (field === "motion") {
+        const pair = raw === "open" ? sessionTimeline.standing(at) : null;
+        sessionTimeline.pick(pair ? [at, pair.close] : [at]);
+      }
+    }
+    repaintPicked();
+  };
+
+  // A fader is an edit made over time: the routine follows it as it moves,
+  // and the whole run is one entry, recorded when it is let go. `way` is the
+  // turn's direction as the run began, which a pass through zero would lose.
+  let faderRun = null;
+
+  const faderMoved = (input) => {
+    const picked = pickedStep();
+    if (!picked || (faderRun === null && historyBusy())) return;
+    if (faderRun === null) faderRun = { before: historyBegin(), way: picked.step.speedPct < 0 ? "left" : "right" };
+    writePicked(picked.step, input.dataset.picked, input.value, faderRun.way);
+    const valueEl = input.closest(".setting-row")?.querySelector(".setting-value");
+    if (valueEl) valueEl.textContent = `${input.value}%`;
+    rerenderStepTable();
+    edited();
+  };
+
+  const faderLetGo = () => {
+    if (faderRun === null) return;
+    const { before } = faderRun;
+    faderRun = null;
+    historyCommit(before);
+    paintHistory();
+    repaintPicked();
+  };
+
+  // ---------------------------------------------------------------------------
+  // The library (#441): the Parts tab, and Drop a part beside the inspector.
+  // Every Part a routine can name is one flat list, dome and body together,
+  // the ones nothing on this droid can move dashed and counted; under it, in
+  // the Parts tab, the steps that are not a Part. The escape-hatch Output
+  // slots and the dome's buttons are not Parts a routine moves.
+  //
+  // A press on a pill does nothing to the routine and never moves the droid:
+  // it says how to add it. A drag onto the timeline inserts it where the
+  // timeline says it lands (data/seq_timeline.js aim()), as one edit. Pointer
+  // events, never HTML5 drag-and-drop, which cannot follow the pointer.
+  // ---------------------------------------------------------------------------
   const UNLISTED_SECTIONS = ["other_slots", "dome_fixtures"];
+  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "random", "loop", "end"];
+  // How far the pointer goes before a press on a pill is a drag.
+  const LIBRARY_DRAG_PX = 6;
+  // How long a dropped panel stands open: its close lands this long after.
+  const DROPPED_OPEN_MS = 1000;
+
+  const libraryParts = () =>
+    (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+
+  let partsFind = "";
 
   const paintParts = () => {
-    const list = document.getElementById("seq-editor-parts");
-    const sub = document.getElementById("seq-editor-parts-sub");
-    if (!list || !sub) return;
     const esc = window.PAUtils.escapeHtml;
     const context = rehearsalContext();
-    const parts = (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+    const parts = libraryParts();
     // The timeline's own rule for a lane it dims (data/seq_timeline.js
     // notWired()), which says nothing of a half the droid has not reported.
     const off = (part) => Boolean(window.SeqTimeline?.notWired(part.id, part.half, context));
-    const reported = context.outputs !== null;
-    sub.textContent = countOf(parts.length, "part", "parts")
-      + (reported ? ` · ${parts.filter(off).length} not wired` : "");
-    list.innerHTML = parts
-      .map((part) =>
-        `<span class="seq-part${off(part) ? " is-off" : ""}">${part.shorthand ? `<span class="seq-part-short">${esc(part.shorthand)}</span>` : ""}${esc(part.name)}</span>`)
-      .join("");
+    const sub = countOf(parts.length, "part", "parts")
+      + (context.outputs !== null ? ` · ${parts.filter(off).length} not wired` : "");
+    const pill = (lib, short, name, dim = false) =>
+      `<button type="button" class="part-pill seq-lib-pill${dim ? " is-off" : ""}" data-lib="${lib}">${short ? `<span class="seq-part-short">${esc(short)}</span>` : ""}${esc(name)}</button>`;
+    const pills = (list) => list.map((part) => pill(`part:${part.id}`, part.shorthand, part.name, off(part))).join("");
+    const write = (id, text, html = false) => {
+      const el = document.getElementById(id);
+      if (el) el[html ? "innerHTML" : "textContent"] = text;
+    };
+    const wanted = partsFind.trim().toLowerCase();
+    const found = parts.filter((part) =>
+      !wanted || part.name.toLowerCase().includes(wanted) || (part.shorthand || "").toLowerCase().includes(wanted));
+    write("seq-editor-parts-sub", sub);
+    write("seq-drop-sub", sub);
+    write("seq-lib-parts", pills(found) || '<span class="hint">No part by that name.</span>', true);
+    write("seq-lib-kinds", LIBRARY_KINDS.map((type) => pill(`kind:${type}`, "", stepTypeName[type])).join(""), true);
+    write("seq-drop-parts", pills(parts), true);
+  };
+
+  // What a pill is called: the Part's name, or the kind of step.
+  const libraryName = (lib) => {
+    const [group, id] = lib.split(":");
+    return group === "kind" ? stepTypeName[id] : libraryParts().find((part) => part.id === id)?.name || id;
+  };
+
+  const sayOnStage = (text, level = "") => sessionTimeline?.say(text ? { text, level } : null);
+
+  // The steps a drop made are in the routine: put them in time order, read
+  // the routine again, and pick them, so the inspector is on the new block.
+  const landed = (made) => {
+    orderSteps();
+    rerenderStepTable();
+    edited();
+    const steps = editorState.current.steps;
+    sessionTimeline.pick(made.map((step) => steps.indexOf(step)));
+    sayOnStage("");
+    showTab("block");
+  };
+
+  // Insert what was dragged from the library at `at` ms. Whatever lands is
+  // one entry in the history, so one Undo takes the whole drop away; a drop
+  // that lands nothing records nothing and says why.
+  const dropOnTimeline = (lib, at) => {
+    const [group, id] = lib.split(":");
+    const steps = editorState.current.steps;
+    const endAt = steps.findIndex((step) => step?.type === "end");
+    const inLoop = SeqProtocolCheck.loopBodySteps(steps);
+
+    if (group === "part") {
+      // A dome panel the dome can be told to move lands as a Part standing
+      // open: its open here and its close a second on, never past the end.
+      // A body Part and a light are listed, and are not steps this view can
+      // write yet.
+      const part = libraryParts().find((each) => each.id === id);
+      const commands = window.DomeCommandMap;
+      const open = part && commands?.resolvePanelCommand(part.shorthand, "open");
+      if (!open) {
+        sayOnStage(`${libraryName(lib)} cannot go on the timeline yet.`, "error");
+        return;
+      }
+      const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
+      const made = [
+        { t: at, type: "dome", cmd: open },
+        { t: Math.min(at + DROPPED_OPEN_MS, last), type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+      ];
+      historyPush();
+      steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
+      landed(made);
+      return;
+    }
+
+    if (id === "loop") {
+      // A loop is one object over the steps it repeats: the ones that start
+      // inside its first period after the drop. They keep their moments -
+      // a repeated step is timed from the start of a pass, so each is
+      // rewritten from there - and leave their beats, which count from
+      // nothing inside a pass. A loop, a sequence and the end cannot be
+      // repeated, so the run of steps stops at the first of them.
+      const loop = { t: at, type: "loop", ...stepTypeDefaults.loop };
+      const taken = [];
+      for (let index = steps.findIndex((step, i) => !inLoop.has(i) && (Number(step?.t) || 0) >= at); index >= 0 && index < steps.length; index += 1) {
+        const step = steps[index];
+        if (inLoop.has(index) || ["loop", "sequence", "end"].includes(step.type) || step.t >= at + loop.periodMs) break;
+        taken.push(step);
+      }
+      if (taken.length === 0) {
+        sayOnStage("Servo Loop needs a step after it to repeat.", "error");
+        return;
+      }
+      historyPush();
+      taken.forEach((step) => {
+        step.t -= at;
+        delete step.beat;
+      });
+      loop.body = taken.length;
+      steps.splice(steps.indexOf(taken[0]), 0, loop);
+      landed([loop]);
+      return;
+    }
+
+    if (id === "end" && endAt !== -1) {
+      // A routine has one end. Dropped again it is that end, moved, as far as
+      // a drag of it would go.
+      sessionTimeline.pick([endAt]);
+      sessionTimeline.movePickedTo(at);
+      sayOnStage("");
+      showTab("block");
+      return;
+    }
+
+    const made = { t: at, type: id, ...stepTypeDefaults[id] };
+    historyPush();
+    if (id === "end") {
+      // The end closes the routine, so it lands no earlier than its last step.
+      made.t = Math.max(at, ...steps.filter((_, i) => !inLoop.has(i)).map((step) => Number(step?.t) || 0));
+      steps.push(made);
+    } else {
+      steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
+    }
+    landed([made]);
+  };
+
+  // A pill held: `ghost` is the pill that follows the pointer once the press
+  // has become a drag.
+  let libraryDrag = null;
+
+  const libraryMove = (event) => {
+    if (!libraryDrag || (event.pointerId !== undefined && event.pointerId !== libraryDrag.pointer)) return;
+    const far = Math.abs(event.clientX - libraryDrag.x0) + Math.abs(event.clientY - libraryDrag.y0) > LIBRARY_DRAG_PX;
+    if (!libraryDrag.ghost && far) {
+      libraryDrag.ghost = document.createElement("div");
+      libraryDrag.ghost.className = "seq-lib-ghost";
+      libraryDrag.ghost.textContent = libraryName(libraryDrag.lib);
+      document.body.appendChild(libraryDrag.ghost);
+    }
+    if (!libraryDrag.ghost) return;
+    libraryDrag.ghost.setAttribute("style", `left:${event.clientX + 10}px;top:${event.clientY + 8}px`);
+    sessionTimeline?.aim(event);
+  };
+
+  // Let go of the pill. Over the lanes it lands; anywhere else, and when the
+  // drag is cancelled, nothing does.
+  const libraryStop = (event = null) => {
+    window.removeEventListener("pointermove", libraryMove);
+    window.removeEventListener("pointerup", libraryUp);
+    window.removeEventListener("pointercancel", libraryCancel);
+    const held = libraryDrag;
+    libraryDrag = null;
+    held?.ghost?.remove();
+    const at = held?.ghost && event && sessionTimeline ? sessionTimeline.aim(event) : null;
+    sessionTimeline?.aim(null);
+    return at === null ? null : { lib: held.lib, at };
+  };
+
+  function libraryUp(event) {
+    if (!libraryDrag || (event.pointerId !== undefined && event.pointerId !== libraryDrag.pointer)) return;
+    const drop = libraryStop(event);
+    if (drop && !historyBusy()) dropOnTimeline(drop.lib, drop.at);
+  }
+
+  function libraryCancel(event) {
+    if (libraryDrag && event?.pointerId !== undefined && event.pointerId !== libraryDrag.pointer) return;
+    libraryStop();
+  }
+
+  const libraryGrab = (event) => {
+    const pill = event.target?.closest?.("[data-lib]");
+    if (!pill || libraryDrag || event.button > 0) return;
+    libraryDrag = { lib: pill.dataset.lib, x0: event.clientX, y0: event.clientY, pointer: event.pointerId, ghost: null };
+    window.addEventListener("pointermove", libraryMove);
+    window.addEventListener("pointerup", libraryUp);
+    window.addEventListener("pointercancel", libraryCancel);
+  };
+
+  // A press that was not a drag, by the pointer or from the keyboard.
+  const libraryPress = (event) => {
+    const pill = event.target?.closest?.("[data-lib]");
+    if (pill) sayOnStage(`${libraryName(pill.dataset.lib)}: drag it onto the timeline to add it.`);
   };
 
   // =========================================================================
@@ -1263,6 +1633,7 @@
     editorState.current !== null && canonical(editorState.current) !== canonical(editorState.original);
 
   const closeSession = () => {
+    libraryStop();
     closeSessionTimeline();
     els.editorView.classList.add("hidden");
     currentEditingSeq = null;
@@ -2588,10 +2959,11 @@
     edited();
   };
 
-  // Neither runs while a block is being dragged on the timeline: the drag's
-  // writes are in the routine but not yet an entry, and restoring a copy
-  // would replace the very steps the drag is holding.
-  const historyBusy = () => !editorState.current || Boolean(sessionTimeline?.dragging());
+  // Neither runs while a block is being dragged on the timeline or a fader
+  // in the inspector is held: the gesture's writes are in the routine but not
+  // yet an entry, and restoring a copy would replace the very steps it is
+  // holding.
+  const historyBusy = () => !editorState.current || Boolean(sessionTimeline?.dragging()) || faderRun !== null;
 
   const undo = () => {
     if (historyBusy()) return;
@@ -2793,10 +3165,19 @@
             <span class="seq-gap"></span>
             <span class="seq-meta" id="seq-editor-routine-sub"></span>
           </div>
-          ${pane("block", "")}
+          ${pane("block", `
+            <div class="seq-picked" id="seq-picked"></div>
+            <div class="seq-lib" id="seq-drop">
+              <div class="sect"><h3>Drop a part</h3><span class="sub" id="seq-drop-sub"></span></div>
+              <span class="part-pills" id="seq-drop-parts"></span>
+            </div>`)}
           ${pane("parts", `
             <div class="sect"><h3>Parts</h3><span class="sub" id="seq-editor-parts-sub"></span></div>
-            <div class="seq-parts" id="seq-editor-parts"></div>`)}
+            <div class="seq-lib" id="seq-editor-parts">
+              <input id="seq-editor-find" class="number-cell text-cell" type="search" placeholder="Find a part" aria-label="Find a part">
+              <div class="part-pills-group"><span class="part-pills-name">Parts</span><span class="part-pills" id="seq-lib-parts"></span></div>
+              <div class="part-pills-group"><span class="part-pills-name">More steps</span><span class="part-pills" id="seq-lib-kinds"></span></div>
+            </div>`)}
           ${pane("sequence", `
             <div class="sect"><h3>Sequence</h3><span class="sub" id="seq-editor-saved-sub"></span></div>
             <div class="setting-rows seq-settings">
@@ -2869,9 +3250,13 @@
       renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
-    // The Picked block pane is the timeline's to fill, as it mounts.
+    // The inspector is the timeline's to fill, as it mounts. A library pill
+    // still held from the sequence that was open lands nowhere.
     pickedBlocks = [];
     pickedShown = null;
+    faderRun = null;
+    partsFind = "";
+    libraryStop();
     showPicked([]);
     mountSessionTimeline();
     paintParts();
@@ -3254,26 +3639,51 @@
     DRAWER_TABS.forEach((tab) =>
       document.getElementById(`seq-editor-tab-${tab}`)?.addEventListener("click", () => showTab(tab)));
 
-    // The Picked block pane is written again whenever the selection changes,
-    // so its controls are heard on the pane itself.
-    const pickedPane = document.getElementById("seq-pane-block");
+    // The inspector is written again whenever the selection changes, so its
+    // controls are heard on the inspector itself: a press on an act or a
+    // choice, a field's change, and a fader as it moves.
+    const pickedPane = document.getElementById("seq-picked");
     if (pickedPane) {
       pickedPane.addEventListener("click", (event) => {
-        const act = event.target?.closest?.("[data-picked]")?.dataset.picked;
+        const pressed = event.target?.closest?.("button[data-picked]");
+        if (!pressed) return;
+        const act = pressed.dataset.picked;
         if (act === "remove") sessionTimeline?.removePicked();
-        if (act === "off-beat" && pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
+        else if (act === "off-beat") {
+          if (pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
+        } else inspect(act, pressed.dataset.value);
+      });
+      pickedPane.addEventListener("input", (event) => {
+        if (event.target?.type === "range" && event.target.dataset.picked) faderMoved(event.target);
       });
       pickedPane.addEventListener("change", (event) => {
         const input = event.target;
-        if (input?.dataset?.picked !== "start" || input.value === "" || !sessionTimeline) return;
-        sessionTimeline.movePickedTo(Number(input.value));
-        // A start the block could not take - it is held at its limit - leaves
-        // the routine as it was, so nothing else draws the pane again: draw
-        // it from where the block is, never leave the number that was typed.
-        pickedShown = null;
-        showPicked(sessionTimeline.picked());
+        const field = input?.dataset?.picked;
+        if (!field || !sessionTimeline) return;
+        if (input.type === "range") faderLetGo();
+        else if (input.type === "checkbox") inspect(field, input.checked);
+        // A number left empty is no number: the field goes back to the one
+        // the routine holds. So does a start the block could not take - it
+        // is held at its limit - because inspect() draws the inspector again
+        // from where the block is.
+        else if (input.type === "number" && input.value === "") repaintPicked();
+        else inspect(field, input.value);
       });
     }
+
+    // The library's two lists. A pill is taken hold of on its list, and the
+    // drag is followed on the window, so it is not stranded when the pointer
+    // leaves the drawer.
+    ["seq-editor-parts", "seq-drop"].forEach((id) => {
+      const list = document.getElementById(id);
+      list?.addEventListener("pointerdown", libraryGrab);
+      list?.addEventListener("click", libraryPress);
+    });
+    const findInput = document.getElementById("seq-editor-find");
+    findInput?.addEventListener("input", () => {
+      partsFind = findInput.value;
+      paintParts();
+    });
 
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) {

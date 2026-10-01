@@ -146,7 +146,7 @@ function openPage() {
     ["seq-editor-tlbar", editorBar],
     ["seq-editor-timeline", editorTimeline],
     ["seq-editor-droid", editorDroid],
-    ["seq-pane-block", pickedPane],
+    ["seq-picked", pickedPane],
   ]);
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, stub());
