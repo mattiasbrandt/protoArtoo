@@ -1218,8 +1218,6 @@
   const model = () => ({
     parts: window.DroidParts?.parts || [],
     outputs: window.PAOutputs.list(),
-    cards: productCards,
-    products: fittedProducts(),
     components,
     lanes: identity?.board_lanes || {},
     capabilities: identity?.board_capabilities || {},
@@ -1314,7 +1312,9 @@
   // surface last read the droid, or when its sheet was last saved - so a
   // screenshot of them says when it was true, the same as the saved copy does.
   const paint = (stamp = sheetStamp()) => {
-    const sheet = wiringDocument({ ...model(), stamp });
+    // The cards ride the sheet's model and not model(): the list of what does
+    // not line up reads model() on every Live Reading frame and no card.
+    const sheet = wiringDocument({ ...model(), cards: productCards, products: fittedProducts(), stamp });
     write("wiring-wires-summary", sheet.wiresSummary);
     write("wiring-wires", sheet.wiresHtml);
     fillBoardArt();
