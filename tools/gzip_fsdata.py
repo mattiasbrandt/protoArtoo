@@ -53,6 +53,10 @@ only, names kept) before gzipping, so the repo keeps its comments and the image
 does not pay for them (#382). A missing esbuild is a hard failure rather than a
 quietly larger image. See MINIFY_LOADERS for why it is esbuild.
 
+Compression: every gzipped asset is written by zopfli, which emits an ordinary
+gzip stream that inflates to the same bytes zlib's would, only shorter (#461).
+A missing zopfli is a hard failure for the same reason a missing esbuild is.
+
 A partial resolves in the same order the file staging below does: this
 environment's asset set first, then the common data root. This lets a set
 carry its own partial, and it is why _recovery_kernel.html -- which no set has
@@ -67,6 +71,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 
 Import("env")  # noqa: F821  (PlatformIO injects this)
 
@@ -170,6 +175,45 @@ def _minify(path, text):
         raise SystemExit(
             "[gzip_fsdata] esbuild failed on %s (exit %d): %s"
             % (path, result.returncode, result.stderr.strip())
+        )
+    return result.stdout
+
+
+def _zopfli(path, payload):
+    """Return `payload` gzipped by zopfli. A missing zopfli, or output that
+    does not inflate back to `payload`, fails the build rather than quietly
+    staging a larger or broken image.
+
+    zopfli writes a stock gzip stream that any inflater reads, so nothing on
+    the droid changes; it only searches harder than zlib -9 for a shorter
+    encoding of the same bytes, and its header carries no timestamp, so the
+    same input stages the same bytes. The CLI reads only a named file (not a
+    pipe), and it exits 0 even when it could not open its input, so its exit
+    code alone is not evidence: the round trip below is.
+    """
+    zopfli = shutil.which("zopfli")
+    if zopfli is None:
+        raise SystemExit(
+            "[gzip_fsdata] cannot compress %s: zopfli is not on PATH. Install the "
+            "zopfli package (pacman -S zopfli, or apt-get install zopfli)." % path
+        )
+    with tempfile.TemporaryDirectory(prefix="gzip_fsdata-") as tmp:
+        plain = os.path.join(tmp, "payload")
+        with open(plain, "wb") as fh:
+            fh.write(payload)
+        result = subprocess.run([zopfli, "--gzip", "-c", plain], capture_output=True)
+    if result.returncode != 0 or result.stderr.strip():
+        raise SystemExit(
+            "[gzip_fsdata] zopfli failed on %s (exit %d): %s"
+            % (path, result.returncode, result.stderr.decode("utf-8", "replace").strip())
+        )
+    try:
+        roundtrip = gzip.decompress(result.stdout)
+    except (OSError, EOFError) as exc:
+        raise SystemExit("[gzip_fsdata] zopfli wrote no valid gzip stream for %s: %s" % (path, exc))
+    if roundtrip != payload:
+        raise SystemExit(
+            "[gzip_fsdata] zopfli's output for %s does not inflate back to its input." % path
         )
     return result.stdout
 
@@ -374,17 +418,15 @@ def main():
                         payload = _expand_includes(
                             sp, include_roots, board_product=lambda: _running_body_controller(env)
                         )
-                        with gzip.open(dp, "wb", compresslevel=9) as fo:
-                            fo.write(payload)
                     elif ext in MINIFY_LOADERS:
                         with open(sp, "r", encoding="utf-8") as fi:
                             payload = _minify(sp, fi.read()).encode("utf-8")
-                        with gzip.open(dp, "wb", compresslevel=9) as fo:
-                            fo.write(payload)
                         minified_count += 1
                     else:
-                        with open(sp, "rb") as fi, gzip.open(dp, "wb", compresslevel=9) as fo:
-                            shutil.copyfileobj(fi, fo)
+                        with open(sp, "rb") as fi:
+                            payload = fi.read()
+                    with open(dp, "wb") as fo:
+                        fo.write(_zopfli(sp, payload))
                     gz_count += 1
                 else:
                     dp = os.path.join(dst_root, name)

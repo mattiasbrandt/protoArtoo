@@ -135,6 +135,11 @@ jobs:
           npm ci
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
+      # zopfli gzips the web UI inside every pio build (tools/gzip_fsdata.py,
+      # #461), and the build refuses to run without it.
+      - name: 🗜️ Install zopfli
+        run: sudo apt-get install -y --no-install-recommends zopfli
+
       - name: 🏗️ Build firmware
         run: |
           export PLATFORMIO_CORE_DIR="$HOME/${{ matrix.core_dir }}"
