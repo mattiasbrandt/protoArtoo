@@ -53,6 +53,11 @@ only, names kept) before gzipping, so the repo keeps its comments and the image
 does not pay for them (#382). A missing esbuild is a hard failure rather than a
 quietly larger image. See MINIFY_LOADERS for why it is esbuild.
 
+Markup: after include expansion, every page loses its markup comments, and
+whitespace that spans a newline between two tags becomes one newline
+(_stage_markup()). Script, style and the other raw-text bodies, the inline
+recovery kernel's among them, are staged as written (#461).
+
 Compression: every gzipped asset is written by zopfli, which emits an ordinary
 gzip stream that inflates to the same bytes zlib's would, only shorter (#461).
 A missing zopfli is a hard failure for the same reason a missing esbuild is.
@@ -336,7 +341,8 @@ def _expand_includes(path, include_roots, board_product=None):
 
 # The elements whose content the HTML parser reads as text, not markup: a
 # `<!--` inside one is part of the script, the style or the title, never a
-# comment. Their bodies are copied verbatim and nothing below looks inside them.
+# comment. Their bodies are copied verbatim; the only look inside one is the
+# script-data check below, which refuses a body rather than change it.
 RAW_TEXT_ELEMENTS = {
     "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript",
 }
