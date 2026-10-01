@@ -517,10 +517,8 @@
 
   // A UART is crossed: this board's TX lands on the far end's RX (docs/pin_map.md,
   // "Dome Control slip ring wiring").
-  const laneNote = (lane) =>
-    lane.shared
-      ? "shares its UART with the dome link, RX only"
-      : "TX to the far end's RX, RX to its TX, and ground";
+  const LANE_SHARED = "shares its UART with the dome link, RX only";
+  const laneNote = (lane) => (lane.shared ? LANE_SHARED : "TX to the far end's RX, RX to its TX, and ground");
 
   // Only the wires a builder has run are drawn (operator, 2026-09-29 on #411:
   // "the drawing should only draw the actaul lines (wires) currently
@@ -650,7 +648,9 @@
   // ---------------------------------------------------------------------------
   const productPins = (product, model) => {
     const lane = product.lane ? loomRows(model).find((each) => each.key === product.lane) : null;
-    if (lane) return [lane.label, laneDetail(lane)].filter(Boolean);
+    // A lane that shares its UART says so here in the drawing's own words,
+    // so the pins beside a card never read as a link of the product's own.
+    if (lane) return [lane.label, laneDetail(lane), lane.shared ? LANE_SHARED : ""].filter(Boolean);
     if (!product.outputs) return [];
     // An Output Address opens with the protocol that reaches it (`ledc:3`),
     // which is the protocol the product's registry row declares.
@@ -684,7 +684,7 @@
 
   // The fitted products this image carries a card for, in the order given.
   const cardedProducts = ({ cards, products = [] } = {}) =>
-    products.filter((product) => cards && cards[product.id]);
+    products.filter((product) => cards && Object.hasOwn(cards, product.id));
 
   // ---------------------------------------------------------------------------
   // wiringDocument()
