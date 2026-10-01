@@ -84,6 +84,7 @@ WIRE_FIELDS = ("from", "to", "note")
 CARD_BLOCK_RE = re.compile(r"^```yaml\n(wiring_card:\n.*?)^```\s*$", re.M | re.S)
 FENCE_RE = re.compile(r"^```.*?^```\s*$", re.M | re.S)
 HEADING_RE = re.compile(r"^#{1,6} +(.+?)\s*$", re.M)
+SECTION_NUMBER_RE = re.compile(r"\d+(\.\d+)*")
 # One registry row: its id and its status. A row spans lines, so the match runs
 # to the status token rather than to the end of a line.
 REGISTRY_ROW_RE = re.compile(
@@ -118,11 +119,13 @@ def sheet_headings(text):
 
 def cites(headings, token):
     """Whether `token` names one of the sheet's sections: by its number
-    (`5.2`, or `6` for `6. Getting the wire to work`) or by its whole title."""
-    return any(
-        heading == token or heading.startswith(token + " ") or heading.startswith(token + ". ")
-        for heading in headings
-    )
+    (`5.2`, or `6` for `6. Getting the wire to work`) or by its whole title.
+    A title is matched whole, so `Wiring` cites a section called Wiring and
+    not the `Wiring card` heading the card itself sits under."""
+    if SECTION_NUMBER_RE.fullmatch(token):
+        return any(heading.startswith(token + " ") or heading.startswith(token + ". ")
+                   for heading in headings)
+    return token in headings
 
 
 def _text(where, key, value, problems):
