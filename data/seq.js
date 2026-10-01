@@ -3017,8 +3017,13 @@
       });
       pickedPane.addEventListener("change", (event) => {
         const input = event.target;
-        if (input?.dataset?.picked !== "start" || input.value === "") return;
-        sessionTimeline?.movePickedTo(Number(input.value));
+        if (input?.dataset?.picked !== "start" || input.value === "" || !sessionTimeline) return;
+        sessionTimeline.movePickedTo(Number(input.value));
+        // A start the block could not take - it is held at its limit - leaves
+        // the routine as it was, so nothing else draws the pane again: draw
+        // it from where the block is, never leave the number that was typed.
+        pickedShown = null;
+        showPicked(sessionTimeline.picked());
       });
     }
 
