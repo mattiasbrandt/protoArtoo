@@ -5746,9 +5746,9 @@ body[data-page="maintenance"] .status-item .hint {
    ======================================================================== */
 
 .seq-editor-error-text {
-  font-size: 0.8rem;
+  font-size: var(--fs-cell);
   color: var(--danger);
-  min-height: 16px;
+  min-height: var(--space-lg);
 }
 
 /* Protocol Check's verdict on the strip: the lamp carries the color, the
@@ -5764,9 +5764,9 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .seq-editor-steps h4 {
-  margin-bottom: 8px;
-  color: var(--silver-bright);
-  font-size: 0.95rem;
+  margin-bottom: var(--space-sm);
+  color: var(--text);
+  font-size: var(--fs-h2);
 }
 
 .seq-editor-step-table {

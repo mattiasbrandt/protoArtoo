@@ -2625,7 +2625,7 @@
     mountSessionTimeline();
     paintParts();
 
-    // Attach event listeners (metadata/footer once; step rows on every rerender)
+    // Attach event listeners (the strip, the tempo and the drawer once; step rows on every rerender)
     attachMetadataListeners();
     attachStepListeners();
     updateValidationSummary();
@@ -2849,7 +2849,7 @@
     edited();
   };
 
-  // Called once from renderEditorView — persistent metadata + footer elements only.
+  // Called once from renderEditorView — the strip, the tempo row and the drawer only.
   // These elements are NOT re-created on rerenderStepTable, so listeners must not accumulate.
   const attachMetadataListeners = () => {
     const nameInput = document.getElementById("seq-editor-name");
@@ -3857,7 +3857,7 @@
       renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
-    // Re-attach only step-row listeners (metadata/footer listeners persist)
+    // Re-attach only step-row listeners (the strip's, the tempo's and the drawer's persist)
     attachStepListeners();
   };
 
