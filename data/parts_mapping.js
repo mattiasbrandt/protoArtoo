@@ -832,9 +832,9 @@
     };
 
     table.addEventListener("click", (event) => {
-      const find = event.target?.closest?.("[data-find]");
-      if (find && !find.disabled && finder !== null) {
-        finder.start(find.dataset.find);
+      const starter = event.target?.closest?.("[data-find]");
+      if (starter && !starter.disabled && finder !== null) {
+        finder.start(starter.dataset.find);
         return;
       }
       const act = event.target?.closest?.("[data-act]");

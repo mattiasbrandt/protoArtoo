@@ -7055,6 +7055,17 @@ body[data-page="maintenance"] .status-item .hint {
   font-size: var(--fs-sect);
 }
 
+/* A bar is as wide as its Outputs up to a measure, and wraps past it: a board
+   with an expander on it reports far more Outputs than one line holds, and a
+   table pushed sideways hides the acts at the row's end. The reason under the
+   bar keeps to the same measure. */
+.parts-bar,
+.parts-on .why {
+  display: block;
+  max-width: 60ch;
+  white-space: normal;
+}
+
 .parts-bar .output-seg > button {
   position: relative;
   font-family: var(--font-mono);
