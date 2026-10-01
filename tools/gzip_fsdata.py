@@ -190,6 +190,7 @@ BUNDLE_OF_MEMBER = {
 # as any script did before its surface had set its labels.
 LABELS_BUNDLE = "/bundle_shell.js"
 DATA_SCRIPTS_RE = re.compile(r'(<html\b[^>]*?\bdata-scripts=")([^"]*)(")', re.IGNORECASE)
+DATA_SCRIPTS_ATTR_RE = re.compile(r"\bdata-scripts\s*=", re.IGNORECASE)
 # The two top-level shapes a member may have once minified: an IIFE statement,
 # preceded by `const NAME = <object or array literal>` declarations. Anything
 # else changes meaning inside the try block that isolates the member, so it
@@ -207,6 +208,15 @@ def _bundle_chain(path, html):
     chain replaced by its bundle, or fail the build when a chain names a
     member without the rest of its group."""
     match = DATA_SCRIPTS_RE.search(html)
+    # Members are never staged on their own, so a chain this cannot read would
+    # ship naming files the droid does not have. Exactly one chain, on <html>,
+    # double-quoted, or none at all.
+    declared = len(DATA_SCRIPTS_ATTR_RE.findall(html))
+    if declared > 1 or (declared == 1 and match is None):
+        raise SystemExit(
+            "[gzip_fsdata] %s declares data-scripts in a form staging does not read; "
+            "write it once, on <html>, as data-scripts=\"/a.js,/b.js\"." % path
+        )
     if match is None:
         return html
     chain = [name.strip() for name in match.group(2).split(",") if name.strip()]

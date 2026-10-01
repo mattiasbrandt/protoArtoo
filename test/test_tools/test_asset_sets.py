@@ -575,6 +575,17 @@ class ScriptBundles(_StagingCase):
                     self._build()
                 self.assertIn("outside its whole group", str(ctx.exception))
 
+    def test_a_chain_staging_cannot_read_fails_the_build(self):
+        self._members()
+        (self.src / "page.html").write_text(
+            "<html data-scripts='/body_art.js,/body_view.js'><head>"
+            "<!-- PA:INCLUDE _recovery_kernel.html --></head></html>",
+            encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("a form staging does not read", str(ctx.exception))
+
     def test_a_member_that_is_not_one_iife_fails_the_build(self):
         self._members(view="function view(){}\n(()=>{})();\n")
         self._page(self.SHELL)
