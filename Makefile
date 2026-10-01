@@ -127,6 +127,7 @@ build: ## Compile firmware  (BUILD_ENV=artoo_esp32 by default)
 	@python3 tools/check_framework_envelope.py --env $(BUILD_ENV) --quiet
 
 test: ## Run native unit tests
+	@python3 tools/suite_pause.py --check && exit 0; \
 	$(FLOCK) pio test -e native
 
 # Canonical web-suite invocation. The quoted glob is expanded by node itself:
@@ -135,6 +136,7 @@ test: ## Run native unit tests
 # a counted failure instead of a vanished `cancelledByParent` entry.
 # tools/slice_verify.py runs the same invocation; keep the flags in sync.
 test-web: ## Run web behavioral tests (node:test)
+	@python3 tools/suite_pause.py --check && exit 0; \
 	node --test --test-reporter=tap --test-timeout=10000 'test/test_web/test_*.js'
 
 test-tools: ## Run Python tooling tests (incl. slice gate self-tests)

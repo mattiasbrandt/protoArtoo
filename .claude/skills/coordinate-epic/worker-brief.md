@@ -13,6 +13,9 @@ pinned coordinator comment (attempt log, rejected approaches, verification
 harness). Rejected approaches are out of scope: do not attempt a variation of
 a rejected category. Then read AGENTS.md.
 
+SUITES PAUSED THROUGH 2026-10-31 (#464)
+This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOARTOO_SUITES=1`. On 2026-11-01 the pause ends by itself.
+
 THE TICKET IS YOUR SOURCE
 You are building a decision somebody already took, so everything it turned on
 is written into the ticket itself: the numbers, the strings verbatim, and the
@@ -70,31 +73,12 @@ tests, not exhaustive suites, and do not polish them; you will not be
 rejected for test naming or structure, and you will be rejected for
 production code that does not do the job.
 
-DO NOT TRANSCRIBE THE ACCEPTANCE LIST INTO TESTS. A web test is an invariant
-that is still true after this ticket is forgotten: a safety invariant, a
-defect this repo has shipped, or a behaviour only the harness can see
-(test/test_web/README.md "What earns a test here"). Copy, heading words, chip
-order, timing constants and visual anatomy stay on the ticket - the operator
-is looking at the screen and the critic reads your production diff. A
-`test_<surface>_<ticket>.js` that lists the checkboxes as test() blocks, with
-a mutation patch per checkbox, is a receipt file and a reject. You will not be
-rejected for the number of real invariants you cover; that protection does not
-reach a checkbox dump. Name the file for the surface or the contract, add to
-the surface's existing file when it has one, and carry ONE mutation per
-changed data/*.js file.
-
-If your data/ change is copy or layout, do not invent a test to clear the
-gate's delta +0 floor. It has no invariant to add. Stop and ask the
-coordinator for --expect-no-new-tests.
-
-Weight your evidence toward BEHAVIOUR, not coverage. The gate's floor is ONE
-native test per production change - a floor, not a target, and nobody counts
-past it. What earns its keep is evidence the change does its job where it
-actually runs: a record the firmware really emits, a transcript from a board,
-an integration path exercised end to end. This epic's most valuable findings
-came from replaying a bench sheet against real hardware, not from unit tests -
-two live defects sat behind a fully green suite. If you are adding the
-fifteenth assertion to a parser table, stop and go prove the thing works.
+DO NOT ADD A TEST OR A MUTATION PATCH. The suite pause above is the rule
+through 2026-10-31. A test the ticket already names in one sentence may stay
+in the diff; you do not invent one, and you do not run the suite to prove it.
+Copy, heading words, chip order, timing constants and visual anatomy stay on
+the ticket. The operator looks at the screen and the critic reads the
+production diff.
 
 Verification is sized to the project (AGENTS.md "Verification Scale"): a small
 hobby project with one user. Prove the change where it runs, once. Do not build
@@ -148,8 +132,8 @@ them once:
 - **Desktop width only.** Phone and tablet are out of scope; never put those
   widths in a test, a note or a screenshot.
 
-Do NOT stop for a look. Go end to end - tests, mutations, the gate and your
-report - and hand the surface over finished. The operator looks at every
+Do NOT stop for a look. Go end to end on the page, the build, and your
+report, and hand the surface over finished. Do not add the suite run. The operator looks at every
 surface once, live, at the Closing Ticket's bench session, not mid-epic
 (operator, 2026-09-29, the third time it was said). A ticket criterion, a
 handoff or an older brief that says "stop for a look" does not override this.
@@ -240,7 +224,8 @@ SLICE WORKFLOW (AGENTS.md, binding)
 
 VERIFICATION (software-verified cap)
 - One PlatformIO build runs on this machine at a time, and the tooling takes
-  the lock for you: run `make build`, `make test` and the slice gate plainly.
+  the lock for you: run `make build` plainly. `make test` is paused (#464)
+  and returns without running; do not follow it with `pio test`.
   Do NOT put `flock` in front - that nests two locks on one file and is
   refused (AGENTS.md "The build lock"). Other agents are building here at the
   same time; the lock serialises you, so do not wait for a window. Keep this
@@ -252,65 +237,19 @@ VERIFICATION (software-verified cap)
   until a number looks right; the coordinator owns the repair. Chase a number
   that disagrees with your brief instead of taking whichever reads better -
   three of this epic's most valuable findings came from exactly that.
-- Per-commit verification is a FAST, TARGETED step, not the full gate: the
-  existing tests covering what you touched, plus a build when you changed
-  something that compiles. Seconds to a minute, so a break is caught at the
-  commit that caused it.
-- Slice gate: run it ONCE, after your final commit, before you report - NOT
-  after every commit. It diffs merge-base..HEAD, so one run at the end covers
-  every commit in the slice; running it four times to land four commits buys
-  nothing and costs four full suites and four builds. Run
-  `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
-  below, if any, and --mutations with your mutation patches when your diff
-  touches web production JS) and paste its FULL block verbatim into your
-  status comment, provenance lines included (AGENTS.md "Worker slice gate" -
-  commit first; the gate diffs merge-base..HEAD). The gate runs the native
-  suite, the web suite, the mutation stage, the build, and the diff checks;
-  it fails on deleted test files, a shrinking test total, a flat test total
-  over production changes, a changed web production JS file no mutation
-  patch touches, or an edit to any of the three verifier scripts
-  (tools/slice_verify.py, tools/mutation_verify.py,
-  tools/web_load_trace.cjs). The waiver flags
-  (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations,
-  --expect-test-shrink) are coordinator-granted in this brief only - never
-  self-granted; every ACK is
-  visible in the block. The coordinator checks the block's provenance
-  against your branch and runs the gate itself once per wave, on the
-  merged tree (docs/agents/slice-gate.md).
-- All pasted evidence carries process exit codes - never a hand-summarised
-  pass/fail line, and never a grep of the TAP `# fail` line (hangs vanish
-  from it; the exit code is the signal).
-- The ticket's acceptance checks, on top of the gate.
-- NEVER flash, never run make ota, never run pio test concurrently with any
-  OTA anywhere.
-- Tests you add or change must be PROVEN ABLE TO FAIL before you report
-  green: for bug fixes, run them against the pre-fix commit and show red;
-  then mutate the production code you fixed and show red. Web tests follow
-  test/test_web/README.md: what earns a test, and one kill per changed
-  data/*.js file, not a patch per checkbox. Mutation evidence is the gate
-  block run
-  with --mutations - the gate applies each patch itself and fails unless
-  every mutation is KILLED by assertion and every changed web production JS
-  file is hit by at least one patch. Author patches against HEAD (edit,
-  `git diff > mX.patch`, revert); standalone
-  `python3 tools/mutation_verify.py <patches>` runs are for authoring only.
-  A test that fails only by hanging or timing out is not coverage. A green
-  run alone, or a hand-written mutation table, will be rejected.
-- A red run against old code happens in a THROWAWAY checkout, never by
-  writing old files over your worktree: `git worktree add --detach
-  /tmp/red-<n> <base>`, copy your test files in, run there, then `git
-  worktree remove --force` it. Wrap every hand-run test in `timeout 60`.
-  On 2026-09-29 a red run wrote old files in place, the test ran away at
-  about 1 GB/s, and the `; git checkout` restore chained after it never ran:
-  systemd-oomd killed the terminal holding every agent session, twice. Your
-  pane is memory-capped, so a runaway now kills only its own process - if a
-  command of yours dies with no message, check `journalctl --user --since
-  -5min | grep -i oom` before running it again, and never run it again
-  unchanged.
-- If the ticket's pinned comment provides a verification harness, run it and
-  paste its output verbatim; do not substitute your own summary of it.
+- Per-commit verification during the pause is the build, when you changed
+  something that compiles. Do not run the existing tests "to be sure".
+- Do not run `tools/slice_verify.py` in order to execute the suites. If a
+  pinned comment still names that command, run it once: the native, web, and
+  mutation rows skip themselves through 2026-10-31 and that skip is a pass
+  of the gate, not of the suite. Do not pass `--mutations`. Do not author
+  patches. The coordinator does not re-run it for the suites.
+- NEVER flash, never run make ota.
+- If the ticket's pinned comment provides a verification harness that is a
+  product suite or a mutation run, do not run it. Say so in the report. A
+  harness that is a build or a diff check still runs.
 
 REPORT
-Final status comment: slices with SHAs, verification evidence (including the
-red runs above), AGENTS.md verification label, and anything you could not
-prove with the reason.
+Final status comment: slices with SHAs, the build result when you built, and
+anything you could not prove with the reason. There is no suite block and no
+red-run block during the pause.

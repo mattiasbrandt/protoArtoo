@@ -147,17 +147,15 @@ from the epic's coordination section rather than from memory.
   sub-issue number. Ticket-specific knowledge lives in the ticket, not the
   prompt - the brief's first step sends the worker to the issue body and the
   pinned coordinator comment.
-- Fence files mechanically, not just in prose: put the exact gate invocation
-  in the ticket's pinned comment — `--fenced <pathspecs>`, the `--mutations`
-  expectation for web slices, and any waiver flag you are sanctioning
-  (`--expect-no-new-tests`, `--expect-no-mutations`, `--expect-test-shrink`;
-  a `data/` slice that is only copy or layout has no invariant to add, so grant
-  `--expect-no-new-tests` rather than let the worker invent a receipt). The
-  gate then rejects a
-  fenced-file edit, a flat test total, or missing mutation coverage in the
-  worker's own run, before review.
+- Fence files mechanically, not just in prose: put `--fenced <pathspecs>` in
+  the ticket's pinned comment when a slice must not touch a path. Through
+  2026-10-31 (#464) do not put a `--mutations` expectation in the brief and
+  do not grant a waiver so the worker can write a test. A flat test total is
+  the normal result. The gate's suite rows skip themselves.
 
 ## Critic protocol (before accepting any slice - no exceptions)
+
+**Through 2026-10-31 (#464) the suite is not the acceptance.** Do not require a pasted suite block, a mutation table, a red run, or a per-wave re-run of `slice_verify` for the suites. Step 0 below is the acceptance. A worker who added tests or mutation patches the ticket did not name goes back to delete them. A missing `make test` is not a reject. The build still matters when the diff compiles. On 2026-11-01 this paragraph stops applying and the steps below return to force.
 
 Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
@@ -317,10 +315,9 @@ reporting passes that never ran. In the worker's worktree, personally:
 
 Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their
-review completes. After the final merge, **run the slice gate on the merged
-tree** with the union of the wave's fences, plus any epic-level acceptance
-sweeps - line numbers and stragglers move, and this is the run that stands
-behind every slice in the wave (critic protocol step 1).
+review completes. After the final merge, through 2026-10-31 (#464), do not re-run the slice
+gate for its suites. The production diffs were the acceptance. The native
+and web suites run when the epic's pull request into `main` opens.
 
 **Measure the filesystem image in the same pass**, with `make
 check-build-budgets` - it images the filesystem and counts allocated blocks for

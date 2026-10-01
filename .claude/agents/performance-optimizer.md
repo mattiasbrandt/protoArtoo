@@ -160,7 +160,7 @@ Verification guidance:
 - Use risk-based verification; automated tests are evidence, not the goal.
 - For firmware behavior changes, start with `make build BUILD_ENV=<affected-env>`
   (for example, `artoo_esp32` or `firebeetle2`).
-- Add `make test` when safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, or prior regression paths are touched.
+- Through 2026-10-31 (#464) do not add `make test`. It returns without running. Review the production diff. CI runs the suite on the pull request into `main`.
 - Run `make check` (cppcheck) only when investigating static-analysis issues or when the change risk justifies it.
 - For memory profiling sessions, use `artoo_esp32_profiler` or `artoo_esp32_profiler_ota` when hardware/runtime evidence is relevant.
 

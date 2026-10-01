@@ -13,12 +13,32 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
 import mutation_verify  # noqa: E402
 import slice_verify  # noqa: E402
+import suite_pause  # noqa: E402
+
+
+class SuitePause(unittest.TestCase):
+    """#464: the per-slice product suites stop on their own on 2026-11-01."""
+
+    def test_pause_holds_through_october(self):
+        self.assertTrue(suite_pause.paused(date(2026, 10, 2)))
+        self.assertTrue(suite_pause.paused(date(2026, 10, 31)))
+
+    def test_pause_ends_on_the_resume_date(self):
+        self.assertFalse(suite_pause.paused(date(2026, 11, 1)))
+
+    def test_override_runs_the_suites(self):
+        os.environ["PROTOARTOO_SUITES"] = "1"
+        try:
+            self.assertFalse(suite_pause.paused(date(2026, 10, 2)))
+        finally:
+            del os.environ["PROTOARTOO_SUITES"]
 
 
 class TapCountParsing(unittest.TestCase):

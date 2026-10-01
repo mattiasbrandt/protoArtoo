@@ -137,6 +137,7 @@ Frontend engineering standards:
 - Keep developer experience clean: local naming should match the domain, repeated layout primitives should be factored, and tests/selectors should stay stable.
 
 Playwright and web-test workflow:
+- Through 2026-10-31 (#464): do not add a file under `test/test_web/`, do not write a mutation patch, and do not run `make test-web`. The production diff is the review.
 - Before writing or changing tests under `test/test_web/`, read `test/test_web/README.md`, starting at "What earns a test here": copy, order, layout and visual anatomy do not get a `test()`. A copy- or layout-only `data/` change adds no test - ask the coordinator for `--expect-no-new-tests` instead of inventing one. When a test is earned, follow the README's harness and prove-it-can-fail steps and include the calibration and mutation results in your report, not just the green run.
 - Do not start the local HTTP server manually (`python3 -m http.server` etc.) — a project hook manages it automatically on port 4173 before any playwright test script runs.
 - Playwright MCP-first startup is required:

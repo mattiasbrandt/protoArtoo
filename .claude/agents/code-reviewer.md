@@ -71,6 +71,7 @@ This is not a generic application review. Review as an embedded firmware reviewe
 
 ## Test Judgment
 
+- Through 2026-10-31 (#464, `tools/suite_pause.py`): do not request a new test, a suite run, or a mutation demonstration. A test the diff added that the ticket did not name is a finding. Review the production diff.
 - Do not reflexively request new PlatformIO/native tests for every change.
 - Request tests when the change touches safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API response contracts, action registry mappings, or prior regression areas.
 - For docs, comments, copy, agent definitions, UI styling, or low-risk cleanup with no behavior change, prefer inspection/build/targeted evidence over new tests.

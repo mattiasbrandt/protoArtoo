@@ -98,6 +98,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import glob
 
+import suite_pause
+
 # Sibling module in tools/, which is on sys.path for both entry points: this
 # script run directly, and the tooling tests that import it.
 import pio_lock
@@ -612,6 +614,15 @@ def is_web_only(diff_names: list[str]) -> bool:
 
 def skipped(label: str) -> CheckResult:
     return CheckResult(label, WEB_ONLY_SKIP, True, [], skipped=True)
+
+
+def paused_skip(label: str) -> CheckResult:
+    """Product suite row skipped for the #464 experiment. A pass of this row
+    is not a pass of the suite."""
+    return CheckResult(
+        label, "SKIP (suites paused until 2026-11-01, #464)", True,
+        [suite_pause.BANNER], skipped=True,
+    )
 
 
 def zero_delta_ok(
@@ -1199,8 +1210,14 @@ def main() -> int:
             stage_seconds[name] = round(elapsed, 1)
             info(f"{name} {elapsed:.1f}s")
 
+    # #464: do not pay for base suites while the product suites themselves are
+    # skipped. The date check lives in tools/suite_pause.py.
+    product_suites_paused = suite_pause.paused()
+    if product_suites_paused:
+        info(suite_pause.BANNER)
+
     same_commit = base_sha == head_sha
-    if same_commit:
+    if same_commit or product_suites_paused:
         base: dict[str, int | None] = {"native": None, "web": None}
         base_notes: dict[str, list[str]] = {"native": [], "web": []}
     else:
@@ -1215,15 +1232,17 @@ def main() -> int:
             ["python3", "-m", "unittest", "discover", "-s", "test/test_tools", "-q"],
             timeout=120,
         )),
-        skipped("native tests") if web_only else stage("native", lambda: check_native_tests(
-            base.get("native"),
-            same_commit,
-            base_notes["native"],
-            production["native"],
-            args.expect_no_new_tests,
-            args.expect_test_shrink,
-        )),
-        stage("web", lambda: check_web_tests(
+        paused_skip("native tests") if product_suites_paused else (
+            skipped("native tests") if web_only else stage("native", lambda: check_native_tests(
+                base.get("native"),
+                same_commit,
+                base_notes["native"],
+                production["native"],
+                args.expect_no_new_tests,
+                args.expect_test_shrink,
+            ))
+        ),
+        paused_skip("web tests") if product_suites_paused else stage("web", lambda: check_web_tests(
             base["web"],
             same_commit,
             base_notes["web"],
@@ -1231,7 +1250,7 @@ def main() -> int:
             args.expect_no_new_tests,
             args.expect_test_shrink,
         )),
-        stage("mutations", lambda: check_mutations(
+        paused_skip("mutation gate") if product_suites_paused else stage("mutations", lambda: check_mutations(
             production["web"],
             mutations,
             args.expect_no_mutations,

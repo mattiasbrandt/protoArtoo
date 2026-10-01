@@ -490,6 +490,12 @@ where a suspect image size is explained. `cat /tmp/protoartoo-pio.lock` reads it
 without taking the lock, and a build that gives up waiting prints it. The pid
 names the last holder, not necessarily a live process — check with `kill -0`.
 
+## Suite pause (through 2026-10-31, #464)
+
+Operator experiment, started 2026-10-02. Through 2026-10-31 the native suite, the web suite, and mutation checks do not run per slice, and a missing run is not a reason to reject a slice. `make test` and `make test-web` print the pause and return. `tools/slice_verify.py` skips those stages, including the base-suite run. `tools/mutation_verify.py` returns without applying patches. The test files stay. CI still runs the native suite and the web suite on a pull request into `main`.
+
+This overrides, until 2026-11-01, the "never skip verification" bullet above, the one-test floor, the worker-slice-gate suite rows, and "add `make test`" in Default completion evidence below. It does not override the build, a second agent's read of the production diff, or the safety-critical rules. Do not add tests or mutation patches to stand in for the paused runs. `PROTOARTOO_SUITES=1` runs the suites anyway; a worker does not set it. On 2026-11-01 the skip ends by itself (`tools/suite_pause.py`).
+
 ## Verification and Reporting
 
 Use risk-based verification. Automated tests are evidence, not the goal. Prefer

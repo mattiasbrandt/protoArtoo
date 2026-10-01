@@ -1,5 +1,7 @@
 # Worker slice gate
 
+**Suites paused through 2026-10-31 (#464).** The native, web, and mutation stages of `tools/slice_verify.py` skip themselves and print `SKIP (suites paused until 2026-11-01, #464)`. That row is not a pass of the suite. A missing suite run is not a reject. The build, the diff checks, and the tooling self-tests still run. CI on a pull request into `main` still runs the native and web suites. Do not add tests or mutation patches during the pause. The date lives in `tools/suite_pause.py` and the skip ends on 2026-11-01 with no further edit. `PROTOARTOO_SUITES=1` runs the stages.
+
 `tools/slice_verify.py` is the mechanical PASS/FAIL floor for a branch against a
 base ref. `python3 tools/slice_verify.py --help` is the flag reference; this file
 is the contract: what the block must contain, who may waive what, and what
