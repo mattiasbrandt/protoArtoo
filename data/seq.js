@@ -1311,6 +1311,22 @@
     showPicked(sessionTimeline ? sessionTimeline.picked() : []);
   };
 
+  // An edit made in the inspector writes the inspector again, and the control
+  // the keyboard was on is replaced by one like it. Run `edit` and put the
+  // focus back on the control that says the same thing - the same field and,
+  // for a choice, the same choice - so a builder working by keyboard is not
+  // sent back to the top of the page by every edit.
+  const keepingFocus = (edit) => {
+    const pane = document.getElementById("seq-picked");
+    const held = document.activeElement;
+    const had = held && held.dataset?.picked && pane?.contains?.(held)
+      ? { picked: held.dataset.picked, value: held.dataset.value }
+      : null;
+    edit();
+    if (!had) return;
+    [...pane.querySelectorAll(`[data-picked="${had.picked}"]`)].find((control) => control.dataset.value === had.value)?.focus();
+  };
+
   // One field of the picked step, written. `raw` is the control's own value.
   const PICKED_NUMBERS = ["moveMs", "jitterMs", "periodMs", "durationMs"];
   const writePicked = (step, field, raw, way = null) => {
@@ -1364,7 +1380,7 @@
 
   // An edit made in the inspector in one act - a number typed, a choice
   // pressed - on the one history. One that changed nothing records nothing.
-  const inspect = (field, raw) => {
+  const inspect = (field, raw) => keepingFocus(() => {
     const picked = pickedStep();
     if (!picked || historyBusy()) return;
     const { at, step } = picked;
@@ -1387,7 +1403,7 @@
       }
     }
     repaintPicked();
-  };
+  });
 
   // A fader is an edit made over time: the routine follows it as it moves,
   // and the whole run is one entry, recorded when it is let go. `way` is the
@@ -1421,7 +1437,7 @@
     faderRun = null;
     historyCommit(before);
     paintHistory();
-    repaintPicked();
+    keepingFocus(repaintPicked);
   }
 
   // ---------------------------------------------------------------------------
