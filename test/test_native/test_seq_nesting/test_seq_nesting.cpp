@@ -128,10 +128,65 @@ static void test_a_phrase_is_spliced_in_time_order_where_it_sits() {
     free(buf);
 }
 
+// A branching tree three levels deep: parent -> a; a -> b, c; b -> d, e;
+// c -> f. Each pass splices exactly the phrases the branch held when the
+// pass began, so b's own phrases (d, e: they sort before c) wait for the next
+// pass rather than taking c's turn, and every leaf is in the run.
+struct TreePhrase {
+    const char* ref;
+    SeqStep steps[3];
+    uint8_t count;
+};
+static TreePhrase gTree[6];
+static uint8_t gLeftOut = 0;
+
+static void buildTree() {
+    gTree[0] = {"a", {step(100, STEP_SEQUENCE, "b"), step(2000, STEP_SEQUENCE, "c"), step(3000, STEP_END, "")}, 3};
+    gTree[1] = {"b", {step(0, STEP_SEQUENCE, "d"), step(50, STEP_SEQUENCE, "e"), step(500, STEP_END, "")}, 3};
+    gTree[2] = {"c", {step(0, STEP_SEQUENCE, "f"), step(500, STEP_END, ""), step(0, STEP_END, "")}, 2};
+    gTree[3] = {"d", {step(0, STEP_AUDIO, "$D"), step(100, STEP_END, ""), step(0, STEP_END, "")}, 2};
+    gTree[4] = {"e", {step(0, STEP_AUDIO, "$E"), step(100, STEP_END, ""), step(0, STEP_END, "")}, 2};
+    gTree[5] = {"f", {step(0, STEP_AUDIO, "$F"), step(100, STEP_END, ""), step(0, STEP_END, "")}, 2};
+}
+
+static void test_every_leaf_of_a_branching_tree_is_spliced_in() {
+    buildTree();
+    gLeftOut = 0;
+    SeqStep* buf = (SeqStep*)malloc(sizeof(SeqStep) * 2);
+    buf[0] = step(0, STEP_SEQUENCE, "a");
+    buf[1] = step(9000, STEP_END, "");
+    uint8_t count = 2;
+    const bool fits = seqStoreSplicePhrases(
+        &buf, &count,
+        [](const char* ref, bool deep, const SeqStep** child, uint8_t* childCount) {
+            for (const TreePhrase& p : gTree) {
+                if (!deep && strcmp(p.ref, ref) == 0) {
+                    *child = p.steps;
+                    *childCount = p.count;
+                    return;
+                }
+            }
+            ++gLeftOut;
+        },
+        []() {});
+    TEST_ASSERT_TRUE(fits);
+    TEST_ASSERT_EQUAL_UINT8(0, gLeftOut);
+    TEST_ASSERT_EQUAL_UINT8(4, count);
+    TEST_ASSERT_EQUAL_STRING("$D", buf[0].payload);
+    TEST_ASSERT_EQUAL_UINT32(100, buf[0].tMs);
+    TEST_ASSERT_EQUAL_STRING("$E", buf[1].payload);
+    TEST_ASSERT_EQUAL_UINT32(150, buf[1].tMs);
+    TEST_ASSERT_EQUAL_STRING("$F", buf[2].payload);
+    TEST_ASSERT_EQUAL_UINT32(2000, buf[2].tMs);
+    TEST_ASSERT_EQUAL(STEP_END, buf[3].type);
+    free(buf);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_the_nesting_walk_keeps_the_stated_rules);
     RUN_TEST(test_a_phrase_inside_a_loop_is_refused);
     RUN_TEST(test_a_phrase_is_spliced_in_time_order_where_it_sits);
+    RUN_TEST(test_every_leaf_of_a_branching_tree_is_spliced_in);
     return UNITY_END();
 }

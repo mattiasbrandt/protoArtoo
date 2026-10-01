@@ -153,19 +153,31 @@ bool seqStoreSplicePhrase(SeqStep** buf, uint8_t* count, uint8_t at, const SeqSt
 // than stacking one more on the Sequence Coordinator's measured chain
 // (ADR 0040), and a native test drives the real loop with a fake loader.
 // -----------------------------------------------------------------------------
+// Marks a phrase step a pass still owes; no SeqEffectClass has this value.
+static const uint8_t SEQ_PHRASE_OWED = 0x80;
+static_assert(FX_AUDIO_BOUNDED < SEQ_PHRASE_OWED, "a phrase mark must not read as an effect class");
+
 template <typename Load, typename Release>
 inline bool seqStoreSplicePhrases(SeqStep** buf, uint8_t* count, Load&& load, Release&& release) {
     for (uint8_t pass = 0; pass <= PC_NEST_DEPTH_MAX && *buf != nullptr; ++pass) {
-        // A pass splices as many phrases as the branch held when it began:
-        // the ones a splice brings in are the next pass's, one level down.
-        // Re-sorting moves steps, so each is found afresh from the front.
+        // A pass splices exactly the phrases the branch held when it began:
+        // the ones a splice brings in are the next pass's, one level down,
+        // even where they sort ahead of one this pass still owes. Re-sorting
+        // moves steps, so the owed ones are marked and found afresh by mark.
+        // A phrase step's effectClass is otherwise FX_NONE and never read.
         uint8_t todo = 0;
         for (uint8_t k = 0; k < *count; ++k) {
-            if ((*buf)[k].type == STEP_SEQUENCE) ++todo;
+            if ((*buf)[k].type == STEP_SEQUENCE) {
+                (*buf)[k].effectClass = SEQ_PHRASE_OWED;
+                ++todo;
+            }
         }
         for (; todo > 0; --todo) {
             uint8_t at = 0;
-            while (at < *count && (*buf)[at].type != STEP_SEQUENCE) ++at;
+            while (at < *count && !((*buf)[at].type == STEP_SEQUENCE &&
+                                    (*buf)[at].effectClass == SEQ_PHRASE_OWED)) {
+                ++at;
+            }
             if (at >= *count) break;
             const SeqStep* child = nullptr;
             uint8_t childCount = 0;
