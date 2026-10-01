@@ -784,7 +784,7 @@ calling `queryModuleState()`.
 
 ```c
 PA_COMPONENT_PART(19, "mp3_trigger", "MP3 Trigger", COMPONENT_CATEGORY_SOUND, "mp3trigger_serial",
-                  COMPONENT_STATUS_SUPPORTED,
+                  COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID,
                   AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_TRACK_COUNT |
                   AudioDriver::AUDIO_CAP_CURRENT_TRACK,
                   nullptr, 1)

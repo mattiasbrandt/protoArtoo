@@ -68,7 +68,7 @@ test that would settle them.
 > module. The driver makes them up, and the Sound page shows one of them as a
 > number the API's own enumeration does not define.**
 >
-> `include/component_registry.inc:172-176` declares `AUDIO_CAP_DEVICE_TYPE` and
+> `include/component_registry.inc:225-229` declares `AUDIO_CAP_DEVICE_TYPE` and
 > `AUDIO_CAP_CURRENT_TRACK`. `data/sound.js:343-345` therefore **shows** the
 > Device and Current-track rows. But `queryModuleState()` hardcodes
 > `out.device = 0x03` (`src/drivers/audio_chirp.cpp:628`, and again at `:702`
@@ -365,7 +365,7 @@ interface designed for its competitor -- which is a compliment to the interface.
 
 | Field | Value | Source |
 | --- | --- | --- |
-| Registry value | **20** | `include/component_registry.inc:172` |
+| Registry value | **20** | `include/component_registry.inc:225` |
 | Registry id | `chirp` | same |
 | Operator-visible name | **CHIRP Audio Trigger** | same |
 | Category | `COMPONENT_CATEGORY_SOUND` | same |
@@ -1231,7 +1231,7 @@ on both sides; none has been captured off the wire.
 
 ### 13.1 REPORTED -- two declared capabilities are fabricated, and one prints an undefined value
 
-`include/component_registry.inc:172-176` declares `AUDIO_CAP_DEVICE_TYPE` and
+`include/component_registry.inc:225-229` declares `AUDIO_CAP_DEVICE_TYPE` and
 `AUDIO_CAP_CURRENT_TRACK`. Neither is answered by the module:
 
 - `src/drivers/audio_chirp.cpp:628` and `:702` set `out.device = 0x03`.

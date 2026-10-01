@@ -2,7 +2,7 @@
 
 Working spec for the **HotRC DS-650** as the `supported` Radio Controller member
 ([#389](https://github.com/mattiasbrandt/protoArtoo/issues/389)), reached over
-the **SBUS** Component Protocol, registered at `include/component_registry.inc:115`
+the **SBUS** Component Protocol, registered at `include/component_registry.inc:148`
 as part id **3**.
 
 Research date 2026-09-12. Every number in this document was read this session
@@ -1033,7 +1033,7 @@ control; `:583` does the same for RC mapping persistence across reboot.
 ## 12. Agent Lookup Quick Reference
 
 - Field: Component Protocol. Required value: **`sbus`**.
-- Field: Registry row. Required value: `include/component_registry.inc:115`, part id **3**, id `hotrc_ds650`, operator-visible name **"HotRC DS-650"**.
+- Field: Registry row. Required value: `include/component_registry.inc:148`, part id **3**, id `hotrc_ds650`, operator-visible name **"HotRC DS-650"**.
 - Field: Lineup status. Required value: **`supported`**. Capabilities bitmask **0** -- nothing to ask, not unknown.
 - Field: Channels the handset transmits. Required value: **6** (CH1-CH2 proportional, CH3-CH6 buttons). CH7-CH16 carry nothing.
 - Field: Receiver protoArtoo runs. Required value: **HotRC SBUS-A**, 16-channel SBUS, 1.7 g, DC 4-9 V, 35 mA.

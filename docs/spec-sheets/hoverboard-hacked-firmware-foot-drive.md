@@ -427,7 +427,7 @@ builder:
 | | |
 | --- | --- |
 | **Category** | Foot Drive |
-| **Registry row** | `include/component_registry.inc:145`, part id **15** |
+| **Registry row** | `include/component_registry.inc:194`, part id **15** |
 | **Registry protocol token** | `hoverboard_gen2_uart` |
 | **Backend profile protocol** | `hoverboard_gen2x` (`include/drive_backend.h:78`) -- **a second, different spelling**, see Section 14.1 |
 | **Lineup status** | `supported` |
@@ -1374,7 +1374,7 @@ and are correct.
 
 ### 14.1 REPORTED -- the Component Protocol is spelled two ways and neither is accurate
 
-`include/component_registry.inc:145` declares `hoverboard_gen2_uart`.
+`include/component_registry.inc:194` declares `hoverboard_gen2_uart`.
 `include/drive_backend.h:78` declares `hoverboard_gen2x`. Both reach operators:
 the first through `/api/identity` (`docs/api.md:200`), the second through
 `DriveTask`'s startup log line (`src/tasks/drive.cpp:71-73`).
