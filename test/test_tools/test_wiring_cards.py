@@ -134,6 +134,29 @@ class WiringCards(unittest.TestCase):
                     gen.generate(quiet=True)
                 self.assertIn(said, str(refused.exception))
 
+    def test_a_card_written_in_a_form_the_generator_cannot_read_is_refused_not_skipped(self):
+        """A skipped sheet is a product's hazards gone from the image with the
+        generator and the drift check agreeing on the shorter set."""
+        for form, rewrite in (
+            ("a trailing comment", lambda text: text.replace("wiring_card:\n", "wiring_card:   # the card\n")),
+            ("a yml fence", lambda text: text.replace("```yaml", "```yml")),
+        ):
+            with self.subTest(form), contextlib.ExitStack() as stack:
+                scratch = Scratch(stack, sound={})
+                sheet = scratch.sheets / "sound.md"
+                sheet.write_bytes(rewrite(sheet.read_text(encoding="utf-8")).encode("utf-8"))
+                with self.assertRaises(gen.CardError) as refused:
+                    gen.generate(quiet=True)
+                self.assertIn("sound.md", str(refused.exception))
+                self.assertIn("cannot read as a card", str(refused.exception))
+
+    def test_a_sheet_saved_with_crlf_line_endings_still_yields_its_card(self):
+        scratch = Scratch(self.stack, sound={})
+        sheet = scratch.sheets / "sound.md"
+        sheet.write_bytes(sheet.read_bytes().replace(b"\n", b"\r\n"))
+        gen.generate(quiet=True)
+        self.assertEqual(list(scratch.payload()), ["dy_sv5w"])
+
     def test_a_roadmap_products_card_is_not_generated(self):
         scratch = Scratch(self.stack, sound={}, dfplayer={"id": "dfplayer_mini"})
         gen.generate(quiet=True)

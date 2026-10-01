@@ -32,6 +32,9 @@ running firmware's own answer beside each card (data/wiring.js).
 This generator refuses, each because the alternative ships something wrong:
 
   - an id the registry does not declare, or two cards for one id;
+  - a `wiring_card:` line it cannot read as a card (a trailing comment, a
+    ```yml fence): skipping that sheet would drop a product's hazards
+    from the image with the drift check still agreeing;
   - a missing or unknown field, or a value that is not a quoted string: YAML
     reads a bare `5` or `off` as a number or a boolean, and a card is text;
   - a `source` naming a section its own sheet does not have. Every line of a
@@ -82,6 +85,10 @@ FIELDS = ("id", "supply", "draw", "logic", "wires", "hazards", "source")
 WIRE_FIELDS = ("from", "to", "note")
 
 CARD_BLOCK_RE = re.compile(r"^```yaml\n(wiring_card:\n.*?)^```\s*$", re.M | re.S)
+# Any line that opens a card, in whatever form somebody wrote it: a trailing
+# comment, a ```yml fence. CARD_BLOCK_RE reads one form only,
+# and a card it cannot read must be a failure, never a sheet quietly skipped.
+CARD_KEY_RE = re.compile(r"^[ \t]*wiring_card[ \t]*:", re.M)
 FENCE_RE = re.compile(r"^```.*?^```\s*$", re.M | re.S)
 HEADING_RE = re.compile(r"^#{1,6} +(.+?)\s*$", re.M)
 SECTION_NUMBER_RE = re.compile(r"\d+(\.\d+)*")
@@ -212,10 +219,20 @@ def load_cards(sheets_dir=None, registry_path=None):
     for sheet in sorted(sheets_dir.glob("*.md")):
         text = sheet.read_text(encoding="utf-8")
         blocks = CARD_BLOCK_RE.findall(text)
-        if len(blocks) > 1:
-            problems.append(f"{rel(sheet)}: carries {len(blocks)} wiring_card blocks; a sheet has one")
+        if len(CARD_KEY_RE.findall(text)) != len(blocks):
+            # The generator and the drift check would agree on the shorter set
+            # and the product's hazards would leave the image with every
+            # check green, so the form is refused rather than widened.
+            problems.append(
+                f"{rel(sheet)}: has a `wiring_card:` line the generator cannot read as a "
+                "card. Write the block as a ```yaml fence whose first line is exactly "
+                "`wiring_card:`, with nothing after the colon"
+            )
             continue
         if not blocks:
+            continue
+        if len(blocks) > 1:
+            problems.append(f"{rel(sheet)}: carries {len(blocks)} wiring_card blocks; a sheet has one")
             continue
         card = read_card(sheet, blocks[0], sheet_headings(text), problems)
         if card is None:
