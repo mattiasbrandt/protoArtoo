@@ -412,5 +412,144 @@ class BoardDrawingInclude(unittest.TestCase):
             self._stage(self.SPRITE, ["-DPA_BOARD=PA_BOARD_BETA"], include="_art.html#dome")
         self.assertIn("'#dome' is not a fragment", str(ctx.exception))
 
+
+class MarkupComments(_StagingCase):
+    """A staged page carries no markup comment, and nothing that only looks
+    like one is touched (#461). A whole-file non-greedy comment regex passes
+    the comment case and fails every other one here; the scanner exists for
+    those."""
+
+    PAGE = (
+        "<!DOCTYPE html>\n"
+        "<html><head>\n"
+        "  <!-- PA:INCLUDE _recovery_kernel.html -->\n"
+        "  <title>Droid <!-- not a comment in a title --></title>\n"
+        "  <!-- a note for whoever edits this page -->\n"
+        "  <script>\n"
+        '    var s = "<!-- keep -->";\n'
+        "    var t = `<!-- keep ${s} -->`;\n"
+        "  </script>\n"
+        "</head><body>\n"
+        '  <div data-note="<!-- keep -->" title=\'a <!-- b\'>x</div>\n'
+        "  <textarea><!-- typed by the operator --></textarea>\n"
+        "  <button>One</button>\n"
+        "  <!-- between two buttons -->\n"
+        "  <button>Two</button>\n"
+        "  <pre>\n  keep\n\n</pre>\n"
+        "</body></html>\n"
+    )
+
+    def test_comments_go_and_what_only_looks_like_one_stays(self):
+        (self.src / "page.html").write_text(self.PAGE, encoding="utf-8")
+        self._build()
+        staged = self._staged("page.html")
+        self.assertIn("KERNEL", staged, "the include is expanded, not stripped")
+        self.assertNotIn("a note for whoever", staged)
+        self.assertNotIn("between two buttons", staged)
+        self.assertIn("<title>Droid <!-- not a comment in a title --></title>", staged)
+        self.assertIn('var s = "<!-- keep -->";\n    var t = `<!-- keep ${s} -->`;', staged)
+        self.assertIn('<div data-note="<!-- keep -->" title=\'a <!-- b\'>x</div>', staged)
+        self.assertIn("<textarea><!-- typed by the operator --></textarea>", staged)
+        # One newline, not none: the gap between two inline buttons is a node.
+        self.assertIn("<button>One</button>\n<button>Two</button>", staged)
+        self.assertIn("<pre>\n  keep\n\n</pre>", staged)
+        self.assertEqual(
+            (self.src / "page.html").read_text(encoding="utf-8"), self.PAGE, "data/ keeps its comments"
+        )
+
+    def test_markup_it_does_not_read_fails_and_leaves_the_last_stage(self):
+        (self.src / "page.html").write_text(
+            "<!-- PA:INCLUDE _recovery_kernel.html --><p>ok</p>", encoding="utf-8"
+        )
+        self._build()
+        refused = {
+            "an unterminated comment": "<p>a</p><!-- never closed",
+            "closed by '--!>'": "<!-- a --!> b -->",
+            "inside script data": "<script>var a = '<!--'; var b = '<script>';</script>",
+            "a self-closed <script/>": '<script src="a.js"/>',
+            "not a start tag": '<p class="a>b</p>',
+        }
+        for why, body in refused.items():
+            with self.subTest(why):
+                (self.src / "page.html").write_text(
+                    "<!-- PA:INCLUDE _recovery_kernel.html -->" + body, encoding="utf-8"
+                )
+                with self.assertRaises(SystemExit) as ctx:
+                    self._build()
+                self.assertIn(why, str(ctx.exception))
+                self.assertIn("<p>ok</p>", self._staged("page.html"), "the last good stage is kept")
+
+
+class ZopfliStaging(_StagingCase):
+    """Every gzipped asset is written by zopfli (#461)."""
+
+    def test_a_missing_zopfli_fails_the_build(self):
+        import os
+        from unittest import mock
+
+        # A .txt asset is gzipped but never minified, so esbuild is not asked.
+        (self.src / "a.txt").write_text("text\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PATH": self.tmp.name}):
+            with self.assertRaises(SystemExit) as ctx:
+                self._build()
+        self.assertIn("zopfli is not on PATH", str(ctx.exception))
+
+    def test_the_stage_is_written_largest_file_first(self):
+        """Creation order is image order, so it is part of the block count and
+        must be a function of the commit (#429); largest first packs best."""
+        (self.src / "b.webp").write_bytes(b"\0" * 10)
+        (self.src / "a.webp").write_bytes(b"\0" * 10)
+        (self.src / "c.webp").write_bytes(b"\0" * 300)
+        (self.src / "d.txt").write_text("x" * 5000, encoding="utf-8")
+        self._build()
+        stage = self.build / "fsdata_gz"
+        created = [e.name for e in sorted(stage.iterdir(), key=lambda e: e.stat().st_ino)]
+        self.assertEqual(created, ["c.webp", "d.txt.gz", "a.webp", "b.webp"])
+
+
+class RealPagesStage(unittest.TestCase):
+    """The scanner reads every real page in both asset sets, and what it must
+    leave alone it leaves alone (#461)."""
+
+    BUILDS = {"artoo_esp32": "legacy", "firebeetle2": "default"}
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.config = _config()
+        except ImportError:  # pragma: no cover - depends on the runner
+            raise unittest.SkipTest("platformio is not installed; this check needs its config parser")
+
+    def test_both_sets_stage_and_the_kernel_is_as_written(self):
+        import re
+
+        kernel = (DATA / "_recovery_kernel.html").read_text(encoding="utf-8")
+        kernel_blocks = re.findall(r"<style>[\s\S]*?</style>|<script>[\s\S]*?</script>", kernel)
+        self.assertEqual(len(kernel_blocks), 2)
+        sources = {p.name: p.read_bytes() for p in DATA.glob("*.html")}
+        for env, asset_set in self.BUILDS.items():
+            with self.subTest(env), tempfile.TemporaryDirectory() as tmp:
+                build = Path(tmp)
+                flags = self.config.get("env:%s" % env, "build_flags")
+                self.assertEqual(self.config.get("env:%s" % env, "custom_asset_set", "default"), asset_set)
+                _run_gzip_fsdata(_BoardEnv(DATA, build, ROOT, flags, custom_asset_set=asset_set))
+                stage = build / "fsdata_gz"
+                pages = sorted(stage.glob("*.html.gz"))
+                self.assertGreater(len(pages), 10)
+                for page in pages:
+                    with gzip.open(page, "rt", encoding="utf-8") as fh:
+                        html = fh.read()
+                    self.assertNotIn("PA:INCLUDE", html, page.name)
+                    if page.name == "index.html.gz":
+                        for block in kernel_blocks:
+                            self.assertIn(block, html, "the kernel's style and script are staged as written")
+                self.assertEqual(
+                    (stage / "console_help.txt").read_bytes(),
+                    (DATA / "console_help.txt").read_bytes(),
+                    "console_help.txt is read at an offset, so it is staged raw",
+                )
+        self.assertEqual({p.name: p.read_bytes() for p in DATA.glob("*.html")}, sources)
+
+
 if __name__ == "__main__":
     unittest.main()
