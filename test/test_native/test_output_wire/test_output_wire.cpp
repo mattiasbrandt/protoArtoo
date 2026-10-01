@@ -13,6 +13,7 @@
 #include <unity.h>
 
 #include "output_wire.h"
+#include "servo_backend.h"  // boardOutputAddress(), boardOutputIndexOf()
 
 void setUp() {}
 void tearDown() {}
@@ -109,19 +110,17 @@ void test_a_light_never_lets_go_and_a_servo_lets_go_at_its_time() {
     TEST_ASSERT_EQUAL_UINT16(SERVO_RELEASE_MS_NEVER, outputWireReleaseAfterMs(light));
 }
 
-// One mapping: armId i is BOARD_OUTPUTS index i, and both directions of the
-// armId <-> Output Address bridge agree with the table's channel for it.
-void test_arm_id_index_and_address_are_one_mapping() {
+// One mapping: the board index these questions take and the Output Address the
+// servo path speaks (#444) are the same Output read two ways, in both
+// directions, and the dome ESC's channel is neither.
+void test_board_index_and_address_are_one_mapping() {
     for (size_t index = 0; index < BOARD_OUTPUT_COUNT; ++index) {
-        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[index].channel,
-                                servo_arm_id_to_ledc_channel((uint8_t)index));
-        uint8_t armId = 0xEE;
-        TEST_ASSERT_TRUE(servo_ledc_channel_to_arm_id(BOARD_OUTPUTS[index].channel, &armId));
-        TEST_ASSERT_EQUAL_UINT8(index, armId);
+        const ServoOutputAddress output = boardOutputAddress(index);
+        TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUTS[index].channel, output.channel);
+        TEST_ASSERT_EQUAL(index, boardOutputIndexOf(output));
     }
-    uint8_t untouched = 0xEE;
-    TEST_ASSERT_FALSE(servo_ledc_channel_to_arm_id(LEDC_CH_DOME, &untouched));
-    TEST_ASSERT_EQUAL_UINT8(0xEE, untouched);
+    TEST_ASSERT_EQUAL(BOARD_OUTPUT_COUNT,
+                      boardOutputIndexOf({SERVO_DRIVER_LEDC, (uint8_t)LEDC_CH_DOME}));
 }
 
 int main() {
@@ -131,6 +130,6 @@ int main() {
     RUN_TEST(test_an_unticked_strip_leaves_neither_side_driving_the_pin);
     RUN_TEST(test_an_index_past_the_table_answers_no);
     RUN_TEST(test_a_light_never_lets_go_and_a_servo_lets_go_at_its_time);
-    RUN_TEST(test_arm_id_index_and_address_are_one_mapping);
+    RUN_TEST(test_board_index_and_address_are_one_mapping);
     return UNITY_END();
 }

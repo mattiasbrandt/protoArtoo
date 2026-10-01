@@ -28,15 +28,15 @@
 #include "console_module.h"               // ConsoleCommandSource, ConsoleRecordSink
 #include "console_args.h"                 // ConsoleArgs, consoleArgsFind(), schema validation
 #include "console_catalog.h"              // ConsoleCatalogEntry, consoleCatalogFindByName()
-#include "api_servo.h"                    // parseArmId(), servoSubmitCommand(), ServoSubmitOutcome
+#include "api_servo.h"                    // servoParseTarget(), servoSubmitCommand(), ServoSubmitOutcome
 #include "ledc_pwm.h"                     // SERVO_PULSE_MIN_US/MAX_US
 
 // servo.action.open/close/set-position/stop/nudge: target=<the running
 // board's label for an Output[|both]> - target=arm3 or target="ARM3" on the
 // Artoo PCB, target=gpio49 or target="GPIO 49" on the FireBeetle 2, case and
 // spaces set aside (include/board_outputs.h, ADR 0033 Amendment 2026-09-19).
-// set-position also carries position_us=<500..2500>. parseArmId() and
-// servoSubmitCommand() (include/api_servo.h) are the SAME target<->id mapping
+// set-position also carries position_us=<500..2500>. servoParseTarget() and
+// servoSubmitCommand() (include/api_servo.h) are the SAME word<->Output mapping
 // and the SAME queue submission handleServoPost() uses, reused verbatim - the
 // ADR 0036 Commit Step beside that handler.
 //
@@ -54,8 +54,8 @@
 // wiring does NOT change, because they are firmware behaviour on a path the
 // web UI shares (registry/coordinator decision, not this ticket's to make):
 // target=both only broadcasts to the first two Outputs, never the other
-// three (ServoCommand::armId's own field comment, include/robot_state.h;
-// src/tasks/servo_task.cpp:353,367,387); and "stop" does not hold position at all -
+// three (SERVO_OUTPUT_BOTH_ARMS, include/servo_output_address.h; ServoTask's
+// processCommand()); and "stop" does not hold position at all -
 // api_servo.cpp's parseAction() maps it to SERVO_CMD_POSITION at
 // SERVO_PULSE_NEUTRAL_US (there is no SERVO_CMD_STOP in the enum), so it
 // drives the servo to neutral like set-position with a fixed pulse width,
@@ -70,9 +70,10 @@
 // token alone cannot say whether a restart or Wiring is what drives it. Called
 // last, just before the send, so a malformed line still gets its own answer.
 static bool consoleRefusedWhileUndriven(uint32_t requestId, const char* operationName,
-                                        int16_t armId, const ConsoleRecordSink* sink) {
+                                        ServoOutputAddress output,
+                                        const ConsoleRecordSink* sink) {
     char undriven[96] = {};
-    if (!servoOutputUndriven(armId, undriven, sizeof(undriven))) {
+    if (!servoOutputUndriven(output, undriven, sizeof(undriven))) {
         return false;
     }
     if (sink->onRecordBegin) {
@@ -107,12 +108,12 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
 
     // Schema already confirmed "target" names one of the running board's
     // Outputs or `both` (consoleParamValueNamesOutput(), include/
-    // console_args.h), through the same boardOutputForWord() parseArmId()
-    // reads; parseArmId() can only fail here on a disagreement between the
-    // two - defensive, the same "reparse after schema" precedent
+    // console_args.h), through the same boardOutputForWord() servoParseTarget()
+    // reads; servoParseTarget() can only fail here on a disagreement between
+    // the two - defensive, the same "reparse after schema" precedent
     // drive.action.move set (include/console_direct_action_drive.h).
-    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
-    if (armId < 0) {
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    if (!servoParseTarget(consoleArgsFind(args, "target"), &output)) {
         consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
         return;
     }
@@ -135,13 +136,13 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
     // A Find by Moving run's nudge or release on a free Output is not refused
     // for being undriven: ServoTask takes that Output for the run (#411), the
     // same exception POST /api/servo makes.
-    if (!servoCommandIsARunsOnAFreeOutput(armId, type) &&
-        consoleRefusedWhileUndriven(requestId, operationName, armId, sink)) {
+    if (!servoCommandIsARunsOnAFreeOutput(output, type) &&
+        consoleRefusedWhileUndriven(requestId, operationName, output, sink)) {
         return;
     }
 
     ServoSubmitOutcome outcome =
-        servoSubmitCommand((uint8_t)armId, type, positionUs, consoleCommandSourceFor(source));
+        servoSubmitCommand(output, type, positionUs, consoleCommandSourceFor(source));
     if (!outcome.ok) {
         if (sink->onRecordResult) {
             sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
@@ -247,19 +248,19 @@ static void consoleExecuteServoStop(uint32_t requestId, const char* operationNam
     }
 
     // Same "reparse after schema" precedent consoleExecuteServoCommand()
-    // above documents: parseArmId() can only fail here on a disagreement
+    // above documents: servoParseTarget() can only fail here on a disagreement
     // between the catalog's own enum and its accepted set.
-    int16_t armId = parseArmId(consoleArgsFind(args, "target"));
-    if (armId < 0) {
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    if (!servoParseTarget(consoleArgsFind(args, "target"), &output)) {
         consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
         return;
     }
 
-    if (consoleRefusedWhileUndriven(requestId, operationName, armId, sink)) {
+    if (consoleRefusedWhileUndriven(requestId, operationName, output, sink)) {
         return;
     }
 
-    ServoSubmitOutcome outcome = servoSubmitCommand((uint8_t)armId, SERVO_CMD_POSITION,
+    ServoSubmitOutcome outcome = servoSubmitCommand(output, SERVO_CMD_POSITION,
                                                      SERVO_PULSE_NEUTRAL_US,
                                                      consoleCommandSourceFor(source));
     if (!outcome.ok) {

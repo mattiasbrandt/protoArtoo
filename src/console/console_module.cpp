@@ -85,7 +85,7 @@
                                  // four mood-category words (sound.config.mood-category-map)
 #include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
                                // executor
-#include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0036 Commit Step
+#include "api_servo.h"         // servoParseTarget(), servoSubmitCommand() - the ADR 0036 Commit Step
                                // beside handleServoPost() (#221 remainder), reused verbatim by
                                // servo.action.open/close/set-position below
 #include "ledc_pwm.h"          // SERVO_PULSE_MIN_US/MAX_US - the same pulse-width bounds

@@ -6,7 +6,7 @@
 //
 // PRECONDITION: GET /api/status says the estop is LATCHED, and at least one
 // Output is enabled in ServoTask's sense - switchable, ticked wired, its wire
-// carrying no light (src/tasks/servo_task.cpp isArmEnabled; releaseAllOutputs
+// carrying no light (src/tasks/servo_task.cpp isOutputEnabled; releaseAllOutputs
 // releases exactly those). NOT ASSESSED otherwise. Never releases the estop.
 // Writes nothing.
 //

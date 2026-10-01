@@ -71,10 +71,10 @@
 //   - POST /api/servo hold/release: a press takes the Output, `refresh=1` only
 //     refreshes a hold that stands and is dropped otherwise, and a hold nobody
 //     refreshes for SERVO_HOLD_EXPIRY_MS (3000, include/config.h) goes limp with
-//     `limp: "expiry"` (include/servo_hold.h, src/tasks/servo_task.cpp holdArm).
+//     `limp: "expiry"` (include/servo_hold.h, src/tasks/servo_task.cpp holdOutput).
 //   - POST /api/estop latches and releases every ENABLED Output with
 //     `limp: "estop"` (releaseAllOutputs, include/servo_halt.h). Enabled is the
-//     wired tick on a row that carries no light (isArmEnabled's lit mask). A
+//     wired tick on a row that carries no light (isOutputEnabled's lit mask). A
 //     status is pushed on the first trigger only (src/failsafe_gate.cpp
 //     failsafeTrigger, requestStatusBroadcastNow); a repeat is idempotent.
 //   - POST /api/estop/clear releases the latch and pushes a status only when

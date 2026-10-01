@@ -80,7 +80,7 @@
 #include "sequence_pose.h"                // sequencePoseRefusal()
 #include "api_drive.h"                    // executeManualCommand()
 #include "api_servo.h"                    // servoOutputUndriven()
-#include "marcduino_helpers.h"            // marcduino_panel_command_arm_id()
+#include "marcduino_helpers.h"            // marcduino_panel_command_output()
 #include "seq_store.h"                    // seqStoreDelete()
 #include "seq_store_index.h"              // seqStoreIndexFind()
 
@@ -199,7 +199,7 @@ static void consoleExecuteDomeSendCommand(uint32_t requestId, const char* operat
         // console_direct_action_servo.h): the reason alone cannot say whether a
         // restart or Wiring is what would drive it.
         char undriven[96] = {};
-        servoOutputUndriven(marcduino_panel_command_arm_id(command), undriven, sizeof(undriven));
+        servoOutputUndriven(marcduino_panel_command_output(command), undriven, sizeof(undriven));
         if (sink->onRecordBegin) {
             sink->onRecordBegin(requestId, operationName);
         }

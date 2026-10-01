@@ -39,7 +39,8 @@
 //
 // Pure apart from the three verbs, which name the LEDC driver's functions
 // (src/drivers/ledc_pwm.cpp): no config cache, no lock, no heap. The mapping
-// half compiles in the native build.
+// half is constexpr, so a slot known at compile time costs a reader nothing,
+// and compiles in the native build.
 // =============================================================================
 #pragma once
 
@@ -105,7 +106,7 @@ static_assert(servo_backend_detail::rowsAreInDriverOrder(),
 
 // The profile for an address's driver, or nullptr for a driver this image has
 // no member for.
-inline const ServoBackendProfile* servoBackendProfileOf(ServoOutputDriver driver) {
+constexpr const ServoBackendProfile* servoBackendProfileOf(ServoOutputDriver driver) {
     return driver < SERVO_DRIVER_COUNT ? &kServoBackends[driver] : nullptr;
 }
 
@@ -122,17 +123,17 @@ inline const ServoBackendProfile* servoBackendProfileOf(ServoOutputDriver driver
 
 // The Output Address of BOARD_OUTPUTS[boardIndex], or SERVO_OUTPUT_NONE past
 // the table.
-inline ServoOutputAddress boardOutputAddress(size_t boardIndex) {
+constexpr ServoOutputAddress boardOutputAddress(size_t boardIndex) {
     if (boardIndex >= BOARD_OUTPUT_COUNT) {
         return SERVO_OUTPUT_NONE;
     }
-    return {SERVO_DRIVER_LEDC, BOARD_OUTPUTS[boardIndex].channel};
+    return ServoOutputAddress{SERVO_DRIVER_LEDC, BOARD_OUTPUTS[boardIndex].channel};
 }
 
 // Which of the board's Outputs this address is, or BOARD_OUTPUT_COUNT when it
 // is none of them: another driver's address, LEDC_CH_DOME (a brushless ESC,
 // not an Output), SERVO_OUTPUT_BOTH_ARMS (two of them) or SERVO_OUTPUT_NONE.
-inline size_t boardOutputIndexOf(ServoOutputAddress output) {
+constexpr size_t boardOutputIndexOf(ServoOutputAddress output) {
     if (output.driver != SERVO_DRIVER_LEDC) {
         return BOARD_OUTPUT_COUNT;
     }
@@ -158,7 +159,7 @@ static_assert(SERVO_OUTPUT_SLOT_COUNT <= 32, "a slot mask is a uint32_t");
 // The slot an Output Address is driven from, or SERVO_OUTPUT_SLOT_NONE for an
 // address no member of this image drives - which is also what the two
 // sentinels answer, so a caller never has to test for them first.
-inline uint8_t servoOutputSlotOf(ServoOutputAddress output) {
+constexpr uint8_t servoOutputSlotOf(ServoOutputAddress output) {
     switch (output.driver) {
         case SERVO_DRIVER_LEDC: {
             const size_t index = boardOutputIndexOf(output);
@@ -170,7 +171,7 @@ inline uint8_t servoOutputSlotOf(ServoOutputAddress output) {
 }
 
 // The Output Address a slot drives, or SERVO_OUTPUT_NONE past the last one.
-inline ServoOutputAddress servoOutputSlotAddress(uint8_t slot) {
+constexpr ServoOutputAddress servoOutputSlotAddress(uint8_t slot) {
     return slot < BOARD_OUTPUT_COUNT ? boardOutputAddress(slot) : SERVO_OUTPUT_NONE;
 }
 

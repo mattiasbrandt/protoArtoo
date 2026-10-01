@@ -562,7 +562,7 @@ struct SeqGestureRunEntry {
 struct SeqGestureRun {
     SeqGestureRunEntry g[SEQ_GESTURE_RUNS_MAX];
     uint32_t dueMs;     // the earliest the next BODY move may start
-    uint8_t  awaitArm;  // SEQ_BULK_CENTRE_NO_AWAIT when nothing is awaited
+    ServoOutputAddress awaitOutput;  // SERVO_OUTPUT_NONE when nothing is awaited
     uint16_t sent;
     uint16_t skipped;
 };
@@ -570,7 +570,7 @@ struct SeqGestureRun {
 inline void sequenceGestureEnd(SeqGestureRun* run) {
     if (run == nullptr) return;
     for (SeqGestureRunEntry& e : run->g) e.active = false;
-    run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    run->awaitOutput = SERVO_OUTPUT_NONE;
 }
 
 inline bool sequenceGestureActive(const SeqGestureRun& run) {
@@ -636,7 +636,7 @@ inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
 // The next thing due at nowMs, or false when nothing may go yet. A dome pass
 // goes as soon as it is due. A body move waits for the moment its spread puts
 // it at AND for the pace: `awaitedMoving` is whether ServoTask still reports
-// the Output the last body move started (run->awaitArm) as moving, and the
+// the Output the last body move started (run->awaitOutput) as moving, and the
 // spacing after it must have run. The earliest-due item goes first.
 //
 // NOTHING GOES OUT AT OR AFTER THE FIRING RUN'S END STEP (#438). A Gesture
@@ -651,7 +651,7 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
     for (SeqGestureRunEntry& e : run->g) {
         if (e.active && e.endAtMs != 0 && (int32_t)(nowMs - e.endAtMs) >= 0) e.active = false;
     }
-    const bool bodyMayGo = sequencePaceAwaitDone(&run->awaitArm, awaitedMoving) &&
+    const bool bodyMayGo = sequencePaceAwaitDone(&run->awaitOutput, awaitedMoving) &&
                            (int32_t)(nowMs - run->dueMs) >= 0;
     int8_t best = -1;
     uint32_t bestAt = 0;
@@ -688,14 +688,15 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
 // was reported and passed over and holds nothing off. A dome pass holds no
 // body move off: the dome's motion is the dome's.
 inline void sequenceGestureDone(SeqGestureRun* run, const SeqGestureNext& next, uint32_t nowMs,
-                                bool started, uint16_t throwMs, uint8_t armId) {
+                                bool started, uint16_t throwMs, ServoOutputAddress output) {
     if (run == nullptr || next.entry >= SEQ_GESTURE_RUNS_MAX) return;
     SeqGestureRunEntry& e = run->g[next.entry];
     if (!e.active) return;
     if (started) run->sent++;
     else run->skipped++;
     if (!e.dome) {
-        sequencePaceMotion(&run->dueMs, &run->awaitArm, nowMs, started, true, true, throwMs, armId);
+        sequencePaceMotion(&run->dueMs, &run->awaitOutput, nowMs, started, true, true, throwMs,
+                           output);
         e.k++;
         if (e.k < seqGesturePassMoves(e.spread, e.n)) return;
         e.k = 0;

@@ -63,7 +63,7 @@ void test_a_pair_with_no_distance_is_refused() {
 
 // Nothing is clamped here and nothing is narrowed: the ends were clamped onto
 // the row when they were recorded (ADR 0041) and each leg goes through
-// resolveArmPulse() on the way to the pin, so a second rule here would be the
+// resolveOutputPulse() on the way to the pin, so a second rule here would be the
 // same rule in two places. An MG90S pair outside the cautious band travels.
 void test_the_recorded_ends_are_used_as_recorded() {
     ServoTravelPlan plan = {};

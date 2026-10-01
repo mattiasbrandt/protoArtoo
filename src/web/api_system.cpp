@@ -28,7 +28,7 @@
 #include "commanded_modes.h"
 #include "config_store.h"
 #include "logging.h"
-#include "marcduino_helpers.h"  // marcduino_panel_command_arm_id()
+#include "marcduino_helpers.h"  // marcduino_panel_command_output()
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -180,7 +180,7 @@ void handleManualCommandPost(WebRequest& req) {
         // The sentence POST /api/servo refuses the same Output with (#364):
         // whether a restart, Wiring, or nothing at all would put a servo on it.
         char undriven[96] = {};
-        servoOutputUndriven(marcduino_panel_command_arm_id(rawCommand), undriven,
+        servoOutputUndriven(marcduino_panel_command_output(rawCommand), undriven,
                             sizeof(undriven));
         webSendJsonError(req, 409, undriven);
         return;

@@ -218,7 +218,7 @@ static void test_a_body_gesture_is_paced_by_the_floor_and_never_holds_the_engine
                             GESTURE_DIR_CLOCKWISE);
     static SeqGestureRun run;
     run = SeqGestureRun{};
-    run.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    run.awaitOutput = SERVO_OUTPUT_NONE;
     TEST_ASSERT_TRUE(sequenceGestureStart(&run, g, 0));
     uint32_t starts[8];
     uint8_t n = 0;
@@ -228,7 +228,7 @@ static void test_a_body_gesture_is_paced_by_the_floor_and_never_holds_the_engine
         TEST_ASSERT_FALSE(next.dome);
         starts[n++] = now;
         // A driven Output with a short throw: the Floor is what spaces them.
-        sequenceGestureDone(&run, next, now, /*started=*/true, 100, 0);
+        sequenceGestureDone(&run, next, now, /*started=*/true, 100, boardOutputAddress(0));
     }
     TEST_ASSERT_EQUAL_UINT8(4, n);
     for (uint8_t i = 1; i < n; ++i) {
@@ -289,7 +289,7 @@ static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gest
     static SeqGestureRun run;
     seqEngineInit(st);
     run = SeqGestureRun{};
-    run.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    run.awaitOutput = SERVO_OUTPUT_NONE;
     seqEngineStart(st, &e, 0);
     uint32_t latest = 0;
     *gestures = 0;
@@ -308,7 +308,8 @@ static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gest
             if (moves != nullptr) (*moves)++;
             // Paced: every move reaches ServoTask and holds the next one off by
             // the Cadence Floor, as on a droid.
-            sequenceGestureDone(&run, next, now, /*started=*/paced, 0, paced ? 0 : SEQ_BULK_CENTRE_NO_AWAIT);
+            sequenceGestureDone(&run, next, now, /*started=*/paced, 0,
+                                paced ? boardOutputAddress(0) : SERVO_OUTPUT_NONE);
         }
     }
     return latest;

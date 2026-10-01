@@ -157,6 +157,13 @@ void loadFsVersion() {
 
 }  // namespace
 
+// The board's first two Outputs' slots in ServoTask's mirror, which the status
+// document reports as arm1TargetUs / arm2TargetUs.
+constexpr uint8_t kStatusArm1Slot = servoOutputSlotOf(boardOutputAddress(0));
+constexpr uint8_t kStatusArm2Slot = servoOutputSlotOf(boardOutputAddress(1));
+static_assert(kStatusArm1Slot < SERVO_OUTPUT_SLOT_COUNT && kStatusArm2Slot < SERVO_OUTPUT_SLOT_COUNT,
+              "the status document's two arms are Outputs ServoTask drives");
+
 // The capture half of the status document: everything formatStatusJson()
 // (src/web/status_json.cpp) writes that is not a web admission counter, read
 // once, in the order this builder has always read it.
@@ -191,11 +198,16 @@ static void captureStatusJsonInputs(StatusJsonInputs* in) {
     in->speedLimitMax = cfg.drive.speedLimitMax;
     in->speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     in->stationary = robotState.stationary;
-    // The width on the pin, which is what the "Target" detail below has always
-    // reported; the commanded target of a move in progress is the Parts
-    // table's to show (captureServoOutputCommanded(), #362).
-    in->arm1TargetUs = robotState.servoCommanded[0].nowUs;
-    in->arm2TargetUs = robotState.servoCommanded[1].nowUs;
+    // The width on the pin of the board's first two Outputs, the utility arms,
+    // which is what the "Target" detail below has always reported; the
+    // commanded target of a move in progress is the Parts table's to show
+    // (captureServoOutputCommanded(), #362). Their slots in ServoTask's mirror
+    // are compile-time facts of the board's address mapping
+    // (include/servo_backend.h), so they are read here, under the lock this
+    // block holds, rather than through servoCommandedOf(): its two copies cost
+    // this builder's frame 48 B on a chain with no headroom (#444).
+    in->arm1TargetUs = robotState.servoCommanded[kStatusArm1Slot].nowUs;
+    in->arm2TargetUs = robotState.servoCommanded[kStatusArm2Slot].nowUs;
     in->lastSbus1Ms = robotState.lastSbus1Ms;
     in->lastSbus2Ms = robotState.lastSbus2Ms;
     in->sbus1LostFrameCount = robotState.sbus1LostFrameCount;

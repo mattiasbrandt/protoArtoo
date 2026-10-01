@@ -127,7 +127,7 @@
           "frames": [],
           "chain_bytes": 3184,
           "stack_bytes": 4096,
-          "note": "beginLeg -> resolveArmPulse's clamp log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf."
+          "note": "beginLeg -> legArrived's log line, an out-and-back returning -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf."
         },
         "esp32p4": {
           "env": "firebeetle2",

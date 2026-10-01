@@ -1,12 +1,15 @@
 // =============================================================================
 // src/tasks/servo_task.cpp
 //
-// ServoTask  --  LEDC PWM control for utility arm servos and spare servo outputs.
-// Handles open, close, position, nudge, travel, hold and release commands, from
-// every source, for:
-//   - ARM1 (Top/Left utility arm, GPIO 23)
-//   - ARM2 (Bottom/Right utility arm, GPIO 5)
-//   - AUX1-3 (Spare servo outputs, GPIO 19/18/32)
+// ServoTask  --  every Servo Output, from every source: open, close, position,
+// nudge, travel, hold and release.
+//
+// A command names its Output by its Output Address (#444). This task keeps one
+// state per Output it can drive, in that Output's slot (include/servo_backend.h),
+// and puts widths on pins and takes them off through the backend seam, whose
+// one member today is LEDC on the board's own GPIO Outputs - ARM1/ARM2 (the
+// utility arms) and ARM3-5 on the Artoo PCB. The ramp, the component clamp, the
+// dial's hold and both kinds of release are decided here, above the seam.
 // DOME (GPIO 25) is controlled separately as an ESC, not a servo.
 // =============================================================================
 
@@ -21,6 +24,7 @@
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "output_wire.h"  // which wires LEDC must stay off (#416)
+#include "servo_backend.h"  // slots, and the three verbs that reach a pin (#444)
 #include "robot_state.h"
 #include "servo_component_helpers.h"  // servoCompTypeToString, for the clamp note
 #include "servo_halt.h"         // when estop and Sleep Mode each let go (ADR 0043)
@@ -36,19 +40,17 @@
 static const char* TAG = "SERVO";
 
 // Boot snapshot of component toggles, captured once at startup.
-// Toggles are staged at reboot (ADR 0027); this snapshot is the stable read for the whole session.
-static bool s_arm1_enabled = false;
-static bool s_arm2_enabled = false;
-static bool s_aux1_enabled = false;
-static bool s_aux2_enabled = false;
-static bool s_aux3_enabled = false;
+// Toggles are staged at reboot (ADR 0027); this snapshot is the stable read for
+// the whole session. The wired ticks are one bit per slot (include/
+// servo_backend.h), each read from its board Output's stored tick.
+static uint32_t s_wired_at_start_mask = 0;
 static bool s_dome_enabled = false;
-// Which arms carry a light instead of a servo, one bit per armId. Captured at
+// Which Outputs carry a light instead of a servo, one bit per slot. Captured at
 // startup beside the toggles above, because what a wire carries is read once at
 // boot like every other Component Toggle (ADR 0027). A droid may have several
 // lit wires (ADR 0067, #413), which is why this is a mask and not the single
 // slot number it replaced.
-static uint8_t s_lit_arm_mask = 0;
+static uint32_t s_lit_mask = 0;
 // Whether LEDC came up at start. Only servoTaskDrivesOutput() reads it: an
 // Output on a timer that never started is driven by nothing, whatever its
 // tick says.
@@ -57,17 +59,20 @@ static bool s_ledc_ready = false;
 // -----------------------------------------------------------------------------
 // Where each output is, and the move it is part way through (ADR 0052).
 //
+// One entry per slot: s_out[slot] is the Output at servoOutputSlotAddress(slot),
+// and robotState.servoCommanded[slot] is its mirror.
+//
 // `commandedUs` is the pulse this task last put on the pin. A move starts from
 // it, so it is only trusted once this task has written something there:
 // `known` is false until then, and a move from an unknown position is a jump.
 //
 // `hold` is the calibration dial's hold on the output (ADR 0064, #364): while
 // it stands the pulse stays on until one of its two bounds fires, the builder
-// lets go, or the halt edge releases it. When s_runArm below names the arm, the
+// lets go, or the halt edge releases it. When s_runSlot below names the slot, the
 // hold is a Find by Moving run's on a FREE Output instead (include/servo_run.h,
 // #411): nothing drives that Output this boot, so while the run holds it this
-// task drives it anyway, the same two bounds let it go, and s_runArm is what
-// lets a halt, a release and a bound reach an Output isArmEnabled() says no to.
+// task drives it anyway, the same two bounds let it go, and s_runSlot is what
+// lets a halt, a release and a bound reach an Output isOutputEnabled() says no to.
 // `limp` is why there is no pulse, read only while `known` is false, so a
 // surface can say "pulses off" and "the estop let go" differently.
 //
@@ -90,7 +95,7 @@ static bool s_ledc_ready = false;
 // travel must not bump it. Everything else about the two motions is identical
 // and is deliberately not duplicated.
 // -----------------------------------------------------------------------------
-static constexpr uint8_t kArmCount = SERVO_ARM_COUNT;  // ARM1, ARM2, AUX1-3
+static constexpr uint8_t kSlotCount = SERVO_OUTPUT_SLOT_COUNT;
 
 // Out, across, back. Both planners lay out the same three legs over their own
 // two ends, which is what lets one machine drive both; the static_assert is
@@ -123,67 +128,109 @@ static struct {
     uint32_t legDwellEndMs;    // when that rest ends
     uint16_t legTargetUs[kLegCount];  // where each leg ends, from whichever planner started it
     uint8_t nudgesDone;        // mirrored to robotState; see ServoCommandedPosition
-} s_arm[kArmCount] = {};
+} s_out[kSlotCount] = {};
 
-// The one free Output a Find by Moving run holds, or SERVO_RUN_NONE (#411). One
-// index, not a flag per arm: a run holds at most one Output, and taking the
-// next lets go of this one first (takeForRun()), so two free servos energized
-// at once is not a state this task can be in. Written only on Core 1, by this
+// The slot of the one free Output a Find by Moving run holds, or SERVO_RUN_NONE
+// (#411). One index, not a flag per Output: a run holds at most one Output, and
+// taking the next lets go of this one first (takeForRun()), so two free servos
+// energized at once is not a state this task can be in. Written only on Core 1, by this
 // task; servoTaskRunHolds() reads the byte from Core 0 (include/servo_task.h).
-static uint8_t s_runArm = SERVO_RUN_NONE;
+static uint8_t s_runSlot = SERVO_RUN_NONE;
 
 // Forward declaration for functions used in static helpers below.
-static bool isArmEnabled(uint8_t armId);
+static bool isOutputEnabled(uint8_t slot);
 
 // -----------------------------------------------------------------------------
-// litArmMask()
-// Which arms carry a light rather than a servo, one bit per armId, read from
-// the Servo Output rows (ADR 0067). The mask exists to keep LEDC off a pin a
-// WS2812B may be driving, and include/output_wire.h decides which pins those
-// are - outputWirePinKeptForLight(), deliberately wider than the question
-// AuxLedTask asks, so an unticked strip ends with neither side on the pin.
-// armId is the BOARD_OUTPUTS index, so it is passed as one.
+// wiredAtStartMask() / litOutputMask()
+// The two facts the boot snapshot keeps per slot.
+//
+// The wired tick is stored per board Output (include/board_output_enabled.h),
+// so a slot reads its board Output's tick; an Output that is not one of the
+// board's has no tick and is not wired.
+//
+// The lit mask says which Outputs carry a light rather than a servo, read from
+// the Servo Output rows (ADR 0067). It exists to keep LEDC off a pin a WS2812B
+// may be driving, and include/output_wire.h decides which pins those are -
+// outputWirePinKeptForLight(), deliberately wider than the question AuxLedTask
+// asks, so an unticked strip ends with neither side on the pin. It asks by
+// board index, because a light only goes on the board's own wires.
 // -----------------------------------------------------------------------------
-static uint8_t litArmMask(const SystemConfig& system) {
-    uint8_t mask = 0;
-    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
+static uint32_t wiredAtStartMask(const SystemConfig& system) {
+    uint32_t mask = 0;
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        const size_t boardIndex = boardOutputIndexOf(servoOutputSlotAddress(slot));
+        if (boardIndex < BOARD_OUTPUT_COUNT && boardOutputIsWired(system, boardIndex)) {
+            mask |= 1u << slot;
+        }
+    }
+    return mask;
+}
+
+static uint32_t litOutputMask(const SystemConfig& system) {
+    uint32_t mask = 0;
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        const ServoOutputAddress output = servoOutputSlotAddress(slot);
+        const size_t boardIndex = boardOutputIndexOf(output);
         const OutputWireInputs in = {
-            boardOutputIsWired(system, armId),
-            configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC,
-                                                servo_arm_id_to_ledc_channel(armId)),
+            boardIndex < BOARD_OUTPUT_COUNT && boardOutputIsWired(system, boardIndex),
+            configCacheReadServoOutputComponent(output.driver, output.channel),
         };
-        if (outputWirePinKeptForLight(in, armId)) {
-            mask |= (uint8_t)(1u << armId);
+        if (outputWirePinKeptForLight(in, boardIndex)) {
+            mask |= 1u << slot;
         }
     }
     return mask;
 }
 
 // -----------------------------------------------------------------------------
-// isArmEnabled()
-// Check feature toggle for a given armId using the boot-time snapshot.
+// isOutputEnabled()
+// Check feature toggle for a given slot using the boot-time snapshot.
 // Toggles are read once at startup and never re-checked per iteration.
-// armId 255 (broadcast) is allowed only if both ARM1 and ARM2 are enabled.
 // An output whose wire carries a Light Type is treated as unavailable to avoid
 // pin ownership conflicts: a WS2812B's signal line and a servo's PWM cannot
-// share a pin.
+// share a pin. SERVO_OUTPUT_SLOT_NONE - an address no member drives - is never
+// enabled.
 // Per ADR 0027, this function gates all servo operations on the component
 // toggle snapshot captured at startup.
 // -----------------------------------------------------------------------------
-static bool isArmEnabled(uint8_t armId) {
-    return servo_arm_enabled(armId, s_arm1_enabled, s_arm2_enabled, s_aux1_enabled, s_aux2_enabled,
-                             s_aux3_enabled, s_lit_arm_mask);
+static bool isOutputEnabled(uint8_t slot) {
+    return servo_output_enabled(slot, s_wired_at_start_mask, s_lit_mask);
 }
 
 // -----------------------------------------------------------------------------
-// isArmLive()
-// Whether this task drives the arm right now: enabled since start, or a free
+// isTargetEnabled() / bothArmsSlot() / wiredAtStart()
+// A command's target against the boot snapshot: one Output's isOutputEnabled(),
+// or for `both` (SERVO_OUTPUT_BOTH_ARMS) both arms wired at start, each then
+// driven through its own slot and its own light check (servo_target_enabled(),
+// include/servo_helpers.h). wiredAtStart() is the tick alone, light or none.
+//
+// isTargetEnabled() is noinline, deliberately: processCommand() is forced into
+// servoTask()'s frame, and inlined there its two walks of the board's table for
+// `both` grew that root frame by 32 B and the walked chain past its recorded
+// figure (ADR 0040, #444). Out of line it is a leaf of its own, far shallower
+// than the route that sets the chain.
+// -----------------------------------------------------------------------------
+static bool __attribute__((noinline)) isTargetEnabled(ServoOutputAddress output) {
+    return servo_target_enabled(output, s_wired_at_start_mask, s_lit_mask);
+}
+
+static uint8_t bothArmsSlot(uint8_t which) {
+    return servoOutputSlotOf(boardOutputAddress(which));
+}
+
+static bool wiredAtStart(uint8_t slot) {
+    return servo_output_enabled(slot, s_wired_at_start_mask, /*lit_mask=*/0);
+}
+
+// -----------------------------------------------------------------------------
+// isOutputLive()
+// Whether this task drives the Output right now: enabled since start, or a free
 // Output a Find by Moving run has taken (#411). What writes a pulse and what
 // takes one off both ask this, so a run's Output is driven and let go by the
 // same paths as any other - the estop's release included.
 // -----------------------------------------------------------------------------
-static bool isArmLive(uint8_t armId) {
-    return servoRunArmLive(isArmEnabled(armId), armId < kArmCount && s_runArm == armId);
+static bool isOutputLive(uint8_t slot) {
+    return servoRunOutputLive(isOutputEnabled(slot), slot < kSlotCount && s_runSlot == slot);
 }
 
 // -----------------------------------------------------------------------------
@@ -194,27 +241,28 @@ static bool isArmLive(uint8_t armId) {
 // carries now. Values only, no row copy: this runs on the command path of the
 // Core 1 loop, whose chain is a measured constant (ADR 0040).
 // -----------------------------------------------------------------------------
-static ServoRunTakeInputs runTakeInputs(uint8_t armId) {
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+static ServoRunTakeInputs runTakeInputs(uint8_t slot) {
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoRunTakeInputs in = {};
-    in.drivenNow = s_ledc_ready && isArmEnabled(armId);
-    in.wiredAtStart = servoTaskWiredAtStart(armId);
-    in.litAtStart = (s_lit_arm_mask & (uint8_t)(1u << armId)) != 0;
+    in.drivenNow = s_ledc_ready && isOutputEnabled(slot);
+    in.wiredAtStart = wiredAtStart(slot);
+    in.litAtStart = (s_lit_mask & (1u << slot)) != 0;
     in.lightNow = outputWirePinKeptForLight(
-        {false, configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, channel)}, armId);
-    in.partCount = configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, channel);
+        {false, configCacheReadServoOutputComponent(output.driver, output.channel)},
+        boardOutputIndexOf(output));
+    in.partCount = configCacheServoOutputPartCountAt(output.driver, output.channel);
     in.ledcReady = s_ledc_ready;
     return in;
 }
 
-static bool mayTakeForRun(uint8_t armId) {
-    return armId < kArmCount && servoRunMayTake(runTakeInputs(armId));
+static bool mayTakeForRun(uint8_t slot) {
+    return slot < kSlotCount && servoRunMayTake(runTakeInputs(slot));
 }
 
 // -----------------------------------------------------------------------------
-// resolveArmPulse()
-// Which channel an arm is on, and the pulse width it may actually be driven to.
-// Returns false (no log, nothing to write) if the arm is not live (isArmLive()).
+// resolveOutputPulse()
+// The pulse width an Output may actually be driven to. Returns false (no log,
+// nothing to write) if the Output is not live (isOutputLive()).
 // Per ADR 0027, disabled channels never PWM-commanded and never update robotState.
 //
 // The pulse width is bounded by what the fitted component takes before it
@@ -228,15 +276,14 @@ static bool mayTakeForRun(uint8_t armId) {
 // never with the row: this frame is on ServoTask's measured chain (ADR 0040) and
 // a ServoOutputRow is 70 B to answer a question whose answer is one number.
 // -----------------------------------------------------------------------------
-static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut,
-                            uint16_t* commandedOut) {
-    if (!isArmLive(armId)) {
+static bool resolveOutputPulse(uint8_t slot, uint16_t pulseUs, uint16_t* commandedOut) {
+    if (!isOutputLive(slot)) {
         return false;
     }
 
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
-    if (channel >= LEDC_CH_MAX || armId >= kArmCount) {
-        PA_LOG_WARN(TAG, "resolveArmPulse: invalid armId %d", armId);
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
+    if (slot >= kSlotCount) {
+        PA_LOG_WARN(TAG, "resolveOutputPulse: invalid slot %d", slot);
         return false;
     }
 
@@ -245,13 +292,12 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
     // second flag to tell them apart.
     ServoComponentType component = SERVO_COMP_NONE;
     const uint16_t commandedUs =
-        configCacheClampServoOutputPulse(SERVO_DRIVER_LEDC, channel, pulseUs, &component);
+        configCacheClampServoOutputPulse(output.driver, output.channel, pulseUs, &component);
     if (commandedUs != pulseUs) {
         PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - sending %d us instead",
-                    armId + 1, pulseUs, servoCompTypeToString(component), commandedUs);
+                    slot + 1, pulseUs, servoCompTypeToString(component), commandedUs);
     }
 
-    *channelOut = channel;
     *commandedOut = commandedUs;
     return true;
 }
@@ -266,7 +312,7 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 // target: the move ends where it settles (ramp.settleUs), and that is the
 // number a builder asked for. `pulsing` is `known`: an output
 // only becomes known by this task putting a pulse on it -- the neutral pulse at
-// init, or a write -- and only releaseArm() takes one away (pulses off, a hold
+// init, or a write -- and only releaseOutput() takes one away (pulses off, a hold
 // bound, or the halt edge; ADR 0043, ADR 0064), which is where `known` is
 // cleared and `limp` says why.
 //
@@ -277,32 +323,32 @@ static bool resolveArmPulse(uint8_t armId, uint16_t pulseUs, uint8_t* channelOut
 // copy into robotState under robotStateMux, like every robotState write, and
 // allocates nothing.
 // -----------------------------------------------------------------------------
-static void publishCommanded(uint8_t armId) {
+static void publishCommanded(uint8_t slot) {
     const ServoCommandedPosition commanded = {
-        s_arm[armId].commandedUs,
-        s_arm[armId].moving ? s_arm[armId].ramp.settleUs : s_arm[armId].commandedUs,
-        s_arm[armId].known,
-        s_arm[armId].nudgesDone,
+        s_out[slot].commandedUs,
+        s_out[slot].moving ? s_out[slot].ramp.settleUs : s_out[slot].commandedUs,
+        s_out[slot].known,
+        s_out[slot].nudgesDone,
         // `held` is the dial's (GET /api/servo/outputs): a run's hold on a free
         // Output is not a dial holding it.
-        s_arm[armId].hold.held && s_runArm != armId,
-        s_arm[armId].limp,
-        s_arm[armId].moving,
+        s_out[slot].hold.held && s_runSlot != slot,
+        s_out[slot].limp,
+        s_out[slot].moving,
     };
     taskENTER_CRITICAL(&robotStateMux);
-    robotState.servoCommanded[armId] = commanded;
+    robotState.servoCommanded[slot] = commanded;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // -----------------------------------------------------------------------------
 // endLeg() / endMove()
 // The one place a move stops being in progress, whatever stops it: arrival, a
-// later command on the same arm, or the halt edge.
+// later command on the same Output, or the halt edge.
 //
 // It also ends the Output Release the last arrival left pending (#443). Every
-// command that moves the output ends the move in progress first (driveArmTo(),
+// command that moves the output ends the move in progress first (driveOutputTo(),
 // beginNudge(), beginTravel(), takeForRun()), and so does every way the pulse
-// comes off (releaseArm()), so a pending release is cancelled by exactly the
+// comes off (releaseOutput()), so a pending release is cancelled by exactly the
 // things ADR 0043 says cancel it, and never fires later on a move it did not
 // belong to. An arrival re-arms it straight after (armReleaseOnArrival()). A
 // command refused before it moves anything - a nudge outside the cautious band,
@@ -320,22 +366,22 @@ static void publishCommanded(uint8_t armId) {
 // discovery run somewhere else on the droid onto its next output. The callers
 // publish; this only changes what they will publish.
 // -----------------------------------------------------------------------------
-static void endLeg(uint8_t armId) {
-    if (s_arm[armId].legNo == 0) {
+static void endLeg(uint8_t slot) {
+    if (s_out[slot].legNo == 0) {
         return;
     }
-    const bool wasNudge = s_arm[armId].legIsNudge;
-    s_arm[armId].legNo = 0;
-    s_arm[armId].legDwelling = false;
+    const bool wasNudge = s_out[slot].legIsNudge;
+    s_out[slot].legNo = 0;
+    s_out[slot].legDwelling = false;
     if (wasNudge) {
-        s_arm[armId].nudgesDone++;
+        s_out[slot].nudgesDone++;
     }
 }
 
-static void endMove(uint8_t armId) {
-    s_arm[armId].moving = false;
-    servoReleaseCancel(&s_arm[armId].release);
-    endLeg(armId);
+static void endMove(uint8_t slot) {
+    s_out[slot].moving = false;
+    servoReleaseCancel(&s_out[slot].release);
+    endLeg(slot);
 }
 
 // -----------------------------------------------------------------------------
@@ -351,30 +397,31 @@ static void endMove(uint8_t armId) {
 // Nothing is armed while a hold stands (servoReleaseArm()). For the dial that
 // is ADR 0064's suppression: the dial's two bounds end the hold instead. A Find
 // by Moving run's hold on a free Output is left to the same two bounds for the
-// same reason, and every hold ends by releaseArm(), so nothing is owed after it.
+// same reason, and every hold ends by releaseOutput(), so nothing is owed after it.
 //
 // Called after endMove(), which cancelled whatever the move before owed.
 // -----------------------------------------------------------------------------
-static void armReleaseOnArrival(uint8_t armId, uint32_t nowMs) {
-    servoReleaseArm(&s_arm[armId].release, nowMs,
-                    configCacheReadServoOutputReleaseMs(SERVO_DRIVER_LEDC,
-                                                        servo_arm_id_to_ledc_channel(armId)),
-                    s_arm[armId].hold.held);
+static void armReleaseOnArrival(uint8_t slot, uint32_t nowMs) {
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
+    servoReleaseArm(&s_out[slot].release, nowMs,
+                    configCacheReadServoOutputReleaseMs(output.driver, output.channel),
+                    s_out[slot].hold.held);
 }
 
 // -----------------------------------------------------------------------------
-// writeArmPulse()
-// Put one width on the pin and say so. The width has already been through
-// resolveArmPulse(); this is the write and nothing else.
+// writeOutputPulse()
+// Put one width on the pin, through the Output's backend (include/
+// servo_backend.h), and say so. The width has already been through
+// resolveOutputPulse(); this is the write and nothing else.
 //
 // What is written is what robotState then reports, because the position a
 // status reader sees has to be the pulse the pin is actually holding -- part
 // way through a ramp too.
 // -----------------------------------------------------------------------------
-static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
-    ledcPwmSetPulseWidth(channel, pulseUs);
-    s_arm[armId].commandedUs = pulseUs;
-    s_arm[armId].known = true;
+static void writeOutputPulse(uint8_t slot, uint16_t pulseUs) {
+    servoBackendWrite(servoOutputSlotAddress(slot), pulseUs);
+    s_out[slot].commandedUs = pulseUs;
+    s_out[slot].known = true;
 
     // The commanded width, and only that. There was an armOpen[] bit beside it
     // deriving "open" from `commandedUs > SERVO_PULSE_NEUTRAL_US`, which is
@@ -382,18 +429,18 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
     // when open is the lower number (ADR 0041). It has gone; anything wanting
     // to say which end this output is at compares the width against the pair on
     // its row, where the direction is recorded.
-    publishCommanded(armId);
+    publishCommanded(slot);
 }
 
 // -----------------------------------------------------------------------------
-// driveArmTo()
-// Send an arm to a pulse width at the pace its Output's Motion Profile sets.
+// driveOutputTo()
+// Send an Output to a pulse width at the pace its Motion Profile sets.
 //
 // The time comes from the row and from nowhere else: a ServoCommand carries no
 // duration, so a Body Step, an RC toggle and a browser move cannot disagree
 // about how long a door takes (ADR 0049, ADR 0052). Where the profile cannot
 // plan a move -- no row, an unmeasured output, no known starting point -- the
-// arm snaps, which is exactly what every move did before the profile existed,
+// Output snaps, which is exactly what every move did before the profile existed,
 // and is also the first move after a release (#364): a released output is no
 // longer `known`, so there is no position to ramp from.
 //
@@ -407,42 +454,42 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
 // A Gesture's move may carry its own throw time and easing (`throwMs`,
 // `easingPlusOne`, both 0 for the Output's own), which apply to this one move
 // and never to the row (servoMotionOverride(), ADR 0049).
-static void driveArmTo(uint8_t armId, uint16_t pulseUs, uint16_t throwMs = 0,
-                       uint8_t easingPlusOne = 0) {
-    uint8_t channel = LEDC_CH_MAX;
+static void driveOutputTo(uint8_t slot, uint16_t pulseUs, uint16_t throwMs = 0,
+                          uint8_t easingPlusOne = 0) {
     uint16_t targetUs = 0;
-    if (!resolveArmPulse(armId, pulseUs, &channel, &targetUs)) {
+    if (!resolveOutputPulse(slot, pulseUs, &targetUs)) {
         return;
     }
-    // Whatever the arm was doing is over: a new command replaces a ramp part
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
+    // Whatever the Output was doing is over: a new command replaces a ramp part
     // way through, and a nudge part way through, alike.
-    endMove(armId);
+    endMove(slot);
 
     // A snap arrives in the frame it is written, so its release counts from
     // here. The boot pass's move home is always one - nothing is `known` at
     // boot - so a row set to go home and hold holds for its release time and
     // lets go, like any arrival (operator, 2026-09-30 on #443).
     ServoMotionProfile profile = {};
-    if (!s_arm[armId].known ||
-        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile)) {
-        writeArmPulse(armId, channel, targetUs);
-        armReleaseOnArrival(armId, millis());
+    if (!s_out[slot].known ||
+        !configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile)) {
+        writeOutputPulse(slot, targetUs);
+        armReleaseOnArrival(slot, millis());
         return;
     }
 
     servoMotionOverride(&profile, throwMs, easingPlusOne);
     const ServoMotionRamp ramp =
-        servoMotionPlan(s_arm[armId].commandedUs, targetUs, profile, millis());
+        servoMotionPlan(s_out[slot].commandedUs, targetUs, profile, millis());
     if (ramp.durationMs == 0) {
-        writeArmPulse(armId, channel, targetUs);
-        armReleaseOnArrival(armId, millis());
+        writeOutputPulse(slot, targetUs);
+        armReleaseOnArrival(slot, millis());
         return;
     }
-    s_arm[armId].ramp = ramp;
-    s_arm[armId].moving = true;
+    s_out[slot].ramp = ramp;
+    s_out[slot].moving = true;
     // Nothing is written until the next frame, but the move already has a
     // target, and that is what a surface shows beside where the output stands.
-    publishCommanded(armId);
+    publishCommanded(slot);
 }
 
 // -----------------------------------------------------------------------------
@@ -457,7 +504,7 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs, uint16_t throwMs = 0,
 // and a body view whose tab was closed mid-press would leave a door standing
 // open.
 //
-// Each leg is an ordinary move: through resolveArmPulse() like every drive
+// Each leg is an ordinary move: through resolveOutputPulse() like every drive
 // (ADR 0041), planned from the Output's Motion Profile like every drive
 // (ADR 0052), so a calibrated output eases through it and an unmeasured one
 // snaps, exactly as either does for any other command.
@@ -468,70 +515,70 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs, uint16_t throwMs = 0,
 // move by either route. Both planners hand this machine the same three leg
 // targets, and from here on the motion is one thing.
 // -----------------------------------------------------------------------------
-static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs);
+static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs);
 
 // The leg has arrived. Rest there where an eye can catch it, or, after the
 // last leg, the out-and-back is over: the output is back where it started.
-static void legArrived(uint8_t armId, uint32_t nowMs) {
-    if (s_arm[armId].legNo < kLegCount) {
-        s_arm[armId].legDwelling = true;
-        s_arm[armId].legDwellEndMs = nowMs + kLegDwellMs;
+static void legArrived(uint8_t slot, uint32_t nowMs) {
+    if (s_out[slot].legNo < kLegCount) {
+        s_out[slot].legDwelling = true;
+        s_out[slot].legDwellEndMs = nowMs + kLegDwellMs;
         return;
     }
-    const bool wasNudge = s_arm[armId].legIsNudge;
-    endMove(armId);
+    const bool wasNudge = s_out[slot].legIsNudge;
+    endMove(slot);
     // The out-and-back is the move, so its release counts from the return, not
     // from any leg before it (#443).
-    armReleaseOnArrival(armId, nowMs);
-    publishCommanded(armId);
-    PA_LOG_INFO(TAG, "Arm%d %s returned to %u us", armId + 1, wasNudge ? "nudge" : "travel",
-                (unsigned)s_arm[armId].commandedUs);
+    armReleaseOnArrival(slot, nowMs);
+    publishCommanded(slot);
+    PA_LOG_INFO(TAG, "Arm%d %s returned to %u us", slot + 1, wasNudge ? "nudge" : "travel",
+                (unsigned)s_out[slot].commandedUs);
 }
 
-static void beginLeg(uint8_t armId, uint8_t leg, uint32_t nowMs) {
-    uint8_t channel = LEDC_CH_MAX;
+static void beginLeg(uint8_t slot, uint8_t leg, uint32_t nowMs) {
     uint16_t targetUs = 0;
     // A leg number outside 1..kLegCount is the return, never another way out:
     // the same rule both planners' own LegTarget() keeps, so a caller that has
     // run off the end sends the output home rather than indexing past the array.
-    const uint8_t slot =
+    const uint8_t legIndex =
         (leg >= 1 && leg <= kLegCount) ? (uint8_t)(leg - 1) : (uint8_t)(kLegCount - 1);
     // A nudge's pair lies inside the cautious band and a travel's ends were
     // clamped onto the row when they were recorded, so the clamp hands either
     // back unchanged -- but the door is the rule (ADR 0041), not the outcome.
-    // This can only fail for an armId resolveArmPulse() rejects, which both
+    // This can only fail for a slot resolveOutputPulse() rejects, which both
     // beginNudge() and beginTravel() have already refused.
-    if (!resolveArmPulse(armId, s_arm[armId].legTargetUs[slot], &channel, &targetUs)) {
-        endMove(armId);
-        publishCommanded(armId);
+    if (!resolveOutputPulse(slot, s_out[slot].legTargetUs[legIndex], &targetUs)) {
+        endMove(slot);
+        publishCommanded(slot);
         return;
     }
-    s_arm[armId].legNo = leg;
-    s_arm[armId].legDwelling = false;
-    s_arm[armId].moving = true;
+    s_out[slot].legNo = leg;
+    s_out[slot].legDwelling = false;
+    s_out[slot].moving = true;
 
     // An Output no row describes leaves the profile as it was initialised:
     // `calibrated` unset, which the planner answers with a snap -- the same
     // jump every unmeasured move makes.
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
-    configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile);
-    const ServoMotionRamp ramp = servoMotionPlan(s_arm[armId].commandedUs, targetUs, profile, nowMs);
-    s_arm[armId].ramp = ramp;
+    configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
+    const ServoMotionRamp ramp = servoMotionPlan(s_out[slot].commandedUs, targetUs, profile, nowMs);
+    s_out[slot].ramp = ramp;
     if (ramp.durationMs == 0) {
         // A snap: the leg is over the moment it is written.
-        writeArmPulse(armId, channel, targetUs);
-        legArrived(armId, nowMs);
+        writeOutputPulse(slot, targetUs);
+        legArrived(slot, nowMs);
         return;
     }
     // A ramp: nothing is written until the next frame, but the leg already has
     // its target, and that is what a surface shows beside where the output is.
-    publishCommanded(armId);
+    publishCommanded(slot);
 }
 
-static void releaseArm(uint8_t armId, ServoLimpReason reason);
+static void releaseOutput(uint8_t slot, ServoLimpReason reason);
 
 // -----------------------------------------------------------------------------
-// sayTheArmLetGo()
+// sayTheOutputLetGo()
 // The log line for an Output being let go - by a run moving on from it, or by
 // its own release time running out (#443) - and nothing else.
 //
@@ -539,12 +586,12 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason);
 // servoTask()'s frame, which processCommand() and so takeForRun() are inlined
 // into (see processCommand()) and which every route on ServoTask's measured
 // chain starts from (ADR 0040). A leaf, because a helper that also called
-// releaseArm() put its log frame over the LEDC driver's log route: +208 B
+// releaseOutput() put its log frame over the LEDC driver's log route: +208 B
 // walked on the ESP32-P4 (#411 slice 4). Its callers release the Output
 // themselves, so the buffer is only ever on the stack for the line.
 // -----------------------------------------------------------------------------
-static void __attribute__((noinline)) sayTheArmLetGo(uint8_t armId, const char* why) {
-    PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1, why);
+static void __attribute__((noinline)) sayTheOutputLetGo(uint8_t slot, const char* why) {
+    PA_LOG_INFO(TAG, "Arm%d let go - %s", slot + 1, why);
 }
 
 // -----------------------------------------------------------------------------
@@ -554,7 +601,7 @@ static void __attribute__((noinline)) sayTheArmLetGo(uint8_t armId, const char* 
 // the hold it has (a nudge is the arrival, and not even one moves the ceiling),
 // or refuses it, letting go of it if a Part or a Light Type has landed on it
 // since. Taking a new Output lets go of the one the run held before FIRST:
-// releaseArm() reaches only an arm isArmLive() calls driven, and s_runArm
+// releaseOutput() reaches only an Output isOutputLive() calls driven, and s_runSlot
 // still names the old one until this moves it on.
 //
 // Taking it attaches its channel with no pulse and puts a first width on the
@@ -562,42 +609,41 @@ static void __attribute__((noinline)) sayTheArmLetGo(uint8_t armId, const char* 
 // Output's recorded centre, kept inside the part of the cautious band a nudge
 // can be symmetric about (servoRunFirstWidthUs()). A free servo has never been
 // driven, so that first width is a jump, as every first move after boot is
-// (#364). False, with nothing driven, when the run may not take it or LEDC
-// will not attach it.
+// (#364). False, with nothing driven, when the run may not take it or its
+// backend will not attach it.
 // -----------------------------------------------------------------------------
-static bool takeForRun(uint8_t armId, CommandSource source) {
-    const ServoRunNudgeStep step = servoRunOnNudge(s_runArm, armId, mayTakeForRun(armId));
+static bool takeForRun(uint8_t slot, CommandSource source) {
+    const ServoRunNudgeStep step = servoRunOnNudge(s_runSlot, slot, mayTakeForRun(slot));
     if (step.letGo != SERVO_RUN_NONE) {
-        releaseArm(step.letGo, SERVO_LIMP_OFF);
-        sayTheArmLetGo(step.letGo, step.letGo == armId ? "it is not free for a run any more"
-                                                       : "the run moved on to the next output");
+        releaseOutput(step.letGo, SERVO_LIMP_OFF);
+        sayTheOutputLetGo(step.letGo, step.letGo == slot ? "it is not free for a run any more"
+                                                         : "the run moved on to the next output");
     }
     if (step.act == SERVO_RUN_REFUSE) {
         return false;
     }
     if (step.act == SERVO_RUN_KEEP) {
-        servoHoldCommand(&s_arm[armId].hold, millis(), SERVO_HOLD_ASK_TAKE);
+        servoHoldCommand(&s_out[slot].hold, millis(), SERVO_HOLD_ASK_TAKE);
         return true;
     }
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
-    if (channel >= LEDC_CH_MAX || !ledcPwmAttach(channel)) {
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
+    if (!servoBackendAttach(output)) {
         PA_LOG_WARN(TAG, "[%s] Arm%d not taken for the run - its channel would not attach",
-                    commandSourceToString(source), armId + 1);
+                    commandSourceToString(source), slot + 1);
         return false;
     }
     uint16_t centreUs = SERVO_PULSE_NEUTRAL_US;
-    configCacheReadServoOutputCentre(SERVO_DRIVER_LEDC, channel, &centreUs);
+    configCacheReadServoOutputCentre(output.driver, output.channel, &centreUs);
     const uint16_t firstUs = servoRunFirstWidthUs(centreUs, SERVO_BAND_STD, SERVO_NUDGE_AMPLITUDE_US);
-    servoHoldCommand(&s_arm[armId].hold, millis(), SERVO_HOLD_ASK_TAKE);
-    s_runArm = armId;
-    uint8_t resolvedChannel = 0;
+    servoHoldCommand(&s_out[slot].hold, millis(), SERVO_HOLD_ASK_TAKE);
+    s_runSlot = slot;
     uint16_t commandedUs = 0;
-    if (resolveArmPulse(armId, firstUs, &resolvedChannel, &commandedUs)) {
-        endMove(armId);
-        writeArmPulse(armId, resolvedChannel, commandedUs);
+    if (resolveOutputPulse(slot, firstUs, &commandedUs)) {
+        endMove(slot);
+        writeOutputPulse(slot, commandedUs);
     }
     PA_LOG_INFO(TAG, "[%s] Arm%d taken for a Find by Moving run at %u us (recorded centre %u us)",
-                commandSourceToString(source), armId + 1, (unsigned)commandedUs, (unsigned)centreUs);
+                commandSourceToString(source), slot + 1, (unsigned)commandedUs, (unsigned)centreUs);
     return true;
 }
 
@@ -605,43 +651,43 @@ static bool takeForRun(uint8_t armId, CommandSource source) {
 // nothing moved and the count still bumped so a run waiting on it steps on,
 // when there is no width on the pin to nudge about or that width is outside
 // the cautious band.
-static void beginNudge(uint8_t armId, CommandSource source) {
+static void beginNudge(uint8_t slot, CommandSource source) {
     // One output per nudge, always: a run nudges the spare outputs one at a
     // time so the builder can say which one moved, and the ARM1+ARM2 broadcast
     // would move two in one press.
-    if (armId >= kArmCount) {
+    if (slot >= kSlotCount) {
         PA_LOG_WARN(TAG, "[%s] Nudge rejected - takes one arm, not %d", commandSourceToString(source),
-                    armId);
+                    slot);
         return;
     }
     // A free Output is taken for the run first (#411); an enabled one is driven
     // already and is nudged about where it is.
-    if (!isArmEnabled(armId) && !takeForRun(armId, source)) {
+    if (!isOutputEnabled(slot) && !takeForRun(slot, source)) {
         PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - it is not free for a run",
-                    commandSourceToString(source), armId + 1);
-        s_arm[armId].nudgesDone++;
-        publishCommanded(armId);
+                    commandSourceToString(source), slot + 1);
+        s_out[slot].nudgesDone++;
+        publishCommanded(slot);
         return;
     }
     ServoNudgePlan plan = {};
-    if (!s_arm[armId].known ||
-        !servoNudgePlan(s_arm[armId].commandedUs, SERVO_BAND_STD, SERVO_NUDGE_AMPLITUDE_US, &plan)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - %s", commandSourceToString(source), armId + 1,
-                    s_arm[armId].known ? "it sits outside the cautious band" : "no pulse on it yet");
-        s_arm[armId].nudgesDone++;
-        publishCommanded(armId);
+    if (!s_out[slot].known ||
+        !servoNudgePlan(s_out[slot].commandedUs, SERVO_BAND_STD, SERVO_NUDGE_AMPLITUDE_US, &plan)) {
+        PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - %s", commandSourceToString(source), slot + 1,
+                    s_out[slot].known ? "it sits outside the cautious band" : "no pulse on it yet");
+        s_out[slot].nudgesDone++;
+        publishCommanded(slot);
         return;
     }
-    // Whatever the arm was doing is over, an out-and-back in progress included:
+    // Whatever the Output was doing is over, an out-and-back in progress included:
     // this one starts from the width on the pin now.
-    endMove(armId);
+    endMove(slot);
     for (uint8_t leg = 1; leg <= kLegCount; ++leg) {
-        s_arm[armId].legTargetUs[leg - 1] = servoNudgeLegTarget(plan, leg);
+        s_out[slot].legTargetUs[leg - 1] = servoNudgeLegTarget(plan, leg);
     }
-    s_arm[armId].legIsNudge = true;
+    s_out[slot].legIsNudge = true;
     PA_LOG_INFO(TAG, "[%s] Arm%d nudged %u/%u us about %u us", commandSourceToString(source),
-                armId + 1, (unsigned)plan.hiUs, (unsigned)plan.loUs, (unsigned)plan.homeUs);
-    beginLeg(armId, 1, millis());
+                slot + 1, (unsigned)plan.hiUs, (unsigned)plan.loUs, (unsigned)plan.homeUs);
+    beginLeg(slot, 1, millis());
 }
 
 // -----------------------------------------------------------------------------
@@ -669,79 +715,79 @@ static void beginNudge(uint8_t armId, CommandSource source) {
 // Nothing is counted here. `nudgesDone` is a discovery run's clock and a travel
 // is nobody's -- see endLeg().
 // -----------------------------------------------------------------------------
-static void beginTravel(uint8_t armId, CommandSource source) {
+static void beginTravel(uint8_t slot, CommandSource source) {
     // One output per travel, always: a press on a body view is about one Part,
     // and the ARM1+ARM2 broadcast would run two parts through their travel on
     // one press. Refused at the API door too, where the caller hears why.
-    if (armId >= kArmCount) {
+    if (slot >= kSlotCount) {
         PA_LOG_WARN(TAG, "[%s] Travel rejected - takes one arm, not %d",
-                    commandSourceToString(source), armId);
+                    commandSourceToString(source), slot);
         return;
     }
-    if (!s_arm[armId].known) {
+    if (!s_out[slot].known) {
         PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - no pulse on it yet",
-                    commandSourceToString(source), armId + 1);
+                    commandSourceToString(source), slot + 1);
         return;
     }
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
     uint16_t openUs = 0;
     uint16_t closeUs = 0;
     ServoMotionProfile profile = {};
-    if (channel >= LEDC_CH_MAX ||
-        !configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, channel, &openUs, &closeUs) ||
-        !configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile)) {
+    if (!configCacheReadServoOutputEndpoints(output.driver, output.channel, &openUs, &closeUs) ||
+        !configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile)) {
         PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - no output row records its ends",
-                    commandSourceToString(source), armId + 1);
+                    commandSourceToString(source), slot + 1);
         return;
     }
     ServoTravelPlan plan = {};
     if (!profile.calibrated ||
-        !servoTravelPlan(s_arm[armId].commandedUs, openUs, closeUs, &plan)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - %s", commandSourceToString(source), armId + 1,
+        !servoTravelPlan(s_out[slot].commandedUs, openUs, closeUs, &plan)) {
+        PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - %s", commandSourceToString(source), slot + 1,
                     profile.calibrated ? "its two ends are the same width"
                                        : "nobody has measured its ends");
         return;
     }
-    // Whatever the arm was doing is over, an out-and-back in progress included:
+    // Whatever the Output was doing is over, an out-and-back in progress included:
     // this one comes back to the width on the pin now.
-    endMove(armId);
+    endMove(slot);
     for (uint8_t leg = 1; leg <= kLegCount; ++leg) {
-        s_arm[armId].legTargetUs[leg - 1] = servoTravelLegTarget(plan, leg);
+        s_out[slot].legTargetUs[leg - 1] = servoTravelLegTarget(plan, leg);
     }
-    s_arm[armId].legIsNudge = false;
+    s_out[slot].legIsNudge = false;
     PA_LOG_INFO(TAG, "[%s] Arm%d travelling open %u us, close %u us, back to %u us",
-                commandSourceToString(source), armId + 1, (unsigned)plan.openUs,
+                commandSourceToString(source), slot + 1, (unsigned)plan.openUs,
                 (unsigned)plan.closeUs, (unsigned)plan.homeUs);
-    beginLeg(armId, 1, millis());
+    beginLeg(slot, 1, millis());
 }
 
 // -----------------------------------------------------------------------------
 // stepMove()
-// One frame of whatever ramp the arm is on: put the width the ramp says on the
+// One frame of whatever ramp the Output is on: put the width the ramp says on the
 // pin, and answer whether the whole move is over.
 //
 // An overshoot is over when it has SETTLED, not when it reaches its aim. The
 // aim was decided when the target was set (servoMotionPlan()); arriving there
 // starts the way back to the target, planned from the Output's profile as it
-// stands now, and the arm stays `moving` through both halves -- so a new
+// stands now, and the Output stays `moving` through both halves -- so a new
 // command, a hold, stopAllMoves() or a release ends an overshoot exactly where
 // it has got to, the same way it ends any ramp.
 // -----------------------------------------------------------------------------
-static bool stepMove(uint8_t armId, uint8_t channel, uint32_t nowMs) {
-    writeArmPulse(armId, channel, servoMotionPositionAt(s_arm[armId].ramp, nowMs));
-    if (!servoMotionArrived(s_arm[armId].ramp, nowMs)) {
+static bool stepMove(uint8_t slot, uint32_t nowMs) {
+    writeOutputPulse(slot, servoMotionPositionAt(s_out[slot].ramp, nowMs));
+    if (!servoMotionArrived(s_out[slot].ramp, nowMs)) {
         return false;
     }
-    if (!servoMotionSettles(s_arm[armId].ramp)) {
+    if (!servoMotionSettles(s_out[slot].ramp)) {
         return true;
     }
     // A row that has gone from under the move leaves `calibrated` unset, and
     // the planner answers that with a snap onto the target.
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoMotionProfile profile = {};
-    configCacheReadServoOutputMotionProfile(SERVO_DRIVER_LEDC, channel, &profile);
-    s_arm[armId].ramp = servoMotionSettleBack(s_arm[armId].ramp, profile, nowMs);
-    if (s_arm[armId].ramp.durationMs == 0) {
-        writeArmPulse(armId, channel, s_arm[armId].ramp.toUs);
+    configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile);
+    s_out[slot].ramp = servoMotionSettleBack(s_out[slot].ramp, profile, nowMs);
+    if (s_out[slot].ramp.durationMs == 0) {
+        writeOutputPulse(slot, s_out[slot].ramp.toUs);
         return true;
     }
     return false;
@@ -750,16 +796,16 @@ static bool stepMove(uint8_t armId, uint8_t channel, uint32_t nowMs) {
 // One frame of an out-and-back in progress: wait out a dwell, then start the
 // next leg; otherwise advance the leg's ramp like any other move and notice its
 // arrival.
-static void advanceLegs(uint8_t armId, uint8_t channel, uint32_t nowMs) {
-    if (s_arm[armId].legDwelling) {
-        if ((int32_t)(nowMs - s_arm[armId].legDwellEndMs) < 0) {
+static void advanceLegs(uint8_t slot, uint32_t nowMs) {
+    if (s_out[slot].legDwelling) {
+        if ((int32_t)(nowMs - s_out[slot].legDwellEndMs) < 0) {
             return;
         }
-        beginLeg(armId, (uint8_t)(s_arm[armId].legNo + 1), nowMs);
+        beginLeg(slot, (uint8_t)(s_out[slot].legNo + 1), nowMs);
         return;
     }
-    if (stepMove(armId, channel, nowMs)) {
-        legArrived(armId, nowMs);
+    if (stepMove(slot, nowMs)) {
+        legArrived(slot, nowMs);
     }
 }
 
@@ -769,24 +815,23 @@ static void advanceLegs(uint8_t armId, uint8_t channel, uint32_t nowMs) {
 // -----------------------------------------------------------------------------
 static void updateMotion() {
     const uint32_t now = millis();
-    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        if (!s_arm[armId].moving) {
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        if (!s_out[slot].moving) {
             continue;
         }
-        const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
-        if (s_arm[armId].legNo != 0) {
-            advanceLegs(armId, channel, now);
+        if (s_out[slot].legNo != 0) {
+            advanceLegs(slot, now);
             continue;
         }
-        if (stepMove(armId, channel, now)) {
+        if (stepMove(slot, now)) {
             // The frame stepMove() wrote was published with the move still in
             // progress; this is where it ends, and a reader waiting on
             // `moving` to fall has to hear it. It is also where it arrives - an
             // overshoot only once it has settled back - so its release counts
             // from here.
-            endMove(armId);
-            armReleaseOnArrival(armId, now);
-            publishCommanded(armId);
+            endMove(slot);
+            armReleaseOnArrival(slot, now);
+            publishCommanded(slot);
         }
     }
 }
@@ -805,17 +850,17 @@ static void updateMotion() {
 // -----------------------------------------------------------------------------
 static void stopAllMoves(const char* reason) {
     bool stopped = false;
-    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        if (!s_arm[armId].moving) {
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        if (!s_out[slot].moving) {
             continue;
         }
-        endMove(armId);
+        endMove(slot);
         stopped = true;
         // The move is over where it got to, so its target is too: no surface
         // may go on showing a destination the output will never reach. An
         // out-and-back ends the same way, its return never made; a nudge is
         // counted as ended and a travel, which nobody is waiting on, is not.
-        publishCommanded(armId);
+        publishCommanded(slot);
     }
     if (stopped) {
         PA_LOG_INFO(TAG, "Moves stopped where they were - %s", reason);
@@ -824,7 +869,7 @@ static void stopAllMoves(const char* reason) {
 
 // -----------------------------------------------------------------------------
 // getOpenClosePositions()
-// The Endpoint Pair of the addressed Servo Output behind this arm (ADR 0041).
+// The Endpoint Pair of the Servo Output row at this slot's address (ADR 0041).
 //
 // The pair is directional and stays that way: `open` is whichever number the
 // builder recorded as open, larger or smaller than close. A reversed linkage is
@@ -839,10 +884,9 @@ static void stopAllMoves(const char* reason) {
 // worst-case chain is a measured constant (ADR 0040) and a whole row would spend
 // 70 B of it on fields this path never reads.
 // -----------------------------------------------------------------------------
-static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& closeUs) {
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
-    if (channel < LEDC_CH_MAX &&
-        configCacheReadServoOutputEndpoints(SERVO_DRIVER_LEDC, channel, &openUs, &closeUs)) {
+static void getOpenClosePositions(uint8_t slot, uint16_t& openUs, uint16_t& closeUs) {
+    const ServoOutputAddress output = servoOutputSlotAddress(slot);
+    if (configCacheReadServoOutputEndpoints(output.driver, output.channel, &openUs, &closeUs)) {
         return;
     }
     openUs = SERVO_BAND_STD.hi;
@@ -850,10 +894,11 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 }
 
 // -----------------------------------------------------------------------------
-// releaseArm()
+// releaseOutput()
 // Take the pulse off one output: pulses off (ADR 0043, ADR 0064, #364).
 //
-// The one place a pulse comes off a pin, whoever asks -- the builder's pulses
+// The one place a pulse comes off a pin, through the Output's backend
+// (include/servo_backend.h), whoever asks -- the builder's pulses
 // off, one of the dial's two bounds, the halt edge, or the Output's own release
 // time running out after a move arrived (#443) -- so a released output
 // means one thing everywhere on the droid: nothing is driven, the servo goes
@@ -867,26 +912,22 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 // output stops being `known`: the next command to it starts from a position
 // nobody can vouch for, so it snaps, exactly as the first move after boot does.
 // -----------------------------------------------------------------------------
-static void releaseArm(uint8_t armId, ServoLimpReason reason) {
-    if (armId >= kArmCount || !isArmLive(armId)) {
+static void releaseOutput(uint8_t slot, ServoLimpReason reason) {
+    if (slot >= kSlotCount || !isOutputLive(slot)) {
         return;
     }
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
-    if (channel >= LEDC_CH_MAX) {
-        return;
-    }
-    endMove(armId);
-    servoHoldEnd(&s_arm[armId].hold);
+    endMove(slot);
+    servoHoldEnd(&s_out[slot].hold);
     // A run's Output is free again: nothing drives it until a run takes it once
     // more. Its channel stays attached with no pulse, which is what the gates
     // above read rather than the channel.
-    if (s_runArm == armId) {
-        s_runArm = SERVO_RUN_NONE;
+    if (s_runSlot == slot) {
+        s_runSlot = SERVO_RUN_NONE;
     }
-    ledcPwmRelease(channel);
-    s_arm[armId].known = false;
-    s_arm[armId].limp = reason;
-    publishCommanded(armId);
+    servoBackendRelease(servoOutputSlotAddress(slot));
+    s_out[slot].known = false;
+    s_out[slot].limp = reason;
+    publishCommanded(slot);
 }
 
 // -----------------------------------------------------------------------------
@@ -900,18 +941,18 @@ static void releaseArm(uint8_t armId, ServoLimpReason reason) {
 // Every enabled output, not only the ones a move was in progress on: a door
 // somebody opened by hand a minute ago is being driven just as much as one a
 // routine was closing, and the stop has to reach it too - and so does a free
-// Output a Find by Moving run is driving (releaseArm() asks isArmLive()).
+// Output a Find by Moving run is driving (releaseOutput() asks isOutputLive()).
 // -----------------------------------------------------------------------------
 static void releaseAllOutputs(ServoLimpReason reason) {
-    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        releaseArm(armId, reason);
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        releaseOutput(slot, reason);
     }
     PA_LOG_INFO(TAG, "Every output released - %s",
                 reason == SERVO_LIMP_ESTOP ? "estop" : "sleep mode");
 }
 
 // -----------------------------------------------------------------------------
-// holdArm()
+// holdOutput()
 // The calibration dial's hold (ADR 0064, #364): drive one output to a width and
 // keep the pulse on it until the builder lets go or a bound fires.
 //
@@ -924,7 +965,7 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // move at all: replanning a ramp part way through, once a second, would
 // restart the move the builder is watching.
 //
-// The drive itself is driveArmTo()'s, like every other command: through the
+// The drive itself is driveOutputTo()'s, like every other command: through the
 // component clamp (ADR 0041), at the Output's own pace (ADR 0052), and a snap
 // where the profile cannot plan one.
 //
@@ -935,36 +976,36 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // `hold.held` is set, so a move the dial makes arrives owing nothing. The
 // dial's two bounds (expireHolds()) are what end the hold instead.
 // -----------------------------------------------------------------------------
-static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source, ServoHoldAsk ask) {
-    if (armId >= kArmCount) {
+static void holdOutput(uint8_t slot, uint16_t positionUs, CommandSource source, ServoHoldAsk ask) {
+    if (slot >= kSlotCount) {
         PA_LOG_WARN(TAG, "[%s] Hold rejected - takes one arm, not %d", commandSourceToString(source),
-                    armId);
+                    slot);
         return;
     }
-    const ServoHoldOutcome outcome = servoHoldCommand(&s_arm[armId].hold, millis(), ask);
+    const ServoHoldOutcome outcome = servoHoldCommand(&s_out[slot].hold, millis(), ask);
     if (outcome == SERVO_HOLD_DROPPED) {
         PA_LOG_DEBUG(TAG, "[%s] Arm%d hold refresh dropped - the dial no longer holds it",
-                     commandSourceToString(source), armId + 1);
+                     commandSourceToString(source), slot + 1);
         return;
     }
-    servoReleaseCancel(&s_arm[armId].release);
+    servoReleaseCancel(&s_out[slot].release);
     const bool taken = outcome == SERVO_HOLD_TAKEN;
     if (taken) {
         PA_LOG_INFO(TAG, "[%s] Arm%d held by the dial at %u us", commandSourceToString(source),
-                    armId + 1, (unsigned)positionUs);
+                    slot + 1, (unsigned)positionUs);
     }
     // Where the move ends, which on an overshoot is where it settles, not its
     // aim: a keepalive for the width the builder asked for is still a refresh.
     const uint16_t goingToUs =
-        s_arm[armId].moving ? s_arm[armId].ramp.settleUs : s_arm[armId].commandedUs;
-    if (s_arm[armId].known && goingToUs == positionUs) {
+        s_out[slot].moving ? s_out[slot].ramp.settleUs : s_out[slot].commandedUs;
+    if (s_out[slot].known && goingToUs == positionUs) {
         // Nothing to drive; the mirror still has to learn the hold was taken.
         if (taken) {
-            publishCommanded(armId);
+            publishCommanded(slot);
         }
         return;
     }
-    driveArmTo(armId, positionUs);
+    driveOutputTo(slot, positionUs);
 }
 
 // -----------------------------------------------------------------------------
@@ -978,20 +1019,20 @@ static void holdArm(uint8_t armId, uint16_t positionUs, CommandSource source, Se
 // -----------------------------------------------------------------------------
 static void expireHolds() {
     const uint32_t now = millis();
-    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        const ServoHoldBound bound = servoHoldBoundHit(s_arm[armId].hold, now, SERVO_HOLD_EXPIRY_MS,
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        const ServoHoldBound bound = servoHoldBoundHit(s_out[slot].hold, now, SERVO_HOLD_EXPIRY_MS,
                                                        SERVO_HOLD_CEILING_MS);
         if (bound == SERVO_HOLD_BOUND_NONE) {
             continue;
         }
         const bool ceiling = bound == SERVO_HOLD_BOUND_CEILING;
-        const bool run = s_runArm == armId;
-        releaseArm(armId, servoRunLimpReason(run, bound));
+        const bool run = s_runSlot == slot;
+        releaseOutput(slot, servoRunLimpReason(run, bound));
         if (run) {
-            PA_LOG_INFO(TAG, "Arm%d let go - %s", armId + 1,
+            PA_LOG_INFO(TAG, "Arm%d let go - %s", slot + 1,
                         ceiling ? "held for the most a run may" : "the run's nudges moved on");
         } else {
-            PA_LOG_WARN(TAG, "Arm%d released - %s", armId + 1,
+            PA_LOG_WARN(TAG, "Arm%d released - %s", slot + 1,
                         ceiling ? "held for the most a dial may" : "the dial's commands stopped arriving");
         }
     }
@@ -1001,20 +1042,20 @@ static void expireHolds() {
 // letGoOnceHeldAfterArriving()
 // One frame of every Output Release pending (ADR 0043, #443): an output whose
 // release time has run out since its move arrived is let go here, through
-// releaseArm() like every other release, and says why (SERVO_LIMP_OUTPUT_RELEASE).
-// Cancelled first, so an output releaseArm() turns away cannot come due again
+// releaseOutput() like every other release, and says why (SERVO_LIMP_OUTPUT_RELEASE).
+// Cancelled first, so an output releaseOutput() turns away cannot come due again
 // on every frame after. Allocates nothing, blocks on nothing: the release time
 // was read once, at the arrival.
 // -----------------------------------------------------------------------------
 static void letGoOnceHeldAfterArriving() {
     const uint32_t now = millis();
-    for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-        if (!servoReleaseDue(s_arm[armId].release, now)) {
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        if (!servoReleaseDue(s_out[slot].release, now)) {
             continue;
         }
-        servoReleaseCancel(&s_arm[armId].release);
-        releaseArm(armId, SERVO_LIMP_OUTPUT_RELEASE);
-        sayTheArmLetGo(armId, "held for its release time after it arrived");
+        servoReleaseCancel(&s_out[slot].release);
+        releaseOutput(slot, SERVO_LIMP_OUTPUT_RELEASE);
+        sayTheOutputLetGo(slot, "held for its release time after it arrived");
     }
 }
 
@@ -1030,18 +1071,21 @@ static void letGoOnceHeldAfterArriving() {
 // only while a run holds something: no heap and no blocking on Core 1.
 // -----------------------------------------------------------------------------
 static void letGoIfTheRunsOutputIsNoLongerFree() {
-    const uint8_t armId = s_runArm;
-    if (armId == SERVO_RUN_NONE || mayTakeForRun(armId)) {
+    const uint8_t slot = s_runSlot;
+    if (slot == SERVO_RUN_NONE || mayTakeForRun(slot)) {
         return;
     }
-    releaseArm(armId, SERVO_LIMP_OFF);
-    sayTheArmLetGo(armId, "a Part or a light is on it now");
+    releaseOutput(slot, SERVO_LIMP_OFF);
+    sayTheOutputLetGo(slot, "a Part or a light is on it now");
 }
 
 // -----------------------------------------------------------------------------
 // processCommand()
 // Process incoming servo command.
-// Every command is gated per isArmEnabled() (ADR 0027).
+// The command names its Output by address; this is where the address becomes
+// the slot the rest of the task works in (servoOutputSlotOf()), and `both`
+// the board's first two Outputs' slots (bothArmsSlot()). Every command is gated
+// per isTargetEnabled() (ADR 0027).
 //
 // always_inline, deliberately: servoTask() is its only caller, and ServoTask's
 // measured chain (ADR 0040) is walked through the two as one frame. Left to
@@ -1071,50 +1115,55 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
         return;
     }
 
-    // Feature toggle: reject arm commands for disabled or AUX-LED-reserved
-    // subsystems. Two exceptions, both a Find by Moving run's on a free Output
+    // SERVO_OUTPUT_SLOT_NONE for `both` and for an address no member drives:
+    // `both` is taken apart below, and anything else is refused by the gate.
+    const uint8_t slot = servoOutputSlotOf(cmd.output);
+
+    // Feature toggle: reject commands for disabled or AUX-LED-reserved
+    // Outputs. Two exceptions, both a Find by Moving run's on a free Output
     // (#411): a nudge may take one, and a release lets go of one a run holds.
     // Nothing else reaches an Output this task does not drive.
     // A nudge on the Output a run holds always reaches beginNudge(), which asks
     // again whether it is still free and lets go of it if not.
-    const bool runNudge = cmd.type == SERVO_CMD_NUDGE && cmd.armId < kArmCount &&
-                          (s_runArm == cmd.armId || mayTakeForRun(cmd.armId));
-    const bool runRelease = cmd.type == SERVO_CMD_RELEASE && cmd.armId < kArmCount &&
-                            s_runArm == cmd.armId;
-    if (!isArmEnabled(cmd.armId) && !runNudge && !runRelease) {
+    const bool runNudge = cmd.type == SERVO_CMD_NUDGE && slot < kSlotCount &&
+                          (s_runSlot == slot || mayTakeForRun(slot));
+    const bool runRelease = cmd.type == SERVO_CMD_RELEASE && slot < kSlotCount &&
+                            s_runSlot == slot;
+    if (!isTargetEnabled(cmd.output) && !runNudge && !runRelease) {
         PA_LOG_DEBUG(TAG, "[%s] Command rejected - arm%d disabled or reserved",
-                     commandSourceToString(cmd.source), cmd.armId);
+                     commandSourceToString(cmd.source), slot);
         return;
     }
+    const bool both = cmd.output == SERVO_OUTPUT_BOTH_ARMS;
 
     uint16_t openUs, closeUs;
 
     switch (cmd.type) {
         case SERVO_CMD_OPEN:
-            if (cmd.armId == 255) {
-                getOpenClosePositions(0, openUs, closeUs);
-                driveArmTo(0, openUs);
-                getOpenClosePositions(1, openUs, closeUs);
-                driveArmTo(1, openUs);
+            if (both) {
+                getOpenClosePositions(bothArmsSlot(0), openUs, closeUs);
+                driveOutputTo(bothArmsSlot(0), openUs);
+                getOpenClosePositions(bothArmsSlot(1), openUs, closeUs);
+                driveOutputTo(bothArmsSlot(1), openUs);
                 PA_LOG_INFO(TAG, "[%s] Both arms opened", commandSourceToString(cmd.source));
             } else {
-                getOpenClosePositions(cmd.armId, openUs, closeUs);
-                driveArmTo(cmd.armId, openUs);
-                PA_LOG_INFO(TAG, "[%s] Arm%d opened", commandSourceToString(cmd.source), cmd.armId + 1);
+                getOpenClosePositions(slot, openUs, closeUs);
+                driveOutputTo(slot, openUs);
+                PA_LOG_INFO(TAG, "[%s] Arm%d opened", commandSourceToString(cmd.source), slot + 1);
             }
             break;
 
         case SERVO_CMD_CLOSE:
-            if (cmd.armId == 255) {
-                getOpenClosePositions(0, openUs, closeUs);
-                driveArmTo(0, closeUs);
-                getOpenClosePositions(1, openUs, closeUs);
-                driveArmTo(1, closeUs);
+            if (both) {
+                getOpenClosePositions(bothArmsSlot(0), openUs, closeUs);
+                driveOutputTo(bothArmsSlot(0), closeUs);
+                getOpenClosePositions(bothArmsSlot(1), openUs, closeUs);
+                driveOutputTo(bothArmsSlot(1), closeUs);
                 PA_LOG_INFO(TAG, "[%s] Both arms closed", commandSourceToString(cmd.source));
             } else {
-                getOpenClosePositions(cmd.armId, openUs, closeUs);
-                driveArmTo(cmd.armId, closeUs);
-                PA_LOG_INFO(TAG, "[%s] Arm%d closed", commandSourceToString(cmd.source), cmd.armId + 1);
+                getOpenClosePositions(slot, openUs, closeUs);
+                driveOutputTo(slot, closeUs);
+                PA_LOG_INFO(TAG, "[%s] Arm%d closed", commandSourceToString(cmd.source), slot + 1);
             }
             break;
 
@@ -1125,26 +1174,26 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
                             commandSourceToString(cmd.source), cmd.positionUs);
                 return;
             }
-            if (cmd.armId == 255) {
-                driveArmTo(0, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
-                driveArmTo(1, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
+            if (both) {
+                driveOutputTo(bothArmsSlot(0), cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
+                driveOutputTo(bothArmsSlot(1), cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
             } else {
-                driveArmTo(cmd.armId, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
+                driveOutputTo(slot, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
             }
-            PA_LOG_INFO(TAG, "[%s] Arm%d set to %d us", commandSourceToString(cmd.source), cmd.armId + 1,
+            PA_LOG_INFO(TAG, "[%s] Arm%d set to %d us", commandSourceToString(cmd.source), slot + 1,
                         cmd.positionUs);
             break;
 
         case SERVO_CMD_NUDGE:
             // No width to validate: the command carries none, and the pair is
             // computed from the pin (include/servo_nudge.h).
-            beginNudge(cmd.armId, cmd.source);
+            beginNudge(slot, cmd.source);
             break;
 
         case SERVO_CMD_TRAVEL:
             // No width to validate either: the ends come off the Output's row
             // (include/servo_travel.h), so a body view's press cannot name one.
-            beginTravel(cmd.armId, cmd.source);
+            beginTravel(slot, cmd.source);
             break;
 
         case SERVO_CMD_HOLD:
@@ -1155,19 +1204,19 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
                             commandSourceToString(cmd.source), cmd.positionUs);
                 return;
             }
-            holdArm(cmd.armId, cmd.positionUs, cmd.source,
-                    cmd.type == SERVO_CMD_HOLD ? SERVO_HOLD_ASK_TAKE : SERVO_HOLD_ASK_REFRESH);
+            holdOutput(slot, cmd.positionUs, cmd.source,
+                       cmd.type == SERVO_CMD_HOLD ? SERVO_HOLD_ASK_TAKE : SERVO_HOLD_ASK_REFRESH);
             break;
 
         case SERVO_CMD_RELEASE:
-            if (cmd.armId == 255) {
-                releaseArm(0, SERVO_LIMP_RELEASED);
-                releaseArm(1, SERVO_LIMP_RELEASED);
+            if (both) {
+                releaseOutput(bothArmsSlot(0), SERVO_LIMP_RELEASED);
+                releaseOutput(bothArmsSlot(1), SERVO_LIMP_RELEASED);
                 PA_LOG_INFO(TAG, "[%s] Both arms released - pulses off", commandSourceToString(cmd.source));
             } else {
-                releaseArm(cmd.armId, SERVO_LIMP_RELEASED);
+                releaseOutput(slot, SERVO_LIMP_RELEASED);
                 PA_LOG_INFO(TAG, "[%s] Arm%d released - pulses off", commandSourceToString(cmd.source),
-                            cmd.armId + 1);
+                            slot + 1);
             }
             break;
     }
@@ -1185,15 +1234,11 @@ void servoTaskInit() {
     // Capture toggles snapshot once at startup.
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    s_arm1_enabled = cfg.system.enable_arm1;
-    s_arm2_enabled = cfg.system.enable_arm2;
-    s_aux1_enabled = cfg.system.enable_aux1;
-    s_aux2_enabled = cfg.system.enable_aux2;
-    s_aux3_enabled = cfg.system.enable_aux3;
+    s_wired_at_start_mask = wiredAtStartMask(cfg.system);
     s_dome_enabled = cfg.system.enable_dome_esc;
-    s_lit_arm_mask = litArmMask(cfg.system);
+    s_lit_mask = litOutputMask(cfg.system);
 
-    bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;
+    const bool anyServo = s_wired_at_start_mask != 0;
 
     // LEDC comes up whatever is wired: its timer is what a Find by Moving run
     // attaches a free Output's channel to (ledcPwmAttach(), #411), and a droid
@@ -1201,9 +1246,8 @@ void servoTaskInit() {
     // configures the timer and no channel.
     {
         // Build enabled-channels mask using the helper from servo_helpers.h.
-        uint8_t ledcMask = servo_enabled_ledc_mask(s_arm1_enabled, s_arm2_enabled, s_aux1_enabled,
-                                                   s_aux2_enabled, s_aux3_enabled, s_dome_enabled,
-                                                   s_lit_arm_mask);
+        uint8_t ledcMask =
+            servo_enabled_ledc_mask(s_wired_at_start_mask, s_lit_mask, s_dome_enabled);
 
         // Every servo output comes up with no pulse on it (ledcPwmInit()): limp
         // where it was left, which is what an Output's boot behaviour defaults
@@ -1218,19 +1262,20 @@ void servoTaskInit() {
             return;
         }
         s_ledc_ready = true;
-        for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-            if (isArmEnabled(armId)) {
-                s_arm[armId].known = false;
-                s_arm[armId].limp = SERVO_LIMP_OFF;
-                publishCommanded(armId);
+        for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+            if (isOutputEnabled(slot)) {
+                s_out[slot].known = false;
+                s_out[slot].limp = SERVO_LIMP_OFF;
+                publishCommanded(slot);
             }
         }
 
-        for (uint8_t armId = 0; armId < kArmCount; ++armId) {
-            if ((s_lit_arm_mask & (uint8_t)(1u << armId)) == 0) {
+        for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+            if ((s_lit_mask & (1u << slot)) == 0) {
                 continue;
             }
-            const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
+            // A light only goes on the board's own wires, which LEDC drives.
+            const uint8_t channel = servoOutputSlotAddress(slot).channel;
             const BoardOutput* output = boardOutputOnChannel(channel);
             PA_LOG_INFO(TAG, "%s carries a light (GPIO %u) - LEDC skipped for that header",
                         output != nullptr ? boardOutputLabel(*output) : "an output",
@@ -1250,26 +1295,26 @@ void servoTaskInit() {
 // The boot snapshot above, read by the servo route and the Output rows
 // (include/servo_task.h has the contract and why no lock is taken).
 // -----------------------------------------------------------------------------
-bool servoTaskWiredAtStart(uint8_t armId) {
-    // servo_arm_enabled() with no lit arms is the wired tick alone; 255 is
-    // refused first because it answers for the broadcast, not for an Output.
-    return armId < kArmCount && servo_arm_enabled(armId, s_arm1_enabled, s_arm2_enabled,
-                                                  s_aux1_enabled, s_aux2_enabled, s_aux3_enabled,
-                                                  /*lit_arm_mask=*/0);
+// Each asks by address, and an address with no slot - `both`, or one no member
+// of this image drives - answers false.
+bool servoTaskWiredAtStart(ServoOutputAddress output) {
+    return wiredAtStart(servoOutputSlotOf(output));
 }
 
-bool servoTaskDrivesOutput(uint8_t armId) {
-    return armId < kArmCount && s_ledc_ready && isArmEnabled(armId);
+bool servoTaskDrivesOutput(ServoOutputAddress output) {
+    const uint8_t slot = servoOutputSlotOf(output);
+    return slot < kSlotCount && s_ledc_ready && isOutputEnabled(slot);
 }
 
 // Read from Core 0 (the servo route, the Console): the boot snapshot is
 // written once before either starts, and the cache reads take its own lock.
-bool servoTaskMayTakeForRun(uint8_t armId) {
-    return mayTakeForRun(armId);
+bool servoTaskMayTakeForRun(ServoOutputAddress output) {
+    return mayTakeForRun(servoOutputSlotOf(output));
 }
 
-bool servoTaskRunHolds(uint8_t armId) {
-    return armId < kArmCount && s_runArm == armId;
+bool servoTaskRunHolds(ServoOutputAddress output) {
+    const uint8_t slot = servoOutputSlotOf(output);
+    return slot < kSlotCount && s_runSlot == slot;
 }
 
 // -----------------------------------------------------------------------------

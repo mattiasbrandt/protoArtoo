@@ -56,7 +56,7 @@ void test_open_over_the_whole_throw_lands_on_the_open_end() {
     const SeqBodyStepPlan plan = sequenceBodyStepPlan(act, &row);
     TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NONE, (int)plan.reason);
     TEST_ASSERT_TRUE(plan.drive);
-    TEST_ASSERT_EQUAL_UINT8(0, plan.armId);  // ARM1
+    TEST_ASSERT_TRUE(plan.output == boardOutputAddress(0));  // ARM1, the row's own address
     TEST_ASSERT_EQUAL_UINT16(1900, plan.targetUs);
 }
 
@@ -169,20 +169,27 @@ void test_row_addressed_to_a_non_servo_channel_cannot_be_driven() {
     TEST_ASSERT_FALSE(plan.drive);
 }
 
-void test_each_ledc_servo_channel_resolves_to_its_arm_id() {
+// The plan carries the row's own Output Address (#444), so the command goes to
+// the Output the row describes and to no other; the dome ESC's channel is never
+// one, whatever a row says.
+void test_each_ledc_servo_channel_resolves_to_its_own_address() {
     static const uint8_t kChannels[] = {LEDC_CH_ARM1, LEDC_CH_ARM2, LEDC_CH_AUX1,
                                         LEDC_CH_AUX2, LEDC_CH_AUX3};
-    for (uint8_t armId = 0; armId < 5; ++armId) {
+    for (uint8_t i = 0; i < 5; ++i) {
         ServoOutputRow row = drivingRow("doorFL", 1900, 1100);
-        row.channel = kChannels[armId];
+        row.channel = kChannels[i];
         const SeqBodyStepPlan plan =
             sequenceBodyStepPlan(bodyAction("doorFL", BODY_SHAPE_OPEN, 100, 0), &row);
         TEST_ASSERT_TRUE(plan.drive);
-        TEST_ASSERT_EQUAL_UINT8(armId, plan.armId);
+        TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, plan.output.driver);
+        TEST_ASSERT_EQUAL_UINT8(kChannels[i], plan.output.channel);
     }
-    uint8_t out = 0xAA;
-    TEST_ASSERT_FALSE(servo_ledc_channel_to_arm_id(LEDC_CH_DOME, &out));
-    TEST_ASSERT_EQUAL_UINT8(0xAA, out);  // untouched on a miss
+    ServoOutputRow dome = drivingRow("doorFL", 1900, 1100);
+    dome.channel = LEDC_CH_DOME;
+    const SeqBodyStepPlan refused =
+        sequenceBodyStepPlan(bodyAction("doorFL", BODY_SHAPE_OPEN, 100, 0), &dome);
+    TEST_ASSERT_FALSE(refused.drive);
+    TEST_ASSERT_EQUAL_INT(CONSOLE_REASON_NOT_IN_THIS_BUILD, (int)refused.reason);
 }
 
 // -----------------------------------------------------------------------------
@@ -210,7 +217,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_part_no_output_claims_reports_part_not_assigned);
     RUN_TEST(test_part_the_catalog_never_declared_is_not_reported_as_unwired);
     RUN_TEST(test_row_addressed_to_a_non_servo_channel_cannot_be_driven);
-    RUN_TEST(test_each_ledc_servo_channel_resolves_to_its_arm_id);
+    RUN_TEST(test_each_ledc_servo_channel_resolves_to_its_own_address);
 
     RUN_TEST(test_dispatch_step_core_routes_a_body_move);
 
