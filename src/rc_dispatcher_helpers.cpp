@@ -91,8 +91,13 @@ static bool startBodyRoutine(uint8_t sequenceId, CommandSource src) {
 
 // `boardIndex` is the RC action's arm/aux index, which counts the board's own
 // Outputs in their table's order; it goes out as that Output's address.
-static bool queueServoCommand(uint8_t boardIndex, ServoCommandType type, uint16_t positionUs,
-                              CommandSource src) {
+//
+// noinline, deliberately: rcDispatchSingleAction() is on RCInputTask's measured
+// chain (ADR 0040), and inlined there the address lookup grew its frame by 16 B
+// (#444). Out of line its own route - one queue send and the drop's log line -
+// is far shallower than the Marcduino route that sets the chain.
+static __attribute__((noinline)) bool queueServoCommand(uint8_t boardIndex, ServoCommandType type,
+                                                        uint16_t positionUs, CommandSource src) {
     ServoCommand cmd = {};
     cmd.output = boardOutputAddress(boardIndex);
     cmd.type = type;
