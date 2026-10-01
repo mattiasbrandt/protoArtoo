@@ -112,8 +112,8 @@
 //   servo   opens it: the surface asks it only for a move that takes a Part off
 //           the Output it is on and puts it on another (data/parts_mapping.js
 //           moveFor, `announce`). On Wiring, a Part already on an Output has
-//           another Output chosen in its row of the part-first picker (moved
-//           there from Parts, #411); on Servos, a Part
+//           another Output pressed on its row's bar in the parts table (moved
+//           there from Parts, #411; a bar since #463); on Servos, a Part
 //           already on one Output is picked in another Output's "Put a part
 //           on" picker. Either change reaches the page's own mover.request(),
 //           which opens the dialog - no POST is sent until the question is
@@ -215,18 +215,17 @@ const DIALOGS = {
     },
   },
   wiring: moveQuestion('#wiring-move-dialog', async (page) => {
-    // A Part row whose picker shows an Output, and another Output to choose.
+    // A Part row whose bar shows an Output, and another Output to press.
     const pick = await page.evaluate(() => {
-      for (const row of document.querySelectorAll('#wiring-parts-table [data-part]')) {
-        const select = row.querySelector('select');
-        if (!select || select.disabled || select.value === 'none') continue;
-        const other = [...select.options].find((option) => option.value !== 'none' && option.value !== select.value);
-        if (other) return { part: row.dataset.part, to: other.value };
+      for (const row of document.querySelectorAll('#wiring-parts-table tr.is-wired[data-part]')) {
+        const bar = [...row.querySelectorAll('[data-bar] button')];
+        const other = bar.find((button) => !button.classList.contains('active') && !button.disabled);
+        if (bar.some((button) => button.classList.contains('active')) && other) return { part: row.dataset.part, to: other.dataset.value };
       }
       return null;
     });
     if (!pick) return null;
-    await page.selectOption(`#wiring-parts-table [data-part="${pick.part}"] select`, pick.to, { timeout: 5000 });
+    await page.click(`#wiring-parts-table tr[data-part="${pick.part}"] [data-bar] button[data-value="${pick.to}"]`, { timeout: 5000 });
     return `${pick.part} to ${pick.to}`;
   }),
   servo: moveQuestion('#outputs-move-dialog', async (page) => {

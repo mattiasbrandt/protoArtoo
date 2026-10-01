@@ -65,7 +65,10 @@ lib.runCheck({
     // a: find by moving -------------------------------------------------------
     await lib.loadSurface(page, 'wiring');
     await page.waitForFunction(() => document.getElementById('shell-estop-state').textContent === 'Estop: latched', null, { timeout: 15000 });
-    // The first Part on no Output: its row's act is what starts a run.
+    // The first Part on no Output: added to the table from its pill, which is
+    // the page's own and sends nothing, its row's act is what starts a run.
+    await page.waitForSelector('#wiring-parts-table [data-act="add"]', { timeout: 15000 });
+    await page.locator('#wiring-parts-table [data-act="add"]').first().click();
     await page.waitForSelector('#wiring-parts-table [data-find]', { timeout: 15000 });
     const find = page.locator('#wiring-parts-table [data-find]').first();
     if (ungate) {
