@@ -924,8 +924,13 @@
       drag = null;
       dragStop();
       // commit() comes back through refresh(), which draws the routine again.
-      if (done.by !== 0) edit.commit(done.before);
-      else redraw();
+      if (done.by !== 0) {
+        edit.commit(done.before);
+        return;
+      }
+      selection.clear();
+      done.alone.forEach((step) => selection.add(step));
+      redraw();
     }
     // A cancelled gesture puts every step back where the press found it.
     function dragCancel() {
@@ -963,7 +968,8 @@
 
       // Shift or Ctrl adds the block to the selection, or takes it out, and
       // starts no drag. A plain press on a block outside the selection selects
-      // it alone; on one inside it, the whole selection is taken hold of.
+      // it alone; on one inside it, the whole selection is taken hold of, and
+      // if it is then let go without moving, that block is selected alone.
       const own = item.steps.map((index) => steps[index]);
       const held = own.every((step) => selection.has(step));
       if (!isEnd && (event.shiftKey || event.ctrlKey || event.metaKey)) {
@@ -999,6 +1005,7 @@
         windowMs,
         by: 0,
         snap: null,
+        alone: isEnd ? [] : own,
       };
       grid.setAttribute("data-dragging", edge ? "edge" : "body");
       window.addEventListener("pointermove", dragMove);
