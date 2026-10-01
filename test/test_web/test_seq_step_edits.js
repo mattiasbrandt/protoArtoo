@@ -244,6 +244,7 @@ function newPage() {
       fire(byId("seq-editor-save"), "click");
       await settle();
     },
+    settle,
   };
 }
 
@@ -506,4 +507,29 @@ test("an unsaved edit is dropped only on Discard, whichever way the builder was 
   assert.equal(page.surface.decide(), false, "nothing is left to hold the surface for");
 
   assert.deepEqual(page.stored, [], "an unsaved edit was written to browser storage");
+});
+
+// What Save marks as saved is what it sent. An edit made while the droid is
+// still answering never reached it, so it is still unsaved - and leaving is
+// still asked about - when the answer lands (#441).
+test("an edit made while a save is on its way is still unsaved when it lands", async () => {
+  const page = newPage();
+  page.open(
+    { name: "DM:INFLIGHT", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "audio", cmd: "$H" }, { t: 1000, type: "end" }] },
+    [0],
+  );
+  const time = page.card(0).timeInput;
+  time.value = "250";
+  fire(time, "change");
+
+  // Save is pressed, and before the droid answers the time is changed again.
+  fire(page.byId("seq-editor-save"), "click");
+  time.value = "400";
+  fire(time, "change");
+  await page.settle();
+
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  assert.equal(saved[0].body.steps[0].t, 250, "the fixture: the save went out before the second edit");
+  assert.equal(page.surface.decide(), true, "an edit the droid never received was let go without asking");
 });

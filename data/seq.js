@@ -3595,12 +3595,16 @@
     // Every sequence saved from here on has a stable id, so another can hold
     // it; one loaded without gets its id on this save and keeps it.
     if (!editorState.current.id) editorState.current.id = mintSequenceId();
+    // What is saved is the copy that was sent, taken once, before the request:
+    // an edit made while the droid is still answering is not in it, so it
+    // still counts as unsaved and is still asked about.
+    const sent = JSON.parse(JSON.stringify(editorState.current));
     try {
-      await PAApi.postJson("/api/seq", editorState.current);
-      showRehearsalReport("Saved.", "ok", editorState.current, "list");
+      await PAApi.postJson("/api/seq", sent);
+      showRehearsalReport("Saved.", "ok", sent, "list");
       editorState.isNew = false;
       editorState.tuningFactory = null;
-      editorState.original = JSON.parse(JSON.stringify(editorState.current));
+      editorState.original = sent;
       refreshLearned();
     } catch (error) {
       showEditorFeedback("Save failed: " + PAApi.messageFor(error), "error");
