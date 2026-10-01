@@ -2810,7 +2810,7 @@
             <span class="seq-row-label">Order</span>
             <div class="seq-row-ctl">${bar("direction", G.DIRECTIONS, step.direction || "cw")}${bar("start", G.STARTS, step.start || "front")}</div>
             <span class="seq-row-label">How far</span>
-            <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", 'min="1" max="100" data-field="howFar"')}<span class="seq-unit">%</span></div>
+            <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", `${limits(STEP_LIMITS.howFar)} data-field="howFar"`)}<span class="seq-unit">%</span></div>
           </div>
           <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs || step.speedMs || step.easing ? " open" : ""}>
             <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace, repeat and feel</summary>
