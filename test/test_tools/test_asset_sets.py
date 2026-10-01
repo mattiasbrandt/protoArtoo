@@ -603,6 +603,7 @@ class ScriptBundles(_StagingCase):
         result = subprocess.run([node, "-e", driver, str(path), probe],
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.strip(), "the bundle stopped partway: a throw escaped a member")
         return json.loads(result.stdout)
 
     def test_a_member_that_throws_does_not_stop_the_next_and_is_still_reported(self):
