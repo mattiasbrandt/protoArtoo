@@ -643,6 +643,41 @@ send help
 send help servo.action.open
 send system.api.get-components
 
+# #441 slices 1-2 - WRITES A SEQUENCE and deletes it again. The editor's Save
+# was proven in a browser against stubs (the request it sends); this is what
+# the droid stores. Make DM:BENCH (Edit any sequence, or a Factory one through
+# Tune, and rename it), tap a tempo of about 120 BPM and press Use, set the
+# Interrupt group to Pies and the Mute period to 9 s, Save. Reload the page and
+# open it again: the tempo, the interrupt group and the mute period read back
+# as saved. The list read keeps what the store indexed.
+@row 441 a-sequence-round-trips-on-the-droid
+pause At http://10.0.0.22/#seq save DM:BENCH as above, reload, reopen it and check the three settings, then press Enter
+http GET /api/seq/list > seq-list-after-save.json
+http GET /api/seq?name=DM%3ABENCH > seq-bench.json
+send dome.api.list-sequences
+
+# #441 slice 2 - a duplicate is saved under an id of its own (a shipped defect:
+# Duplicate copied the original's id, and the firmware resolves a nested
+# reference by the first id it finds, src/seq_store.cpp:154). Duplicate
+# DM:BENCH, Save the copy as DM:BENCH_COPY. In the list read, the two rows carry
+# different ids.
+@row 441 a-duplicate-has-its-own-id
+pause Duplicate DM:BENCH, save DM:BENCH_COPY, then press Enter
+http GET /api/seq/list > seq-list-after-duplicate.json
+send dome.api.list-sequences
+
+# #441 slices 1-2 - Test and the pose press against the real firmware, not a
+# stub: the droid takes both and reports the run. Nothing is connected, so
+# nothing moves; the answer is what proves it. Then Memory Wipe both bench
+# sequences, so the board keeps its own Learned Sequences and room under the
+# cap.
+@row 441 test-and-pose-reach-the-droid
+pause Open DM:BENCH, press Test on the droid, then Move the droid to this moment at 1.00 s, then press Enter
+http GET /api/seq/last-run > seq-last-run.json
+send system.status.health
+pause Memory Wipe DM:BENCH_COPY and DM:BENCH from the list, then press Enter
+send dome.api.list-sequences
+
 # #418 + #427 - read once, after every write above and before the profiler
 # flash wipes the log: no config write ran
 # outside its Write Window (logged on device, never a reset), and whether the
