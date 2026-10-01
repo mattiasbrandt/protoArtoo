@@ -25,7 +25,15 @@
 // history whatever it passed on the way, and what Save sends is in the time
 // order Protocol Check accepts. A press that moves nothing is no edit.
 //
-// The third: a Factory sequence's stage is read-only. The builder has not made
+// The third: what is dragged in from the library, and what is changed in the
+// Picked block tab, are edits on that same history. A drop is one entry
+// however many steps it makes, lands by the timeline's own tolerance and never
+// outside the lanes; an inspector edit that changes nothing is no entry; and
+// neither leaves the routine in a state the droid would refuse where the
+// surface offered the choice (a flutter keeps the close it owes, Same pick
+// needs a pick before it, a loop keeps the steps it takes at their moments).
+//
+// The fourth: a Factory sequence's stage is read-only. The builder has not made
 // the sequence theirs, so nothing on its stage can be taken hold of and a drag
 // across a block leaves the routine exactly as the droid sent it; Tune is the
 // way into the editor.
@@ -134,6 +142,11 @@ function openPage() {
   const editorTimeline = real();
   const editorDroid = real();
   const pickedPane = real();
+  // The library: the Parts tab's list, which the pills are taken hold of on,
+  // and the two groups its pills are written into.
+  const partsList = real();
+  const libraryParts = real();
+  const libraryKinds = real();
 
   // The Factory row and its Timeline act, handed back the way the browser
   // would find them in the markup renderListView() just wrote.
@@ -147,6 +160,9 @@ function openPage() {
     ["seq-editor-timeline", editorTimeline],
     ["seq-editor-droid", editorDroid],
     ["seq-picked", pickedPane],
+    ["seq-editor-parts", partsList],
+    ["seq-lib-parts", libraryParts],
+    ["seq-lib-kinds", libraryKinds],
   ]);
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, stub());
@@ -226,7 +242,11 @@ function openPage() {
     writes,
     timelineView,
     editorTimeline,
+    editorBar,
     pickedPane,
+    partsList,
+    libraryParts,
+    libraryKinds,
     timelineButton,
     byId,
     seam: sandbox.__seqEditorForTesting,
@@ -488,6 +508,214 @@ test("taking the picked block off its beat leaves it picked", async () => {
     view.querySelectorAll("[data-edit]").some((node) => node.getAttribute("data-edit").includes("is-selected")),
     "the block is no longer drawn as picked",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The library and the inspector (#441). The track is 1000 px wide and the
+// lanes 400 px tall; the timeline draws its ruler again whenever the routine
+// changes, so the boxes are given again before each pointer event that reads
+// them.
+// ---------------------------------------------------------------------------
+function workspace(sequence) {
+  const page = openPage();
+  page.seam.renderEditorView(JSON.parse(JSON.stringify(sequence)));
+  const view = page.editorTimeline;
+  const boxes = () => {
+    view.querySelector(".tl-ruler").getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000 });
+    view.querySelector(".tl-grid").getBoundingClientRect = () => ({ top: 0, bottom: 400 });
+  };
+  const xAt = (ms) => (ms / Number(view.querySelector(".tl-ruler").getAttribute("aria-valuemax"))) * 1000;
+  const steps = () => page.seam.editorState.current.steps;
+  const press = (id) => (page.byId(id).listeners.click || []).forEach((fn) => fn());
+  return {
+    page,
+    view,
+    steps,
+    // The routine in short. Array.from: the steps are the page's own array,
+    // from another realm than the one these assertions compare in.
+    brief: () => Array.from(steps(), (step) => [step.t, step.cmd || step.type]),
+    undo: () => press("seq-editor-undo"),
+    undoOff: () => page.byId("seq-editor-undo").disabled,
+    saveOff: () => page.byId("seq-editor-save").disabled,
+    said: () => page.editorBar.querySelector(".tl-said").textContent,
+    // Take hold of a library pill and let it go at `ms` on the timeline, `y`
+    // px down from the top of the lanes; with no `ms`, let it go where it was
+    // pressed.
+    drag(lib, ms = null, y = 200) {
+      const group = lib.startsWith("kind:") ? page.libraryKinds : page.libraryParts;
+      const pill = group.querySelector(`[data-lib="${lib}"]`);
+      assert.ok(pill, `the library offers no ${lib}`);
+      page.partsList.fire("pointerdown", { target: pill, clientX: 300, clientY: 700, pointerId: 1 });
+      if (ms !== null) {
+        boxes();
+        page.fireWindow("pointermove", { clientX: xAt(ms), clientY: y, pointerId: 1 });
+        boxes();
+      }
+      page.fireWindow("pointerup", { clientX: ms === null ? 300 : xAt(ms), clientY: ms === null ? 700 : y, pointerId: 1 });
+    },
+    // Press a block and let it go where it is: the `nth` item of `kind` on a lane.
+    pick(lane, kind, nth = 0) {
+      boxes();
+      const block = view.querySelector(`[data-lane="${lane}"]`).querySelectorAll(`.tl-${kind}`)[nth];
+      assert.ok(block, `no ${kind} block on the ${lane} lane`);
+      block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+      view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
+      page.fireWindow("pointerup", {});
+    },
+    field: (name) => page.pickedPane.querySelector(`[data-picked="${name}"]`),
+    choice: (name, value) =>
+      page.pickedPane.querySelectorAll(`[data-picked="${name}"]`).find((button) => button.getAttribute("data-value") === value) || null,
+    // Type into an inspector field, or press one of its choices, as the
+    // browser delivers each.
+    type(name, value) {
+      const input = page.pickedPane.querySelector(`[data-picked="${name}"]`);
+      input.value = String(value);
+      page.pickedPane.fire("change", { target: input });
+    },
+    choose(name, value) {
+      const button = page.pickedPane.querySelectorAll(`[data-picked="${name}"]`).find((each) => each.getAttribute("data-value") === value);
+      assert.ok(button, `the inspector offers no ${name} "${value}"`);
+      page.pickedPane.fire("click", { target: button });
+    },
+    // Move a fader through `values` and let it go.
+    slide(name, values) {
+      const fader = page.pickedPane.querySelector(`[data-picked="${name}"]`);
+      values.forEach((value) => {
+        fader.value = String(value);
+        page.pickedPane.fire("input", { target: fader });
+      });
+      page.pickedPane.fire("change", { target: fader });
+    },
+  };
+}
+
+test("a Part dragged from the library lands as one edit, and one Undo takes the whole drop away", async () => {
+  const w = workspace(EDITED);
+  const before = w.brief();
+  assert.equal(w.view.querySelector('[data-lane="pie1"]'), null, "the fixture: no step names the pie yet");
+
+  // A press that goes nowhere adds nothing, and neither does a pill let go
+  // off the lanes: the routine is as it was and there is nothing to undo.
+  w.drag("part:pie1");
+  w.drag("part:pie1", 3460, 900);
+  assert.deepEqual(w.brief(), before, "a pill that was not dropped on the lanes changed the routine");
+  assert.equal(w.undoOff(), true, "a drop that landed nothing was recorded as an edit");
+
+  // Dropped on the lanes at 3460 ms, out of reach of any edge: the pie opens
+  // there and closes a second on - held at the end, which is at 4000 ms - on
+  // a lane of its own, and the droid would accept the routine.
+  w.drag("part:pie1", 3460);
+  assert.deepEqual(w.brief(), [[0, "$H"], [500, "domeRotate"], [2000, ":OP01"], [3000, ":CL01"], [3460, ":OPP1"], [4000, ":CLP1"], [4000, "end"]]);
+  assert.ok(w.view.querySelector('[data-lane="pie1"]'), "the dropped Part has no lane");
+  assert.equal(w.saveOff(), false, "the drop left a routine the droid would refuse");
+  assert.ok(w.field("runs"), "the dropped block is not the one the inspector is on");
+
+  w.undo();
+  assert.deepEqual(w.brief(), before, "one Undo did not take the whole drop away");
+  assert.equal(w.undoOff(), true, "the drop was more than one entry");
+
+  // Within the tolerance of a block's edge it lands on the edge, as a dragged
+  // block does: 60 ms past the panel's open at 2000 ms.
+  w.drag("part:pie1", 2060);
+  assert.equal(w.steps().find((step) => step.cmd === ":OPP1").t, 2000, "the drop did not land on the edge it came within the tolerance of");
+});
+
+test("an inspector edit that changes nothing records nothing, and one that does is one Undo", async () => {
+  const w = workspace(EDITED);
+  w.pick("panel1", "open");
+  const close = () => w.steps().find((step) => step.cmd === ":CL01");
+  const open = () => w.steps().find((step) => step.cmd === ":OP01");
+  assert.equal(w.field("runs").getAttribute("value"), "1000");
+
+  // The number it already has, typed again.
+  w.type("runs", 1000);
+  assert.equal(w.undoOff(), true, "typing the value a field already had was recorded as an edit");
+
+  // Runs for moves the close: the open stays where it is.
+  w.type("runs", 400);
+  assert.deepEqual([open().t, close().t], [2000, 2400]);
+  w.undo();
+  assert.equal(close().t, 3000, "one Undo did not take the typed length back");
+  assert.equal(w.undoOff(), true);
+
+  // A fader held and moved is one edit, written as it moves. The whole throw
+  // is stored as absence, so a routine that never said how far saves back as
+  // it was read.
+  w.pick("panel1", "open");
+  w.slide("howFar", [80, 60]);
+  assert.equal(open().howFar, 60, "the fader never reached the routine");
+  w.slide("howFar", [100]);
+  assert.equal("howFar" in open(), false, "the whole throw was written into the step");
+  w.undo();
+  assert.equal(open().howFar, 60);
+  w.undo();
+  assert.equal("howFar" in open(), false, "a fader moved through two values took two Undos");
+  assert.equal(w.undoOff(), true);
+});
+
+test("Flutter on a Part standing open keeps the close it owes, and is not offered where there is none", async () => {
+  const w = workspace(EDITED);
+  w.pick("panel1", "open");
+  w.choose("motion", "flutter");
+  assert.deepEqual(w.brief().slice(2, 4), [[2000, ":OF01"], [3000, ":CL01"]], "the flutter did not take the open's place and keep its close");
+  assert.equal(w.saveOff(), false, "the flutter left a routine the droid would refuse");
+  assert.equal(w.choice("motion", "flutter")?.getAttribute("aria-pressed"), "true", "the inspector left the block it changed");
+
+  // Open on the flutter makes it the pair again, with its length to type.
+  w.choose("motion", "open");
+  assert.deepEqual(w.brief().slice(2, 4), [[2000, ":OP01"], [3000, ":CL01"]]);
+  assert.ok(w.field("runs"), "the pair came back without its length");
+
+  // An open no step closes (the droid closes a ring panel itself after the
+  // end): a flutter there would never be closed, which Protocol Check refuses.
+  const left = workspace({ ...EDITED, steps: EDITED.steps.filter((step) => step.cmd !== ":CL01") });
+  left.pick("panel1", "open");
+  assert.ok(left.choice("motion", "open"), "the fixture: the open's Motion row is drawn");
+  assert.equal(left.choice("motion", "flutter"), null, "Flutter is offered on an open with no close to keep");
+});
+
+test("Same pick is offered only to a Random Flutter that has a pick before it", async () => {
+  const random = (t) => ({ t, type: "random", set: "ring", mode: "flutter", moveMs: 300, jitterMs: 0, distinct: true });
+  const w = workspace({ ...EDITED, steps: [random(500), random(1500), { t: 4000, type: "end" }] });
+
+  w.pick("panel1", "maybe", 0);
+  assert.ok(w.choice("set", "ring"), "the fixture: the first Random Flutter's set is drawn");
+  assert.equal(w.choice("set", "hold"), null, "the first Random Flutter is offered a pick nothing made");
+
+  w.pick("panel1", "maybe", 1);
+  w.choose("set", "hold");
+  assert.equal(w.steps()[1].set, "hold");
+  assert.equal(w.saveOff(), false);
+});
+
+test("a dropped Servo Loop takes the steps that start in its first pass and leaves them at their moments", async () => {
+  const w = workspace(EDITED);
+  const before = w.brief();
+
+  // At 1750 ms its first pass (1846 ms) reaches the panel's open and close.
+  // They are timed from the start of a pass once repeated, so each is
+  // rewritten from there and still happens when it did.
+  w.drag("kind:loop", 1750);
+  const loopAt = w.steps().findIndex((step) => step.type === "loop");
+  const loop = w.steps()[loopAt];
+  assert.equal(loop?.t, 1750, "the loop did not land where it was dropped");
+  assert.equal(loop.body, 2, "the loop does not repeat the steps that start in its first pass");
+  assert.deepEqual(
+    Array.from(w.steps().slice(loopAt + 1, loopAt + 3), (step) => [loop.t + step.t, step.cmd]),
+    [[2000, ":OP01"], [3000, ":CL01"]],
+    "a step the loop took was moved by being taken",
+  );
+  assert.equal(w.saveOff(), false, "the dropped loop left a routine the droid would refuse");
+
+  w.undo();
+  assert.deepEqual(w.brief(), before, "one Undo did not take the loop off and put its steps back");
+
+  // With only the end after it there is nothing to repeat: it lands nothing,
+  // says so, and is no edit.
+  w.drag("kind:loop", 3500);
+  assert.deepEqual(w.brief(), before, "a loop with nothing to repeat changed the routine");
+  assert.equal(w.undoOff(), true);
+  assert.equal(w.said(), "Servo Loop needs a step after it to repeat.");
 });
 
 test("a Factory sequence's stage offers nothing that edits it", async () => {
