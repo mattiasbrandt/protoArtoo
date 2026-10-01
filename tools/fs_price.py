@@ -42,7 +42,6 @@ the block size (`usedBytes()`).
 from __future__ import annotations
 
 import argparse
-import ast
 import json
 import os
 import sys
@@ -61,22 +60,16 @@ from check_build_budgets import (  # noqa: E402
     platform_for_env,
 )
 
-# Arguments of build_fs_image's LittleFS(...) that are the same on both pins.
-# A name is an expression in the builder; a literal is the value it passes.
-# block_size is the partition's FS_BLOCK, which defaults to 4096, and
-# cache_size follows it. disk_version is (major << 16) | minor, default 2.1.
-# `mount` is not in this table: the pins disagree, and it is read per env.
-EXPECTED_LITTLEFS = {
-    "block_size": "block_size",
-    "block_count": "block_count",
-    "read_size": 1,
-    "prog_size": 1,
-    "cache_size": "block_size",
-    "lookahead_size": 32,
-    "block_cycles": 500,
-    "name_max": 64,
-    "disk_version": "disk_version",
-}
+# The builder's geometry, mount handling, file order and writer are shared with
+# tools/littlefs_image.py, which writes the image the build ships, so the price
+# and the build cannot read the platform differently.
+from littlefs_builder import (  # noqa: E402
+    disk_version,
+    image_expression_problems,
+    littlefs_call,
+    ordered_entries,
+    write_image,
+)
 
 _REENC_ENV = "FS_PRICE_REEXEC"
 
@@ -151,14 +144,10 @@ def resolved_env(env_name: str) -> dict[str, str]:
 
 
 def disk_version_for(options: dict[str, str]) -> int:
-    raw = options.get("board_build.littlefs_version", "2.1")
-    parts = raw.split(".")
     try:
-        major = int(parts[0])
-        minor = int(parts[1]) if len(parts) > 1 else 0
-    except ValueError:
-        die(f"board_build.littlefs_version {raw!r} is not a major.minor")
-    return (major << 16) | minor
+        return disk_version(options.get("board_build.littlefs_version", "2.1"))
+    except ValueError as exc:
+        die(str(exc))
 
 
 def partition_blocks(env_name: str) -> tuple[int, Path]:
@@ -230,59 +219,12 @@ def littlefs_mount(source: str, origin: str = "the platform builder") -> bool:
     55.03.37 passes mount=True and never calls format(); the library formats
     when that first mount fails. The P4 pin passes mount=False and then calls
     format() and mount(). Anything else is a builder this script would image
-    differently from, so the run stops.
+    differently from, so the run stops. The reading is tools/littlefs_builder.py's.
     """
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as exc:
-        die(f"{origin} could not be parsed: {exc}")
-    func = next(
-        (node for node in ast.walk(tree)
-         if isinstance(node, ast.FunctionDef) and node.name == "build_fs_image"),
-        None,
-    )
-    if func is None:
-        die(f"{origin} has no build_fs_image()")
-    calls = [
-        node for node in ast.walk(func)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "LittleFS"
-    ]
-    if len(calls) != 1:
-        die(f"{origin} build_fs_image() makes {len(calls)} LittleFS() calls")
-    found: dict[str, object] = {}
-    for keyword in calls[0].keywords:
-        if keyword.arg is None:
-            die(f"{origin} LittleFS() call has a positional argument")
-        value = keyword.value
-        if isinstance(value, ast.Constant):
-            found[keyword.arg] = value.value
-        elif isinstance(value, ast.Name):
-            found[keyword.arg] = value.id
-        else:
-            found[keyword.arg] = ast.unparse(value)
-    problems = [
-        f"LittleFS({name}={found.get(name, '<absent>')!r}, expected {expected!r})"
-        for name, expected in EXPECTED_LITTLEFS.items()
-        if found.get(name, "<absent>") != expected
-    ]
-    for name in sorted(set(found) - set(EXPECTED_LITTLEFS) - {"mount"}):
-        problems.append(f"LittleFS({name}=...) is not written by this pricer")
-    mount = found.get("mount", "<absent>")
-    body = {ast.unparse(node) for node in ast.walk(func) if isinstance(node, ast.expr)}
-    if mount is True:
-        if "fs.format()" in body:
-            problems.append(
-                "LittleFS(mount=True) and build_fs_image() also calls fs.format()"
-            )
-    elif mount is False:
-        for expr in ("fs.format()", "fs.mount()"):
-            if expr not in body:
-                problems.append(f"LittleFS(mount=False) but build_fs_image() has no `{expr}`")
-    else:
-        problems.append(f"LittleFS(mount={mount!r}) is neither True nor False")
+    mount, problems = littlefs_call(source)
     if problems:
         die(f"{origin} LittleFS call does not match this pricer:\n  " + "\n  ".join(problems))
-    return True if mount is True else False
+    return mount
 
 
 def platform_littlefs(env_name: str) -> PlatformLittleFS:
@@ -303,7 +245,11 @@ def platform_littlefs(env_name: str) -> PlatformLittleFS:
     version = str(described.get("version", ""))
     if not version:
         die(f"{directory / 'platform.json'} has no version")
-    mount = littlefs_mount(builder.read_text(encoding="utf-8"), str(builder))
+    source = builder.read_text(encoding="utf-8")
+    mount = littlefs_mount(source, str(builder))
+    drift = image_expression_problems(source)
+    if drift:
+        die(f"{builder} does not match this pricer:\n  " + "\n  ".join(drift))
     return PlatformLittleFS(mount=mount, version=version, builder=builder)
 
 
@@ -345,72 +291,14 @@ def ensure_littlefs(env_name: str):
     os.execv(str(python), [str(python), *sys.argv])
 
 
-def ordered_entries(source: Path, order: str) -> list[Path]:
-    """Entries in the order `image_directory` writes them.
-
-    `name` is a sorted walk: within a directory, files in name order, then
-    subdirectories. A flat sort of every relative path writes a subdirectory's
-    files before a later file in the parent, and that is a different image.
-    `size` is directories by path, then files largest first.
-    """
-    walked: list[Path] = []
-    directories: list[Path] = []
-    files: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(source):
-        dirnames.sort()
-        filenames.sort()
-        current = Path(dirpath)
-        if current != source:
-            walked.append(current)
-            directories.append(current)
-        for name in filenames:
-            path = current / name
-            walked.append(path)
-            files.append(path)
-    if order == "name":
-        return walked
-    directories.sort(key=lambda path: path.relative_to(source).as_posix())
-    files.sort(key=lambda path: (-path.stat().st_size, path.relative_to(source).as_posix()))
-    return directories + files
-
-
 def image_directory(source: Path, block_count: int, order: str, disk_version: int, mount: bool) -> tuple[int, int]:
     """Write `source` and return (written non-0xFF blocks, lfs_fs_size).
 
-    Caller has already run ensure_littlefs, so this import is the PlatformIO one.
-    `mount` is the pin's own LittleFS(mount=...). Mounted, the library formats
-    the blank buffer when the first mount fails. Unmounted, the builder formats
-    and mounts on a fresh instance, and so does this.
+    Caller has already run ensure_littlefs, so the import inside write_image is
+    the PlatformIO one. `mount` is the pin's own LittleFS(mount=...).
     """
-    from littlefs import LittleFS as LFS
-
     block = LITTLEFS_BLOCK_SIZE
-    fs = LFS(
-        block_size=block,
-        block_count=block_count,
-        read_size=EXPECTED_LITTLEFS["read_size"],
-        prog_size=EXPECTED_LITTLEFS["prog_size"],
-        cache_size=block,
-        lookahead_size=EXPECTED_LITTLEFS["lookahead_size"],
-        block_cycles=EXPECTED_LITTLEFS["block_cycles"],
-        name_max=EXPECTED_LITTLEFS["name_max"],
-        disk_version=disk_version,
-        mount=mount,
-    )
-    if not mount:
-        fs.format()
-        fs.mount()
-    for item in ordered_entries(source, order):
-        rel = item.relative_to(source).as_posix()
-        if item.is_dir():
-            fs.makedirs(rel, exist_ok=True)
-        else:
-            parent = item.relative_to(source).parent
-            if parent != Path("."):
-                fs.makedirs(parent.as_posix(), exist_ok=True)
-            with fs.open(rel, "wb") as dest:
-                dest.write(item.read_bytes())
-        fs.setattr(rel, "t", int(item.stat().st_mtime).to_bytes(4, "little"))
+    fs = write_image(source, block, block_count, disk_version, mount, order)
     raw = bytes(fs.context.buffer)
     written = sum(
         1

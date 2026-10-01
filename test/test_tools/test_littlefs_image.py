@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The filesystem image is written in one file order on every host (#461).
 
-tools/littlefs_image.py rewrites the image the platform builds, because the
+tools/littlefs_image.py rewrites the image the platform builds (through
+tools/littlefs_builder.py, which tools/fs_price.py shares), because the
 platform adds files in Path.rglob order - the host filesystem's listing - and
 that moved the block count from host to host (118-121 on one stage). These
 tests hold the three things the rewrite rests on: the image does not depend on
@@ -47,11 +48,11 @@ def _littlefs_available():
 
 
 class _NativeEnv:
-    """Answers only what main() asks before it returns for a native build."""
+    """Answers only what the script asks before main() returns for a native
+    build: where the project's tools are, and the platform."""
 
     def subst(self, key):
-        assert key == "$PIOPLATFORM", key
-        return "native"
+        return {"$PROJECT_DIR": str(ROOT), "$PIOPLATFORM": "native"}[key]
 
 
 def _load():
@@ -75,7 +76,7 @@ class PlatformBuilderAgreement(unittest.TestCase):
             self.skipTest("no espressif32 platform is installed under ~/.platformio*")
         for path in PLATFORM_BUILDERS:
             with self.subTest(path):
-                mount, drift = IMAGE["_platform_image_builder"](Path(path).read_text(encoding="utf-8"))
+                mount, drift = IMAGE["read_platform_builder"](Path(path).read_text(encoding="utf-8"))
                 self.assertEqual(drift, [])
                 self.assertIn(mount, (True, False))
 
@@ -87,7 +88,7 @@ class PlatformBuilderAgreement(unittest.TestCase):
             "mtime.to_bytes(4, 'little')", "mtime.to_bytes(8, 'little')"
         )
         self.assertNotEqual(changed, source)
-        _mount, drift = IMAGE["_platform_image_builder"](changed)
+        _mount, drift = IMAGE["read_platform_builder"](changed)
         self.assertTrue(any("lookahead_size=64" in line for line in drift), drift)
         self.assertTrue(any("'t', mtime.to_bytes(4, 'little')" in line for line in drift), drift)
 
@@ -140,9 +141,7 @@ class OrderedImage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             stage = self._stage(Path(tmp) / "stage")
             image = self._image(stage, True)
-            geometry = dict(IMAGE["PLATFORM_LITTLEFS_CALL"])
-            geometry.update(block_size=BLOCK, block_count=FS_SIZE // BLOCK, cache_size=BLOCK,
-                            disk_version=DISK_2_1)
+            geometry = IMAGE["littlefs_builder"].geometry(BLOCK, FS_SIZE // BLOCK, DISK_2_1)
             fs = LittleFS(context=UserContext(buffer=bytearray(image)), mount=True, **geometry)
             for rel in list(self.FILES) + ["sub"]:
                 with self.subTest(rel):

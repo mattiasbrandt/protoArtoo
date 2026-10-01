@@ -31,181 +31,77 @@ Nothing here touches the image when the image is not being built: a firmware
 build has no DataToBin node, and the action is never registered.
 """
 
-import ast
 import os
-import posixpath
+import sys
 
 Import("env")  # noqa: F821  (PlatformIO injects this)
 
+# The platform's builder is read, and the image written, by the one module
+# tools/fs_price.py prices with too (#462), so the shipped image and its price
+# cannot read the platform differently. SCons runs this file with exec(), so
+# the tools directory is found from the project, not from __file__.
+_TOOLS = os.path.join(env.subst("$PROJECT_DIR"), "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import littlefs_builder  # noqa: E402
 
-def _write_order_key(path, size):
-    """The order files go into the image: largest first, ties by path.
-    tools/gzip_fsdata.py writes the stage in the same order, so a host that
-    lists a directory in creation order shows the stage as it is imaged."""
-    return (-size, path)
-
-
-# The LittleFS geometry the platform's build_fs_image() formats the image with
-# (builder/main.py, its LittleFS(...) call), restated because the image is now
-# written here and must mount where the platform's would. A call argument that
-# is a name, not a literal, is listed by that name. _platform_image_builder()
-# reads the platform's call at build time and fails the build on any
-# difference, so this table cannot quietly fall behind a platform update.
-# `mount` is the one argument read rather than restated: the two platform
-# releases this project pins disagree on it (see write_ordered_image()).
-PLATFORM_LITTLEFS_CALL = {
-    "block_size": "block_size",
-    "block_count": "block_count",
-    "read_size": 1,
-    "prog_size": 1,
-    "cache_size": "block_size",
-    "lookahead_size": 32,
-    "block_cycles": 500,
-    "name_max": 64,
-    "disk_version": "disk_version",
-}
-# The other expressions build_fs_image() is read for: the block count it
-# derives, and the 4-byte little-endian `t` mtime attribute it sets on every
-# file and directory (ESP-IDF's LittleFS reads it as the file's mtime).
-PLATFORM_IMAGE_EXPRESSIONS = (
-    "fs_size // block_size",
-    "int(item.stat().st_mtime)",
-    "fs.setattr(fs_path, 't', mtime.to_bytes(4, 'little'))",
-)
+# The order the image is written in: tools/fs_price.py --order size, the order
+# tools/gzip_fsdata.py writes the stage in.
+IMAGE_ORDER = "size"
 
 
-def _platform_image_builder(builder_source):
-    """Read the platform's build_fs_image(): return (mount, drift), where
-    `mount` is the LittleFS(mount=...) it constructs with and `drift` lists
-    every difference from what write_ordered_image() assumes, as readable
-    lines; empty when they agree."""
-    tree = ast.parse(builder_source)
-    func = next(
-        (node for node in ast.walk(tree)
-         if isinstance(node, ast.FunctionDef) and node.name == "build_fs_image"),
-        None,
-    )
-    if func is None:
-        return None, ["the platform builder has no build_fs_image()"]
-    calls = [
-        node for node in ast.walk(func)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "LittleFS"
-    ]
-    if len(calls) != 1:
-        return None, ["build_fs_image() makes %d LittleFS(...) calls, not one" % len(calls)]
-    found = {}
-    for keyword in calls[0].keywords:
-        value = keyword.value
-        if isinstance(value, ast.Constant):
-            found[keyword.arg] = value.value
-        elif isinstance(value, ast.Name):
-            found[keyword.arg] = value.id
-        else:
-            found[keyword.arg] = ast.unparse(value)
-    drift = [
-        "LittleFS(%s=%r) in the platform, %r here" % (name, found.get(name), expected)
-        for name, expected in sorted(PLATFORM_LITTLEFS_CALL.items())
-        if found.get(name, "<absent>") != expected
-    ]
-    drift += [
-        "LittleFS(%s=...) in the platform is not written here" % name
-        for name in sorted(set(found) - set(PLATFORM_LITTLEFS_CALL) - {"mount"})
-    ]
-    mount = found.get("mount")
-    body = {ast.unparse(node) for node in ast.walk(func) if isinstance(node, ast.expr)}
-    expected = list(PLATFORM_IMAGE_EXPRESSIONS)
-    if mount is False:
-        # Constructed unmounted, the platform formats and mounts explicitly.
-        expected += ["fs.format()", "fs.mount()"]
-    elif mount is not True:
-        drift.append("LittleFS(mount=%r) in the platform is neither True nor False" % (mount,))
-    drift += [
-        "build_fs_image() no longer contains `%s`" % expression
-        for expression in expected
-        if expression not in body
-    ]
-    return mount, drift
+def read_platform_builder(builder_source):
+    """Return (mount, drift) for the platform's build_fs_image(): its own
+    LittleFS(mount=...), and every way it differs from what write_ordered_image()
+    writes, as readable lines (empty when they agree)."""
+    mount, drift = littlefs_builder.littlefs_call(builder_source)
+    return mount, drift + littlefs_builder.image_expression_problems(builder_source)
 
 
 def write_ordered_image(stage_dir, fs_size, block_size, disk_version, mount):
-    """Return the LittleFS image of `stage_dir`, written in _write_order_key()
-    order whatever order the host lists the directory in.
+    """Return the LittleFS image of `stage_dir`, written largest file first
+    whatever order the host lists the directory in.
 
     It is the platform's build_fs_image() with one change: that function
     writes in Path.rglob order, which is the host filesystem's directory
     listing - creation order on btrfs, the reverse on tmpfs, hash order on
     ext4 - so one stage imaged to different bytes, and a different block
-    count, on different hosts. Directories are made first, by path; files
-    follow in the fixed order. Every directory and file carries the `t`
-    attribute the platform sets.
+    count, on different hosts. `mount` is the platform's own LittleFS(mount=...)
+    (the two pins differ; tools/littlefs_builder.py write_image()).
 
-    `mount` is the platform's own LittleFS(mount=...): pioarduino 55.03.37
-    (artoo) constructs mounted and lets the library format the blank buffer
-    when that first mount fails; 55.03.311 (P4) constructs unmounted, then
-    formats and mounts, because the implicit path leaves a superblock some
-    targets refuse (its own comment). Each image is written the way its
-    platform writes one.
+    The image must mount on the droid, so it is mounted again here from its
+    bytes, with the same geometry, and every file read back at its size before
+    it replaces anything.
     """
-    from littlefs import LittleFS  # the platform's penv provides it at build time
+    from littlefs import LittleFS, UserContext  # the platform's penv provides it at build time
 
-    stage_dir = os.path.abspath(stage_dir)
-    dirs = []
-    files = []
-    for root, dir_names, file_names in os.walk(stage_dir):
-        rel_root = os.path.relpath(root, stage_dir)
-        for name in dir_names:
-            dirs.append(posixpath.normpath(posixpath.join(rel_root.replace(os.sep, "/"), name)))
-        for name in file_names:
-            full = os.path.join(root, name)
-            rel = posixpath.normpath(posixpath.join(rel_root.replace(os.sep, "/"), name))
-            files.append((rel, os.path.getsize(full)))
-
-    def mtime(rel):
-        return int(os.stat(os.path.join(stage_dir, rel)).st_mtime).to_bytes(4, "little")
-
-    geometry = dict(PLATFORM_LITTLEFS_CALL)
-    geometry.update(block_size=block_size, block_count=fs_size // block_size,
-                    cache_size=block_size, disk_version=disk_version)
-    fs = LittleFS(mount=mount, **geometry)
-    if not mount:
-        fs.format()
-        fs.mount()
-    for rel in sorted(dirs):
-        fs.makedirs(rel, exist_ok=True)
-        fs.setattr(rel, "t", mtime(rel))
-    for rel, _size in sorted(files, key=lambda f: _write_order_key(f[0], f[1])):
-        with open(os.path.join(stage_dir, rel), "rb") as fh:
-            payload = fh.read()
-        with fs.open(rel, "wb") as dest:
-            dest.write(payload)
-        fs.setattr(rel, "t", mtime(rel))
+    block_count = fs_size // block_size
+    fs = littlefs_builder.write_image(stage_dir, block_size, block_count, disk_version, mount, IMAGE_ORDER)
     image = bytes(fs.context.buffer)
-
-    # The image must mount on the droid; mount it here, with the same
-    # geometry, and read every file back before it replaces anything.
-    from littlefs import UserContext
-    check = LittleFS(context=UserContext(buffer=bytearray(image)), mount=True, **geometry)
-    for rel, size in files:
-        if check.stat(rel).size != size:
-            raise SystemExit("[gzip_fsdata] %s reads back from the image at the wrong size." % rel)
+    check = LittleFS(context=UserContext(buffer=bytearray(image)), mount=True,
+                     **littlefs_builder.geometry(block_size, block_count, disk_version))
+    for entry in littlefs_builder.ordered_entries(stage_dir, IMAGE_ORDER):
+        if entry.is_file():
+            rel = entry.relative_to(stage_dir).as_posix()
+            if check.stat(rel).size != entry.stat().st_size:
+                raise SystemExit("[littlefs_image] %s reads back from the image at the wrong size." % rel)
     check.unmount()
     return image
 
 
 def _littlefs_disk_version(env):
     """The disk version build_fs_image() formats with: board_build.littlefs_version
-    from this env's section, else [common], else 2.1, as major << 16 | minor."""
+    from this env's section, else [common], else 2.1."""
     config = env.GetProjectConfig()
     version = "2.1"
     for section in ["env:" + env["PIOENV"], "common"]:
         if config.has_option(section, "board_build.littlefs_version"):
             version = config.get(section, "board_build.littlefs_version")
             break
-    major, _, minor = str(version).partition(".")
     try:
-        return (int(major) << 16) | int(minor or 0)
-    except ValueError:
-        raise SystemExit("[gzip_fsdata] board_build.littlefs_version '%s' is not major.minor." % version)
+        return littlefs_builder.disk_version(version)
+    except ValueError as exc:
+        raise SystemExit("[littlefs_image] %s" % exc)
 
 
 def _rewrite_image_in_order(target, source, env):
@@ -213,9 +109,9 @@ def _rewrite_image_in_order(target, source, env):
     stage in the fixed order, replacing the platform's host-ordered copy."""
     builder = os.path.join(env.PioPlatform().get_dir(), "builder", "main.py")
     with open(builder, "r", encoding="utf-8") as fh:
-        mount, drift = _platform_image_builder(fh.read())
+        mount, drift = read_platform_builder(fh.read())
     if drift:
-        print("[gzip_fsdata] the platform's filesystem image builder (%s) no longer "
+        print("[littlefs_image] the platform's filesystem image builder (%s) no longer "
               "matches the ordered writer:\n  %s" % (builder, "\n  ".join(drift)))
         return 1
     image = write_ordered_image(
