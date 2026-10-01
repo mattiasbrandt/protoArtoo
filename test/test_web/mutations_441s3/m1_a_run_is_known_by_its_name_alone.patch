@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index ac6bf143..facb2aaf 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -211,7 +211,7 @@
+ 
+     const judge = (record) => {
+       const fresh = !sameRecord(record, run.before);
+-      const ours = fresh && record.valid === true && record.name === run.name;
++      const ours = record.valid === true && record.name === run.name;
+       if (ours && record.running === true) {
+         run.seen = true;
+         return;
