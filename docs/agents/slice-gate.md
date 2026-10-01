@@ -55,7 +55,9 @@ a slice fails the gate; `--expect-gate-edit` is for coordinator-sanctioned
 gate work only. The waiver flags — `--expect-gate-edit`,
 `--expect-no-new-tests`, `--expect-no-mutations` — are granted by the
 coordinator in the brief, never self-granted by a worker, and every ACK is
-visible in the block.
+visible in the block. Pricing a staged directory without `buildfs` is
+`tools/fs_price.py` (`--order` is required, #462). It is not a second gate;
+`make check-build-budgets` is still the number that can fail a build.
 
 **Evidence rules:** pasted evidence must carry process exit codes, never a
 hand-summarised pass/fail line. A test that fails only by hanging or timing out

@@ -579,6 +579,10 @@ a script already knows. A ticket that would trip the budget does not raise it
 either - `tools/build_budgets.json`'s own rationale makes a raise a decision
 about Learned Sequence storage, which is the operator's.
 
+A question about what a staged directory would cost, including the same bytes
+written in another order, is `tools/fs_price.py` (`--order` is required; #462).
+That number is not the gate. Do not write a private LittleFS imager for it.
+
 **JSON API test rule:** JSON API response builders that are new or materially
 changed should have high-signal native coverage for the typical case and serialized
 size budget. Avoid low-value tests that only mirror implementation details.

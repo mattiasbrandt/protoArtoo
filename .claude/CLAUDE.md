@@ -150,6 +150,7 @@ none.
   `tools/bench_rows/` sheets (`make bench-rows`). Use it instead of ad-hoc pyserial snippets;
   the reference is [docs/console-client.md](../docs/console-client.md).
 - After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
+- A question about what a staged web directory would cost is `tools/fs_price.py` (`--order` is required). `make check-build-budgets` is still the number that can fail a build. Do not write a private LittleFS imager. The rule is AGENTS.md "The filesystem image is measured by the coordinator".
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.
 - The HTTP server (`initPsychicWebServer()`, via `startHttpServerOnce()`) must be started from the WiFi event callback path, not directly in `setup()`.
 - Core 1 real-time loops must avoid heap allocation. Core 0 web handlers may use bounded per-request `JsonDocument` allocations.

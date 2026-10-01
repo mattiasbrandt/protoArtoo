@@ -184,6 +184,9 @@ def main():
     set_count = 0
     src_bytes = 0
     out_bytes = 0
+    # Pricing a staged directory, or another write order, without buildfs is
+    # tools/fs_price.py (--order is required). It is not the number that can
+    # fail a build; make check-build-budgets is.
     for walk_src, in_set in roots:
         for root, _dirs, files in os.walk(walk_src):
             rel = os.path.relpath(root, walk_src)

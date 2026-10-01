@@ -279,6 +279,10 @@ worker for it: the number is mechanical, the gate does not produce it, and a
 slice that would trip the budget cannot raise it anyway - `build_budgets.json`
 makes a raise a decision about Learned Sequence storage, which is the
 operator's (AGENTS.md "Build-size budget rule").
+A question about what a modified stage would cost, or the same bytes in
+another write order, is `tools/fs_price.py` (`--order` is required, #462).
+That number is not this measurement, and a worker does not grow a private
+imager to answer it.
 Nothing is pushed to origin until the operator explicitly says so.
 
 ## Device verification (serialized - coordinator + operator, never workers)
