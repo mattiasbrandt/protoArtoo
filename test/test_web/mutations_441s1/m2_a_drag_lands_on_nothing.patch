@@ -1,8 +1,8 @@
 diff --git i/data/seq_timeline.js w/data/seq_timeline.js
-index 20ca2024..66477ad2 100644
+index d3e86460..e76268b9 100644
 --- i/data/seq_timeline.js
 +++ w/data/seq_timeline.js
-@@ -900,7 +900,6 @@
+@@ -907,7 +907,6 @@
            if (Math.abs(off) <= SNAP_MS && (best === null || Math.abs(off) < Math.abs(best.off))) best = { off, target };
          });
        });
