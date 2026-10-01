@@ -2650,6 +2650,10 @@
     const stateEl = document.getElementById("seq-editor-state");
     if (stateEl) stateEl.textContent = dirty ? "Unsaved edits" : editorState.saved ? "Saved" : "No edits";
     document.getElementById("seq-editor-test-hint")?.classList.toggle("hidden", !dirty);
+    // Revert has nothing to take back until there is an edit. Save stays live
+    // either way: a sequence being tuned or restored is saved with no edit.
+    const revertBtn = document.getElementById("seq-editor-revert");
+    if (revertBtn) revertBtn.disabled = !dirty;
     const savedEl = document.getElementById("seq-editor-saved-sub");
     if (savedEl) savedEl.textContent = dirty ? "unsaved edits" : "as saved";
   };
