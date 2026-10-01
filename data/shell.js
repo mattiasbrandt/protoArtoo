@@ -1616,10 +1616,10 @@
     if (currentSurface === surface) return;
 
     // A surface may hold its own unmount open while it asks the operator
-    // something -- an unsaved edit, once #289/#299 has one to protect. Nothing
-    // registers a hold today; what exists here is the capability. The address
+    // something -- Sequences does, over an unsaved edit (#441). The address
     // already names where the operator was going, so releasing the hold and
-    // re-reading it is the whole resume path (see pa:surface-release below).
+    // re-reading it is the whole resume path (see pa:surface-release below);
+    // staying puts the address back (pa:surface-stay).
     if (currentSurface && window.PASurface?.unmountHeld(currentSurface.page)) return;
 
     // Stop asking before the screen changes, so the surface being left is not
@@ -1708,6 +1708,15 @@
   // operator may have moved on again, and the address is the one thing that
   // always says where they are.
   window.addEventListener("pa:surface-release", () => applyRoute());
+
+  // A surface that was holding its unmount is staying. The address was moved
+  // to where the operator was going before the surface was asked, so it and
+  // the nav name a surface that is not the one on screen: go back to the one
+  // that is. The surface is still dirty and still holding, and that is fine:
+  // nothing is being left, so nothing is asked.
+  window.addEventListener("pa:surface-stay", () => {
+    if (currentSurface) navigateTo(currentSurface.page);
+  });
 
   // A click on a link to a surface's own document is a route change, not a page
   // load. Capture phase, so a surface's own delegated handler cannot swallow it

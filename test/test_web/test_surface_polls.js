@@ -1019,3 +1019,24 @@ test("a surface can hold its own unmount, and releasing it lands where the opera
 
   assert.equal(env.mountedSurface(), "wifi", "and releasing takes the operator where they were going");
 });
+
+// The other answer to the same question (#441): the operator keeps the unsaved
+// work. The shell moved the address to where they were going before it asked,
+// so until it is put back the address names a surface that is not on screen,
+// and a reload would land on it and drop the work the operator just chose to
+// keep.
+test("a surface that stays put gets the address back, and is still held", async () => {
+  const env = await boot();
+  env.window.PASurface.holdUnmount(() => true);
+
+  env.navigate("#wifi");
+  await sleep(140);
+  assert.equal(env.mountedSurface(), "home", "the surface held itself");
+  assert.equal(env.window.location.hash, "#wifi", "the fixture: the address went ahead to where the operator was going");
+
+  env.window.PASurface.stayOnSurface();
+  await sleep(140);
+
+  assert.equal(env.window.location.hash, "#home", "staying puts the address back on the surface on screen");
+  assert.equal(env.mountedSurface(), "home");
+});
