@@ -142,7 +142,8 @@ RECOVERY_KERNEL = "_recovery_kernel.html"
 # so a delegate must not carry the kernel (see the module docstring).
 SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true"
 
-# Minified before gzipping, by esbuild; everything else is staged as written.
+# Minified before gzipping, by esbuild. HTML goes through _stage_markup()
+# instead; everything else is staged as written.
 # esbuild parses the source, so it removes whitespace and comments without
 # touching a string. rjsmin, the regex minifier tried first, rewrote the
 # whitespace inside nested template literals in six files -- class="parts-row${`
@@ -258,7 +259,7 @@ def _board_symbol(partial, product):
 
 
 def _expand_includes(path, include_roots, board_product=None):
-    """Return the file's bytes with any PA:INCLUDE directives replaced.
+    """Return the file's text with any PA:INCLUDE directives replaced.
 
     include_roots is searched in order. Callers pass the active asset set
     before the common data root -- the same "set is staged on top of the
@@ -330,7 +331,137 @@ def _expand_includes(path, include_roots, board_product=None):
             "[gzip_fsdata] %s still contains an unexpanded PA:INCLUDE directive "
             "after substitution (check the directive syntax)." % path
         )
-    return expanded.encode("utf-8")
+    return expanded
+
+
+# The elements whose content the HTML parser reads as text, not markup: a
+# `<!--` inside one is part of the script, the style or the title, never a
+# comment. Their bodies are copied verbatim and nothing below looks inside them.
+RAW_TEXT_ELEMENTS = {
+    "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript",
+}
+# Markup inside a <pre> keeps its whitespace as written, so the trim skips it.
+PRE_ELEMENT = "pre"
+START_TAG_RE = re.compile(
+    r"""<([A-Za-z][A-Za-z0-9-]*)(?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*\s*(/?)>"""
+)
+END_TAG_RE = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
+DOCTYPE_RE = re.compile(r"<!DOCTYPE[^<>]*>", re.IGNORECASE)
+# Script data that opens `<!--` and then names `<script` is "double escaped":
+# the browser no longer ends the script at the next `</script>`, so where the
+# block ends is not where a simple scan would put it.
+SCRIPT_DOUBLE_ESCAPE_RE = re.compile(r"<!--[\s\S]*?<script[\s/>]", re.IGNORECASE)
+WHITESPACE_ONLY_RE = re.compile(r"[ \t\n\r\f]+")
+
+
+def _stage_markup(path, text):
+    """Return an expanded page with its markup comments removed and the
+    newline-bearing whitespace between tags cut to one newline.
+
+    Runs after _expand_includes(), so every PA:INCLUDE directive is already
+    replaced by its partial and none can be taken for a comment. `data/` keeps
+    its comments: they document the pages and cost nothing once this runs.
+
+    This is a scanner, not a whole-file regex, because a regex cannot tell a
+    comment from a `<!--` inside a script string, a template literal, a title
+    or a quoted attribute value. It is also not a full HTML tokenizer: it
+    understands start tags with quoted attributes, end tags, the doctype,
+    comments and the raw-text elements, and on anything else it fails the
+    build rather than guess, the posture _minify() takes. A page it refuses is
+    rewritten into the shape it reads; the scanner is not widened to accept it.
+
+    The trim keeps one newline rather than none: a whitespace node between two
+    inline elements renders as a gap, and dropping it would close up buttons
+    and pills written on separate lines. Text with any other character in it is
+    left as written, as is everything inside a <pre> or a raw-text element.
+    """
+    def fail(at, why):
+        raise SystemExit(
+            "[gzip_fsdata] %s: %s at line %d of the expanded page. The comment "
+            "stripper does not guess at markup it does not read; rewrite it."
+            % (path, why, text.count("\n", 0, at) + 1)
+        )
+
+    out = []
+    pending = []  # text since the last tag, comments already dropped
+    pre_depth = 0
+
+    def flush():
+        run = "".join(pending)
+        del pending[:]
+        if pre_depth == 0 and "\n" in run and WHITESPACE_ONLY_RE.fullmatch(run):
+            run = "\n"
+        out.append(run)
+
+    i = 0
+    n = len(text)
+    while i < n:
+        lt = text.find("<", i)
+        if lt < 0:
+            pending.append(text[i:])
+            break
+        pending.append(text[i:lt])
+        if text.startswith("<!--", lt):
+            # Searched from just past `<!`, so `<!-->` and `<!--->` end where
+            # the browser ends them.
+            end = text.find("-->", lt + 2)
+            if end < 0:
+                fail(lt, "an unterminated comment")
+            if text.find("--!>", lt + 2, end + 3) >= 0:
+                fail(lt, "a comment closed by '--!>'")
+            i = end + 3
+            continue
+        if text.startswith("<!", lt):
+            match = DOCTYPE_RE.match(text, lt)
+            if match is None:
+                fail(lt, "a '<!' that is neither a comment nor the doctype")
+            flush()
+            out.append(match.group(0))
+            i = match.end()
+            continue
+        if text.startswith("</", lt):
+            match = END_TAG_RE.match(text, lt)
+            if match is None:
+                fail(lt, "a '</' that is not an end tag")
+            flush()
+            out.append(match.group(0))
+            if match.group(1).lower() == PRE_ELEMENT:
+                pre_depth = max(0, pre_depth - 1)
+            i = match.end()
+            continue
+        if text.startswith("<?", lt):
+            fail(lt, "a '<?' processing instruction")
+        if lt + 1 < n and text[lt + 1].isalpha():
+            match = START_TAG_RE.match(text, lt)
+            if match is None:
+                fail(lt, "a '<' and a letter that is not a start tag")
+            flush()
+            out.append(match.group(0))
+            i = match.end()
+            name = match.group(1).lower()
+            if name == PRE_ELEMENT:
+                pre_depth += 1
+            if name in RAW_TEXT_ELEMENTS:
+                if match.group(2):
+                    # HTML ignores the slash and reads on to a close tag; inside
+                    # an <svg> it really is empty. Which one depends on where it
+                    # sits, so it is refused rather than read either way.
+                    fail(lt, "a self-closed <%s/>" % name)
+                close = re.compile(r"</%s(?=[\s/>])[^>]*>" % name, re.IGNORECASE).search(text, i)
+                if close is None:
+                    fail(lt, "a <%s> with no closing tag" % name)
+                body = text[i:close.start()]
+                if name == "script" and SCRIPT_DOUBLE_ESCAPE_RE.search(body):
+                    fail(lt, "a '<!--' followed by '<script' inside script data")
+                out.append(body)
+                out.append(close.group(0))
+                i = close.end()
+            continue
+        # A '<' the parser reads as text: `a < b`, `<=`, a lone '<'.
+        pending.append("<")
+        i = lt + 1
+    flush()
+    return "".join(out)
 
 
 def main():
@@ -407,9 +538,9 @@ def main():
                 if _should_gzip(name):
                     ext = os.path.splitext(name)[1].lower()
                     if ext in HTML_EXTS:
-                        payload = _expand_includes(
+                        payload = _stage_markup(sp, _expand_includes(
                             sp, include_roots, board_product=lambda: _running_body_controller(env)
-                        )
+                        )).encode("utf-8")
                     elif ext in MINIFY_LOADERS:
                         with open(sp, "r", encoding="utf-8") as fi:
                             payload = _minify(sp, fi.read()).encode("utf-8")
