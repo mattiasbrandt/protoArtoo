@@ -880,10 +880,17 @@
 
   const askDiscard = (go, stay = null) => {
     asked = { go, stay };
-    const name = editorState.current.name || "This sequence";
-    els.discardWhat.textContent = editorState.isNew && !editorState.tuningFactory
-      ? `${name} was never saved. Discard it and it is gone.`
-      : `${name} goes back to how it was last saved.`;
+    // Named by what the droid holds, not by a name typed since: the saved
+    // sequence under the name it was saved as, a Factory sequence being tuned
+    // under its own, and one never saved under the name it has now.
+    const typedName = editorState.current.name || "This sequence";
+    if (editorState.tuningFactory) {
+      els.discardWhat.textContent = `${editorState.tuningFactory} stays the factory sequence.`;
+    } else if (editorState.isNew) {
+      els.discardWhat.textContent = `${typedName} was never saved. Discard it and it is gone.`;
+    } else {
+      els.discardWhat.textContent = `${editorState.original.name || typedName} goes back to how it was last saved.`;
+    }
     showModal(els.modalDiscard);
   };
 
