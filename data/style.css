@@ -8209,6 +8209,18 @@ body[data-page="wiring"] .card > * + * {
   margin-top: var(--space-md);
 }
 
+/* Find by Moving's line is empty until a run starts, and an empty block still
+   took its ladder step: the Outputs table sat a step lower than every other
+   plate's work area. */
+body[data-page="wiring"] .card > .outputs-find:empty {
+  display: none;
+}
+
+/* Power wiring's sentences and its note: a step between them. */
+#wiring-rail > * + * {
+  margin-top: var(--space-sm);
+}
+
 /* ---------------------------------------------------------------------------
    The pictures
 
