@@ -196,7 +196,10 @@ DATA_SCRIPTS_ATTR_RE = re.compile(r"\bdata-scripts\s*=", re.IGNORECASE)
 # else changes meaning inside the try block that isolates the member, so it
 # fails the build.
 IIFE_START_RE = re.compile(r"\((?:\(\)=>|function\(\))\{")
-GLOBAL_CONST_RE = re.compile(r"const [A-Za-z_$][\w$]*=[\[{]")
+GLOBAL_CONST_RE = re.compile(r"const [A-Za-z_$][\w$]*=")
+INERT_NUMBER_RE = re.compile(r"-?(?:0[xXoObB][0-9a-fA-F_]+|(?:\d[\d_]*\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
+INERT_KEY_RE = re.compile(r"[A-Za-z_$][\w$]*")
+INERT_WORDS = ("true", "false", "null")
 JS_KEYWORDS_BEFORE_REGEX = {
     "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
     "case", "do", "else", "yield", "await",
@@ -219,6 +222,15 @@ def _bundle_chain(path, html):
         )
     if match is None:
         return html
+    if "&" in match.group(2):
+        # The browser decodes a character reference before the loader reads the
+        # chain (getAttribute), and this does not, so `/body&#95;view.js` would
+        # pass the group check as a stranger and then be asked for by name. No
+        # script path needs one; refuse it rather than decode it.
+        raise SystemExit(
+            "[gzip_fsdata] %s has '&' in its data-scripts chain; write every script "
+            "path literally." % path
+        )
     chain = [name.strip() for name in match.group(2).split(",") if name.strip()]
     for name in chain:
         if any(name == bundle for bundle, _label, _members in SCRIPT_BUNDLES):
@@ -388,6 +400,68 @@ def _top_level_statements(path, js):
     return statements
 
 
+def _inert_literal_end(text, i):
+    """Index just past the inert literal at text[i], or None.
+
+    Inert is what can be evaluated without running anything: strings, numbers,
+    true, false, null, and plain objects and arrays of them, with plain or
+    quoted keys. An identifier, a call, a spread, a computed key or a template
+    literal is not inert - it can read a binding that does not exist yet, or
+    run code - and None says so. Read over esbuild's minified output, which
+    carries no whitespace or comments between these tokens."""
+    n = len(text)
+    if i >= n:
+        return None
+    c = text[i]
+    if c in "\"'":
+        j = i + 1
+        while j < n and text[j] != c:
+            if text[j] in "\n":
+                return None
+            j += 2 if text[j] == "\\" else 1
+        return j + 1 if j < n else None
+    for word in INERT_WORDS:
+        if text.startswith(word, i) and not INERT_KEY_RE.match(text[i + len(word):i + len(word) + 1] or " "):
+            return i + len(word)
+    number = INERT_NUMBER_RE.match(text, i)
+    if number is not None and number.end() > i and not INERT_KEY_RE.match(text[number.end():number.end() + 1] or " "):
+        return number.end()
+    if c == "[":
+        j = i + 1
+        if text.startswith("]", j):
+            return j + 1
+        while True:
+            j = _inert_literal_end(text, j)
+            if j is None:
+                return None
+            if text.startswith("]", j):
+                return j + 1
+            if not text.startswith(",", j):
+                return None
+            j += 1
+    if c == "{":
+        j = i + 1
+        if text.startswith("}", j):
+            return j + 1
+        while True:
+            if j < n and text[j] in "\"'":
+                j = _inert_literal_end(text, j)
+            else:
+                key = INERT_KEY_RE.match(text, j) or INERT_NUMBER_RE.match(text, j)
+                j = key.end() if key is not None and key.end() > j else None
+            if j is None or not text.startswith(":", j):
+                return None
+            j = _inert_literal_end(text, j + 1)
+            if j is None:
+                return None
+            if text.startswith("}", j):
+                return j + 1
+            if not text.startswith(",", j):
+                return None
+            j += 1
+    return None
+
+
 def _member_parts(path, js):
     """Split a minified member into (global declarations, IIFE statement), or
     fail the build when it is any other shape.
@@ -395,21 +469,25 @@ def _member_parts(path, js):
     Wrapped in a try block, a top-level `function`, `let`, `const` or `class`
     would become block-scoped and vanish from the page's global scope, so the
     only top-level code allowed inside the wrapper is one IIFE statement. A
-    leading `const NAME = {...}` (data/configuration.js's BOARD_LABELS) is kept
-    outside the wrapper, where it stays a global binding exactly as it was in
-    its own file; an object or array literal cannot throw, so leaving it out of
-    the isolation loses nothing."""
+    leading `const NAME = <literal>` (data/configuration.js's BOARD_LABELS) is
+    kept outside the wrapper, where it stays a global binding exactly as it was
+    in its own file. Outside the wrapper it is not isolated, so it is accepted
+    only when its initializer is inert (_inert_literal_end()): a literal of
+    strings, numbers, booleans and null cannot throw. An object literal in
+    general can - `{a: missing()}` throws a ReferenceError - and would stop
+    every member after it."""
     statements = _top_level_statements(path, js)
     if not statements:
         raise SystemExit("[gzip_fsdata] %s is empty; a bundle member must be one IIFE." % path)
     declarations = []
     for text, first_close in statements[:-1]:
-        literal = GLOBAL_CONST_RE.match(text)
-        if literal is None or first_close != len(text) - 1:
+        declaration = GLOBAL_CONST_RE.match(text)
+        if declaration is None or _inert_literal_end(text, declaration.end()) != len(text):
             raise SystemExit(
                 "[gzip_fsdata] %s has a top-level statement a bundle cannot isolate: %s... "
-                "A member is one IIFE, optionally after `const NAME = {...}` declarations."
-                % (path, text[:60])
+                "A member is one IIFE, optionally after `const NAME = <literal>` declarations "
+                "whose literal runs nothing: strings, numbers, booleans, null, plain objects "
+                "and arrays." % (path, text[:60])
             )
         declarations.append(text + ";")
     iife, first_close = statements[-1]
@@ -727,6 +805,10 @@ def _stage_markup(path, text):
             out.append(match.group(0))
             i = match.end()
             name = match.group(1).lower()
+            if name == "plaintext":
+                # Everything after <plaintext> renders as text, to the end of the
+                # document, so a `<!--` there is visible copy, not a comment.
+                fail(lt, "a <plaintext>, after which the rest of the page is text")
             if name == PRE_ELEMENT:
                 pre_depth += 1
             if name in RAW_TEXT_ELEMENTS:

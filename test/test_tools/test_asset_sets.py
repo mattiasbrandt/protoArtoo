@@ -468,6 +468,8 @@ class MarkupComments(_StagingCase):
             "inside script data": "<script>var a = '<!--'; var b = '<script>';</script>",
             "a self-closed <script/>": '<script src="a.js"/>',
             "not a start tag": '<p class="a>b</p>',
+            # Everything after <plaintext> renders as text, comments included.
+            "a <plaintext>": "<p>a</p><plaintext><!-- shown to the operator -->",
         }
         for why, body in refused.items():
             with self.subTest(why):
@@ -574,6 +576,27 @@ class ScriptBundles(_StagingCase):
                 with self.assertRaises(SystemExit) as ctx:
                     self._build()
                 self.assertIn("outside its whole group", str(ctx.exception))
+
+    def test_a_character_reference_in_a_chain_fails_the_build(self):
+        """The browser decodes `&#95;` before the loader reads the chain; staging
+        does not, so an encoded member would slip past the group check."""
+        self._members()
+        self._page("/web_api.js,/body&#95;view.js")
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("'&' in its data-scripts chain", str(ctx.exception))
+
+    def test_a_global_const_that_can_run_code_fails_the_build(self):
+        """Kept outside the isolating try, a call in the initializer would stop
+        every member after it."""
+        (self.src / "configuration.js").write_text(
+            "const BOARD_LABELS = { artoo_esp32: missing() };\n(() => {})();\n", encoding="utf-8"
+        )
+        (self.src / "setup.js").write_text("(() => {})();\n", encoding="utf-8")
+        self._page("/configuration.js,/setup.js")
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("whose literal runs nothing", str(ctx.exception))
 
     def test_a_chain_staging_cannot_read_fails_the_build(self):
         self._members()
