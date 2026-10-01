@@ -227,7 +227,8 @@ test("Test on Droid runs first, then folds a badge for what the droid holds, not
   const runAt = page.calls.findIndex(([method, url]) => method === "post" && url === "/api/seq/test");
   assert.ok(runAt >= 0, "the run was held back");
   const feedback = page.byId("seq-editor-feedback").innerHTML;
-  assert.match(feedback, /DM:HELLO dispatched\./);
+  // Accepted, the run is the strip's lamp: no line about it is left to outlive it.
+  assert.doesNotMatch(feedback, /DM:HELLO/, "the strip still carries a line about the run after the droid accepted it");
   assert.match(feedback, /<details class="seq-rehearsal-badge seq-rehearsal-badge-warning"/);
   assert.match(feedback, /Rehearsal: 3 warnings, 0 notes/);
 });

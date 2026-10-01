@@ -46,6 +46,13 @@ the patch releases, whose notes live on their own GitHub Release.
   green lamp, until the droid says the run has ended. Stop beside it ends
   that run and nothing else; the red STOP is still the estop. A run the droid
   accepts and never starts says so.
+- **Build a sequence on its timeline.** Drag a part from the Parts tab onto
+  the timeline and it lands on a lane of its own, open for a second. Sound,
+  Sound Category, Spin Dome, Random Flutter, Servo Loop and Sequence End drag
+  in the same way; a Servo Loop repeats the steps that start in its first
+  pass. Pick a block and the drawer shows its settings: when it starts, how
+  long it runs, how far it opens, and whether it opens or flutters. A drop,
+  and each change, is one Undo.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring has a card for each product on the droid, opened from the product's
   own row: its supply, its draw, its logic level, where each wire goes, and

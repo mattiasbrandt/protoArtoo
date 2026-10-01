@@ -30,6 +30,9 @@
 // and what order they are stored in is the caller's (`edit.commit`,
 // `edit.remove`), and so is the history. Only the routine as written is
 // edited: a loop's later passes and the Expanded reading are read-only.
+// Something dragged in from outside - a Part from the library - is the
+// caller's to insert; this view only says where it would land (`aim`), by the
+// same tolerance a dragged block lands by.
 //
 // ONE READING OF THE ROUTINE. The steps are expanded by the Rehearsal's own
 // expand() and a body move is resolved by its bodyMove() (data/seq_rehearsal.js),
@@ -580,7 +583,8 @@
   //             knows which they are.
   //
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
-  // pick(indices), movePickedTo(ms), removePicked(), destroy()}.
+  // pick(indices), movePickedTo(ms), removePicked(), aim(point, isEnd),
+  // standing(index), sizeStanding(index, ms), say(answer), destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (hosts, source, options = {}) => {
     const seqNow = typeof source === "function" ? source : () => source;
@@ -603,6 +607,9 @@
     const selection = new Set();
     let drawn = [];
     let drag = null;
+    // Where something dragged in from outside would land, while it is over
+    // the lanes: {t, label}, or null.
+    let aimed = null;
 
     // The pose press is a quiet act: the one filled act on this surface is
     // Save, and this press moves the droid, which nothing here does by itself.
@@ -692,6 +699,11 @@
         blocks.set(key, block);
       });
       const all = [...blocks.values()];
+      // The end step is drawn as a line, not an item: picked, it is a block
+      // with no lane and no words of its own.
+      if (model.end !== -1 && selection.has(seqNow().steps[model.end])) {
+        all.push({ steps: [model.end], t0: model.endMs, lanes: new Set(), part: false, words: "" });
+      }
       const within = (block, other) =>
         other !== block && other.steps.length > block.steps.length && block.steps.every((index) => other.steps.includes(index));
       return all
@@ -713,10 +725,12 @@
       const loopLane = hasLoop
         ? laneHtml({ key: "loop", name: "Loop", short: "", items: loopItems(model, authored) }, windowMs, false, false, handleOf)
         : "";
-      const snap = drag && drag.snap
-        ? `<div class="tl-snap" style="left:${pct(drag.snap.t, windowMs)}">` +
-          (drag.snap.label ? `<span class="tl-snap-label">${esc(drag.snap.label)}</span>` : "") + `</div>`
+      const landing = drag ? drag.snap : aimed;
+      const snap = landing
+        ? `<div class="tl-snap" style="left:${pct(landing.t, windowMs)}">` +
+          (landing.label ? `<span class="tl-snap-label">${esc(landing.label)}</span>` : "") + `</div>`
         : "";
+      const endPicked = model.end !== -1 && selection.has(seqNow().steps[model.end]);
       // At least this many pixels a second, so a long routine scrolls rather
       // than crushing its blocks together.
       grid.setAttribute("style", `min-width:calc(var(--tl-lane-w) + ${Math.round((windowMs / 1000) * PX_PER_SECOND)}px)`);
@@ -728,7 +742,7 @@
         model.parts.map((lane) => laneHtml(lane, windowMs, authored, dim.has(lane.part), handleOf)).join("") +
         model.rows.map((row) => laneHtml(row, windowMs, authored, false, handleOf)).join("") +
         `<div class="tl-overlay" aria-hidden="true">` +
-        `<div class="tl-end"${editing() && model.end !== -1 ? ` data-edit="can-move"` : ""} style="left:${pct(model.endMs, windowMs)}"></div>` +
+        `<div class="tl-end"${editing() && model.end !== -1 ? ` data-edit="can-move${endPicked ? " is-selected" : ""}"` : ""} style="left:${pct(model.endMs, windowMs)}"></div>` +
         snap +
         `<div class="tl-marker"></div></div>`;
       ruler = grid.querySelector(".tl-ruler");
@@ -1024,15 +1038,15 @@
       // if it is then let go without moving, that block is selected alone.
       const own = item.steps.map((index) => steps[index]);
       const held = own.every((step) => selection.has(step));
-      if (!isEnd && (event.shiftKey || event.ctrlKey || event.metaKey)) {
+      if (event.shiftKey || event.ctrlKey || event.metaKey) {
         own.forEach((step) => (held ? selection.delete(step) : selection.add(step)));
         paintLanes(true);
         setMarker(t);
         return;
       }
-      if (isEnd || !held) {
+      if (!held) {
         selection.clear();
-        if (!isEnd) own.forEach((step) => selection.add(step));
+        own.forEach((step) => selection.add(step));
       }
 
       // Body or edge, decided once, here. How far in from a block's end a
@@ -1048,7 +1062,7 @@
         : item.l && event.clientX - rect.left < grip ? "l"
         : item.r && rect.right - event.clientX < grip ? "r" : null;
       const track = ruler.getBoundingClientRect();
-      const plan = isEnd ? { writes: [write(steps, model.end, "t", 1)], lo: -Infinity, hi: Infinity } : planFor(item, edge);
+      const plan = planFor(item, edge);
       const length = item.kind === "tick" ? 0 : (item.t1 ?? item.t0) - item.t0;
       drag = {
         before: edit.begin(),
@@ -1064,13 +1078,13 @@
         windowMs,
         by: 0,
         snap: null,
-        alone: isEnd ? [] : own,
+        alone: own,
       };
       grid.setAttribute("data-dragging", edge ? "edge" : "body");
       window.addEventListener("pointermove", dragMove);
       window.addEventListener("pointerup", dragEnd);
       window.addEventListener("pointercancel", dragCancel);
-      paintLanes(!isEnd);
+      paintLanes(true);
       setMarker(t);
     }
 
@@ -1086,6 +1100,66 @@
       const before = edit.begin();
       apply(plan, by);
       edit.commit(before);
+    };
+
+    // A Part standing open is one block made of two steps. By the step that
+    // opens it: the step that closes it and how long it stands, or null when
+    // no written step closes it.
+    const standingItem = (index) => {
+      for (const lane of model.parts) {
+        const item = lane.items.find((each) => each.kind === "open" && each.l && each.l.step === index && each.r);
+        if (item) return item;
+      }
+      return null;
+    };
+    const standing = (index) => {
+      const item = standingItem(index);
+      return item ? { close: item.r.step, ms: item.t1 - item.t0 } : null;
+    };
+    // Typed rather than dragged: the block the step at `index` opens stands
+    // for `ms`, its close moved as a drag of that edge moves it, as far as
+    // its limits allow, and it is one edit.
+    const sizeStanding = (index, ms) => {
+      const item = standingItem(index);
+      if (drag || !item || !Number.isFinite(ms)) return;
+      const plan = planFor(item, "r");
+      const [lo, hi] = reach(plan);
+      const by = Math.max(lo, Math.min(hi, Math.round(ms) - (item.t1 - item.t0)));
+      const before = edit.begin();
+      apply(plan, by);
+      edit.commit(before);
+    };
+
+    // Where something dragged in from outside the view would land: the time
+    // under `point` ({clientX, clientY}), on the nearest block edge within
+    // the tolerance, as a dragged block lands, and never past the end step -
+    // unless it is the end that is being dropped (`isEnd`), which may go on
+    // past where it is. Null when the pointer is not over the lanes or
+    // nothing here is being edited. While it is over them the landing line
+    // shows where; aim(null) takes the line away.
+    const aim = (point, isEnd = false) => {
+      const was = aimed;
+      aimed = null;
+      if (point && editing() && !drag) {
+        const track = ruler.getBoundingClientRect();
+        const lanes = grid.getBoundingClientRect();
+        const over = track.width > 0 && point.clientX >= track.left && point.clientX <= track.right &&
+          point.clientY >= lanes.top && point.clientY <= lanes.bottom;
+        if (over) {
+          const at = Math.round(msFrom(point));
+          const near = snapTargets({ writes: [] })
+            .filter((target) => Math.abs(target.t - at) <= SNAP_MS)
+            .sort((a, b) => Math.abs(a.t - at) - Math.abs(b.t - at))[0];
+          const last = isEnd || model.end === -1 ? STEP_T_MAX_MS : model.endMs;
+          const landed = Math.max(0, Math.min(last, near ? near.t : at));
+          aimed = { t: landed, label: near && near.t === landed ? near.label : "" };
+        }
+      }
+      if ((aimed && aimed.t) !== (was && was.t) || Boolean(aimed) !== Boolean(was)) {
+        paintLanes();
+        setMarker(t);
+      }
+      return aimed ? aimed.t : null;
     };
 
     const removeSelected = () => {
@@ -1130,18 +1204,22 @@
       grid.addEventListener("keydown", gridKey);
     }
 
+    // What is said beside the pose press: the droid's answer to it, or the
+    // caller's word on something the builder just tried here ({text, level}).
+    const said = hosts.bar.querySelector(".tl-said");
+    const say = (answer) => {
+      said.hidden = !answer || !answer.text;
+      said.textContent = answer && answer.text ? answer.text : "";
+      said.className = `hint tl-said${answer && answer.level === "error" ? " is-refused" : ""}`;
+    };
+
     // The pose press: one press, one request, at the marker's instant as it is
     // when pressed. The answer -- under way, or why not -- is said beside it.
-    const said = hosts.bar.querySelector(".tl-said");
     const pose = (button) => {
       const at = t;
       button.disabled = true;
       Promise.resolve(options.onPose(at))
-        .then((answer) => {
-          said.hidden = !answer || !answer.text;
-          said.textContent = answer && answer.text ? answer.text : "";
-          said.className = `hint tl-said${answer && answer.level === "error" ? " is-refused" : ""}`;
-        })
+        .then(say)
         .finally(() => {
           button.disabled = false;
         });
@@ -1197,6 +1275,10 @@
       },
       movePickedTo,
       removePicked: removeSelected,
+      aim,
+      standing,
+      sizeStanding,
+      say,
       destroy() {
         scrubEnd();
         dragAbandon();

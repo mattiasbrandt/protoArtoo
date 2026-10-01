@@ -22,7 +22,7 @@
   let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
   let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
   let pickedBlocks = []; // the blocks picked on that timeline, as it last said them
-  let pickedShown = null; // the Picked block tab's markup as last written
+  let pickedShown = null; // the inspector's markup as last written
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
   // Editor state tracking. One object for the life of the page: it is reset in
@@ -105,6 +105,10 @@
   // A run still open is an edit not yet on the stack.
   const runChanged = () => history.run !== null && historyCapture() !== history.run;
 
+  // How many characters a sequence's name holds after its DM: (Protocol
+  // Check's name rule, data/seq_protocol_check.js).
+  const SEQ_NAME_CHARS = 18;
+
   // How many Learned Sequences this droid lets a builder save. It is a board
   // fact the droid reports - five on the artoo-esp32, ten elsewhere (ADR 0065,
   // amended 2026-09-25) - as learned_sequence_cap in GET /api/identity, which
@@ -125,7 +129,7 @@
   // fails leaves them null: the rules that need them stay silent, the Gap lines
   // say what went unchecked, and nothing waits on them.
   const rehearsalFacts = { outputs: null, config: null };
-  let lastRunBadge = null; // the badge beside the last run, repainted when facts land
+  let lastRunBadge = null; // the copy the last run's badge rehearses, repainted when facts land
   let saidSaved = false; // whether the strip's feedback line is the receipt of a save
 
   // The droid's per-file byte cap, the size figure's denominator (GET
@@ -1160,10 +1164,100 @@
   const stepKindName = (step) =>
     (step.type === "dome" ? domeSubmodeLabel(step.cmd).name : stepTypeName[step.type] || step.type || "Step");
 
-  // The Picked block tab: what the timeline says is picked. One block shows
-  // where it starts, which can be typed; several can be moved together and
-  // removed. What a block of each kind does is edited in the step list until
-  // the inspector's rows for it land here (#441).
+  // ---------------------------------------------------------------------------
+  // The Picked block tab (#441): what the timeline says is picked, and for one
+  // block the inspector - where it starts, then the rows of its kind. Every
+  // row is a setting row, and every bound and choice in one is the kind
+  // table's (STEP_LIMITS and its neighbours), the same the step list's cards
+  // read. Several blocks can be moved together and removed.
+  //
+  // RUNS FOR, OPENS TO and MOTION are the decided words for a Part standing
+  // open: how long from its open to its close, how far (stored as howFar,
+  // absent meaning the whole throw) and the Move Shape. None of them is a
+  // speed, an acceleration or an easing: those are the Output's (ADR 0052).
+  //
+  // Kinds with no rows of their own yet show where they start and are edited
+  // in the step list until theirs land: the light commands, a Body Step, a
+  // Gesture and a sequence inside this one.
+  // ---------------------------------------------------------------------------
+  const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
+
+  const settingRow = (name, control, value = "") =>
+    `<div class="setting-row"><span class="setting-name">${name}</span>${control}<span class="setting-value">${value}</span></div>`;
+  const numberCell = (field, value, bounds, label, unit = "ms") =>
+    `<span class="setting-number"><input class="number-cell" type="number" ${limits(bounds)} step="${unit === "ms" ? 10 : 1}" value="${value}" data-picked="${field}" aria-label="${label}"><span class="setting-unit">${unit}</span></span>`;
+  // Up to five peers are a joined bar, more are pills that wrap. An option is
+  // [value, words] and, for a bar, whether it cannot be pressed now.
+  const segOf = (field, options, current, label) =>
+    `<span class="seg seg-sm" role="group" aria-label="${label}">${options
+      .map(([value, words, off]) => `<button type="button" data-picked="${field}" data-value="${value}" aria-pressed="${value === current}"${off ? " disabled" : ""}>${words}</button>`)
+      .join("")}</span>`;
+  const pillsOf = (field, options, current, label) =>
+    `<span class="seq-pills" role="radiogroup" aria-label="${label}">${options
+      .map(([value, words]) => `<button type="button" class="seq-pill" role="radio" data-picked="${field}" data-value="${value}" aria-checked="${value === current}">${words}</button>`)
+      .join("")}</span>`;
+  const faderOf = (field, value, bounds, label) =>
+    `<input class="fader" type="range" ${limits(bounds)} step="1" value="${value}" data-picked="${field}" aria-label="${label}">`;
+  const capital = (word) => word[0].toUpperCase() + word.slice(1);
+
+  // A panel command's halves: [":OP07", "OP", "07"], or null.
+  const panelIntent = (step) => (step.type === "dome" ? /^:(OP|CL|OF)(.+)$/.exec(step.cmd || "") : null);
+
+  // The rows of the block's kind, under where it starts.
+  const kindRows = (step, at) => {
+    const esc = window.PAUtils.escapeHtml;
+    switch (step.type) {
+      case "dome": {
+        const intent = panelIntent(step);
+        if (!intent) return "";
+        if (intent[1] === "CL") return settingRow("Motion", segOf("motion", [["close", "Close"]], "close", "Motion"));
+        // A panel flutter has no length the body knows and owes a later close
+        // (Protocol Check), so it is offered where a close already follows:
+        // on a pair, which keeps that close, and on the flutter itself.
+        const pair = sessionTimeline?.standing(at) || null;
+        const flutter = intent[1] === "OF";
+        const motion = settingRow("Motion", segOf("motion",
+          [["open", "Open"], ...(pair || flutter ? [["flutter", "Flutter"]] : [])], flutter ? "flutter" : "open", "Motion"));
+        if (flutter) return motion;
+        const far = step.howFar ?? STEP_LIMITS.howFar[1];
+        return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
+          + settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`)
+          + motion;
+      }
+      case "domeRotate": {
+        const speed = Math.abs(fieldOf(step, "speedPct"));
+        const stopped = speed === 0;
+        return settingRow("Runs for", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.turnMs, "Runs for, in milliseconds"))
+          + settingRow("Way", segOf("way", [["left", "Left", stopped], ["right", "Right", stopped]], stopped ? "" : step.speedPct < 0 ? "left" : "right", "Way"))
+          + settingRow("Speed", faderOf("speed", speed, STEP_LIMITS.speed, "Dome speed, percent"), `${speed}%`);
+      }
+      case "audio":
+        return settingRow("Plays",
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." data-picked="cmd" aria-label="Sound command">`);
+      case "audioCat":
+        return settingRow("Plays", pillsOf("category", AUDIO_CATEGORIES.map((name) => [name, capital(name)]), fieldOf(step, "category"), "Sound category"))
+          + settingRow("Fallback", pillsOf("fallback", AUDIO_FALLBACK_SLOTS.map((slot) => [slot.value, esc(slot.label)]), fieldOf(step, "fallback"), "Fallback sound"));
+      case "random": {
+        // Same pick reuses the pick of the Random Flutter before it, so it is
+        // offered only where there is one - or where the step already says it.
+        const before = editorState.current.steps.slice(0, at).some((prior) => prior?.type === "random" && prior.set !== "hold");
+        const sets = RANDOM_SETS.filter((set) => set !== "hold" || before || step.set === "hold")
+          .map((set) => [set, set === "hold" ? "Same pick" : capital(set)]);
+        return settingRow("Set", segOf("set", sets, fieldOf(step, "set"), "Which panels it picks from"))
+          + settingRow("Action", segOf("mode", RANDOM_MODES.map((mode) => [mode, capital(mode)]), fieldOf(step, "mode"), "What it does to the pick"))
+          + settingRow("Distinct", `<input class="switch" type="checkbox" data-picked="distinct"${fieldOf(step, "distinct") ? " checked" : ""} aria-label="Distinct">`)
+          + settingRow("Move", numberCell("moveMs", fieldOf(step, "moveMs"), STEP_LIMITS.moveMs, "Move time, in milliseconds"))
+          + settingRow("Jitter", numberCell("jitterMs", fieldOf(step, "jitterMs"), STEP_LIMITS.jitterMs, "Jitter, in milliseconds"));
+      }
+      case "loop":
+        return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), loopReach(editorState.current.steps, at), "Steps it repeats", "steps"))
+          + settingRow("Every", numberCell("periodMs", fieldOf(step, "periodMs"), STEP_LIMITS.periodMs, "Every, in milliseconds"))
+          + settingRow("For", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.loopMs, "For, in milliseconds"));
+      default:
+        return "";
+    }
+  };
+
   const pickedHtml = (blocks) => {
     const esc = window.PAUtils.escapeHtml;
     const head = (name, sub) =>
@@ -1184,61 +1278,388 @@
     const at = block.steps[0];
     const step = editorState.current.steps[at] || {};
     const beat = beatWords(step);
+    const startsAt = settingRow("Starts at",
+      `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
+      + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
+    const opens = panelIntent(step)?.[1] === "OP";
     return head(block.name || block.words || stepKindName(step), `${stepKindName(step)} · step ${at + 1}`)
-      + `<div class="setting-rows seq-picked-rows">
-          <div class="setting-row">
-            <span class="setting-name">Starts at</span>
-            <span class="seq-row-ctl">
-              <span class="setting-number">
-                <input class="number-cell" type="number" min="0" max="120000" step="10" value="${Math.round(block.t0)}" data-picked="start" aria-label="Starts at, in milliseconds">
-                <span class="setting-unit">ms</span>
-              </span>
-              ${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}
-            </span>
-            <span class="setting-value"></span>
-          </div>
-        </div>`
+      + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
+      + (opens ? `<p class="hint seq-brick">${BRICK_SENTENCE}</p>` : "")
       + remove;
   };
 
-  // Called by the timeline whenever it draws the routine: the pane is written
-  // again only when what it says has changed, so a number half typed into it
-  // is not wiped by a redraw. The press that picked a block brings it forward.
+  // Called by the timeline whenever it draws the routine: the inspector is
+  // written again only when what it says has changed, so a number half typed
+  // into it is not wiped by a redraw, and not at all while a fader in it is
+  // held - writing it would take the fader out from under the pointer. The
+  // press that picked a block brings the tab forward.
   const showPicked = (blocks, pressed = false) => {
     pickedBlocks = blocks;
     const html = pickedHtml(blocks);
-    const pane = document.getElementById("seq-pane-block");
-    if (pane && html !== pickedShown) {
+    const pane = document.getElementById("seq-picked");
+    if (pane && html !== pickedShown && faderRun === null) {
       pane.innerHTML = html;
       pickedShown = html;
     }
     if (pressed) showTab("block");
   };
 
-  // The Parts tab: every Part a routine can name, as one flat list, dome and
-  // body together, the ones nothing on this droid can move greyed and counted.
-  // Read-only: a Part is put on the timeline by a step that names it, until
-  // dropping one from here lands (#441). The escape-hatch Output slots and the
-  // dome's buttons are not Parts a routine moves.
+  // Draw the inspector from the routine as it is, whatever it showed: after
+  // an edit made in it, so a field never keeps a value that was not applied.
+  const repaintPicked = () => {
+    pickedShown = null;
+    showPicked(sessionTimeline ? sessionTimeline.picked() : []);
+  };
+
+  // An edit made in the inspector writes the inspector again, and the control
+  // the keyboard was on is replaced by one like it. Run `edit` and put the
+  // focus back on the control that says the same thing - the same field and,
+  // for a choice, the same choice - so a builder working by keyboard is not
+  // sent back to the top of the page by every edit.
+  const keepingFocus = (edit) => {
+    const pane = document.getElementById("seq-picked");
+    const held = document.activeElement;
+    const had = held && held.dataset?.picked && pane?.contains?.(held)
+      ? { picked: held.dataset.picked, value: held.dataset.value }
+      : null;
+    edit();
+    if (!had) return;
+    [...pane.querySelectorAll(`[data-picked="${had.picked}"]`)].find((control) => control.dataset.value === had.value)?.focus();
+  };
+
+  // One field of the picked step, written. `raw` is the control's own value.
+  const PICKED_NUMBERS = ["moveMs", "jitterMs", "periodMs", "durationMs"];
+  const writePicked = (step, field, raw, way = null) => {
+    const number = parseInt(raw, 10);
+    if (field === "howFar") {
+      // Stored only where it differs: the whole throw is absence, so a
+      // sequence that never said how far saves back as it was read.
+      if (!Number.isInteger(number)) return;
+      if (number >= STEP_LIMITS.howFar[1]) delete step.howFar;
+      else step.howFar = number;
+    } else if (field === "motion") {
+      // Open and Flutter are the one step's command, at the same time. Only
+      // an open or a close says how far (Protocol Check).
+      step.cmd = step.cmd.replace(/^:(OP|OF)/, raw === "flutter" ? ":OF" : ":OP");
+      if (raw === "flutter") delete step.howFar;
+    } else if (field === "way") {
+      Object.assign(step, turnOf(raw, step.speedPct, step.durationMs));
+    } else if (field === "speed") {
+      if (!Number.isInteger(number)) return;
+      // A stop given a speed becomes a turn in the one edit: it takes the
+      // time a turn starts with, or the droid would refuse it until a second
+      // edit gave it one.
+      const starts = number > 0 && !step.speedPct && !step.durationMs;
+      Object.assign(step, turnOf(way || (step.speedPct < 0 ? "left" : "right"), number, starts ? TURN_STARTS_MS : step.durationMs));
+    } else if (field === "distinct") {
+      step.distinct = raw === true;
+    } else if (field === "body") {
+      // Held to the steps there are to repeat, whatever was typed.
+      if (!Number.isInteger(number)) return;
+      const [least, most] = loopReach(editorState.current.steps, editorState.current.steps.indexOf(step));
+      step.body = Math.max(least, Math.min(most, number));
+    } else if (PICKED_NUMBERS.includes(field)) {
+      if (!Number.isInteger(number)) return;
+      // A duration typed over a span of beats is a millisecond instead
+      // (ADR 0058), as it is in the step list.
+      if (field === "durationMs" && number !== step.durationMs) delete step.spanBeats;
+      step[field] = number;
+    } else {
+      step[field] = raw;
+    }
+  };
+
+  // The step the inspector is showing, with its place in the routine: the one
+  // picked block's first step, or null.
+  const pickedStep = () => {
+    if (pickedBlocks.length !== 1) return null;
+    const at = pickedBlocks[0].steps[0];
+    const step = editorState.current?.steps[at];
+    return step ? { at, step } : null;
+  };
+
+  // An edit made in the inspector in one act - a number typed, a choice
+  // pressed - on the one history. One that changed nothing records nothing.
+  const inspect = (field, raw) => keepingFocus(() => {
+    const picked = pickedStep();
+    if (!picked || historyBusy()) return;
+    const { at, step } = picked;
+    if (field === "start") {
+      sessionTimeline.movePickedTo(Number(raw));
+    } else if (field === "runs") {
+      sessionTimeline.sizeStanding(at, Number(raw));
+    } else {
+      const before = historyBegin();
+      writePicked(step, field, raw);
+      historyCommit(before);
+      rerenderStepTable();
+      edited();
+      // The blocks a step draws change with its Move Shape: a flutter is its
+      // own block and leaves the close it owes as another, and an open takes
+      // that close back as the end of the one block it then is.
+      if (field === "motion") {
+        const pair = raw === "open" ? sessionTimeline.standing(at) : null;
+        sessionTimeline.pick(pair ? [at, pair.close] : [at]);
+      }
+    }
+    repaintPicked();
+  });
+
+  // A fader is an edit made over time: the routine follows it as it moves,
+  // and the whole run is one entry, recorded when it is let go. `way` is the
+  // turn's direction as the run began, which a pass through zero would lose.
+  //
+  // Let go is the fader's `change`, and the pointer coming up anywhere: a
+  // fader brought back to the value it started on sends no `change`, and a
+  // run left open would hold Undo and the inspector for good.
+  let faderRun = null;
+
+  const faderMoved = (input) => {
+    const picked = pickedStep();
+    if (!picked || (faderRun === null && historyBusy())) return;
+    if (faderRun === null) {
+      faderRun = { before: historyBegin(), way: picked.step.speedPct < 0 ? "left" : "right" };
+      window.addEventListener("pointerup", faderLetGo);
+      window.addEventListener("pointercancel", faderLetGo);
+    }
+    writePicked(picked.step, input.dataset.picked, input.value, faderRun.way);
+    const valueEl = input.closest(".setting-row")?.querySelector(".setting-value");
+    if (valueEl) valueEl.textContent = `${input.value}%`;
+    rerenderStepTable();
+    edited();
+  };
+
+  function faderLetGo() {
+    window.removeEventListener("pointerup", faderLetGo);
+    window.removeEventListener("pointercancel", faderLetGo);
+    if (faderRun === null) return;
+    const { before } = faderRun;
+    faderRun = null;
+    historyCommit(before);
+    paintHistory();
+    keepingFocus(repaintPicked);
+  }
+
+  // ---------------------------------------------------------------------------
+  // The library (#441): the Parts tab, and Drop a part beside the inspector.
+  // Every Part a routine can name is one flat list, dome and body together,
+  // the ones nothing on this droid can move dashed and counted; under it, in
+  // the Parts tab, the steps that are not a Part. The escape-hatch Output
+  // slots and the dome's buttons are not Parts a routine moves.
+  //
+  // A press on a pill does nothing to the routine and never moves the droid:
+  // it says how to add it. A drag onto the timeline inserts it where the
+  // timeline says it lands (data/seq_timeline.js aim()), as one edit. Pointer
+  // events, never HTML5 drag-and-drop, which cannot follow the pointer.
+  // ---------------------------------------------------------------------------
   const UNLISTED_SECTIONS = ["other_slots", "dome_fixtures"];
+  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "random", "loop", "end"];
+  // The Sequence End pill: the one thing that may be dropped past the end.
+  const END_PILL = "kind:end";
+  // How far the pointer goes before a press on a pill is a drag.
+  const LIBRARY_DRAG_PX = 6;
+  // How long a dropped panel stands open: its close lands this long after.
+  const DROPPED_OPEN_MS = 1000;
+
+  const libraryParts = () =>
+    (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+
+  let partsFind = "";
 
   const paintParts = () => {
-    const list = document.getElementById("seq-editor-parts");
-    const sub = document.getElementById("seq-editor-parts-sub");
-    if (!list || !sub) return;
     const esc = window.PAUtils.escapeHtml;
     const context = rehearsalContext();
-    const parts = (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+    const parts = libraryParts();
     // The timeline's own rule for a lane it dims (data/seq_timeline.js
     // notWired()), which says nothing of a half the droid has not reported.
     const off = (part) => Boolean(window.SeqTimeline?.notWired(part.id, part.half, context));
-    const reported = context.outputs !== null;
-    sub.textContent = countOf(parts.length, "part", "parts")
-      + (reported ? ` · ${parts.filter(off).length} not wired` : "");
-    list.innerHTML = parts
-      .map((part) =>
-        `<span class="seq-part${off(part) ? " is-off" : ""}">${part.shorthand ? `<span class="seq-part-short">${esc(part.shorthand)}</span>` : ""}${esc(part.name)}</span>`)
-      .join("");
+    const sub = countOf(parts.length, "part", "parts")
+      + (context.outputs !== null ? ` · ${parts.filter(off).length} not wired` : "");
+    const pill = (lib, short, name, dim = false) =>
+      `<button type="button" class="part-pill seq-lib-pill${dim ? " is-off" : ""}" data-lib="${lib}">${short ? `<span class="seq-part-short">${esc(short)}</span>` : ""}${esc(name)}</button>`;
+    const pills = (list) => list.map((part) => pill(`part:${part.id}`, part.shorthand, part.name, off(part))).join("");
+    const write = (id, text, html = false) => {
+      const el = document.getElementById(id);
+      if (el) el[html ? "innerHTML" : "textContent"] = text;
+    };
+    const wanted = partsFind.trim().toLowerCase();
+    const found = parts.filter((part) =>
+      !wanted || part.name.toLowerCase().includes(wanted) || (part.shorthand || "").toLowerCase().includes(wanted));
+    write("seq-editor-parts-sub", sub);
+    write("seq-drop-sub", sub);
+    write("seq-lib-parts", pills(found) || '<span class="hint">No part by that name.</span>', true);
+    write("seq-lib-kinds", LIBRARY_KINDS.map((type) => pill(`kind:${type}`, "", stepTypeName[type])).join(""), true);
+    write("seq-drop-parts", pills(parts), true);
+  };
+
+  // What a pill is called: the Part's name, or the kind of step.
+  const libraryName = (lib) => {
+    const [group, id] = lib.split(":");
+    return group === "kind" ? stepTypeName[id] : libraryParts().find((part) => part.id === id)?.name || id;
+  };
+
+  const sayOnStage = (text, level = "") => sessionTimeline?.say(text ? { text, level } : null);
+
+  // The steps a drop made are in the routine: put them in time order, read
+  // the routine again, and pick them, so the inspector is on the new block.
+  const landed = (made) => {
+    orderSteps();
+    rerenderStepTable();
+    edited();
+    const steps = editorState.current.steps;
+    sessionTimeline.pick(made.map((step) => steps.indexOf(step)));
+    sayOnStage("");
+    showTab("block");
+  };
+
+  // Insert what was dragged from the library at `at` ms. Whatever lands is
+  // one entry in the history, so one Undo takes the whole drop away; a drop
+  // that lands nothing records nothing and says why.
+  const dropOnTimeline = (lib, at) => {
+    const [group, id] = lib.split(":");
+    const steps = editorState.current.steps;
+    const endAt = steps.findIndex((step) => step?.type === "end");
+    const inLoop = SeqProtocolCheck.loopBodySteps(steps);
+
+    if (group === "part") {
+      // A dome panel the dome can be told to move lands as a Part standing
+      // open: its open here and its close a second on, never past the end.
+      // A body Part and a light are listed, and are not steps this view can
+      // write yet.
+      const part = libraryParts().find((each) => each.id === id);
+      const commands = window.DomeCommandMap;
+      const open = part && commands?.resolvePanelCommand(part.shorthand, "open");
+      if (!open) {
+        sayOnStage(`${libraryName(lib)} cannot go on the timeline yet.`, "error");
+        return;
+      }
+      const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
+      const made = [
+        { t: at, type: "dome", cmd: open },
+        { t: Math.min(at + DROPPED_OPEN_MS, last), type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+      ];
+      historyPush();
+      steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
+      landed(made);
+      return;
+    }
+
+    if (id === "loop") {
+      // A loop is one object over the steps it repeats: the run of steps that
+      // start inside its first period after the drop, up to the first a loop
+      // cannot repeat. They keep their moments - a repeated step is timed
+      // from the start of a pass, so each is rewritten from there - and leave
+      // their beats, which count from nothing inside a pass.
+      const first = steps.findIndex((step, i) => !inLoop.has(i) && (Number(step?.t) || 0) >= at);
+      let count = 0;
+      for (let step = steps[first]; step && !inLoop.has(first + count) && !NOT_REPEATED.includes(step.type)
+        && step.t < at + stepTypeDefaults.loop.periodMs; step = steps[first + count]) count += 1;
+      if (count === 0) {
+        sayOnStage("Servo Loop needs a step after it to repeat.", "error");
+        return;
+      }
+      const wrap = (list) => {
+        const loop = { t: at, type: "loop", ...stepTypeDefaults.loop, body: count };
+        list.slice(first, first + count).forEach((step) => {
+          step.t -= at;
+          delete step.beat;
+        });
+        list.splice(first, 0, loop);
+        return loop;
+      };
+      // Tried on a copy first. What a loop repeats is checked on its own, as
+      // the routine round it is: a flutter taken into the loop with its close
+      // left outside, or the other way about, is refused by the droid. A drop
+      // never turns a routine it accepts into one it refuses.
+      const trial = JSON.parse(JSON.stringify(editorState.current));
+      wrap(trial.steps);
+      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !SeqProtocolCheck.validateSequence(trial).ok) {
+        sayOnStage("Servo Loop would split a step from the close it owes.", "error");
+        return;
+      }
+      historyPush();
+      landed([wrap(steps)]);
+      return;
+    }
+
+    if (id === "end" && endAt !== -1) {
+      // A routine has one end. Dropped again it is that end, moved - later, or
+      // earlier as far as a drag of it would go, which is to its last step.
+      sessionTimeline.pick([endAt]);
+      sessionTimeline.movePickedTo(at);
+      sayOnStage("");
+      showTab("block");
+      return;
+    }
+
+    const made = { t: at, type: id, ...stepTypeDefaults[id] };
+    historyPush();
+    if (id === "end") {
+      // The end closes the routine, so it lands no earlier than its last step.
+      made.t = Math.max(at, ...steps.filter((_, i) => !inLoop.has(i)).map((step) => Number(step?.t) || 0));
+      steps.push(made);
+    } else {
+      steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
+    }
+    landed([made]);
+  };
+
+  // A pill held: `ghost` is the pill that follows the pointer once the press
+  // has become a drag.
+  let libraryDrag = null;
+
+  const libraryMove = (event) => {
+    if (!libraryDrag || (event.pointerId !== undefined && event.pointerId !== libraryDrag.pointer)) return;
+    const far = Math.abs(event.clientX - libraryDrag.x0) + Math.abs(event.clientY - libraryDrag.y0) > LIBRARY_DRAG_PX;
+    if (!libraryDrag.ghost && far) {
+      libraryDrag.ghost = document.createElement("div");
+      libraryDrag.ghost.className = "seq-lib-ghost";
+      libraryDrag.ghost.textContent = libraryName(libraryDrag.lib);
+      document.body.appendChild(libraryDrag.ghost);
+    }
+    if (!libraryDrag.ghost) return;
+    libraryDrag.ghost.setAttribute("style", `left:${event.clientX + 10}px;top:${event.clientY + 8}px`);
+    sessionTimeline?.aim(event, libraryDrag.lib === END_PILL);
+  };
+
+  // Let go of the pill. Over the lanes it lands; anywhere else, and when the
+  // drag is cancelled, nothing does.
+  const libraryStop = (event = null) => {
+    window.removeEventListener("pointermove", libraryMove);
+    window.removeEventListener("pointerup", libraryUp);
+    window.removeEventListener("pointercancel", libraryCancel);
+    const held = libraryDrag;
+    libraryDrag = null;
+    held?.ghost?.remove();
+    const at = held?.ghost && event && sessionTimeline ? sessionTimeline.aim(event, held.lib === END_PILL) : null;
+    sessionTimeline?.aim(null);
+    return at === null ? null : { lib: held.lib, at };
+  };
+
+  function libraryUp(event) {
+    if (!libraryDrag || (event.pointerId !== undefined && event.pointerId !== libraryDrag.pointer)) return;
+    const drop = libraryStop(event);
+    if (drop && !historyBusy()) dropOnTimeline(drop.lib, drop.at);
+  }
+
+  function libraryCancel(event) {
+    if (libraryDrag && event?.pointerId !== undefined && event.pointerId !== libraryDrag.pointer) return;
+    libraryStop();
+  }
+
+  const libraryGrab = (event) => {
+    const pill = event.target?.closest?.("[data-lib]");
+    if (!pill || libraryDrag || event.button > 0) return;
+    libraryDrag = { lib: pill.dataset.lib, x0: event.clientX, y0: event.clientY, pointer: event.pointerId, ghost: null };
+    window.addEventListener("pointermove", libraryMove);
+    window.addEventListener("pointerup", libraryUp);
+    window.addEventListener("pointercancel", libraryCancel);
+  };
+
+  // A press that was not a drag, by the pointer or from the keyboard.
+  const libraryPress = (event) => {
+    const pill = event.target?.closest?.("[data-lib]");
+    if (pill) sayOnStage(`${libraryName(pill.dataset.lib)}: drag it onto the timeline to add it.`);
   };
 
   // =========================================================================
@@ -1263,6 +1684,7 @@
     editorState.current !== null && canonical(editorState.current) !== canonical(editorState.original);
 
   const closeSession = () => {
+    libraryStop();
     closeSessionTimeline();
     els.editorView.classList.add("hidden");
     currentEditingSeq = null;
@@ -1339,11 +1761,14 @@
     return SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
   };
 
+  // "an alert", "a happy": a sound category behind its article.
+  const aOrAn = (word) => `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
+
   // Plain-English preview text for each step type
   const stepPreview = (step) => {
     switch (step.type) {
       case "audio":
-        return `Play sound (${step.cmd || "$H"})`;
+        return `Play sound (${fieldOf(step, "cmd")})`;
       case "dome": {
         const cmd = step.cmd || "";
         // Visual preset mode
@@ -1426,8 +1851,8 @@
         return `Dome command ${cmd || "@0T6"}`;
       }
       case "domeRotate": {
-        const speedPct = step.speedPct ?? 0;
-        const durationMs = step.durationMs ?? 0;
+        const speedPct = fieldOf(step, "speedPct");
+        const durationMs = fieldOf(step, "durationMs");
         if (speedPct === 0) {
           return "Stop dome (neutral)";
         }
@@ -1436,21 +1861,21 @@
         return `Rotate ${direction} at ${speed}% for ${durationMs}ms`;
       }
       case "loop": {
-        const body = step.body || 1;
-        const periodMs = step.periodMs || 1000;
-        const durationMs = step.durationMs || 10000;
+        const body = fieldOf(step, "body");
+        const periodMs = fieldOf(step, "periodMs");
+        const durationMs = fieldOf(step, "durationMs");
         return `Repeat next ${body} steps every ${periodMs}ms for ${durationMs}ms`;
       }
       case "random": {
         const setMap = { ring: "ring panels", pie: "pie panels", all: "all panels", hold: "hold" };
-        const set = step.set || "ring";
-        const moveMs = step.moveMs ?? 300;
+        const set = fieldOf(step, "set");
+        const moveMs = fieldOf(step, "moveMs");
         const setLabel = setMap[set] || set;
         return `Random flutter on ${setLabel} (move ${moveMs}ms)`;
       }
       case "audioCat": {
-        const category = step.category || "alert";
-        return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
+        const category = fieldOf(step, "category");
+        return `Play ${aOrAn(category)} sound (fallback ${audioFallbackLabel(fieldOf(step, "fallback"))})`;
       }
       case "sequence":
         return phraseName(step);
@@ -1477,6 +1902,74 @@
       default:
         return "Unknown step";
     }
+  };
+
+  // ---------------------------------------------------------------------------
+  // The kinds of step, as their fields: what a new step of each kind starts
+  // as, the bounds its numbers are offered within, and the choices its pickers
+  // hold. One set, read by the step list's cards and by the Picked block tab,
+  // so a kind never has two sets of bounds. Protocol Check has the rules
+  // (data/seq_protocol_check.js); these are what the controls offer.
+  // ---------------------------------------------------------------------------
+  const stepTypeDefaults = {
+    audio: { cmd: "$H" },
+    dome: { cmd: ":OP00" },
+    domeRotate: { speedPct: 0, durationMs: 0 },
+    loop: { body: 2, periodMs: 1846, durationMs: 14000 },
+    random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
+    audioCat: { category: "alert", fallback: "scream" },
+    gesture: { set: "ring", spread: "wave" },
+    sequence: {},
+    end: {},
+  };
+
+  const STEP_LIMITS = {
+    t: [0, 120000],
+    howFar: [1, 100],
+    speed: [0, 100],
+    turnMs: [0, 120000],
+    body: [1, 96],
+    periodMs: [100, 60000],
+    loopMs: [100, 120000],
+    moveMs: [0, 5000],
+    jitterMs: [0, 2000],
+  };
+  const limits = ([min, max]) => `min="${min}" max="${max}"`;
+  // How long a dome turn runs when a stop is first given a speed: a turn with
+  // a speed and no time is refused, and a new Spin Dome is the neutral stop.
+  const TURN_STARTS_MS = 1000;
+
+  // A field of a step as anything here reads it - an inspector row, a card,
+  // the words on a block: the step's own value, or what a step of its kind
+  // starts as. The one fallback, so no reader has a default of its own.
+  const fieldOf = (step, field) => step[field] ?? stepTypeDefaults[step.type]?.[field];
+
+  const AUDIO_CATEGORIES = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
+  // A Random Flutter's set - "hold" reuses the pick of the one before it
+  // (SLOTSET_HOLD, include/sequence_engine.h) - and what it does to the pick.
+  const RANDOM_SETS = ["ring", "pie", "all", "hold"];
+  const RANDOM_MODES = ["flutter", "open", "close"];
+
+  // What a loop cannot repeat: another loop, a sequence inside this one, and
+  // the end.
+  const NOT_REPEATED = ["loop", "sequence", "end"];
+
+  // How many steps the loop at `at` may repeat: the ones after it, up to the
+  // first it cannot repeat, and no more than a loop holds. The droid refuses
+  // a loop that reaches past them ("loop body overruns the branch",
+  // src/protocol_check.cpp). A loop with nothing after it still asks for one.
+  const loopReach = (steps, at) => {
+    let room = 0;
+    while (room < STEP_LIMITS.body[1] && steps[at + 1 + room] && !NOT_REPEATED.includes(steps[at + 1 + room].type)) room += 1;
+    return [STEP_LIMITS.body[0], Math.max(STEP_LIMITS.body[0], room)];
+  };
+
+  // A dome turn is stored as one signed speed: negative left, positive right,
+  // zero the neutral stop, which runs for no time.
+  const turnOf = (direction, speed, durationMs) => {
+    const abs = Math.abs(speed) || 0;
+    if (direction === "stop" || abs === 0) return { speedPct: 0, durationMs: direction === "stop" ? 0 : durationMs };
+    return { speedPct: direction === "left" ? -abs : abs, durationMs };
   };
 
   // Plain-English type names. There was a parallel map of emoji beside this
@@ -1584,7 +2077,7 @@
             <div class="setting-row">
               <span class="setting-name">Starts at</span>
               <span class="setting-number">
-                <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+                <input class="step-t" type="number" value="${step.t || 0}" ${limits(STEP_LIMITS.t)} aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
                 <span class="setting-unit">ms</span>
               </span>
               <span class="setting-value"></span>
@@ -1826,8 +2319,8 @@
       case "visualPreset":
         return "Applies a dome visual preset";
       case "domeRotate": {
-        const speedPct = step.speedPct ?? 0;
-        const durationMs = step.durationMs ?? 0;
+        const speedPct = fieldOf(step, "speedPct");
+        const durationMs = fieldOf(step, "durationMs");
         if (speedPct === 0) {
           return "Stops dome rotation";
         }
@@ -1836,19 +2329,15 @@
         return `Rotates ${direction} at ${speed}% speed for ${durationMs}ms total`;
       }
       case "loop": {
-        const body = step.body || 1;
-        const periodMs = step.periodMs || 1000;
-        const totalMs = (periodMs * (step.durationMs || 10000)) / periodMs || step.durationMs || 10000;
-        return `Repeats ${body} step(s) every ${periodMs}ms for ~${totalMs}ms total`;
+        return `Repeats ${fieldOf(step, "body")} step(s) every ${fieldOf(step, "periodMs")}ms for ~${fieldOf(step, "durationMs")}ms total`;
       }
       case "random": {
-        const set = step.set || "ring";
-        const moveMs = step.moveMs ?? 300;
+        const set = fieldOf(step, "set");
+        const moveMs = fieldOf(step, "moveMs");
         return `Randomly moves ${set} panels with ${moveMs}ms move time`;
       }
       case "audioCat": {
-        const category = step.category || "alert";
-        return `Plays a ${category} sound`;
+        return `Plays ${aOrAn(fieldOf(step, "category"))} sound`;
       }
       case "end":
         return "Marks the end of the sequence";
@@ -1864,7 +2353,7 @@
 
     switch (step.type) {
       case "audio":
-        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
+        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
         break;
 
       case "dome": {
@@ -2239,7 +2728,7 @@
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
-            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
+            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" ${limits(STEP_LIMITS.howFar)} placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
             <div class="dome-panel-advisory hidden"></div>
           `;
         } else {
@@ -2256,8 +2745,8 @@
         // Ergonomic operator UI for dome rotation: direction (Left/Right/Stop) + speed + duration
         // Internal storage: speedPct (signed -100..100), durationMs
         // Direction is derived from speedPct sign: negative=left, positive=right, 0=stop
-        const rotateSpeedPct = step.speedPct ?? 0;
-        const rotateDurationMs = step.durationMs ?? 0;
+        const rotateSpeedPct = fieldOf(step, "speedPct");
+        const rotateDurationMs = fieldOf(step, "durationMs");
 
         // Determine direction from speedPct
         let direction = "stop";
@@ -2270,25 +2759,25 @@
             <option value="left" ${direction === "left" ? "selected" : ""}>Left (reverse)</option>
             <option value="right" ${direction === "right" ? "selected" : ""}>Right (forward)</option>
           </select>
-          <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" min="0" max="100" step="1" aria-label="Speed (0-100%)" placeholder="0-100">
+          <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" ${limits(STEP_LIMITS.speed)} step="1" aria-label="Speed (0-100%)" placeholder="0-100">
           <span class="dome-rotate-label">%</span>
         `;
 
         timingHtml = `
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" min="0" max="120000" step="1" aria-label="Run for (ms)" placeholder="duration ms">
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" ${limits(STEP_LIMITS.turnMs)} step="1" aria-label="Run for (ms)" placeholder="duration ms">
           <span class="dome-rotate-label">ms</span>
         `;
         break;
       }
 
       case "loop": {
-        const body = step.body || 1;
-        behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" min="1" max="96" aria-label="Steps to repeat" placeholder="body">`;
+        const body = fieldOf(step, "body");
+        behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" ${limits(STEP_LIMITS.body)} aria-label="Steps to repeat" placeholder="body">`;
 
         timingHtml = `
-          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${step.periodMs || 1000}" min="100" max="60000" aria-label="Every (ms)" placeholder="periodMs">
+          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${fieldOf(step, "periodMs")}" ${limits(STEP_LIMITS.periodMs)} aria-label="Every (ms)" placeholder="periodMs">
           <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${step.durationMs || 10000}" min="100" max="120000" aria-label="For (ms)" placeholder="durationMs">
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${fieldOf(step, "durationMs")}" ${limits(STEP_LIMITS.loopMs)} aria-label="For (ms)" placeholder="durationMs">
           <span class="dome-rotate-label">ms total</span>
         `;
         break;
@@ -2296,38 +2785,32 @@
 
       case "random": {
         targetHtml = `<select class="step-field step-field-set" data-field="set" aria-label="Target">
-          <option value="ring" ${step.set === "ring" ? "selected" : ""}>ring</option>
-          <option value="pie" ${step.set === "pie" ? "selected" : ""}>pie</option>
-          <option value="all" ${step.set === "all" ? "selected" : ""}>all</option>
-          <option value="hold" ${step.set === "hold" ? "selected" : ""}>hold</option>
+          ${RANDOM_SETS.map((set) => `<option value="${set}" ${fieldOf(step, "set") === set ? "selected" : ""}>${set}</option>`).join("")}
         </select>`;
 
         behaviorHtml = `
           <select class="step-field step-field-mode" data-field="mode" aria-label="Action">
-            <option value="flutter" ${(step.mode || "flutter") === "flutter" ? "selected" : ""}>flutter</option>
-            <option value="open" ${step.mode === "open" ? "selected" : ""}>open</option>
-            <option value="close" ${step.mode === "close" ? "selected" : ""}>close</option>
+            ${RANDOM_MODES.map((mode) => `<option value="${mode}" ${fieldOf(step, "mode") === mode ? "selected" : ""}>${mode}</option>`).join("")}
           </select>
-          <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${step.distinct ? "checked" : ""} aria-label="Distinct"> Distinct</label>
+          <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${fieldOf(step, "distinct") ? "checked" : ""} aria-label="Distinct"> Distinct</label>
         `;
 
         timingHtml = `
-          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" min="0" max="5000" aria-label="Move time (ms)" placeholder="moveMs">
+          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${fieldOf(step, "moveMs")}" ${limits(STEP_LIMITS.moveMs)} aria-label="Move time (ms)" placeholder="moveMs">
           <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" min="0" max="2000" aria-label="Jitter (ms)" placeholder="jitterMs">
+          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${fieldOf(step, "jitterMs")}" ${limits(STEP_LIMITS.jitterMs)} aria-label="Jitter (ms)" placeholder="jitterMs">
           <span class="dome-rotate-label">ms</span>
         `;
         break;
       }
 
       case "audioCat":
-        const audioCategories = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
         behaviorHtml = `
           <select class="step-field step-field-category" data-field="category" aria-label="Category">
-            ${audioCategories.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
+            ${AUDIO_CATEGORIES.map((cat) => `<option value="${cat}" ${fieldOf(step, "category") === cat ? "selected" : ""}>${cat}</option>`).join("")}
           </select>
           <select class="step-field step-field-fallback" data-field="fallback" aria-label="Fallback sound">
-            ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${(step.fallback || "none") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
+            ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${fieldOf(step, "fallback") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
           </select>
         `;
         break;
@@ -2382,7 +2865,7 @@
             <span class="seq-row-label">Order</span>
             <div class="seq-row-ctl">${bar("direction", G.DIRECTIONS, step.direction || "cw")}${bar("start", G.STARTS, step.start || "front")}</div>
             <span class="seq-row-label">How far</span>
-            <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", 'min="1" max="100" data-field="howFar"')}<span class="seq-unit">%</span></div>
+            <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", `${limits(STEP_LIMITS.howFar)} data-field="howFar"`)}<span class="seq-unit">%</span></div>
           </div>
           <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs || step.speedMs || step.easing ? " open" : ""}>
             <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace, repeat and feel</summary>
@@ -2548,10 +3031,11 @@
     edited();
   };
 
-  // Neither runs while a block is being dragged on the timeline: the drag's
-  // writes are in the routine but not yet an entry, and restoring a copy
-  // would replace the very steps the drag is holding.
-  const historyBusy = () => !editorState.current || Boolean(sessionTimeline?.dragging());
+  // Neither runs while a block is being dragged on the timeline or a fader
+  // in the inspector is held: the gesture's writes are in the routine but not
+  // yet an entry, and restoring a copy would replace the very steps it is
+  // holding.
+  const historyBusy = () => !editorState.current || Boolean(sessionTimeline?.dragging()) || faderRun !== null;
 
   const undo = () => {
     if (historyBusy()) return;
@@ -2753,16 +3237,25 @@
             <span class="seq-gap"></span>
             <span class="seq-meta" id="seq-editor-routine-sub"></span>
           </div>
-          ${pane("block", "")}
+          ${pane("block", `
+            <div class="seq-picked" id="seq-picked"></div>
+            <div class="seq-lib" id="seq-drop">
+              <div class="sect"><h3>Drop a part</h3><span class="sub" id="seq-drop-sub"></span></div>
+              <span class="part-pills" id="seq-drop-parts"></span>
+            </div>`)}
           ${pane("parts", `
             <div class="sect"><h3>Parts</h3><span class="sub" id="seq-editor-parts-sub"></span></div>
-            <div class="seq-parts" id="seq-editor-parts"></div>`)}
+            <div class="seq-lib" id="seq-editor-parts">
+              <input id="seq-editor-find" class="number-cell text-cell" type="search" placeholder="Find a part" aria-label="Find a part">
+              <div class="part-pills-group"><span class="part-pills-name">Parts</span><span class="part-pills" id="seq-lib-parts"></span></div>
+              <div class="part-pills-group"><span class="part-pills-name">More steps</span><span class="part-pills" id="seq-lib-kinds"></span></div>
+            </div>`)}
           ${pane("sequence", `
             <div class="sect"><h3>Sequence</h3><span class="sub" id="seq-editor-saved-sub"></span></div>
             <div class="setting-rows seq-settings">
               <label class="setting-row">
                 <span class="setting-name">Name</span>
-                <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${esc(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="21">
+                <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${esc(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="${"DM:".length + SEQ_NAME_CHARS}">
                 <span class="setting-value"></span>
               </label>
               <div class="setting-row">
@@ -2829,9 +3322,15 @@
       renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
-    // The Picked block pane is the timeline's to fill, as it mounts.
+    // The inspector is the timeline's to fill, as it mounts. A library pill
+    // still held from the sequence that was open lands nowhere.
     pickedBlocks = [];
     pickedShown = null;
+    faderRun = null;
+    window.removeEventListener("pointerup", faderLetGo);
+    window.removeEventListener("pointercancel", faderLetGo);
+    partsFind = "";
+    libraryStop();
     showPicked([]);
     mountSessionTimeline();
     paintParts();
@@ -2887,6 +3386,8 @@
     // for one it would refuse - and the sentence says which on its own
     // (CONTEXT.md "Status Color", ADR 0044).
     const status = validation.ok ? "valid" : "error";
+    // A refusal is a sentence, so it takes a line of its own under the acts.
+    summaryEl.classList.toggle("is-refused", !validation.ok);
     summaryEl.innerHTML = `
       <span class="indicator ${validation.ok ? "ok" : "fail"}" aria-hidden="true"></span>
       <span class="seq-validation-status seq-validation-${status}">${window.PAUtils.escapeHtml(validation.ok ? "Sequence is valid" : validation.error || "Validation error")}</span>
@@ -2947,7 +3448,7 @@
       updateValidationSummary();
       paintParts();
     }
-    if (lastRunBadge) showRunBadge(...lastRunBadge);
+    if (lastRunBadge) showRunBadge(lastRunBadge);
     if (timeline) timeline.refresh(rehearsalContext());
     if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
   };
@@ -2986,23 +3487,9 @@
       step[field] = value;
     });
 
-    // Convert domeRotate UI fields (direction + speed) to signed speedPct
+    // The card's direction and speed are one signed speed on the step.
     if (step.type === "domeRotate") {
-      const direction = step.direction || "stop";
-      const speed = step.speed ?? 0;
-      const absSpeed = Math.abs(speed) || 0;
-
-      // Compute signed speedPct from direction and speed
-      if (direction === "stop") {
-        step.speedPct = 0;
-        step.durationMs = 0;  // Stop always has 0 duration
-      } else if (direction === "left") {
-        step.speedPct = -absSpeed;
-      } else if (direction === "right") {
-        step.speedPct = absSpeed;
-      }
-
-      // Clean up UI-only fields
+      Object.assign(step, turnOf(step.direction || "stop", step.speed ?? 0, step.durationMs));
       delete step.direction;
       delete step.speed;
     }
@@ -3228,26 +3715,53 @@
     DRAWER_TABS.forEach((tab) =>
       document.getElementById(`seq-editor-tab-${tab}`)?.addEventListener("click", () => showTab(tab)));
 
-    // The Picked block pane is written again whenever the selection changes,
-    // so its controls are heard on the pane itself.
-    const pickedPane = document.getElementById("seq-pane-block");
+    // The inspector is written again whenever the selection changes, so its
+    // controls are heard on the inspector itself: a press on an act or a
+    // choice, a field's change, and a fader as it moves.
+    const pickedPane = document.getElementById("seq-picked");
     if (pickedPane) {
       pickedPane.addEventListener("click", (event) => {
-        const act = event.target?.closest?.("[data-picked]")?.dataset.picked;
+        const pressed = event.target?.closest?.("button[data-picked]");
+        if (!pressed) return;
+        const act = pressed.dataset.picked;
         if (act === "remove") sessionTimeline?.removePicked();
-        if (act === "off-beat" && pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
+        else if (act === "off-beat") {
+          if (pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
+        } else inspect(act, pressed.dataset.value);
+      });
+      // Which control a field is, read from the markup the inspector wrote.
+      const kindOf = (input) => input?.getAttribute?.("type") || "";
+      pickedPane.addEventListener("input", (event) => {
+        if (kindOf(event.target) === "range" && event.target.dataset.picked) faderMoved(event.target);
       });
       pickedPane.addEventListener("change", (event) => {
         const input = event.target;
-        if (input?.dataset?.picked !== "start" || input.value === "" || !sessionTimeline) return;
-        sessionTimeline.movePickedTo(Number(input.value));
-        // A start the block could not take - it is held at its limit - leaves
-        // the routine as it was, so nothing else draws the pane again: draw
-        // it from where the block is, never leave the number that was typed.
-        pickedShown = null;
-        showPicked(sessionTimeline.picked());
+        const field = input?.dataset?.picked;
+        if (!field || !sessionTimeline) return;
+        if (kindOf(input) === "range") faderLetGo();
+        else if (kindOf(input) === "checkbox") inspect(field, input.checked);
+        // A number left empty is no number: the field goes back to the one
+        // the routine holds. So does a start the block could not take - it
+        // is held at its limit - because inspect() draws the inspector again
+        // from where the block is.
+        else if (kindOf(input) === "number" && input.value === "") repaintPicked();
+        else inspect(field, input.value);
       });
     }
+
+    // The library's two lists. A pill is taken hold of on its list, and the
+    // drag is followed on the window, so it is not stranded when the pointer
+    // leaves the drawer.
+    ["seq-editor-parts", "seq-drop"].forEach((id) => {
+      const list = document.getElementById(id);
+      list?.addEventListener("pointerdown", libraryGrab);
+      list?.addEventListener("click", libraryPress);
+    });
+    const findInput = document.getElementById("seq-editor-find");
+    findInput?.addEventListener("input", () => {
+      partsFind = findInput.value;
+      paintParts();
+    });
 
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) {
@@ -3267,7 +3781,7 @@
     const addStepBtn = document.getElementById("seq-editor-add-step");
     if (addStepBtn) {
       addStepBtn.addEventListener("click", () => {
-        const newStep = { t: 0, type: "audio", cmd: "$H" };
+        const newStep = { t: 0, type: "audio", ...stepTypeDefaults.audio };
         const steps = editorState.current.steps;
         const terminalIdx = steps.findIndex((step) => step.type === "end");
         historyPush();
@@ -3794,18 +4308,6 @@
       });
     });
 
-    const stepTypeDefaults = {
-      audio: { cmd: "$H" },
-      dome: { cmd: ":OP00" },
-      domeRotate: { speedPct: 0, durationMs: 0 },
-      loop: { body: 2, periodMs: 1846, durationMs: 14000 },
-      random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
-      audioCat: { category: "alert", fallback: "scream" },
-      gesture: { set: "ring", spread: "wave" },
-      sequence: {},
-      end: {},
-    };
-
     // Card expand/collapse listeners
     document.querySelectorAll(".step-card").forEach((card) => {
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
@@ -4112,19 +4614,20 @@
     feedbackEl.innerHTML = message ? feedbackHtml(message, kind) : "";
   };
 
-  // A run's line of feedback with the Rehearsal's folded badge under it. The
-  // badge rehearses `seq`, the copy the droid ran - which is not the edits on
+  // The Rehearsal's folded badge for a run the droid accepted, in place of
+  // the line that said it was being sent: the lamp on the strip is the word
+  // that it is running, and a line saying so would outlive the run. The badge
+  // rehearses `seq`, the copy the droid ran - which is not the edits on
   // screen, and so not what the Rehearsal tab is reading. It is only ever shown
   // after the run has been sent, so nothing it finds can stand in the run's
   // way (#287 specific 6).
-  const showRunBadge = (message, seq) => {
+  const showRunBadge = (seq) => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
-    lastRunBadge = [message, seq];
+    lastRunBadge = seq;
     saidSaved = false;
     const rehearsal = window.SeqRehearsal;
-    const badge = rehearsal ? rehearsal.badgeHtml(rehearsal.rehearse(seq, rehearsalContext())) : "";
-    feedbackEl.innerHTML = feedbackHtml(message, "ok") + badge;
+    feedbackEl.innerHTML = rehearsal ? rehearsal.badgeHtml(rehearsal.rehearse(seq, rehearsalContext())) : "";
   };
 
   const handleSave = async () => {
@@ -4179,7 +4682,7 @@
       await runWatch.start(seqName);
       // The droid ran what is saved under that name, not the edits on screen,
       // so the badge rehearses the last saved or cloned copy.
-      showRunBadge(`${seqName} dispatched.`, editorState.original);
+      showRunBadge(editorState.original);
     } catch (error) {
       showEditorFeedback("Test failed: " + PAApi.messageFor(error), "error");
     } finally {
@@ -4319,9 +4822,12 @@
     }
     // Auto-rename to NAME_COPY (avoid _COPY_COPY by removing an existing
     // suffix). In capitals: Protocol Check takes no lowercase in a name, so
-    // "_copy" opened every duplicate refused until it was renamed.
-    const baseName = seqName.replace(/_COPY(\d*)$/, "");
-    original.name = `${baseName}_COPY`;
+    // "_copy" opened every duplicate refused until it was renamed. And within
+    // the name's length: a long name gives up its tail to the suffix, or the
+    // duplicate would open refused for being too long.
+    const suffix = "_COPY";
+    const stem = seqName.replace(/^DM:/, "").replace(/_COPY(\d*)$/, "").slice(0, SEQ_NAME_CHARS - suffix.length);
+    original.name = `DM:${stem}${suffix}`;
     // A duplicate is a new sequence, so it gets an id of its own at save. A
     // sequence inside another is found by id, and the droid takes the first
     // match (src/seq_store.cpp): two sequences sharing one would let a
