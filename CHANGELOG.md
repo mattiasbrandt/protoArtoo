@@ -39,11 +39,11 @@ the patch releases, whose notes live on their own GitHub Release.
   what breaks hardware. Fit a sound module and its card appears; answer Not
   fitted and it goes. The printable wiring sheet ends with the same cards.
 - **Wiring is one table.** Every part on an output, the free outputs, the
-  parts not on an output yet and the serial links are rows of one table, and
-  the list of pins under the drawing is gone. A part's output is a bar of
-  every output on its row; press a part under "add a part" to give it a row.
-  Print the page or save the wiring sheet and you get the same table as plain
-  text, with a box to tick for each wire.
+  parts not on an output yet, the serial links, the dome's ESC and the radio
+  are rows of one table, and the list of pins under the drawing is gone. A
+  part's output is a bar of every output on its row; press a part under "add
+  a part" to give it a row. Print the page or save the wiring sheet and you
+  get the same table as plain text, with a box to tick for each wire.
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted

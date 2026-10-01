@@ -109,7 +109,9 @@
   const TABLE = Object.freeze({
     columns: Object.freeze(["Part", "Output", "On the wire"]),
     board: "Board outputs",
-    links: "Serial links",
+    // The serial links, and the fitted products no serial link carries: the
+    // dome's ESC, the radio and its receiver (operator, 2026-10-01 on #463).
+    links: "Links",
     dome: "Dome Controller",
   });
 
@@ -426,8 +428,9 @@
    *   Board outputs   a row per Part on an Output, then the free Outputs by
    *                   what the board prints, then the Parts on no Output yet
    *                   as pills to add
-   *   Serial links    the Board Lanes, read only, as the caller hands them
-   *                   over (`links`)
+   *   Links           the Board Lanes, then each fitted product no lane
+   *                   carries, read only, as the caller hands them over
+   *                   (`links`)
    *   Dome Controller the dome's Parts, collapsed, each with the command the
    *                   dome is sent for it (domeCommandText())
    *
@@ -459,7 +462,7 @@
    *   droid's next start, while one does
    * @param {Element} [hosts.find] - where a Find by Moving run's line goes
    *   (data/find_by_moving.js): a Part on no Output offers a run on its row
-   * @param {function} [hosts.links] - the serial links' rows, each
+   * @param {function} [hosts.links] - the links' rows, each
    *   { key, name, output, note, wire, fitted, product, route }: `product` is
    *   { id, name } where a wiring card exists for it, `route` the { href,
    *   label } of where the link is switched
@@ -620,9 +623,8 @@
       );
     };
 
-    // A serial link: read only here, because it is switched in Configuration.
-    // Every word on it is the caller's, which draws the same link on the
-    // sheet.
+    // A link: read only here, because it is switched in Configuration. Every
+    // word on it is the caller's, which lists the same link on the sheet.
     const linkRowHtml = (link) =>
       `<tr class="parts-row parts-link-row${link.fitted ? " is-wired" : ""}" data-link="${esc(link.key)}">` +
       `<th scope="row"><span class="parts-name">${esc(link.name)}</span>` +
@@ -637,8 +639,9 @@
     const linksHtml = (rows) => {
       if (!rows.length) return "";
       const fitted = rows.filter((link) => link.fitted).length;
-      const count = `${fitted} wired${rows.length - fitted ? ` · ${rows.length - fitted} not fitted` : ""}`;
-      return `<tbody data-group="serial-links">${groupHead(TABLE.links, count)}${rows.map(linkRowHtml).join("")}</tbody>`;
+      // "fitted", not "wired": a radio is one of them, and it is on no wire.
+      const count = `${fitted} fitted${rows.length - fitted ? ` · ${rows.length - fitted} not fitted` : ""}`;
+      return `<tbody data-group="links">${groupHead(TABLE.links, count)}${rows.map(linkRowHtml).join("")}</tbody>`;
     };
 
     // A dome Part's row: its command across the columns an Output and its wire
@@ -948,7 +951,7 @@
     // paints from it.
     OUTPUTS.onChange(() => paint());
     paint();
-    // What the caller hands over - the serial links, the cards - changes
+    // What the caller hands over - the links, the cards - changes
     // without the Outputs changing, and the caller says when.
     return Object.freeze({ repaint: () => paint() });
   };

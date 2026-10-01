@@ -681,10 +681,10 @@
   //
   // Wiring has one table of what is on which wire (operator, 2026-10-01 on
   // #463), and the sheet carries it: every Part on an Output with what is on
-  // its wire, the free Outputs in one row, and every serial link, fitted or
-  // not. The screen's copy of it is the one a builder sets the wiring in
+  // its wire, the free Outputs in one row, and every link, fitted or not.
+  // The screen's copy of it is the one a builder sets the wiring in
   // (data/parts_mapping.js picker()); this is that table with nothing to
-  // press, for paper. Both read the same Outputs and the same serial links
+  // press, for paper. Both read the same Outputs and the same links
   // (linkRows()), count with the same function and are headed with the same
   // words (PAParts.TABLE), so the page and the paper cannot come to list a
   // wire differently.
@@ -694,30 +694,63 @@
   // ---------------------------------------------------------------------------
   const NOT_FITTED = "not fitted";
 
+  // The family whose product is the board itself (Component Registry id).
+  const BOARD_FAMILY = "body_controller";
+
   // What is on an Output's wire, by its own name: the Light Type's or the
   // servo model's, as the table's row offers them.
   const onTheWire = (output) => (output.light ? output.light.label : output.servo ? output.servo.label : "a servo");
 
-  // The serial links as the table lists them, read only: every Board Lane the
+  // The links as the table lists them, read only: every Board Lane the
   // firmware reports, by what the board prints for it, with where it is
   // routed while its component is fitted. `product` is the fitted product on
   // the link where this image carries its wiring card (#458), and `route` is
   // where the link is switched.
+  //
+  // Then a row for each fitted product with a card that no row above carries:
+  // the dome's ESC, the radio and its receiver, which no Board Lane reports
+  // (UNSEEN below). A card opens on the row of the product it belongs to, so
+  // without a row these three had theirs on paper only (operator, 2026-10-01
+  // on #463: they "get read-only rows in the links group ... so every fitted
+  // product's card opens on screen as well as on paper"). Such a row says
+  // what the droid can say: the product, and what the board prints for it
+  // where the config carries a label. Where it is routed nothing reports, so
+  // that cell is empty rather than guessed. The board's own card and the
+  // card of the Outputs on it are the board group's (boardCards()).
+  const ownsBoardCard = (product) => product.family === BOARD_FAMILY || Boolean(product.outputs);
+
   const linkRows = (model = {}) => {
     const carded = cardedProducts(model);
-    return loomRows(model).map((lane) => {
-      const product = lane.on ? carded.find((each) => each.lane === lane.key) : null;
-      return {
-        key: lane.key,
-        name: lane.name,
-        output: lane.label || `UART ${lane.uart}`,
-        note: lane.on && lane.shared ? LANE_SHARED : "",
-        wire: lane.on ? `serial · ${laneDetail(lane)}` : NOT_FITTED,
-        fitted: lane.on,
-        product: product ? { id: product.id, name: product.name } : null,
-        route: { href: MOVES.configuration.href, label: "Configuration" },
-      };
-    });
+    const lanes = loomRows(model);
+    const toggles = componentIndex(model.components);
+    const route = { href: MOVES.configuration.href, label: "Configuration" };
+    return [
+      ...lanes.map((lane) => {
+        const product = lane.on ? carded.find((each) => each.lane === lane.key) : null;
+        return {
+          key: lane.key,
+          name: lane.name,
+          output: lane.label || `UART ${lane.uart}`,
+          note: lane.on && lane.shared ? LANE_SHARED : "",
+          wire: lane.on ? `serial · ${laneDetail(lane)}` : NOT_FITTED,
+          fitted: lane.on,
+          product: product ? { id: product.id, name: product.name } : null,
+          route,
+        };
+      }),
+      ...carded
+        .filter((product) => !ownsBoardCard(product) && !lanes.some((lane) => lane.on && lane.key === product.lane))
+        .map((product) => ({
+          key: `product:${product.id}`,
+          name: product.title || product.name,
+          output: labelOf(toggles, product.lane),
+          note: "",
+          wire: "",
+          fitted: true,
+          product: { id: product.id, name: product.name },
+          route,
+        })),
+    ];
   };
 
   const TICK_BOX =
@@ -1252,7 +1285,9 @@
   // a family answered Not fitted has no card. The families are listed in the
   // order Configuration asks them, by their Component Registry ids; no
   // product is named here. Each product carries its family, which is how the
-  // table tells the board's own card from the card of the Outputs on it.
+  // table tells the board's own card from the card of the Outputs on it, and
+  // its `title`: the builder's word for the family, as Configuration heads
+  // it, which is what a row of the table calls a product no Board Lane names.
   // ---------------------------------------------------------------------------
   const cardSource = document.getElementById("wiring-product-cards");
   const productCards = cardSource ? JSON.parse(cardSource.textContent) : null;
@@ -1265,9 +1300,9 @@
   // cannot be read from the picker here. A family added to Configuration is
   // added to this list too, or its product has no wiring card.
   const PRODUCT_FAMILIES = [
-    { family: "body_controller" },
+    { family: BOARD_FAMILY },
     { family: "foot_drive", toggle: "drive" },
-    { family: "dome_rotation", toggle: "domeEsc" },
+    { family: "dome_rotation", toggle: "domeEsc", title: "Dome Rotation" },
     { family: "dome_controller", toggle: "protoR2link" },
     { family: "sound", toggle: "audio" },
     // The one family whose product is reached on the Outputs.
@@ -1279,17 +1314,19 @@
     if (!productCards || !picker?.answered?.()) return [];
     const toggles = componentIndex(components);
     const found = [];
-    PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false }) => {
+    PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false, title = "" }) => {
       if (toggle && !switchedOn(toggles, toggle)) return;
       const part = picker.productOf(family);
       if (!part) return;
       // A Board Lane's key is its Component Toggle's, folded to lower case
       // (componentIndex() above).
-      found.push({ id: part.id, name: part.name, family, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
+      found.push({ id: part.id, name: part.name, family, title, lane: toggle.toLowerCase(), outputs: outputs ? part.protocol : "" });
     });
     if (!picker.isRadioNotFitted()) {
-      [picker.chosenPart("radio_controller"), picker.chosenReceiverPart()].forEach((part) => {
-        if (part) found.push({ id: part.id, name: part.name, family: "radio_controller", lane: "", outputs: "" });
+      // The radio and the receiver it talks to are two products of one
+      // family, and each is a row of its own.
+      [[picker.chosenPart("radio_controller"), "Radio Controller"], [picker.chosenReceiverPart(), "RC receiver"]].forEach(([part, title]) => {
+        if (part) found.push({ id: part.id, name: part.name, family: "radio_controller", title, lane: "", outputs: "" });
       });
     }
     return found;
@@ -1326,7 +1363,7 @@
   // for the Outputs on it. Named for what each is a card of.
   const boardCards = () =>
     cardedProducts(sheetModel())
-      .filter((product) => product.family === "body_controller" || product.outputs)
+      .filter(ownsBoardCard)
       .map((product) => ({ id: product.id, word: product.outputs ? "servo wiring card" : "board card" }));
 
   const cardHtmlFor = (id) => {
@@ -1340,7 +1377,7 @@
   // (data/parts_mapping.js picker(), #347, #411, #463). Mounted here and never
   // made by wiringDocument(), which makes the same table as text: the printed
   // sheet stays a reference that writes nothing (CONTEXT.md "Wiring"). The
-  // serial links and the cards are handed over as this file reads them, and
+  // links and the cards are handed over as this file reads them, and
   // only once the droid has answered: a lane whose switch has not been read
   // is not yet known to be fitted.
   const partsTable = window.PAParts?.picker({
@@ -1431,7 +1468,7 @@
     write("wiring-products-summary", sheet.productsSummary);
     write("wiring-products", sheet.productsHtml);
     document.getElementById("wiring-products-card")?.classList.toggle("hidden", sheet.productsHtml === "");
-    // The table's serial links and cards follow the same answers.
+    // The table's links and cards follow the same answers.
     partsTable?.repaint();
     paintLineUp();
     return sheet;

@@ -736,9 +736,44 @@ test("paper carries the parts table as text: the same table on the page's print 
     ["", "Upper utility arm", "ARM1", "MG90S"],
     ["", "Data Panel", "ARM3", "LED strip"],
     ["", "free", "ARM2, pca:0", ""],
-    ["Serial links"],
+    ["Links"],
     ["", "Foot Drive", "S1", "not fitted"],
     ["", "Sound", "S2", "not fitted"],
     ["", "Dome link", "S3", "serial · UART 2 - TX 33 / RX 34"],
   ]);
 });
+
+// A card opens on the row of the product it belongs to, so a fitted product
+// with no row would have its card on paper only. No Board Lane reports the
+// dome's ESC, the radio or its receiver, and each still has a row (operator,
+// 2026-10-01 on #463: "every fitted product's card opens on screen as well as
+// on paper"). Whatever paper prints a card for, some row of the table opens.
+test("every wiring card paper prints can be opened on the screen, from a row of the table", async () => {
+  const env = await boot({
+    lanes: {
+      audio: { enabled: true, label: "S2", member: "dy_sv5w" },
+      domeEsc: { enabled: true, label: "DOME" },
+    },
+    products: [
+      { id: "dy_sv5w", name: "DY-SV5W", category: "sound", status: "supported", included: true },
+      { id: "isdt_esc70", name: "ISDT ESC70", category: "dome_rotation", status: "supported", included: true },
+    ],
+    assetSet: "default",
+  });
+  const table = env.document.getElementById("wiring-parts-table");
+  const onPaper = env.document.getElementById("wiring-products").querySelectorAll(".wcard").map((card) => card.dataset.product);
+  const acts = () => table.querySelectorAll("[data-act]").filter((node) => node.dataset.act === "card");
+  assert.ok(onPaper.includes("isdt_esc70") && onPaper.includes("dy_sv5w"), `the fixture fits a product with a lane and one without: ${onPaper}`);
+  assert.deepEqual(acts().map((node) => node.dataset.product).sort(), [...onPaper].sort(), "one act in the table for each card on paper");
+
+  // The ESC has no lane: its row names the family as Configuration does, the
+  // product, and what the board prints for it. Where it is routed nobody
+  // reports, and the row does not make it up.
+  const rows = () => table.querySelectorAll("tr");
+  const escRow = () => rows().find((row) => row.dataset.link === "product:isdt_esc70");
+  assert.deepEqual(escRow().children.slice(0, 3).map((cell) => cell.textContent), ["Dome RotationISDT ESC70", "DOME", ""]);
+  table.fire("click", { target: acts().find((node) => node.dataset.product === "isdt_esc70") });
+  assert.equal(rows()[rows().indexOf(escRow()) + 1].dataset.card, "isdt_esc70", "its card opens under its own row");
+  assert.deepEqual(env.posts, [], "and nothing is written");
+});
+
