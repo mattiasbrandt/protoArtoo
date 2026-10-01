@@ -63,6 +63,33 @@ them.
 > `test_audio_io_seam.cpp:170` asserts `0xCD`. Only the comment a developer would
 > copy is wrong. Fixed in the change that carries this sheet (Section 17.1).
 
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "dy_sv5w"
+  supply: "DC 5 V"
+  draw: "about 0.7 A at full volume, by arithmetic: budget 1 A. Idle is UNKNOWN"
+  logic: "3.3 V on every I/O pin, UART included: no level shifter"
+  wires:
+    - { from: "TXD/IO0", to: "the board's sound RX", note: "crossed: TX to RX" }
+    - { from: "RXD/IO1", to: "the board's sound TX", note: "crossed: RX to TX" }
+    - { from: "5V+ and 5V-", to: "a 5 V supply and its ground" }
+    - { from: "GND", to: "ground" }
+    - { from: "Speaker pads", to: "a 4 ohm speaker", note: "or the 3.5 mm jack to an amplifier" }
+  hazards:
+    - "Neither Speaker pad is ground. Never wire one to ground or to an amplifier input."
+    - "The 5 W on the box is about 3 W. A loud sound on a shared 5 V regulator browns the droid out."
+  source: "5.1, 5.2, 5.3, 5.4"
+```
+
 ## Where this sits in the lineup
 
 The **Sound** category holds four products, and a builder picks one:

@@ -35,6 +35,27 @@ with the artefact or bench test that would settle them.
 > CRSF is bidirectional, so for the first time in this lineup the droid can
 > report **back** to the operator's handset (Section 9).
 
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "rc_transmitter_elrs"
+  supply: "UNKNOWN"
+  draw: "UNKNOWN"
+  logic: "3.0 to 3.3 V, not inverted: no level shifter"
+  wires: []
+  hazards:
+    - "The droid does not read ELRS yet. With it picked, the sticks do nothing."
+  source: "Where this sits in the lineup, 5.1, 12"
+```
+
 ## Where this sits in the lineup
 
 | Category | Product | Role | Status |
