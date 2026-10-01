@@ -769,10 +769,19 @@
       const rect = ruler.getBoundingClientRect();
       return rect.width > 0 ? ((event.clientX - rect.left) / rect.width) * windowMs : 0;
     };
+    // A gesture belongs to the pointer that started it: a second finger or a
+    // pen that comes down while it runs neither moves nor ends it.
+    const foreign = (event, pointer) =>
+      Boolean(event) && pointer !== undefined && event.pointerId !== undefined && event.pointerId !== pointer;
+
     // A press on the ruler jumps; a drag scrubs. Move, up and cancel are bound
     // on the window so a fast drag that leaves the ruler is not stranded.
-    const scrubMove = (event) => setMarker(msFrom(event));
-    const scrubEnd = () => {
+    let scrubPointer;
+    const scrubMove = (event) => {
+      if (!foreign(event, scrubPointer)) setMarker(msFrom(event));
+    };
+    const scrubEnd = (event) => {
+      if (foreign(event, scrubPointer)) return;
       window.removeEventListener("pointermove", scrubMove);
       window.removeEventListener("pointerup", scrubEnd);
       window.removeEventListener("pointercancel", scrubEnd);
@@ -780,6 +789,7 @@
     function scrubStart(event) {
       if (typeof event.preventDefault === "function") event.preventDefault();
       ruler.focus();
+      scrubPointer = event.pointerId;
       setMarker(msFrom(event));
       window.addEventListener("pointermove", scrubMove);
       window.addEventListener("pointerup", scrubEnd);
@@ -890,6 +900,7 @@
     };
 
     const dragMove = (event) => {
+      if (foreign(event, drag.pointer)) return;
       let by = Math.round((event.clientX - drag.x0) * drag.msPerPx);
       // The nearest target within the tolerance, to whichever of the dragged
       // edges is nearest to one.
@@ -918,8 +929,8 @@
     };
     // The gesture ends where it is. One that moved nothing was a press that
     // only selected, and is no edit.
-    function dragEnd() {
-      if (!drag) return;
+    function dragEnd(event) {
+      if (!drag || foreign(event, drag.pointer)) return;
       const done = drag;
       drag = null;
       dragStop();
@@ -944,7 +955,8 @@
       apply(undone.plan, 0);
       return true;
     };
-    function dragCancel() {
+    function dragCancel(event) {
+      if (drag && foreign(event, drag.pointer)) return;
       if (dragAbandon()) redraw();
     }
 
@@ -1007,6 +1019,7 @@
         edges: edge === "l" ? [item.t0] : edge === "r" ? [item.t0 + length] : length > 0 ? [item.t0, item.t0 + length] : [item.t0],
         targets: snapTargets(plan),
         x0: event.clientX,
+        pointer: event.pointerId,
         msPerPx: track.width > 0 ? windowMs / track.width : 0,
         windowMs,
         by: 0,
