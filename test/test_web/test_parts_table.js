@@ -483,6 +483,8 @@ test("every dome Part gets no Output to choose, and shows its command or that it
   assert.equal(domeRow("pie1").querySelector(".parts-command").textContent, "Open :OPP1 · Close :CLP1");
   assert.equal(domeRow("hp1Pan").querySelector(".parts-command").textContent, "No command yet");
   assert.match(env.row("panel1").textContent, /ARM1/, "the one on a body Output is named with it");
+  assert.deepEqual(env.row("panel1").querySelectorAll("button").map((button) => button.dataset.act), ["off"],
+    "and offered take off and nothing else: no bar of Outputs, no servo or light to pick");
   assert.equal(domeRow("pie1").querySelectorAll("button").length, 0);
 });
 

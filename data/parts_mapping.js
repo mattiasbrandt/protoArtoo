@@ -772,8 +772,10 @@
         const output = outputOf(part.id);
         node.querySelector("[data-bar]")?.replaceChildren(outputBar(part, outputs));
         const carries = node.querySelector(".parts-carries");
-        if (output) carries.replaceChildren(typeBar(part, output));
-        else if (finder !== null) carries.replaceChildren(findAct(part));
+        // A dome Part on a body Output is offered take off and nothing else:
+        // what is on that wire is not this board's to say either.
+        if (output && !isDomePart(part)) carries.replaceChildren(typeBar(part, output));
+        else if (!output && finder !== null) carries.replaceChildren(findAct(part));
       });
     };
 
