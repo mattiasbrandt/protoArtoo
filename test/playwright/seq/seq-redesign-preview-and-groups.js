@@ -83,6 +83,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         document.getElementById('seq-editor-view').classList.remove('hidden');
       }, seq);
       await page.waitForSelector('.step-card', { state: 'attached', timeout: 5000 });
+      // The workspace opens on the timeline; the step cards are in the step list.
+      await page.click('#seq-editor-show-steps');
     });
 
     await test('Collapsed cards show correct plain-English preview per type', async () => {

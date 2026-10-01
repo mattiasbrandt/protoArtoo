@@ -52,6 +52,10 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     }, testSeq);
     await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
+    // The workspace opens on the timeline; the step cards are in the step list.
+    await page.click('#seq-editor-show-steps');
+    // The name is in the drawer's Sequence pane.
+    await page.click('#seq-editor-tab-sequence');
 
     // Protocol Check's verdict carries no glyph: its status class says which
     // it is (seq-validation-valid / seq-validation-error), and the sentence

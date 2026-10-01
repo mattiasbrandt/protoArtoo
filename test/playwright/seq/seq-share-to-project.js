@@ -68,7 +68,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
   }, SAMPLE);
 
   await test('Share button renders on a custom sequence', async () => {
-    const btn = await page.$('.seq-card-actions button[data-action="share"]');
+    const btn = await page.$('.seq-item[data-seq-name="DM:MYDANCE"] button[data-action="share"]');
     assert(btn, 'Share to project button not found');
     const label = (await btn.textContent()).trim();
     assert(/share to project/i.test(label), `unexpected label: ${label}`);
@@ -80,7 +80,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
   });
 
   await test('Share opens a pre-filled contribution issue', async () => {
-    await page.click('.seq-card-actions button[data-action="share"]');
+    // Share to project is one of the acts folded behind the row's More.
+    await page.click('.seq-item[data-seq-name="DM:MYDANCE"] button[data-action="more"]');
+    await page.click('.seq-item[data-seq-name="DM:MYDANCE"] button[data-action="share"]');
     await page.waitForFunction(() => window.__openCalls && window.__openCalls.length > 0);
     const url = await page.evaluate(() => window.__openCalls[0]);
     assert(
@@ -97,8 +99,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // so match by the .feedback class and its text rather than the original one.
     await page.waitForFunction(
       () => {
-        const card = [...document.querySelectorAll('.seq-card')].find(
-          (c) => c.querySelector('h4')?.textContent === 'DM:MYDANCE'
+        const card = [...document.querySelectorAll('.seq-item')].find(
+          (c) => c.querySelector('th[scope="row"] .seq-name')?.textContent === 'DM:MYDANCE'
         );
         const fb = card?.querySelector('.feedback');
         // "Sequence copied." on a copy; "Could not copy ... attach the file"

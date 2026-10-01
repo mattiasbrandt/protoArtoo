@@ -35,22 +35,17 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
     await page.waitForSelector('#seq-main-card', { timeout: 5000 });
 
-    // Directly open the Memory Wipe modal via DOM — avoids needing live API/list population
+    // Open the Memory Wipe modal from the sequence's own row: the page's list
+    // renderer draws it, and Memory Wipe is folded behind the row's More.
     await test('Memory Wipe modal appears when triggered', async () => {
       await page.evaluate(() => {
-        const seqName = 'DM:TESTWIPE';
-        const modal = document.getElementById('seq-modal-memory-wipe');
-        const nameEl = document.getElementById('seq-wipe-seq-name');
-        const input = document.getElementById('seq-wipe-confirm-input');
-        const confirmBtn = document.getElementById('seq-modal-wipe-confirm');
-        if (nameEl) nameEl.textContent = `Delete sequence: ${seqName}`;
-        if (input) { input.placeholder = seqName; input.value = ''; }
-        if (confirmBtn) confirmBtn.disabled = true;
-        if (input && confirmBtn) {
-          input.addEventListener('input', () => { confirmBtn.disabled = input.value !== seqName; });
-        }
-        if (modal) modal.classList.remove('hidden');
+        window.__seqEditorForTesting.renderListWithMocks([
+          { name: 'DM:TESTWIPE', source: 'user', valid: true },
+        ], []);
       });
+      const row = page.locator('.seq-item[data-seq-name="DM:TESTWIPE"]');
+      await row.locator('[data-action="more"]').click();
+      await row.locator('[data-action="memory-wipe"]').click();
       await page.waitForSelector('#seq-modal-memory-wipe:not(.hidden)', { timeout: 3000 });
       const seqName = 'DM:TESTWIPE';
 

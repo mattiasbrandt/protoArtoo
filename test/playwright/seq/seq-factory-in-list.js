@@ -7,12 +7,13 @@
  * with a "Tune" button that opens the editor directly.
  *
  * Tests:
- * - Factory sequences appear in "Factory sequences" section when no Learned sequences exist
- * - Factory cards show metadata (toggle, suppress, steps) and Factory badge
+ * - Factory sequences appear in the "Factory" group when no Learned sequences exist
+ * - Factory rows show what the droid reports (step count, interrupt group) and
+ *   sit under the Factory group's header, with no badge of their own
  * - Tune button on Factory card opens editor with factory sequence data
  * - Capacity display shows only Learned count (not Factory), against the cap
  *   the droid reports in GET /api/identity (FIXTURE=1 answers it)
- * - Section headers appear correctly (Your sequences / Factory sequences)
+ * - Group headers appear correctly (Yours / Factory)
  */
 
 const { chromium } = require("playwright");
@@ -40,12 +41,15 @@ async function test() {
 
     const initialState = await page.evaluate(() => ({
       cardsContainer: !!document.querySelector("#seq-cards-container"),
-      capacityDisplay: !!document.querySelector("#seq-capacity-display"),
+      // The list's count slot is in the page's own markup; the capacity
+      // (#seq-capacity-display) is drawn in the Yours group's header once the
+      // list has rows, and is read in Tests 5 and 7.
+      countDisplay: !!document.querySelector("#seq-count-display"),
       populatedState: !document.querySelector("#seq-populated-state")?.classList.contains("hidden"),
     }));
 
     assert.strictEqual(initialState.cardsContainer, true, "Cards container should exist");
-    assert.strictEqual(initialState.capacityDisplay, true, "Capacity display should exist");
+    assert.strictEqual(initialState.countDisplay, true, "Count display should exist");
     console.log("✓ Page structure loaded");
 
     // =====================================================================
@@ -94,24 +98,25 @@ async function test() {
     // =====================================================================
     console.log("Test 3: Verifying section headers");
 
+    // Each group is a <tbody class="seq-group"> whose header cell names it.
     const sectionHeaders = await page.evaluate(() => ({
       yourSequencesHeader: Array.from(
-        document.querySelectorAll(".seq-section-heading")
-      ).some(h => h.textContent.includes("Your sequences")),
+        document.querySelectorAll("#seq-cards-container tbody.seq-group th")
+      ).some(h => h.textContent.trim().startsWith("Yours")),
       factorySequencesHeader: Array.from(
-        document.querySelectorAll(".seq-section-heading")
-      ).some(h => h.textContent.includes("Factory sequences")),
+        document.querySelectorAll("#seq-cards-container tbody.seq-group th")
+      ).some(h => h.textContent.trim().startsWith("Factory")),
     }));
 
     assert.strictEqual(
       sectionHeaders.yourSequencesHeader,
       true,
-      '"Your sequences" section header should exist'
+      '"Yours" group header should exist'
     );
     assert.strictEqual(
       sectionHeaders.factorySequencesHeader,
       true,
-      '"Factory sequences" section header should exist'
+      '"Factory" group header should exist'
     );
 
     console.log("✓ Section headers present");
@@ -122,13 +127,19 @@ async function test() {
     console.log("Test 4: Verifying Factory cards appearance");
 
     const factoryCards = await page.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll(".seq-card-factory"));
+      const cards = Array.from(document.querySelectorAll(".seq-item-factory"));
+      // The group header a row sits under: the nearest tbody.seq-group above it.
+      const groupOf = (row) => {
+        let at = row.previousElementSibling;
+        while (at && !at.classList.contains("seq-group")) at = at.previousElementSibling;
+        return at?.querySelector("th")?.textContent.trim() ?? "";
+      };
       return cards.map(card => ({
-        name: card.querySelector("h4")?.textContent ?? "",
-        hasBadge: !!card.querySelector(".seq-badge-factory"),
-        badgeText: card.querySelector(".seq-badge-factory")?.textContent ?? "",
-        hasMetaMeta: !!card.querySelector(".seq-card-meta"),
-        metaItems: Array.from(card.querySelectorAll(".seq-meta-item")).map(m => m.textContent),
+        name: card.querySelector('th[scope="row"] .seq-name')?.textContent ?? "",
+        badgeCount: card.querySelectorAll(".seq-badge").length,
+        group: groupOf(card),
+        steps: card.querySelector("td.seq-count-cell")?.textContent.trim() ?? "",
+        metaItems: Array.from(card.querySelectorAll(".seq-meta")).map(m => m.textContent),
         hasTuneBtn: !!card.querySelector('[data-action="tune"]'),
         tuneBtn: card.querySelector('[data-action="tune"]')
           ? {
@@ -143,9 +154,14 @@ async function test() {
 
     // Verify first card
     assert.strictEqual(factoryCards[0].name, "DM:ROCKMARCH", "First card should be DM:ROCKMARCH");
-    assert.strictEqual(factoryCards[0].hasBadge, true, "Card should have Factory badge");
-    assert.strictEqual(factoryCards[0].badgeText, "Factory", "Badge should say Factory");
-    assert.ok(factoryCards[0].metaItems.length >= 3, "Card should have metadata items");
+    // The group says Factory; the row carries no Factory badge of its own.
+    assert.ok(factoryCards[0].group.startsWith("Factory"), `Card should sit under the Factory group, got: "${factoryCards[0].group}"`);
+    assert.strictEqual(factoryCards[0].badgeCount, 0, "Factory row should carry no badge");
+    // What the droid reported: the step count in the Steps column, and the
+    // interrupt group beside the purpose when the sequence has one.
+    assert.strictEqual(factoryCards[0].steps, "5", "Card should show its step count");
+    assert.deepStrictEqual(factoryCards[0].metaItems, [], "DM:ROCKMARCH has no interrupt group to show");
+    assert.deepStrictEqual(factoryCards[1].metaItems, ["interrupt group Pies"], "DM:TWIRLY should show its interrupt group");
     assert.strictEqual(factoryCards[0].hasTuneBtn, true, "Card should have Tune button");
     assert.strictEqual(factoryCards[0].tuneBtn.text, "Tune", "Button should say Tune");
     assert.strictEqual(
@@ -156,7 +172,7 @@ async function test() {
 
     console.log(`✓ Found ${factoryCards.length} factory cards with correct structure`);
     factoryCards.forEach((card, i) => {
-      console.log(`  Card ${i + 1}: ${card.name}, meta items: ${card.metaItems.join(" | ")}`);
+      console.log(`  Card ${i + 1}: ${card.name}, steps: ${card.steps}, meta items: ${card.metaItems.join(" | ")}`);
     });
 
     // =====================================================================
@@ -308,10 +324,10 @@ async function test() {
     await page.waitForTimeout(500);
 
     const mixedState = await page.evaluate(() => ({
-      learnedCards: document.querySelectorAll(".seq-card:not(.seq-card-factory)").length,
-      factoryCards: document.querySelectorAll(".seq-card-factory").length,
+      learnedCards: document.querySelectorAll(".seq-item:not(.seq-item-factory)").length,
+      factoryCards: document.querySelectorAll(".seq-item-factory").length,
       retrainedBadge: !!Array.from(document.querySelectorAll(".seq-badge-retrained")).some(
-        b => b.closest(".seq-card").querySelector("h4")?.textContent === "DM:ROCKMARCH"
+        b => b.closest(".seq-item").querySelector(".seq-name")?.textContent === "DM:ROCKMARCH"
       ),
       capacityDisplay: document.querySelector("#seq-capacity-display")?.textContent,
     }));

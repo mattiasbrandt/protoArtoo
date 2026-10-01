@@ -99,6 +99,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         }
       }, preloadSeq);
       await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
+      // The workspace opens on the timeline; the step cards are in the step list.
+      await page.click('#seq-editor-show-steps');
       await page.waitForTimeout(200);
 
       const steps = page.locator('.step-card');

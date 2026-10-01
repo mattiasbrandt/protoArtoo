@@ -67,6 +67,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     }, testSeq);
 
     await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
+    // The workspace opens on the timeline; the step cards are in the step list.
+    await page.click('#seq-editor-show-steps');
 
     // Expand the dome panel step
     const stepCard = page.locator('.step-card').first();

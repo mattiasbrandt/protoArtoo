@@ -43,64 +43,33 @@ async function test() {
       ],
     };
 
-    // Simulate tuning via handleCloneBuiltin by injecting state and rendering
+    // Simulate tuning via handleCloneBuiltin: set the editor state it sets,
+    // then render, so the page draws its own tuning notice.
     await page.evaluate((seq) => {
-      window.__testEditorState = {
-        original: null,
-        current: null,
-        isNew: true,
-        tuningFactory: seq.name, // This is what handleCloneBuiltin sets
-      };
-      window.__testCurrentEditingSeq = seq;
+      const hooks = window.__seqEditorForTesting;
+      hooks.editorState.isNew = true;
+      hooks.editorState.tuningFactory = seq.name; // This is what handleCloneBuiltin sets
+      hooks.renderEditorView(seq);
     }, factorySeq);
-
-    // Call renderEditorView with tuningFactory state pre-set
-    await page.evaluate((seq) => {
-      if (window.__seqEditorForTesting && window.__seqEditorForTesting.renderEditorView) {
-        // Manually set editorState before rendering (simulating handleCloneBuiltin behavior)
-        const editorView = document.querySelector("#seq-editor-view");
-        if (editorView) {
-          editorView.classList.remove("hidden");
-        }
-        window.__seqEditorForTesting.renderEditorView(seq);
-      }
-    }, factorySeq);
-
-    // Need to manually set the tuningFactory flag after rendering
-    // because the test helper doesn't expose editorState directly
-    await page.evaluate(() => {
-      // Find or create the banner by injecting it
-      const cardDiv = document.querySelector("#seq-editor-view .card");
-      if (cardDiv && !cardDiv.querySelector(".card.warning")) {
-        const h3 = cardDiv.querySelector("h3");
-        if (h3) {
-          const bannerDiv = document.createElement("div");
-          bannerDiv.className = "card warning";
-          bannerDiv.style.cssText = "margin-bottom: 1rem; font-size: 0.9rem;";
-          bannerDiv.innerHTML = `Tuning <strong>DM:VADER</strong> — save under the same name to create a Retrained version that overrides the Factory sequence at runtime. <em>Memory Wipe</em> restores the original.`;
-          h3.insertAdjacentElement("afterend", bannerDiv);
-        }
-      }
-    });
 
     await page.waitForTimeout(300);
 
     // 3. Verify banner is present and contains correct text
     console.log("Verifying tuning factory banner");
     const bannerState = await page.evaluate(() => {
-      const banner = document.querySelector("#seq-editor-view .card.warning");
+      const banner = document.querySelector("#seq-editor-view .seq-tuning");
       return {
         exists: !!banner,
         text: banner?.textContent ?? "",
         hasFactoryName: banner?.textContent?.includes("DM:VADER") ?? false,
-        hasRetrainedInfo: banner?.textContent?.includes("Retrained") ?? false,
+        hasRetrainedInfo: banner?.textContent?.includes("your version replaces the factory one") ?? false,
         hasMemoryWipeInfo: banner?.textContent?.includes("Memory Wipe") ?? false,
       };
     });
 
     assert.strictEqual(bannerState.exists, true, "Tuning banner should exist when tuningFactory is set");
     assert.strictEqual(bannerState.hasFactoryName, true, "Banner should contain factory sequence name");
-    assert.strictEqual(bannerState.hasRetrainedInfo, true, "Banner should mention Retrained override");
+    assert.strictEqual(bannerState.hasRetrainedInfo, true, "Banner should say the saved version replaces the factory one");
     assert.strictEqual(bannerState.hasMemoryWipeInfo, true, "Banner should mention Memory Wipe");
     console.log("✓ Tuning banner present with correct content");
     console.log("  Banner text:", bannerState.text.trim().substring(0, 100) + "...");
@@ -126,8 +95,11 @@ async function test() {
         if (editorView) {
           editorView.classList.remove("hidden");
         }
+        // Note: tuningFactory is NOT set for normal editing (handleEditSequence
+        // opens from a closed session, which clears it)
+        window.__seqEditorForTesting.editorState.isNew = false;
+        window.__seqEditorForTesting.editorState.tuningFactory = null;
         window.__seqEditorForTesting.renderEditorView(seq);
-        // Note: tuningFactory is NOT set for normal editing
       }
     }, normalSeq);
 
@@ -137,7 +109,7 @@ async function test() {
     console.log("Verifying no banner for normal sequence");
     const noBannerState = await page.evaluate(() => {
       const editorView = document.querySelector("#seq-editor-view");
-      const warnings = editorView?.querySelectorAll(".card.warning") ?? [];
+      const warnings = editorView?.querySelectorAll(".seq-tuning") ?? [];
       return {
         warningCount: warnings.length,
         editorVisible: !editorView?.classList.contains("hidden"),
