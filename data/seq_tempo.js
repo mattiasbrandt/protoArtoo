@@ -21,6 +21,12 @@
 //   FIX 2  an onset was timed at its analysis window's start, about 18 ms
 //          early at 44.1 kHz. It is timed at the window's centre:
 //          t += win / (2 * sr).
+//   FIX 3  (#438, operator-approved 2026-10-01) the octave halving rounds the
+//          lag, which can land one frame off the correlation peak, and the
+//          parabolic step only looks half a lag either side, so it refused to
+//          walk back: 128 BPM clicks read 126.05 and 150 read 147.66. The lag
+//          climbs to the local maximum of corr() before the interpolation.
+//          This, not FIX 1, is what the -2.0 / -2.3 BPM figures were.
 //
 // The ported part carries the reference's notice, as its licence requires:
 //
@@ -163,6 +169,15 @@
         best = corr(half);
       } else break;
     }
+    // FIX 3 (#438): halving rounds the lag, which can land one frame off the
+    // peak; the interpolation below only looks half a lag either side, so
+    // climb first.
+    for (;;) {
+      if (bestLag + 1 <= lagHi && corr(bestLag + 1) > corr(bestLag)) bestLag++;
+      else if (bestLag - 1 >= lagLo && corr(bestLag - 1) > corr(bestLag)) bestLag--;
+      else break;
+    }
+    best = corr(bestLag);
     // parabolic interpolation over the neighbouring lags recovers the
     // fractional peak
     let lagF = bestLag;

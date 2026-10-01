@@ -46,3 +46,15 @@ test("an analyzed grid lands where the clicks sound, not a window early", () => 
   });
   assert.ok(Math.abs(result.phaseMs - 500) <= 8, `beat 1 was placed at ${result.phaseMs} ms, not 500`);
 });
+
+// The same one-way door for the tempo itself (FIX 3, #438): the octave halving
+// rounds the lag one frame off the correlation peak and the interpolation will
+// not walk back, so 128 BPM clicks read 126.05. A grid stored at the wrong
+// tempo drifts every beat-placed step further the later it sits.
+test("an analyzed tempo reads the clicks' own BPM, not the halving's rounding", () => {
+  const T = load();
+  for (const bpm of [128, 150]) {
+    const result = T.analyze(clickTrack(bpm, 30, 0.1));
+    assert.ok(Math.abs(result.bpm - bpm) <= 0.3, `${bpm} BPM clicks read ${result.bpm}`);
+  }
+});
