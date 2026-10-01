@@ -157,10 +157,17 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Cancel (don't actually save)
-    await test('Cancel returns to list view', async () => {
+    // Cancel (don't actually save). The edits above are unsaved, so Cancel
+    // asks before it drops them (#441): the editor stays until Discard.
+    await test('Cancel asks, and Discard returns to list view', async () => {
       const cancelBtn = page.locator('#seq-editor-cancel');
       await cancelBtn.click();
+      await page.waitForSelector('#seq-modal-discard:not(.hidden)', { timeout: 2000 });
+      const stillOpen = await page.locator('#seq-editor-view').evaluate((el) => !el.classList.contains('hidden'));
+      if (!stillOpen) {
+        throw new Error('Cancel closed an editor with unsaved edits without asking');
+      }
+      await page.locator('#seq-modal-discard-confirm').click();
       // Cancel reloads the list; without a live API the empty state shows.
       // Wait for the reload to settle then check editor is hidden.
       await page.waitForTimeout(300);
