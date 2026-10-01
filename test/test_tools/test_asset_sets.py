@@ -495,16 +495,43 @@ class ZopfliStaging(_StagingCase):
         self.assertIn("zopfli is not on PATH", str(ctx.exception))
 
     def test_the_stage_is_written_largest_file_first(self):
-        """Creation order is image order, so it is part of the block count and
-        must be a function of the commit (#429); largest first packs best."""
+        """The order the stager writes in is (-size, path). Staging controls
+        only that order; whether it reaches the image depends on the host
+        filesystem's directory listing (see the comment at the writer loop),
+        so this records the writes themselves rather than reading the stage
+        back from disk."""
+        import builtins
+        import shutil as shutil_module
+        from unittest import mock
+
         (self.src / "b.webp").write_bytes(b"\0" * 10)
         (self.src / "a.webp").write_bytes(b"\0" * 10)
         (self.src / "c.webp").write_bytes(b"\0" * 300)
         (self.src / "d.txt").write_text("x" * 5000, encoding="utf-8")
-        self._build()
         stage = self.build / "fsdata_gz"
-        created = [e.name for e in sorted(stage.iterdir(), key=lambda e: e.stat().st_ino)]
-        self.assertEqual(created, ["c.webp", "d.txt.gz", "a.webp", "b.webp"])
+        written = []
+        in_copy = []
+        real_open, real_copy2 = builtins.open, shutil_module.copy2
+
+        def recording_open(path, mode="r", *args, **kwargs):
+            if "w" in mode and not in_copy and Path(path).parent == stage:
+                written.append(Path(path).name)
+            return real_open(path, mode, *args, **kwargs)
+
+        def recording_copy2(source, dest, *args, **kwargs):
+            # copy2 opens its destination itself; count the copy once.
+            if Path(dest).parent == stage:
+                written.append(Path(dest).name)
+            in_copy.append(True)
+            try:
+                return real_copy2(source, dest, *args, **kwargs)
+            finally:
+                in_copy.pop()
+
+        with mock.patch("builtins.open", recording_open), mock.patch("shutil.copy2", recording_copy2):
+            self._build()
+        # d.txt gzips to a few dozen bytes: smaller than c.webp, larger than a and b.
+        self.assertEqual(written, ["c.webp", "d.txt.gz", "a.webp", "b.webp"])
 
 
 class RealPagesStage(unittest.TestCase):
