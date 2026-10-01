@@ -411,12 +411,14 @@ test("a start typed for the picked block moves it, as one edit that Undo takes b
   assert.equal(startField(), null, "the fixture: nothing is picked when a sequence opens");
 
   // A press on the dome turn, let go where it is: it is picked, and no edit.
-  const ruler = view.querySelector(".tl-ruler");
-  ruler.getBoundingClientRect = () => ({ left: 0, width: 1000 });
-  const block = view.querySelector('[data-lane="spin"]').querySelector(".tl-item");
-  block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
-  view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
-  page.fireWindow("pointerup", {});
+  const pick = () => {
+    view.querySelector(".tl-ruler").getBoundingClientRect = () => ({ left: 0, width: 1000 });
+    const block = view.querySelector('[data-lane="spin"]').querySelector(".tl-item");
+    block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+    view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
+    page.fireWindow("pointerup", {});
+  };
+  pick();
   assert.ok(startField(), "the picked block shows no start to type over");
   assert.equal(startField().getAttribute("value"), "500");
   assert.equal(page.byId("seq-editor-undo").disabled, true, "picking a block was recorded as an edit");
@@ -430,6 +432,59 @@ test("a start typed for the picked block moves it, as one edit that Undo takes b
 
   (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
   assert.equal(turn().t, 500, "one Undo did not take the typed start back");
+
+  // A start past where the block may go is held at its limit, the end of the
+  // routine - and typed again there it moves nothing. The field still shows
+  // where the block is, never a number that was not applied. (The Undo put
+  // other steps in the routine, so the block is picked again first.)
+  pick();
+  for (let i = 0; i < 2; i += 1) {
+    const past = startField();
+    past.value = "99999";
+    page.pickedPane.fire("change", { target: past });
+    assert.equal(turn().t, 4000, "the block went past the end of the routine");
+    assert.notEqual(startField(), past, "the field was left holding a start that was not applied");
+    assert.equal(startField().getAttribute("value"), "4000");
+  }
+});
+
+// The timeline holds what is picked as the steps themselves, and putting a
+// step on or off a beat writes a new step in its place (the time is resolved
+// again from the tempo). An edit made from the Picked block tab must leave
+// the tab on the block it edited, or the one press empties it.
+test("taking the picked block off its beat leaves it picked", async () => {
+  const page = openPage();
+  await page.settle();
+  page.seam.renderEditorView({
+    ...JSON.parse(JSON.stringify(EDITED)),
+    tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+    steps: [
+      { t: 0, type: "audio", cmd: "$H" },
+      { t: 500, beat: 1, type: "domeRotate", speedPct: 40, durationMs: 1000 },
+      { t: 4000, type: "end" },
+    ],
+  });
+
+  const view = page.editorTimeline;
+  const turn = () => page.seam.editorState.current.steps.find((step) => step.type === "domeRotate");
+  view.querySelector(".tl-ruler").getBoundingClientRect = () => ({ left: 0, width: 1000 });
+  const block = view.querySelector('[data-lane="spin"]').querySelector(".tl-item");
+  block.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200 });
+  view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: 200, preventDefault() {} });
+  page.fireWindow("pointerup", {});
+
+  const offBeat = page.pickedPane.querySelector('[data-picked="off-beat"]');
+  assert.ok(offBeat, "a block on a beat offers no way off it");
+  page.pickedPane.fire("click", { target: offBeat });
+
+  assert.equal(turn().beat, undefined, "the step is still on its beat");
+  assert.equal(turn().t, 500, "taking a step off its beat moved it");
+  assert.ok(page.pickedPane.querySelector('[data-picked="start"]'), "the edit emptied the Picked block tab");
+  assert.equal(page.pickedPane.querySelector('[data-picked="off-beat"]'), null, "the tab still offers Off the beat");
+  assert.ok(
+    view.querySelectorAll("[data-edit]").some((node) => node.getAttribute("data-edit").includes("is-selected")),
+    "the block is no longer drawn as picked",
+  );
 });
 
 test("a Factory sequence's stage offers nothing that edits it", async () => {

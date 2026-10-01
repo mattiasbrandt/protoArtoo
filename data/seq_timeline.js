@@ -580,7 +580,7 @@
   //             knows which they are.
   //
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
-  // movePickedTo(ms), removePicked(), destroy()}.
+  // pick(indices), movePickedTo(ms), removePicked(), destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (hosts, source, options = {}) => {
     const seqNow = typeof source === "function" ? source : () => source;
@@ -1183,6 +1183,18 @@
       // a drag under way is abandoned, as a pointercancel abandons it.
       cancel: () => dragCancel(),
       picked,
+      // Pick the steps at these indices. What is picked is held as the steps
+      // themselves, so an edit that writes new steps in their place - a beat
+      // set or cleared re-resolves the routine - leaves nothing picked; the
+      // editor that made the edit says which steps they are now.
+      pick(indices) {
+        const steps = seqNow().steps;
+        selection.clear();
+        indices.forEach((index) => {
+          if (steps[index]) selection.add(steps[index]);
+        });
+        redraw();
+      },
       movePickedTo,
       removePicked: removeSelected,
       destroy() {

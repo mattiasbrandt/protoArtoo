@@ -1545,12 +1545,17 @@
       if (patch[key] === null) delete step[key];
       else step[key] = patch[key];
     });
+    // The steps picked on the timeline, by index: this edit writes new steps
+    // in their place and changes no step's place in the routine, so the same
+    // indices are picked again once it is drawn.
+    const pickedSteps = [...new Set(pickedBlocks.flatMap((block) => block.steps))];
     const before = historyBegin();
     editorState.current.steps[stepIdx] = step;
     editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
     historyCommit(before);
     rerenderStepTable();
     edited();
+    if (pickedSteps.length > 0) sessionTimeline?.pick(pickedSteps);
   };
 
   // Retime to the grid (ADR 0060), with its receipt: how many steps actually
