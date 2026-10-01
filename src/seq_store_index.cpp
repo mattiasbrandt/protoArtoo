@@ -52,6 +52,15 @@ const SeqIndexEntry* seqStoreIndexFind(const char* name) {
     return (slot >= 0) ? &s_entries[slot] : nullptr;
 }
 
+const SeqIndexEntry* seqStoreIndexFindRef(const char* ref) {
+    if (ref == nullptr || ref[0] == '\0') return nullptr;
+    if (strncmp(ref, "DM:", 3) == 0) return seqStoreIndexFind(ref);
+    for (uint8_t i = 0; i < s_count; ++i) {
+        if (strcmp(s_entries[i].id, ref) == 0) return &s_entries[i];
+    }
+    return nullptr;
+}
+
 uint8_t seqStoreIndexCount() {
     return s_count;
 }

@@ -403,7 +403,12 @@ static void writeArmPulse(uint8_t armId, uint8_t channel, uint16_t pulseUs) {
 // (ADR 0040). Its ease is already the one that runs (servoMotionProfileOf()),
 // so an overshoot on an unmeasured Output never reaches the planner as one.
 // -----------------------------------------------------------------------------
-static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
+//
+// A Gesture's move may carry its own throw time and easing (`throwMs`,
+// `easingPlusOne`, both 0 for the Output's own), which apply to this one move
+// and never to the row (servoMotionOverride(), ADR 0049).
+static void driveArmTo(uint8_t armId, uint16_t pulseUs, uint16_t throwMs = 0,
+                       uint8_t easingPlusOne = 0) {
     uint8_t channel = LEDC_CH_MAX;
     uint16_t targetUs = 0;
     if (!resolveArmPulse(armId, pulseUs, &channel, &targetUs)) {
@@ -425,6 +430,7 @@ static void driveArmTo(uint8_t armId, uint16_t pulseUs) {
         return;
     }
 
+    servoMotionOverride(&profile, throwMs, easingPlusOne);
     const ServoMotionRamp ramp =
         servoMotionPlan(s_arm[armId].commandedUs, targetUs, profile, millis());
     if (ramp.durationMs == 0) {
@@ -1120,10 +1126,10 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
                 return;
             }
             if (cmd.armId == 255) {
-                driveArmTo(0, cmd.positionUs);
-                driveArmTo(1, cmd.positionUs);
+                driveArmTo(0, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
+                driveArmTo(1, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
             } else {
-                driveArmTo(cmd.armId, cmd.positionUs);
+                driveArmTo(cmd.armId, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
             }
             PA_LOG_INFO(TAG, "[%s] Arm%d set to %d us", commandSourceToString(cmd.source), cmd.armId + 1,
                         cmd.positionUs);

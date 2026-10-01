@@ -26,6 +26,28 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **One move across many parts.** A Gesture says "the ring, clockwise, from
+  the front, a wave, one panel per beat" once: the order comes from where the
+  parts sit, and the droid works out the parts when it runs, so a panel fitted
+  later joins in. On the body the droid paces the moves itself, one part at a
+  time; on the dome it becomes one dome command, and a move the dome has no
+  command for still saves. A body Gesture can set its own speed and easing
+  for its moves; each part otherwise moves the way its output is set to.
+- **A sequence can hold your own sequences.** Drop a saved phrase into
+  another sequence as one step; it stays linked, so improving the phrase
+  improves every sequence that uses it. Phrases nest three deep, and a
+  sequence cannot contain itself.
+- **A dome panel can open part way.** Say how far on a panel open or close,
+  and the dome stops it that far along its own travel.
+- **A sequence can have a tempo.** Type the BPM, tap along while the droid
+  plays the track, or drop your own copy of the track in to have its beat
+  read. You set where bar 1 starts. Put a step on a beat by picking it from
+  the bar-numbered list, give a dome turn or a flutter a length in beats, or
+  retime the whole routine to the grid: it says how many steps landed, and
+  Undo puts them back. A step
+  placed on a beat stays on it: change the tempo and every step on a beat moves
+  with it, while steps placed in milliseconds stay put. A tempo that is only a
+  guess is flagged, never refused.
 - **See where your answers and the droid disagree.** Wiring lists every wire
   it draws and everything the droid reports on - the sound module, the dome
   link, the RC receiver, the Foot Drive, the dome's panels - with what you

@@ -503,6 +503,28 @@ body_arms:
   - { id: interArm,  cad_name: null, aliases: ["Interface arm"],  position: front-left,  control: none }
   - { id: interTool, cad_name: null, aliases: ["Interface tool"], position: front-left,  control: none }
 
+# Sets a Gesture spreads across (ADR 0046, #438): one token a builder says - "the
+# ring" - that means these Parts, whichever of them the droid in front of it has
+# when the sequence runs. A saved Gesture stores the token and never the Parts
+# it meant on the day, so a Part added here joins every Gesture that names its
+# set with nothing re-authored.
+#   id:       the token a sequence stores. Stable: renaming one orphans every
+#             Gesture that names it.
+#   label:    what the editor calls it.
+#   sections: every Part declared in these sections, or
+#   members:  these Parts, by id.
+# A set is on ONE half of the droid, because who performs a Gesture is decided
+# by who owns its Parts (Coordinator Resolution): the dome performs a dome set,
+# the body expands a body set. The generator refuses a set that spans both.
+# Order is NOT declared here. It comes from where each Part sits (`bearing_deg`),
+# and a Part with no bearing goes last.
+sets:
+  - { id: ring,     label: The ring,            sections: [dome_panels] }
+  - { id: pies,     label: The pies,            sections: [dome_pies] }
+  - { id: dome,     label: Every dome panel,    sections: [dome_pies, dome_panels] }
+  - { id: breadpan, label: The breadpan doors,  members: [doorFL, doorFR, doorRL, doorRR] }
+  - { id: bodyDoors, label: Every body door,    sections: [body_doors] }
+
 # Escape hatch for off-model hardware wired to spare outputs (fire
 # extinguisher, custom rigs). Exists so a real output is never unnameable.
 # The slots are ids, not rows: the generator mints `other1`..`other<count>`

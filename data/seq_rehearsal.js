@@ -42,6 +42,19 @@
 //                           generates, so hand-written overlaps are advised on.
 //   part-left-open          ADR 0049: the engine undoes nothing a body step did.
 //   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
+//   dome-how-far            ADR 0046: how far is resolved by the dome, and
+//                           our fork has no part-way move for PP3 and PP5.
+//   gesture-cut             #438: the droid ends a Gesture at its run's end
+//                           step, mid-pass, so terminal cleanup is the last
+//                           thing the run moves.
+//   gesture-dome            ADR 0046: a dome Gesture is the dome's `$` command,
+//                           and a pair the dome has no command for saves.
+//   tempo-confidence        ADR 0058: the analyzer read Cantina's ~200 BPM as
+//                           127.8; a tempo that says how unsure it is must say
+//                           so where the builder looks.
+//   tempo-hash              ADR 0058: a sound is named as a role, so the track
+//                           behind a tempo can change with the sequence
+//                           untouched.
 //
 // One computation behind three appearances (#287 specific 6): the figures in
 // the editor, the full list at save and at clone, and a badge beside a run.
@@ -66,6 +79,10 @@
     "body-timing": {
       msg: "Only a part on a calibrated output can be timed here.",
       closes: "Calibrate the output it is on, with the droid connected.",
+    },
+    "phrase": {
+      msg: "A sequence inside this one is read when it runs, not here.",
+      closes: "Open that sequence to see what it does.",
     },
     "random-pick": {
       msg: "A random step picks its panel at run time. Nothing fixed to check.",
@@ -167,10 +184,53 @@
         i += 1;
       }
     }
+    // A Gesture also reads as the moves it becomes (ADR 0046), each marked
+    // `generated`: a body Gesture's moves as the Coordinator asks for them
+    // before pacing, and a dome Gesture's panels where the dome's `$` command
+    // leaves them. The Part rules read them; the rules about an author's own
+    // timing do not, because the body paces what it generates and the dome
+    // performs its command as one (data/seq_gesture.js).
+    const G = window.SeqGesture;
+    if (G) {
+      events.slice().forEach((event) => {
+        if (event.def.type !== "gesture") return;
+        const t = event.t;
+        const meta = { step: event.step, iter: event.iter, generated: true };
+        G.bodyMoves(event.def, t).forEach((move) =>
+          events.push({
+            ...meta,
+            t: move.t,
+            def: { type: "body", part: move.part, shape: move.shape, howFar: event.def.howFar, speedMs: event.def.speedMs, easing: event.def.easing },
+          }),
+        );
+        domePanelsOf(event.def).forEach((cmd) => events.push({ ...meta, t, def: { type: "dome", cmd } }));
+      });
+    }
     // Stable: equal times keep authored order, which is the engine's order too.
     return events
       .map((event, order) => ({ ...event, order }))
       .sort((a, b) => a.t - b.t || a.order - b.order);
+  };
+
+  // A dome Gesture's panels as its `$` command leaves them: a together open or
+  // close as written, a flutter as the dome's to know (nothing), every other
+  // command the dome performs ends its panels closed, and a pair with no
+  // command moves nothing (include/sequence_gesture.h).
+  const domePanelsOf = (def) => {
+    const G = window.SeqGesture;
+    if (!G || !G.onDome(def)) return [];
+    const shape = def.shape || "open";
+    const spread = def.spread || "together";
+    if (!G.domeCommand(shape, spread) || (spread === "together" && shape === "flutter")) return [];
+    const word = spread === "together" && shape === "open" ? "OP" : "CL";
+    return G.members(def)
+      .map((id) => {
+        const panel = /^panel(\d+)$/.exec(id);
+        const pie = /^pie(\d)$/.exec(id);
+        if (panel) return `:${word}${String(panel[1]).padStart(2, "0")}`;
+        return pie ? `:${word}P${pie[1]}` : null;
+      })
+      .filter((cmd) => cmd && panelIntent(cmd));
   };
 
   // A panel intent (:OP/:CL/:OF) split into what it does and to which panel.
@@ -239,6 +299,23 @@
     };
   };
 
+  // A Gesture's move may state its own full-throw time and easing, which run in
+  // place of the Output's for that move (servoMotionOverride(),
+  // include/servo_motion_ramp.h); an overshoot still never passes an
+  // unmeasured Output's ends.
+  const overridden = (profile, def) => {
+    if (!profile) return profile;
+    const model = motion();
+    const out = { ...profile };
+    if (Number(def.speedMs) > 0) out.throwMs = Number(def.speedMs);
+    const ease = model?.ServoEasing;
+    const words = ease ? { none: ease.SERVO_EASE_NONE, soft: ease.SERVO_EASE_SOFT, overshoot: ease.SERVO_EASE_OVERSHOOT } : {};
+    if (def.easing in words) {
+      out.easing = def.easing === "overshoot" && !out.calibrated ? ease.SERVO_EASE_NONE : words[def.easing];
+    }
+    return out;
+  };
+
   // seqBodyHowFar() (include/sequence_engine.h): absent is the whole throw, and
   // a stated value is floored at 5 and capped at 100.
   const howFarOf = (def) => {
@@ -265,7 +342,7 @@
   const bodyMove = (def, context) => {
     const output = outputOf(def.part, context);
     const shape = def.shape || "open";
-    const profile = output && isServo(output) ? profileOf(output) : null;
+    const profile = output && isServo(output) ? overridden(profileOf(output), def) : null;
     const timed = Boolean(profile && profile.calibrated);
     return {
       part: def.part,
@@ -302,7 +379,7 @@
       : `${name(worst.after)} ${worst.gap} ms after ${name(worst.before)}`;
 
   const dispatchSpacing = (events) => {
-    const dome = events.filter((event) => event.def.type === "dome");
+    const dome = events.filter((event) => event.def.type === "dome" && !event.generated);
     const { tight, worst } = tightPairs(dome, DOME_SPACING_MS);
     if (!worst) return [];
     const when =
@@ -325,7 +402,7 @@
   const servoBurst = (events) => {
     const floor = cadenceFloorMs();
     if (floor === null) return [];
-    const panels = events.filter((event) => event.def.type === "dome" && panelIntent(event.def.cmd));
+    const panels = events.filter((event) => event.def.type === "dome" && panelIntent(event.def.cmd) && !event.generated);
     const { tight, worst } = tightPairs(panels, floor);
     if (!worst) return [];
     return [
@@ -386,6 +463,9 @@
     const runs = new Map();
     const groups = grouped();
     events.forEach((event) => {
+      // A generated move waits for the one before to arrive: the Coordinator
+      // paces it (include/sequence_gesture.h).
+      if (event.generated) return;
       const def = event.def;
       let key = null;
       let command = null;
@@ -604,7 +684,7 @@
   const bodyOverlap = (events) => {
     const floor = cadenceFloorMs();
     if (floor === null) return [];
-    const moves = events.filter((event) => event.def.type === "body" && event.def.part);
+    const moves = events.filter((event) => event.def.type === "body" && event.def.part && !event.generated);
     const { tight, worst } = tightPairs(moves, floor, (a, b) => a.def.part === b.def.part);
     if (!worst) return [];
     return [
@@ -660,6 +740,130 @@
     );
   };
 
+  // A dome panel move that says how far, on a panel our fork has no part-way
+  // move for (PP3 and PP5, include/sequence_dome_how_far.h): it goes all the
+  // way, and saying so is what the author needs.
+  const domeHowFar = (events) =>
+    events
+      .filter((event) => event.def.type === "dome" && !event.generated && Number(event.def.howFar) > 0 && Number(event.def.howFar) < 100)
+      .filter((event) => /^:(OP|CL)P[35]$/.test(String(event.def.cmd || "")) && !(event.iter > 0))
+      .map((event) =>
+        finding(
+          "warning",
+          "dome-how-far",
+          `${panelName(event.def.cmd.slice(3))} has no part-way move on the dome, so it goes all the way.`,
+          "Use the full move, or a panel the dome can stop part way.",
+          { step: event.step, element: panelName(event.def.cmd.slice(3)) },
+        ),
+      );
+
+  // A Gesture whose moves do not all fit before the end step. The droid ends a
+  // Gesture there, mid-pass (sequenceGestureNext(), include/sequence_gesture.h),
+  // so what falls at or after the end is never sent. A body Gesture's moves are
+  // paced at least the Cadence Floor apart, which this counts; each Output's
+  // own throw can push them later still, so the count is the least that is cut.
+  const gestureCut = (events, steps) => {
+    const G = window.SeqGesture;
+    const end = steps.find((step) => step && step.type === "end");
+    if (!G || !end) return [];
+    const endT = Number(end.t) || 0;
+    const floor = cadenceFloorMs() || 0;
+    const out = [];
+    events
+      .filter((event) => event.def.type === "gesture" && !event.generated)
+      .forEach((event) => {
+        let cut = 0;
+        if (G.onDome(event.def)) {
+          const repeat = Number(event.def.repeatMs) || 0;
+          const extent = Number(event.def.extentMs) || 0;
+          const passes = repeat > 0 && extent > 0 ? Math.ceil(extent / repeat) : 1;
+          for (let p = 0; p < passes; p++) if (event.t + p * repeat >= endT) cut += 1;
+        } else {
+          let last = -Infinity;
+          G.bodyMoves(event.def, event.t).forEach((move) => {
+            const at = Math.max(move.t, last + floor);
+            last = at;
+            if (at >= endT) cut += 1;
+          });
+        }
+        if (cut > 0) {
+          out.push(
+            finding(
+              "warning",
+              "gesture-cut",
+              `${plural(cut, "move of this gesture falls", "moves of this gesture fall")} at or after the end, and the droid stops it there.`,
+              "Start it earlier, slow its pace, or move the end later.",
+              { step: event.step, n: cut },
+            ),
+          );
+        }
+      });
+    return out;
+  };
+
+  // A dome Gesture the connected dome performs only in part, or not at all
+  // (ADR 0046): Coordinator Resolution maps it onto the dome's `$` family, and
+  // the body never breaks it into single panel commands. It still saved; this
+  // says what happens instead.
+  const gestureDome = (events) => {
+    const G = window.SeqGesture;
+    if (!G) return [];
+    return events
+      .filter((event) => event.def.type === "gesture" && !event.generated && !(event.iter > 0))
+      .map((event) => ({ event, reading: G.domeReading(event.def) }))
+      .filter(({ reading }) => reading)
+      .map(({ event, reading }) =>
+        finding(
+          "warning",
+          "gesture-dome",
+          reading.notes.join(" "),
+          reading.performs
+            ? "Use together, or a chase that opens, for the dome to do exactly this."
+            : "Pick together, or open with another spread.",
+          { step: event.step },
+        ),
+      );
+  };
+
+  // ---------------------------------------------------------------------------
+  // The tempo (ADR 0058). Two warnings, neither a refusal: a tempo is advisory
+  // and always editable, and the builder can know what no analyzer can.
+  // ---------------------------------------------------------------------------
+
+  // Below this a tempo is called a guess. Every figure ADR 0058 has came from
+  // synthesised click tracks, so this is a stated stand-in awaiting a real
+  // track, not a measurement: an analyzed tempo whose best lag barely beats the
+  // average one reads 0.5, and so do taps whose spacing wanders by a tenth of
+  // a beat.
+  const TEMPO_CONFIDENCE_LOW = 0.5;
+
+  const tempoConfidence = (seq) => {
+    const tempo = seq?.tempo;
+    if (!tempo || typeof tempo.confidence !== "number" || tempo.confidence >= TEMPO_CONFIDENCE_LOW) return [];
+    const why =
+      tempo.source === "tapped"
+        ? "The taps were uneven, so this tempo is a rough guess."
+        : "The track has no steady beat to lock onto, so this tempo is a guess.";
+    return [finding("warning", "tempo-confidence", why, "Tap along to the track on the droid, or type the tempo.")];
+  };
+
+  // The hash can only be compared when the builder drops a copy of the track in
+  // again: the browser never holds the droid's audio, and no route fetches it.
+  // `context.trackHash` is that copy's, when there is one.
+  const tempoHash = (seq, context) => {
+    const stored = seq?.tempo?.hash;
+    const dropped = context?.trackHash;
+    if (typeof stored !== "string" || typeof dropped !== "string" || stored === dropped) return [];
+    return [
+      finding(
+        "warning",
+        "tempo-hash",
+        "The track you dropped in is not the one this tempo was measured from.",
+        "Analyze this track again, or tap along to it.",
+      ),
+    ];
+  };
+
   // ---------------------------------------------------------------------------
   // The figures (#287 second pass, specific 9): each one true, no headline.
   // ---------------------------------------------------------------------------
@@ -706,9 +910,14 @@
   //   config     GET /api/config (its `components`)
   //   layout     the connected dome's layout model (data/dome_layout.js)
   //   maxBytes   the droid's per-file cap (GET /api/identity)
+  //   trackHash  the fingerprint of a track the builder dropped in, if any
+  //
+  // The steps are read as the droid runs them, every beat at the millisecond
+  // it resolves to (data/seq_protocol_check.js resolveBeats()).
   // ---------------------------------------------------------------------------
   const rehearse = (seq, context = {}) => {
-    const steps = Array.isArray(seq?.steps) ? seq.steps : [];
+    const run = window.SeqProtocolCheck?.resolveBeats ? window.SeqProtocolCheck.resolveBeats(seq) : seq;
+    const steps = Array.isArray(run?.steps) ? run.steps : [];
     const events = expand(steps);
     const findings = [
       ...dispatchSpacing(events),
@@ -722,6 +931,11 @@
       ...bodyOverlap(events),
       ...partLeftOpen(events),
       ...audioOutlivesShow(events),
+      ...gestureDome(events),
+      ...gestureCut(events, steps),
+      ...domeHowFar(events),
+      ...tempoConfidence(seq),
+      ...tempoHash(seq, context),
     ];
 
     // What could not be judged, by step: a panel move's timing is the dome's, a
@@ -737,6 +951,7 @@
         const move = bodyMove(step, context);
         if (!(move.output && !isServo(move.output)) && !move.timed) gap = "body-timing";
       } else if (step.type === "random") gap = "random-pick";
+      else if (step.type === "sequence") gap = "phrase";
       if (gap) gapCounts.set(gap, (gapCounts.get(gap) || 0) + 1);
     });
     const gaps = [...gapCounts.entries()].map(([code, n]) => ({ code, n, ...GAPS[code] }));

@@ -20,6 +20,7 @@
 #include "logging.h"
 #include "seq_json.h"
 #include "seq_store_index.h"
+#include "sequence_dispatcher.h"  // sequenceCatalogFind() - a Factory phrase
 
 static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
@@ -119,6 +120,86 @@ static void unlock() {
     if (s_mutex != nullptr) xSemaphoreGive(s_mutex);
 }
 
+// The stable id a phrase refers to this sequence by (ADR 0046), or "" for one
+// that has none. seqJsonParseVariant() has already refused a malformed one.
+static void copyStableId(JsonVariantConst root, char* out, size_t cap) {
+    out[0] = '\0';
+    const char* id = root["id"] | (const char*)nullptr;
+    if (id != nullptr && protocolCheckSeqIdValid(id)) {
+        strncpy(out, id, cap - 1);
+        out[cap - 1] = '\0';
+    }
+}
+
+// -----------------------------------------------------------------------------
+// A sequence inside a sequence (ADR 0046)
+//
+// On SAVE, protocolCheckNesting() walks the phrases a sequence names through
+// nestLookup(), which answers from the index and each phrase's own file.
+//
+// On LOAD - every run and every pose - the phrases are SPLICED into the
+// staging: each phrase step becomes its phrase's steps, timed from where the
+// phrase step sits, its end step dropped. Loaded then, never at save, so
+// editing a phrase changes what every caller does with nothing re-saved. The
+// engine therefore runs one flat branch with one cursor: the "stack" ADR 0046
+// names is these passes, one per level, bounded by PC_NEST_DEPTH_MAX. Each
+// spliced step keeps the effect class its own phrase's Protocol Check stamped,
+// so terminal cleanup unions every level's classes.
+// -----------------------------------------------------------------------------
+
+// Resolve a reference the way a run of it would: a Learned Sequence first (by
+// id, or by name, which is how a Learned one shadows a Factory one), then the
+// Factory catalog by name. Fills the path of a Learned one, or the entry of a
+// Factory one.
+static bool nestResolve(const char* ref, char* path, size_t pathCap, const SequenceEntry** factory) {
+    *factory = nullptr;
+    const SeqIndexEntry* e = seqStoreIndexFindRef(ref);
+    if (e != nullptr) {
+        snprintf(path, pathCap, "%s/%s", SEQ_DIR, e->file);
+        return true;
+    }
+    if (strncmp(ref, "DM:", 3) == 0) {
+        *factory = sequenceCatalogFind(ref);
+        return *factory != nullptr;
+    }
+    return false;
+}
+
+// The save-time lookup (SeqNestLookup). The store's lock is held by the caller.
+static void nestLookup(const char* ref, SeqNestInfo* out, void* /*ctx*/) {
+    memset(out, 0, sizeof(*out));
+    char path[64];
+    const SequenceEntry* factory = nullptr;
+    if (!nestResolve(ref, path, sizeof(path), &factory)) return;
+    if (factory != nullptr) {
+        // Factory steps carry no phrases.
+        out->found = true;
+        out->toggle = factory->toggleGroup != TOGGLE_NONE;
+        out->stepCount = factory->stepCount;
+        return;
+    }
+    File f = LittleFS.open(path, "r");
+    if (!f) return;
+    JsonDocument doc;
+    const DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    if (err) return;
+    out->found = true;
+    SeqToggleGroup grp = TOGGLE_NONE;
+    out->toggle = seqToggleGroupFromString(doc["toggleGroup"] | "none", grp) && grp != TOGGLE_NONE;
+    JsonArrayConst steps = doc["steps"].as<JsonArrayConst>();
+    out->stepCount = (uint8_t)((steps.size() > 255) ? 255 : steps.size());
+    for (JsonObjectConst step : steps) {
+        const char* type = step["type"] | "";
+        const char* phrase = step["ref"] | (const char*)nullptr;
+        if (strcmp(type, "sequence") == 0 && phrase != nullptr && out->refCount < PC_NEST_REFS_MAX) {
+            strncpy(out->refs[out->refCount], phrase, PC_SEQ_REF_MAX);
+            out->refs[out->refCount][PC_SEQ_REF_MAX] = '\0';
+            out->refCount++;
+        }
+    }
+}
+
 // Index a validated draft with its meta. Returns false if the index is full.
 static bool indexDraft(const SeqDraft& d, JsonVariantConst root, const char* file) {
     SeqIndexEntry e = {};
@@ -129,6 +210,7 @@ static bool indexDraft(const SeqDraft& d, JsonVariantConst root, const char* fil
     strncpy(e.source, src, sizeof(e.source) - 1);
     e.modified = root["meta"]["modified"] | false;
     strncpy(e.file, file, sizeof(e.file) - 1);
+    copyStableId(root, e.id, sizeof(e.id));
     e.valid = true;
     return seqStoreIndexAdd(e);
 }
@@ -218,6 +300,7 @@ void seqStoreInit() {
             strncpy(inv.source, src, sizeof(inv.source) - 1);
             inv.modified = root["meta"]["modified"] | false;
             strncpy(inv.file, file, sizeof(inv.file) - 1);
+            copyStableId(root, inv.id, sizeof(inv.id));
             inv.valid = false;
             if (!seqStoreIndexAdd(inv)) {
                 PA_LOG_WARN(TAG, "index full at %s (invalid)", file);
@@ -276,13 +359,65 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
     ProtocolCheckResult r =
         seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
     if (r.ok) r = protocolCheck(d);  // stamps effectClass into the staging
-    unlock();
     if (!r.ok) {
+        unlock();
         stagingFree(st);
         return r;
     }
+    // The parent goes straight into the statics, so this frame's locals - the
+    // document, the file, the draft and the staging - are reused for each
+    // phrase rather than doubled: the frame sits on the Sequence
+    // Coordinator's measured chain (ADR 0040).
     s_staging = st;
     s_stagedDraft = d;
+
+    // Splice the phrases in, one level per pass (see "A sequence inside a
+    // sequence" above). A phrase that is gone, or no longer passes Protocol
+    // Check, is reported and left out, and the rest runs; one past the depth
+    // bound likewise. A run that would not fit is refused.
+    for (uint8_t branch = 0; branch < 2 && r.ok; ++branch) {
+        SeqStep** buf = (branch == 0) ? &s_staging.main : &s_staging.close;
+        uint8_t* count = (branch == 0) ? &s_stagedDraft.stepCount : &s_stagedDraft.closeStepCount;
+        const bool fits = seqStoreSplicePhrases(
+            buf, count,
+            [&](const char* ref, bool deep, const SeqStep** child, uint8_t* childCount) {
+                const SequenceEntry* factory = nullptr;
+                const bool found = !deep && nestResolve(ref, path, sizeof(path), &factory);
+                st = SeqStaging();
+                if (factory != nullptr) {
+                    *child = factory->steps;
+                    *childCount = factory->stepCount;
+                } else if (found) {
+                    f = LittleFS.open(path, "r");
+                    doc.clear();
+                    err = f ? deserializeJson(doc, f) : DeserializationError(DeserializationError::InvalidInput);
+                    if (f) f.close();
+                    root = doc.as<JsonVariantConst>();
+                    if (!err && stagingAlloc(root, st)) {
+                        ProtocolCheckResult cr =
+                            seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
+                        if (cr.ok) cr = protocolCheck(d);  // stamps the phrase's own classes
+                        if (cr.ok) {
+                            *child = d.steps;
+                            *childCount = d.stepCount;
+                        }
+                    }
+                }
+                if (*child == nullptr) {
+                    PA_LOG_WARN(TAG, "%s: sequence %s left out - %s", name, ref,
+                                deep ? "nested deeper than 3" : "not on this droid, or it no longer checks");
+                }
+            },
+            [&]() { stagingFree(st); });
+        if (!fits) r = pcFail("steps", "too many steps once its sequences are inside, or out of memory");
+    }
+    s_stagedDraft.steps = s_staging.main;
+    s_stagedDraft.closeSteps = s_staging.close;
+    unlock();
+    if (!r.ok) {
+        stagingFree(s_staging);
+        return r;
+    }
     return pcOk();
 }
 
@@ -389,6 +524,20 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
         return pcFail("name", "store busy");
     }
 
+    // A sequence holding sequences: each exists and is not a toggle, nothing
+    // reaches back round to this one, no path is too deep, and the whole run
+    // fits (ADR 0046). Checked under the lock, against the files as they are.
+    {
+        char selfId[PC_SEQ_ID_MAX + 1];
+        copyStableId(root, selfId, sizeof(selfId));
+        ProtocolCheckResult nest = protocolCheckNesting(d, selfId, d.name, nestLookup, nullptr);
+        if (!nest.ok) {
+            unlock();
+            stagingFree(st);
+            return nest;
+        }
+    }
+
     // Capacity: the board's store cap (new names only), per-file size,
     // free-space floor -- seqStoreCapacityCheck(), include/seq_store_util.h.
     const bool isNew = (seqStoreIndexFind(d.name) == nullptr);
@@ -410,6 +559,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     strncpy(entry.source, src, sizeof(entry.source) - 1);
     entry.modified = doc["meta"]["modified"] | false;
     strncpy(entry.file, file, sizeof(entry.file) - 1);
+    copyStableId(root, entry.id, sizeof(entry.id));
     // Nothing reaches this point without passing Protocol Check above, so the
     // entry is valid. Leaving the zero-initialised default would index a
     // just-validated sequence as needing repair until the next boot scan

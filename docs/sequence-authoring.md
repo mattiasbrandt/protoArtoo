@@ -26,6 +26,8 @@ Every choreography is built from core step kinds:
 | `loop` | beat/BPM iteration; repeats a body of steps |
 | `random` | runtime panel pick; emits a random panel intent command |
 | `audioCat` | random track from a sound category with fallback |
+| `gesture` | one move spread across a set of Parts, in order round the droid (see below) |
+| `sequence` | another sequence, as one step, kept linked (see below) |
 
 Timing is **absolute** from sequence start (`tMs`). Steps inside a `loop` body use times
 relative to the iteration start.
@@ -172,6 +174,84 @@ If estop or Sleep Mode arrives while a sequence is running, the outputs that
 sequence moved snap to their close position -- the promise the body routines kept
 when ServoTask ran them itself -- and any move in progress stops where it is.
 
+## Tempo and beats
+
+A sequence may carry a **tempo** (`tempo` at the top level, ADR 0058): `bpm`
+(1..600, one decimal), `source` (`typed`, `tapped` or `analysed`), `confidence`
+(0..1), and optionally `phase` (ms where beat 1 sits), `barLen` (beats in a bar,
+1..16, default 4), `barPhase`, `duration` (ms the track runs) and `hash` (the
+analysed file's fingerprint; the analysed route only).
+
+Any step may then carry `beat` (the whole beat it starts on, 0..1200) beside its
+`t`; the beat wins, and changing the BPM moves every step on a beat and leaves
+every step placed in milliseconds where it was. A dome turn or a body flutter may
+carry `spanBeats` for its duration. A step inside a `loop` body is timed from its
+pass and cannot sit on a beat: put the loop header on the beat instead. The
+firmware resolves beats to milliseconds when it loads the sequence; the engine
+still runs milliseconds.
+
+## Gestures
+
+A `gesture` step spreads one shape across a **set** of Parts (ADR 0046):
+
+```json
+{ "t": 0, "beat": 4, "type": "gesture", "set": "ring", "shape": "open",
+  "spread": "chase", "direction": "cw", "start": "front", "repeatBeats": 8 }
+```
+
+- `set` is a token from the parts catalog (`ring`, `pies`, `dome`, `breadpan`,
+  `bodyDoors`), or `parts` lists Part ids (all on the dome or all on the body,
+  at most 24). The droid works out the Parts when the step **runs**, so a part
+  fitted later joins in, and a part nothing drives is reported and skipped.
+- The order comes from where the Parts sit (`bearing_deg`, 0 dead astern, 180
+  dead ahead), clockwise or counter-clockwise from `front`, `right`, `rear` or
+  `left`. A Part with no bearing (every body Part today) goes last.
+- `spread`: `together`, `wave` (one per step, each stays), `chase` (one per step,
+  the one before goes back), `alternate` (all on one step, all back on the
+  next), `pulse` (back on the half step). The step is `stepMs` or `stepBeats`;
+  with a tempo it defaults to one beat.
+- `repeatMs`/`repeatBeats` repeats it; `extentMs`/`extentBeats` bounds the
+  repeats, and by default it repeats to the end step (or the track's end, if
+  sooner).
+- `howFar`, `speedMs` (a full throw's time) and `easing` (`none`, `soft`,
+  `overshoot`) are optional; on the body, speed and easing replace the
+  Output's own Motion Profile for the Gesture's moves only.
+- A **body** Gesture is expanded by the Sequence Coordinator into one move at a
+  time, never closer than the Cadence Floor, whatever the spread asks.
+- A **dome** Gesture is one of the dome's `$` commands over the members' panel
+  addresses: `together` open/close/flutter, and `open` with `wave`, `chase`,
+  `alternate` or `pulse`. The dome orders its own panels and keeps its own
+  speed. Any other pair still saves, and the Rehearsal says the dome does
+  nothing with it.
+- A flutter with `together` or `wave` owes a later close Gesture over the same
+  set.
+- A Gesture stops at the end step, mid-pass if it has to: nothing it would
+  move at or after the end is sent, and the Rehearsal says when a pass is cut
+  short.
+
+## How far a dome panel goes
+
+A dome `:OP`/`:CL` step may carry `howFar` (1..100): the dome stops the panel
+that far along its own calibrated travel (sent as `:MV`, a fraction, never a
+pulse). PP3 and PP5 have no part-way move on our dome firmware and go all the
+way.
+
+## A sequence inside a sequence
+
+A `sequence` step names another sequence by its stable reference: a saved
+sequence's `id` (every save carries one) or a factory sequence's name.
+
+```json
+{ "t": 2000, "type": "sequence", "ref": "a1b2c3d4", "name": "DM:PHRASE" }
+```
+
+Its steps run where the step sits, loaded fresh on every run, so improving the
+phrase improves every sequence that holds it. On save: the phrase must be on
+the droid and not a toggle, a sequence cannot reach itself, phrases nest at
+most three deep, the whole run must fit 96 steps, and a phrase cannot sit
+inside a loop. A phrase deleted later is left out of the run, and the log
+says so.
+
 ## The Rehearsal
 
 The editor reads the sequence you are writing and says what will not happen the
@@ -191,6 +271,10 @@ and a fix:
 | `retarget-before-arrival` | warning | the same open or close sent again to a panel or Part with nothing in between | `DM:HELLO`'s five identical opens made one |
 | `quiet-in-sequence` | warning | a `$s` step | it turned idle chatter off until reboot on 2026-06-17 |
 | `part-left-open` | note | a body Part whose last step is not a close | the body undoes nothing (ADR 0049) |
+| `gesture-dome` | warning | a dome Gesture the dome performs only in part, or not at all | a dome Gesture is the dome's `$` command (ADR 0046) |
+| `dome-how-far` | warning | a part-way move of PP3 or PP5 | our dome firmware has no part-way move for them |
+| `tempo-confidence` | warning | a tempo that is only a guess (confidence under 0.5) | Cantina's ~200 BPM read as 127.8 (ADR 0058) |
+| `tempo-hash` | warning | a dropped-in track that is not the one the tempo was measured from | the track behind a sound can change (ADR 0058) |
 
 It also says how many steps it could check. A dome panel move, a body move and a
 random pick each carry a question it cannot answer from the page -- how long the
@@ -257,9 +341,10 @@ model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   "closeSteps": [] }
 ```
 
-- `type` is one of `dome | audio | body | loop | random | audioCat | domeRotate | end`.
+- `type` is one of `dome | audio | body | gesture | sequence | loop | random | audioCat | domeRotate | end`.
 - `dome` steps carry a single panel intent or Advanced dome command string.
-- A `loop` header is followed by its `body` steps (relative `t`); no nesting.
+- A `loop` header is followed by its `body` steps (relative `t`); loops do not
+  nest, and a `sequence` step cannot sit in a loop body.
 - `random` steps pick from a logical target set (`ring`, `pie`, `all`, `hold`) and emit
   panel intent commands according to `mode` (`flutter`, `open`, `close`).
 - A toggle sequence (`toggleGroup` != `none`) carries a `closeSteps` branch; a non-toggle

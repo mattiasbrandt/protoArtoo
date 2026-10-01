@@ -145,6 +145,46 @@ enum SeqBulkCentreKind : uint8_t {
 // never starts two Outputs at once.
 constexpr uint8_t SEQ_BULK_CENTRE_NO_AWAIT = 0xFE;
 
+// -----------------------------------------------------------------------------
+// The pace every generated motion keeps (#440, #438)
+//
+// A pose and a body Gesture both put motion out one Output at a time, on the
+// Coordinator's own cursor rather than a sequence's: the next motion waits the
+// last one's spacing -- the Cadence Floor after a dome panel, the Output's own
+// full throw, floored, after a body Output -- and, after a body Output, until
+// ServoTask stops reporting that Output moving. These two are that rule, once,
+// over the two fields each run keeps (`dueMs`, `awaitArm`).
+// -----------------------------------------------------------------------------
+
+// Whether the Output the last motion moved has stopped, given what ServoTask
+// reports. Clears the wait when it has.
+inline bool sequencePaceAwaitDone(uint8_t* awaitArm, bool outputMoving) {
+    if (awaitArm == nullptr || *awaitArm == SEQ_BULK_CENTRE_NO_AWAIT) return true;
+    if (outputMoving) return false;
+    *awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    return true;
+}
+
+// A motion was dealt with at nowMs. A motion that STARTED holds the next one
+// off: a dome panel by the Cadence Floor, a body Output by its own throw,
+// floored, and until it stops (`armId`). One that did not start - a Part
+// nothing drives, passed over - holds nothing off, because nothing moved; nor
+// does a command that moves nothing (`moves` false: a sound, a light).
+inline void sequencePaceMotion(uint32_t* dueMs, uint8_t* awaitArm, uint32_t nowMs, bool started,
+                               bool moves, bool bodyOutput, uint16_t throwMs, uint8_t armId) {
+    if (dueMs == nullptr || awaitArm == nullptr) return;
+    if (!started || !moves) {
+        *dueMs = nowMs;
+        return;
+    }
+    if (bodyOutput) {
+        *dueMs = nowMs + sequenceCadenceSpacingMs(throwMs);
+        *awaitArm = armId;
+    } else {
+        *dueMs = nowMs + SEQ_CADENCE_FLOOR_MS;
+    }
+}
+
 struct SeqBulkCentreRun {
     bool     active;
     uint8_t  nextRow;

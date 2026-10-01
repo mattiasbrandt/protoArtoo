@@ -25,7 +25,26 @@
 //   absent shape is an open and an absent howFar is the whole throw; `howFar:0`
 //   is refused here, because zero in storage is how absence is recorded.
 //
+//   tempo (top level, optional, ADR 0058): the beat the sequence is written
+//   against. `bpm` (1..600, one decimal), `source` (typed|tapped|analysed) and
+//   `confidence` (0..1) are required; `phase` (ms where beat 0 sits, default
+//   0), `barLen` (beats in a bar, default 4), `barPhase` (the beat a bar starts
+//   on, default 0), `duration` (ms the track runs) and `hash` (lowercase hex
+//   of the file analysed, the analysed route only) are optional. A sequence
+//   with no tempo parses exactly as one saved before tempos existed.
+//
+//   beat / spanBeats (any step, optional, need a tempo): `beat` is the whole
+//   beat the step starts on and `spanBeats` how many beats its duration lasts
+//   (a dome turn's durationMs, a body flutter's flutterMs). Both are resolved
+//   to milliseconds HERE, at parse, and never reach SeqStep: the engine runs
+//   the millisecond, unchanged in kind. Where a step carries `t` beside a
+//   `beat`, the beat wins -- the browser writes `t` resolved from it, and a
+//   tempo edited since is exactly when the two disagree. A step inside a loop
+//   body is timed from its pass and carries no beat; the loop header can.
+//
 //   { "format":1, "name":"DM:X", "suppressMs":8000, "toggleGroup":"none",
+//     "tempo":{"bpm":130,"phase":0,"barLen":4,"barPhase":0,
+//              "source":"typed","confidence":1},
 //     "meta":{...},
 //     "steps":[ {"t":0,"type":"audio","cmd":"$H","boundAudio":true},
 //               {"t":0,"type":"dome","cmd":":SM0,150,2200"},

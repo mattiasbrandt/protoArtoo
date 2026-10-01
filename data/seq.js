@@ -58,11 +58,19 @@
     return Number.isInteger(bytes) && bytes > 0 ? bytes : null;
   };
 
+  // A track the builder dropped in to be analyzed, while the editor is open:
+  // its fingerprint, which the Rehearsal compares with the one the tempo was
+  // measured from, and its analysis, until the builder takes or leaves it.
+  // The browser never holds the droid's audio (ADR 0046), so this is the only
+  // moment a stored fingerprint can be checked.
+  let droppedTrack = null;
+
   const rehearsalContext = () => ({
     outputs: rehearsalFacts.outputs,
     config: rehearsalFacts.config,
     layout: window.DomeLayout?.getModel?.() || null,
     maxBytes: learnedSequenceMaxBytes(),
+    trackHash: droppedTrack ? droppedTrack.hash : null,
   });
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
@@ -448,7 +456,7 @@
     // Share to project: only the operator's own custom sequences (not factory-derived).
     const isCustom = !seq.source || seq.source === "user";
     const shareBtn = isCustom
-      ? `<button class="btn btn-sm" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      ? `<button class="seq-act" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
       : "";
 
     const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${window.PAUtils.escapeAttr(seq.name)}"`;
@@ -459,20 +467,22 @@
           <h4>${window.PAUtils.escapeHtml(seq.name)}</h4>
           <div class="seq-badges">${badges.join("")}</div>
         </div>
-        <div class="seq-card-meta">
-          <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(seq.toggleGroup || "none")}</span>
-          <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
-          <span class="seq-meta-item">Steps: ${stepCount}</span>
-          <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
+        <div class="seq-card-body">
+          <div class="seq-card-meta">
+            <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(seq.toggleGroup || "none")}</span>
+            <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
+            <span class="seq-meta-item">Steps: ${stepCount}</span>
+            <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
+          </div>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
-          <button class="btn btn-sm" data-action="test" ${testBtnDisabled}>Test</button>
-          <button class="btn btn-sm" data-action="timeline" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Timeline</button>
-          <button class="btn btn-sm" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
-          <button class="btn btn-sm" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
-          <button class="btn btn-sm" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
+          <button class="seq-act" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
+          <button class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
+          <button class="seq-act" data-action="timeline" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Timeline</button>
+          <button class="seq-act" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
+          <button class="seq-act" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
           ${shareBtn}
+          <button class="seq-act seq-act-danger" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
         <div class="seq-card-rehearsal"></div>
@@ -496,15 +506,17 @@
             <span class="seq-badge seq-badge-factory" title="Built-in Factory sequence">Factory</span>
           </div>
         </div>
-        ${purposeHtml}
-        <div class="seq-card-meta">
-          <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(toggleGroup)}</span>
-          <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
-          <span class="seq-meta-item">Steps: ${stepCount}</span>
+        <div class="seq-card-body">
+          ${purposeHtml}
+          <div class="seq-card-meta">
+            <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(toggleGroup)}</span>
+            <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
+            <span class="seq-meta-item">Steps: ${stepCount}</span>
+          </div>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
-          <button class="btn btn-sm" data-action="timeline" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}">Timeline</button>
+          <button class="seq-act" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open to edit. Save under the same name to retrain it.">Tune</button>
+          <button class="seq-act" data-action="timeline" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}">Timeline</button>
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
       </div>
@@ -748,6 +760,14 @@
         const category = step.category || "alert";
         return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
       }
+      case "sequence":
+        return phraseName(step);
+      case "gesture": {
+        const G = window.SeqGesture;
+        const set = G && step.set ? G.setOf(step.set)?.label || step.set : `${(step.parts || []).length} parts`;
+        const spread = G?.SPREADS.find((x) => x.id === (step.spread || "together"))?.id || step.spread || "together";
+        return `${set}: ${step.shape || "open"}, ${spread}`;
+      }
       case "body": {
         // A Body Step names a Part and a Move Shape (ADR 0049). A light Part
         // hears the same three stored words as on, off and flash, so it reads
@@ -778,6 +798,8 @@
     loop: "Servo Loop",
     random: "Random Flutter",
     audioCat: "Sound Category",
+    gesture: "Gesture",
+    sequence: "Sequence",
     end: "Sequence End",
   };
 
@@ -798,6 +820,8 @@
     loop: "Repeat a group of steps at an interval",
     random: "Randomized panel motion",
     audioCat: "Play a random sound from a category",
+    gesture: "One move across a set of parts, in order round the droid",
+    sequence: "Another sequence, as one step, kept linked",
     end: "Mark the end of the sequence",
   };
 
@@ -810,7 +834,7 @@
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
-            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
+            ${["audio", "dome", "domeRotate", "gesture", "sequence", "loop", "random", "audioCat", "end"]
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
@@ -844,7 +868,7 @@
       <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0" ${isInvalid ? `aria-invalid="true" aria-describedby="${errorId}"` : ""}>
         <span class="step-handle" title="Drag to reorder steps">⋯</span>
         <span class="step-number-label">Step ${idx + 1}</span>
-        <span class="step-time-label">t=${step.t || 0}ms</span>
+        <span class="step-time-label">t=${step.t || 0}ms${beatLabel(step)}</span>
         <span class="step-card-type">${window.PAUtils.escapeHtml(typeName)}</span>
         <span class="step-card-preview">${window.PAUtils.escapeHtml(preview)}</span>
         ${isInvalid ? `<span class="step-card-error-badge" aria-hidden="true">!</span>` : ""}
@@ -863,47 +887,41 @@
           <span class="step-card-error-text">${window.PAUtils.escapeHtml(validation.error || "Invalid step")}</span>
         </div>` : ""}
         <div class="step-card-expanded-content">
-          <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+          <div class="setting-rows step-rows">
+            <div class="setting-row">
+              <span class="setting-name">Starts at</span>
+              <span class="setting-number">
+                <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
+                <span class="setting-unit">ms</span>
+              </span>
+              <span class="setting-value"></span>
+            </div>
+          </div>
+          ${renderBeatPicker(step, idx)}
 
-          <!-- Grouped icon cards (Common + Advanced) -->
-          <div class="step-type-picker">
-            <div class="step-type-group">
-              <div class="step-type-group-label">Common</div>
-              <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "loop"]
+          <!-- What kind of step it is: one row of pills, the dome's four kinds
+               of command among them. -->
+          <div class="setting-rows step-rows">
+            <div class="setting-row">
+              <span class="setting-name">Kind</span>
+              <span class="step-type-picker seq-pills" role="radiogroup" aria-label="Kind of step">
+                ${["audio", "domeRotate", "dome"]
                   .map(
                     (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
-                        <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
-                      </button>`
+                      `<button class="step-type-chip step-type-card ${step.type === type && !(type === "dome" && /^(DL|DT|DH):/.test(step.cmd || "")) ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}"><span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span></button>`
                   )
                   .join("")}
-              </div>
-            </div>
-            <div class="step-type-subgroup">
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}">
-                <span class="step-type-card-name">Logic / PSI Mode</span>
-              </button>
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}">
-                <span class="step-type-card-name">Logic Text</span>
-              </button>
-              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}">
-                <span class="step-type-card-name">Holo Effect</span>
-              </button>
-            </div>
-
-            <div class="step-type-group">
-              <div class="step-type-group-label">Advanced</div>
-              <div class="step-type-cards">
-                ${["random", "audioCat", "end"]
+                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}"><span class="step-type-card-name">Logic / PSI Mode</span></button>
+                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}"><span class="step-type-card-name">Logic Text</span></button>
+                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}"><span class="step-type-card-name">Holo Effect</span></button>
+                ${["gesture", "sequence", "loop", "random", "audioCat", "end"]
                   .map(
                     (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">
-                        <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
-                      </button>`
+                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}"><span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span></button>`
                   )
                   .join("")}
-              </div>
+              </span>
+              <span class="setting-value"></span>
             </div>
           </div>
 
@@ -922,6 +940,164 @@
         ${expandedHtml}
       </div>
     `;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Putting a step on a beat (ADR 0060): the builder picks the beat, from a
+  // list of every beat with its bar number, rather than dragging a time until
+  // it lands near one. The list and the span sit outside .step-fields, because
+  // the form rebuilds a step from its [data-field] inputs and a beat is not a
+  // form value: it is set on the step directly and the time resolved from it.
+  // ---------------------------------------------------------------------------
+  const tempoOf = () => {
+    const tempo = editorState.current?.tempo;
+    return tempo && SeqProtocolCheck.validateTempo(tempo).ok ? tempo : null;
+  };
+
+  // How far a routine reaches, for how long the beat list runs.
+  const routineReachMs = () =>
+    Math.max(...(editorState.current?.steps || []).map((step) => Number(step?.t) || 0), 0);
+
+  const beatLabel = (step) => {
+    const tempo = tempoOf();
+    if (!tempo || !Number.isInteger(step.beat) || !window.SeqTempo) return "";
+    const name = window.SeqTempo.beatName(tempo, step.beat);
+    return name.bar === 0 ? ` &middot; pickup beat ${name.beat}` : ` &middot; bar ${name.bar}, beat ${name.beat}`;
+  };
+
+  // Steps whose duration can be a span of beats: a turn that moves, and a
+  // body flutter (src/seq_json.cpp parseStepBeats()).
+  const spansBeats = (step) =>
+    (step.type === "domeRotate" && Number(step.speedPct) !== 0) || (step.type === "body" && step.shape === "flutter");
+
+  // ---------------------------------------------------------------------------
+  // A sequence inside a sequence (ADR 0046). A step names its phrase by the
+  // phrase's stable reference - a saved sequence's `id`, or a factory
+  // sequence's name, which never changes - and shows it by its CURRENT name,
+  // so a rename orphans nothing. A saved sequence with no id yet cannot be
+  // picked until it is saved again, which mints one.
+  // ---------------------------------------------------------------------------
+  const phraseChoices = () => [
+    ...sequences
+      .filter((x) => x.id && x.name !== editorState.current?.name && x.toggleGroup === "none")
+      .map((x) => ({ id: x.id, label: x.name })),
+    ...builtins
+      .filter((x) => (x.toggleGroup || "none") === "none" && x.name !== editorState.current?.name)
+      .map((x) => ({ id: x.name, label: x.name })),
+  ];
+
+  const phraseName = (step) => {
+    const ref = step?.ref;
+    const learned = sequences.find((x) => x.id && x.id === ref);
+    if (learned) return learned.name;
+    if (typeof ref === "string" && ref.startsWith("DM:")) return ref;
+    return step?.name ? `${step.name} (not on this droid)` : "Pick a sequence";
+  };
+
+  // A stable id for a sequence being saved that has none: eight lowercase hex
+  // digits, never changed after (protocolCheckSeqIdValid()).
+  const mintSequenceId = () => {
+    const bytes = new Uint8Array(4);
+    (window.crypto || globalThis.crypto).getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  // The Gesture's form values: numbers that are optional, and words that are
+  // optional (an unset word is its default).
+  const GESTURE_NUMBER_FIELDS = ["howFar", "stepMs", "repeatMs", "extentMs", "speedMs"];
+  const GESTURE_WORD_FIELDS = ["set", "shape", "spread", "direction", "start", "easing"];
+
+  const renderBeatPicker = (step, idx) => {
+    const tempo = tempoOf();
+    if (!tempo || !window.SeqTempo) return "";
+    if (SeqProtocolCheck.loopBodySteps(editorState.current.steps).has(idx)) return "";
+    // Each bar is its number and its beats as one joined bar, the first beat
+    // weighted; the bars sit side by side and wrap.
+    const bars = window.SeqTempo.bars(tempo, Math.max(routineReachMs(), Number(step.t) || 0))
+      .map((bar) => {
+        const name = bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`;
+        const beats = bar.beats
+          .map(
+            (b) =>
+              `<button type="button" class="step-beat-pick${b.strong ? " strong" : ""}" data-beat="${b.index}" aria-pressed="${step.beat === b.index ? "true" : "false"}" aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
+          )
+          .join("");
+        return `<span class="seq-bar"><span class="seq-bar-num" aria-hidden="true">${bar.bar === 0 ? "-" : bar.bar}</span><span class="seg seg-sm seq-beats" role="group" aria-label="${name}">${beats}</span></span>`;
+      })
+      .join("");
+    const clear = Number.isInteger(step.beat)
+      ? `<button type="button" class="seq-act step-beat-clear">Off the beat</button>`
+      : "";
+    const span = spansBeats(step)
+      ? `<span class="seq-row-label">Lasts</span>
+         <div class="seq-row-ctl">
+           <input class="seq-num step-beat-span" type="number" min="1" max="1200" step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts">
+           <span class="seq-unit">beats</span>
+         </div>`
+      : "";
+    return `
+      <div class="seq-rows">
+        <span class="seq-row-label">Beat</span>
+        <div class="seq-row-ctl"><div class="seq-bars">${bars}</div>${clear}</div>
+        ${span}
+      </div>`;
+  };
+
+  // Put the step at `stepIdx` on beat `beat` (null takes it off), or give its
+  // duration a span of `spanBeats` beats (null clears it). The time and the
+  // duration are resolved from the tempo, as the droid will.
+  const setStepBeat = (stepIdx, patch) => {
+    const step = { ...editorState.current.steps[stepIdx] };
+    if ("beat" in patch) {
+      if (patch.beat === null) delete step.beat;
+      else step.beat = patch.beat;
+    }
+    ["spanBeats", "stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
+      if (!(key in patch)) return;
+      if (patch[key] === null) delete step[key];
+      else step[key] = patch[key];
+    });
+    editorState.current.steps[stepIdx] = step;
+    editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
+    retimeUndo = null;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime("");
+  };
+
+  // Retime to the grid, and the one press that takes it back (ADR 0060). The
+  // steps from before the retime are kept until the next edit to a step or to
+  // the tempo, which is what makes the undo one press rather than one per
+  // step - and never a press that throws a later edit away.
+  let retimeUndo = null;
+
+  const showRetime = (receipt) => {
+    const receiptEl = document.getElementById("seq-editor-retime-receipt");
+    const undoBtn = document.getElementById("seq-editor-retime-undo");
+    const retimeBtn = document.getElementById("seq-editor-retime");
+    if (retimeBtn) retimeBtn.classList.toggle("hidden", !tempoOf());
+    if (receiptEl) receiptEl.textContent = receipt || "";
+    if (undoBtn) undoBtn.classList.toggle("hidden", !retimeUndo);
+  };
+
+  const retimeToGrid = () => {
+    const result = window.SeqTempo?.retime(editorState.current);
+    if (!result) return;
+    retimeUndo = JSON.parse(JSON.stringify({ steps: editorState.current.steps, closeSteps: editorState.current.closeSteps }));
+    editorState.current = result.seq;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime(`${result.landed} of ${result.total} steps landed on a beat.`);
+  };
+
+  const undoRetime = () => {
+    if (!retimeUndo) return;
+    editorState.current.steps = retimeUndo.steps;
+    if (retimeUndo.closeSteps !== undefined) editorState.current.closeSteps = retimeUndo.closeSteps;
+    retimeUndo = null;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime("");
   };
 
   // Helper to render a grouped field section with optional label
@@ -1041,7 +1217,7 @@
                 .join("")}
             </select>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
-            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
+            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to advanced mode">Advanced</button>
           `;
         } else if (domeMode === "logic") {
           // Logic/PSI Mode (DL:) structured step
@@ -1372,15 +1548,16 @@
               <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
             </select>
             <span class="dome-cmd-preview">:${action}${target}</span>
-            <button class="dome-mode-toggle" aria-label="Switch to visual presets">Presets</button>
+            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to visual presets">Presets</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
+            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" min="1" max="100" placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
             <div class="dome-panel-advisory hidden"></div>
           `;
         } else {
           // Advanced mode: raw text input
           behaviorHtml = `
             <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
-            <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
+            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to panel mode">Panel</button>
           `;
         }
         break;
@@ -1466,6 +1643,100 @@
         `;
         break;
 
+      case "gesture": {
+        // One grid of rows, each choice drawn as what it is: a joined bar for
+        // a few peers, wrapping pills for a longer set. Each writes a hidden
+        // form value, so the step still reads back through its [data-field]
+        // inputs like every other type. Pace and repeat are rarely set and
+        // fold away.
+        const G = window.SeqGesture;
+        if (!G) break;
+        const esc = window.PAUtils.escapeHtml;
+        const hidden = (field, current) => `<input type="hidden" data-field="${field}" value="${esc(current || "")}">`;
+        const bar = (field, options, current) => `
+          <span class="seg seg-sm" role="group" aria-label="${field}">
+            ${options
+              .map(
+                (o) =>
+                  `<button type="button" class="gesture-pick" data-pick="${field}" data-value="${esc(o.id)}" aria-pressed="${o.id === current ? "true" : "false"}">${esc(o.label)}</button>`,
+              )
+              .join("")}
+          </span>${hidden(field, current)}`;
+        const pills = (field, options, current) => `
+          <span class="seq-pills" role="radiogroup" aria-label="${field}">
+            ${options
+              .map(
+                (o) =>
+                  `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="${field}" data-value="${esc(o.id)}" aria-checked="${o.id === current ? "true" : "false"}">${esc(o.label)}</button>`,
+              )
+              .join("")}
+          </span>${hidden(field, current)}`;
+        const num = (field, value, placeholder, label, extra = "") =>
+          `<input class="seq-num" type="number" ${extra} value="${value ?? ""}" placeholder="${placeholder}" aria-label="${label}">`;
+        const sets = (window.DroidParts?.sets || []).map((x) => ({ id: x.id, label: x.label }));
+        const shapes = G.SHAPES.map((x) => ({ id: x, label: x[0].toUpperCase() + x.slice(1) }));
+        const tempo = tempoOf();
+        const every = tempo
+          ? `${num("stepBeats", step.stepBeats, "1", "Beats between parts", 'min="1" max="1200" data-beats="stepBeats"').replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
+          : `${num("stepMs", step.stepMs, G.STEP_DEFAULT_MS, "Milliseconds between parts", 'min="50" max="60000" data-field="stepMs"')}<span class="seq-unit">ms</span>`;
+        const again = tempo
+          ? `${num("repeatBeats", step.repeatBeats, "-", "Repeat every beats", 'min="1" max="1200" data-beats="repeatBeats"').replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
+          : `${num("repeatMs", step.repeatMs, "-", "Repeat every milliseconds", 'min="100" max="60000" data-field="repeatMs"')}<span class="seq-unit">ms</span>`;
+        fieldsContainer.innerHTML = `
+          <div class="seq-rows">
+            <span class="seq-row-label">Parts</span>
+            <div class="seq-row-ctl">${pills("set", sets, step.set || "")}</div>
+            <span class="seq-row-label">Move</span>
+            <div class="seq-row-ctl">${bar("shape", shapes, step.shape || "open")}</div>
+            <span class="seq-row-label">Travels</span>
+            <div class="seq-row-ctl">${pills("spread", G.SPREADS, step.spread || "together")}</div>
+            <span class="seq-row-label">Order</span>
+            <div class="seq-row-ctl">${bar("direction", G.DIRECTIONS, step.direction || "cw")}${bar("start", G.STARTS, step.start || "front")}</div>
+            <span class="seq-row-label">How far</span>
+            <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", 'min="1" max="100" data-field="howFar"')}<span class="seq-unit">%</span></div>
+          </div>
+          <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs || step.speedMs || step.easing ? " open" : ""}>
+            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace, repeat and feel</summary>
+            <div class="seq-rows">
+              <span class="seq-row-label">Every</span>
+              <div class="seq-row-ctl">${every}</div>
+              <span class="seq-row-label">Again</span>
+              <div class="seq-row-ctl">${again}</div>
+              <span class="seq-row-label">For</span>
+              <div class="seq-row-ctl">${num("extentMs", step.extentMs, "end", "Repeat for milliseconds, to the end when empty", 'min="0" max="120000" data-field="extentMs"')}<span class="seq-unit">ms</span></div>
+              <span class="seq-row-label">Full throw</span>
+              <div class="seq-row-ctl">${num("speedMs", step.speedMs, "own", "Full throw time for each part, the part's own when empty", 'min="50" max="5000" data-field="speedMs"')}<span class="seq-unit">ms</span></div>
+              <span class="seq-row-label">Easing</span>
+              <div class="seq-row-ctl">${bar("easing", [{ id: "", label: "Own" }, ...G.EASINGS.map((x) => ({ id: x, label: x[0].toUpperCase() + x.slice(1) }))], step.easing || "")}</div>
+            </div>
+          </details>`;
+        return;
+      }
+
+      case "sequence": {
+        // The phrase as wrapping pills of names over a hidden reference; the
+        // step's `name` is the label a reader of the file sees.
+        const esc = window.PAUtils.escapeHtml;
+        const choices = phraseChoices();
+        fieldsContainer.innerHTML = `
+          <div class="seq-rows">
+            <span class="seq-row-label">Sequence</span>
+            <div class="seq-row-ctl">
+              <span class="seq-pills" role="radiogroup" aria-label="sequence">
+                ${choices
+                  .map(
+                    (o) =>
+                      `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="ref" data-value="${esc(o.id)}" aria-checked="${o.id === step.ref ? "true" : "false"}">${esc(o.label)}</button>`,
+                  )
+                  .join("")}
+              </span>
+              ${choices.length ? "" : `<span class="seq-unit">Save a sequence first.</span>`}
+              <input type="hidden" data-field="ref" value="${esc(step.ref || "")}">
+            </div>
+          </div>`;
+        return;
+      }
+
       case "end":
         html = `<span class="step-field-empty">(terminal step)</span>`;
         fieldsContainer.innerHTML = html;
@@ -1485,10 +1756,77 @@
     fieldsContainer.innerHTML = groupedHtml + helpHtml;
   };
 
+  // Where the tempo came from, as the field beside it says it (ADR 0058).
+  const TEMPO_SOURCE_LABELS = { typed: "Typed", tapped: "Tapped", analysed: "Analyzed" };
+  const tempoSourceLabel = (tempo) => (tempo ? TEMPO_SOURCE_LABELS[tempo.source] || "" : "");
+
+  // A typed BPM is stored as typed, whatever it replaced: the number no longer
+  // came from the taps or the analyzer, so their confidence and the analyzed
+  // track's fingerprint go with them. Where beat 1 sits and the bar the
+  // builder set stay. An empty field is no tempo; a step still on a beat then
+  // fails the check until it is placed again.
+  const typedTempo = (value) => {
+    const kept = editorState.current.tempo;
+    if (value === "" || value === null) return undefined;
+    const bpm = Math.round(Number(value) * 10) / 10;
+    if (!Number.isFinite(bpm)) return kept;
+    return {
+      bpm,
+      phase: kept?.phase ?? 0,
+      barLen: kept?.barLen ?? 4,
+      barPhase: kept?.barPhase ?? 0,
+      ...(kept?.duration ? { duration: kept.duration } : {}),
+      source: "typed",
+      confidence: 1,
+    };
+  };
+
+  // Tapping along (ADR 0058). Times are from the start edge of the track on
+  // the droid when the builder pressed Play on the droid, else from the first
+  // tap - so the first tap is the downbeat either way (ADR 0060).
+  const tapState = { taps: [], startedAt: null };
+  const nowMs = () => (window.performance?.now ? window.performance.now() : Date.now());
+
+  const resetTaps = () => {
+    tapState.taps = [];
+    tapState.startedAt = null;
+  };
+
+  const tempoFeedback = (message) => {
+    const el = document.getElementById("seq-editor-tempo-feedback");
+    if (el) el.textContent = message || "";
+  };
+
+  // A tempo from any route replaces the one there, and every step on a beat
+  // moves to where its beat now falls; the field and the source say so.
+  const setTempo = (tempo) => {
+    // Every step on a beat moves to where its beat now falls; a step placed in
+    // milliseconds stays put (ADR 0058).
+    const next = { ...editorState.current, tempo };
+    if (tempo === undefined) delete next.tempo;
+    editorState.current = SeqProtocolCheck.resolveBeats(next, { written: true });
+    const bpmInput = document.getElementById("seq-editor-bpm");
+    if (bpmInput) bpmInput.value = tempo ? String(tempo.bpm) : "";
+    const sourceEl = document.getElementById("seq-editor-tempo-source");
+    if (sourceEl) sourceEl.textContent = tempoSourceLabel(tempo);
+    document.getElementById("seq-editor-downbeat")?.classList.toggle("hidden", !tempo);
+    retimeUndo = null;
+    rerenderStepTable();
+    updateValidationSummary();
+    showRetime("");
+  };
+
+  const tapCountText = () => {
+    const n = tapState.taps.length;
+    const result = window.SeqTempo?.tap(tapState.taps);
+    return result ? `${n} taps, ${result.bpm} BPM` : `${n} ${n === 1 ? "tap" : "taps"}`;
+  };
+
   const renderEditorView = (seq) => {
     // isNew must be set by the caller before calling renderEditorView
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
+    droppedTrack = null;
 
     // Load DomeLayout if available so the live picker in panel-intent steps can
     // render from the connected dome's layout, with automatic refresh on dome
@@ -1522,51 +1860,80 @@
         ${tuneNotice}
 
         <div class="seq-editor-metadata">
-          <!-- Sequence Info (always visible) -->
-          <div class="seq-metadata-section seq-metadata-info">
-            <div class="seq-editor-field">
-              <label for="seq-editor-name">Name</label>
-              <input id="seq-editor-name" type="text" value="${window.PAUtils.escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="20">
-              <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
+          <!-- The sequence's details as setting rows, the family Foot Drive's
+               settings are drawn in: a name, the control, what it is on. -->
+          <div class="setting-rows seq-header">
+            <label class="setting-row">
+              <span class="setting-name">Name</span>
+              <input id="seq-editor-name" class="number-cell text-cell" type="text" value="${window.PAUtils.escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="21">
+              <span class="setting-value"></span>
+            </label>
+            <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
+            <label class="setting-row">
+              <span class="setting-name">Purpose</span>
+              <input id="seq-editor-purpose" class="number-cell text-cell text-cell-wide" type="text" value="${window.PAUtils.escapeHtml(seq.meta?.purpose || "")}" placeholder="optional" aria-label="Purpose of the sequence">
+              <span class="setting-value"></span>
+            </label>
+            <div class="setting-row">
+              <span class="setting-name">Interrupt group</span>
+              <span id="seq-editor-toggle" class="seg seg-sm" role="group" aria-label="Interrupt group for conflict management">
+                ${["none", "pies", "low", "all"]
+                  .map(
+                    (g) =>
+                      `<button type="button" data-value="${g}" aria-pressed="${(seq.toggleGroup || "none") === g ? "true" : "false"}">${g[0].toUpperCase() + g.slice(1)}</button>`,
+                  )
+                  .join("")}
+              </span>
+              <span class="setting-value"></span>
             </div>
-
-            <div class="seq-editor-field">
-              <label for="seq-editor-purpose">Purpose (optional)</label>
-              <input id="seq-editor-purpose" type="text" value="${window.PAUtils.escapeHtml(seq.meta?.purpose || "")}" placeholder="What this sequence does..." aria-label="Purpose of the sequence">
+            <div class="setting-row">
+              <span class="setting-name">Tempo</span>
+              <span class="seq-row-ctl">
+                <span class="setting-number">
+                  <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? window.PAUtils.escapeHtml(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
+                  <span class="setting-unit">BPM</span>
+                </span>
+                <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
+                <label class="seq-act" for="seq-editor-track">Analyze a track</label>
+                <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
+              </span>
+              <span class="setting-value seq-tempo-source" id="seq-editor-tempo-source">${tempoSourceLabel(seq.tempo)}</span>
             </div>
-
-            <div class="seq-editor-field">
-              <label for="seq-editor-toggle">Interrupt group</label>
-              <select id="seq-editor-toggle" aria-label="Interrupt group for conflict management">
-                <option value="none" ${(seq.toggleGroup || "none") === "none" ? "selected" : ""}>none</option>
-                <option value="pies" ${seq.toggleGroup === "pies" ? "selected" : ""}>pies</option>
-                <option value="low" ${seq.toggleGroup === "low" ? "selected" : ""}>low</option>
-                <option value="all" ${seq.toggleGroup === "all" ? "selected" : ""}>all</option>
-              </select>
+            <div id="seq-editor-tap" class="setting-row hidden">
+              <span class="setting-name">Tap on the beat</span>
+              <span class="seq-row-ctl">
+                <button id="seq-editor-tap-play" class="seq-act" type="button">Play on the droid</button>
+                <button id="seq-editor-tap-beat" class="btn btn-sm accent" type="button">Tap</button>
+                <span class="setting-unit" id="seq-editor-tap-count" role="status">0 taps</span>
+                <button id="seq-editor-tap-use" class="seq-act" type="button" disabled>Use</button>
+              </span>
+              <span class="setting-value"></span>
             </div>
+            <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
           </div>
 
-          <!-- Advanced Settings (collapsed by default) -->
-          <div class="seq-metadata-section seq-metadata-advanced">
-            <button id="seq-editor-advanced-toggle" class="seq-advanced-toggle" type="button" aria-expanded="false" aria-controls="seq-editor-advanced-fields">
-              <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Advanced settings
-            </button>
-            <div id="seq-editor-advanced-fields" class="seq-advanced-fields hidden">
-              <div class="seq-editor-field">
-                <label for="seq-editor-suppress">Mute period after this runs (ms)</label>
-                <div class="seq-editor-slider-row">
-                  <input id="seq-editor-suppress" type="range" class="seq-editor-slider" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period milliseconds">
-                  <span class="seq-editor-slider-value">${seq.suppressMs || 8000}</span>
-                </div>
-                <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
-              </div>
-
-              <div class="seq-editor-field">
-                <label for="seq-editor-notes">Notes (optional)</label>
-                <textarea id="seq-editor-notes" placeholder="Add any notes about this sequence..." aria-label="Optional notes about the sequence">${window.PAUtils.escapeHtml((seq.meta?.notes || ""))}</textarea>
-              </div>
+          <!-- What is rarely set, folded away. -->
+          <details class="seq-more seq-header-more">
+            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>More settings</summary>
+            <div class="setting-rows seq-header">
+              <label class="setting-row">
+                <span class="setting-name">Mute period (ms)</span>
+                <input id="seq-editor-suppress" type="range" class="fader" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period milliseconds">
+                <span class="setting-value seq-editor-slider-value">${seq.suppressMs || 8000}</span>
+              </label>
+              <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
+              <label id="seq-editor-downbeat" class="setting-row${seq.tempo ? "" : " hidden"}">
+                <span class="setting-name">Bar 1 starts on beat</span>
+                <input id="seq-editor-downbeat-beat" class="number-cell" type="number" min="1" step="1" value="1" aria-label="Move bar 1 to this beat">
+                <span class="setting-value"></span>
+              </label>
+              <label class="setting-row">
+                <span class="setting-name">Notes</span>
+                <textarea id="seq-editor-notes" class="number-cell text-cell text-cell-wide seq-notes" placeholder="optional" aria-label="Optional notes about the sequence">${window.PAUtils.escapeHtml((seq.meta?.notes || ""))}</textarea>
+                <span class="setting-value"></span>
+              </label>
             </div>
-          </div>
+          </details>
         </div>
 
         <div class="seq-editor-validation-summary" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
@@ -1583,14 +1950,19 @@
           <div class="seq-editor-step-table" id="seq-editor-step-table">
             ${stepRows}
           </div>
-          <button id="seq-editor-add-step" class="btn btn-sm" type="button">Add a step</button>
+          <div class="seq-row-ctl">
+            <button id="seq-editor-add-step" class="seq-act" type="button">Add a step</button>
+            <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
+            <span class="seq-unit" id="seq-editor-retime-receipt" role="status"></span>
+            <button id="seq-editor-retime-undo" class="seq-act hidden" type="button">Undo</button>
+          </div>
         </div>
 
         <div class="seq-editor-footer">
-          <button id="seq-editor-test" class="btn" type="button">Test on the droid</button>
-          <button id="seq-editor-save" class="btn accent" type="button">Save</button>
-          <button id="seq-editor-revert" class="btn" type="button" aria-label="Discard unsaved changes">Revert</button>
-          <button id="seq-editor-cancel" class="btn" type="button" aria-label="Cancel editing">Cancel</button>
+          <button id="seq-editor-save" class="btn btn-sm accent" type="button">Save</button>
+          <button id="seq-editor-test" class="seq-act" type="button">Test on the droid</button>
+          <button id="seq-editor-revert" class="seq-act" type="button" aria-label="Discard unsaved changes">Revert</button>
+          <button id="seq-editor-cancel" class="seq-act" type="button" aria-label="Cancel editing">Cancel</button>
           <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
         </div>
 
@@ -1701,6 +2073,13 @@
         value = input.checked;
       } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "moveMs" || field === "jitterMs" || field === "speed") {
         value = parseInt(value, 10);
+      } else if (GESTURE_NUMBER_FIELDS.includes(field)) {
+        // A Gesture's optional numbers: an empty field is the default, which
+        // is stored as absence.
+        if (value === "") return;
+        value = parseInt(value, 10);
+      } else if (GESTURE_WORD_FIELDS.includes(field) && value === "") {
+        return;
       }
       step[field] = value;
     });
@@ -1726,6 +2105,33 @@
       delete step.speed;
     }
 
+    // The step is rebuilt from the form, which has no field for a beat, so a
+    // beat-placed step keeps its beat through an edit of anything else. Typing
+    // a new time is choosing a millisecond instead, and the beat goes; a span
+    // in beats goes the same way when its duration is typed over (ADR 0058).
+    const prev = editorState.current.steps[stepIdx] || {};
+    if (prev.beat !== undefined && step.t === prev.t) step.beat = prev.beat;
+    // A Gesture's times in beats have no form field either, so they ride
+    // along the same way (their inputs set them directly, setStepBeat()); and
+    // a Gesture over a listed set of parts, which the pickers do not offer,
+    // keeps its list.
+    // A phrase step keeps a label for a reader of the file: its current name.
+    if (step.type === "sequence") {
+      if (step.ref === "") delete step.ref;
+      const label = step.ref ? phraseName(step) : "";
+      if (label && !label.endsWith("(not on this droid)")) step.name = label;
+      else if (prev.name && prev.ref === step.ref) step.name = prev.name;
+    }
+    if (step.type === "gesture" && prev.type === "gesture") {
+      ["stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
+        if (prev[key] !== undefined) step[key] = prev[key];
+      });
+      if (step.set === undefined && Array.isArray(prev.parts)) step.parts = prev.parts;
+    }
+    if (prev.spanBeats !== undefined && step.type === prev.type && step.durationMs === prev.durationMs) {
+      step.spanBeats = prev.spanBeats;
+    }
+
     // Validate
     const validation = SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
     const errorDiv = row.querySelector(".step-row-error") || document.createElement("div");
@@ -1749,6 +2155,10 @@
 
     // Update editor state
     editorState.current.steps[stepIdx] = step;
+    if (retimeUndo) {
+      retimeUndo = null;
+      showRetime("");
+    }
     updateValidationSummary();
   };
 
@@ -1788,9 +2198,134 @@
     }
 
     if (toggleSelect) {
-      toggleSelect.addEventListener("change", () => {
-        editorState.current.toggleGroup = toggleSelect.value;
-        updateValidationSummary();
+      // A joined bar of the four groups: the pressed one is the group.
+      toggleSelect.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          editorState.current.toggleGroup = btn.dataset.value;
+          toggleSelect.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
+          updateValidationSummary();
+        });
+      });
+    }
+
+    const tapPanel = document.getElementById("seq-editor-tap");
+    const tapOpen = document.getElementById("seq-editor-tap-open");
+    const tapPlay = document.getElementById("seq-editor-tap-play");
+    const tapBeat = document.getElementById("seq-editor-tap-beat");
+    const tapUse = document.getElementById("seq-editor-tap-use");
+    const tapCount = document.getElementById("seq-editor-tap-count");
+    const showTaps = () => {
+      if (tapCount) tapCount.textContent = tapCountText();
+      if (tapUse) tapUse.disabled = !window.SeqTempo?.tap(tapState.taps);
+    };
+    resetTaps();
+    if (tapOpen && tapPanel) {
+      tapOpen.addEventListener("click", () => {
+        resetTaps();
+        showTaps();
+        tempoFeedback("");
+        tapPanel.classList.toggle("hidden");
+      });
+    }
+    if (tapPlay) {
+      tapPlay.addEventListener("click", async () => {
+        // The droid plays what is saved under this name, so a sequence never
+        // saved has nothing on the droid to play yet.
+        if (editorState.isNew || !editorState.original?.name) {
+          tempoFeedback("Save it first, so the droid has the track to play.");
+          return;
+        }
+        tapPlay.disabled = true;
+        try {
+          await PAApi.postJson("/api/seq/test", { name: editorState.original.name });
+          resetTaps();
+          tapState.startedAt = nowMs();
+          showTaps();
+          tempoFeedback("");
+        } catch (error) {
+          tempoFeedback("The droid did not play it: " + PAApi.messageFor(error));
+        } finally {
+          tapPlay.disabled = false;
+        }
+      });
+    }
+    if (tapBeat) {
+      tapBeat.addEventListener("click", () => {
+        const now = nowMs();
+        if (tapState.startedAt === null) tapState.startedAt = now;
+        tapState.taps.push(now - tapState.startedAt);
+        showTaps();
+      });
+    }
+    if (tapUse) {
+      tapUse.addEventListener("click", () => {
+        const result = window.SeqTempo?.tap(tapState.taps);
+        if (!result) return;
+        setTempo(window.SeqTempo.tappedTempo(result));
+        resetTaps();
+        tapPanel?.classList.add("hidden");
+      });
+    }
+    const trackInput = document.getElementById("seq-editor-track");
+    if (trackInput) {
+      trackInput.addEventListener("change", async () => {
+        const file = trackInput.files && trackInput.files[0];
+        trackInput.value = "";
+        if (!file || !window.SeqTempo) return;
+        tempoFeedback("Reading the track...");
+        let result;
+        try {
+          result = await window.SeqTempo.analyzeFile(file);
+        } catch (error) {
+          tempoFeedback("This file could not be read as audio.");
+          return;
+        }
+        if (!result.bpm) {
+          tempoFeedback("No steady beat in this track. Type the tempo, or tap along.");
+          return;
+        }
+        const offeredBefore = droppedTrack && droppedTrack.hash === result.hash;
+        droppedTrack = result;
+        const held = editorState.current.tempo;
+        // A tempo already measured from a different file is not replaced
+        // behind the builder's back: the Rehearsal says the two differ, and
+        // dropping the same file in a second time takes its tempo (ADR 0058).
+        if (held && held.source === "analysed" && held.hash && held.hash !== result.hash && !offeredBefore) {
+          tempoFeedback(`Not the track this tempo was measured from. It reads ${result.bpm} BPM; drop it in again to use it.`);
+          updateValidationSummary();
+          return;
+        }
+        if (held && held.hash === result.hash) {
+          tempoFeedback("This is the track the tempo was measured from.");
+          updateValidationSummary();
+          return;
+        }
+        tempoFeedback("");
+        setTempo(window.SeqTempo.analyzedTempo(result));
+      });
+    }
+
+    const downbeatInput = document.getElementById("seq-editor-downbeat-beat");
+    if (downbeatInput) {
+      downbeatInput.addEventListener("change", () => {
+        const moved = window.SeqTempo?.moveDownbeat(editorState.current.tempo, parseInt(downbeatInput.value, 10));
+        if (!moved) {
+          tempoFeedback("That beat is past where a sequence can reach.");
+          return;
+        }
+        tempoFeedback("");
+        downbeatInput.value = "1";
+        setTempo(moved);
+      });
+    }
+
+    document.getElementById("seq-editor-retime")?.addEventListener("click", retimeToGrid);
+    document.getElementById("seq-editor-retime-undo")?.addEventListener("click", undoRetime);
+
+    const bpmInput = document.getElementById("seq-editor-bpm");
+    if (bpmInput) {
+      bpmInput.addEventListener("change", () => {
+        setTempo(typedTempo(bpmInput.value));
       });
     }
 
@@ -2296,6 +2831,47 @@
   };
 
   const attachStepListeners = () => {
+    // The beat list and a span in beats (renderBeatPicker()).
+    const stepIndexOf = (el) => parseInt(el.closest(".step-card")?.dataset.stepIndex, 10);
+    document.querySelectorAll(".step-beat-pick").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const stepIdx = stepIndexOf(pill);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: parseInt(pill.dataset.beat, 10) });
+      });
+    });
+    document.querySelectorAll(".step-beat-clear").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const stepIdx = stepIndexOf(btn);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: null });
+      });
+    });
+    // A Gesture's pickers write their hidden form value and read the step back.
+    document.querySelectorAll(".gesture-pick").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const stepIdx = stepIndexOf(pill);
+        const fields = pill.closest(".step-fields");
+        const hidden = fields?.querySelector(`input[data-field="${pill.dataset.pick}"]`);
+        if (!hidden || !Number.isInteger(stepIdx)) return;
+        hidden.value = pill.dataset.value;
+        validateAndUpdateStep(stepIdx);
+        rerenderStepTable();
+      });
+    });
+    document.querySelectorAll(".gesture-beats").forEach((input) => {
+      input.addEventListener("change", () => {
+        const stepIdx = stepIndexOf(input);
+        const beats = parseInt(input.value, 10);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { [input.dataset.beats]: Number.isInteger(beats) ? beats : null });
+      });
+    });
+    document.querySelectorAll(".step-beat-span").forEach((input) => {
+      input.addEventListener("change", () => {
+        const stepIdx = stepIndexOf(input);
+        const beats = parseInt(input.value, 10);
+        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { spanBeats: Number.isInteger(beats) ? beats : null });
+      });
+    });
+
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
       dome: { cmd: ":OP00" },
@@ -2303,6 +2879,8 @@
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
       audioCat: { category: "alert", fallback: "scream" },
+      gesture: { set: "ring", spread: "wave" },
+      sequence: {},
       end: {},
     };
 
@@ -2641,6 +3219,9 @@
     const saveBtn = document.getElementById("seq-editor-save");
     if (saveBtn) saveBtn.disabled = true;
     showEditorFeedback("Saving...", "info");
+    // Every sequence saved from here on has a stable id, so another can hold
+    // it; one loaded without gets its id on this save and keeps it.
+    if (!editorState.current.id) editorState.current.id = mintSequenceId();
     try {
       await PAApi.postJson("/api/seq", editorState.current);
       showRehearsalReport("Saved.", "ok", editorState.current, "list");

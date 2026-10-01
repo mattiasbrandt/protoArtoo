@@ -360,3 +360,73 @@ test("a step aimed at hardware switched off on this droid is one finding per swi
   assert.equal(off.find((item) => !item.part).n, 2);
   assert.equal(off.find((item) => item.part).part, "doorFL");
 });
+
+// A tempo is advisory and always editable (ADR 0058): a weak one, and one whose
+// track has changed underneath it, are warnings the builder reads, and neither
+// is ever a reason the droid refuses the save.
+test("a weak or stale tempo is warned about and never refused", () => {
+  const guessed = {
+    ...seq([
+      { t: 0, beat: 0, type: "audio", cmd: "$H" },
+      { t: 1846, beat: 4, type: "end" },
+    ]),
+    tempo: { bpm: 130, phase: 0, barLen: 4, barPhase: 0, source: "analysed", confidence: 0.3, hash: "0a1b2c3d" },
+  };
+  const report = R.rehearse(guessed, { trackHash: "ffffffff" });
+  assert.equal(byCode(report, "tempo-confidence").length, 1);
+  assert.equal(byCode(report, "tempo-confidence")[0].level, "warning");
+  assert.equal(byCode(report, "tempo-hash").length, 1);
+  assert.equal(W.SeqProtocolCheck.validateSequence(guessed).ok, true, "a weak tempo was refused");
+
+  const sure = { ...guessed, tempo: { ...guessed.tempo, confidence: 0.9 } };
+  const matched = R.rehearse(sure, { trackHash: "0a1b2c3d" });
+  assert.equal(byCode(matched, "tempo-confidence").length, 0);
+  assert.equal(byCode(matched, "tempo-hash").length, 0);
+});
+
+// A Gesture (ADR 0046) is ruled on form by Protocol Check and read by the
+// Rehearsal, never refused for what the droid cannot do: a dome Gesture the
+// dome has no command for saves and is warned about. And a body Gesture's
+// moves are the Coordinator's to pace, so they are never the hand-written
+// overlap the Rehearsal advises on - "together" asks for four doors at once.
+test("a gesture the dome cannot perform saves with a warning, and generated moves are not an author's overlap", () => {
+  const sandbox = { window: {} };
+  vm.createContext(sandbox);
+  ["droid_parts.js", "servo_motion.js", "dome_command_map.js", "seq_protocol_check.js", "seq_gesture.js", "seq_rehearsal.js"].forEach((name) =>
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, "../../data", name), "utf8"), sandbox, { filename: name }),
+  );
+  const { SeqProtocolCheck: check, SeqRehearsal: rehearsal } = sandbox.window;
+
+  const domeCannot = seq([
+    { t: 0, type: "gesture", set: "ring", shape: "close", spread: "wave" },
+    { t: 3000, type: "end" },
+  ]);
+  assert.equal(check.validateSequence(domeCannot).ok, true, "a pair the dome has no command for was refused");
+  const warned = rehearsal.rehearse(domeCannot).findings.filter((f) => f.code === "gesture-dome");
+  assert.equal(warned.length, 1);
+  assert.equal(warned[0].level, "warning");
+  assert.match(warned[0].msg, /does nothing/);
+
+  const together = seq([
+    { t: 0, type: "gesture", set: "breadpan", spread: "together" },
+    { t: 3000, type: "end" },
+  ]);
+  assert.equal(check.validateSequence(together).ok, true);
+  const report = rehearsal.rehearse(together);
+  assert.equal(report.findings.filter((f) => f.code === "body-overlap").length, 0);
+  assert.equal(report.findings.filter((f) => f.code === "gesture-dome").length, 0);
+  // The moves it becomes are still read: the doors are left open.
+  assert.equal(report.findings.filter((f) => f.code === "part-left-open").length, 4);
+
+  // The droid ends a Gesture at the end step, mid-pass: a wave of four doors
+  // paced at the Cadence Floor from 1000 cannot all go before an end at 2000.
+  const cut = rehearsal.rehearse(
+    seq([
+      { t: 1000, type: "gesture", set: "breadpan", spread: "wave", stepMs: 100 },
+      { t: 2000, type: "end" },
+    ]),
+  );
+  const cuts = cut.findings.filter((f) => f.code === "gesture-cut");
+  assert.equal(cuts.length, 1);
+  assert.equal(cuts[0].n, 1);
+});

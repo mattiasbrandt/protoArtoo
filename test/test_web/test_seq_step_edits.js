@@ -31,6 +31,8 @@ const PAGE_MODULES = [
   "dome_panel_model.js",
   "dome_layout.js",
   "seq_protocol_check.js",
+  "seq_tempo.js",
+  "seq_gesture.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "outputs.js",
@@ -193,6 +195,7 @@ function newPage() {
     removeEventListener() {},
     alert() {},
     confirm: () => false,
+    crypto: require("node:crypto").webcrypto,  // the browser's own, which the editor mints ids with
     setTimeout,
     clearTimeout,
     setInterval,
@@ -210,6 +213,7 @@ function newPage() {
   };
   return {
     posts,
+    byId,
     card: (index) => stepCards().find((c) => c.index === String(index)),
     open(sequence, expanded) {
       seam.editorState.expanded = new Set(expanded);
@@ -254,4 +258,99 @@ test("a step's changed time is the time Save sends", async () => {
   // The rest of the step came through the same read-back untouched.
   assert.equal(saved[0].body.steps[0].type, "audio");
   assert.equal(saved[0].body.steps[0].cmd, "$H");
+});
+
+// A step placed on a beat keeps the beat through an edit (ADR 0058, #438). The
+// step is rebuilt from the form, which has no beat field, so without the carry
+// the first edit to any step would quietly turn a beat back into a
+// millisecond - and the next tempo change would leave that step behind.
+test("a step on a beat keeps its beat through an edit, and a new tempo moves it", async () => {
+  const page = newPage();
+  page.open(
+    {
+      name: "DM:ONBEAT",
+      suppressMs: 8000,
+      toggleGroup: "none",
+      tempo: { bpm: 130, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+      steps: [
+        { t: 0, type: "audio", cmd: "$H" },
+        { t: 923, beat: 2, type: "audio", cmd: "$S" },
+        { t: 3000, type: "end" },
+      ],
+    },
+    [1],
+  );
+
+  // An edit to the beat-placed step that leaves its time alone.
+  const card = page.card(1);
+  assert.ok(card, "the expanded step drew no time input");
+  fire(card.timeInput, "change");
+
+  // The builder types a new tempo.
+  const bpm = page.byId("seq-editor-bpm");
+  bpm.value = "120";
+  fire(bpm, "change");
+
+  await page.save();
+
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  const steps = saved[0].body.steps;
+  assert.equal(steps[1].beat, 2, "the edit dropped the step's beat");
+  assert.equal(steps[1].t, 1000, "the step did not move to where beat 2 falls at 120 BPM");
+  assert.equal(steps[0].t, 0);
+  assert.equal(steps[2].t, 3000, "a step placed in milliseconds moved with the tempo");
+  assert.equal(saved[0].body.tempo.source, "typed");
+});
+
+// Retime to the grid is the most destructive edit on this surface (ADR 0060):
+// it moves every step at once. So it says how many steps actually landed on a
+// beat - a step inside a loop body cannot, and is not counted as if it had,
+// which is the silence the reference's own test rewarded - and one press puts
+// every step back where it was.
+test("retiming to the grid counts only the steps that landed, and one undo puts them all back", async () => {
+  const page = newPage();
+  const original = [
+    { t: 90, type: "audio", cmd: "$H" },
+    { t: 600, type: "loop", body: 1, periodMs: 500, durationMs: 1000 },
+    { t: 40, type: "audio", cmd: "$S" },
+    { t: 2600, type: "end" },
+  ];
+  page.open(
+    {
+      name: "DM:RETIME",
+      suppressMs: 8000,
+      toggleGroup: "none",
+      tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+      steps: JSON.parse(JSON.stringify(original)),
+    },
+    [],
+  );
+
+  fire(page.byId("seq-editor-retime"), "click");
+  assert.equal(page.byId("seq-editor-retime-receipt").textContent, "3 of 4 steps landed on a beat.");
+
+  fire(page.byId("seq-editor-retime-undo"), "click");
+  await page.save();
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  assert.deepEqual(saved[0].body.steps, original, "undo did not put every step back");
+});
+
+// A sequence inside another names it by a stable id (ADR 0046), so a save
+// always carries one, and never replaces one it already has: a new id would
+// orphan every sequence that holds this one.
+test("a saved sequence always carries a stable id, and keeps the one it has", async () => {
+  const minted = newPage();
+  minted.open({ name: "DM:FRESH", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] }, []);
+  await minted.save();
+  const first = minted.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(first.length, 1, "Save sent nothing");
+  assert.match(first[0].body.id || "", /^[0-9a-f]{8}$/);
+
+  const kept = newPage();
+  kept.open({ name: "DM:HELD", id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] }, []);
+  await kept.save();
+  const second = kept.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(second[0].body.id, "abcd1234", "the save replaced the sequence's id");
 });

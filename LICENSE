@@ -55,6 +55,11 @@ over what its author owns, so for the avoidance of doubt:
      The package's notice, the licence link and the list of paths this
      firmware carries are in docs/icon-set-provenance.md.
 
+  6. PORTED CODE from r2d2-astromech-simulator (Copyright (c) 2026 Mike
+     Eddington, MIT) stays under his notice, which travels in the header of
+     each file that carries it: data/seq_tempo.js ports its beat analyser
+     (src/js/maestro/music.js at v1.79.0), with two corrections of ours.
+
 Star Wars, R2-D2 and related names and marks belong to Lucasfilm Ltd. This
 is a non-commercial fan project by a hobbyist droid builder, with no
 affiliation with, connection to, or endorsement from Lucasfilm or The Walt

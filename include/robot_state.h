@@ -250,8 +250,17 @@ struct ServoCommand {
     ServoCommandType type;  // Command type
     uint16_t positionUs;    // Target pulse width (us) for POSITION type
     CommandSource source;
+    // A Gesture's own words about this one POSITION move (ADR 0049, #438):
+    // the easing as ServoEasing + 1 and a full throw's time in ms, each 0 for
+    // "the Output's own Motion Profile". Nothing else sets them, so every other
+    // command still moves at the pace its Output's row sets. They sit in what
+    // was padding, so the command is the size it was.
+    uint8_t motionEasing;
+    uint16_t motionThrowMs;
     uint32_t timestampMs;
 };
+static_assert(sizeof(ServoCommand) == 12,
+              "the Gesture's motion words sit in ServoCommand's padding; a larger command grows servoCmdQueue");
 
 // The outputs ServoTask drives, one per armId above.
 constexpr uint8_t SERVO_ARM_COUNT = 5;

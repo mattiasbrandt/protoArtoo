@@ -11,7 +11,9 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "gesture", "sequence", "end"];
+  // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
+  const SEQ_REF = /^(DM:[A-Z0-9_]{1,18}|[0-9a-z]{1,16})$/;
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -26,6 +28,50 @@
     "whistle",
   ];
   const RANDOM_SETS  = ["ring", "pie", "all", "hold"];
+
+  // A Sequence Tempo (ADR 0058). Bounds mirror include/seq_tempo.h, where each
+  // is derived: a beat lasts 100..60000 ms (the loop period bounds), so a tempo
+  // runs 1..600 BPM, and the longest sequence at the fastest tempo is 1200
+  // beats. The BPM is stored to one decimal and counted in tenths, so a beat
+  // resolves to the same whole millisecond here as on the droid.
+  const TEMPO_SOURCES = ["typed", "tapped", "analysed"];
+  const TEMPO_BPM_TENTHS_MIN = 10;
+  const TEMPO_BPM_TENTHS_MAX = 6000;
+  const TEMPO_BEAT_MAX = 1200;
+  const TEMPO_BAR_LEN_MAX = 16;
+  const TEMPO_PHASE_MAX_MS = 120000;
+  const TEMPO_DURATION_MAX_MS = 3600000;
+  const TEMPO_HASH = /^[0-9a-f]{1,64}$/;
+
+  const isWhole = (value) => Number.isInteger(value);
+  const bpmTenths = (tempo) => Math.round(Number(tempo?.bpm) * 10);
+
+  // seqTempoSpanMs() / seqTempoBeatMs(): round(beats * 60000 / bpm), in the
+  // same integer steps the firmware takes.
+  const tempoSpanMs = (tempo, beats) => {
+    const tenths = bpmTenths(tempo);
+    if (!(tenths > 0)) return 0;
+    return Math.floor((2 * beats * 600000 + tenths) / (2 * tenths));
+  };
+  const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
+
+  // The indices of steps inside a loop body: timed from the loop pass, so a
+  // beat there counts from nothing the grid knows.
+  const loopBodyIndices = (steps) => {
+    const body = new Set();
+    let j = 0;
+    while (j < steps.length) {
+      const s = steps[j];
+      if (s && s.type === "loop" && typeof s.body === "number" && s.body > 0) {
+        const count = Math.min(s.body, steps.length - j - 1);
+        for (let k = 1; k <= count; k++) body.add(j + k);
+        j += count + 1;
+      } else {
+        j++;
+      }
+    }
+    return body;
+  };
   const RANDOM_MODES = ["flutter", "open", "close"];
 
   // audioCat "fallback" is a NAMED SLOT (the clip played when the chosen category
@@ -265,9 +311,65 @@
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
+        case "gesture":  return this._validateGestureStep(step, stepIndex, allSteps);
+        case "sequence":
+          return typeof step.ref === "string" && SEQ_REF.test(step.ref)
+            ? { ok: true }
+            : { ok: false, field: "ref", error: "Pick a sequence" };
         case "end":      return { ok: true };
         default:         return { ok: true };
       }
+    },
+
+    // A Gesture's form (checkGesture(), src/protocol_check.cpp). Whether the
+    // dome can perform the pair is the Rehearsal's and never refuses a save.
+    _validateGestureStep(step, stepIndex, allSteps) {
+      const G = window.SeqGesture;
+      const parts = window.DroidParts;
+      const fail = (field, error) => ({ ok: false, field, error });
+      const hasSet = typeof step.set === "string";
+      const hasParts = Array.isArray(step.parts);
+      if (hasSet === hasParts) return fail("set", "Pick a set of parts, or list them");
+      if (G && parts) {
+        if (hasSet && !G.setOf(step.set)) return fail("set", "Pick a set of parts from the list");
+        if (hasParts) {
+          if (step.parts.length === 0 || step.parts.some((id) => !G.partOf(id))) {
+            return fail("parts", "Every part must be one from the parts list");
+          }
+          if (new Set(step.parts).size !== step.parts.length) return fail("parts", "A part is listed twice");
+          if (step.parts.length > G.MEMBERS_MAX) return fail("parts", `A gesture moves at most ${G.MEMBERS_MAX} parts`);
+          if (new Set(step.parts.map((id) => G.partOf(id).half)).size > 1) {
+            return fail("parts", "The parts must all be on the dome, or all on the body");
+          }
+          if (step.parts.join(",").length > 63) return fail("parts", "Too many parts to list. Pick a set instead.");
+        }
+      }
+      const known = (value, list) => value === undefined || list.includes(value);
+      if (!known(step.shape, ["open", "close", "flutter"])) return fail("shape", "Pick open, close or flutter");
+      if (!known(step.spread, ["together", "wave", "chase", "alternate", "pulse"])) return fail("spread", "Pick how it travels");
+      if (!known(step.direction, ["cw", "ccw"])) return fail("direction", "Pick a direction");
+      if (!known(step.start, ["front", "right", "rear", "left"])) return fail("start", "Pick where it starts");
+      if (!known(step.easing, ["none", "soft", "overshoot"])) return fail("easing", "Pick an easing");
+      const inRange = (value, lo, hi) => value === undefined || (isWhole(value) && value >= lo && value <= hi);
+      if (!inRange(step.howFar, 1, 100)) return fail("howFar", "How far is 1 to 100 percent");
+      if (!inRange(step.stepMs, 50, 60000)) return fail("stepMs", "The pace is 50 to 60000 ms");
+      if (!inRange(step.speedMs, 50, 5000)) return fail("speedMs", "A full throw takes 50 to 5000 ms");
+      if (!inRange(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
+      if (!inRange(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
+      if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
+      if (step.flutterMs !== undefined && step.shape !== "flutter") return fail("flutterMs", "Only a flutter lasts a time");
+      // A flutter ends open and owes a close, unless the spread brings each
+      // part back itself: a later close gesture over the same parts.
+      const spread = step.spread || "together";
+      if (step.shape === "flutter" && (spread === "together" || spread === "wave")) {
+        const same = (other) =>
+          other && other.type === "gesture" && other.shape === "close" &&
+          (hasSet ? other.set === step.set : Array.isArray(other.parts) && other.parts.join(",") === step.parts.join(","));
+        if (!allSteps.slice(stepIndex + 1).some(same)) {
+          return fail("shape", "A flutter must be closed later. Add a close gesture over the same parts.");
+        }
+      }
+      return { ok: true };
     },
 
     _validateAudioStep(step) {
@@ -292,6 +394,16 @@
       const { cmd } = step;
       if (!cmd || typeof cmd !== "string") {
         return { ok: false, field: "cmd", error: "Choose a dome action for this step" };
+      }
+      // How far is said on a panel open or close (include/sequence_dome_how_far.h).
+      if (step.howFar !== undefined) {
+        const panel = /^:(OP|CL)([0-9A-Z]{2})$/.exec(cmd);
+        if (!panel || !PANEL_INTENT_TARGETS.has(panel[2])) {
+          return { ok: false, field: "howFar", error: "Only a panel open or close says how far" };
+        }
+        if (!isWhole(step.howFar) || step.howFar < 1 || step.howFar > 100) {
+          return { ok: false, field: "howFar", error: "How far is 1 to 100 percent" };
+        }
       }
 
       // Explicit rejection with clear actionable message
@@ -906,6 +1018,180 @@
     },
 
     /**
+     * The tempo block's form (protocolCheckTempo(), src/protocol_check.cpp, and
+     * the wire rules in src/seq_json.cpp parseTempo()). A low confidence or a
+     * stale hash is the Rehearsal's, never this gate's.
+     * @param {object} tempo
+     * @returns {{ok: boolean, field?: string, error?: string}}
+     */
+    validateTempo(tempo) {
+      const fail = (field, error) => ({ ok: false, field: `tempo.${field}`, error });
+      if (!tempo || typeof tempo !== "object" || Array.isArray(tempo)) {
+        return { ok: false, field: "tempo", error: "The tempo is missing its details" };
+      }
+      const tenths = bpmTenths(tempo);
+      if (typeof tempo.bpm !== "number" || !(tenths >= TEMPO_BPM_TENTHS_MIN && tenths <= TEMPO_BPM_TENTHS_MAX)) {
+        return fail("bpm", "The tempo must be between 1 and 600 BPM");
+      }
+      const phase = tempo.phase ?? 0;
+      if (!isWhole(phase) || phase < 0 || phase > TEMPO_PHASE_MAX_MS) {
+        return fail("phase", "Beat 1 must sit within the first 120000 ms");
+      }
+      const barLen = tempo.barLen ?? 4;
+      if (!isWhole(barLen) || barLen < 1 || barLen > TEMPO_BAR_LEN_MAX) {
+        return fail("barLen", "A bar is 1 to 16 beats");
+      }
+      const barPhase = tempo.barPhase ?? 0;
+      if (!isWhole(barPhase) || barPhase < 0 || barPhase >= barLen) {
+        return fail("barPhase", "The downbeat must be a beat of the bar");
+      }
+      const duration = tempo.duration ?? 0;
+      if (!isWhole(duration) || duration < 0 || duration > TEMPO_DURATION_MAX_MS) {
+        return fail("duration", "The track length must be under an hour");
+      }
+      if (!TEMPO_SOURCES.includes(tempo.source)) {
+        return fail("source", "The tempo must say whether it was typed, tapped or analysed");
+      }
+      const confidence = Math.round(Number(tempo.confidence) * 1000);
+      if (typeof tempo.confidence !== "number" || !(confidence >= 0 && confidence <= 1000)) {
+        return fail("confidence", "The tempo's confidence must be between 0 and 1");
+      }
+      if (tempo.hash !== undefined) {
+        if (typeof tempo.hash !== "string" || !TEMPO_HASH.test(tempo.hash)) {
+          return fail("hash", "The track fingerprint is damaged");
+        }
+        if (tempo.source !== "analysed") {
+          return fail("hash", "Only an analyzed tempo carries a track fingerprint");
+        }
+      }
+      return { ok: true };
+    },
+
+    /** The indices of steps inside a loop body, which are timed from a pass. */
+    loopBodySteps: loopBodyIndices,
+    /** Where beat `beat` falls, in ms, on this tempo (seqTempoBeatMs()). */
+    tempoBeatMs,
+    /** How long `beats` beats last, in ms, on this tempo (seqTempoSpanMs()). */
+    tempoSpanMs,
+
+    /**
+     * The sequence as the droid will run it: every step placed on a beat at
+     * the millisecond its beat resolves to, and every span in beats as the
+     * duration it resolves to (src/seq_json.cpp parseStepBeats()). A Gesture's
+     * pace, repeat and extent in beats resolve the same way; and on the run's
+     * reading (the default) a Gesture that states no pace takes one beat, and
+     * one that repeats with no extent runs to the end step or the track's end,
+     * whichever comes first (resolveGestureExtents()).
+     *
+     * `{ written: true }` resolves only what the builder wrote in beats and
+     * leaves every default unstated, which is what the editor keeps: a
+     * default written down would stop following the tempo.
+     *
+     * Returns a copy; the builder's own object, beats and all, is never
+     * rewritten. A sequence with no valid tempo comes back as it went in,
+     * apart from the run's defaults that need no tempo.
+     * @param {object} seq
+     * @param {{written?: boolean}} options
+     * @returns {object}
+     */
+    resolveBeats(seq, options = {}) {
+      if (!seq || !Array.isArray(seq.steps)) return seq;
+      const tempo = seq.tempo !== undefined && this.validateTempo(seq.tempo).ok ? seq.tempo : null;
+      const run = !options.written;
+      if (!tempo && !run) return seq;
+      const resolveBranch = (steps) => {
+        const out = steps.map((step) => {
+          if (!step || typeof step !== "object") return step;
+          const next = { ...step };
+          if (tempo) {
+            if (isWhole(step.beat)) next.t = tempoBeatMs(tempo, step.beat);
+            if (isWhole(step.spanBeats)) {
+              const ms = tempoSpanMs(tempo, step.spanBeats);
+              if (step.type === "domeRotate") next.durationMs = ms;
+              else if (step.type === "body" && step.shape === "flutter") next.flutterMs = ms;
+            }
+            if (step.type === "gesture") {
+              if (isWhole(step.stepBeats)) next.stepMs = tempoSpanMs(tempo, step.stepBeats);
+              if (isWhole(step.repeatBeats)) next.repeatMs = tempoSpanMs(tempo, step.repeatBeats);
+              if (isWhole(step.extentBeats)) next.extentMs = tempoSpanMs(tempo, step.extentBeats);
+              if (run && !next.stepMs) next.stepMs = tempoSpanMs(tempo, 1);
+            }
+          }
+          return next;
+        });
+        const end = out[out.length - 1];
+        if (run && end && end.type === "end") {
+          const endMs = Number(end.t) || 0;
+          out.forEach((step) => {
+            if (!step || step.type !== "gesture" || !(step.repeatMs > 0) || step.extentMs) return;
+            let extent = Math.max(0, endMs - (Number(step.t) || 0));
+            const track = Number(tempo?.duration) || 0;
+            if (track > step.t && track - step.t < extent) extent = track - step.t;
+            step.extentMs = extent;
+          });
+        }
+        return out;
+      };
+      const out = { ...seq, steps: resolveBranch(seq.steps) };
+      if (Array.isArray(seq.closeSteps)) out.closeSteps = resolveBranch(seq.closeSteps);
+      return out;
+    },
+
+    /**
+     * The beat rules on each step (src/seq_json.cpp parseStepBeats()): a beat
+     * or a span needs a tempo, a step in a loop body carries no beat, a beat
+     * is a whole 0..1200 and a span a whole 1..1200 on a step that has a
+     * duration to set.
+     */
+    _validateBeats(steps, tempo) {
+      const inLoop = loopBodyIndices(steps);
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i] || {};
+        if (step.beat !== undefined) {
+          if (tempo === undefined) {
+            return { ok: false, field: `steps[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
+          }
+          if (inLoop.has(i)) {
+            return {
+              ok: false,
+              field: `steps[${i}].beat`,
+              error: "A step inside a repeat is timed from the repeat. Put the repeat on the beat instead.",
+            };
+          }
+          if (!isWhole(step.beat) || step.beat < 0 || step.beat > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `steps[${i}].beat`, error: "Pick a beat on the grid" };
+          }
+        }
+        for (const key of ["stepBeats", "repeatBeats", "extentBeats"]) {
+          if (step[key] === undefined) continue;
+          if (step.type !== "gesture") {
+            return { ok: false, field: `steps[${i}].${key}`, error: "Only a gesture keeps its pace in beats" };
+          }
+          if (tempo === undefined) {
+            return { ok: false, field: `steps[${i}].${key}`, error: "Set a tempo before timing a gesture in beats" };
+          }
+          if (!isWhole(step[key]) || step[key] < 1 || step[key] > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `steps[${i}].${key}`, error: `A gesture's beats are 1 to ${TEMPO_BEAT_MAX}` };
+          }
+        }
+        if (step.spanBeats !== undefined) {
+          if (tempo === undefined) {
+            return { ok: false, field: `steps[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
+          }
+          if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
+            return { ok: false, field: `steps[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
+          }
+          const turns = step.type === "domeRotate" && Number(step.speedPct) !== 0;
+          const flutters = step.type === "body" && step.shape === "flutter";
+          if (!turns && !flutters) {
+            return { ok: false, field: `steps[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
+          }
+        }
+      }
+      return { ok: true };
+    },
+
+    /**
      * Validate entire sequence.
      * @param {object} seq
      * @returns {{ok: boolean, field?: string, error?: string}}
@@ -915,7 +1201,26 @@
         return { ok: false, error: "This sequence is missing its details" };
       }
 
-      const { name, suppressMs, toggleGroup, steps } = seq;
+      // The tempo and the beats first, as the droid parses them: every rule
+      // below reads the steps at the milliseconds their beats resolve to.
+      if (seq.tempo !== undefined) {
+        const tempoVal = this.validateTempo(seq.tempo);
+        if (!tempoVal.ok) return tempoVal;
+      }
+      if (Array.isArray(seq.steps)) {
+        const beatVal = this._validateBeats(seq.steps, seq.tempo);
+        if (!beatVal.ok) return beatVal;
+        // A sequence is spliced in where it sits, which a loop body cannot take.
+        const inLoop = loopBodyIndices(seq.steps);
+        const looped = seq.steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
+        if (looped >= 0) {
+          return { ok: false, field: `steps[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
+        }
+        if (seq.steps.filter((step) => step && step.type === "sequence").length > 8) {
+          return { ok: false, field: "steps", error: "A sequence can hold at most 8 others" };
+        }
+      }
+      const { name, suppressMs, toggleGroup, steps } = this.resolveBeats(seq);
 
       // Name
       const nameVal = this.validateName(name);

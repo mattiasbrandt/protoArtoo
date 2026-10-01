@@ -39,6 +39,8 @@ const read = (name) => readFileSync(join(__dirname, "../../data", name), "utf-8"
 // The script chain data/seq.html declares, from the page's own modules on.
 const PAGE_MODULES = [
   "seq_protocol_check.js",
+  "seq_tempo.js",
+  "seq_gesture.js",
   "servo_motion.js",
   "seq_rehearsal.js",
   "droid_parts.js",
@@ -245,4 +247,29 @@ test("moving the marker sends nothing; the press sends one request naming the se
   page.timelineView.querySelector(".tl-bar").fire("click", { target: press });
   await page.settle();
   assert.deepEqual(page.writes, [`POST /api/seq/pose ${JSON.stringify({ name: ROUTINE.name, t: 3600 })}`]);
+});
+
+// One reading of the routine: a step placed on a beat is drawn where the droid
+// runs it, at the millisecond its beat resolves to, even when the `t` written
+// beside it is stale (ADR 0058, #438). Otherwise the pose a builder sends from
+// this view is a moment the run never reaches.
+test("a step on a beat is drawn where its beat falls, not at a stale time", () => {
+  const sandbox = { window: {}, console };
+  sandbox.window.window = sandbox.window;
+  vm.createContext(sandbox);
+  ["seq_protocol_check.js", "servo_motion.js", "seq_rehearsal.js", "droid_parts.js", "dome_command_map.js", "seq_timeline.js"]
+    .forEach((name) => vm.runInContext(`(function(window){${read(name)}}).call(window, window)`, sandbox, { filename: name }));
+  const model = sandbox.window.SeqTimeline.build({
+    name: "DM:ONBEAT",
+    toggleGroup: "none",
+    suppressMs: 4000,
+    tempo: { bpm: 120, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
+    steps: [
+      { t: 0, beat: 4, type: "dome", cmd: ":OP01" },
+      { t: 3000, type: "end" },
+    ],
+  });
+  const panel = model.parts.find((lane) => lane.part === "panel1");
+  assert.ok(panel, "the panel the step opens has no lane");
+  assert.equal(panel.changes[0].t, 2000);
 });

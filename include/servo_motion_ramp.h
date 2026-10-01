@@ -19,7 +19,8 @@
 //
 // The profile is the Output's and nothing else's. No command carries a time or
 // a shape, so a Body Step, an RC toggle and a browser move all read the same
-// row; only a Gesture may override it (ADR 0049), and none exists yet.
+// row; only a Gesture may override it (ADR 0049), for the one move it asks
+// for, through servoMotionOverride() below.
 //
 // The third thing on the profile is the ease, the shape of the move (ADR 0052):
 //
@@ -58,6 +59,27 @@
 
 #include "servo_motion_model.h"  // ServoMotionProfile, ServoMotionRamp, servoMotionPlan() - generated
 #include "servo_output_row.h"    // servoOutputLowUs(), servoOutputEffectiveEasing()
+
+// -----------------------------------------------------------------------------
+// servoMotionOverride()
+// A Gesture's speed and easing, where it states them, in place of the Output's
+// own for one move (ADR 0049, #438). `throwMs` is a full throw's time and 0
+// means the Output's own; `easingPlusOne` is a ServoEasing + 1 and 0 means the
+// Output's own. What the Gesture leaves unsaid is the Output's, so a door
+// keeps its acceleration whatever speed a Gesture asks of it.
+//
+// An overshoot still never passes the recorded ends: on an Output nobody has
+// measured it degrades to none, exactly as the Output's own overshoot does
+// (servoOutputEffectiveEasing(), CONTEXT.md "Motion Profile").
+// -----------------------------------------------------------------------------
+inline void servoMotionOverride(ServoMotionProfile* profile, uint16_t throwMs, uint8_t easingPlusOne) {
+    if (profile == nullptr) return;
+    if (throwMs != 0) profile->throwMs = throwMs;
+    if (easingPlusOne != 0 && easingPlusOne <= SERVO_EASE_COUNT) {
+        const ServoEasing asked = (ServoEasing)(easingPlusOne - 1);
+        profile->easing = (asked == SERVO_EASE_OVERSHOOT && !profile->calibrated) ? SERVO_EASE_NONE : asked;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // servoMotionProfileOf()
