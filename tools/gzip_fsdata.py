@@ -565,19 +565,21 @@ def main():
         shutil.rmtree(stage)
     for rel_dir in sorted(stage_dirs):
         os.makedirs(os.path.join(stage, rel_dir), exist_ok=True)
-    # Written largest file first, ties by path, because the order files are
-    # created in the stage is the order they are written into the image, and
-    # that moves the block count. The builder (littlefs-python, in the
-    # platform's build_fs_image) walks the stage with Path.rglob, which lists
-    # a directory in readdir order, and btrfs - like a small ext4 directory -
-    # returns entries in creation order. So the order has to be a function of
-    # the commit alone: written in whatever order os.walk handed back data/,
-    # the same commit imaged as 112 blocks in one worktree and 114 in another,
-    # and one stage written in 300 random orders gave 112 blocks 297 times,
-    # 113 twice and 114 once (#429). Of the deterministic orders, largest first
-    # packs best: big files are laid down while the image is empty, and the
-    # small ones fill in behind them. It imaged 2 blocks under name order on
-    # the stage it was priced on (#461).
+    # Written largest file first, ties by path. The order files go into the
+    # image moves the block count, and staging can only choose the order it
+    # writes in: the platform's builder (build_fs_image, littlefs-python)
+    # images the stage in Path.rglob order, which is the host filesystem's
+    # directory listing. btrfs lists in creation order, so the order written
+    # here reaches the image; tmpfs lists in reverse; ext4, the CI runner's
+    # filesystem, lists in hash order, and there this order is lost.
+    #
+    # Measured, not explained (#461, the 70-file artoo stage at 118 blocks):
+    # largest first 118, name order 120, smallest first 120, and 200 random
+    # orders 118 x51, 119 x70, 120 x51, 121 x28. Largest first costs nothing
+    # and is the best of those where the order reaches the image. Read the
+    # filesystem budget as up to 121 on a host that does not keep creation
+    # order. Before #429 the order was os.walk's over data/, so the same commit
+    # imaged differently in two worktrees; any fixed order here ends that.
     out_bytes = 0
     for path in sorted(staged, key=lambda p: (-staged[p][0], p)):
         size, data, source = staged[path]
