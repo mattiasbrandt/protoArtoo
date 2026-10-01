@@ -1201,7 +1201,7 @@
     const found = [];
     PRODUCT_FAMILIES.forEach(({ family, toggle = "", outputs = false }) => {
       if (toggle && !switchedOn(toggles, toggle)) return;
-      const part = picker.chosenPart(family) || picker.fittedPart?.(family);
+      const part = picker.chosenPart(family) || picker.fittedPart(family);
       if (!part) return;
       // A Board Lane's key is its Component Toggle's, folded to lower case
       // (componentIndex() above).
