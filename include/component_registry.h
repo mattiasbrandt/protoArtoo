@@ -46,11 +46,21 @@ enum ComponentStatus : uint8_t {
 };
 
 // -----------------------------------------------------------------------------
+// The two words the manifest's `confirmed_on_droid` column is written in
+// (CONTEXT.md "Confirmed on a Droid", #455): whether the product has run on a
+// real droid. Evidence about a supported row and never a third status, which
+// is why it is a bool beside ComponentStatus rather than a value of it.
+// -----------------------------------------------------------------------------
+constexpr bool COMPONENT_CONFIRMED_ON_DROID = true;
+constexpr bool COMPONENT_NOT_CONFIRMED_ON_DROID = false;
+
+// -----------------------------------------------------------------------------
 // ComponentCategoryId -- one enumerator per Component Family, from the manifest.
 // -----------------------------------------------------------------------------
 enum ComponentCategoryId : uint8_t {
 #define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key) enumerator,
-#define PA_COMPONENT_PART(value, id, name, category, protocol, status, capabilities, gate, included)
+#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, \
+                          gate, included)
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
 #undef PA_COMPONENT_CATEGORY
@@ -77,6 +87,7 @@ struct ComponentPartEntry {
     ComponentCategoryId category;
     const char* protocol;        // Component Protocol token; shared between products
     ComponentStatus status;
+    bool confirmedOnDroid;       // the product has run on a real droid (#455)
     uint8_t capabilities;        // the family's own bitmask, declared per part
     const char* gate;            // required Board Capability Gate name, or nullptr = universal
     bool included;               // this image carries a driver for this part
@@ -91,7 +102,7 @@ extern const ComponentPartEntry COMPONENT_PARTS[];
 extern const size_t COMPONENT_PART_COUNT;
 
 // -----------------------------------------------------------------------------
-// Lookups. All are O(n) linear scans over a 21-row flash table, called from
+// Lookups. All are O(n) linear scans over a 22-row flash table, called from
 // boot and from Core 0 web handlers -- never from a real-time loop.
 // -----------------------------------------------------------------------------
 
@@ -124,10 +135,10 @@ constexpr bool idEquals(const char* a, const char* b) {
 // answer every row that declares no capabilities gives.
 constexpr uint8_t componentPartCapabilities(const char* id) {
 #define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
-#define PA_COMPONENT_PART(value, part_id, name, category, protocol, status, capabilities, gate, \
-                          included)                                                             \
-    if (component_registry_detail::idEquals(id, part_id)) {                                     \
-        return (uint8_t)(capabilities);                                                         \
+#define PA_COMPONENT_PART(value, part_id, name, category, protocol, status, confirmed, \
+                          capabilities, gate, included)                                  \
+    if (component_registry_detail::idEquals(id, part_id)) {                              \
+        return (uint8_t)(capabilities);                                                  \
     }
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
@@ -143,8 +154,8 @@ constexpr uint8_t componentPartCapabilities(const char* id) {
 // every call site that depends on the answer.
 constexpr const char* componentPartDisplayName(const char* id) {
 #define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
-#define PA_COMPONENT_PART(value, part_id, part_name, category, protocol, status, capabilities, \
-                          gate, included)                                                     \
+#define PA_COMPONENT_PART(value, part_id, part_name, category, protocol, status, confirmed, \
+                          capabilities, gate, included)                                       \
     if (component_registry_detail::idEquals(id, part_id)) {                                   \
         return (part_name);                                                                   \
     }
@@ -160,10 +171,10 @@ constexpr const char* componentPartDisplayName(const char* id) {
 // concrete driver static_asserts this beside the lookup it depends on.
 constexpr bool componentPartExists(const char* id) {
 #define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
-#define PA_COMPONENT_PART(value, part_id, name, category, protocol, status, capabilities, gate, \
-                          included)                                                             \
-    if (component_registry_detail::idEquals(id, part_id)) {                                     \
-        return true;                                                                            \
+#define PA_COMPONENT_PART(value, part_id, name, category, protocol, status, confirmed, \
+                          capabilities, gate, included)                                  \
+    if (component_registry_detail::idEquals(id, part_id)) {                              \
+        return true;                                                                     \
     }
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
@@ -195,10 +206,10 @@ inline bool componentPartIsSelectable(const ComponentPartEntry& part) {
 constexpr uint8_t componentCategorySelectableCount(ComponentCategoryId category) {
     uint8_t count = 0;
 #define PA_COMPONENT_CATEGORY(enumerator, token, name, member_key)
-#define PA_COMPONENT_PART(value, id, name, part_category, protocol, status, capabilities, gate, \
-                          included)                                                             \
-    if ((part_category) == category && componentPartIsSelectable((status), (included) != 0)) {  \
-        ++count;                                                                                \
+#define PA_COMPONENT_PART(value, id, name, part_category, protocol, status, confirmed, \
+                          capabilities, gate, included)                                  \
+    if ((part_category) == category && componentPartIsSelectable((status), (included) != 0)) { \
+        ++count;                                                                         \
     }
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART

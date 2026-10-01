@@ -142,6 +142,12 @@ const readRegistry = () => {
     else if (includedExpr.includes('PA_BOARD_FIREBEETLE2')) included = false;
     else if (includedExpr.startsWith('PA_CAP_')) included = true;
     else throw new Error(`component_registry.inc: cannot read "included" for ${match[2]}: ${includedExpr}`);
+    // The first argument after `status` is `confirmed_on_droid`, one of two
+    // words (include/component_registry.inc column notes).
+    const confirmedWord = tail.slice(0, tail.indexOf(',')).trim();
+    if (!['COMPONENT_CONFIRMED_ON_DROID', 'COMPONENT_NOT_CONFIRMED_ON_DROID'].includes(confirmedWord)) {
+      throw new Error(`component_registry.inc: cannot read "confirmed_on_droid" for ${match[2]}: ${confirmedWord}`);
+    }
     const gate = /"(PA_CAP_\w+)"/.exec(tail);
     parts.push({
       id: match[2],
@@ -150,6 +156,7 @@ const readRegistry = () => {
       category: categoryId.get(match[4]),
       protocol: match[5],
       status,
+      confirmed_on_droid: confirmedWord === 'COMPONENT_CONFIRMED_ON_DROID',
       capabilities: 0,
       included,
       board_capability: gate ? gate[1] : null,

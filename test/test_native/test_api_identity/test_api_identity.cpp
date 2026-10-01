@@ -310,12 +310,14 @@ void test_components_payload_separates_status_from_what_the_image_carries() {
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
                                 "\"id\":\"dfplayer_mini\",\"value\":21,\"name\":\"DFPlayer Mini\","
                                 "\"category\":\"sound\",\"protocol\":\"dfplayer_serial\","
-                                "\"status\":\"roadmap\",\"capabilities\":0,\"included\":false,"
+                                "\"status\":\"roadmap\",\"confirmed_on_droid\":false,"
+                                "\"capabilities\":0,\"included\":false,"
                                 "\"board_capability\":null}"));
     TEST_ASSERT_NOT_NULL(strstr(backend.sentBody,
                                 "\"id\":\"chirp\",\"value\":20,\"name\":\"CHIRP Audio Trigger\","
                                 "\"category\":\"sound\",\"protocol\":\"chirp_ascii_uart\","
-                                "\"status\":\"supported\",\"capabilities\":63,\"included\":true,"
+                                "\"status\":\"supported\",\"confirmed_on_droid\":true,"
+                                "\"capabilities\":63,\"included\":true,"
                                 "\"board_capability\":null}"));
     // The one row that names a Board Capability Gate reports it, so a builder
     // is told which board fact a missing part turns on rather than only that it

@@ -29,6 +29,8 @@ import check_component_registry_drift as drift  # noqa: E402
 
 SUPPORTED = "COMPONENT_STATUS_SUPPORTED"
 ROADMAP = "COMPONENT_STATUS_ROADMAP"
+CONFIRMED = "COMPONENT_CONFIRMED_ON_DROID"
+NOT_CONFIRMED = "COMPONENT_NOT_CONFIRMED_ON_DROID"
 
 
 def manifest(categories: str = "", parts: str = "") -> str:
@@ -46,7 +48,7 @@ class ManifestParsing(unittest.TestCase):
         # The Sound rows wrap, because a capability expression is long. A
         # line-based parser would cut them in half and see columns that are
         # not there.
-        text = manifest(parts='''PA_COMPONENT_PART(18, "dy_sv5w", "DY-SV5W", COMPONENT_CATEGORY_SOUND, "soft_uart_binary", COMPONENT_STATUS_SUPPORTED,
+        text = manifest(parts='''PA_COMPONENT_PART(18, "dy_sv5w", "DY-SV5W", COMPONENT_CATEGORY_SOUND, "soft_uart_binary", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,
                   AudioDriver::AUDIO_CAP_STATUS_QUERY | AudioDriver::AUDIO_CAP_DEVICE_TYPE,
                   nullptr, 1)''')
         rows = drift.read_invocations(text, "PA_COMPONENT_PART")
@@ -55,14 +57,14 @@ class ManifestParsing(unittest.TestCase):
         self.assertEqual("dy_sv5w", drift.unquote(rows[0][1]))
 
     def test_a_parenthesised_included_expression_is_one_column(self):
-        text = manifest(parts='PA_COMPONENT_PART(1, "a", "A", C, "p", COMPONENT_STATUS_SUPPORTED, 0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))')
+        text = manifest(parts='PA_COMPONENT_PART(1, "a", "A", C, "p", COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID, 0, nullptr, (PA_BOARD == PA_BOARD_ARTOO_ESP32))')
         rows = drift.read_invocations(text, "PA_COMPONENT_PART")
         self.assertEqual(drift.PART_COLUMNS, len(rows[0]))
-        self.assertEqual("(PA_BOARD == PA_BOARD_ARTOO_ESP32)", rows[0][8])
+        self.assertEqual("(PA_BOARD == PA_BOARD_ARTOO_ESP32)", rows[0][drift.PART_INCLUDED])
 
     def test_a_comma_inside_a_string_does_not_split_a_row(self):
         # "Hoverboard, hacked firmware" is a real row's name.
-        text = manifest(parts='PA_COMPONENT_PART(15, "hoverboard", "Hoverboard, hacked firmware", C, "p", COMPONENT_STATUS_SUPPORTED, 0, nullptr, 1)')
+        text = manifest(parts='PA_COMPONENT_PART(15, "hoverboard", "Hoverboard, hacked firmware", C, "p", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)')
         rows = drift.read_invocations(text, "PA_COMPONENT_PART")
         self.assertEqual(drift.PART_COLUMNS, len(rows[0]))
         self.assertEqual("Hoverboard, hacked firmware", drift.unquote(rows[0][2]))
@@ -84,7 +86,7 @@ class ManifestParsing(unittest.TestCase):
                          'PA_COMPONENT_PART(1, "a", "A", C, "p", COMPONENT_STATUS_SUPPORTED, 0)\n')
             errors: list[str] = []
             drift.load_manifest(path, errors)
-        self.assertTrue(any("columns, expected 9" in e for e in errors), errors)
+        self.assertTrue(any("columns, expected 10" in e for e in errors), errors)
 
 
 class CapabilityConsumers(unittest.TestCase):
@@ -95,7 +97,7 @@ class CapabilityConsumers(unittest.TestCase):
 
     def part(self, part_id="dy_sv5w", status=SUPPORTED, capabilities="AudioDriver::AUDIO_CAP_TRACK_COUNT"):
         return [f"18", f'"{part_id}"', '"DY-SV5W"', "COMPONENT_CATEGORY_SOUND",
-                '"soft_uart_binary"', status, capabilities, "nullptr", "1"]
+                '"soft_uart_binary"', status, NOT_CONFIRMED, capabilities, "nullptr", "1"]
 
     def run_check(self, parts, consumer_text):
         with tempfile.TemporaryDirectory() as tmp:
@@ -159,7 +161,7 @@ class CapabilityConsumers(unittest.TestCase):
 
     def foot_drive(self, capabilities="DRIVE_CAP_REPORTS_FEEDBACK"):
         return ["15", '"hoverboard"', '"Hoverboard, hacked firmware"', "COMPONENT_CATEGORY_FOOT_DRIVE",
-                '"hoverboard_gen2_uart"', SUPPORTED, capabilities,
+                '"hoverboard_gen2_uart"', SUPPORTED, NOT_CONFIRMED, capabilities,
                 '"PA_CAP_DRIVE_BACKEND_HOVERBOARD"', "PA_CAP_DRIVE_BACKEND_HOVERBOARD"]
 
     def test_a_foot_drive_bit_nothing_reads_is_reported(self):
@@ -203,7 +205,7 @@ class BoardCapabilityGates(unittest.TestCase):
 
     def part(self, gate, included):
         return ["15", '"hoverboard"', '"Hoverboard"', "COMPONENT_CATEGORY_FOOT_DRIVE",
-                '"hoverboard_gen2_uart"', SUPPORTED, "0", gate, included]
+                '"hoverboard_gen2_uart"', SUPPORTED, NOT_CONFIRMED, "0", gate, included]
 
     def run_check(self, parts):
         errors: list[str] = []
@@ -236,6 +238,39 @@ class BoardCapabilityGates(unittest.TestCase):
         errors = self.run_check([self.part("nullptr", "PA_CAP_DRIVE_BACKEND_HOVERBOARD")])
         self.assertEqual(1, len(errors), errors)
         self.assertIn("reports no gate", errors[0])
+
+
+class ConfirmedOnDroid(unittest.TestCase):
+    """Confirmed on a Droid is evidence about a supported row (#455)."""
+
+    def part(self, status, confirmed, part_id="syren10"):
+        return ["12", f'"{part_id}"', '"SyRen 10"', "COMPONENT_CATEGORY_DOME_ROTATION",
+                '"de_packet_serial"', status, confirmed, "0", "nullptr",
+                "1" if status == SUPPORTED else "0"]
+
+    def run_check(self, parts):
+        errors: list[str] = []
+        drift.check_confirmed_on_droid(parts, errors)
+        return errors
+
+    def test_a_roadmap_row_that_says_it_is_confirmed_is_reported(self):
+        # Nothing drives a roadmap product, so nothing can have run on a droid.
+        errors = self.run_check([self.part(ROADMAP, CONFIRMED)])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("syren10", errors[0])
+        self.assertIn("roadmap row", errors[0])
+
+    def test_supported_rows_pass_either_way_and_an_unconfirmed_roadmap_row_passes(self):
+        errors = self.run_check([self.part(SUPPORTED, CONFIRMED), self.part(SUPPORTED, NOT_CONFIRMED),
+                                 self.part(ROADMAP, NOT_CONFIRMED)])
+        self.assertEqual([], errors)
+
+    def test_a_column_written_in_any_other_word_is_reported(self):
+        # The fixture readers match the two words; a bare 1 would compile and
+        # reach the browser fixtures as unconfirmed.
+        errors = self.run_check([self.part(SUPPORTED, "1")])
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("confirmed_on_droid", errors[0])
 
 
 class MemberKeys(unittest.TestCase):
@@ -314,6 +349,11 @@ class RealTree(unittest.TestCase):
     def test_every_named_gate_exists_and_is_the_one_the_row_consults(self):
         errors: list[str] = []
         drift.check_board_capability_gates(self.parts, errors)
+        self.assertEqual([], errors)
+
+    def test_no_roadmap_row_is_confirmed_on_a_droid(self):
+        errors: list[str] = []
+        drift.check_confirmed_on_droid(self.parts, errors)
         self.assertEqual([], errors)
 
     def test_every_declared_member_key_is_a_member_settings_key(self):

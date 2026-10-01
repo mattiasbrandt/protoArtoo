@@ -53,12 +53,20 @@ const lineupFor = (board) => {
     ([, enumerator, id, name, key]) => ({ enumerator, id, name, member_key: key === "nullptr" ? null : key.slice(1, -1) }),
   );
   const byEnum = new Map(categories.map((category) => [category.enumerator, category.id]));
-  const parts = [...inc.matchAll(/^PA_COMPONENT_PART\(\s*\d+,\s*"(\w+)",\s*"([^"]+)",\s*(\w+),\s*"(\w+)",\s*COMPONENT_STATUS_(\w+),/gm)].map(
-    ([, id, name, category, protocol, status]) => {
+  const parts = [...inc.matchAll(/^PA_COMPONENT_PART\(\s*\d+,\s*"(\w+)",\s*"([^"]+)",\s*(\w+),\s*"(\w+)",\s*COMPONENT_STATUS_(\w+),\s*COMPONENT_(NOT_)?CONFIRMED_ON_DROID,/gm)].map(
+    ([, id, name, category, protocol, status, notConfirmed]) => {
       let included = status === "SUPPORTED";
       if (id === "artoo_pcb") included = board === "artoo_esp32";
       if (id === "firebeetle2") included = board === "firebeetle2";
-      return { id, name, category: byEnum.get(category), protocol, status: status.toLowerCase(), included };
+      return {
+        id,
+        name,
+        category: byEnum.get(category),
+        protocol,
+        status: status.toLowerCase(),
+        confirmed_on_droid: notConfirmed === undefined,
+        included,
+      };
     },
   );
   return {
@@ -111,9 +119,13 @@ const stub = () => ({
   appendChild() {},
 });
 
-export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true, config = configured() } = {}) => {
+// `lineup` reshapes the controller's answer before the surface reads it: a
+// controller on older firmware, or one whose rows say something the shipped
+// registry does not.
+export const boot = ({ set = "legacy", board = "artoo_esp32", assetsReady = true, config = configured(), lineup: reshape = null } = {}) => {
   const parsed = surfaceDocument(set);
   const lineup = lineupFor(board);
+  if (reshape) reshape(lineup);
   // The droid reports what it started with beside what it saved (#371).
   const report = bootedDroid();
   const posts = [];
