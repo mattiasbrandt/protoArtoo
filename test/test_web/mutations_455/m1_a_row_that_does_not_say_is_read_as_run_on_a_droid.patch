@@ -1,0 +1,13 @@
+diff --git i/data/component_picker.js w/data/component_picker.js
+index 41596a27..c779f721 100644
+--- i/data/component_picker.js
++++ w/data/component_picker.js
+@@ -151,7 +151,7 @@
+   // since the droid has said neither.
+   const CONFIRMED_MARK = "Run on a droid";
+   const NOT_YET_RUN_SENTENCE = "Built. Not yet run on a droid.";
+-  const hasRunOnDroid = (part) => part.status === KIND_SUPPORTED && part.confirmed_on_droid === true;
++  const hasRunOnDroid = (part) => part.status === KIND_SUPPORTED && part.confirmed_on_droid !== false;
+   const saysNotYetRun = (part) => part.status === KIND_SUPPORTED && part.confirmed_on_droid === false;
+   const confirmedMark = () => element("span", "component-confirmed", CONFIRMED_MARK);
+ 

@@ -9497,7 +9497,12 @@ button.droid-build-card:disabled {
   line-height: 1.3;
 }
 
-.component-receiver-caption {
+/* .component-confirmed is the mark of a product that has run on a droid
+   (#455). It is a caption, in the caption's own ink: no Status Color, and no
+   change when its card is chosen - it says what the project has seen, not
+   what this droid holds. */
+.component-receiver-caption,
+.component-confirmed {
   color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);

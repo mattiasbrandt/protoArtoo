@@ -358,6 +358,10 @@ the patch releases, whose notes live on their own GitHub Release.
   the bench is looking at the thing rather than reading a name. Those
   photographs ride the default asset set only; the Artoo board does not
   carry them (ADR 0065).
+- **See which products have run on a droid.** In Configuration, a product
+  card says Run on a droid when the project has seen it work on a real one.
+  A card without it is built, not yet run on a droid. It never changes the
+  order of the cards or what you can pick.
 
 ### Changed
 - **One firmware per board, whatever sound module you fitted.** A release now

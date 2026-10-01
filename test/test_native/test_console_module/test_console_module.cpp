@@ -982,6 +982,41 @@ void test_system_api_get_components_names_the_radio_member() {
         row);
 }
 
+// Every part item reaches the sink whole, and says what the table says about
+// whether the product has run on a droid (#455) - the fact GET
+// /api/identity/components reports as `confirmed_on_droid`, so the two
+// adapters cannot report different project facts. The executor formats into
+// one fixed buffer and snprintf truncates in silence, so "whole" is asserted
+// on the item's last field: a row that outgrew the buffer loses its tail.
+void test_system_api_get_components_part_items_are_whole_and_carry_the_droid_fact() {
+    runSeqItemQuery("system.api.get-components");
+    TEST_ASSERT_EQUAL(CONSOLE_OUTCOME_COMPLETED, g_seqItemCap.outcome);
+
+    for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
+        const ComponentPartEntry& part = COMPONENT_PARTS[i];
+        char head[64];
+        const int headLen = snprintf(head, sizeof(head), "part:%s ", part.id);
+        const char* item = nullptr;
+        for (int j = 0; j < g_seqItemCap.count; ++j) {
+            if (strncmp(g_seqItemCap.values[j], head, (size_t)headLen) == 0) {
+                item = g_seqItemCap.values[j];
+            }
+        }
+        TEST_ASSERT_NOT_NULL_MESSAGE(item, part.id);
+
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(item, part.confirmedOnDroid ? " confirmedOnDroid:true "
+                                                                        : " confirmedOnDroid:false "),
+                                     item);
+
+        char tail[64];
+        const int tailLen = snprintf(tail, sizeof(tail), " boardCapability:%s",
+                                     part.gate != nullptr ? part.gate : "-");
+        const size_t itemLen = strlen(item);
+        TEST_ASSERT_TRUE_MESSAGE(itemLen >= (size_t)tailLen, item);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(tail, item + itemLen - (size_t)tailLen, item);
+    }
+}
+
 void test_dome_api_list_sequences_streams_the_real_index_as_items() {
     SeqIndexEntry e = {};
     snprintf(e.name, sizeof(e.name), "%s", "DM:MYSEQ");
@@ -5762,6 +5797,7 @@ int main(int, char**) {
     RUN_TEST(test_the_executor_not_ready_set_is_exactly_the_recorded_rows);
     RUN_TEST(test_servo_api_get_outputs_streams_every_row_as_an_item);
     RUN_TEST(test_system_api_get_components_names_the_radio_member);
+    RUN_TEST(test_system_api_get_components_part_items_are_whole_and_carry_the_droid_fact);
     RUN_TEST(test_action_executor_not_ready_count_report);
 
     RUN_TEST(test_action_zero_param_action_rejects_unknown_argument);

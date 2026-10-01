@@ -220,8 +220,8 @@ The controller is the source of the lineup - a browser copy is only a fallback,
 because firmware and web assets are uploaded separately and a controller can
 report a part its own web assets have never heard of.
 
-Separate from `GET /api/identity` because that payload is bounded at 512 B and
-this one runs to roughly 4.7 KB; it is sent chunked.
+Separate from `GET /api/identity` because that payload is bounded at 576 B and
+this one runs to roughly 5.5 KB; it is sent chunked.
 
 - Success: `200` JSON with:
   - `categories`: one entry per Component Family, each carrying
@@ -242,6 +242,11 @@ this one runs to roughly 4.7 KB; it is sent chunked.
       products share one token where one driver serves them all.
     - `status`: `supported` (implemented and drivable) or `roadmap` (planned,
       not built). A project fact.
+    - `confirmed_on_droid`: `true` where the product has run on a real droid,
+      `false` where it is built and drivable but has not yet. A project fact
+      about a `supported` part, not a third status: a `roadmap` part is always
+      `false`. Firmware older than this field omits it, and a browser reads a
+      part without it as not confirmed.
     - `capabilities`: what this product can be asked, as its family's own
       bitmask. `0` where the family has no vocabulary yet. Sound's bits are
       the `AUDIO_CAP_*` words (`include/audio_driver.h`); the Foot Drive's are
@@ -261,7 +266,7 @@ curl -s http://artoo.local/api/identity/components
 
 #### Example response
 
-Abridged - the real payload carries all 7 categories and all 21 parts. Every
+Abridged - the real payload carries all 7 categories and all 22 parts. Every
 line below is verbatim from an `artoo_esp32` build.
 
 ```json
@@ -269,9 +274,9 @@ line below is verbatim from an `artoo_esp32` build.
   {"id":"body_controller","name":"Body Controller","selectable":1,"member_key":null,"active_member":null},
   {"id":"sound","name":"Sound","selectable":3,"member_key":"snd_member","active_member":"dy_sv5w"}
 ],"parts":[
-  {"id":"hoverboard","value":15,"name":"Hoverboard, hacked firmware","category":"foot_drive","protocol":"hoverboard_gen2_uart","status":"supported","capabilities":1,"included":true,"board_capability":"PA_CAP_DRIVE_BACKEND_HOVERBOARD"},
-  {"id":"chirp","value":20,"name":"CHIRP Audio Trigger","category":"sound","protocol":"chirp_ascii_uart","status":"supported","capabilities":63,"included":true,"board_capability":null},
-  {"id":"dfplayer_mini","value":21,"name":"DFPlayer Mini","category":"sound","protocol":"dfplayer_serial","status":"roadmap","capabilities":0,"included":false,"board_capability":null}
+  {"id":"hoverboard","value":15,"name":"Hoverboard, hacked firmware","category":"foot_drive","protocol":"hoverboard_gen2_uart","status":"supported","confirmed_on_droid":false,"capabilities":1,"included":true,"board_capability":"PA_CAP_DRIVE_BACKEND_HOVERBOARD"},
+  {"id":"chirp","value":20,"name":"CHIRP Audio Trigger","category":"sound","protocol":"chirp_ascii_uart","status":"supported","confirmed_on_droid":true,"capabilities":63,"included":true,"board_capability":null},
+  {"id":"dfplayer_mini","value":21,"name":"DFPlayer Mini","category":"sound","protocol":"dfplayer_serial","status":"roadmap","confirmed_on_droid":false,"capabilities":0,"included":false,"board_capability":null}
 ]}
 ```
 
