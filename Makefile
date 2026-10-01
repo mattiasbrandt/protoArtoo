@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
         flash-monitor \
         setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
@@ -157,6 +157,13 @@ check-setting-words: ## Check every declared Setting has browser words for its r
 # rather than being quietly repaired by the first run.
 check-parts-drift: ## Ad hoc check that the parts catalog and its generated outputs align
 	python3 tools/check_droid_parts_drift.py
+
+# Wiring's product cards against the wiring_card blocks in docs/spec-sheets/
+# (#458), in the same report-never-rewrite shape: the real generator with its
+# writes intercepted, byte-compared. check-action-drift runs it too, which is
+# how the slice gate carries it. To regenerate: python3 tools/generate_wiring_cards.py
+check-wiring-cards-drift: ## Check Wiring's product cards against the spec sheets' wiring_card blocks
+	python3 tools/check_wiring_cards_drift.py
 
 # The registry's own report-never-rewrite check, beside the two above so an
 # operator reads all three the same way (#340).
