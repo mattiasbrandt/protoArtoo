@@ -6216,18 +6216,22 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* "Remove", not a multiplication sign. A glyph on its own carries a control
    with no label at all, which is the one thing ADR 0066 does not let it do. */
+/* A step's Remove is a quiet act, as it is in the Picked block tab: one Undo
+   brings the step back, so it is not the red of what cannot be taken back. */
 .step-remove {
   flex-shrink: 0;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--danger);
+  color: var(--text-dim);
   cursor: pointer;
   font-family: inherit;
   font-size: var(--fs-cell);
 }
 
-.step-remove:hover {
+.step-remove:hover,
+.step-remove:focus-visible {
+  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
