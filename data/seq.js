@@ -4099,9 +4099,11 @@
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
       const original = result.data;
-      // Auto-rename to NAME_copy (avoid _copy_copy by removing existing suffix)
-      const baseName = seqName.replace(/_copy(\d*)$/, "");
-      original.name = `${baseName}_copy`;
+      // Auto-rename to NAME_COPY (avoid _COPY_COPY by removing an existing
+      // suffix). In capitals: Protocol Check takes no lowercase in a name, so
+      // "_copy" opened every duplicate refused until it was renamed.
+      const baseName = seqName.replace(/_COPY(\d*)$/, "");
+      original.name = `${baseName}_COPY`;
 
       // Open editor with copy
       currentEditingSeq = original;
