@@ -11,9 +11,10 @@ each sound driver returns its own row's capability word through
 selectable count. The drive backend profile reads the Foot Drive row's word the
 same way (`include/drive_backend.h`).
 
-What is left is what no compiler can see, and this is it. Three questions, all
-answered by reading source text, and none of them by rewriting a file - the
-convention `tools/check_action_registry_drift.py` set.
+What is left is what no compiler can see, and this is it. Three questions - and
+a fourth the compiler does see, repeated here so it is reported as a sentence
+with the row's name - all answered by reading source text, and none of them by
+rewriting a file - the convention `tools/check_action_registry_drift.py` set.
 
 1. **Every capability a supported row declares has a consumer.** ADR 0042 is
    explicit that this is scoped to `supported` rows and never to `roadmap`
@@ -38,6 +39,12 @@ convention `tools/check_action_registry_drift.py` set.
    `src/config_settings.cpp`, which is what the NVS save and load both loop
    over (ADR 0068, amended 2026-09-26). Rename either half alone and the member
    silently stops surviving a reboot.
+
+4. **A `roadmap` row is not Confirmed on a Droid.** The column records that a
+   product has run on a real droid (CONTEXT.md "Confirmed on a Droid", #455).
+   It is evidence about a `supported` row: a roadmap row has no driver to have
+   run. `src/component_registry.cpp` holds the same rule as a `static_assert`;
+   this is the form that names the row and says what to change.
 
 Run it as `make check-component-drift`. Its own unit tests, which drive each
 check against fixtures and prove it can fail, are
@@ -85,7 +92,20 @@ CAPABILITY_NAME = re.compile(r"\b([A-Z]+_CAP_[A-Z0-9_]+)\b")
 DECLARATION_FILES = {header for _, header in VOCABULARIES} | {MANIFEST}
 
 CATEGORY_COLUMNS = 4
-PART_COLUMNS = 9
+PART_COLUMNS = 10
+
+# PA_COMPONENT_PART's columns, by position. Named once here because every
+# check reads a row by index and a column added mid-row moves the rest.
+PART_ID = 1
+PART_STATUS = 5
+PART_CONFIRMED = 6
+PART_CAPABILITIES = 7
+PART_GATE = 8
+PART_INCLUDED = 9
+
+STATUS_SUPPORTED = "COMPONENT_STATUS_SUPPORTED"
+STATUS_ROADMAP = "COMPONENT_STATUS_ROADMAP"
+CONFIRMED_WORDS = ("COMPONENT_CONFIRMED_ON_DROID", "COMPONENT_NOT_CONFIRMED_ON_DROID")
 
 
 def split_top_level(argument_text: str) -> list[str]:
@@ -257,11 +277,11 @@ def check_capability_consumers(parts: list[list[str]], errors: list[str],
     """
     declared: dict[str, list[str]] = {}
     for row in parts:
-        part_id = unquote(row[1])
-        status = row[5].strip()
-        if status != "COMPONENT_STATUS_SUPPORTED":
+        part_id = unquote(row[PART_ID])
+        status = row[PART_STATUS].strip()
+        if status != STATUS_SUPPORTED:
             continue
-        for name in CAPABILITY_NAME.findall(row[6]):
+        for name in CAPABILITY_NAME.findall(row[PART_CAPABILITIES]):
             declared.setdefault(name, []).append(part_id)
 
     if not declared:
@@ -321,9 +341,9 @@ def check_board_capability_gates(parts: list[list[str]], errors: list[str],
             return
 
     for row in parts:
-        part_id = unquote(row[1])
-        gate = unquote(row[7])
-        included = row[8]
+        part_id = unquote(row[PART_ID])
+        gate = unquote(row[PART_GATE])
+        included = row[PART_INCLUDED]
         if gate is None:
             # Universal. The `included` expression may still consult a PA_CAP_*
             # one day, and if it does the row has to say so - that is the half
@@ -339,6 +359,32 @@ def check_board_capability_gates(parts: list[list[str]], errors: list[str],
             errors.append(
                 f"{part_id} reports {gate} as its Board Capability Gate but its `included` "
                 f"expression does not consult it: {included}"
+            )
+
+
+def check_confirmed_on_droid(parts: list[list[str]], errors: list[str]) -> None:
+    """A roadmap row cannot be Confirmed on a Droid, and the column takes two words.
+
+    The claim is evidence that a driver ran on a real droid. A roadmap row has
+    no driver, so one that carries it is asserting a run that cannot have
+    happened - and a builder choosing from the lineup would be told to trust
+    it. The second half catches a row written with anything else in the
+    column (a bare 1, a misspelt word): the readers that carry the lineup to
+    the browser fixtures match the two words, and would read it as unconfirmed.
+    """
+    for row in parts:
+        part_id = unquote(row[PART_ID])
+        confirmed = row[PART_CONFIRMED].strip()
+        if confirmed not in CONFIRMED_WORDS:
+            errors.append(
+                f"{part_id} writes `{confirmed}` in confirmed_on_droid; the column takes "
+                f"{CONFIRMED_WORDS[0]} or {CONFIRMED_WORDS[1]}"
+            )
+        elif confirmed == CONFIRMED_WORDS[0] and row[PART_STATUS].strip() != STATUS_SUPPORTED:
+            errors.append(
+                f"{part_id} is a roadmap row that says it is confirmed on a droid. Nothing "
+                "drives it yet, so nothing can have run: either the row is supported, or it "
+                f"is {CONFIRMED_WORDS[1]}"
             )
 
 
@@ -375,6 +421,7 @@ def main() -> int:
     if not errors:
         check_capability_consumers(parts, errors)
         check_board_capability_gates(parts, errors)
+        check_confirmed_on_droid(parts, errors)
         check_member_keys(categories, errors)
 
     if errors:
@@ -383,12 +430,14 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 1
 
-    supported = sum(1 for row in parts if row[5].strip() == "COMPONENT_STATUS_SUPPORTED")
+    supported = sum(1 for row in parts if row[PART_STATUS].strip() == STATUS_SUPPORTED)
+    confirmed = sum(1 for row in parts if row[PART_CONFIRMED].strip() == CONFIRMED_WORDS[0])
     members = sum(1 for row in categories if unquote(row[3]) is not None)
     print(
         f"Component Registry drift check passed "
         f"({len(categories)} families, {len(parts)} products, "
-        f"{supported} supported, {members} with a Component Member)."
+        f"{supported} supported, {confirmed} confirmed on a droid, "
+        f"{members} with a Component Member)."
     )
     return 0
 

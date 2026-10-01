@@ -212,6 +212,13 @@ void appendPartJson(JsonSliceWriter& writer, const ComponentPartEntry& part) {
     writer.append(",\"status\":");
     writer.appendJsonString(componentStatusToken(part.status));
 
+    // Whether the product has run on a real droid: a project fact like
+    // `status`, and evidence about it rather than a softer value of it
+    // (CONTEXT.md "Confirmed on a Droid", #455). Always present, so a browser
+    // can tell "not yet" from a controller too old to say.
+    writer.append(",\"confirmed_on_droid\":");
+    writer.append(part.confirmedOnDroid ? "true" : "false");
+
     std::snprintf(number, sizeof(number), "%u", (unsigned)part.capabilities);
     writer.append(",\"capabilities\":");
     writer.append(number);
