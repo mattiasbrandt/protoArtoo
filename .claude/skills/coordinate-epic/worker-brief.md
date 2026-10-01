@@ -148,6 +148,10 @@ BOUNDARIES
 - Stop a server you started by its PID, never by name: `pkill -f serve_editor_fixture.py`
   matches every worktree's fixture server, and another worker's browser check
   loses its server mid-run (2026-09-30, twice in one afternoon).
+- A Playwright script you run to completion (an A/B, a regression run, any
+  scripted check) runs HEADLESS: set `HEADLESS=true`. Only a session you drive
+  by hand through the Playwright MCP is headed, and you close it when done
+  (operator, 2026-10-01).
 - Never edit a shared test harness to accommodate the code under test; fix
   the code or report the conflict.
 - If a stated requirement of the ticket cannot be met, STOP and report on

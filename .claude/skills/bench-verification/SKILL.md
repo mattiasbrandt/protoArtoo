@@ -1,6 +1,6 @@
 ---
 name: bench-verification
-description: Plan and run a Bench-Mode verification session for an epic's Closing Ticket - gather the verification points from the epic's sub-issues, draft the replayable Console sheet and the headed Playwright pass, run the automated half with the operator watching along, hand him the hands-on review, and record the evidence and his sign-off. Use when an epic nears closure, when asked to plan, draft or run a bench day or bench rows, or when editing tools/bench_rows/ sheets.
+description: Plan and run a Bench-Mode verification session for an epic's Closing Ticket - gather the verification points from the epic's sub-issues, draft the replayable Console sheet and the Playwright pass, run the automated half headless, hand him the hands-on review, and record the evidence and his sign-off. Use when an epic nears closure, when asked to plan, draft or run a bench day or bench rows, or when editing tools/bench_rows/ sheets.
 ---
 
 # Bench verification
@@ -25,7 +25,7 @@ the cheapest axis and skipped the four the bench exists for.
 | Axis | What it means here | How it is checked |
 |---|---|---|
 | **1. The image is what we think** | `firmwareVersion` matches the intended commit; the filesystem image matches `fs-version.json`; no `-dirty` | Console + HTTP, first rows |
-| **2. UI and UX** | Does it look right, work right and read right - at **desktop width**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Headed Playwright, operator watching** (section 5) |
+| **2. UI and UX** | Does it look right, work right and read right - at **desktop width**, served from the **staged image**. Layout, focus, pointer-events, copy, whether a control is discoverable at all | **Playwright**: scripts headless, an agent's own session headed (section 5) |
 | **3. Performance** | Page load and first paint, whether a surface feels sluggish, SSE under concurrent clients, heap free / min / largest block, per-task stack headroom, fragmentation, admission-floor refusals | `/api/status` and `/api/profiler` rows, Playwright timings, resource-error counts |
 | **4. Regression** | What worked last time still works. Defects this repo has shipped stay fixed | **Replay the existing rows** - see below |
 | **5. API and console behaviour** | Routes answer truthfully, the Console catalog matches its pinned counts, guards and typing hold | Console `send`s |
@@ -59,8 +59,9 @@ close without the third:
 
 1. **Automated - the agents.** Every Console row, HTTP read, Playwright script,
    build and flash (asking before each device session), and the evidence
-   comment. Playwright runs **headed** so the operator can watch along, but
-   nothing in this phase waits on him - see section 5.
+   comment. Every Playwright script runs **headless**; a session an agent drives
+   by hand stays **headed** so he can watch along. Nothing in this phase waits
+   on him - see section 5.
 2. **Hands-on - the operator.** He uses the new UI and functions himself on the
    running board, at desktop width, and takes every deferred live look. The
    agents stand by to capture what he finds and route it (section 7).
@@ -263,24 +264,27 @@ That is what makes a browser or HTTP check replayable instead of a typed session
 Use it for anything the console genuinely cannot reach - and prefer a Playwright
 script over a `pause` whenever one can do the job (section 5).
 
-## 5. The Playwright pass - **headed, and the operator watches**
+## 5. The Playwright pass - scripts headless, an agent's own session headed
 
-> **Standing operator instruction: not headless.** The bench day is a
-> collaboration. He watches the browser to catch what no assertion was written
-> for - something that looks wrong, or that he simply does not like. A headless
-> run answers *"did anything throw"*; a watched run also answers *"is this
-> good"*, and only one of those has a script.
+> **Operator, 2026-09-29, widened 2026-10-01:** a Playwright **script** run to
+> completion for its report is unattended, and its report is what gets read, so
+> it runs **headless** (`HEADLESS=true`). A session an **agent drives by hand**
+> stays **headed**, because the bench day is a collaboration. He watches the
+> browser to catch what no assertion was written for - something that looks
+> wrong, or that he simply does not like. A headless run answers *"did anything
+> throw"*; a watched run also answers *"is this good"*, and only one of those
+> has a script.
 
-So: **give the run a pace a person can follow.** A sweep that blinks through
+So: **give a hand-driven session a pace a person can follow.** A sweep that blinks through
 every surface in twenty seconds is not a session he can take part in; the
 settle time per page is the pace.
 
-**Headed is a window, not a wait.** An agent runs the automated pass headed and
-unattended in phase 1. What must stay out of that run is anything that blocks
+**Headed is a window, not a wait.** An agent's hand-driven session is headed but
+never blocks phase 1. What must stay out of that run is anything that blocks
 on a key: `STEP=1` (Enter between pages) and any `pause` only the operator can
 answer. `STEP=1` is for when he asks to hold on a page, and his own hands-on
-time is phase 2. Never switch a run to headless on the reasoning that he is not
-required to watch - he watches when he wants to.
+time is phase 2. Never switch an agent's hand-driven session to headless on the
+reasoning that he is not required to watch - he watches when he wants to.
 
 **Two required checks, every session:**
 
@@ -290,7 +294,7 @@ required to watch - he watches when he wants to.
    `networkidle` because SSE never closes.
 
    ```bash
-   HEADED=1 BASE=http://<board-ip> node test/playwright/console-sweep.js
+   BASE=http://<board-ip> node test/playwright/console-sweep.js   # headless
    ```
 
    **Before trusting it, check its `PAGES` list against `data/*.html`.** It goes
@@ -321,8 +325,8 @@ open on the real controller:**
   is still open on it** - that is the difference between a finding and a memory.
 
 **Close the browser as the last step of every run** - including a run that found
-nothing and a run you abandoned. Headed means every browser is a real window left
-on his desktop. `.claude/skills/playwright/SKILL.md` carries the full shutdown
+nothing and a run you abandoned. A headed session is a real window left on his
+desktop. `.claude/skills/playwright/SKILL.md` carries the full shutdown
 protocol.
 
 ## 6. Running the session

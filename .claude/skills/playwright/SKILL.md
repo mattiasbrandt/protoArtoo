@@ -54,8 +54,11 @@ Execution pattern (required):
 4. Re-snapshot and verify state change.
 
 Defaults:
-- Headed mode is required by default so interactions remain visible.
-- Use headless mode only when explicitly requested.
+- **Headless or headed is decided by who is driving (operator, 2026-09-29, widened 2026-10-01).**
+  A Playwright script run to completion for its report - `make bench-auto`, a worker's A/B or
+  regression run, any scripted check nobody steps through - runs **headless** (`HEADLESS=true`).
+  Only a session an agent drives interactively through the Playwright MCP stays **headed**, so
+  the operator can watch along when he wants to; close it as the last step (Shutdown protocol).
 - Use desktop-first validation expectations with runtime default viewport.
 - Do not run tablet/mobile viewport checks unless explicitly requested.
 
