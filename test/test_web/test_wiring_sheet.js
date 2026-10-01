@@ -14,7 +14,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
-const { readFileSync } = require("node:fs");
+const { existsSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 const dataDir = join(__dirname, "../../data");
@@ -77,6 +77,14 @@ const lineup = (running = "artoo_pcb", extra = []) => ({
   ],
 });
 
+// The page as a build stages it: its product wiring cards inlined from the
+// build's asset set, else from the common data root, the order
+// tools/gzip_fsdata.py resolves a partial in (ADR 0065). The legacy set
+// carries none, so its page gets the common root's empty partial.
+const stagedPage = (name, assetSet) =>
+  readData(name).replace(/<!--\s*PA:INCLUDE\s+(_wiring_cards\.html)\s*-->/, (_directive, partial) =>
+    readData(existsSync(join(dataDir, "asset-sets", assetSet, partial)) ? join("asset-sets", assetSet, partial) : partial));
+
 const boot = async ({
   outputs = freshOutputs(),
   say = {},
@@ -84,6 +92,7 @@ const boot = async ({
   manifest = identity(),
   running = "artoo_pcb",
   products = [],
+  assetSet = "legacy",
 } = {}) => {
   outputs = rowsSaying(outputs, say);
   // GET /api/config carries the lanes' toggles and no Output (ADR 0068).
@@ -160,7 +169,7 @@ const boot = async ({
           return { data: { components: structuredClone(env.components) } };
         }
         if (path === "/api/identity/components") return { data: lineup(running, products) };
-        if (path.endsWith(".html")) return { data: readData(path.slice(1)) };
+        if (path.endsWith(".html")) return { data: stagedPage(path.slice(1), assetSet) };
         throw new Error(`unexpected request ${path}`);
       },
       // Wiring writes nothing, so every write door records the attempt and
@@ -613,4 +622,49 @@ test("a fitted part the droid cannot hear from is never read as contradicting yo
   env.document.getElementById("wiring-save").fire("click", {});
   const saved = await [...env.files.values()].at(-1).text();
   assert.ok(!/No answer|lineup/.test(saved), "the saved sheet carries no live reading");
+});
+
+// How to wire and power a product is on Wiring only for a product that is on
+// the droid, and the pins beside it are the running board's (#458). A card is
+// per product and pins are per board, so a pin that came from card text would
+// be right on one board and wrong on the next: the lane here is one no card
+// could know. The saved sheet ends with the same cards, from the same
+// generator. A family answered Not fitted has no card, and an image built
+// without the cards - the legacy asset set - has no such section at all, on
+// the screen or in the file, for the very same droid (ADR 0065).
+test("a product's wiring card follows the droid's own answers, and an image without the cards has no such section", async () => {
+  const sound = { id: "dy_sv5w", name: "DY-SV5W", category: "sound", status: "supported", included: true };
+  const droid = (enabled) => ({
+    manifest: identity({ ...LANES, audio: { uart: 3, tx: 41, rx: 42 } }),
+    lanes: { audio: { enabled, label: "ROW 41/42", member: "dy_sv5w" } },
+    products: [sound],
+  });
+  const read = async (env) => {
+    env.document.getElementById("wiring-save").fire("click", {});
+    return {
+      cards: env.document.querySelectorAll(".wcard").map((card) => card.dataset.product),
+      plate: env.document.getElementById("wiring-products-card"),
+      saved: await [...env.files.values()].at(-1).text(),
+    };
+  };
+
+  const fitted = await boot({ ...droid(true), assetSet: "default" });
+  const shown = await read(fitted);
+  assert.deepEqual(shown.cards, ["dy_sv5w"]);
+  assert.equal(shown.plate.classList.contains("hidden"), false);
+  const pins = fitted.document.querySelector(".wcard-pins").textContent;
+  assert.match(pins, /ROW 41\/42/, "the label the running board prints for the lane");
+  assert.match(pins, /TX 41 \/ RX 42/, "and where the firmware routes it");
+  assert.match(shown.saved, /data-product="dy_sv5w"/, "the saved sheet carries the same card");
+  assert.match(shown.saved, /TX 41 \/ RX 42/);
+
+  const declined = await read(await boot({ ...droid(false), assetSet: "default" }));
+  assert.deepEqual(declined.cards, [], "sound answered Not fitted has no card");
+  assert.equal(declined.plate.classList.contains("hidden"), true, "and with no card the plate is not shown");
+  assert.doesNotMatch(declined.saved, /Product wiring|data-product/);
+
+  const without = await read(await boot({ ...droid(true), assetSet: "legacy" }));
+  assert.deepEqual(without.cards, []);
+  assert.equal(without.plate, null, "the page has no plate for them, hidden or otherwise");
+  assert.doesNotMatch(without.saved, /Product wiring|data-product/);
 });
