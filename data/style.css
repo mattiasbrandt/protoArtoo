@@ -175,10 +175,10 @@
   /* The Sequences timeline's lane-name column (data/seq_timeline.js): the one
      place its width is written, so nothing else repeats the number. */
   --tl-lane-w: 200px;
-  /* How far in from a block's end the timeline's resize grip reaches. The
-     script hit-tests with this number and sets it on the grid it draws
-     (EDGE_PX, data/seq_timeline.js), so the grip and the press agree; this
-     is its declaration. */
+  /* How far in from a block's end the timeline's resize grip reaches: the
+     one place it is written. The script reads it from here to decide whether
+     a press took the edge (data/seq_timeline.js), so the grip and the press
+     cannot disagree. */
   --tl-grip: 8px;
 
   /* Type, by job. Each step carries the job it does, so a new surface picks a
@@ -6725,8 +6725,8 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* Editing (#441): a block the builder can take hold of. The script marks
    each one in data-edit - can-move, can-size-l, can-size-r, is-selected - and
-   decides body or edge with the same number the grips are drawn at, --tl-grip,
-   which it sets on the grid. */
+   decides body or edge by the width the grips are drawn at, --tl-grip, which
+   it reads from :root. */
 .tl-loop-mode[hidden] {
   display: none;
 }

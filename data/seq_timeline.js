@@ -66,10 +66,6 @@
   // or end to land on it. A time, not a pixel count (ADR 0060): the same drag
   // lands the same way however long the routine on screen is.
   const SNAP_MS = 100;
-  // How far in from a block's end a press takes the edge rather than the body.
-  // The grip the stylesheet draws reads the same number (--tl-grip), and a
-  // block too narrow for two grips and a body gives each a third.
-  const EDGE_PX = 8;
   // What a drag will not go past. Protocol Check has the rules; these only
   // keep a block on the timeline and wide enough to take hold of again.
   const STEP_T_MAX_MS = 120000;
@@ -605,7 +601,7 @@
         : "") +
       (edit
         ? `<button type="button" class="seq-act" data-tl-act="remove" disabled>Remove</button>`
-        : `<button type="button" class="seq-act" data-tl-act="cards">${esc(options.cardsLabel || "Edit steps")}</button>` +
+        : `<button type="button" class="seq-act" data-tl-act="cards">${esc(options.cardsLabel)}</button>` +
           `<button type="button" class="seq-act" data-tl-act="close">Close</button>`) +
       `</span></div>`;
     host.innerHTML =
@@ -683,7 +679,7 @@
         : "";
       // At least this many pixels a second, so a long routine scrolls rather
       // than crushing its blocks together.
-      grid.setAttribute("style", `--tl-grip:${EDGE_PX}px;min-width:calc(var(--tl-lane-w) + ${Math.round((windowMs / 1000) * PX_PER_SECOND)}px)`);
+      grid.setAttribute("style", `min-width:calc(var(--tl-lane-w) + ${Math.round((windowMs / 1000) * PX_PER_SECOND)}px)`);
       grid.innerHTML =
         `<div class="tl-row tl-ruler-row"><div class="tl-name">Time</div>` +
         `<div class="tl-track tl-ruler" role="slider" tabindex="0" aria-label="Moment" ` +
@@ -1001,9 +997,15 @@
         if (!isEnd) own.forEach((step) => selection.add(step));
       }
 
-      // Body or edge, decided once, here.
+      // Body or edge, decided once, here. How far in from a block's end a
+      // press takes the edge is the width the stylesheet draws the grip at,
+      // --tl-grip, read from it rather than written a second time; a block
+      // too narrow for two grips and a body gives each a third, as the
+      // stylesheet does. With no stylesheet there is no grip, and no edge.
       const rect = node.getBoundingClientRect();
-      const grip = Math.min(EDGE_PX, rect.width / 3);
+      const drawnGrip = typeof window.getComputedStyle === "function"
+        ? parseFloat(window.getComputedStyle(grid).getPropertyValue("--tl-grip")) : NaN;
+      const grip = Math.min(Number.isFinite(drawnGrip) ? drawnGrip : 0, rect.width / 3);
       const edge = isEnd || item.kind === "tick" ? null
         : item.l && event.clientX - rect.left < grip ? "l"
         : item.r && rect.right - event.clientX < grip ? "r" : null;

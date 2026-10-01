@@ -334,7 +334,7 @@
   // the same move the Page Recovery View makes (data/page_bootstrap.js,
   // holdSurfacesInert).
   //
-  // The surface's OTHER top-level nodes rather than the surface itself: both
+  // The surface's OTHER top-level nodes rather than the surface itself: the
   // dialogs are children of it, and inert is inherited, so a descendant
   // cannot opt back in.
   // =========================================================================
@@ -370,7 +370,7 @@
   const hideModal = (modal) => {
     if (!modal) return;
     modal.classList.add("hidden");
-    // The other dialog may still be up; the surface comes back only when the
+    // Another dialog may still be up; the surface comes back only when the
     // last one closes.
     if (anotherDialogIsOpen(modal)) return;
     surfaceBehind(modal).forEach((node) => {
