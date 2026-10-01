@@ -19,7 +19,7 @@
     <!-- The title is the name in the nav (ADR 0066). Restoring a backup is the one act that belongs beside the title rather than
          beside a row: it puts a sequence on the droid that is not on the list
          yet, so there is no row for it to sit next to. -->
-    <div class="title">
+    <div id="seq-title" class="title">
       <div>
         <h1>Sequences</h1>
       </div>
@@ -28,8 +28,11 @@
       </div>
     </div>
 
+    <!-- The list, its own view: every sequence on the droid in one table, the
+         builder's own first. It gives way to the workspace while a sequence
+         is open (data/seq.js renderListView()). -->
     <div id="seq-main-card" class="card">
-      <div class="sect"><h2>Learned sequences</h2><span class="sub waiting" id="seq-capacity-display" role="status" aria-live="polite"></span></div>
+      <div class="sect"><h2>On this droid</h2><span class="sub waiting" id="seq-count-display" role="status" aria-live="polite"></span></div>
 
       <!-- Empty state: what is empty, why, and the act that ends it. -->
       <div id="seq-empty-state" class="seq-empty-state hidden">
@@ -42,8 +45,13 @@
 
       <!-- Populated state: the list (hidden until there is something on it) -->
       <div id="seq-populated-state" class="hidden">
-        <div id="seq-cards-container" class="seq-cards-list">
-          <!-- seq-card elements inserted here -->
+        <span id="seq-filter" class="seg seg-sm seq-filter" role="group" aria-label="Which sequences are listed">
+          <button type="button" data-value="all" aria-pressed="true">All</button>
+          <button type="button" data-value="yours" aria-pressed="false">Yours</button>
+          <button type="button" data-value="factory" aria-pressed="false">Factory</button>
+        </span>
+        <div id="seq-cards-container">
+          <!-- the table of sequences, written by data/seq.js -->
         </div>
       </div>
     </div>
@@ -72,19 +80,20 @@
           <div id="seq-import-feedback" class="feedback hidden"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-import-cancel" class="btn" type="button">Cancel</button>
-          <button id="seq-modal-import-confirm" class="btn accent" type="button" disabled>Restore and edit</button>
+          <button id="seq-modal-import-cancel" class="btn btn-sm" type="button">Cancel</button>
+          <button id="seq-modal-import-confirm" class="btn btn-sm accent" type="button" disabled>Restore and edit</button>
         </div>
       </div>
     </div>
 
-    <!-- Editor view (written by seq.js when a sequence is opened) -->
+    <!-- The workspace (written by seq.js when a sequence is opened to edit):
+         a strip, the stage with the timeline and the droid, and the drawer -->
     <div id="seq-editor-view" class="hidden">
       <!-- Editor content loaded here by seq.js -->
     </div>
 
-    <!-- Timeline view (written by data/seq_timeline.js when a sequence is
-         opened as a timeline) -->
+    <!-- A Factory sequence's stage, read-only (written by seq.js; the timeline
+         in it by data/seq_timeline.js) -->
     <div id="seq-timeline-view" class="hidden"></div>
 
     <!-- Discard dialog: asked before an unsaved edit is dropped, by whichever
@@ -99,8 +108,8 @@
           <p class="prose" id="seq-discard-what"></p>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-discard-keep" class="btn" type="button">Keep editing</button>
-          <button id="seq-modal-discard-confirm" class="btn danger" type="button">Discard edits</button>
+          <button id="seq-modal-discard-keep" class="btn btn-sm" type="button">Keep editing</button>
+          <button id="seq-modal-discard-confirm" class="btn btn-sm danger" type="button">Discard edits</button>
         </div>
       </div>
     </div>
@@ -128,8 +137,8 @@
           <div id="seq-wipe-dangling-info" class="seq-wipe-dangling-info hidden"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-wipe-cancel" class="btn" type="button">Cancel</button>
-          <button id="seq-modal-wipe-confirm" class="btn danger" type="button" disabled>Wipe it</button>
+          <button id="seq-modal-wipe-cancel" class="btn btn-sm" type="button">Cancel</button>
+          <button id="seq-modal-wipe-confirm" class="btn btn-sm danger" type="button" disabled>Wipe it</button>
         </div>
       </div>
     </div>

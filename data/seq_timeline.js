@@ -14,6 +14,12 @@
 // -- a name and an instant -- and the firmware works out and paces the pose
 // itself (POST /api/seq/pose, include/sequence_pose.h).
 //
+// IT DRAWS INTO THE CALLER'S STAGE (#441, variant C). The caller owns the page
+// around it and hands over three places: the bar over the routine (the moment
+// and the pose press), the column the lanes are drawn in, and the side where
+// the droid is shown at the marker. The same three serve the editor and a
+// Factory sequence's read-only stage.
+//
 // IT EDITS ONLY WHEN IT IS HANDED `edit` (#441, ADR 0057). Without it the view
 // is read-only, as a Factory sequence is shown. With it a block is moved by
 // dragging its body and made longer or shorter by dragging an edge, on the
@@ -472,21 +478,21 @@
   };
 
   // ---------------------------------------------------------------------------
-  // unwired() -- the Parts this routine names that nothing on this droid can
-  // move: a body Part no Output claims, and a dome Part while the dome link is
-  // switched off. Nothing is said about a half the droid has not reported.
+  // notWired() -- whether nothing on this droid can move a Part: a body Part no
+  // Output claims, and a dome Part while the dome link is switched off. Nothing
+  // is said about a half the droid has not reported. The one rule, for a lane
+  // here and for the Parts list beside the routine (data/seq.js).
+  //
+  // unwired() -- the Parts this routine names that it holds for.
   // ---------------------------------------------------------------------------
-  const unwired = (model, context = {}) => {
-    const outputs = Array.isArray(context.outputs) ? context.outputs : null;
-    const domeOff = context.config?.components?.protoR2link?.enabled === false;
-    return model.parts
-      .filter((lane) => {
-        if (lane.half === "dome") return domeOff;
-        if (!outputs) return false;
-        return !outputs.some((output) => Array.isArray(output.parts) && output.parts.includes(lane.part));
-      })
-      .map((lane) => lane.part);
+  const notWired = (partId, half, context = {}) => {
+    if (half === "dome") return context.config?.components?.protoR2link?.enabled === false;
+    if (!Array.isArray(context.outputs)) return false;
+    return !context.outputs.some((output) => Array.isArray(output.parts) && output.parts.includes(partId));
   };
+
+  const unwired = (model, context = {}) =>
+    model.parts.filter((lane) => notWired(lane.part, lane.half, context)).map((lane) => lane.part);
 
   // ---------------------------------------------------------------------------
   // The view
@@ -536,14 +542,19 @@
   };
 
   const laneHtml = (lane, windowMs, authored, dim, handleOf = () => "") =>
-    `<div class="tl-row${dim ? " is-unwired" : ""}" data-lane="${esc(lane.key)}">` +
+    `<div class="tl-row${dim ? " is-unwired" : ""}${lane.part ? "" : " is-kind"}" data-lane="${esc(lane.key)}">` +
     `<div class="tl-name">${lane.short ? `<span class="tl-short">${esc(lane.short)}</span>` : ""}` +
     `<span class="tl-part">${esc(lane.name)}</span></div>` +
-    `<div class="tl-track">${lane.items.map((item) => itemHtml(item, windowMs, authored, handleOf(item))).join("")}</div>` +
+    `<div class="tl-track">${lane.items.map((item) => itemHtml(item, windowMs, authored, handleOf(item, lane))).join("")}</div>` +
     `</div>`;
 
   // ---------------------------------------------------------------------------
-  // mount() -- draw a sequence as a timeline into `host`.
+  // mount() -- draw a sequence as a timeline into the caller's stage.
+  //
+  // `hosts` is the three places the caller gives it: `bar` (the moment, the
+  // pose press and what the droid answered), `lanes` (the note about Parts
+  // this droid cannot move, and the routine itself) and `side` (the droid at
+  // the marker, and what the routine has commanded by then).
   //
   // `source` is the sequence, or a function that returns it. An editor passes
   // the function, so the view always reads the object being edited and never
@@ -558,18 +569,20 @@
   //             called with it in ms, and returns a promise of {text, level}
   //             to show beside the press. Absent, there is no press.
   //   edit      the editor's half of an edit; with it the blocks can be taken
-  //             hold of, and the view draws inside the editor's own card
-  //             rather than as a card of its own:
+  //             hold of:
   //               begin()         the copy of the routine a gesture starts from
   //               commit(before)  a gesture changed the routine: put the steps
   //                               in order, record it, and read it all again
   //               remove(indices) take these steps out of the routine
-  //   cardsLabel, onCards, onClose   the read-only view's own way out: the
-  //             words on the button back to the card view, and the two presses
+  //   onPicked  the blocks the builder has picked, said again whenever the
+  //             routine is drawn: called with picked() and, on the press that
+  //             picked one, `true`. The caller shows them; this view only
+  //             knows which they are.
   //
-  // Returns {refresh(context), at(), dragging(), destroy()}.
+  // Returns {refresh(context), at(), dragging(), cancel(), picked(),
+  // movePickedTo(ms), removePicked(), destroy()}.
   // ---------------------------------------------------------------------------
-  const mount = (host, source, options = {}) => {
+  const mount = (hosts, source, options = {}) => {
     const seqNow = typeof source === "function" ? source : () => source;
     const edit = options.edit || null;
     let context = { ...(options.context || {}), describe: options.describe };
@@ -583,46 +596,39 @@
     // What the editing view holds between presses. `selection` is the steps
     // themselves rather than their indices, so it survives the editor putting
     // them in a new order and empties by itself when an undo replaces them.
-    // `drawn` is every item on screen, in the order it was written, which is
-    // how a press finds the item under it. `drag` is the gesture under way.
+    // `drawn` is every item on screen that can be taken hold of, with the lane
+    // it is drawn on, in the order it was written: how a press finds the item
+    // under it, and how the picked blocks are named. `drag` is the gesture
+    // under way.
     const selection = new Set();
     let drawn = [];
     let drag = null;
 
-    const bar =
-      `<div class="tl-bar">` +
-      `<div class="seg tl-loop-mode" role="group" aria-label="How a loop is drawn" hidden>` +
-      `<button type="button" data-tl-loop="authored" aria-pressed="true">As written</button>` +
-      `<button type="button" data-tl-loop="expanded" aria-pressed="false">Expanded</button></div>` +
+    // The pose press is a quiet act: the one filled act on this surface is
+    // Save, and this press moves the droid, which nothing here does by itself.
+    hosts.bar.innerHTML =
       `<span class="tl-now" role="status" aria-live="polite"></span>` +
-      `<span class="tl-acts">` +
       (typeof options.onPose === "function"
-        ? `<button type="button" class="btn btn-sm accent" data-tl-act="pose">Move the droid to this moment</button>`
+        ? `<button type="button" class="seq-act" data-tl-act="pose">Move the droid to this moment</button>`
         : "") +
-      (edit
-        ? `<button type="button" class="seq-act" data-tl-act="remove" disabled>Remove</button>`
-        : `<button type="button" class="seq-act" data-tl-act="cards">${esc(options.cardsLabel)}</button>` +
-          `<button type="button" class="seq-act" data-tl-act="close">Close</button>`) +
-      `</span></div>`;
-    host.innerHTML =
-      (edit
-        ? `<div class="tl-view">`
-        : `<div class="card tl-view"><div class="sect"><h2>Timeline</h2><span class="sub">${esc(model.name)} &middot; ${esc(seconds(model.endMs))}</span></div>`) +
-      bar +
-      `<p class="hint tl-said" role="status" aria-live="polite" hidden></p>` +
+      `<span class="hint tl-said" role="status" aria-live="polite" hidden></span>` +
+      `<div class="seg seg-sm tl-loop-mode" role="group" aria-label="How a loop is drawn" hidden>` +
+      `<button type="button" data-tl-loop="authored" aria-pressed="true">As written</button>` +
+      `<button type="button" data-tl-loop="expanded" aria-pressed="false">Expanded</button></div>`;
+    hosts.lanes.innerHTML =
       `<p class="note note-act tl-unwired" hidden></p>` +
-      `<div class="tl-stage">` +
-      `<div class="tl-scroll"><div class="tl-grid"${edit ? ` tabindex="0" role="group" aria-label="The routine's blocks"` : ""}></div></div>` +
-      `<div class="tl-side"><div class="tl-picture"></div><dl class="tl-readout"></dl></div>` +
-      `</div></div>`;
+      `<div class="tl-scroll"><div class="tl-grid"${edit ? ` tabindex="0" role="group" aria-label="The routine's blocks"` : ""}></div></div>`;
+    hosts.side.innerHTML =
+      `<div class="sect"><h3>The droid</h3><span class="sub tl-at"></span></div>` +
+      `<div class="tl-picture"></div><dl class="tl-readout"></dl>`;
 
-    const grid = host.querySelector(".tl-grid");
-    const now = host.querySelector(".tl-now");
-    const readout = host.querySelector(".tl-readout");
-    const unwiredNote = host.querySelector(".tl-unwired");
-    const pictureHost = host.querySelector(".tl-picture");
-    const loopMode = host.querySelector(".tl-loop-mode");
-    const removeButton = host.querySelector('[data-tl-act="remove"]');
+    const grid = hosts.lanes.querySelector(".tl-grid");
+    const now = hosts.bar.querySelector(".tl-now");
+    const atSub = hosts.side.querySelector(".tl-at");
+    const readout = hosts.side.querySelector(".tl-readout");
+    const unwiredNote = hosts.lanes.querySelector(".tl-unwired");
+    const pictureHost = hosts.side.querySelector(".tl-picture");
+    const loopMode = hosts.bar.querySelector(".tl-loop-mode");
 
     // The droid picture, in its "a moment of the routine" state (ADR 0063).
     // A click on it selects nothing here: this view has no acts on a Part.
@@ -659,14 +665,48 @@
       const steps = seqNow().steps;
       return item.steps.every((index) => selection.has(steps[index]));
     };
-    const handleOf = (item) => {
+    const handleOf = (item, lane) => {
       if (!editing() || !item.steps) return "";
-      drawn.push(item);
+      drawn.push({ item, lane });
       const sized = item.kind === "tick" ? "" : `${item.l ? " can-size-l" : ""}${item.r ? " can-size-r" : ""}`;
       return ` data-item="${drawn.length - 1}" data-edit="can-move${sized}${selected(item) ? " is-selected" : ""}"`;
     };
 
-    const paintLanes = () => {
+    // The blocks the builder has picked, as the routine wrote them. One step
+    // can draw several items - a Part standing open is drawn over the mark of
+    // the command that opened it - so an item whose steps are all inside
+    // another picked item's is that block's own detail, not a second block.
+    // Each is {steps, t0, name, words}: the indices of its steps, where it
+    // starts, the lane it is on when it is on one Part's lane and nowhere
+    // else, and the step's own words.
+    const picked = () => {
+      const blocks = new Map();
+      drawn.forEach(({ item, lane }) => {
+        if (!selected(item)) return;
+        const key = item.steps.join(",");
+        const block = blocks.get(key) || { steps: item.steps, t0: item.t0, lanes: new Set(), part: true, words: "" };
+        block.t0 = Math.min(block.t0, item.t0);
+        block.lanes.add(lane.name);
+        block.part = block.part && Boolean(lane.part);
+        block.words = block.words || item.label || "";
+        blocks.set(key, block);
+      });
+      const all = [...blocks.values()];
+      const within = (block, other) =>
+        other !== block && other.steps.length > block.steps.length && block.steps.every((index) => other.steps.includes(index));
+      return all
+        .filter((block) => !all.some((other) => within(block, other)))
+        .map((block) => ({
+          steps: block.steps,
+          t0: block.t0,
+          name: block.part && block.lanes.size === 1 ? [...block.lanes][0] : "",
+          // A Part standing open has no words of its own: it takes those of
+          // the command that opened it.
+          words: block.words || all.find((detail) => within(detail, block) && detail.words)?.words || "",
+        }));
+    };
+
+    const paintLanes = (pressed = false) => {
       drawn = [];
       const hasLoop = model.loops.length > 0;
       loopMode.hidden = !hasLoop;
@@ -695,10 +735,7 @@
       marker = grid.querySelector(".tl-marker");
       ruler.addEventListener("pointerdown", scrubStart);
       ruler.addEventListener("keydown", onKey);
-      if (removeButton) {
-        removeButton.disabled = !editing() || selection.size === 0;
-        removeButton.textContent = selection.size > 1 ? `Remove ${selection.size} steps` : "Remove";
-      }
+      if (typeof options.onPicked === "function") options.onPicked(picked(), pressed);
     };
 
     const paintReadout = () => {
@@ -742,6 +779,7 @@
         ruler.setAttribute("aria-valuetext", seconds(t));
       }
       now.textContent = seconds(t);
+      atSub.textContent = `at ${seconds(t)}`;
       paintReadout();
     };
 
@@ -972,7 +1010,7 @@
       const steps = seqNow().steps;
       const item = isEnd
         ? (model.end === -1 ? null : { kind: "tick", t0: model.endMs, t1: model.endMs, steps: [model.end] })
-        : node && node.dataset.item !== undefined ? drawn[Number(node.dataset.item)] : null;
+        : node && node.dataset.item !== undefined ? drawn[Number(node.dataset.item)].item : null;
       if (!item) {
         clearSelection();
         return;
@@ -988,7 +1026,7 @@
       const held = own.every((step) => selection.has(step));
       if (!isEnd && (event.shiftKey || event.ctrlKey || event.metaKey)) {
         own.forEach((step) => (held ? selection.delete(step) : selection.add(step)));
-        paintLanes();
+        paintLanes(true);
         setMarker(t);
         return;
       }
@@ -1032,9 +1070,23 @@
       window.addEventListener("pointermove", dragMove);
       window.addEventListener("pointerup", dragEnd);
       window.addEventListener("pointercancel", dragCancel);
-      paintLanes();
+      paintLanes(!isEnd);
       setMarker(t);
     }
+
+    // Typed rather than dragged: the picked blocks start at `ms`, moved as a
+    // drag of their bodies moves them, as far as their limits allow, and it is
+    // one edit.
+    const movePickedTo = (ms) => {
+      const blocks = picked();
+      if (drag || blocks.length === 0 || !Number.isFinite(ms)) return;
+      const plan = planFor(null, null);
+      const [lo, hi] = reach(plan);
+      const by = Math.max(lo, Math.min(hi, Math.round(ms) - Math.min(...blocks.map((block) => block.t0))));
+      const before = edit.begin();
+      apply(plan, by);
+      edit.commit(before);
+    };
 
     const removeSelected = () => {
       const steps = seqNow().steps;
@@ -1080,7 +1132,7 @@
 
     // The pose press: one press, one request, at the marker's instant as it is
     // when pressed. The answer -- under way, or why not -- is said beside it.
-    const said = host.querySelector(".tl-said");
+    const said = hosts.bar.querySelector(".tl-said");
     const pose = (button) => {
       const at = t;
       button.disabled = true;
@@ -1095,27 +1147,21 @@
         });
     };
 
-    host.querySelector(".tl-bar").addEventListener("click", (event) => {
+    const barClick = (event) => {
       const target = event.target && event.target.closest ? event.target : null;
       const loopButton = target ? target.closest("[data-tl-loop]") : null;
       if (loopButton) {
         authored = loopButton.dataset.tlLoop === "authored";
-        host.querySelectorAll("[data-tl-loop]").forEach((button) =>
+        hosts.bar.querySelectorAll("[data-tl-loop]").forEach((button) =>
           button.setAttribute("aria-pressed", String((button.dataset.tlLoop === "authored") === authored)));
         paintLanes();
         setMarker(t);
         return;
       }
       const act = target ? target.closest("[data-tl-act]") : null;
-      if (!act) return;
-      if (act.dataset.tlAct === "pose") {
-        pose(act);
-        return;
-      }
-      if (act.dataset.tlAct === "remove") removeSelected();
-      if (act.dataset.tlAct === "cards" && typeof options.onCards === "function") options.onCards();
-      if (act.dataset.tlAct === "close" && typeof options.onClose === "function") options.onClose();
-    });
+      if (act && act.dataset.tlAct === "pose") pose(act);
+    };
+    hosts.bar.addEventListener("click", barClick);
 
     paintUnwired();
     paintLanes();
@@ -1133,13 +1179,22 @@
       // A drag is under way: its half-made writes are in the routine and not
       // yet in the history, so the editor must not undo or redo under it.
       dragging: () => drag !== null,
+      // The lanes are about to go out of sight with the view still mounted:
+      // a drag under way is abandoned, as a pointercancel abandons it.
+      cancel: () => dragCancel(),
+      picked,
+      movePickedTo,
+      removePicked: removeSelected,
       destroy() {
         scrubEnd();
         dragAbandon();
-        host.innerHTML = "";
+        hosts.bar.removeEventListener("click", barClick);
+        [hosts.bar, hosts.lanes, hosts.side].forEach((host) => {
+          host.innerHTML = "";
+        });
       },
     };
   };
 
-  window.SeqTimeline = Object.freeze({ build, poseAt, unwired, mount });
+  window.SeqTimeline = Object.freeze({ build, poseAt, unwired, notWired, mount, NUDGE_MS, NUDGE_BIG_MS });
 })();

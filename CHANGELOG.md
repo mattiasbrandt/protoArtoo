@@ -26,13 +26,21 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
-- **Edit a sequence on its timeline.** Open your own sequence and switch
-  from Steps to Timeline: drag a block to move it, drag its edge to make it
-  longer or shorter, drag the end line to give the routine more room. A block
-  that comes close to another block's edge lands on it. Every edit, on the
+- **Edit a sequence on its timeline.** Edit opens your sequence on its
+  timeline: drag a block to move it, drag its edge to make it longer or
+  shorter, drag the end line to give the routine more room. A block that
+  comes close to another block's edge lands on it. Every edit, on the
   timeline or in the step list, is one Undo and one Redo, and Revert still
   takes the whole sequence back to how it was saved. Leave with edits unsaved
   and the page asks before it drops them.
+- **Sequences is one list and one workspace.** Every sequence on the droid is
+  a row in one table, yours first, and you can show only yours or only the
+  factory's. Edit opens the workspace in its place: Save, Undo and the test
+  run on a strip across the top, the tempo on the timeline's ruler, the droid
+  beside it at the moment the marker is on, and one drawer underneath for the
+  block you picked, the parts, the sequence's own settings and the Rehearsal.
+  A factory sequence's Timeline opens the same view to look at, with Tune as
+  the way to make it yours.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring ends with a card for each product on the droid: its supply, its
   draw, its logic level, where each wire goes, and what breaks hardware. Fit

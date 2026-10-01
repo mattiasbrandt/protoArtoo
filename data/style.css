@@ -5307,29 +5307,13 @@ body[data-page="maintenance"] .status-item .hint {
    Learned Sequence Editor (seq.html)
    ========================================================================= */
 
-/* The label over a run of sequence cards - "Your sequences", "Factory
-   sequences". It had no rule anywhere in this stylesheet, so both headings
-   rendered at the browser's own h3 size on a surface whose section heads are
-   11 px mono. The same treatment Sound's group labels take. */
-.seq-section-heading {
-  margin: var(--space-xl) 0 var(--space-md);
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sect);
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.seq-section-heading:first-child {
-  margin-top: 0;
-}
-
-/* A list that has not answered yet holds its place with the waiting dots,
-   spaced like the line that says it is empty. */
+/* What a group of the list has to say for itself - that it has not answered
+   yet (the waiting dots), that it is empty, that the droid is over its cap -
+   on one line under the group's name. */
 .seq-section-empty,
-.seq-section-waiting {
-  margin-bottom: var(--space-lg);
+.seq-section-waiting,
+.seq-over-cap {
+  margin: 0;
 }
 
 /* Empty state: what is empty, why, and the act that ends it. The tick above it
@@ -5363,46 +5347,154 @@ body[data-page="maintenance"] .status-item .hint {
   min-width: 160px;
 }
 
-/* The lists, as setting rows (operator, 2026-10-01): one row per sequence -
-   its name, what it is, and its acts as quiet words - divided by seams, in
-   place of a plate per sequence with a row of boxed buttons on it. */
-.seq-cards-list {
-  display: grid;
+/* The list, its own view (#441, variant C): every sequence on the droid in
+   one table - the builder's own first, then the factory's - a row each, with
+   its acts as quiet words at the row's end. A sequence is a row group: its
+   row, and under it the line it answers a test on. */
+.seq-filter {
+  margin-bottom: var(--space-md);
 }
 
-.seq-card {
-  display: grid;
-  grid-template-columns: minmax(180px, 260px) minmax(260px, 1fr) minmax(0, max-content);
-  align-items: center;
-  gap: var(--space-2xs) var(--space-xl);
-  min-height: var(--row);
-  padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--border);
+.seq-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: var(--fs-cell);
 }
 
-.seq-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  min-width: 0;
+.seq-table thead th {
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sect);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* A group's own row: its name, and its count at the far end. */
+.seq-group th {
+  padding: var(--space-lg) var(--space-sm) var(--space-2xs);
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.seq-group-count {
+  float: right;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+.seq-group-said td {
+  padding: var(--space-sm);
+}
+
+.seq-item {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.seq-item th,
+.seq-item td {
+  padding: var(--space-sm);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* The name column is as wide as its longest name, so what a sequence does
+   takes the room. */
+.seq-item th {
+  width: 1%;
+  white-space: nowrap;
 }
 
 /* The sequence's own name, in ink and at the row's size: a name on a list,
    never the interaction blue (CONTEXT.md "Status Color"). */
-.seq-card-header h4 {
-  margin: 0;
+.seq-name {
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-cell);
   font-weight: 600;
-  word-break: break-word;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.seq-badges {
-  display: flex;
-  gap: var(--space-2xs);
-  flex-wrap: wrap;
+.seq-item .seq-badge {
+  margin-left: var(--space-sm);
+}
+
+.seq-purpose {
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* A provenance or a count beside the thing it is about: when it was saved,
+   which interrupt group it is in, how many steps it has. */
+.seq-meta {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.seq-table .seq-count-cell {
+  width: 1%;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.seq-table .seq-item-acts {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.seq-acts {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2xs) var(--space-md);
+}
+
+/* The acts a row needs less often, behind its More. */
+.seq-item-more {
+  display: inline-flex;
+  gap: var(--space-md);
+  padding-left: var(--space-md);
+  border-left: 1px solid var(--border);
+}
+
+.seq-disclose .chev {
+  transition: transform 0.15s ease;
+}
+
+.seq-disclose[aria-expanded="true"] .chev {
+  transform: rotate(90deg);
+}
+
+/* What a row says back - a test's outcome, its Rehearsal - under it, and no
+   room taken while it has nothing to say. */
+.seq-item .seq-item-said td {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.seq-item-feedback,
+.seq-item-rehearsal:not(:empty) {
+  padding-bottom: var(--space-sm);
 }
 
 /* A badge names a KIND OF THING - retrained, factory - and takes no color at
@@ -5425,43 +5517,6 @@ body[data-page="maintenance"] .status-item .hint {
 .seq-badge-invalid {
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
-}
-
-.seq-card-body {
-  min-width: 0;
-}
-
-.seq-card-purpose {
-  margin: 0 0 2px;
-  color: var(--text-dim);
-  font-size: var(--fs-cell);
-}
-
-.seq-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-md);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  color: var(--text-faint);
-}
-
-.seq-meta-item {
-  white-space: nowrap;
-}
-
-.seq-card-actions {
-  display: flex;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-/* What a card says back - a test's outcome, its Rehearsal - takes the row's
-   full width under it. */
-.seq-card > .seq-card-test-feedback,
-.seq-card > .seq-card-rehearsal {
-  grid-column: 1 / -1;
 }
 
 /* Modal styles.
@@ -5501,8 +5556,8 @@ body[data-page="maintenance"] .status-item .hint {
   z-index: 10000;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  max-width: 600px;
+  border-radius: var(--radius-plate);
+  max-width: 520px;
   width: 90%;
   max-height: 80vh;
   display: flex;
@@ -5514,7 +5569,7 @@ body[data-page="maintenance"] .status-item .hint {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
+  padding: var(--space-lg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -5534,8 +5589,8 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-modal-header h4 {
   margin: 0;
-  font-size: 1rem;
-  color: var(--silver-bright);
+  font-size: var(--fs-h2);
+  color: var(--text);
 }
 
 /* A dialog's close, as a word. It was a 1.5 rem cross in a 32 px box, which is
@@ -5564,26 +5619,26 @@ body[data-page="maintenance"] .status-item .hint {
 .seq-modal-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: var(--space-lg);
 }
 
 .seq-modal-footer {
   display: flex;
-  gap: 10px;
+  gap: var(--space-sm);
   justify-content: flex-end;
-  padding: 16px;
+  padding: var(--space-lg);
   border-top: 1px solid var(--border);
 }
 
 .seq-modal-desc {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-lg);
   color: var(--text-dim);
-  font-size: 0.9rem;
+  font-size: var(--fs-cell);
 }
 
 /* Import modal specifics */
 .seq-import-file-picker {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-lg);
 }
 
 #seq-import-file-input {
@@ -5596,8 +5651,8 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-import-divider {
   text-align: center;
-  margin: 16px 0 12px 0;
-  font-size: 0.85rem;
+  margin: var(--space-lg) 0 var(--space-md);
+  font-size: var(--fs-cell);
   color: var(--text-dim);
   position: relative;
 }
@@ -5605,13 +5660,13 @@ body[data-page="maintenance"] .status-item .hint {
 .seq-import-textarea {
   width: 100%;
   min-height: 120px;
-  padding: 10px;
+  padding: var(--space-sm);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
   resize: vertical;
 }
 
@@ -5620,21 +5675,21 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 #seq-import-feedback {
-  margin-top: 12px;
+  margin-top: var(--space-md);
 }
 
 /* Memory wipe modal specifics */
 .seq-wipe-warning {
   background: var(--danger-bg);
   border: 1px solid var(--danger);
-  border-radius: 4px;
-  padding: 12px;
-  margin: 12px 0;
+  border-radius: var(--radius-xs);
+  padding: var(--space-md);
+  margin: var(--space-md) 0;
 }
 
 .seq-wipe-warning p {
-  margin-bottom: 8px;
-  font-size: 0.9rem;
+  margin-bottom: var(--space-sm);
+  font-size: var(--fs-cell);
   color: var(--text);
 }
 
@@ -5643,42 +5698,42 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .seq-wipe-confirm-prompt {
-  margin-top: 12px;
-  margin-bottom: 8px;
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-sm);
   font-weight: 500;
 }
 
 .seq-wipe-confirm-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--space-sm) var(--space-md);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: var(--fs-cell);
 }
 
 .seq-wipe-dangling-info {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 12px;
-  margin: 12px 0 0 0;
-  font-size: 0.85rem;
+  border-radius: var(--radius-xs);
+  padding: var(--space-md);
+  margin: var(--space-md) 0 0;
+  font-size: var(--fs-cell);
 }
 
 .seq-wipe-dangling-info p {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-sm);
 }
 
 .seq-wipe-dangling-info ul {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--space-xl);
   color: var(--text-dim);
 }
 
 .seq-wipe-dangling-info li {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2xs);
 }
 
 /* Utility classes */
@@ -5690,40 +5745,22 @@ body[data-page="maintenance"] .status-item .hint {
    Sequence editor: skeleton and step table
    ======================================================================== */
 
-.seq-editor-metadata {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
 .seq-editor-error-text {
   font-size: 0.8rem;
   color: var(--danger);
   min-height: 16px;
 }
 
-.seq-editor-validation-summary {
-  margin: var(--space-md) 0 var(--space-xs);
-}
-
+/* Protocol Check's verdict on the strip: the lamp carries the color, the
+   sentence says which. A refusal is also said in red, because it is the one
+   thing on the strip that stops a save. */
 .seq-validation-status {
-  font-family: var(--font-mono);
+  color: var(--text-dim);
   font-size: var(--fs-cell);
-  font-weight: 500;
-}
-
-.seq-validation-valid {
-  color: var(--success);
 }
 
 .seq-validation-error {
   color: var(--danger);
-}
-
-.seq-editor-steps {
-  margin-bottom: 24px;
 }
 
 .seq-editor-steps h4 {
@@ -6204,16 +6241,6 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--danger);
 }
 
-.seq-editor-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-lg);
-  margin-top: var(--space-lg);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--border);
-}
-
 /* The uncalibrated Outputs this routine moves, read under Test on the droid
    before the press (#439). A line, never a gate: the button beside it stays
    live. */
@@ -6228,15 +6255,18 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--warning);
 }
 
+/* What just happened to the sequence - saved, sent to the droid, refused -
+   on a line of the strip, with a run's folded Rehearsal under it. */
 .seq-editor-feedback {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  flex-basis: 100%;
 }
 
-.seq-editor-feedback.hidden {
+.seq-editor-feedback:empty {
   display: none;
+}
+
+.seq-editor-feedback .feedback {
+  margin: 0;
 }
 
 /* Dome SVG Panel Picker */
@@ -6394,9 +6424,6 @@ body[data-page="maintenance"] .status-item .hint {
    (ADR 0044, #327).
    ======================================================================== */
 
-.seq-editor-rehearsal {
-  margin: -8px 0 20px;
-}
 
 .seq-rehearsal-counts {
   display: flex;
@@ -6414,8 +6441,9 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
-.seq-rehearsal-clear {
-  margin: 0 0 var(--space-xs);
+.seq-rehearsal-clear,
+.seq-rehearsal-wire {
+  margin: 0 0 var(--space-sm);
   font-size: var(--fs-cell);
   color: var(--text-dim);
 }
@@ -6494,51 +6522,47 @@ body[data-page="maintenance"] .status-item .hint {
    position is a fraction of the track, so the script never needs to know it:
    the marker and the end line sit in an overlay laid over the tracks alone.
    --------------------------------------------------------------------------- */
+/* The bar over the routine: the moment the marker is on, the press that
+   moves the droid there and what the droid answered, and - where the routine
+   has a loop - how the loop is drawn, at the far end. */
 .tl-bar {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-md);
-  margin-bottom: var(--space-md);
+  gap: var(--space-sm) var(--space-md);
 }
 
-.tl-bar .seg {
-  flex: 0 0 auto;
+.tl-loop-mode {
+  margin-left: auto;
 }
 
-.tl-bar .seg > button {
-  min-height: 26px;
-  padding: 0 var(--space-md);
+/* It is offered only where the routine has a loop and its lanes are in
+   sight. Spelled with .seg so it outranks the bar's own display. */
+.seg.tl-loop-mode[hidden],
+.tl-bar.is-steps .seg.tl-loop-mode {
+  display: none;
 }
 
 .tl-now {
+  min-width: 6ch;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-cell);
   font-variant-numeric: tabular-nums;
 }
 
-.tl-acts {
-  display: flex;
-  gap: var(--space-sm);
-  margin-left: auto;
+.tl-unwired {
+  margin: 0 0 var(--space-sm);
 }
 
-.tl-unwired,
-.tl-said {
-  margin: 0 0 var(--space-md);
+.tl-said[hidden] {
+  display: none;
 }
 
 /* A pose the droid refused: the estop or Sleep Mode, in the firmware's words. */
 .tl-said.is-refused {
   color: var(--danger);
-}
-
-.tl-stage {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: var(--space-lg);
-  align-items: start;
 }
 
 .tl-scroll {
@@ -6590,6 +6614,16 @@ body[data-page="maintenance"] .status-item .hint {
 .tl-row.is-unwired .tl-short {
   color: var(--text-faint);
   font-style: italic;
+}
+
+/* A row that is not a Part's lane - the sounds, the dome's own commands, its
+   turns - is named as a label, the way the ruler's row is. */
+.tl-row.is-kind .tl-name {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .tl-track {
@@ -6727,10 +6761,6 @@ body[data-page="maintenance"] .status-item .hint {
    each one in data-edit - can-move, can-size-l, can-size-r, is-selected - and
    decides body or edge by the width the grips are drawn at, --tl-grip, which
    it reads from :root. */
-.tl-loop-mode[hidden] {
-  display: none;
-}
-
 .tl-grid:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -6840,20 +6870,11 @@ body[data-page="maintenance"] .status-item .hint {
   white-space: nowrap;
 }
 
-.seq-editor-show {
-  margin-bottom: var(--space-md);
-}
-
-.tl-side {
-  display: grid;
-  gap: var(--space-md);
-}
-
 .tl-readout {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: var(--space-2xs) var(--space-md);
-  margin: 0;
+  margin: var(--space-sm) 0 0;
   font-size: var(--fs-cell);
 }
 
@@ -6864,6 +6885,296 @@ body[data-page="maintenance"] .status-item .hint {
 .tl-readout dd {
   margin: 0;
   color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+   Sequences: the workspace a sequence is edited in (#441, variant C)
+
+   The timeline is the workspace. Three plates joined by seams: a strip (the
+   way back, the sequence, the run, the verdict, Save), the stage (the routine
+   with the tempo on its ruler, and the droid beside it) and one drawer under
+   it whose tabs hold the picked block, the Parts, the sequence's own settings
+   and the Rehearsal. A Factory sequence's read-only stage is the same strip
+   and stage with no drawer.
+
+   Save is the only filled act here. Every other act is a quiet word
+   (.seq-act) or, where it moves the droid, a small neutral button.
+   --------------------------------------------------------------------------- */
+.seq-work {
+  margin-bottom: var(--space-lg);
+}
+
+.seq-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-plate) var(--radius-plate) 0 0;
+}
+
+.seq-strip .seq-name {
+  font-size: var(--fs-h2);
+}
+
+/* Whatever is on either side of it is pushed to its own end of the row. */
+.seq-gap {
+  flex: 1 1 auto;
+}
+
+.seq-state {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.seq-run,
+.seq-verdict,
+.seq-keep {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.seq-run .hint {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.seq-strip-seam {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+/* Tuning a Factory sequence: said once, between the strip and the stage. */
+.seq-tuning {
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.seq-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+
+.seq-stage:last-child {
+  border-radius: 0 0 var(--radius-plate) var(--radius-plate);
+}
+
+/* The stage's one column, top to bottom: the tempo, what this droid cannot
+   move, the bar, then the routine as its timeline or as its step list. The
+   note and the lanes are both the timeline's (data/seq_timeline.js draws them
+   into .seq-lanes), and the bar sits between them, so the lanes' box is
+   dissolved and each of the two takes its own place in the column. */
+.seq-stage-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-md);
+}
+
+.seq-lanes {
+  display: contents;
+}
+
+.seq-tempo {
+  order: 0;
+}
+
+.seq-stage-main .tl-unwired {
+  order: 1;
+}
+
+.seq-stagebar {
+  order: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.seq-stage-main .tl-scroll,
+.seq-editor-steps {
+  order: 3;
+}
+
+.seq-stage-side {
+  min-width: 0;
+  padding: var(--space-md);
+  border-left: 1px solid var(--border);
+}
+
+/* The tempo riding on the ruler, and the sequence's own settings in the
+   drawer: Foot Drive's setting rows with a narrower name column, each control
+   the size of what it holds. */
+.seq-tempo .setting-row,
+.seq-settings .setting-row {
+  grid-template-columns: 132px minmax(0, max-content) 64px;
+  gap: var(--space-lg);
+  min-height: 36px;
+  padding: var(--space-2xs) 0;
+}
+
+.seq-tempo {
+  margin-bottom: var(--space-sm);
+}
+
+.seq-tempo .setting-row {
+  border-bottom: 0;
+}
+
+.seq-tempo .seq-tempo-source {
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
+  text-align: left;
+}
+
+/* How many steps a retime landed, under the tempo's control. */
+.seq-receipt {
+  margin: 0 0 0 calc(132px + var(--space-lg));
+}
+
+.seq-receipt:empty,
+.seq-tempo .seq-editor-error-text:empty {
+  display: none;
+}
+
+.seq-tempo .seq-editor-error-text {
+  margin-left: calc(132px + var(--space-lg));
+}
+
+.seq-settings .setting-row:last-child {
+  border-bottom: 0;
+}
+
+.seq-settings .seg.seg-sm {
+  justify-self: start;
+}
+
+.seq-settings .fader {
+  width: 240px;
+}
+
+.seq-settings .number-cell.text-cell-wide {
+  width: 38ch;
+}
+
+/* More settings: a quiet line, and what it folds away follows straight on. */
+.seq-settings-more {
+  margin-top: var(--space-2xs);
+}
+
+.seq-settings-more > summary {
+  min-height: 28px;
+}
+
+.seq-drawer {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--border-strong);
+  border-radius: 0 0 var(--radius-plate) var(--radius-plate);
+}
+
+.seq-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.seq-pane {
+  min-height: 220px;
+  padding: var(--space-md);
+}
+
+/* The picked block: its lane's name in ink with what kind of step it is under
+   it, then its rows - a narrow mono name column, capitalised the way the
+   decided words are written (STARTS AT, RUNS FOR, OPENS TO, MOTION). */
+#seq-pane-block > * {
+  max-width: 520px;
+}
+
+.seq-picked-head {
+  display: block;
+}
+
+.seq-picked-head h3 {
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-cell);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.seq-picked-head .sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-faint);
+  text-align: left;
+}
+
+.seq-picked-rows .setting-row {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  min-height: 36px;
+  padding: var(--space-2xs) 0;
+}
+
+.seq-picked-rows .setting-name {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.seq-picked-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+/* The Parts, one flat list. Not pressable yet, so they are drawn as the
+   .part-pill a Part is everywhere else without its pointer or its hover; one
+   nothing on this droid can move is dashed and dim, never colored (#327). */
+.seq-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.seq-part {
+  padding: 3px var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--well);
+  color: var(--text-dim);
+  font-size: var(--fs-hint);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.seq-part.is-off {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-faint);
+}
+
+.seq-part-short {
+  margin-right: var(--space-2xs);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
 }
 
 /* ---------------------------------------------------------------------------
@@ -10132,50 +10443,36 @@ button.droid-build-card:disabled {
   resize: vertical;
 }
 
-.seq-header .setting-value.seq-tempo-source {
-  color: var(--text-faint);
-  font-size: var(--fs-hint);
-  text-align: left;
-}
-
-/* The header's few-choice control is sized to its words, and a feedback line
-   with nothing to say takes no room between the rows. */
-.seq-header .seg.seg-sm {
-  justify-self: start;
-}
-
-.seq-header .seq-editor-error-text:empty {
-  display: none;
-}
-
-/* More settings sits on the row grid: its line is a row's height with a row's
-   seam under it, and what it folds away follows straight on. */
-details.seq-header-more > summary {
-  display: flex;
-  min-height: var(--row);
-  border-bottom: 1px solid var(--border);
-}
-
+/* A quiet act: a word at the row's size, never a box. It is dim until it is
+   reached for, so the one filled act on the page - Save - is the only thing
+   asking to be pressed; the act a row or a strip leads with is in full ink. */
 .seq-act {
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-height: 24px;
+  padding: 0 var(--space-2xs);
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--text-dim);
   font-family: inherit;
   font-size: var(--fs-cell);
+  white-space: nowrap;
   cursor: pointer;
 }
 
 /* A <label> that is an act (the file picker's) keeps the act's look over the
    editor's form-label rule. */
 label.seq-act {
-  color: var(--accent);
+  color: var(--text-dim);
   font-size: var(--fs-cell);
   font-weight: 400;
   cursor: pointer;
 }
 
-.seq-act:hover {
+.seq-act:hover,
+.seq-act:focus-visible {
+  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -10183,6 +10480,15 @@ label.seq-act {
 .seq-act:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.seq-act.is-strong {
+  color: var(--text);
+}
+
+.seq-act svg.i {
+  width: 14px;
+  height: 14px;
 }
 
 /* Memory Wipe: the one act that cannot be undone, in the refusal's red and
@@ -10193,6 +10499,7 @@ label.seq-act {
 
 .seq-act:disabled {
   color: var(--text-faint);
+  opacity: 0.55;
   cursor: not-allowed;
   text-decoration: none;
 }

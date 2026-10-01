@@ -99,21 +99,18 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
     return elements.get(id);
   };
 
-  // The card buttons renderListView() binds, handed back the way the browser
+  // The row acts renderListView() binds, handed back the way the browser
   // would find them in the markup it just wrote.
   const cardFeedback = makeElement();
   const cardRehearsal = makeElement();
   const card = makeElement({
     querySelector: (selector) =>
-      selector === ".seq-card-test-feedback" ? cardFeedback : selector === ".seq-card-rehearsal" ? cardRehearsal : null,
+      selector === ".seq-item-feedback" ? cardFeedback : selector === ".seq-item-rehearsal" ? cardRehearsal : null,
   });
   const testButton = makeElement({ dataset: { action: "test", seqName: sequence.name }, closest: () => card });
   const tuneButton = makeElement({ dataset: { action: "tune", builtinName: sequence.name } });
-  byId("seq-cards-container").querySelectorAll = (selector) => {
-    if (selector === '[data-action="tune"]') return [tuneButton];
-    if (selector.startsWith(".seq-card-actions button")) return [testButton];
-    return [];
-  };
+  byId("seq-cards-container").querySelectorAll = (selector) =>
+    (selector === "[data-action]" ? [testButton, tuneButton] : []);
 
   const get = (url) => {
     calls.push(["get", url]);
