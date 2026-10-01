@@ -36,9 +36,6 @@
   const catalog = window.DroidParts;
   const kinds = window.DroidPartKind;
 
-  // What a Part on no Output is called where a sentence has to name it: a
-  // Find by Moving run that ends without one (data/find_by_moving.js).
-  const NOT_WIRED = "– not wired –";
   // The Output Address token a move sends for "no Output" (docs/api.md).
   const NO_OUTPUT = "none";
 
@@ -965,7 +962,6 @@
   };
 
   window.PAParts = Object.freeze({
-    NOT_WIRED,
     NO_OUTPUT,
     groupParts,
     partById,
