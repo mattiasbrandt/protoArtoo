@@ -533,6 +533,99 @@ class ZopfliStaging(_StagingCase):
         self.assertEqual(written, ["c.webp", "d.txt.gz", "a.webp", "b.webp"])
 
 
+class ScriptBundles(_StagingCase):
+    """Co-loaded script groups are staged as one bundle each (#461). The
+    loader dedupes a resource by name for the session, so a member loaded
+    outside its whole group would run twice; staging refuses that chain."""
+
+    SHELL = "/web_api.js,/body_art.js,/body_view.js,/footer.js"
+
+    def _page(self, chain):
+        (self.src / "page.html").write_text(
+            '<html data-scripts="%s"><head><!-- PA:INCLUDE _recovery_kernel.html --></head></html>'
+            % chain,
+            encoding="utf-8",
+        )
+
+    def _members(self, art='(()=>{"use strict";window.art=1})();\n', view="(()=>{window.view=1})();\n"):
+        (self.src / "body_art.js").write_text(art, encoding="utf-8")
+        (self.src / "body_view.js").write_text(view, encoding="utf-8")
+
+    def _bundle(self):
+        return self._staged("bundle_body.js")
+
+    def test_a_group_is_staged_as_its_bundle(self):
+        self._members()
+        self._page(self.SHELL)
+        self._build()
+        self.assertIn('data-scripts="/web_api.js,/bundle_body.js,/footer.js"', self._staged("page.html"))
+        stage = self.build / "fsdata_gz"
+        self.assertFalse((stage / "body_art.js.gz").exists(), "a member is never staged on its own")
+        self.assertFalse((stage / "body_view.js.gz").exists())
+        bundle = self._bundle()
+        self.assertLess(bundle.index("window.art=1"), bundle.index("window.view=1"), "group order")
+
+    def test_a_member_outside_its_whole_group_fails_the_build(self):
+        self._members()
+        for chain in ("/web_api.js,/body_view.js", "/body_view.js,/body_art.js",
+                      "/body_art.js,/web_api.js,/body_view.js"):
+            with self.subTest(chain):
+                self._page(chain)
+                with self.assertRaises(SystemExit) as ctx:
+                    self._build()
+                self.assertIn("outside its whole group", str(ctx.exception))
+
+    def test_a_member_that_is_not_one_iife_fails_the_build(self):
+        self._members(view="function view(){}\n(()=>{})();\n")
+        self._page(self.SHELL)
+        with self.assertRaises(SystemExit) as ctx:
+            self._build()
+        self.assertIn("is one IIFE", str(ctx.exception))
+
+    def _run_in_node(self, bundle, probe):
+        import json
+        import shutil as shutil_module
+        import subprocess
+
+        node = shutil_module.which("node")
+        if node is None:
+            self.skipTest("node is not on PATH")
+        path = Path(self.tmp.name) / "bundle.js"
+        path.write_text(bundle, encoding="utf-8")
+        driver = (
+            "const vm=require('vm'),fs=require('fs');const errors=[];"
+            "process.on('uncaughtException',(e)=>errors.push(e.message));"
+            "globalThis.window=globalThis;"
+            "vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));"
+            "const probe=vm.runInThisContext(process.argv[2]);"
+            "setTimeout(()=>console.log(JSON.stringify({probe,errors})),20);"
+        )
+        result = subprocess.run([node, "-e", driver, str(path), probe],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_a_member_that_throws_does_not_stop_the_next_and_is_still_reported(self):
+        self._members(art='(()=>{"use strict";throw new Error("art failed")})();\n')
+        self._page(self.SHELL)
+        self._build()
+        outcome = self._run_in_node(self._bundle(), "globalThis.view")
+        self.assertEqual(outcome["probe"], 1, "the member after the one that threw still ran")
+        self.assertEqual(outcome["errors"], ["art failed"], "the error still reaches the page")
+
+    def test_a_leading_global_const_stays_global(self):
+        (self.src / "configuration.js").write_text(
+            "const BOARD_LABELS = { artoo_esp32: 'Artoo' };\n(() => { window.cfg = BOARD_LABELS.artoo_esp32; })();\n",
+            encoding="utf-8",
+        )
+        (self.src / "setup.js").write_text("(() => { window.setup = typeof BOARD_LABELS; })();\n", encoding="utf-8")
+        self._page("/configuration.js,/setup.js")
+        self._build()
+        outcome = self._run_in_node(self._staged("bundle_configuration.js"),
+                                    "[typeof BOARD_LABELS, window.cfg, window.setup].join()")
+        self.assertEqual(outcome["probe"], "object,Artoo,object")
+
+
 class RealPagesStage(unittest.TestCase):
     """The scanner reads every real page in both asset sets, and what it must
     leave alone it leaves alone (#461)."""
@@ -577,6 +670,17 @@ class RealPagesStage(unittest.TestCase):
                     (DATA / "console_help.txt").read_bytes(),
                     "console_help.txt is read at an offset, so it is staged raw",
                 )
+                bundles = _run_gzip_fsdata(_BoardEnv(DATA, Path(tmp) / "again", ROOT, flags,
+                                                     custom_asset_set=asset_set))["SCRIPT_BUNDLES"]
+                for bundle, _label, members in bundles:
+                    self.assertTrue((stage / (bundle.lstrip("/") + ".gz")).is_file(), bundle)
+                    for member in members:
+                        self.assertFalse((stage / (member.lstrip("/") + ".gz")).exists(), member)
+                for page in pages:
+                    with gzip.open(page, "rt", encoding="utf-8") as fh:
+                        chain = re.search(r'data-scripts="([^"]*)"', fh.read())
+                    for name in (chain.group(1).split(",") if chain else []):
+                        self.assertNotIn(name, {m for _b, _l, ms in bundles for m in ms}, page.name)
         self.assertEqual({p.name: p.read_bytes() for p in DATA.glob("*.html")}, sources)
 
 

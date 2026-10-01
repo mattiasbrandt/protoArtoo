@@ -158,6 +158,278 @@ SHELL_DELEGATE_MARKER = "window.PAShellDelegate = true"
 MINIFY_LOADERS = {".js": "js", ".css": "css"}
 
 
+# Script bundles (#461). Each group is loaded by exactly the same pages, one
+# member straight after another in every `data-scripts` chain, so staging ships
+# the group as one file: nine fewer requests on a page load and nine fewer
+# files on the image. `data/` keeps the members as they are; only the stage
+# carries the bundle, and the dev fixture server keeps serving the members.
+#
+# The rule that keeps this safe is the loader's: data/page_bootstrap.js dedupes
+# a resource by name for the whole session (ADD_RESOURCES), so a member that
+# some chain loaded on its own would run a second time beside its bundle and
+# rebuild its module state. _bundle_chain() therefore refuses to stage a page
+# whose chain names any member without its whole group, in order and
+# consecutive. The label is what the recovery view shows while the bundle is
+# loading or failing; it reuses the words the surfaces give the members.
+SCRIPT_BUNDLES = (
+    ("/bundle_shell.js", "live updates and page layout",
+     ("/status_stream.js", "/live_reading.js", "/health_signals.js", "/shell.js")),
+    ("/bundle_configuration.js", "droid configuration", ("/configuration.js", "/setup.js")),
+    ("/bundle_body.js", "droid picture", ("/body_art.js", "/body_view.js")),
+    ("/bundle_dashboard.js", "home dashboard", ("/dome_control.js", "/app.js")),
+    ("/bundle_rehearsal.js", "sequence rehearsal", ("/servo_motion.js", "/seq_rehearsal.js")),
+    ("/bundle_seq_moves.js", "sequence timing", ("/seq_tempo.js", "/seq_gesture.js")),
+    ("/bundle_seq_editor.js", "sequence editor", ("/seq_timeline.js", "/seq.js")),
+)
+BUNDLE_OF_MEMBER = {
+    member: bundle for bundle, _label, members in SCRIPT_BUNDLES for member in members
+}
+# The first bundle every session loads (it is in the shell document's own
+# chain); it carries every bundle's recovery label, so a later bundle that
+# stalls is named. One that stalls before it has run shows the generic words,
+# as any script did before its surface had set its labels.
+LABELS_BUNDLE = "/bundle_shell.js"
+DATA_SCRIPTS_RE = re.compile(r'(<html\b[^>]*?\bdata-scripts=")([^"]*)(")', re.IGNORECASE)
+# The two top-level shapes a member may have once minified: an IIFE statement,
+# preceded by `const NAME = <object or array literal>` declarations. Anything
+# else changes meaning inside the try block that isolates the member, so it
+# fails the build.
+IIFE_START_RE = re.compile(r"\((?:\(\)=>|function\(\))\{")
+GLOBAL_CONST_RE = re.compile(r"const [A-Za-z_$][\w$]*=[\[{]")
+JS_KEYWORDS_BEFORE_REGEX = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
+    "case", "do", "else", "yield", "await",
+}
+
+
+def _bundle_chain(path, html):
+    """Return the staged page with every script group in its `data-scripts`
+    chain replaced by its bundle, or fail the build when a chain names a
+    member without the rest of its group."""
+    match = DATA_SCRIPTS_RE.search(html)
+    if match is None:
+        return html
+    chain = [name.strip() for name in match.group(2).split(",") if name.strip()]
+    for name in chain:
+        if any(name == bundle for bundle, _label, _members in SCRIPT_BUNDLES):
+            raise SystemExit(
+                "[gzip_fsdata] %s names %s, a bundle staging builds; a page names the "
+                "bundle's members instead." % (path, name)
+            )
+    out = []
+    i = 0
+    while i < len(chain):
+        bundle = BUNDLE_OF_MEMBER.get(chain[i])
+        if bundle is None:
+            out.append(chain[i])
+            i += 1
+            continue
+        members = next(m for b, _label, m in SCRIPT_BUNDLES if b == bundle)
+        if tuple(chain[i:i + len(members)]) != members:
+            raise SystemExit(
+                "[gzip_fsdata] %s loads %s outside its whole group: %s staged as %s needs "
+                "exactly %s, consecutive and in that order, wherever any of them is "
+                "loaded. A member loaded alone would run twice beside its bundle, "
+                "since the loader dedupes by name (data/page_bootstrap.js ADD_RESOURCES)."
+                % (path, chain[i], ", ".join(members), bundle, ",".join(members))
+            )
+        out.append(bundle)
+        i += len(members)
+    for name in out:
+        if name in BUNDLE_OF_MEMBER:
+            raise SystemExit("[gzip_fsdata] %s still names %s after bundling." % (path, name))
+    return html[:match.start(2)] + ",".join(out) + html[match.end(2):]
+
+
+def _top_level_statements(path, js):
+    """Split minified script text into its top-level statements, each with the
+    index (within the statement) where its first bracket closed, or None.
+
+    A small scanner over esbuild's output: strings, template literals with
+    nested `${}`, regular expression literals and comments are skipped, and a
+    `;` at depth 0 ends a statement. It decides only what _member_parts()
+    checks, and a misread fails that check rather than passing it."""
+    statements = []
+    start = 0
+    depth = 0
+    first_close = None
+    templates = []  # brace depth at each open `${`
+    prev = ""  # last significant token: a punctuator character or a word
+    i = 0
+    n = len(js)
+
+    def regex_allowed():
+        if not prev:
+            return True
+        if prev[-1].isalnum() or prev[-1] in "_$":
+            return prev in JS_KEYWORDS_BEFORE_REGEX
+        return prev not in (")", "]")
+
+    def skip_template(j):
+        # j is just past a backtick or a closing `}` of a substitution.
+        while j < n:
+            c = js[j]
+            if c == "\\":
+                j += 2
+            elif c == "`":
+                return j + 1, False
+            elif c == "$" and js.startswith("${", j):
+                return j + 2, True
+            else:
+                j += 1
+        raise SystemExit("[gzip_fsdata] %s: an unterminated template literal." % path)
+
+    while i < n:
+        c = js[i]
+        if c in " \t\r\n":
+            i += 1
+            continue
+        if c in "\"'":
+            j = i + 1
+            while j < n and js[j] != c:
+                j += 2 if js[j] == "\\" else 1
+            if j >= n:
+                raise SystemExit("[gzip_fsdata] %s: an unterminated string." % path)
+            i = j + 1
+            prev = "a"  # a string ends an operand
+            continue
+        if c == "`":
+            i, opened = skip_template(i + 1)
+            if opened:
+                templates.append(depth)
+                depth += 1
+                prev = "{"
+            else:
+                prev = "a"
+            continue
+        if js.startswith("//", i):
+            j = js.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if js.startswith("/*", i):
+            j = js.find("*/", i + 2)
+            if j < 0:
+                raise SystemExit("[gzip_fsdata] %s: an unterminated comment." % path)
+            i = j + 2
+            continue
+        if c == "/" and regex_allowed():
+            j = i + 1
+            in_class = False
+            while j < n:
+                d = js[j]
+                if d == "\\":
+                    j += 2
+                    continue
+                if d == "[":
+                    in_class = True
+                elif d == "]":
+                    in_class = False
+                elif d == "/" and not in_class:
+                    break
+                elif d == "\n":
+                    raise SystemExit("[gzip_fsdata] %s: an unterminated regular expression." % path)
+                j += 1
+            j += 1
+            while j < n and (js[j].isalnum() or js[j] == "_"):
+                j += 1  # flags
+            i = j
+            prev = "a"
+            continue
+        if c.isalnum() or c in "_$":
+            j = i
+            while j < n and (js[j].isalnum() or js[j] in "_$"):
+                j += 1
+            prev = js[i:j]
+            i = j
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if c == "}" and templates and templates[-1] == depth - 1:
+                templates.pop()
+                depth -= 1
+                i, opened = skip_template(i + 1)
+                if opened:
+                    templates.append(depth)
+                    depth += 1
+                    prev = "{"
+                else:
+                    prev = "a"
+                continue
+            depth -= 1
+            if depth < 0:
+                raise SystemExit("[gzip_fsdata] %s: an unbalanced '%s'." % (path, c))
+            if depth == 0 and first_close is None:
+                first_close = i - start
+        elif c == ";" and depth == 0:
+            statements.append((js[start:i].strip(), first_close))
+            start = i + 1
+            first_close = None
+            prev = ";"
+            i += 1
+            continue
+        prev = c
+        i += 1
+    if depth != 0 or templates:
+        raise SystemExit("[gzip_fsdata] %s: brackets do not balance." % path)
+    tail = js[start:].strip()
+    if tail:
+        statements.append((tail, first_close))
+    return statements
+
+
+def _member_parts(path, js):
+    """Split a minified member into (global declarations, IIFE statement), or
+    fail the build when it is any other shape.
+
+    Wrapped in a try block, a top-level `function`, `let`, `const` or `class`
+    would become block-scoped and vanish from the page's global scope, so the
+    only top-level code allowed inside the wrapper is one IIFE statement. A
+    leading `const NAME = {...}` (data/configuration.js's BOARD_LABELS) is kept
+    outside the wrapper, where it stays a global binding exactly as it was in
+    its own file; an object or array literal cannot throw, so leaving it out of
+    the isolation loses nothing."""
+    statements = _top_level_statements(path, js)
+    if not statements:
+        raise SystemExit("[gzip_fsdata] %s is empty; a bundle member must be one IIFE." % path)
+    declarations = []
+    for text, first_close in statements[:-1]:
+        literal = GLOBAL_CONST_RE.match(text)
+        if literal is None or first_close != len(text) - 1:
+            raise SystemExit(
+                "[gzip_fsdata] %s has a top-level statement a bundle cannot isolate: %s... "
+                "A member is one IIFE, optionally after `const NAME = {...}` declarations."
+                % (path, text[:60])
+            )
+        declarations.append(text + ";")
+    iife, first_close = statements[-1]
+    if not (IIFE_START_RE.match(iife) and iife.endswith(")()") and first_close == len(iife) - 3):
+        raise SystemExit(
+            "[gzip_fsdata] %s does not end in one IIFE statement (%s...); a bundle member "
+            "is one IIFE, optionally after `const NAME = {...}` declarations." % (path, iife[:60])
+        )
+    return "".join(declarations), iife + ";"
+
+
+def _bundle_text(bundle, members, minified):
+    """The bundle's script: each member in group order, its IIFE wrapped so a
+    member that throws does not stop the ones after it. Separate files gave
+    that for free; the error is rethrown on a fresh task, so it still reaches
+    window.onerror and the console exactly as an uncaught error did."""
+    parts = []
+    if bundle == LABELS_BUNDLE:
+        labels = ",".join('"%s":"%s"' % (name, label) for name, label, _m in SCRIPT_BUNDLES)
+        parts.append(
+            "try{window.PABootstrap&&window.PABootstrap.setResourceLabels&&"
+            "window.PABootstrap.setResourceLabels({%s})}catch(e){setTimeout(()=>{throw e})}" % labels
+        )
+    for member in members:
+        declarations, iife = _member_parts(member, minified[member])
+        parts.append(declarations)
+        parts.append("try{%s}catch(e){setTimeout(()=>{throw e})}" % iife)
+    return "\n".join(part for part in parts if part) + "\n"
+
+
 def _minify(path, text):
     """Return the file's text minified by esbuild. A missing or failing
     esbuild fails the build rather than quietly staging a larger image."""
@@ -519,6 +791,7 @@ def main():
     # path, which is what "the set is staged on top" means.
     staged = {}
     stage_dirs = [""]
+    bundle_members = {}
     for walk_src, in_set in roots:
         for root, dirs, files in os.walk(walk_src):
             dirs.sort()
@@ -544,13 +817,19 @@ def main():
                 if _should_gzip(name):
                     ext = os.path.splitext(name)[1].lower()
                     if ext in HTML_EXTS:
-                        payload = _stage_markup(sp, _expand_includes(
+                        payload = _bundle_chain(sp, _stage_markup(sp, _expand_includes(
                             sp, include_roots, board_product=lambda: _running_body_controller(env)
-                        )).encode("utf-8")
+                        ))).encode("utf-8")
                     elif ext in MINIFY_LOADERS:
                         with open(sp, "r", encoding="utf-8") as fi:
-                            payload = _minify(sp, fi.read()).encode("utf-8")
+                            minified = _minify(sp, fi.read())
                         minified_count += 1
+                        member = "/" + "/".join(filter(None, [rel_dir.replace(os.sep, "/"), name]))
+                        if member in BUNDLE_OF_MEMBER:
+                            # Staged inside its bundle below, never on its own.
+                            bundle_members[member] = minified
+                            continue
+                        payload = minified.encode("utf-8")
                     else:
                         with open(sp, "rb") as fi:
                             payload = fi.read()
@@ -560,6 +839,21 @@ def main():
                 else:
                     staged[os.path.join(rel_dir, name)] = (os.path.getsize(sp), None, sp)
                     raw_count += 1
+
+    for bundle, _label, members in SCRIPT_BUNDLES:
+        missing = [member for member in members if member not in bundle_members]
+        if len(missing) == len(members):
+            continue  # a data root with none of this group (the tools tests' fixtures)
+        if missing:
+            raise SystemExit(
+                "[gzip_fsdata] %s cannot be built: %s not in %s." % (bundle, ", ".join(missing), src)
+            )
+        rel = bundle.lstrip("/") + ".gz"
+        if rel in staged or os.path.exists(os.path.join(src, bundle.lstrip("/"))):
+            raise SystemExit("[gzip_fsdata] %s is a bundle name and a file in %s." % (bundle, src))
+        data = _zopfli(bundle, _bundle_text(bundle, members, bundle_members).encode("utf-8"))
+        staged[rel] = (len(data), data, None)
+        gz_count += 1
 
     if os.path.isdir(stage):
         shutil.rmtree(stage)
