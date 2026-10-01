@@ -266,10 +266,12 @@ test("no token in :root is orphaned", () => {
   // paints it inline by name: Wiring's wire palette has no rule at all, since
   // each wire's ink is put on its own line of the drawing (data/wiring.js
   // WIRE_INKS). Both readers are found the same way, by the var() that names
-  // the token.
+  // the token. A script's comments are stripped as the stylesheet's are: a
+  // token named in a remark is read by nothing.
+  const stripScriptComments = (js) => stripComments(js).replace(/(^|\s)\/\/[^\n]*/g, "$1");
   const scripts = readdirSync("data")
     .filter((name) => name.endsWith(".js"))
-    .map((name) => readFileSync(`data/${name}`, "utf8"));
+    .map((name) => stripScriptComments(readFileSync(`data/${name}`, "utf8")));
   const used = new Set(
     [stripComments(CSS), ...scripts].flatMap((text) => [...text.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1])),
   );
