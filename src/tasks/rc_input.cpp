@@ -222,19 +222,19 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
     // Backbone: audio trigger
     rcDispatchAudioTrigger(output.backbone.audioTrigger);
 
-    // Backbone: servo commands (arm1 = index 0, arm2 = index 1)
-    auto dispatchServo = [](RcServoCommand cmd, uint8_t armId) {
+    // Backbone: servo commands, arm1 and arm2 being the board's first two
+    // Outputs, sent by their addresses
+    auto dispatchServo = [](RcServoCommand cmd, uint8_t boardIndex) {
         if (cmd == RC_SERVO_NO_CHANGE) return;
         ServoCommandType servoType = SERVO_CMD_POSITION;
         uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
         if (cmd == RC_SERVO_OPEN)    servoType = SERVO_CMD_OPEN;
         else if (cmd == RC_SERVO_CLOSE) servoType = SERVO_CMD_CLOSE;
         ServoCommand servoCmd = {};
-        servoCmd.armId = armId;
+        servoCmd.output = boardOutputAddress(boardIndex);
         servoCmd.type = servoType;
         servoCmd.positionUs = positionUs;
         servoCmd.source = SRC_SBUS;
-        servoCmd.timestampMs = millis();
         if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
             logQueueDrop(QUEUE_SERVO_CMD, "servo command");
         }

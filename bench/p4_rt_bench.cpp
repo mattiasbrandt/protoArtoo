@@ -315,7 +315,7 @@ void benchPhase3DriveFrameCadence() {
     //   1. en_aux3 - the AUX3 servo channel (include/config.h: PIN_ARM5_SERVO = 51)
     //   2. AUX3's Servo Output row naming a Light Type - the WS2812B strip. Since
     //      #413 that is where a light lives, one answer per Output, and it is the
-    //      same read servoTaskInit()'s litArmMask() makes.
+    //      same read servoTaskInit()'s litOutputMask() makes.
     // Read the live config cache, exactly as servoTaskInit() does at
     // src/tasks/servo_task.cpp:414-415. This env compiles all of src/ (build_src_filter
     // "+<*>"), so the cache is linked in; reading NVS directly would duplicate the

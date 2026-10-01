@@ -120,7 +120,7 @@ static const ServoOutputRow* rowForPart(const char* part, ServoOutputRow* row) {
 // throw. A pose press is the caller (poseOneCommand() below).
 struct BodyMoveOutcome {
     bool     sent;
-    uint8_t  armId;
+    ServoOutputAddress output;
     uint16_t throwMs;
 };
 
@@ -139,19 +139,18 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
     }
 
     ServoCommand cmd = {};
-    cmd.armId = plan.armId;
+    cmd.output = plan.output;
     cmd.type = SERVO_CMD_POSITION;
     cmd.positionUs = plan.targetUs;
     cmd.source = SRC_SEQ;
     cmd.motionThrowMs = throwMs;
     cmd.motionEasing = easing;
-    cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         return false;
     }
     if (outcome != nullptr) {
         outcome->sent = true;
-        outcome->armId = plan.armId;
+        outcome->output = plan.output;
         outcome->throwMs = (throwMs != 0) ? throwMs : row.throw_ms;  // the move as asked
     }
     return true;
@@ -202,28 +201,24 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
 static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     const uint8_t rowCount = configCacheServoOutputCount();
 
-    if (run.awaitArm != SEQ_BULK_CENTRE_NO_AWAIT) {
-        ServoCommandedPosition at = {};
-        if (run.awaitArm < SERVO_ARM_COUNT) {
-            taskENTER_CRITICAL(&robotStateMux);
-            at = robotState.servoCommanded[run.awaitArm];
-            taskEXIT_CRITICAL(&robotStateMux);
-        }
+    if (run.awaitOutput != SERVO_OUTPUT_NONE) {
+        const ServoCommandedPosition at = servoCommandedOf(run.awaitOutput);
         const SeqBulkCentreAwait awaited = sequenceBulkCentreAwaitCheck(run, now, at);
         if (awaited == SEQ_AWAIT_WAIT) {
             return;  // still moving: looked at again on the next tick
         }
         if (awaited == SEQ_AWAIT_RELEASE) {
             ServoCommand cmd = {};
-            cmd.armId = run.awaitArm;
+            cmd.output = run.awaitOutput;
             cmd.type = SERVO_CMD_RELEASE;
             cmd.source = SRC_SEQ;
-            cmd.timestampMs = now;
             if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
                 return;  // owed still: it comes round again on the next tick
             }
         } else if (awaited == SEQ_AWAIT_DROP) {
-            PA_LOG_INFO(TAG, "arm%u has no pulse left to release", (unsigned)run.awaitArm + 1);
+            PA_LOG_INFO(TAG, "%s:%u has no pulse left to release",
+                        servoOutputDriverToString(run.awaitOutput.driver),
+                        (unsigned)run.awaitOutput.channel);
         }
         sequenceBulkCentreAwaitOver(&run, rowCount);
         if (!run.active) {
@@ -257,9 +252,9 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     // would still spend a Cadence Floor slot waiting on it. Passed over and
     // counted instead, costing no time (#364). POST /api/servo/centre names
     // these rows in its answer (servoCentreSkipped(), src/web/api_servo.cpp).
-    if (!servoTaskDrivesOutput(plan.armId)) {
-        PA_LOG_INFO(TAG, "arm%u not centred - restart the droid to use it",
-                    (unsigned)plan.armId + 1);
+    if (!servoTaskDrivesOutput(plan.output)) {
+        PA_LOG_INFO(TAG, "%s:%u not centred - restart the droid to use it",
+                    servoOutputDriverToString(plan.output.driver), (unsigned)plan.output.channel);
         sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
         return;
     }
@@ -268,15 +263,14 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     // clamp already applied: one motion path, and ServoTask still decides the
     // move's own shape from the Output's Motion Profile (ADR 0052).
     ServoCommand cmd = {};
-    cmd.armId = plan.armId;
+    cmd.output = plan.output;
     cmd.type = SERVO_CMD_POSITION;
     cmd.positionUs = plan.targetUs;
     cmd.source = SRC_SEQ;
-    cmd.timestampMs = now;
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
         return;  // the cursor stays put: this row's turn comes round again
     }
-    sequenceBulkCentreAwait(&run, plan.armId, step.releaseAfter);
+    sequenceBulkCentreAwait(&run, plan.output, step.releaseAfter);
     sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms);
 }
 
@@ -344,12 +338,7 @@ static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& ac
 // Out of line, as gestureStartFromAction() below is, so neither's locals sit
 // on the root frame or on dispatchAction()'s: both are on the measured chain.
 static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
-    bool moving = false;
-    if (gestureRun.awaitArm < SERVO_ARM_COUNT) {
-        taskENTER_CRITICAL(&robotStateMux);
-        moving = robotState.servoCommanded[gestureRun.awaitArm].moving;
-        taskEXIT_CRITICAL(&robotStateMux);
-    }
+    const bool moving = servoCommandedOf(gestureRun.awaitOutput).moving;
     SeqGestureNext next = {};
     if (!sequenceGestureNext(&gestureRun, now, moving, &next)) {
         return;
@@ -358,7 +347,7 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
         if (!domeQueueTx(gestureRun.g[next.entry].domeCmd)) {
             return;
         }
-        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SERVO_OUTPUT_NONE);
         return;
     }
     memset(&gestureMove, 0, sizeof(gestureMove));
@@ -368,21 +357,16 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     gestureMove.bodyHowFar = next.howFar;
     // Paced by the Output's own throw unless the Gesture states one: the
     // spacing is how long this move takes.
-    BodyMoveOutcome moved = {false, SEQ_BULK_CENTRE_NO_AWAIT, 0};
+    BodyMoveOutcome moved = {false, SERVO_OUTPUT_NONE, 0};
     if (!dispatchBodyMove(gestureMove, &moved, next.speedMs, next.easing)) {
         return;
     }
-    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.armId);
+    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.output);
 }
 
 static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
-    if (run.awaitArm != SEQ_BULK_CENTRE_NO_AWAIT) {
-        bool moving = false;
-        if (run.awaitArm < SERVO_ARM_COUNT) {
-            taskENTER_CRITICAL(&robotStateMux);
-            moving = robotState.servoCommanded[run.awaitArm].moving;
-            taskEXIT_CRITICAL(&robotStateMux);
-        }
+    if (run.awaitOutput != SERVO_OUTPUT_NONE) {
+        const bool moving = servoCommandedOf(run.awaitOutput).moving;
         if (!sequencePoseAwaitDone(&run, moving)) {
             return;  // still moving: looked at again on the next tick
         }
@@ -398,17 +382,17 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!domeQueueTx(cmd.act.payload)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE);
             return;
 
         case SEQ_POSE_BODY: {
             // A Part nothing can move is reported by dispatchBodyMove() and
             // passed over here, costing the pose no time.
-            BodyMoveOutcome moved = {false, SEQ_BULK_CENTRE_NO_AWAIT, 0};
+            BodyMoveOutcome moved = {false, SERVO_OUTPUT_NONE, 0};
             if (!dispatchBodyMove(cmd.act, &moved)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.armId);
+            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.output);
             return;
         }
 
@@ -417,7 +401,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!dispatchAction(cmd.act)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE);
             return;
     }
 }
@@ -654,15 +638,15 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     // measured stack chain (ADR 0040).
     static SeqBulkCentreRun centreRun;
     centreRun = SeqBulkCentreRun{};
-    centreRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    centreRun.awaitOutput = SERVO_OUTPUT_NONE;
 
     // The pose press's run (#440), over the static posePlan. Static for the
     // same reason as the sweep's.
     static SeqPoseRun poseRun;
     poseRun = SeqPoseRun{};
-    poseRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    poseRun.awaitOutput = SERVO_OUTPUT_NONE;
     gestureRun = SeqGestureRun{};
-    gestureRun.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    gestureRun.awaitOutput = SERVO_OUTPUT_NONE;
     // The pose request as taken from RobotState, static like the run: its name
     // and instant live across the whole intake below, and on this task's stack
     // they pushed the measured chain past its figure.

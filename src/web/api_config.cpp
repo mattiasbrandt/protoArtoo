@@ -1202,8 +1202,9 @@ void handleServoOutputsGet(WebRequest& req) {
         // (include/servo_task.h), so no page works either out from config. An
         // expander's row has no tick and nothing drives it yet.
         const size_t boardIndex = board != nullptr ? (size_t)(board - BOARD_OUTPUTS) : 0;
-        output["activeWired"] = board == nullptr || servoTaskWiredAtStart((uint8_t)boardIndex);
-        output["driven"] = board != nullptr && servoTaskDrivesOutput((uint8_t)boardIndex);
+        const ServoOutputAddress at = {row.driver, row.channel};
+        output["activeWired"] = board == nullptr || servoTaskWiredAtStart(at);
+        output["driven"] = servoTaskDrivesOutput(at);
         // And what was on the wire, from AuxLedTask's own start (#364): the
         // Light Type it carried, or null for a servo, and - where a light can
         // go, beside `ledCount` - its LED count. Both are read at start, so a

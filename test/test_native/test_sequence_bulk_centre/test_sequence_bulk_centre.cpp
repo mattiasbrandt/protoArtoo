@@ -72,11 +72,14 @@ void test_the_component_band_bounds_the_centre() {
     TEST_ASSERT_EQUAL_UINT16(SERVO_BAND_STD.hi, plan.targetUs);
 }
 
-// The armId servoCmdQueue speaks, resolved from the Output Address the row
-// records - the one bridge between the two vocabularies.
-void test_the_output_address_resolves_to_the_arm_the_queue_speaks() {
-    TEST_ASSERT_EQUAL_UINT8(0, sequenceBodyCentrePlan(servoRow(LEDC_CH_ARM1, 1500, 800)).armId);
-    TEST_ASSERT_EQUAL_UINT8(4, sequenceBodyCentrePlan(servoRow(LEDC_CH_AUX3, 1500, 800)).armId);
+// The plan carries the Output Address the row records, which is what
+// servoCmdQueue speaks (#444): the centre goes to the row's own Output.
+void test_the_plan_sends_the_centre_to_the_rows_own_address() {
+    const ServoOutputAddress arm1 = sequenceBodyCentrePlan(servoRow(LEDC_CH_ARM1, 1500, 800)).output;
+    const ServoOutputAddress aux3 = sequenceBodyCentrePlan(servoRow(LEDC_CH_AUX3, 1500, 800)).output;
+    TEST_ASSERT_TRUE(arm1 == boardOutputAddress(0));
+    TEST_ASSERT_EQUAL_UINT8(SERVO_DRIVER_LEDC, aux3.driver);
+    TEST_ASSERT_EQUAL_UINT8(LEDC_CH_AUX3, aux3.channel);
 }
 
 // LEDC's DOME channel drives a brushless ESC, so no row should be addressed
@@ -346,7 +349,7 @@ void test_nothing_moves_at_boot_when_estop_is_latched() {
 // the pass owed goes with it: the estop has already let go of every Output.
 void test_an_estop_during_the_boot_pass_ends_it_and_owes_nothing() {
     SeqBulkCentreRun run = bootPass(0);
-    sequenceBulkCentreAwait(&run, 2, /*release=*/true);
+    sequenceBulkCentreAwait(&run, boardOutputAddress(2), /*release=*/true);
     sequenceBulkCentreAdvance(&run, 5, 0, true, 800);
 
     sequenceBulkCentreEnd(&run);
@@ -366,7 +369,7 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
     row.easing = SERVO_EASE_OVERSHOOT;
     const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
     TEST_ASSERT_TRUE(step.releaseAfter);
-    sequenceBulkCentreAwait(&run, 2, /*release=*/true);
+    sequenceBulkCentreAwait(&run, boardOutputAddress(2), /*release=*/true);
     sequenceBulkCentreAdvance(&run, 1, 0, true, row.throw_ms);
     TEST_ASSERT_TRUE(run.active);  // the last row, but a release is still owed
 
@@ -389,7 +392,7 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
 // full-throw time: that is the earliest check, a snap included.
 void test_a_release_is_never_earlier_than_the_floored_throw() {
     SeqBulkCentreRun run = bootPass(0);
-    sequenceBulkCentreAwait(&run, 0, /*release=*/true);
+    sequenceBulkCentreAwait(&run, boardOutputAddress(0), /*release=*/true);
     sequenceBulkCentreAdvance(&run, 5, 0, true, 200);
 
     ServoCommandedPosition settled = {};
@@ -402,14 +405,14 @@ void test_a_release_is_never_earlier_than_the_floored_throw() {
 // pulse to take off: the release is dropped, not sent, and the pass goes on.
 void test_a_release_on_an_output_with_no_pulse_is_dropped() {
     SeqBulkCentreRun run = bootPass(0);
-    sequenceBulkCentreAwait(&run, 3, /*release=*/true);
+    sequenceBulkCentreAwait(&run, boardOutputAddress(3), /*release=*/true);
     sequenceBulkCentreAdvance(&run, 5, 0, true, 500);
 
     const ServoCommandedPosition limp = {};
     TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_DROP, sequenceBulkCentreAwaitCheck(run, 500, limp));
     sequenceBulkCentreAwaitOver(&run, 5);
     TEST_ASSERT_TRUE(run.active);
-    TEST_ASSERT_EQUAL_UINT8(SEQ_BULK_CENTRE_NO_AWAIT, run.awaitArm);
+    TEST_ASSERT_TRUE(run.awaitOutput == SERVO_OUTPUT_NONE);
 }
 
 // One servo actuating at a time (#417). An overshoot row outlasts its floored
@@ -424,7 +427,7 @@ void test_the_next_row_waits_for_an_output_still_moving() {
     const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
     TEST_ASSERT_TRUE(step.centre);
     TEST_ASSERT_FALSE(step.releaseAfter);
-    sequenceBulkCentreAwait(&run, sequenceBodyCentrePlan(row).armId, step.releaseAfter);
+    sequenceBulkCentreAwait(&run, sequenceBodyCentrePlan(row).output, step.releaseAfter);
     sequenceBulkCentreAdvance(&run, 5, 0, true, row.throw_ms);
 
     ServoCommandedPosition at = {};
@@ -438,7 +441,7 @@ void test_the_next_row_waits_for_an_output_still_moving() {
     TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_DONE, sequenceBulkCentreAwaitCheck(run, 1420, at));
     sequenceBulkCentreAwaitOver(&run, 5);
     TEST_ASSERT_TRUE(run.active);
-    TEST_ASSERT_EQUAL_UINT8(SEQ_BULK_CENTRE_NO_AWAIT, run.awaitArm);
+    TEST_ASSERT_TRUE(run.awaitOutput == SERVO_OUTPUT_NONE);
     TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, 1420));
 }
 
@@ -447,7 +450,7 @@ int main() {
     RUN_TEST(test_an_output_goes_to_its_recorded_centre_not_to_half_its_throw);
     RUN_TEST(test_a_reversed_pair_does_not_move_the_centre);
     RUN_TEST(test_the_component_band_bounds_the_centre);
-    RUN_TEST(test_the_output_address_resolves_to_the_arm_the_queue_speaks);
+    RUN_TEST(test_the_plan_sends_the_centre_to_the_rows_own_address);
     RUN_TEST(test_a_row_on_a_channel_that_is_not_a_servo_is_not_driven);
     RUN_TEST(test_a_row_recorded_as_an_led_strip_has_nothing_to_centre);
     RUN_TEST(test_a_row_with_no_component_stated_still_has_travel);

@@ -39,24 +39,24 @@ static const char* TAG = "MARCDUINO";
 // -----------------------------------------------------------------------------
 // handlePanelCommand()
 // :OPnn / :CLnn / :OFnn / :MVnnvvvv on a body Output. The number is read by
-// marcduino_panel_command_arm_id(), the same reading the ownership resolver
-// takes (include/marcduino_ownership.h), so a line routed here is one this
-// handler can place.
+// marcduino_panel_command_output(), over the same marcduino_panel_command_arm_id()
+// reading the ownership resolver takes (include/marcduino_ownership.h), so a
+// line routed here is one this handler can place, and it goes out as that
+// board Output's address.
 //
 // :OF is a flutter, a Move Shape the body models (ADR 0049), and it ends
 // open. Until the flutter oscillation is performed it resolves to that open
 // end - the one part of the shape the body can already do.
 // -----------------------------------------------------------------------------
 MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
-    const uint8_t armId = marcduino_panel_command_arm_id(cmd);
-    if (armId == 254) {
+    const ServoOutputAddress output = marcduino_panel_command_output(cmd);
+    if (output == SERVO_OUTPUT_NONE) {
         return MarcduinoBodyOutcome::NotHandled;
     }
 
     ServoCommand servoCmd = {};
     servoCmd.source = SRC_INTERNAL;
-    servoCmd.timestampMs = millis();
-    servoCmd.armId = armId;
+    servoCmd.output = output;
 
     if (strncmp(cmd, ":OP", 3) == 0 || strncmp(cmd, ":OF", 3) == 0) {
         servoCmd.type = SERVO_CMD_OPEN;

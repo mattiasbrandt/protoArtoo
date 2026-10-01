@@ -494,7 +494,7 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
 
 // -----------------------------------------------------------------------------
 // The run: the cursor over a plan. `dueMs` is the earliest the next command
-// may go; `awaitArm` is the body Output the last command moved, which the next
+// may go; `awaitOutput` is the body Output the last command moved, which the next
 // waits on until ServoTask no longer reports it moving. A run stays active past
 // its last command until that command's spacing has run and its Output has
 // stopped: the pose owns the motion it started until then, and the
@@ -505,7 +505,7 @@ struct SeqPoseRun {
     uint8_t  next;
     uint8_t  count;
     uint32_t dueMs;
-    uint8_t  awaitArm;  // SEQ_BULK_CENTRE_NO_AWAIT when nothing is awaited
+    ServoOutputAddress awaitOutput;  // SERVO_OUTPUT_NONE when nothing is awaited
     uint8_t  sent;
     uint8_t  skipped;
     uint8_t  src;       // CommandSource of who pressed
@@ -538,15 +538,15 @@ inline bool sequencePoseStart(SeqPoseRun* run, uint32_t nowMs, bool estopLatched
     if (run == nullptr) return false;
     const bool replacing = run->active;
     const uint32_t dueMs = (replacing && (int32_t)(run->dueMs - nowMs) > 0) ? run->dueMs : nowMs;
-    const uint8_t awaitArm = replacing ? run->awaitArm : SEQ_BULK_CENTRE_NO_AWAIT;
+    const ServoOutputAddress awaitOutput = replacing ? run->awaitOutput : SERVO_OUTPUT_NONE;
     run->active = false;
-    run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    run->awaitOutput = SERVO_OUTPUT_NONE;
     if (sequencePoseRefusal(estopLatched, sleepMode) != nullptr) return false;
     run->active = count > 0 || replacing;
     run->next = 0;
     run->count = count;
     run->dueMs = dueMs;
-    run->awaitArm = awaitArm;
+    run->awaitOutput = awaitOutput;
     run->sent = 0;
     run->skipped = 0;
     run->src = src;
@@ -561,7 +561,7 @@ inline bool sequencePoseStart(SeqPoseRun* run, uint32_t nowMs, bool estopLatched
 inline void sequencePoseEnd(SeqPoseRun* run) {
     if (run != nullptr) {
         run->active = false;
-        run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+        run->awaitOutput = SERVO_OUTPUT_NONE;
     }
 }
 
@@ -587,24 +587,24 @@ inline bool sequencePoseDue(const SeqPoseRun& run, uint32_t nowMs) {
 // ServoTask reports. Clears the wait when it has.
 inline bool sequencePoseAwaitDone(SeqPoseRun* run, bool outputMoving) {
     if (run == nullptr) return true;
-    return sequencePaceAwaitDone(&run->awaitArm, outputMoving);
+    return sequencePaceAwaitDone(&run->awaitOutput, outputMoving);
 }
 
 // The command whose turn it was has been dealt with. `started` is whether it
 // was sent; a skipped one spaces nothing, because nothing moved. A dome panel
 // holds the next command off by the Cadence Floor, a body Output by its own
-// full throw, floored (sequenceCadenceSpacingMs()), and `armId` is then the
+// full throw, floored (sequenceCadenceSpacingMs()), and `output` is then the
 // Output the next command waits on.
 inline void sequencePoseAdvance(SeqPoseRun* run, uint32_t nowMs, uint8_t cls, bool started,
-                                uint16_t throwMs, uint8_t armId) {
+                                uint16_t throwMs, ServoOutputAddress output) {
     if (run == nullptr || !run->active) return;
     if (started) {
         run->sent++;
     } else {
         run->skipped++;
     }
-    sequencePaceMotion(&run->dueMs, &run->awaitArm, nowMs, started, cls != SEQ_POSE_INSTANT,
-                       cls == SEQ_POSE_BODY, throwMs, armId);
+    sequencePaceMotion(&run->dueMs, &run->awaitOutput, nowMs, started, cls != SEQ_POSE_INSTANT,
+                       cls == SEQ_POSE_BODY, throwMs, output);
     run->next++;
 }
 

@@ -862,8 +862,9 @@ static void runSeqItemQuery(const char* operationName) {
 // one item per row, in the REST answer's own key names. Every Part a ganged
 // Output drives is named, the band follows the fitted component, and an Output
 // with no pulse says so with `-` rather than a width that reads as a position.
-// AUX1 is armId 2 on LEDC channel 3, and every width below differs, so a read
-// that confused the two indexes could not pass.
+// AUX1 is the board's third Output, on LEDC channel 3, and every width below
+// differs, so a read that confused the board index with the channel could not
+// pass.
 void test_servo_api_get_outputs_streams_every_row_as_an_item() {
     Preferences prefs;
     prefs.begin("proto", false);
@@ -4526,7 +4527,7 @@ void test_servo_close_rejects_an_unknown_target() {
 }
 
 // set-position's own catalog enum excludes "both" (docs/action-registry.yaml)
-// even though handleServoPost()'s parseArmId() would accept it for any
+// even though handleServoPost()'s servoParseTarget() would accept it for any
 // action - narrower than REST here is not "widening" and is the registry's
 // own declared shape, not invented in this dispatch code.
 void test_servo_set_position_rejects_both_though_open_close_accept_it() {

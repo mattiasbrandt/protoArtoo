@@ -20,6 +20,7 @@
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
+#include "servo_backend.h"  // ServoOutputAddress, SERVO_OUTPUT_SLOT_COUNT - one mirror entry per Output
 
 // -----------------------------------------------------------------------------
 // Enums
@@ -246,24 +247,26 @@ inline const char* servoLimpReasonToString(ServoLimpReason reason) {
 }
 
 struct ServoCommand {
-    uint8_t armId;          // 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3, 255=broadcast (ARM1+ARM2)
+    // Which Output, by its Output Address (include/servo_output_address.h), or
+    // SERVO_OUTPUT_BOTH_ARMS for the board's first two together. Never an
+    // index: an expander's channels are more addresses on this same field
+    // (#444).
+    ServoOutputAddress output;
     ServoCommandType type;  // Command type
-    uint16_t positionUs;    // Target pulse width (us) for POSITION type
     CommandSource source;
+    uint16_t positionUs;    // Target pulse width (us) for POSITION type
     // A Gesture's own words about this one POSITION move (ADR 0049, #438):
     // the easing as ServoEasing + 1 and a full throw's time in ms, each 0 for
     // "the Output's own Motion Profile". Nothing else sets them, so every other
-    // command still moves at the pace its Output's row sets. They sit in what
-    // was padding, so the command is the size it was.
-    uint8_t motionEasing;
+    // command still moves at the pace its Output's row sets.
     uint16_t motionThrowMs;
-    uint32_t timestampMs;
+    uint8_t motionEasing;
 };
-static_assert(sizeof(ServoCommand) == 12,
-              "the Gesture's motion words sit in ServoCommand's padding; a larger command grows servoCmdQueue");
-
-// The outputs ServoTask drives, one per armId above.
-constexpr uint8_t SERVO_ARM_COUNT = 5;
+// The address's second byte came out of a `timestampMs` every sender stamped
+// and ServoTask never read, so the command shrank rather than growing every
+// sender's frame and servoCmdQueue (#444). Larger than this grows both.
+static_assert(sizeof(ServoCommand) == 10,
+              "a larger ServoCommand grows servoCmdQueue and every sender's frame");
 
 // Where ServoTask has told one output to be (#362). Commanded, all of it:
 // nothing reads a servo back.
@@ -390,10 +393,12 @@ struct RobotState {
     AudioRxStatus audio_module_rx_status;
 
     // --- Zone 6: Servo (ServoTask) ---
-    // Where each output ServoTask drives has been told to be, indexed by armId
-    // (ServoCommand::armId, 0=ARM1 .. 4=AUX3). Every surface that shows a
-    // position reads it here, through captureServoOutputCommanded()
-    // (include/api_status.h), and nowhere else (#362).
+    // Where each output ServoTask drives has been told to be, one entry per
+    // slot (include/servo_backend.h) - ServoTask's own index, which nobody
+    // else holds. Every reader asks by Output Address through
+    // servoCommandedOf() below; every surface that shows a position reads it
+    // through captureServoOutputCommanded() (include/api_status.h), and
+    // nowhere else (#362, #444).
     //
     // Both widths are COMMANDED. Nothing on this droid reads a servo back -- no
     // encoder, no feedback path -- so neither is where the horn actually is,
@@ -405,7 +410,7 @@ struct RobotState {
     // `pulseUs > SERVO_PULSE_NEUTRAL_US`, which is wrong on any reversed
     // Endpoint Pair. Which end an output is at is derived from these widths and
     // the pair on its Servo Output row, where the direction is recorded (#345).
-    ServoCommandedPosition servoCommanded[SERVO_ARM_COUNT];
+    ServoCommandedPosition servoCommanded[SERVO_OUTPUT_SLOT_COUNT];
 
     // --- Zone 7: the lit wires ---
     // One per Output, in include/board_outputs.h's order, so an index here and
@@ -452,6 +457,26 @@ extern QueueHandle_t domeCmdQueue;
 extern QueueHandle_t audioCmdQueue;
 extern QueueHandle_t domeTxQueue;
 extern QueueHandle_t sequenceQueue;
+
+// -----------------------------------------------------------------------------
+// servoCommandedOf()
+// Where ServoTask has told the Output at this address to be (#362), read under
+// robotStateMux. An address ServoTask has no slot for - an Output no member of
+// this image drives, `both`, or none - answers a zero-filled position: not
+// pulsing, limp since boot, nothing moving, which is the honest answer for an
+// Output nothing drives.
+// -----------------------------------------------------------------------------
+inline ServoCommandedPosition servoCommandedOf(ServoOutputAddress output) {
+    ServoCommandedPosition commanded = {};
+    const uint8_t slot = servoOutputSlotOf(output);
+    if (slot >= SERVO_OUTPUT_SLOT_COUNT) {
+        return commanded;
+    }
+    taskENTER_CRITICAL(&robotStateMux);
+    commanded = robotState.servoCommanded[slot];
+    taskEXIT_CRITICAL(&robotStateMux);
+    return commanded;
+}
 // -----------------------------------------------------------------------------
 // Helper function declarations (defined in main.cpp or a dedicated helpers.cpp)
 // -----------------------------------------------------------------------------

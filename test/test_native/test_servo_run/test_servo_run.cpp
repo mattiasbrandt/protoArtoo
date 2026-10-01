@@ -94,9 +94,9 @@ void test_nudges_that_keep_arriving_still_end_the_hold_at_the_ceiling() {
 // is live though nothing enabled it at start, and one the run has let go is
 // not driven by anything.
 void test_an_output_a_run_holds_is_one_every_release_reaches() {
-    TEST_ASSERT_TRUE_MESSAGE(servoRunArmLive(false, true), "a run's free Output is let go by the halt");
-    TEST_ASSERT_TRUE(servoRunArmLive(true, false));
-    TEST_ASSERT_FALSE_MESSAGE(servoRunArmLive(false, false), "a free Output no run holds has no pulse to take");
+    TEST_ASSERT_TRUE_MESSAGE(servoRunOutputLive(false, true), "a run's free Output is let go by the halt");
+    TEST_ASSERT_TRUE(servoRunOutputLive(true, false));
+    TEST_ASSERT_FALSE_MESSAGE(servoRunOutputLive(false, false), "a free Output no run holds has no pulse to take");
 }
 
 // A run holds at most one Output (#411 slice 4): stepping on to the next free

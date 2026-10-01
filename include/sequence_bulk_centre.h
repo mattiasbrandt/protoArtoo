@@ -123,11 +123,12 @@ inline bool sequenceBulkCentreHasTravel(const ServoOutputRow& row) {
 // the run sends are the Coordinator's own, SRC_SEQ. `kind` is
 // which of the two acts this is.
 //
-// `awaitArm` is the Output the last started row moved. The next row waits for
-// it: `dueMs` -- that Output's own full-throw time, floored -- is the earliest
-// the next row is looked at, and it starts only once ServoTask no longer
-// reports that Output moving (sequenceBulkCentreAwaitCheck()), so one servo
-// actuates at a time even when a move outlasts its throw. `awaitRelease` says
+// `awaitOutput` is the Output the last started row moved, by its address. The
+// next row waits for it: `dueMs` -- that Output's own full-throw time, floored
+// -- is the earliest the next row is looked at, and it starts only once
+// ServoTask no longer reports that Output moving
+// (sequenceBulkCentreAwaitCheck()), so one servo actuates at a time even when
+// a move outlasts its throw. `awaitRelease` says
 // the row was "go home and release": once the Output has SETTLED its drive
 // comes off, and the next row waits behind that too. Nothing blocks on either:
 // the run looks again each tick, like a row.
@@ -141,10 +142,6 @@ enum SeqBulkCentreKind : uint8_t {
     SEQ_BULK_CENTRE_BOOT,       // power-up: each row does what its boot behaviour says
 };
 
-// No Output awaited. Not an armId: servoCmdQueue's broadcast is 255, and a run
-// never starts two Outputs at once.
-constexpr uint8_t SEQ_BULK_CENTRE_NO_AWAIT = 0xFE;
-
 // -----------------------------------------------------------------------------
 // The pace every generated motion keeps (#440, #438)
 //
@@ -153,33 +150,36 @@ constexpr uint8_t SEQ_BULK_CENTRE_NO_AWAIT = 0xFE;
 // last one's spacing -- the Cadence Floor after a dome panel, the Output's own
 // full throw, floored, after a body Output -- and, after a body Output, until
 // ServoTask stops reporting that Output moving. These two are that rule, once,
-// over the two fields each run keeps (`dueMs`, `awaitArm`).
+// over the two fields each run keeps (`dueMs`, `awaitOutput`). Nothing awaited
+// is SERVO_OUTPUT_NONE: a run never starts two Outputs at once, so `both` is
+// never what it waits on.
 // -----------------------------------------------------------------------------
 
 // Whether the Output the last motion moved has stopped, given what ServoTask
 // reports. Clears the wait when it has.
-inline bool sequencePaceAwaitDone(uint8_t* awaitArm, bool outputMoving) {
-    if (awaitArm == nullptr || *awaitArm == SEQ_BULK_CENTRE_NO_AWAIT) return true;
+inline bool sequencePaceAwaitDone(ServoOutputAddress* awaitOutput, bool outputMoving) {
+    if (awaitOutput == nullptr || *awaitOutput == SERVO_OUTPUT_NONE) return true;
     if (outputMoving) return false;
-    *awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    *awaitOutput = SERVO_OUTPUT_NONE;
     return true;
 }
 
 // A motion was dealt with at nowMs. A motion that STARTED holds the next one
 // off: a dome panel by the Cadence Floor, a body Output by its own throw,
-// floored, and until it stops (`armId`). One that did not start - a Part
+// floored, and until it stops (`output`). One that did not start - a Part
 // nothing drives, passed over - holds nothing off, because nothing moved; nor
 // does a command that moves nothing (`moves` false: a sound, a light).
-inline void sequencePaceMotion(uint32_t* dueMs, uint8_t* awaitArm, uint32_t nowMs, bool started,
-                               bool moves, bool bodyOutput, uint16_t throwMs, uint8_t armId) {
-    if (dueMs == nullptr || awaitArm == nullptr) return;
+inline void sequencePaceMotion(uint32_t* dueMs, ServoOutputAddress* awaitOutput, uint32_t nowMs,
+                               bool started, bool moves, bool bodyOutput, uint16_t throwMs,
+                               ServoOutputAddress output) {
+    if (dueMs == nullptr || awaitOutput == nullptr) return;
     if (!started || !moves) {
         *dueMs = nowMs;
         return;
     }
     if (bodyOutput) {
         *dueMs = nowMs + sequenceCadenceSpacingMs(throwMs);
-        *awaitArm = armId;
+        *awaitOutput = output;
     } else {
         *dueMs = nowMs + SEQ_CADENCE_FLOOR_MS;
     }
@@ -193,7 +193,7 @@ struct SeqBulkCentreRun {
     uint8_t  skipped;     // rows it passed over, with nothing to centre
     uint8_t  src;         // CommandSource of the operator who asked
     uint8_t  kind;        // SeqBulkCentreKind
-    uint8_t  awaitArm;    // armId the next row waits on, or SEQ_BULK_CENTRE_NO_AWAIT
+    ServoOutputAddress awaitOutput;  // the Output the next row waits on, or SERVO_OUTPUT_NONE
     bool     awaitRelease;  // and that Output is owed a release once it has settled
 };
 
@@ -274,7 +274,7 @@ inline void sequenceBulkCentreStart(SeqBulkCentreRun* run, uint32_t nowMs, uint8
     run->skipped = 0;
     run->src = src;
     run->kind = SEQ_BULK_CENTRE_PRESS;
-    run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    run->awaitOutput = SERVO_OUTPUT_NONE;
     run->awaitRelease = false;
 }
 
@@ -302,7 +302,7 @@ inline bool sequenceBootPassStart(SeqBulkCentreRun* run, uint32_t nowMs, bool es
     }
     if (estopLatched || sleepMode) {
         run->active = false;
-        run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+        run->awaitOutput = SERVO_OUTPUT_NONE;
         run->awaitRelease = false;
         return false;
     }
@@ -326,7 +326,7 @@ inline bool sequenceBootPassStart(SeqBulkCentreRun* run, uint32_t nowMs, bool es
 inline void sequenceBulkCentreEnd(SeqBulkCentreRun* run) {
     if (run != nullptr) {
         run->active = false;
-        run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+        run->awaitOutput = SERVO_OUTPUT_NONE;
         run->awaitRelease = false;
     }
 }
@@ -338,9 +338,10 @@ inline void sequenceBulkCentreEnd(SeqBulkCentreRun* run) {
 // before sequenceBulkCentreAdvance(), so a last row that owes a release keeps
 // the run alive until the release has gone.
 // -----------------------------------------------------------------------------
-inline void sequenceBulkCentreAwait(SeqBulkCentreRun* run, uint8_t armId, bool release) {
+inline void sequenceBulkCentreAwait(SeqBulkCentreRun* run, ServoOutputAddress output,
+                                    bool release) {
     if (run != nullptr && run->active) {
-        run->awaitArm = armId;
+        run->awaitOutput = output;
         run->awaitRelease = release;
     }
 }
@@ -392,7 +393,7 @@ inline SeqBulkCentreAwait sequenceBulkCentreAwaitCheck(const SeqBulkCentreRun& r
     if (!sequenceBulkCentreRowDue(run, nowMs)) {
         return SEQ_AWAIT_WAIT;
     }
-    if (run.awaitArm == SEQ_BULK_CENTRE_NO_AWAIT) {
+    if (run.awaitOutput == SERVO_OUTPUT_NONE) {
         return SEQ_AWAIT_DONE;
     }
     if (at.moving) {
@@ -414,7 +415,7 @@ inline void sequenceBulkCentreAwaitOver(SeqBulkCentreRun* run, uint8_t rowCount)
     if (run == nullptr || !run->active) {
         return;
     }
-    run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    run->awaitOutput = SERVO_OUTPUT_NONE;
     run->awaitRelease = false;
     if (run->nextRow >= rowCount) {
         run->active = false;
@@ -449,6 +450,6 @@ inline void sequenceBulkCentreAdvance(SeqBulkCentreRun* run, uint8_t rowCount, u
     run->nextRow++;
     if (run->nextRow >= rowCount && !run->awaitRelease) {
         run->active = false;
-        run->awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+        run->awaitOutput = SERVO_OUTPUT_NONE;
     }
 }

@@ -29,7 +29,7 @@
 #include "output_wire.h"    // outputWirePinKeptForLight()
 #include "robot_state.h"
 #include "sequence_bulk_centre.h"  // sequenceBulkCentreHasTravel(), sequenceBodyCentrePlan()
-#include "servo_helpers.h"  // servo_ledc_channel_to_arm_id()
+#include "servo_backend.h"  // boardOutputAddress(), boardOutputIndexOf()
 #include "servo_task.h"     // servoTaskDrivesOutput() - what ServoTask started with
 
 extern QueueHandle_t servoCmdQueue;
@@ -38,35 +38,35 @@ static const char* TAG = "SERVO_API";
 
 // See include/api_servo.h for the full contract - exported so the Controller
 // Console's servo.action.* executors (include/console_direct_action_servo.h)
-// reuse the same target<->id mapping.
-int16_t parseArmId(const char* arm) {
-    if (arm == nullptr) {
-        return -1;
+// reuse the same word<->Output mapping.
+bool servoParseTarget(const char* word, ServoOutputAddress* output) {
+    if (word == nullptr || output == nullptr) {
+        return false;
     }
-    if (strcasecmp(arm, "both") == 0) {
-        return 255;
+    if (strcasecmp(word, "both") == 0) {
+        *output = SERVO_OUTPUT_BOTH_ARMS;
+        return true;
     }
-    const BoardOutput* output = boardOutputForWord(arm);
-    uint8_t armId = 0;
-    if (output == nullptr || !servo_ledc_channel_to_arm_id(output->channel, &armId)) {
-        return -1;
+    const BoardOutput* board = boardOutputForWord(word);
+    if (board == nullptr) {
+        return false;
     }
-    return armId;
+    *output = boardOutputAddress((size_t)(board - BOARD_OUTPUTS));
+    return true;
 }
 
 // See include/api_servo.h for the full contract. `cmd` is zero-initialised
 // here: the pre-port handler left fields of an uninitialised local unset that
 // ServoTask never read for OPEN/CLOSE/POSITION, so this closes that latent UB
 // without changing anything ServoTask observes.
-ServoSubmitOutcome servoSubmitCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
-                                       CommandSource source) {
+ServoSubmitOutcome servoSubmitCommand(ServoOutputAddress output, ServoCommandType type,
+                                      uint16_t positionUs, CommandSource source) {
     ServoSubmitOutcome outcome;
     ServoCommand cmd = {};
-    cmd.armId = armId;
+    cmd.output = output;
     cmd.type = type;
     cmd.positionUs = positionUs;
     cmd.source = source;
-    cmd.timestampMs = millis();
     outcome.ok = (xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE);
     return outcome;
 }
@@ -75,17 +75,19 @@ namespace {
 
 // One Output's half of servoOutputUndriven(). The saved tick and component are
 // read only to say what a restart would do; whether anything drives it NOW is
-// ServoTask's snapshot alone.
-bool oneOutputUndriven(uint8_t armId, char* reason, size_t reasonSize) {
-    if (servoTaskDrivesOutput(armId)) {
+// ServoTask's snapshot alone. The tick is stored per board Output, so an
+// address that is not one of the board's has none saved.
+bool oneOutputUndriven(ServoOutputAddress output, char* reason, size_t reasonSize) {
+    if (servoTaskDrivesOutput(output)) {
         return false;
     }
-    const char* name = armId < BOARD_OUTPUT_COUNT ? boardOutputLabel(BOARD_OUTPUTS[armId]) : "";
+    const char* name = servoOutputAddressName(output.driver, output.channel);
+    const size_t boardIndex = boardOutputIndexOf(output);
     const OutputWireInputs saved = {
-        configCacheOutputIsWired(armId),
-        configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, servo_arm_id_to_ledc_channel(armId)),
+        boardIndex < BOARD_OUTPUT_COUNT && configCacheOutputIsWired(boardIndex),
+        configCacheReadServoOutputComponent(output.driver, output.channel),
     };
-    if (outputWirePinKeptForLight(saved, armId)) {
+    if (outputWirePinKeptForLight(saved, boardIndex)) {
         snprintf(reason, reasonSize, "%s carries a light, not a servo.", name);
     } else if (saved.wired) {
         snprintf(reason, reasonSize, "Restart the droid to use %s.", name);
@@ -97,25 +99,25 @@ bool oneOutputUndriven(uint8_t armId, char* reason, size_t reasonSize) {
 
 }  // namespace
 
-bool servoOutputUndriven(int16_t armId, char* reason, size_t reasonSize) {
-    if (armId == 255) {
-        return oneOutputUndriven(0, reason, reasonSize) || oneOutputUndriven(1, reason, reasonSize);
+bool servoOutputUndriven(ServoOutputAddress output, char* reason, size_t reasonSize) {
+    if (output == SERVO_OUTPUT_BOTH_ARMS) {
+        return oneOutputUndriven(boardOutputAddress(0), reason, reasonSize) ||
+               oneOutputUndriven(boardOutputAddress(1), reason, reasonSize);
     }
-    return armId >= 0 && oneOutputUndriven((uint8_t)armId, reason, reasonSize);
+    return oneOutputUndriven(output, reason, reasonSize);
 }
 
-bool servoCommandIsARunsOnAFreeOutput(int16_t armId, ServoCommandType type) {
-    if (armId < 0 || armId >= SERVO_ARM_COUNT) {
-        return false;
-    }
+// The two ServoTask questions answer false for `both` and for any address it
+// has no slot for, so neither needs testing for here.
+bool servoCommandIsARunsOnAFreeOutput(ServoOutputAddress output, ServoCommandType type) {
     if (type == SERVO_CMD_NUDGE) {
-        return servoTaskMayTakeForRun((uint8_t)armId);
+        return servoTaskMayTakeForRun(output);
     }
     // A release is Stop, and Stop always wins: it is taken for an Output the
     // run holds, and for a free one it may be about to, because the nudge that
     // takes it can still be queued ahead of this release (include/api_servo.h).
     return type == SERVO_CMD_RELEASE &&
-           (servoTaskRunHolds((uint8_t)armId) || servoTaskMayTakeForRun((uint8_t)armId));
+           (servoTaskRunHolds(output) || servoTaskMayTakeForRun(output));
 }
 
 namespace {
@@ -127,7 +129,7 @@ namespace {
 // `oneOutputOnly` is the fourth, and it is the reason this is a table. A nudge
 // and a hold are each about ONE Output by definition -- a builder watching
 // which part twitches, and a dial standing on one row -- so the `both`
-// broadcast (the first two Outputs, include/robot_state.h ServoCommand::armId)
+// broadcast (the first two Outputs, SERVO_OUTPUT_BOTH_ARMS)
 // is refused for both, at the door, where the caller hears why.
 struct ServoActionSpec {
     const char* name;
@@ -192,8 +194,8 @@ void handleServoPost(WebRequest& req) {
     char words[64] = {};
     boardOutputWordList(", ", words, sizeof(words));
 
-    int16_t armId = parseArmId(arm);
-    if (armId < 0) {
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    if (!servoParseTarget(arm, &output)) {
         char errMsg[128];
         snprintf(errMsg, sizeof(errMsg), "No output called %s on this board. Use %s, or both", arm,
                  words);
@@ -211,7 +213,7 @@ void handleServoPost(WebRequest& req) {
 
     // One output at a time where the action is about one output. Refused here,
     // where the caller hears why, rather than only in ServoTask's log.
-    if (spec->oneOutputOnly && armId == 255) {
+    if (spec->oneOutputOnly && output == SERVO_OUTPUT_BOTH_ARMS) {
         char errMsg[112];
         snprintf(errMsg, sizeof(errMsg), "A %s moves one output. Use %s", spec->name, words);
         webSendJsonError(req, 400, errMsg);
@@ -274,8 +276,8 @@ void handleServoPost(WebRequest& req) {
     // A Find by Moving run's nudge or release on a free Output is the one
     // exception: ServoTask takes that Output for the run (#411).
     char undriven[96] = {};
-    if (!servoCommandIsARunsOnAFreeOutput(armId, type) &&
-        servoOutputUndriven(armId, undriven, sizeof(undriven))) {
+    if (!servoCommandIsARunsOnAFreeOutput(output, type) &&
+        servoOutputUndriven(output, undriven, sizeof(undriven))) {
         webSendJsonError(req, 409, undriven);
         return;
     }
@@ -283,8 +285,7 @@ void handleServoPost(WebRequest& req) {
     // Commit Step (ADR 0036 criterion 1, include/api_servo.h): the same
     // servoCmdQueue submission both this handler and the Console's
     // servo.action.* executors now make.
-    ServoSubmitOutcome outcome =
-        servoSubmitCommand((uint8_t)armId, type, positionUs, SRC_WEB_API);
+    ServoSubmitOutcome outcome = servoSubmitCommand(output, type, positionUs, SRC_WEB_API);
     if (!outcome.ok) {
         webSendJsonError(req, 503, "Servo command queue full");
         return;
@@ -325,7 +326,7 @@ size_t servoCentreSkipped(void (*visit)(const char* name, void* ctx), void* ctx)
             continue;  // a light is passed over by design, not for want of a drive
         }
         const SeqBodyStepPlan plan = sequenceBodyCentrePlan(row);
-        if (plan.drive && servoTaskDrivesOutput(plan.armId)) {
+        if (plan.drive && servoTaskDrivesOutput(plan.output)) {
             continue;
         }
         char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};

@@ -85,7 +85,7 @@
                                  // four mood-category words (sound.config.mood-category-map)
 #include "mood.h"              // applyMood() - system.config.mood's and system.action.set-mood's
                                // executor
-#include "api_servo.h"         // parseArmId(), servoSubmitCommand() - the ADR 0036 Commit Step
+#include "api_servo.h"         // servoParseTarget(), servoSubmitCommand() - the ADR 0036 Commit Step
                                // beside handleServoPost() (#221 remainder), reused verbatim by
                                // servo.action.open/close/set-position below
 #include "ledc_pwm.h"          // SERVO_PULSE_MIN_US/MAX_US - the same pulse-width bounds
@@ -138,19 +138,22 @@ static const ConsoleHelpReader* g_helpReader = nullptr;
 // only the first four fields are rendered, so what has to fit is the row up to
 // and including the executor's closing delimiter -- never the params tail.
 //
-// 512 sat below the catalog it reads. Three rows in data/console_help.txt are
-// longer than that at this tip (561, 562 and 585 bytes; the last prose
-// delimiter any of them needs is at byte 561), so those delimiters fell past
-// the cut and their description and executor were never emitted at all --
-// absent rather than truncated, because the parser in
-// consoleEmitHelpForOperation() emits a field only when it reaches the `|` that
-// closes it (#282). 768 clears the longest of them with ~200 bytes of headroom.
+// 512 once sat below the catalog it reads: rows longer than that had their
+// executor's closing delimiter fall past the cut, and their description and
+// executor were never emitted at all -- absent rather than truncated, because
+// the parser in consoleEmitHelpForOperation() emits a field only when it
+// reaches the `|` that closes it (#282). Measured 2026-10-01, the longest row
+// in data/console_help.txt is 319 bytes and the deepest executor delimiter
+// any row needs is at byte 296, so 768 is well clear of today's catalog.
 //
-// The cost is 256 bytes of stack on whichever task is answering: the Console
-// task (10240 B on ESP32, 9216 B on ESP32-P4, measured chains 7984/7360 --
-// include/config.h) or the httpd task (8192 B, whose handleConsolePost() frame
-// is 240 B since #266). Neither is close: the deepest chain on both tasks is
-// the config-write path, and the help branch is a shallow one.
+// The cost is HELP_TEXT_MAX bytes of stack on whichever task is answering: the
+// Console task or the httpd task (handleConsolePost()). The Console task's
+// stack and measured chain have one home, tools/task_stack_recipes.json
+// (generated into include/task_stack_figures.h), and
+// tools/check_task_stack_chains.py catches a change here growing it; the httpd
+// task's stack is set where the server is configured
+// (src/web/web_request_psychic.cpp). The help branch is a shallow route on
+// either task.
 //
 // It is still a bound, not a guarantee. A row whose executor delimiter falls
 // past it is reported as `unreadable` rather than half-answered -- see the

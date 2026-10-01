@@ -22,16 +22,11 @@
 // the fault; nothing driven is not. Aligning them would be a behaviour change
 // with its own decision, not a tidy-up.
 //
-// One wire, three index spaces, and this is the one mapping between them:
-//
-//   armId              ServoCommand::armId and ServoTask's own s_arm[]
-//   BOARD_OUTPUTS index robotState.auxLed and AuxLedTask's own s_wires[]
-//   Output Address     (driver, channel), how a Servo Output row names it
-//
-// armId and the BOARD_OUTPUTS index are the same number: the table is laid out
-// in armId order (include/board_outputs.h). The Output Address of index i is
-// (SERVO_DRIVER_LEDC, BOARD_OUTPUTS[i].channel). The tasks keep their own
-// index; this header translates rather than retiring either.
+// The questions take a BOARD_OUTPUTS index, because a light can only go on the
+// board's own wires (`lightCapable`) and the wired ticks are stored per board
+// Output. Everything on the servo path names an Output by its Output Address
+// instead (#444); include/servo_backend.h holds the one mapping between the
+// two, boardOutputAddress() and boardOutputIndexOf().
 //
 // Pure: no config cache, no lock, no heap, no clock. The caller reads the wired
 // tick and the row's component and hands them in, so this is safe on the
@@ -42,9 +37,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "board_outputs.h"     // BOARD_OUTPUTS - the Outputs, in armId order
-#include "ledc_pwm.h"          // LEDC_CH_MAX
-#include "robot_state.h"       // ServoComponentType, SERVO_ARM_COUNT
+#include "board_outputs.h"     // BOARD_OUTPUTS - the board's own Outputs
+#include "robot_state.h"       // ServoComponentType
 #include "servo_output_row.h"  // ServoOutputRow
 
 // What the caller read about one Output, for the two questions that need it.
@@ -119,46 +113,4 @@ inline bool outputWireCentreable(const ServoOutputRow& row) {
 inline uint16_t outputWireReleaseAfterMs(const ServoOutputRow& row) {
     return output_wire_detail::carriesLight(row.component) ? SERVO_RELEASE_MS_NEVER
                                                            : row.release_ms;
-}
-
-// -----------------------------------------------------------------------------
-// The mapping: armId <-> BOARD_OUTPUTS index <-> Output Address
-//
-// These two keep ServoTask's armId vocabulary, which the tasks and
-// servoCmdQueue still speak, and are reached through include/servo_helpers.h
-// as they always were. What changed is that they read BOARD_OUTPUTS instead of
-// holding a second table of the same channels.
-// -----------------------------------------------------------------------------
-static_assert(SERVO_ARM_COUNT == BOARD_OUTPUT_COUNT,
-              "armId is a BOARD_OUTPUTS index: ServoTask must have one arm per Output");
-
-// The LEDC channel armId drives, or LEDC_CH_MAX for an armId that is not an
-// Output - including 255, the ARM1+ARM2 broadcast, which is two Outputs and
-// not one.
-inline uint8_t servo_arm_id_to_ledc_channel(uint8_t arm_id) {
-    return arm_id < BOARD_OUTPUT_COUNT ? BOARD_OUTPUTS[arm_id].channel : (uint8_t)LEDC_CH_MAX;
-}
-
-// The inverse: which armId addresses this LEDC channel, if any.
-//
-// A caller that starts from an Output Address rather than from an arm name needs
-// this direction  --  the Servo Output rows record a driver and a channel
-// (ADR 0041), and servoCmdQueue speaks armId.
-//
-// Returns false for LEDC_CH_DOME (a brushless ESC, not an Output) and for
-// anything out of range, leaving *out untouched. A bool rather than a sentinel
-// value: 255 already means the ARM1+ARM2 broadcast on ServoCommand::armId
-// (include/robot_state.h), so "not an arm" would have to invent a second magic
-// number to sit beside the one that means "both".
-inline bool servo_ledc_channel_to_arm_id(uint8_t channel, uint8_t* out) {
-    if (out == nullptr) {
-        return false;
-    }
-    for (size_t index = 0; index < BOARD_OUTPUT_COUNT; ++index) {
-        if (BOARD_OUTPUTS[index].channel == channel) {
-            *out = (uint8_t)index;
-            return true;
-        }
-    }
-    return false;
 }

@@ -53,7 +53,6 @@ esp_reset_reason_t esp_reset_reason();
 #include "heap_reading.h"
 #include "reset_reason.h"
 #include "robot_state.h"
-#include "servo_helpers.h"  // servo_ledc_channel_to_arm_id(), the address -> armId bridge
 #include "web_network_manager.h"
 #include "web_server.h"
 
@@ -215,18 +214,10 @@ void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,
     }
     *out = ServoOutputCommandedSnapshot{};
 
-    // ServoTask speaks armId and the rows speak an Output Address, and
-    // servo_ledc_channel_to_arm_id() is the one bridge between the two. An
-    // address it does not know is not an output ServoTask drives.
-    uint8_t armId = 0;
-    if (driver != SERVO_DRIVER_LEDC || !servo_ledc_channel_to_arm_id(channel, &armId) ||
-        armId >= SERVO_ARM_COUNT) {
-        return;
-    }
-
-    taskENTER_CRITICAL(&robotStateMux);
-    const ServoCommandedPosition commanded = robotState.servoCommanded[armId];
-    taskEXIT_CRITICAL(&robotStateMux);
+    // Asked by address, like everything else on the servo path (#444): an
+    // address ServoTask has no slot for answers a zero-filled position, which
+    // is an Output nothing has driven - no pulse, limp since boot.
+    const ServoCommandedPosition commanded = servoCommandedOf({driver, channel});
 
     // The nudge count travels whatever the pulse state: a discovery run reads
     // it before it asks and compares afterwards, and a refused nudge on an

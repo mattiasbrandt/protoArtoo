@@ -174,47 +174,54 @@ void sequenceDispatcherInit() {
 QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue = nullptr;
 
-// ServoTask's boot snapshot (#364), one bit per armId. The real answer is
-// servoTaskInit()'s; include/servo_task_test_hooks.h says why both default to
-// every Output.
+// ServoTask's boot snapshot (#364), one bit per slot (include/servo_backend.h).
+// The real answer is servoTaskInit()'s; include/servo_task_test_hooks.h says
+// why both default to every Output.
 #include "servo_task.h"
 #include "servo_task_test_hooks.h"  // declares the three masks, defined here
 #include "config_cache.h"     // the live row facts servoTaskMayTakeForRun() reads
 #include "output_wire.h"      // outputWirePinKeptForLight() - a light may be on the pin
-#include "servo_helpers.h"    // servo_arm_id_to_ledc_channel()
+#include "servo_backend.h"    // servoOutputSlotOf(), boardOutputIndexOf()
 #include "servo_run.h"        // servoRunMayTake() - the one rule
 uint8_t g_test_servo_wired_at_start_mask = 0xFF;
 uint8_t g_test_servo_driven_mask = 0xFF;
 
-bool servoTaskWiredAtStart(uint8_t armId) {
-    return armId < SERVO_ARM_COUNT && (g_test_servo_wired_at_start_mask & (1u << armId)) != 0;
+// Whether this Output's bit is set in one of the masks; an address with no
+// slot has no bit.
+static bool servoTestMaskHas(uint8_t mask, ServoOutputAddress output) {
+    const uint8_t slot = servoOutputSlotOf(output);
+    return slot < SERVO_OUTPUT_SLOT_COUNT && slot < 8 && (mask & (1u << slot)) != 0;
 }
 
-bool servoTaskDrivesOutput(uint8_t armId) {
-    return armId < SERVO_ARM_COUNT && (g_test_servo_driven_mask & (1u << armId)) != 0;
+bool servoTaskWiredAtStart(ServoOutputAddress output) {
+    return servoTestMaskHas(g_test_servo_wired_at_start_mask, output);
+}
+
+bool servoTaskDrivesOutput(ServoOutputAddress output) {
+    return servoTestMaskHas(g_test_servo_driven_mask, output);
 }
 
 uint8_t g_test_servo_lit_at_start_mask = 0;
 uint8_t g_test_servo_run_held_mask = 0;
 
-bool servoTaskRunHolds(uint8_t armId) {
-    return armId < SERVO_ARM_COUNT && (g_test_servo_run_held_mask & (1u << armId)) != 0;
+bool servoTaskRunHolds(ServoOutputAddress output) {
+    return servoTestMaskHas(g_test_servo_run_held_mask, output);
 }
 
 // The same inputs servo_task.cpp assembles, from the masks above and the live
 // cache, through the one rule.
-bool servoTaskMayTakeForRun(uint8_t armId) {
-    if (armId >= SERVO_ARM_COUNT) {
+bool servoTaskMayTakeForRun(ServoOutputAddress output) {
+    if (servoOutputSlotOf(output) >= SERVO_OUTPUT_SLOT_COUNT) {
         return false;
     }
-    const uint8_t channel = servo_arm_id_to_ledc_channel(armId);
     ServoRunTakeInputs in = {};
-    in.drivenNow = servoTaskDrivesOutput(armId);
-    in.wiredAtStart = servoTaskWiredAtStart(armId);
-    in.litAtStart = (g_test_servo_lit_at_start_mask & (1u << armId)) != 0;
+    in.drivenNow = servoTaskDrivesOutput(output);
+    in.wiredAtStart = servoTaskWiredAtStart(output);
+    in.litAtStart = servoTestMaskHas(g_test_servo_lit_at_start_mask, output);
     in.lightNow = outputWirePinKeptForLight(
-        {false, configCacheReadServoOutputComponent(SERVO_DRIVER_LEDC, channel)}, armId);
-    in.partCount = configCacheServoOutputPartCountAt(SERVO_DRIVER_LEDC, channel);
+        {false, configCacheReadServoOutputComponent(output.driver, output.channel)},
+        boardOutputIndexOf(output));
+    in.partCount = configCacheServoOutputPartCountAt(output.driver, output.channel);
     in.ledcReady = true;
     return servoRunMayTake(in);
 }

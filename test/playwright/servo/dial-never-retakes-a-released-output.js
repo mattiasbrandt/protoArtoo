@@ -16,7 +16,7 @@
 // may be latched: Part 2 waits for the operator's clear), and GET
 // /api/servo/outputs has an enabled Output with a name the servo route takes -
 // switchable, ticked wired, its wire carrying no light, not a row of lights
-// only (ServoTask isArmEnabled, data/servo.js isDriveable). NOT ASSESSED
+// only (ServoTask isOutputEnabled, data/servo.js isDriveable). NOT ASSESSED
 // otherwise.
 //
 // WRITES IT ALLOWS, and nothing else: POST /api/servo action=hold (a press, or

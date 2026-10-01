@@ -78,9 +78,10 @@ constexpr const char* boardComponentLabel(const char* board, const char* compone
 }
 
 // -----------------------------------------------------------------------------
-// The Outputs, in the order every surface draws them. The order is also
-// ServoCommand::armId's (include/servo_helpers.h is the channel <-> armId
-// bridge), which is why the table is not sorted by anything a reader sees.
+// The Outputs, in the order every surface draws them. The order is also the
+// LEDC member's slot order, Marcduino's panel numbers and RC's arm/aux index
+// (include/servo_backend.h boardOutputAddress() is the index <-> Output Address
+// mapping), which is why the table is not sorted by anything a reader sees.
 // -----------------------------------------------------------------------------
 struct BoardOutput {
     const char* id;            // stored config key, its row's `id`; never shown

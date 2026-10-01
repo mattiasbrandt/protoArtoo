@@ -58,17 +58,9 @@
 #include "ledc_pwm.h"     // LedcChannel, SERVO_PULSE_* / ESC_PULSE_* constants
 #include "robot_state.h"  // ServoComponentType (firmware and native alike)
 #include "servo_component_helpers.h"  // servoCompTypeToString, parseServoCompType
-
-// -----------------------------------------------------------------------------
-// Output Address  --  where the wire physically plugs in
-// -----------------------------------------------------------------------------
-
-// An expander adds a driver here and rows to the table; it never adds a field
-// to the row. `ledc` is the ESP32 PWM peripheral this controller drives today.
-enum ServoOutputDriver : uint8_t {
-    SERVO_DRIVER_LEDC = 0,
-    SERVO_DRIVER_COUNT = 1,
-};
+// ServoOutputDriver, SERVO_OUTPUT_CHANNEL_UNSET - the Output Address a row
+// carries in its first two fields, where the wire physically plugs in
+#include "servo_output_address.h"
 
 // -----------------------------------------------------------------------------
 // Motion Profile  --  the shape of the move (ADR 0052)
@@ -149,10 +141,6 @@ constexpr uint16_t SERVO_RELEASE_MS_MAX = 60000;
 constexpr uint8_t SERVO_LIGHT_LEDS_MIN = 1;
 constexpr uint8_t SERVO_LIGHT_LEDS_MAX = 255;
 constexpr uint8_t SERVO_LIGHT_LEDS_DEFAULT = 1;
-
-// A channel value that is not an address on any driver. Rows past the table's
-// count carry it, so a row nobody has addressed cannot read as channel 0.
-constexpr uint8_t SERVO_OUTPUT_CHANNEL_UNSET = 0xFF;
 
 // A catalog part id: `utilUp`, `doorFL`, `pie1`, `other10`. The longest in
 // docs/droid-parts.yaml is nine characters; twelve leaves room without making

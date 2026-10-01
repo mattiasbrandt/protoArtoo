@@ -36,8 +36,8 @@
 #include "servo_output_row.h"  // ServoPulseBand
 
 // No Output is held by a run. A run holds at most one Output, so ServoTask
-// keeps which one as a single index rather than a bit per Output: two held at
-// once is not a state it can be in.
+// keeps which one as a single slot (include/servo_backend.h) rather than a bit
+// per Output: two held at once is not a state it can be in.
 constexpr uint8_t SERVO_RUN_NONE = 0xFF;
 
 // What decides whether a run may take an Output, each read where it lives.
@@ -78,7 +78,8 @@ struct ServoRunNudgeStep {
 
 // -----------------------------------------------------------------------------
 // servoRunOnNudge()
-// A nudge has named `armId`, which the run holds or not (`heldArm`), and which
+// A nudge has named the Output in `slot`, which the run holds or not
+// (`heldSlot`, ServoTask's slot or SERVO_RUN_NONE), and which
 // servoRunMayTake() says is free or not NOW - asked on every nudge, not only
 // the first, because a Part or a Light Type can land on an Output while the
 // run holds it (#411 slice 4).
@@ -92,14 +93,14 @@ struct ServoRunNudgeStep {
 //              The run holds one Output, and the firmware is what keeps it at
 //              one: the page that steps it on can die between two nudges.
 // -----------------------------------------------------------------------------
-inline ServoRunNudgeStep servoRunOnNudge(uint8_t heldArm, uint8_t armId, bool mayTake) {
+inline ServoRunNudgeStep servoRunOnNudge(uint8_t heldSlot, uint8_t slot, bool mayTake) {
     if (!mayTake) {
-        return {SERVO_RUN_REFUSE, heldArm == armId ? armId : SERVO_RUN_NONE};
+        return {SERVO_RUN_REFUSE, heldSlot == slot ? slot : SERVO_RUN_NONE};
     }
-    if (heldArm == armId) {
+    if (heldSlot == slot) {
         return {SERVO_RUN_KEEP, SERVO_RUN_NONE};
     }
-    return {SERVO_RUN_TAKE, heldArm};
+    return {SERVO_RUN_TAKE, heldSlot};
 }
 
 // -----------------------------------------------------------------------------
@@ -136,15 +137,15 @@ inline uint16_t servoRunFirstWidthUs(uint16_t centreUs, ServoPulseBand band, uin
 }
 
 // -----------------------------------------------------------------------------
-// servoRunArmLive()
-// Whether ServoTask drives an arm right now: enabled since start, or a free
+// servoRunOutputLive()
+// Whether ServoTask drives an Output right now: enabled since start, or a free
 // Output a run holds. Every path that writes a pulse and every path that takes
 // one off asks this - the estop's and Sleep Mode's release of every Output
 // included (ADR 0043) - so an Output a run is driving is let go by a halt
 // exactly as an enabled one is, and never left pulsing because it was not
 // enabled at start.
 // -----------------------------------------------------------------------------
-inline bool servoRunArmLive(bool enabledAtStart, bool runHeld) {
+inline bool servoRunOutputLive(bool enabledAtStart, bool runHeld) {
     return enabledAtStart || runHeld;
 }
 

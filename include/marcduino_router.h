@@ -114,15 +114,25 @@ inline MarcduinoRouteOutcome marcduinoForwardToDome(const char* line) {
     return outcome;
 }
 
-// Whether ServoTask drives the Output(s) a body-owned panel line names; 255 is
-// the ARM1+ARM2 broadcast and needs both. ServoTask drops a command for an
-// Output it does not drive without a word (#364), so asking here is the only
-// way the sender hears it.
-inline bool marcduinoPanelOutputDriven(uint8_t armId) {
-    if (armId == 255) {
-        return servoTaskDrivesOutput(0) && servoTaskDrivesOutput(1);
+// Whether a body-owned panel line names an Output ServoTask does not drive;
+// SERVO_OUTPUT_BOTH_ARMS is the ARM1+ARM2 broadcast and needs both. ServoTask
+// drops a command for an Output it does not drive without a word (#364), so
+// asking here is the only way the sender hears it. A line that names no Output
+// is not refused here: the body handler reports it.
+//
+// Out of line for the reason marcduinoLogRoute() is: routeMarcduinoLine() is on
+// RCInputTask's measured chain, and inlined there the line's Output Address
+// grew its frame by 16 B on the ESP32-P4 walk (#444).
+__attribute__((noinline)) inline bool marcduinoPanelOutputUndriven(const char* line) {
+    const ServoOutputAddress output = marcduino_panel_command_output(line);
+    if (output == SERVO_OUTPUT_NONE) {
+        return false;
     }
-    return servoTaskDrivesOutput(armId);
+    if (output == SERVO_OUTPUT_BOTH_ARMS) {
+        return !servoTaskDrivesOutput(boardOutputAddress(0)) ||
+               !servoTaskDrivesOutput(boardOutputAddress(1));
+    }
+    return !servoTaskDrivesOutput(output);
 }
 
 inline MarcduinoRouteOutcome marcduinoRouteFromBody(MarcduinoBodyOutcome body) {
@@ -178,8 +188,7 @@ inline MarcduinoRouteOutcome routeMarcduinoLine(const char* line) {
                 marcduinoLogRoute(MarcduinoRouteOutcome::NotRun, line);
                 return MarcduinoRouteOutcome::NotRun;
             }
-            const uint8_t armId = marcduino_panel_command_arm_id(line);
-            if (armId != 254 && !marcduinoPanelOutputDriven(armId)) {
+            if (marcduinoPanelOutputUndriven(line)) {
                 marcduinoLogRoute(MarcduinoRouteOutcome::OutputUndriven, line);
                 return MarcduinoRouteOutcome::OutputUndriven;
             }

@@ -32,7 +32,7 @@
 //
 // No band is applied here. Every recorded end is already inside the component's
 // band -- ADR 0041 puts that clamp at every door onto a row -- and each leg goes
-// through resolveArmPulse() on the way to the pin anyway, so a second clamp here
+// through resolveOutputPulse() on the way to the pin anyway, so a second clamp here
 // would be a rule in two places.
 //
 // Pure: no FreeRTOS, no Arduino, no clock -- ServoTask drives the legs.

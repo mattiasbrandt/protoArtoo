@@ -34,7 +34,7 @@
 #include "console_module.h"           // ConsoleReason - the Availability Reason set
 #include "droid_part_availability.h"  // droidPartAvailabilityFromRow()
 #include "sequence_engine.h"          // SeqAction, SeqBodyShape
-#include "servo_helpers.h"            // servo_ledc_channel_to_arm_id()
+#include "servo_backend.h"            // servoOutputSlotOf() - whether this image drives an address
 #include "servo_output_row.h"         // ServoOutputRow - this droid's own wiring
 
 // -----------------------------------------------------------------------------
@@ -47,8 +47,8 @@
 // -----------------------------------------------------------------------------
 struct SeqBodyStepPlan {
     ConsoleReason reason;    // NONE when the Output can be commanded
-    bool          drive;     // true => command armId to targetUs
-    uint8_t       armId;     // ServoCommand::armId for the Output Address
+    bool          drive;     // true => command `output` to targetUs
+    ServoOutputAddress output;  // the row's Output Address, which the ServoCommand carries
     uint16_t      targetUs;  // where to drive it, already clamped by the row
 };
 
@@ -97,7 +97,7 @@ inline uint16_t seqBodyTargetUs(const ServoOutputRow& row, SeqBodyShape shape,
 // -----------------------------------------------------------------------------
 inline SeqBodyStepPlan sequenceBodyStepPlan(const SeqAction& act,
                                             const ServoOutputRow* row) {
-    SeqBodyStepPlan plan = { CONSOLE_REASON_NONE, false, 0, 0 };
+    SeqBodyStepPlan plan = { CONSOLE_REASON_NONE, false, SERVO_OUTPUT_NONE, 0 };
 
     plan.reason = droidPartAvailabilityFromRow(act.payload, row != nullptr);
     // The null test is not a second case -- a null row can only come back as
@@ -109,19 +109,19 @@ inline SeqBodyStepPlan sequenceBodyStepPlan(const SeqAction& act,
         return plan;
     }
 
-    // An expander adds a driver and rows; until one exists, an Output addressed
-    // to a driver this image does not carry cannot be commanded, and saying
-    // "not in this build" is the honest answer rather than silence. Same for a
-    // channel that is not a servo output: LEDC's DOME channel drives a brushless
-    // ESC, so no row should be addressed there and none can be driven there.
-    uint8_t armId = 0;
-    if (row->driver != SERVO_DRIVER_LEDC ||
-        !servo_ledc_channel_to_arm_id(row->channel, &armId)) {
+    // An expander adds a driver and rows; an Output addressed to a driver no
+    // member of this image carries cannot be commanded, and saying "not in
+    // this build" is the honest answer rather than silence. Same for a channel
+    // that is not a servo output: LEDC's DOME channel drives a brushless ESC,
+    // so no row should be addressed there and none can be driven there. Both
+    // are an address with no slot (include/servo_backend.h).
+    const ServoOutputAddress output = {row->driver, row->channel};
+    if (servoOutputSlotOf(output) == SERVO_OUTPUT_SLOT_NONE) {
         plan.reason = CONSOLE_REASON_NOT_IN_THIS_BUILD;
         return plan;
     }
 
-    plan.armId = armId;
+    plan.output = output;
     plan.targetUs = seqBodyTargetUs(*row, (SeqBodyShape)act.bodyShape, act.bodyHowFar);
     plan.drive = true;
     return plan;
@@ -154,20 +154,19 @@ inline SeqBodyStepPlan sequenceBodyStepPlan(const SeqAction& act,
 // first by the run that generates these (include/sequence_bulk_centre.h).
 // -----------------------------------------------------------------------------
 inline SeqBodyStepPlan sequenceBodyCentrePlan(const ServoOutputRow& row) {
-    SeqBodyStepPlan plan = { CONSOLE_REASON_NONE, false, 0, 0 };
+    SeqBodyStepPlan plan = { CONSOLE_REASON_NONE, false, SERVO_OUTPUT_NONE, 0 };
 
     // Same clause, same reason, same words as the body step above: an Output
     // addressed to a driver this image does not carry, or to an LEDC channel
     // that is not a servo output, cannot be commanded and saying "not in this
     // build" is the honest answer rather than silence.
-    uint8_t armId = 0;
-    if (row.driver != SERVO_DRIVER_LEDC ||
-        !servo_ledc_channel_to_arm_id(row.channel, &armId)) {
+    const ServoOutputAddress output = {row.driver, row.channel};
+    if (servoOutputSlotOf(output) == SERVO_OUTPUT_SLOT_NONE) {
         plan.reason = CONSOLE_REASON_NOT_IN_THIS_BUILD;
         return plan;
     }
 
-    plan.armId = armId;
+    plan.output = output;
     plan.targetUs = servoOutputClampPulse(row, row.centre_us);
     plan.drive = true;
     return plan;

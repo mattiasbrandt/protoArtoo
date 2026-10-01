@@ -1062,8 +1062,9 @@ void test_servo_accepts_a_named_arm_action() {
 }
 
 void test_servo_accepts_the_broadcast_arm() {
-    // 255 is a real armId (robot_state.h) and this endpoint's own error message
-    // offers "both" -- an int8_t return truncated it to the invalid sentinel.
+    // "both" is a real target (SERVO_OUTPUT_BOTH_ARMS) and this endpoint's own
+    // error message offers it -- an int8_t return once truncated it to the
+    // invalid sentinel.
     const WebRequestTestParam params[] = {{"arm", "both"}, {"action", "close"}};
     WebRequestTestBackend backend;
     backend.params = params;
@@ -1095,17 +1096,29 @@ void test_servo_refuses_a_word_the_board_does_not_print() {
 }
 
 // The board's word is matched without regard to case or spaces, and names the
-// Output ServoTask knows by its armId - the third Output is armId 2 whatever
-// the board calls it. A label with a space is sent as the board prints it.
+// Output by its address (#444) - the board's third Output is LEDC channel 3,
+// LEDC_CH_AUX1, whatever the board calls it, and the dome ESC's channel 2
+// between them is never one. A label with a space is sent as the board prints
+// it.
+static void assertTargetIs(const char* word, ServoOutputAddress want) {
+    ServoOutputAddress got = SERVO_OUTPUT_NONE;
+    TEST_ASSERT_TRUE_MESSAGE(servoParseTarget(word, &got), word);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(want.driver, got.driver, word);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(want.channel, got.channel, word);
+}
+
 void test_servo_takes_the_board_label_in_any_case_and_spacing() {
-    TEST_ASSERT_EQUAL_INT16(2, parseArmId("ARM3"));
-    TEST_ASSERT_EQUAL_INT16(2, parseArmId("arm3"));
-    TEST_ASSERT_EQUAL_INT16(2, parseArmId("Arm 3"));
-    TEST_ASSERT_EQUAL_INT16(4, parseArmId("ARM5"));
-    TEST_ASSERT_EQUAL_INT16(255, parseArmId("both"));
-    TEST_ASSERT_EQUAL_INT16(-1, parseArmId("aux1"));
-    TEST_ASSERT_EQUAL_INT16(-1, parseArmId("aux3"));
-    TEST_ASSERT_EQUAL_INT16(-1, parseArmId(""));
+    assertTargetIs("ARM1", {SERVO_DRIVER_LEDC, LEDC_CH_ARM1});
+    assertTargetIs("ARM3", {SERVO_DRIVER_LEDC, LEDC_CH_AUX1});
+    assertTargetIs("arm3", {SERVO_DRIVER_LEDC, LEDC_CH_AUX1});
+    assertTargetIs("Arm 3", {SERVO_DRIVER_LEDC, LEDC_CH_AUX1});
+    assertTargetIs("ARM5", {SERVO_DRIVER_LEDC, LEDC_CH_AUX3});
+    assertTargetIs("both", SERVO_OUTPUT_BOTH_ARMS);
+    ServoOutputAddress untouched = SERVO_OUTPUT_NONE;
+    TEST_ASSERT_FALSE(servoParseTarget("aux1", &untouched));
+    TEST_ASSERT_FALSE(servoParseTarget("aux3", &untouched));
+    TEST_ASSERT_FALSE(servoParseTarget("", &untouched));
+    TEST_ASSERT_TRUE(untouched == SERVO_OUTPUT_NONE);
 
     const WebRequestTestParam params[] = {{"arm", "arm 4"}, {"action", "open"}};
     WebRequestTestBackend backend;

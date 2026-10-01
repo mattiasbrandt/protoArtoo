@@ -221,7 +221,7 @@ void test_a_pose_never_starts_two_motions_inside_the_cadence_floor() {
             TEST_ASSERT_FALSE_MESSAGE(anyMotion, "a sound or light waited behind a motion");
             ++instantsBeforeMotion;
         }
-        sequencePoseAdvance(&run, now, cmd.cls, true, slowThrowMs, 0);
+        sequencePoseAdvance(&run, now, cmd.cls, true, slowThrowMs, boardOutputAddress(0));
         sequencePoseAwaitDone(&run, false);
     }
     TEST_ASSERT_FALSE(run.active);
@@ -234,7 +234,7 @@ void test_a_pose_never_starts_two_motions_inside_the_cadence_floor() {
 void test_the_next_command_waits_for_the_moving_output() {
     SeqPoseRun run = {};
     TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 3, 0, nullptr));
-    sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, 2);
+    sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, boardOutputAddress(2));
     TEST_ASSERT_TRUE(sequencePoseDue(run, SEQ_CADENCE_FLOOR_MS));
     TEST_ASSERT_FALSE(sequencePoseAwaitDone(&run, true));
     TEST_ASSERT_TRUE(sequencePoseAwaitDone(&run, false));
@@ -247,7 +247,7 @@ void test_the_next_command_waits_for_the_moving_output() {
 void test_a_pose_replacing_a_pose_keeps_the_spacing() {
     SeqPoseRun run = {};
     TEST_ASSERT_TRUE(sequencePoseStart(&run, 0, false, false, 1, 0, nullptr));
-    sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, 2);  // its last command: a body Output
+    sequencePoseAdvance(&run, 0, SEQ_POSE_BODY, true, 300, boardOutputAddress(2));  // its last command: a body Output
     TEST_ASSERT_TRUE(sequencePoseFinished(run));
 
     TEST_ASSERT_TRUE(sequencePoseStart(&run, 10, false, false, 3, 0, nullptr));

@@ -1,8 +1,9 @@
 // =============================================================================
 // include/servo_task.h
 //
-// ServoTask  --  controls utility arm servos via LEDC PWM.
-// Receives commands via servoCmdQueue and executes them.
+// ServoTask  --  drives every Servo Output through its backend
+// (include/servo_backend.h). Receives commands via servoCmdQueue and executes
+// them.
 // =============================================================================
 #pragma once
 
@@ -19,9 +20,9 @@ void servoTaskInit();
 // The ServoTask function  --  runs on Core 1.
 void servoTask(void* pvParameters);
 
-// What ServoTask started with, per Output (ADR 0027, #364). armId is the
-// BOARD_OUTPUTS index (include/output_wire.h); 255, the ARM1+ARM2 broadcast, is
-// two Outputs and answers false here - ask for each.
+// What ServoTask started with, per Output (ADR 0027, #364), asked by Output
+// Address. SERVO_OUTPUT_BOTH_ARMS is two Outputs and answers false here - ask
+// for each - and so does any address no member of this image drives.
 //
 // A wired tick saved after boot takes effect at the next start
 // (src/config_settings.cpp, ApplyTiming::AtReboot), so the saved tick and
@@ -38,12 +39,12 @@ void servoTask(void* pvParameters);
 //
 // servoTaskWiredAtStart(): the Output's wired tick as the droid started with
 // it.
-bool servoTaskWiredAtStart(uint8_t armId);
+bool servoTaskWiredAtStart(ServoOutputAddress output);
 
 // servoTaskDrivesOutput(): ServoTask puts servo pulses on this Output this
 // boot - wired at start, no light on its wire at start, and LEDC came up. An
 // Output this answers false for is one every servo command is dropped for.
-bool servoTaskDrivesOutput(uint8_t armId);
+bool servoTaskDrivesOutput(ServoOutputAddress output);
 
 // servoTaskMayTakeForRun(): a Find by Moving run may take this Output now - a
 // free servo Output, one nothing drives, no Part is on and no light is on the
@@ -51,11 +52,11 @@ bool servoTaskDrivesOutput(uint8_t armId);
 // the Console admit a nudge and a release on it for that reason, and ServoTask
 // asks the same question before it takes one. Reads the boot snapshot above
 // and the live config cache, so it is current as of the call.
-bool servoTaskMayTakeForRun(uint8_t armId);
+bool servoTaskMayTakeForRun(ServoOutputAddress output);
 
 // servoTaskRunHolds(): a Find by Moving run holds this Output now, so a
 // release for it lets it go (a run holds one Output at most; include/
 // servo_run.h). Read from Core 0 without a lock: which Output a run holds is
 // one byte ServoTask writes, and a stale read can only be a release landing
 // just as the run let go, which the task then drops.
-bool servoTaskRunHolds(uint8_t armId);
+bool servoTaskRunHolds(ServoOutputAddress output);

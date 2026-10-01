@@ -14,7 +14,8 @@
 #include <stdlib.h>  // atoi
 #include <string.h>  // strcmp, strlen, strncmp
 
-#include "ledc_pwm.h"  // SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US
+#include "ledc_pwm.h"       // SERVO_PULSE_MIN_US, SERVO_PULSE_MAX_US
+#include "servo_backend.h"  // boardOutputAddress() - a panel number is a board Output
 
 // -----------------------------------------------------------------------------
 // marcduino_panel_to_arm_id()
@@ -139,6 +140,24 @@ inline uint8_t marcduino_panel_command_arm_id(const char* line) {
         return marcduino_panel_to_arm_id_mv(((line[3] - '0') * 10) + (line[4] - '0'));
     }
     return marcduino_panel_to_arm_id(atoi(line + 3));
+}
+
+// -----------------------------------------------------------------------------
+// marcduino_panel_command_output()
+// The same reading as marcduino_panel_command_arm_id(), as the Output Address
+// the servo path names an Output by (#444). Panels 1-5 are the board's own
+// Outputs, in its table's order, so the number becomes the address through
+// the board's one mapping (include/servo_backend.h boardOutputAddress()).
+//
+// SERVO_OUTPUT_BOTH_ARMS for the 0/99 broadcast; SERVO_OUTPUT_NONE for a line
+// marcduino_panel_command_arm_id() answers 254 for.
+// -----------------------------------------------------------------------------
+inline ServoOutputAddress marcduino_panel_command_output(const char* line) {
+    const uint8_t index = marcduino_panel_command_arm_id(line);
+    if (index == 255) {
+        return SERVO_OUTPUT_BOTH_ARMS;
+    }
+    return boardOutputAddress(index);  // 254 is past the table: SERVO_OUTPUT_NONE
 }
 
 // -----------------------------------------------------------------------------
