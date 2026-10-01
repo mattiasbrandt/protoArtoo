@@ -44,6 +44,9 @@
 //   audio-outlives-show     #16: DM:VADER's $M played on for three minutes.
 //   dome-how-far            ADR 0046: how far is resolved by the dome, and
 //                           our fork has no part-way move for PP3 and PP5.
+//   gesture-cut             #438: the droid ends a Gesture at its run's end
+//                           step, mid-pass, so terminal cleanup is the last
+//                           thing the run moves.
 //   gesture-dome            ADR 0046: a dome Gesture is the dome's `$` command,
 //                           and a pair the dome has no command for saves.
 //   tempo-confidence        ADR 0058: the analyzer read Cantina's ~200 BPM as
@@ -754,6 +757,50 @@
         ),
       );
 
+  // A Gesture whose moves do not all fit before the end step. The droid ends a
+  // Gesture there, mid-pass (sequenceGestureNext(), include/sequence_gesture.h),
+  // so what falls at or after the end is never sent. A body Gesture's moves are
+  // paced at least the Cadence Floor apart, which this counts; each Output's
+  // own throw can push them later still, so the count is the least that is cut.
+  const gestureCut = (events, steps) => {
+    const G = window.SeqGesture;
+    const end = steps.find((step) => step && step.type === "end");
+    if (!G || !end) return [];
+    const endT = Number(end.t) || 0;
+    const floor = cadenceFloorMs() || 0;
+    const out = [];
+    events
+      .filter((event) => event.def.type === "gesture" && !event.generated)
+      .forEach((event) => {
+        let cut = 0;
+        if (G.onDome(event.def)) {
+          const repeat = Number(event.def.repeatMs) || 0;
+          const extent = Number(event.def.extentMs) || 0;
+          const passes = repeat > 0 && extent > 0 ? Math.ceil(extent / repeat) : 1;
+          for (let p = 0; p < passes; p++) if (event.t + p * repeat >= endT) cut += 1;
+        } else {
+          let last = -Infinity;
+          G.bodyMoves(event.def, event.t).forEach((move) => {
+            const at = Math.max(move.t, last + floor);
+            last = at;
+            if (at >= endT) cut += 1;
+          });
+        }
+        if (cut > 0) {
+          out.push(
+            finding(
+              "warning",
+              "gesture-cut",
+              `${plural(cut, "move of this gesture falls", "moves of this gesture fall")} at or after the end, and the droid stops it there.`,
+              "Start it earlier, slow its pace, or move the end later.",
+              { step: event.step, n: cut },
+            ),
+          );
+        }
+      });
+    return out;
+  };
+
   // A dome Gesture the connected dome performs only in part, or not at all
   // (ADR 0046): Coordinator Resolution maps it onto the dome's `$` family, and
   // the body never breaks it into single panel commands. It still saved; this
@@ -885,6 +932,7 @@
       ...partLeftOpen(events),
       ...audioOutlivesShow(events),
       ...gestureDome(events),
+      ...gestureCut(events, steps),
       ...domeHowFar(events),
       ...tempoConfidence(seq),
       ...tempoHash(seq, context),

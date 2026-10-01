@@ -330,7 +330,8 @@ inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs
         for (uint16_t k = 0; k < moves; ++k) {
             const SeqGestureMove move = seqGesturePassMove(spread, n, stepMs, k);
             const uint32_t at = passAt + move.atMs;
-            if (at > atMs) continue;
+            // A move at or after the end step is never sent (sequenceGestureNext()).
+            if (at > atMs || (endMs != 0 && at >= endMs)) continue;
             SeqAction a = blankAction(SEQ_ACT_BODY_MOVE, droidPartIdAt(members[move.member]));
             a.bodyShape = (uint8_t)seqGestureMoveShape(shape, move.undo);
             a.bodyHowFar = seqBodyHowFar(step.params);

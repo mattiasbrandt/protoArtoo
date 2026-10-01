@@ -376,8 +376,8 @@ struct SeqAction {
     uint32_t      domeDurationMs;  // DOME_ROTATE: how long the turn runs.
                                    // GESTURE: the absolute ms the end step of
                                    // the run that fired it falls at, 0 when the
-                                   // branch has none -- no pass of the Gesture
-                                   // may start at or after it (#438).
+                                   // branch has none -- no move of the Gesture
+                                   // goes out at or after it (#438).
     // BODY_MOVE. Already resolved through seqBodyShape()/seqBodyHowFar(), so a
     // consumer reads a shape and a percentage rather than the two defaults.
     uint8_t       bodyShape;
@@ -385,8 +385,9 @@ struct SeqAction {
     uint16_t      bodyFlutterMs;
     // GESTURE. The step itself, valid only while the run that fired it is
     // still active: a Learned run's steps live in heap run buffers the
-    // dispatcher frees when the run ends, and a Gesture can outlive its run.
-    // So the Coordinator copies what it needs AT DISPATCH, never later.
+    // dispatcher frees when the run ends, and the Gesture runs on past the
+    // step that fired it. So the Coordinator copies what it needs AT
+    // DISPATCH, never later.
     const SeqStep* gesture;
 };
 

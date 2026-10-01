@@ -417,4 +417,16 @@ test("a gesture the dome cannot perform saves with a warning, and generated move
   assert.equal(report.findings.filter((f) => f.code === "gesture-dome").length, 0);
   // The moves it becomes are still read: the doors are left open.
   assert.equal(report.findings.filter((f) => f.code === "part-left-open").length, 4);
+
+  // The droid ends a Gesture at the end step, mid-pass: a wave of four doors
+  // paced at the Cadence Floor from 1000 cannot all go before an end at 2000.
+  const cut = rehearsal.rehearse(
+    seq([
+      { t: 1000, type: "gesture", set: "breadpan", spread: "wave", stepMs: 100 },
+      { t: 2000, type: "end" },
+    ]),
+  );
+  const cuts = cut.findings.filter((f) => f.code === "gesture-cut");
+  assert.equal(cuts.length, 1);
+  assert.equal(cuts[0].n, 1);
 });

@@ -225,6 +225,9 @@ A `gesture` step spreads one shape across a **set** of Parts (ADR 0046):
   nothing with it.
 - A flutter with `together` or `wave` owes a later close Gesture over the same
   set.
+- A Gesture stops at the end step, mid-pass if it has to: nothing it would
+  move at or after the end is sent, and the Rehearsal says when a pass is cut
+  short.
 
 ## How far a dome panel goes
 

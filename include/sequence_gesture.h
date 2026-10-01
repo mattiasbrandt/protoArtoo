@@ -552,6 +552,7 @@ struct SeqGestureRunEntry {
     uint16_t repeatMs;
     uint32_t passes;
     uint32_t fireMs;      // when the engine handed it over
+    uint32_t endAtMs;     // when the run that fired it reaches its end step; 0 = none
     uint32_t pass;        // the pass under way
     uint16_t k;           // the next move of that pass
     char     domeCmd[16]; // a dome Gesture's command, or "" when it has none
@@ -606,6 +607,7 @@ inline bool sequenceGestureStart(SeqGestureRun* run, const SeqStep& step, uint32
     e.stepMs = seqGestureStepMs(step.params);
     e.repeatMs = seqGestureRepeatMs(step.params);
     e.passes = seqGesturePassesBefore(step.params, nowMs, runEndAtMs);
+    e.endAtMs = runEndAtMs;
     e.fireMs = nowMs;
     if (e.n == 0) return false;
     if (e.dome && !seqGestureDomeCommand(step, e.domeCmd, sizeof(e.domeCmd))) return false;
@@ -635,9 +637,19 @@ inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
 // it at AND for the pace: `awaitedMoving` is whether ServoTask still reports
 // the Output the last body move started (run->awaitArm) as moving, and the
 // spacing after it must have run. The earliest-due item goes first.
+//
+// NOTHING GOES OUT AT OR AFTER THE FIRING RUN'S END STEP (#438). A Gesture
+// whose run has reached its end is over, mid-pass or not: terminal cleanup is
+// the last thing the run moves, and the Coordinator clears suppression right
+// after it. So an entry is ended here the moment nowMs reaches its run's end,
+// and a move the pace pushed past the end is never sent. The Rehearsal says
+// when a pass cannot fit before the end (gesture-cut).
 inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaitedMoving,
                                 SeqGestureNext* out) {
     if (run == nullptr || out == nullptr) return false;
+    for (SeqGestureRunEntry& e : run->g) {
+        if (e.active && e.endAtMs != 0 && (int32_t)(nowMs - e.endAtMs) >= 0) e.active = false;
+    }
     const bool bodyMayGo = sequencePaceAwaitDone(&run->awaitArm, awaitedMoving) &&
                            (int32_t)(nowMs - run->dueMs) >= 0;
     int8_t best = -1;

@@ -282,7 +282,8 @@ static void test_a_pose_puts_the_gesture_where_the_run_has_it() {
 // Run an engine over `steps` the way the Coordinator does: each Gesture it
 // hands over starts a Gesture run bounded by the action's end time, and the
 // run is driven to 30 s. Returns the latest time any Gesture item started.
-static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gestures) {
+static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gestures,
+                                   bool paced = false, uint32_t* moves = nullptr) {
     SequenceEntry e = { "DM:BOUND", steps, count, 9000, TOGGLE_NONE, nullptr, 0, nullptr };
     static SeqEngineState st;
     static SeqGestureRun run;
@@ -304,7 +305,10 @@ static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gest
         SeqGestureNext next;
         while (sequenceGestureNext(&run, now, false, &next)) {
             latest = now;
-            sequenceGestureDone(&run, next, now, /*started=*/false, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+            if (moves != nullptr) (*moves)++;
+            // Paced: every move reaches ServoTask and holds the next one off by
+            // the Cadence Floor, as on a droid.
+            sequenceGestureDone(&run, next, now, /*started=*/paced, 0, paced ? 0 : SEQ_BULK_CENTRE_NO_AWAIT);
         }
     }
     return latest;
@@ -360,6 +364,26 @@ static void test_a_spliced_phrase_gesture_never_runs_past_the_parent_end() {
     free(buf);
 }
 
+// SAFETY (#438): not one Gesture move goes out at or after its run's end step,
+// even mid-pass. A wave over the four breadpan doors, paced at the Cadence
+// Floor, would put its doors out at 1000, 1450, 1900 and 2350; the run ends at
+// 2000, so the fourth is never sent.
+static void test_no_gesture_move_goes_out_after_the_end_step() {
+    SeqDraft d;
+    ProtocolCheckResult r = parseAndCheck(
+        "{\"format\":1,\"name\":\"DM:GCUT\",\"suppressMs\":9000,\"steps\":["
+        "{\"t\":1000,\"type\":\"gesture\",\"set\":\"breadpan\",\"spread\":\"wave\",\"stepMs\":100},"
+        "{\"t\":2000,\"type\":\"end\"}]}",
+        d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    uint32_t gestures = 0;
+    uint32_t moves = 0;
+    const uint32_t latest = latestGestureStart(d.steps, d.stepCount, &gestures, /*paced=*/true, &moves);
+    TEST_ASSERT_EQUAL_UINT32(1, gestures);
+    TEST_ASSERT_EQUAL_UINT32(1900, latest);
+    TEST_ASSERT_EQUAL_UINT32(3, moves);
+}
+
 // A pose past the end agrees with the run: the Gesture's last pass is the one
 // that started before the end step.
 static void test_a_pose_past_the_end_agrees_with_the_bounded_run() {
@@ -398,5 +422,6 @@ int main(int, char**) {
     RUN_TEST(test_an_explicit_extent_never_carries_a_gesture_past_the_end);
     RUN_TEST(test_a_spliced_phrase_gesture_never_runs_past_the_parent_end);
     RUN_TEST(test_a_pose_past_the_end_agrees_with_the_bounded_run);
+    RUN_TEST(test_no_gesture_move_goes_out_after_the_end_step);
     return UNITY_END();
 }

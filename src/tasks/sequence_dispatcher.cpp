@@ -324,7 +324,8 @@ static void gestureEnd(const char* why) {
 
 // A Gesture the engine has just handed over, copied into the run NOW, while
 // the engine that fired it is still active: a Learned run's steps are freed
-// when the run ends, and a Gesture may outlive it (SeqAction, sequence_engine.h).
+// when the run ends, and the Gesture is read on every pass until then
+// (SeqAction, sequence_engine.h).
 static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& act) {
     // act.domeDurationMs is where the firing run ends: no pass starts after it.
     if (act.gesture != nullptr &&
@@ -1108,6 +1109,13 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         if (seqEngineActive(engine)) {
             SeqAction act;
             while (seqEnginePeek(engine, now, esp_random, act)) {
+                // The run has reached its end step: the Gestures it fired end
+                // here, before terminal cleanup, so cleanup is the last thing
+                // the run moves (#438; sequenceGestureNext() holds the same
+                // line by time).
+                if (seqEngineFinishing(engine) && sequenceGestureActive(gestureRun)) {
+                    gestureEnd("end step");
+                }
                 if (!dispatchAction(act)) {
                     if (!retryLogged) {
                         PA_LOG_WARN(TAG, "queue full, retrying: %s", act.payload);
@@ -1123,9 +1131,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 seqEngineCommit(engine);
             }
             if (!seqEngineActive(engine)) {
-                // A Gesture this run fired was bounded by this end when it was
-                // handed over (seqGesturePassesBefore()): no pass starts after
-                // it, and a pass already under way finishes its moves.
+                // An end with no cleanup to send finishes inside one peek;
+                // its Gestures end here all the same.
+                gestureEnd("end step");
                 PA_LOG_INFO(TAG, "end %s", activeName);
                 // No-op if an abort path already finalized this run (guarded on
                 // RUNNING); otherwise records the normal completion.
