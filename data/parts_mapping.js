@@ -781,8 +781,10 @@
       return `${where}|${kind}|${node.dataset.value || node.dataset.product || ""}`;
     };
     const focusControl = (key) => {
-      if (key === null) return;
-      Array.from(table.querySelectorAll("button")).find((each) => controlKey(each) === key)?.focus?.();
+      const control = Array.from(table.querySelectorAll("button")).find((each) => controlKey(each) === key);
+      if (!control || control.disabled) return false;
+      control.focus?.();
+      return true;
     };
 
     // Everything the filled controls are drawn from that the markup does not
@@ -794,6 +796,11 @@
       `|${move.pending()}|${finder === null ? "" : `${finder.live()}:${finder.running() !== null}`}`;
 
     let drawn = null;
+    // The control a rebuild took the focus from and could not hand it back
+    // to: a bar is refused while its move is on its way, and a refused
+    // control cannot hold the focus. It is owed the focus at the next
+    // rebuild, unless the builder has put the focus somewhere since.
+    let owed = null;
     const draw = (outputs) => {
       // A Part that has landed on an Output is the droid's now; taken off
       // again, it goes back among the pills.
@@ -801,11 +808,13 @@
       const html = tableHtml(outputs);
       const state = `${html}|${stateOf(outputs)}`;
       if (state === drawn) return;
-      const held = controlKey(document.activeElement);
+      const active = document.activeElement;
+      const nowhere = !active || active === document.body;
+      const held = controlKey(active) ?? (nowhere ? owed : null);
       drawn = state;
       table.innerHTML = html;
       fillRows(outputs);
-      focusControl(held);
+      owed = held !== null && !focusControl(held) ? held : null;
     };
 
     const rowOf = (partId) =>
