@@ -1,7 +1,8 @@
 # A tempo is tapped or measured, and the sequence keeps both the beat and the millisecond
 
-Status: accepted (2026-09-09, issue #335). Describes the **target** model; none of
-it is implemented yet.
+Status: accepted (2026-09-09, issue #335). **Built by #438 (2026-10-01):** the
+tempo block, beat-placed steps, the typed, tapped and analysed routes, and the
+ported analyser with **three** fixes (the third is below).
 
 ## Context
 
@@ -54,6 +55,16 @@ Two measured defects are corrected before any grid is stored:
   music. It reads **-2.0 BPM at 128 and -2.3 at 150**. Divide by `(nF - lag)`.
 - the grid sits about **18 ms early** at 44.1 kHz, because an onset's time is
   taken as the analysis window's start. Add `win/(2*sr)` back.
+- **(added 2026-10-01, #438, operator-approved)** the octave halving rounds the
+  lag, `Math.round(bestLag / 2)`, which can land one frame off the correlation
+  peak, and the parabolic step only looks half a lag either side, so it never
+  walks back. Climb the lag to the local maximum of `corr()` before
+  interpolating. **This, not the unnormalised `corr()`, is what produced the
+  -2.0 / -2.3 BPM figures above**: with only the first two fixes, 44.1 kHz click
+  tracks read 128 as 126.05 and 150 as 147.66; with the climb they read 128.17
+  and 150.11, while 100, 120, 140 and 175 BPM are unchanged. The normalisation
+  stays; it is the reference's stated defect and costs nothing. The one-way door
+  below applies to this fix as to the other two.
 
 Per #290 a close port carries a per-file MIT notice. That is accepted rather than
 avoided: the constants and the estimator are both quoted in full in #335, so
@@ -117,7 +128,7 @@ redesign.
 
 ## Consequences
 
-- The two analyser defects are a **one-way door**. Grids persist and steps carry
+- The analyser defects (two found here, a third by #438) are a **one-way door**. Grids persist and steps carry
   beat indices, so correcting the 18 ms bias after shipping would silently
   re-resolve every beat-placed step in every saved sequence. They land before the
   first grid is stored or not at all.
