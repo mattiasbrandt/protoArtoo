@@ -326,7 +326,9 @@ static void gestureEnd(const char* why) {
 // the engine that fired it is still active: a Learned run's steps are freed
 // when the run ends, and a Gesture may outlive it (SeqAction, sequence_engine.h).
 static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& act) {
-    if (act.gesture != nullptr && !sequenceGestureStart(&gestureRun, *act.gesture, millis())) {
+    // act.domeDurationMs is where the firing run ends: no pass starts after it.
+    if (act.gesture != nullptr &&
+        !sequenceGestureStart(&gestureRun, *act.gesture, millis(), act.domeDurationMs)) {
         PA_LOG_WARN(TAG, "gesture %s not performed - nothing to perform, or four already running",
                     act.payload);
     }
@@ -1121,6 +1123,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 seqEngineCommit(engine);
             }
             if (!seqEngineActive(engine)) {
+                // A Gesture this run fired was bounded by this end when it was
+                // handed over (seqGesturePassesBefore()): no pass starts after
+                // it, and a pass already under way finishes its moves.
                 PA_LOG_INFO(TAG, "end %s", activeName);
                 // No-op if an abort path already finalized this run (guarded on
                 // RUNNING); otherwise records the normal completion.

@@ -458,8 +458,17 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
         case STEP_GESTURE:
             // Handed on whole. The payload rides along so a log line and the
             // run evidence can name the set without reaching into the step.
+            // So does where this run ends: a Gesture repeats on the
+            // Coordinator's cursor, not this one, and must not start a pass
+            // after the run that fired it has reached its end step -- an
+            // explicit extent, or a phrase's own extent spliced in from a
+            // shorter sequence, could otherwise carry it past the parent's
+            // end and past terminal cleanup.
             a.kind = SEQ_ACT_GESTURE;
             a.gesture = &step;
+            a.domeDurationMs = (st.stepCount > 0 && st.steps[st.stepCount - 1].type == STEP_END)
+                                   ? st.startMs + st.steps[st.stepCount - 1].tMs
+                                   : 0;
             setPayload(a, step.payload);
             break;
         case STEP_SEQUENCE:

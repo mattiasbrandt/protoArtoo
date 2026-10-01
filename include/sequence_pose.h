@@ -299,7 +299,8 @@ inline bool domePartTarget(uint8_t partIndex, char* out, size_t outLen) {
 // panels that way; every other command the dome performs ends them closed, on
 // the dome's own timing, and a pair the dome has no command for moves nothing
 // (include/sequence_gesture.h) -- so neither does the pose.
-inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs) {
+inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs,
+                         uint32_t endMs) {
     uint8_t members[SEQ_GESTURE_MEMBERS_MAX];
     const uint8_t n = seqGestureMembers(step, members, SEQ_GESTURE_MEMBERS_MAX);
     const SeqBodyShape shape = seqBodyShape(step.params);
@@ -319,7 +320,9 @@ inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs
     }
     const uint16_t stepMs = seqGestureStepMs(step.params);
     const uint16_t repeat = seqGestureRepeatMs(step.params);
-    const uint32_t passes = seqGesturePasses(step.params);
+    // As a run bounds it: no pass starts at or after the end step (endMs 0:
+    // no end step).
+    const uint32_t passes = seqGesturePassesBefore(step.params, fireMs, endMs);
     const uint16_t moves = seqGesturePassMoves(spread, n);
     for (uint32_t pass = 0; pass < passes; ++pass) {
         const uint32_t passAt = fireMs + pass * repeat;
@@ -337,7 +340,7 @@ inline void visitGesture(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs
 }
 
 // One step, as the engine would fire it at fireMs.
-inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs) {
+inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint32_t atMs, uint32_t endMs) {
     switch (step.type) {
         case STEP_DOME_CMD:
             if (!visitPanel(plan, step.payload, fireMs, step.params.howFar)) {
@@ -373,7 +376,7 @@ inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint3
             break;
         }
         case STEP_GESTURE:
-            visitGesture(plan, step, fireMs, atMs);
+            visitGesture(plan, step, fireMs, atMs, endMs);
             break;
         default:
             // A random step's pick, a dome turn, a latch reset: nothing an
@@ -403,6 +406,14 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
     out->truncated = false;
     if (steps == nullptr) return;
 
+    // Where the routine ends, which bounds a Gesture's passes as a run does.
+    uint32_t endMs = 0;
+    for (uint8_t k = 0; k < count; ++k) {
+        if (steps[k].type == STEP_END) {
+            endMs = steps[k].tMs;
+            break;
+        }
+    }
     bool ended = false;
     uint8_t i = 0;
     while (i < count) {
@@ -419,14 +430,14 @@ inline void sequencePosePlan(const SeqStep* steps, uint8_t count, bool toggleOpe
             do {
                 for (uint8_t k = (uint8_t)(i + 1); k <= last; ++k) {
                     const uint32_t fire = step.tMs + start + steps[k].tMs;
-                    if (fire <= atMs) seq_pose_detail::visit(*out, steps[k], fire, atMs);
+                    if (fire <= atMs) seq_pose_detail::visit(*out, steps[k], fire, atMs, endMs);
                 }
                 start += period;
             } while (period > 0 && start < step.params.durationMs && step.tMs + start <= atMs);
             i = (uint8_t)(last + 1);
             continue;
         }
-        if (step.tMs <= atMs) seq_pose_detail::visit(*out, step, step.tMs, atMs);
+        if (step.tMs <= atMs) seq_pose_detail::visit(*out, step, step.tMs, atMs, endMs);
         ++i;
     }
 

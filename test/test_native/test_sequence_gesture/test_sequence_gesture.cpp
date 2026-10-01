@@ -9,6 +9,7 @@
 // =============================================================================
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <unity.h>
@@ -18,6 +19,7 @@
 #include "sequence_engine.h"
 #include "sequence_gesture.h"
 #include "sequence_pose.h"
+#include "seq_store_util.h"
 
 void setUp() {}
 void tearDown() {}
@@ -277,6 +279,109 @@ static void test_a_pose_puts_the_gesture_where_the_run_has_it() {
     TEST_ASSERT_EQUAL_UINT8(SEQ_POSE_BODY, plan.cmds[0].cls);
 }
 
+// Run an engine over `steps` the way the Coordinator does: each Gesture it
+// hands over starts a Gesture run bounded by the action's end time, and the
+// run is driven to 30 s. Returns the latest time any Gesture item started.
+static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gestures) {
+    SequenceEntry e = { "DM:BOUND", steps, count, 9000, TOGGLE_NONE, nullptr, 0, nullptr };
+    static SeqEngineState st;
+    static SeqGestureRun run;
+    seqEngineInit(st);
+    run = SeqGestureRun{};
+    run.awaitArm = SEQ_BULK_CENTRE_NO_AWAIT;
+    seqEngineStart(st, &e, 0);
+    uint32_t latest = 0;
+    *gestures = 0;
+    for (uint32_t now = 0; now <= 30000; now += 10) {
+        SeqAction act;
+        while (seqEngineActive(st) && seqEnginePeek(st, now, stubRand, act)) {
+            if (act.kind == SEQ_ACT_GESTURE) {
+                (*gestures)++;
+                TEST_ASSERT_TRUE(sequenceGestureStart(&run, *act.gesture, now, act.domeDurationMs));
+            }
+            seqEngineCommit(st);
+        }
+        SeqGestureNext next;
+        while (sequenceGestureNext(&run, now, false, &next)) {
+            latest = now;
+            sequenceGestureDone(&run, next, now, /*started=*/false, 0, SEQ_BULK_CENTRE_NO_AWAIT);
+        }
+    }
+    return latest;
+}
+
+// SAFETY (#438): no Gesture pass starts after the run that fired it reaches its
+// end step - terminal cleanup is the last thing that moves what the sequence
+// moved. An explicit extent asks for 20 s of repeats in a sequence that ends
+// at 8 s.
+static void test_an_explicit_extent_never_carries_a_gesture_past_the_end() {
+    SeqDraft d;
+    ProtocolCheckResult r = parseAndCheck(
+        "{\"format\":1,\"name\":\"DM:GLONG\",\"suppressMs\":9000,\"steps\":["
+        "{\"t\":1000,\"type\":\"gesture\",\"set\":\"breadpan\",\"spread\":\"wave\","
+        "\"stepMs\":100,\"repeatMs\":1000,\"extentMs\":20000},"
+        "{\"t\":8000,\"type\":\"end\"}]}",
+        d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    uint32_t gestures = 0;
+    const uint32_t latest = latestGestureStart(d.steps, d.stepCount, &gestures);
+    TEST_ASSERT_EQUAL_UINT32(1, gestures);
+    // The last pass starts at 7000 and its fourth door at 7300.
+    TEST_ASSERT_EQUAL_UINT32(7300, latest);
+}
+
+// The same rule when the Gesture came in a phrase: its extent was resolved
+// against the phrase's own end, then the splice timed it from the phrase step
+// in a parent that ends sooner. A Protocol Check bound cannot see this case.
+static void test_a_spliced_phrase_gesture_never_runs_past_the_parent_end() {
+    SeqStep* buf = (SeqStep*)malloc(sizeof(SeqStep) * 2);
+    memset(buf, 0, sizeof(SeqStep) * 2);
+    buf[0].tMs = 6000;
+    buf[0].type = STEP_SEQUENCE;
+    strncpy(buf[0].payload, "aaaa", sizeof(buf[0].payload) - 1);
+    buf[1].tMs = 8000;
+    buf[1].type = STEP_END;
+    uint8_t count = 2;
+    SeqStep child[2];
+    child[0] = gestureStep("breadpan", BODY_SHAPE_OPEN, GESTURE_SPREAD_WAVE, GESTURE_START_FRONT,
+                           GESTURE_DIR_CLOCKWISE);
+    seqGestureSetStepMs(child[0].params, 100);
+    seqGestureSetRepeatMs(child[0].params, 1000);
+    seqGestureSetExtentMs(child[0].params, 5000);
+    memset(&child[1], 0, sizeof(child[1]));
+    child[1].tMs = 5000;
+    child[1].type = STEP_END;
+    TEST_ASSERT_TRUE(seqStoreSplicePhrase(&buf, &count, 0, child, 2));
+    uint32_t gestures = 0;
+    const uint32_t latest = latestGestureStart(buf, count, &gestures);
+    TEST_ASSERT_EQUAL_UINT32(1, gestures);
+    // Passes at 6000 and 7000 start; 8000..10000 would be after the end.
+    TEST_ASSERT_EQUAL_UINT32(7300, latest);
+    free(buf);
+}
+
+// A pose past the end agrees with the run: the Gesture's last pass is the one
+// that started before the end step.
+static void test_a_pose_past_the_end_agrees_with_the_bounded_run() {
+    SeqStep steps[2];
+    steps[0] = gestureStep("breadpan", BODY_SHAPE_OPEN, GESTURE_SPREAD_CHASE, GESTURE_START_FRONT,
+                           GESTURE_DIR_CLOCKWISE);
+    steps[0].tMs = 1000;
+    seqGestureSetStepMs(steps[0].params, 100);
+    seqGestureSetRepeatMs(steps[0].params, 1000);
+    seqGestureSetExtentMs(steps[0].params, 20000);
+    memset(&steps[1], 0, sizeof(steps[1]));
+    steps[1].type = STEP_END;
+    steps[1].tMs = 8000;
+    static SeqPosePlan plan;
+    sequencePosePlan(steps, 2, false, 30000, &plan);
+    TEST_ASSERT_TRUE(plan.count > 0);
+    for (uint8_t i = 0; i < plan.count; ++i) {
+        // The chase's last move of the pass that starts at 7000 is at 7400.
+        TEST_ASSERT_TRUE(plan.cmds[i].atMs <= 7400);
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_ring_orders_by_bearing_from_the_front);
@@ -290,5 +395,8 @@ int main(int, char**) {
     RUN_TEST(test_a_dome_gesture_that_leaves_the_ring_open_is_closed_one_panel_at_a_time);
     RUN_TEST(test_a_body_gesture_is_paced_by_the_floor_and_never_holds_the_engine);
     RUN_TEST(test_a_pose_puts_the_gesture_where_the_run_has_it);
+    RUN_TEST(test_an_explicit_extent_never_carries_a_gesture_past_the_end);
+    RUN_TEST(test_a_spliced_phrase_gesture_never_runs_past_the_parent_end);
+    RUN_TEST(test_a_pose_past_the_end_agrees_with_the_bounded_run);
     return UNITY_END();
 }

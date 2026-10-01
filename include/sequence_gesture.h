@@ -385,6 +385,22 @@ inline uint32_t seqGesturePasses(const SeqStepParams& p) {
     return (extent + repeat - 1) / repeat;
 }
 
+// The passes that start before the run that fired the Gesture reaches its end
+// step (#438): a Gesture fired at fireMs in a run ending at endAtMs starts no
+// pass at or after endAtMs, whatever its extent says. The first pass always
+// counts -- it starts as the Gesture fires, which the engine only does before
+// the end. endAtMs 0 is a run with no end step, bounded by the extent alone.
+// A pass already under way at the end finishes its moves; none starts after.
+// Both clocks are the caller's: absolute ms for a run, sequence ms for a pose.
+inline uint32_t seqGesturePassesBefore(const SeqStepParams& p, uint32_t fireMs, uint32_t endAtMs) {
+    const uint32_t passes = seqGesturePasses(p);
+    const uint16_t repeat = seqGestureRepeatMs(p);
+    if (endAtMs == 0 || repeat == 0 || passes <= 1) return passes;
+    if ((int32_t)(endAtMs - fireMs) <= 0) return 1;
+    const uint32_t before = (endAtMs - fireMs + repeat - 1) / repeat;
+    return before < passes ? before : passes;
+}
+
 // -----------------------------------------------------------------------------
 // The dome's side: Coordinator Resolution onto the connected dome's `$` family.
 //
@@ -566,7 +582,8 @@ inline bool sequenceGestureActive(const SeqGestureRun& run) {
 // already running, and when there is nothing to perform: a dome Gesture the
 // dome has no command for, or a Gesture none of whose Parts this build knows.
 // Neither is an error in the sequence, which carries on.
-inline bool sequenceGestureStart(SeqGestureRun* run, const SeqStep& step, uint32_t nowMs) {
+inline bool sequenceGestureStart(SeqGestureRun* run, const SeqStep& step, uint32_t nowMs,
+                                 uint32_t runEndAtMs = 0) {
     if (run == nullptr) return false;
     SeqGestureRunEntry* slot = nullptr;
     for (SeqGestureRunEntry& e : run->g) {
@@ -588,7 +605,7 @@ inline bool sequenceGestureStart(SeqGestureRun* run, const SeqStep& step, uint32
     e.easing = seqGestureEasing(step.params);
     e.stepMs = seqGestureStepMs(step.params);
     e.repeatMs = seqGestureRepeatMs(step.params);
-    e.passes = seqGesturePasses(step.params);
+    e.passes = seqGesturePassesBefore(step.params, nowMs, runEndAtMs);
     e.fireMs = nowMs;
     if (e.n == 0) return false;
     if (e.dome && !seqGestureDomeCommand(step, e.domeCmd, sizeof(e.domeCmd))) return false;
