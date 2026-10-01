@@ -4104,6 +4104,11 @@
       // "_copy" opened every duplicate refused until it was renamed.
       const baseName = seqName.replace(/_COPY(\d*)$/, "");
       original.name = `${baseName}_COPY`;
+      // A duplicate is a new sequence, so it gets an id of its own at save. A
+      // sequence inside another is found by id, and the droid takes the first
+      // match (src/seq_store.cpp): two sequences sharing one would let a
+      // routine that holds the original play the copy.
+      delete original.id;
 
       // Open editor with copy
       currentEditingSeq = original;
