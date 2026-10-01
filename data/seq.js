@@ -4016,7 +4016,7 @@
         break;
       }
       case "duplicate":
-        leaveSession(() => handleDuplicateSequence(seqName));
+        leaveSession(() => handleDuplicateSequence(seqName, rowEl));
         break;
       case "memory-wipe":
         handleMemoryWipePrompt(seqName);
@@ -4095,28 +4095,37 @@
     }
   };
 
-  const handleDuplicateSequence = async (seqName) => {
+  // Open a copy of one of the builder's own sequences to edit. A read that
+  // fails says so on the row that was pressed.
+  const handleDuplicateSequence = async (seqName, rowEl = null) => {
+    const sayOnRow = rowSayer(seqName, rowEl);
+    let original = null;
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      const original = result.data;
-      // Auto-rename to NAME_COPY (avoid _COPY_COPY by removing an existing
-      // suffix). In capitals: Protocol Check takes no lowercase in a name, so
-      // "_copy" opened every duplicate refused until it was renamed.
-      const baseName = seqName.replace(/_COPY(\d*)$/, "");
-      original.name = `${baseName}_COPY`;
-      // A duplicate is a new sequence, so it gets an id of its own at save. A
-      // sequence inside another is found by id, and the droid takes the first
-      // match (src/seq_store.cpp): two sequences sharing one would let a
-      // routine that holds the original play the copy.
-      delete original.id;
-
-      // Open editor with copy
-      currentEditingSeq = original;
-      editorState.isNew = true; // Duplicate is a new sequence
-      renderEditorView(currentEditingSeq);
+      original = result.data;
     } catch (error) {
-      console.error("Error duplicating sequence:", error);
+      sayOnRow(`Could not read ${seqName}: ${PAApi.messageFor(error)}`);
+      return;
     }
+    if (!original || !Array.isArray(original.steps)) {
+      sayOnRow(`The droid sent ${seqName} back with no steps.`);
+      return;
+    }
+    // Auto-rename to NAME_COPY (avoid _COPY_COPY by removing an existing
+    // suffix). In capitals: Protocol Check takes no lowercase in a name, so
+    // "_copy" opened every duplicate refused until it was renamed.
+    const baseName = seqName.replace(/_COPY(\d*)$/, "");
+    original.name = `${baseName}_COPY`;
+    // A duplicate is a new sequence, so it gets an id of its own at save. A
+    // sequence inside another is found by id, and the droid takes the first
+    // match (src/seq_store.cpp): two sequences sharing one would let a
+    // routine that holds the original play the copy.
+    delete original.id;
+
+    // Open editor with copy
+    currentEditingSeq = original;
+    editorState.isNew = true; // Duplicate is a new sequence
+    renderEditorView(currentEditingSeq);
   };
 
   const handleMemoryWipePrompt = (seqName) => {

@@ -79,7 +79,9 @@ function makeElement(extra = {}) {
 
 const fire = (element, name) => (element.listeners[name] || []).forEach((fn) => fn({ type: name, target: element }));
 
-function newPage() {
+// `onDroid` is what the droid answers a read of one saved sequence with: the
+// sequence, or an Error to refuse the read with.
+function newPage({ onDroid = null } = {}) {
   const posts = [];
   // The shell's half of an unmount hold: what the surface registered, and what
   // it answered with. And every write to browser storage, which an unsaved
@@ -91,6 +93,12 @@ function newPage() {
     if (!elements.has(id)) elements.set(id, makeElement());
     return elements.get(id);
   };
+
+  // The list's row acts, handed back the way the browser would find them in
+  // the markup renderListView() just wrote: each a button with its row behind
+  // it, and the row's own feedback line.
+  const rowButtons = [];
+  byId("seq-cards-container").querySelectorAll = (selector) => (selector === "[data-action]" ? rowButtons : []);
 
   // Each rendered step card, rebuilt whenever the editor's markup changes.
   // Only an expanded card carries a time input and a fields container.
@@ -199,7 +207,14 @@ function newPage() {
     PAAssetsReady: true,
     PAApi: {
       ...shippedWords(),
-      get: (url) => Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] }),
+      get: (url) => {
+        if (onDroid && url.startsWith("/api/seq?name=")) {
+          return onDroid instanceof Error
+            ? Promise.reject(onDroid)
+            : Promise.resolve({ ok: true, status: 200, data: JSON.parse(JSON.stringify(onDroid)) });
+        }
+        return Promise.resolve({ ok: true, status: 200, data: url.startsWith("/api/config") ? {} : [] });
+      },
       postForm: () => Promise.resolve({ ok: true, data: {} }),
       postJson: (url, body) => {
         posts.push({ url, body: JSON.parse(JSON.stringify(body)) });
@@ -272,6 +287,18 @@ function newPage() {
     async save() {
       fire(byId("seq-editor-save"), "click");
       await settle();
+    },
+    // Press one of a list row's acts; hands back the row's feedback line.
+    async rowAct(action, seqName) {
+      const feedback = makeElement();
+      const row = makeElement({ querySelector: (selector) => (selector === ".seq-item-feedback" ? feedback : null) });
+      const button = makeElement({ dataset: { action, seqName }, closest: () => row });
+      rowButtons.length = 0;
+      rowButtons.push(button);
+      seam.renderListWith([{ name: seqName }]);
+      fire(button, "click");
+      await settle();
+      return feedback;
     },
     settle,
   };
@@ -599,4 +626,31 @@ test("a panel picked on one step and then on another is two edits, and Undo take
   assert.deepEqual(commands(), [":OP03", ":OP02", "end"], "one Undo took back more than the last pick");
   fire(page.byId("seq-editor-undo"), "click");
   assert.deepEqual(commands(), [":OP01", ":OP02", "end"]);
+});
+
+// A sequence inside another is found by its id, and the droid takes the first
+// sequence that carries it (src/seq_store.cpp). A duplicate is a new sequence:
+// saved with the original's id, a routine that nests the original could play
+// the copy instead.
+test("a duplicate is saved under an id of its own, never the original's", async () => {
+  const page = newPage({
+    onDroid: { name: "DM:ORIGINAL", id: "abcd1234", suppressMs: 8000, toggleGroup: "none", steps: [{ t: 0, type: "end" }] },
+  });
+  await page.rowAct("duplicate", "DM:ORIGINAL");
+  assert.equal(page.editing()?.name, "DM:ORIGINAL_COPY", "the fixture: Duplicate opened the copy to edit");
+
+  await page.save();
+  const saved = page.posts.filter((post) => post.url === "/api/seq");
+  assert.equal(saved.length, 1, "Save sent nothing");
+  assert.match(saved[0].body.id || "", /^[0-9a-f]{8}$/, "the duplicate was saved with no id");
+  assert.notEqual(saved[0].body.id, "abcd1234", "the duplicate was saved under the original's id");
+});
+
+// A row act that cannot read its sequence says so on the row. Duplicate used
+// to say it only to the console, so the press did nothing a builder could see.
+test("a Duplicate that cannot read the sequence says so on its row", async () => {
+  const page = newPage({ onDroid: new Error("controller not reachable") });
+  const feedback = await page.rowAct("duplicate", "DM:ORIGINAL");
+  assert.equal(page.editing(), null, "a duplicate that was never read opened the editor");
+  assert.match(feedback.textContent, /Could not read DM:ORIGINAL: controller not reachable/);
 });
