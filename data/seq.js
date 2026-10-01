@@ -2664,7 +2664,7 @@
                   <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? esc(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
                   <span class="setting-unit">BPM</span>
                 </span>
-                <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
+                <button id="seq-editor-tap-open" class="seq-act" type="button" aria-expanded="false" aria-controls="seq-editor-tap">Tap along</button>
                 <label class="seq-act" for="seq-editor-track">Analyze a track</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
                 <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
@@ -3089,7 +3089,8 @@
         resetTaps();
         showTaps();
         tempoFeedback("");
-        tapPanel.classList.toggle("hidden");
+        const shut = tapPanel.classList.toggle("hidden");
+        tapOpen.setAttribute("aria-expanded", String(!shut));
       });
     }
     if (tapPlay) {
@@ -3129,6 +3130,7 @@
         setTempo(window.SeqTempo.tappedTempo(result));
         resetTaps();
         tapPanel?.classList.add("hidden");
+        tapOpen?.setAttribute("aria-expanded", "false");
       });
     }
     const trackInput = document.getElementById("seq-editor-track");
