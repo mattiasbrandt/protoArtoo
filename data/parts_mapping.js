@@ -791,11 +791,18 @@
       const kind = node.dataset.act || (node.dataset.find ? "find" : node.closest("[data-bar]") ? "output" : "wire");
       return `${where}|${kind}|${node.dataset.value || node.dataset.product || ""}`;
     };
+    // Hands the focus back to the control a rebuild took it from. `true` only
+    // where that control is still there and cannot take it yet. A control
+    // that is gone was on a row that is gone - its Part was taken off, or
+    // removed - and the Part is a pill again: the focus goes to that pill, so
+    // it never falls off the table.
     const focusControl = (key) => {
-      const control = Array.from(table.querySelectorAll("button")).find((each) => controlKey(each) === key);
-      if (!control || control.disabled) return false;
-      control.focus?.();
-      return true;
+      const buttons = Array.from(table.querySelectorAll("button"));
+      const control = buttons.find((each) => controlKey(each) === key);
+      if (control && control.disabled) return true;
+      const partId = key.split("|")[0];
+      (control || buttons.find((each) => each.dataset.act === "add" && each.dataset.part === partId))?.focus?.();
+      return false;
     };
 
     // Everything the filled controls are drawn from that the markup does not
@@ -808,9 +815,10 @@
 
     let drawn = null;
     // The control a rebuild took the focus from and could not hand it back
-    // to: a bar is refused while its move is on its way, and a refused
+    // to: a bar takes no press while its move is on its way, and a disabled
     // control cannot hold the focus. It is owed the focus at the next
-    // rebuild, unless the builder has put the focus somewhere since.
+    // rebuild, unless the builder has put the focus somewhere since, and
+    // nothing is owed to a control that is no longer in the table.
     let owed = null;
     const draw = (outputs) => {
       // A Part that has landed on an Output is the droid's now; taken off
@@ -825,7 +833,7 @@
       drawn = state;
       table.innerHTML = html;
       fillRows(outputs);
-      owed = held !== null && !focusControl(held) ? held : null;
+      owed = held !== null && focusControl(held) ? held : null;
     };
 
     const rowOf = (partId) =>

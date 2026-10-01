@@ -296,7 +296,12 @@ const bootPicker = async ({ outputs = freshOutputs(), catalogSource = readData("
   // the bar's own button.
   env.press = (node) => env.table().fire("click", { target: node });
   env.add = (id) => env.press(env.pill(id));
-  env.takeOff = (id) => env.press(env.row(id).querySelectorAll("[data-act]").find((node) => node.dataset.act === "off"));
+  // The builder is on the act when they press it, as a click leaves them.
+  env.takeOff = (id) => {
+    const act = env.row(id).querySelectorAll("[data-act]").find((node) => node.dataset.act === "off");
+    act.focus();
+    env.press(act);
+  };
   // Put a Part on an Output: from its row's bar, adding it to the table
   // first when it is still a pill.
   env.pick = (id, address) => {
@@ -690,9 +695,11 @@ test("every body Part is in the table once, a row on an Output and a pill off on
   // The same act on a row the droid never held takes it off this page alone.
   env.takeOff("doorRL");
   assert.deepEqual(env.posts, [], "removing an added Part sends nothing either");
+  assert.strictEqual(env.document.activeElement, env.pill("doorRL"), "and the cursor goes with the Part, to its pill");
 
   env.takeOff("utilUp");
   await sleep(40);
   assert.deepEqual(env.posts.map((post) => post.form), [{ movePart: "utilUp", movePartFrom: "ledc:3", movePartTo: "none" }]);
   check("after a Part came off its Output");
+  assert.strictEqual(env.document.activeElement, env.pill("utilUp"), "taken off, the cursor is on its pill too");
 });
