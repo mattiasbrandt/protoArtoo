@@ -27,16 +27,18 @@ import socket
 import sys
 import time
 
+# What a droid serves. Staging bundles co-loaded scripts (#461), so the shell's
+# chain, the dashboard's and the sequence editor's are fetched as their bundles
+# (tools/gzip_fsdata.py SCRIPT_BUNDLES); the member files are not on the image.
 DEFAULT_ASSETS = [
     "/fw-version.json",
-    "/status_stream.js",
-    "/shell.js",
+    "/bundle_shell.js",
     "/web_api.js",
     "/index.html",
-    "/app.js",
+    "/bundle_dashboard.js",
     "/style.css",
     "/rc.js",
-    "/seq.js",
+    "/bundle_seq_editor.js",
 ]
 
 # Long enough that a stalled send hits the server's own five-second SO_SNDTIMEO

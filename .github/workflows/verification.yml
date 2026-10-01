@@ -144,6 +144,12 @@ jobs:
           npm ci
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: 🗜️ Install zopfli
+        # tools/gzip_fsdata.py gzips every web asset with zopfli on every pio
+        # build and refuses to build without it (#461). Always installed: the
+        # tooling tests stage a filesystem too, on a documentation-only change.
+        run: sudo apt-get install -y --no-install-recommends zopfli
+
       - name: 🔑 Provision CI placeholder secrets.h
         run: cp src/secrets.h.example src/secrets.h
 

@@ -436,7 +436,13 @@ const readPartsToggle = (page) =>
     // -----------------------------------------------------------------------
     // (a) One plate, never blank, across every surface
     // -----------------------------------------------------------------------
-    const served = await page.evaluate(async () => (await fetch('/shell.js', { cache: 'no-store' })).text());
+    // The shell's script as the droid serves it: inside its staged bundle on an
+    // image that bundles (#461, tools/gzip_fsdata.py SCRIPT_BUNDLES), else /shell.js.
+    const served = await page.evaluate(async () => {
+      const chain = (document.documentElement.getAttribute('data-scripts') || '').split(',').map((name) => name.trim());
+      const source = chain.includes('/bundle_shell.js') ? '/bundle_shell.js' : '/shell.js';
+      return (await fetch(source, { cache: 'no-store' })).text();
+    });
     const surfaces = [...served.matchAll(/page:\s*"([^"]+)"\s*,\s*doc:\s*"/g)].map((match) => match[1]);
     assert.ok(surfaces.length >= 10, `read only ${surfaces.length} surfaces out of the served shell.js`);
     console.log(`Surfaces in the served shell.js (${surfaces.length}): ${surfaces.join(', ')}`);

@@ -37,8 +37,9 @@ DEFAULT_PORT = 80
 # send queue (CONFIG_LWIP_TCP_SND_BUF_DEFAULT, 5744 bytes) plus whatever
 # receive window the client advertises. Anything smaller completes normally and
 # never enters a stalled response phase at all, which would make the probe
-# report a failure with nothing wrong.
-DEFAULT_ASSET_PATH = "/seq.js"
+# report a failure with nothing wrong. Staged inside the sequence editor's
+# bundle since #461 (tools/gzip_fsdata.py SCRIPT_BUNDLES), which is larger still.
+DEFAULT_ASSET_PATH = "/bundle_seq_editor.js"
 HANDSHAKE_DEADLINE_SECONDS = 10.0
 STATUS_POLL_INTERVAL_SECONDS = 1.0
 # Above any deadline this probe is run against. esp_http_server serves every

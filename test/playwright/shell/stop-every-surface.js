@@ -494,7 +494,13 @@ const precondition = lib.allOf(lib.estopMustBe(false), lib.sleepMustBe(false));
 
     // The surface list the droid is actually serving, read from its shell.js
     // rather than copied here, so a surface added later is walked too.
-    const served = await page.evaluate(async () => (await fetch('/shell.js', { cache: 'no-store' })).text());
+    // The shell's script as the droid serves it: inside its staged bundle on an
+    // image that bundles (#461, tools/gzip_fsdata.py SCRIPT_BUNDLES), else /shell.js.
+    const served = await page.evaluate(async () => {
+      const chain = (document.documentElement.getAttribute('data-scripts') || '').split(',').map((name) => name.trim());
+      const source = chain.includes('/bundle_shell.js') ? '/bundle_shell.js' : '/shell.js';
+      return (await fetch(source, { cache: 'no-store' })).text();
+    });
     const surfaceDocs = [...served.matchAll(/page:\s*"([^"]+)"\s*,\s*doc:\s*"([^"]+)"/g)].map((match) => ({ page: match[1], doc: match[2] }));
     const surfaces = surfaceDocs.map((entry) => entry.page);
     assert.ok(surfaces.length >= 10, `read only ${surfaces.length} surfaces out of the served shell.js`);
