@@ -33,6 +33,11 @@ the patch releases, whose notes live on their own GitHub Release.
   timeline or in the step list, is one Undo and one Redo, and Revert still
   takes the whole sequence back to how it was saved. Leave with edits unsaved
   and the page asks before it drops them.
+- **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
+  Wiring ends with a card for each product on the droid: its supply, its
+  draw, its logic level, where each wire goes, and what breaks hardware. Fit
+  a sound module and its card appears; answer Not fitted and it goes. The
+  printable wiring sheet ends with the same cards.
 - **One move across many parts.** A Gesture says "the ring, clockwise, from
   the front, a wave, one panel per beat" once: the order comes from where the
   parts sit, and the droid works out the parts when it runs, so a panel fitted

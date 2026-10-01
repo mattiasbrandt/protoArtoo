@@ -1,5 +1,27 @@
 # SBUS Protocol
 
+## Wiring card
+
+How to wire and power this product, in the fixed shape **Wiring** shows
+([#458](https://github.com/mattiasbrandt/protoArtoo/issues/458)).
+`tools/generate_wiring_cards.py` generates it into the Wiring page, and it is
+the only part of this sheet the product ships. Every line is proven by a
+section `source` names: change the section first, then the card. A value this
+sheet does not know stays `UNKNOWN`.
+
+```yaml
+wiring_card:
+  id: "rc_transmitter_sbus"
+  supply: "UNKNOWN here: it is the receiver's own figure"
+  draw: "UNKNOWN here: it is the receiver's own figure"
+  logic: "inverted serial, 100000 baud, 8E2. Its voltage is UNKNOWN"
+  wires:
+    - { from: "Signal", to: "one of the board's RC pins", note: "one wire carries every channel" }
+  hazards:
+    - "The droid reads inverted SBUS. Some FrSky receivers send it non-inverted."
+  source: "1, 2"
+```
+
 ## 0. Authority Contract
 
 This document is an implementation authority for SBUS frame parsing and validation behavior.

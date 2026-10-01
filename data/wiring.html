@@ -114,9 +114,21 @@
     <div class="card">
       <div class="sect">
         <h2 id="wiring-rail-heading"></h2>
+        <span class="sub">described, not drawn</span>
       </div>
       <div id="wiring-rail"></div>
     </div>
+
+    <!-- Product wiring (#458): how to wire and power each product on the
+         droid, one card a product, from the wiring card its spec sheet
+         carries. Reference content, which only an image built with the
+         default asset set holds (ADR 0065, amended 2026-09-30): that set's
+         partial is the plate and the cards, and the common root's is empty,
+         so on a build without them this line inlines nothing and the page
+         has no such section. data/wiring.js draws a card for each fitted
+         product, last on the page, with the running board's own pins beside
+         it; the saved sheet ends with the same cards. -->
+    <!-- PA:INCLUDE _wiring_cards.html -->
 
     <!-- The move question (#347): a Part taken off one Output for another
          is asked first, naming the Output it leaves. Opened non-modally over

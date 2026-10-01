@@ -718,6 +718,25 @@ class RealPagesStage(unittest.TestCase):
                         self.assertNotIn(name, {m for _b, _l, ms in bundles for m in ms}, page.name)
         self.assertEqual({p.name: p.read_bytes() for p in DATA.glob("*.html")}, sources)
 
+    def test_only_the_default_set_images_the_product_wiring_cards(self):
+        """The cards are reference content the default set carries and the
+        legacy set does not (ADR 0065, amended 2026-09-30; #458). On the legacy
+        image the Wiring page is staged with no card, no plate for them and no
+        partial beside it, so the cards cost that image nothing."""
+        staged = {}
+        for env, asset_set in self.BUILDS.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                flags = self.config.get("env:%s" % env, "build_flags")
+                _run_gzip_fsdata(_BoardEnv(DATA, Path(tmp), ROOT, flags, custom_asset_set=asset_set))
+                stage = Path(tmp) / "fsdata_gz"
+                self.assertEqual(sorted(p.name for p in stage.rglob("_wiring_cards*")), [], env)
+                with gzip.open(stage / "wiring.html.gz", "rt", encoding="utf-8") as fh:
+                    staged[asset_set] = fh.read()
+        self.assertIn('id="wiring-product-cards"', staged["default"])
+        self.assertIn('"dy_sv5w":', staged["default"])
+        for marker in ("wiring-product", "dy_sv5w", "PA:INCLUDE"):
+            self.assertNotIn(marker, staged["legacy"])
+
 
 if __name__ == "__main__":
     unittest.main()
