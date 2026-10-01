@@ -352,8 +352,10 @@ const boot = async ({
 // currently assigned/wired in"). An Output is wired when a Part is on it and
 // free when none is (CONTEXT.md "Wiring"), whatever its tick says - the tick
 // follows the Part on the droid, and an expander's channel has none. A free
-// Output draws no line and reads free by what its board prints - on the
-// screen, and in the printed sheet, which is the same generator's.
+// Output draws no line and reads free by what its board prints, in the one
+// place the page says so: the free row of the parts wiring table (operator,
+// 2026-10-01 on #463). The printed sheet, the same generator's, draws no
+// line for it either.
 test("an output with no Part on it draws no line and reads free, on the screen and in the saved sheet", async () => {
   const rows = [
     output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg996r" }),
@@ -364,9 +366,9 @@ test("an output with no Part on it draws no line and reads free, on the screen a
   assert.equal(env.drawn("ledc:0"), true, "the Output with a Part on it is drawn");
   assert.equal(env.drawn("ledc:1"), false, "the free one is not, though an old tick says wired");
   assert.equal(env.drawn("pca:0"), false, "nor an expander's free channel, which has no tick at all");
-  const pin = (key) => env.document.querySelectorAll(".wd-pin").find((node) => node.dataset.pin === key);
-  assert.match(pin("ledc:1").textContent, /^ARM2free$/);
-  assert.match(pin("ledc:0").textContent, /Upper utility arm/);
+  const free = env.document.querySelectorAll("[data-free]").map((node) => node.dataset.free);
+  assert.deepEqual(free, ["ledc:1", "pca:0"], "the free row lists the Outputs with no Part, and only those");
+  assert.equal(env.document.querySelectorAll(".wd-pin").length, 0, "and no second list of the Outputs stands under the drawing");
 
   const link = env.document.getElementById("wiring-save");
   link.fire("click", {});
@@ -454,8 +456,8 @@ test("a latched estop does not rewrite the sheet", async () => {
 // The bench copy and the screen copy are "the same document from one
 // generator" (CONTEXT.md "Wiring"): the file a builder saves and prints must
 // carry exactly the wires the surface is showing, and none of what writes -
-// the part-first picker mounted under the sheet is the screen's, never the
-// generator's (#411). And it is opened at a bench, often with no droid in
+// the controls of the parts wiring table are the screen's, never the
+// generator's (#411, #463). And it is opened at a bench, often with no droid in
 // reach, so it must ask for nothing when it opens - no script, no stylesheet,
 // no image (#366).
 test("the saved sheet is the sheet on the screen, and loads nothing when it opens", async () => {
@@ -478,13 +480,13 @@ test("the saved sheet is the sheet on the screen, and loads nothing when it open
 
   const sheetOf = (root) => ({
     wires: root.querySelectorAll(".wd-link").map((wire) => wire.dataset.wire),
-    pickers: root.querySelectorAll("select").length,
+    pickers: root.querySelectorAll("button").length,
   });
   const onScreen = sheetOf(env.document);
   assert.deepEqual(onScreen.wires, ["ledc:0", "ledc:1"], "the fixture draws the two Outputs with a Part");
-  assert.ok(onScreen.pickers > 0, "and the screen carries the part-first picker");
-  // The bench copy is the wires and their power, and it writes nothing
-  // (operator, 2026-09-19 on #411).
+  assert.ok(onScreen.pickers > 0, "and the screen carries the table's controls");
+  // The bench copy has nothing to press, and it writes nothing (operator,
+  // 2026-09-19 on #411).
   assert.deepEqual(sheetOf(saved), { ...onScreen, pickers: 0 });
   assert.doesNotMatch(file, /<(select|button|dialog|form)\b/i, "nothing in the saved file can be pressed");
   assert.equal(saved.querySelectorAll(".wd").length, env.diagrams().length);
@@ -628,10 +630,13 @@ test("a fitted part the droid cannot hear from is never read as contradicting yo
 // the droid, and the pins beside it are the running board's (#458). A card is
 // per product and pins are per board, so a pin that came from card text would
 // be right on one board and wrong on the next: the lane here is one no card
-// could know. The saved sheet ends with the same cards, from the same
-// generator. A family answered Not fitted has no card, and an image built
-// without the cards - the legacy asset set - has no such section at all, on
-// the screen or in the file, for the very same droid (ADR 0065).
+// could know. On the screen the card opens on the row of the product it
+// belongs to, under that row and nowhere else (operator, 2026-10-01 on #463);
+// the plate that prints every card is paper's. The saved sheet ends with the
+// same cards, from the same generator. A family answered Not fitted has no
+// card, and an image built without the cards - the legacy asset set - offers
+// none on any row and has no such section in the file, for the very same
+// droid (ADR 0065).
 test("a product's wiring card follows the droid's own answers, and an image without the cards has no such section", async () => {
   const sound = { id: "dy_sv5w", name: "DY-SV5W", category: "sound", status: "supported", included: true };
   const droid = (enabled) => ({
@@ -644,6 +649,7 @@ test("a product's wiring card follows the droid's own answers, and an image with
     return {
       cards: env.document.querySelectorAll(".wcard").map((card) => card.dataset.product),
       plate: env.document.getElementById("wiring-products-card"),
+      acts: env.document.querySelectorAll("[data-act]").filter((node) => node.dataset.act === "card"),
       saved: await [...env.files.values()].at(-1).text(),
     };
   };
@@ -658,8 +664,23 @@ test("a product's wiring card follows the droid's own answers, and an image with
   assert.match(shown.saved, /data-product="dy_sv5w"/, "the saved sheet carries the same card");
   assert.match(shown.saved, /TX 41 \/ RX 42/);
 
+  // On the screen: the act on the sound link's own row opens the card as the
+  // next row of the table, and asks the droid for nothing.
+  const table = fitted.document.getElementById("wiring-parts-table");
+  const rows = () => table.querySelectorAll("tr");
+  const soundRow = () => rows().find((row) => row.dataset.link === "audio");
+  const act = soundRow().querySelectorAll("[data-act]").find((node) => node.dataset.product === "dy_sv5w");
+  assert.ok(act, "the sound link's row offers its product's card");
+  assert.equal(table.querySelectorAll(".wcard").length, 0, "no card is open until one is asked for");
+  table.fire("click", { target: act });
+  const under = rows()[rows().indexOf(soundRow()) + 1];
+  assert.equal(under.dataset.card, "dy_sv5w", "the card opens on the row under the row it belongs to");
+  assert.match(under.textContent, /TX 41 \/ RX 42/);
+  assert.deepEqual(fitted.posts, [], "opening a card writes nothing");
+
   const declined = await read(await boot({ ...droid(false), assetSet: "default" }));
   assert.ok(!declined.cards.includes("dy_sv5w"), "sound answered Not fitted has no card");
+  assert.ok(!declined.acts.some((node) => node.dataset.product === "dy_sv5w"), "and its row offers none");
   assert.doesNotMatch(declined.saved, /data-product="dy_sv5w"/, "on the saved sheet either");
 
   // A family with a Component Member is answered by that member alone. The
@@ -674,6 +695,50 @@ test("a product's wiring card follows the droid's own answers, and an image with
 
   const without = await read(await boot({ ...droid(true), assetSet: "legacy" }));
   assert.deepEqual(without.cards, []);
+  assert.deepEqual(without.acts, [], "no row offers a card");
   assert.equal(without.plate, null, "the page has no plate for them, hidden or otherwise");
   assert.doesNotMatch(without.saved, /Product wiring|data-product/);
+});
+
+// Paper carries the parts wiring table as text (operator, 2026-10-01 on
+// #463): the page's own print copy and the saved sheet are one generator's
+// table, so they are the same markup, and neither has anything to press. An
+// Output is on it once: with its Part while it is wired, in the free row
+// while it is not, and never both. A serial link that is not fitted is still
+// listed, saying so.
+test("paper carries the parts table as text: the same table on the page's print copy and in the saved sheet", async () => {
+  const rows = [
+    output("ledc:0", "ARM1", { parts: ["utilUp"], component: "mg90s" }),
+    output("ledc:1", "ARM2"),
+    output("ledc:3", "ARM3", { parts: ["dataPanel"], component: "rgb" }),
+    output("pca:0", ""),
+  ];
+  const env = await boot({
+    outputs: rows,
+    say: { "ledc:3": { lightCapable: true, type: "rgb" } },
+    lanes: { drive: { enabled: false, label: "S1" }, protoR2link: { enabled: true, label: "S3" } },
+  });
+  const { MiniDOMParser } = await import("./helpers/mini_dom.js");
+
+  env.document.getElementById("wiring-save").fire("click", {});
+  const file = await [...env.files.values()].at(-1).text();
+  const onPage = env.document.getElementById("wiring-parts-sheet");
+  const inFile = new MiniDOMParser().parseFromString(file).querySelector(".sheet-table");
+  assert.ok(inFile, "the saved sheet carries the table");
+  assert.equal(onPage.querySelectorAll("button").length + onPage.querySelectorAll("a").length, 0, "nothing on it can be pressed");
+
+  const linesOf = (root) => root.querySelectorAll("tr").map((row) => row.children.map((cell) => cell.textContent));
+  const lines = linesOf(onPage);
+  assert.deepEqual(linesOf(inFile), lines, "the saved sheet's table is the page's own print copy");
+  assert.deepEqual(lines, [
+    ["", "Part", "Output", "On the wire"],
+    ["Board outputs"],
+    ["", "Upper utility arm", "ARM1", "MG90S"],
+    ["", "Data Panel", "ARM3", "LED strip"],
+    ["", "free", "ARM2, pca:0", ""],
+    ["Serial links"],
+    ["", "Foot Drive", "S1", "not fitted"],
+    ["", "Sound", "S2", "not fitted"],
+    ["", "Dome link", "S3", "serial · UART 2 - TX 33 / RX 34"],
+  ]);
 });

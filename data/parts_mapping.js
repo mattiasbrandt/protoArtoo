@@ -10,11 +10,13 @@
 // asked in the same words, so the two ends cannot disagree about a Part or
 // about what a move does.
 //
-// The part-first picker is picker() below, and Wiring is its one caller: it
-// moved there from Parts with its question, rather than being copied. Parts
-// keeps the Parts no Output claims (unclaimed()) and sends a builder to the
-// picker with routeToOutput() - one route, taken from the droid picture's
-// act and from each Unused row alike.
+// The parts wiring table is picker() below, and Wiring is its one caller: it
+// moved there from Parts with its question, rather than being copied. It is
+// the one place on Wiring that says which Output is wired and which is free
+// (operator, 2026-10-01 on #463: "it makes most sense to also define this
+// also in the wiring table"). Parts keeps the Parts no Output claims
+// (unclaimed()) and sends a builder to the table with routeToOutput() - one
+// route, taken from the droid picture's act and from each Unused row alike.
 //
 // A move is announced before it happens, on every surface that can make one
 // (#347). Taking a Part off the Output it is on names the Part, the Output it
@@ -34,6 +36,8 @@
   const catalog = window.DroidParts;
   const kinds = window.DroidPartKind;
 
+  // What a Part on no Output is called where a sentence has to name it: a
+  // Find by Moving run that ends without one (data/find_by_moving.js).
   const NOT_WIRED = "– not wired –";
   // The Output Address token a move sends for "no Output" (docs/api.md).
   const NO_OUTPUT = "none";
@@ -98,20 +102,46 @@
   // "Wiring"): the word a builder reads for an empty Output.
   const FREE = "free";
 
-  const optionText = (output) =>
-    `${output.name} · ${output.parts.length ? listParts(output.parts) : FREE}`;
+  const countOf = (count, [one, many]) => `${count} ${count === 1 ? one : many}`;
 
-  // The Outputs a Part may be put on: every one for a servo Part, and only the
-  // ones a light can go on for a light Part (operator, 2026-09-29 on #411:
-  // "either we limit what you can define in the wiring page or give
-  // recommendations" - both). Whether an Output can carry a light is its
-  // board's fact, on its row (data/outputs.js `canLight`); nothing here knows
-  // which Outputs those are. The Output the Part is on now is always offered,
-  // so the select shows the truth even where an older droid put a light on a
-  // wire that cannot carry one.
-  const outputsFor = (part, outputs, current) => {
+  // The words the parts wiring table is headed with, on the screen and on
+  // Wiring's printed copy (data/wiring.js), which is the same table as text.
+  const TABLE = Object.freeze({
+    columns: Object.freeze(["Part", "Output", "On the wire"]),
+    board: "Board outputs",
+    links: "Serial links",
+    dome: "Dome Controller",
+  });
+
+  // How many Outputs are wired and how many are free, and how many Parts are
+  // on them: the one count Wiring states, over its table and on its printed
+  // copy alike (data/wiring.js), so the two cannot come to count differently.
+  const wiredCounts = (outputs) => {
+    const wired = outputs.filter((output) => output.parts.length > 0);
+    return {
+      wired: wired.length,
+      free: outputs.length - wired.length,
+      parts: wired.reduce((sum, output) => sum + output.parts.length, 0),
+    };
+  };
+  const wiredSummary = (outputs) => {
+    const counts = wiredCounts(outputs);
+    return (
+      `${countOf(counts.parts, ["part", "parts"])} on ${countOf(counts.wired, ["output", "outputs"])}` +
+      ` · ${counts.free} ${FREE}`
+    );
+  };
+
+  // The Outputs a Part may not be put on: the ones a light cannot go on, for a
+  // light Part (operator, 2026-09-29 on #411: "either we limit what you can
+  // define in the wiring page or give recommendations" - both). Whether an
+  // Output can carry a light is its board's fact, on its row (data/outputs.js
+  // `canLight`); nothing here knows which Outputs those are. The Output the
+  // Part is on now is never refused, so the row shows the truth even where an
+  // older droid put a light on a wire that cannot carry one.
+  const refusedFor = (part, outputs, current) => {
     const light = Boolean(kinds?.isLight(part));
-    return outputs.filter((output) => !light || output.canLight || output === current);
+    return outputs.filter((output) => light && !output.canLight && output !== current);
   };
 
   // The recommend half: the one Output whose board says it usually carries
@@ -127,7 +157,7 @@
   // What putting a Part on `to` would do, read off the rows as the droid last
   // reported them. `from` is what the firmware needs told; the rest is what a
   // builder needs told first. Only taking a Part off one Output and putting it
-  // on another is announced: choosing "not wired" on a Part's own row takes
+  // on another is announced: taking a Part off on its own row takes
   // nothing from anywhere else, and putting an unwired Part on an Output takes
   // nothing from any Part already there.
   const moveFor = (outputs, partId, to) => {
@@ -382,30 +412,42 @@
   };
 
   /**
-   * The part-first picker: one row per body Part, grouped the way a builder
-   * thinks about them, each choosing the Output the Part is on and, on the
-   * same row once it is on one, what is on that wire - its servo, or its
-   * Light Type for a light Part (operator, 2026-09-29 on #411: "define and
-   * wire a body part/panel to a output (GPIO) and then for each you then
-   * define what servo type, same way for light on a part"). This table is the
-   * one place an Output is wired: an Output with a Part on it is wired, and
-   * the droid writes its wired tick with the move (docs/api.md, `movePart`).
-   * Moved here from Parts with its question (#347) when the mapping moved to
-   * Wiring.
+   * The parts wiring table: Wiring's one table of what is on which wire
+   * (operator, 2026-10-01 on #463, the pick of three drawn options). Each row
+   * is a Part, the Output it is on, and on the same row what is on that wire -
+   * its servo, or its Light Type for a light Part (operator, 2026-09-29 on
+   * #411: "define and wire a body part/panel to a output (GPIO) and then for
+   * each you then define what servo type, same way for light on a part"). An
+   * Output with a Part on it is wired, and the droid writes its wired tick
+   * with the move (docs/api.md, `movePart`).
    *
-   * No such row is ever hidden. A fresh droid shows every one reading
-   * "- not wired -", which is the honest state of a build in progress, and
-   * hiding a row is how an operator loses an output (#296).
+   * EVERY WIRE IS IN IT, AND NOTHING ELSE ON THE PAGE SAYS USED OR FREE. Its
+   * groups, in one table:
+   *   Board outputs   a row per Part on an Output, then the free Outputs by
+   *                   what the board prints, then the Parts on no Output yet
+   *                   as pills to add
+   *   Serial links    the Board Lanes, read only, as the caller hands them
+   *                   over (`links`)
+   *   Dome Controller the dome's Parts, collapsed, each with the command the
+   *                   dome is sent for it (domeCommandText())
    *
-   * A dome Part gets no Output to choose (isDomePart()). Every one of them is
-   * a row of one group after the rest, the Dome Controller's, showing the
-   * command that moves it or "No command yet" (domeCommandText()), so no dome
-   * Part vanishes from the page.
+   * NO PART IS EVER MISSING FROM IT. A body Part is a row while it is on an
+   * Output and a pill while it is not, so a fresh droid shows every one as a
+   * pill; hiding one is how an operator loses an output (#296). A pill pressed
+   * becomes a row with no Output lit, which is kept on this page only: nothing
+   * is sent until an Output is picked.
    *
-   * The table is built once and repainted in place. A repaint writes
-   * textContent, value, disabled and classList on nodes that already exist,
-   * and leaves the control the builder is holding alone until they let go of
-   * it (r2d2-astromech-simulator v1.79.0, src/js/maestro/hw-table.js:171-173).
+   * A dome Part gets no Output to choose (isDomePart()). One a builder recorded
+   * on a body Output anyway is a row of the board's group all the same, naming
+   * the Output and offering only to take it off, so a wire with a Part on it is
+   * never a wired count with no row under it.
+   *
+   * A product's wiring card opens on a row under the row it belongs to, where
+   * the caller has one (`cards`, #458).
+   *
+   * The table is rebuilt only when what it shows has changed, and the control
+   * the builder has hold of is found again in the new one. A read that changed
+   * nothing - a Find by Moving run reads once a second - touches no node.
    *
    * @param {object} hosts
    * @param {Element} hosts.table - where the table goes
@@ -417,12 +459,19 @@
    *   droid's next start, while one does
    * @param {Element} [hosts.find] - where a Find by Moving run's line goes
    *   (data/find_by_moving.js): a Part on no Output offers a run on its row
-   * @returns {boolean} whether it mounted
+   * @param {function} [hosts.links] - the serial links' rows, each
+   *   { key, name, output, note, wire, fitted, product, route }: `product` is
+   *   { id, name } where a wiring card exists for it, `route` the { href,
+   *   label } of where the link is switched
+   * @param {object} [hosts.cards] - the product wiring cards, where the image
+   *   carries them: `board()` the { id, word } acts of the board's own group,
+   *   `html(id)` one product's card
+   * @returns {{repaint: function}|null} the mounted table, or null
    */
-  const picker = ({ table, summary, feedback, dialog, timing, find } = {}) => {
+  const picker = ({ table, summary, feedback, dialog, timing, find, links = () => [], cards = null } = {}) => {
     const OUTPUTS = window.PAOutputs;
     const TIMING = window.PAApplyTiming;
-    if (!table || !summary || !feedback || !dialog || !timing || !OUTPUTS || !TIMING) return false;
+    if (!table || !summary || !feedback || !dialog || !timing || !OUTPUTS || !TIMING) return null;
     const esc = (value) => window.PAUtils.escapeHtml(String(value));
     const say = (text, level) => window.PAUtils.showFeedback(feedback, text, level);
     const answered = () => OUTPUTS.known().table;
@@ -432,7 +481,7 @@
       // A table with no rows reads as a droid with no parts. Say what broke.
       summary.textContent = "The parts list did not load, so there is nothing to show. Reload the page to try again.";
       console.error("[parts] window.DroidParts is missing; /droid_parts.js did not load");
-      return false;
+      return null;
     }
 
     // Until the table answers, the summary says so in the one word for it
@@ -440,76 +489,180 @@
     summary.classList.add("waiting");
     summary.textContent = window.PALiveReading.slotText(OUTPUTS.live(null).word);
 
-    const groupHeading = (group) => {
-      const [one, many] = group.unit || ["part", "parts"];
-      const count = group.parts.length;
-      return `${group.label} — ${count} ${count === 1 ? one : many}`;
-    };
-
+    const COLUMNS = 4;
     const body = catalog.parts.filter((part) => !isDomePart(part));
     const dome = catalog.parts.filter(isDomePart);
 
-    const rowHtml = (part) => {
-      const kind = kinds ? kinds.treatmentClass(part) : "";
+    // What this page holds and the droid does not: the Parts a builder added
+    // to the table and has not yet put on an Output, which cards are open and
+    // whether the dome's group is. All three are gone on a reload.
+    const added = [];
+    const cardsOpen = new Set();
+    let domeOpen = false;
+
+    // A row's act is a quiet word at row scale, never a box on every row.
+    const actHtml = (act, word, attrs = "") =>
+      `<button class="btn btn-sm btn-quiet parts-act" type="button" data-act="${act}"${attrs}>${esc(word)}</button>`;
+
+    // A card opens as a row of the table it belongs to, under the row whose
+    // act opened it, and the act says whether it is open.
+    const cardAct = (product, word) =>
+      cards && product
+        ? actHtml("card", word, ` data-product="${esc(product.id)}" aria-expanded="${cardsOpen.has(product.id)}"`)
+        : "";
+    const cardRow = (product) =>
+      cards && product && cardsOpen.has(product.id)
+        ? `<tr class="parts-card-row" data-card="${esc(product.id)}"><td colspan="${COLUMNS}">${cards.html(product.id)}</td></tr>`
+        : "";
+
+    const groupHead = (label, count, acts = "") =>
+      `<tr class="parts-group"><th colspan="${COLUMNS}" scope="colgroup"><span class="parts-group-line">` +
+      `<span>${esc(label)}</span><span class="parts-group-count">${esc(count)}${acts}</span></span></th></tr>`;
+
+    const nameHtml = (part) => {
       const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
       const light = kinds?.isLight(part) ? `<span class="parts-kind">light</span>` : "";
+      return `<span class="parts-name">${esc(part.name)}</span>${shorthand}${light}`;
+    };
+    const kindClass = (part) => {
+      const kind = kinds ? kinds.treatmentClass(part) : "";
+      return kind ? ` ${kind}` : "";
+    };
+
+    // The Parts with a row: every one on an Output, in catalog order, then the
+    // ones added and not yet on one, in the order they were added.
+    const rowParts = () => [
+      ...catalog.parts.filter((part) => outputOf(part.id) !== null),
+      ...added.map((id) => partById.get(id)).filter((part) => part && outputOf(part.id) === null),
+    ];
+
+    // Why a choice is off or marked, as text on the row and never a title: a
+    // bench tablet has no hover (docs/ui-copy-voice.md rule 12). The board's
+    // suggestion is said while the Part still has no Output, which is when it
+    // is of use.
+    const whyHtml = (part, output, outputs) => {
+      const lines = [];
+      const refused = refusedFor(part, outputs, output);
+      if (refused.length) lines.push(`${refused.map((each) => each.name).join(", ")}: no light`);
+      if (!output) {
+        const usual = outputs.filter((each) => each.suggestedPart === part.id);
+        if (usual.length) lines.push(`${usual.map((each) => each.name).join(", ")}: ${SUGGESTED}`);
+      }
+      return lines.length ? `<span class="why">${esc(lines.join(" · "))}</span>` : "";
+    };
+
+    const partRowHtml = (part, outputs) => {
+      const output = outputOf(part.id);
+      const gang = output ? output.parts.filter((other) => other !== part.id) : [];
+      // The Dome Controller's Part, recorded on this board anyway: it is named
+      // with its Output and can be taken off, and is offered no other Output.
+      const chosen = isDomePart(part) && output
+        ? `<span class="parts-out">${esc(output.name)}</span>`
+        : `<span class="parts-bar" data-bar="output"></span>${whyHtml(part, output, outputs)}`;
       return (
-        `<tr class="parts-row${kind ? ` ${kind}` : ""}" data-part="${esc(part.id)}">` +
-        `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
-        `<span class="parts-gang"></span></th>` +
-        `<td><select class="parts-output" aria-label="${esc(`Output for ${part.name}`)}" disabled>` +
-        `<option value="${NO_OUTPUT}">${esc(OUTPUTS.live(null).word)}</option></select></td>` +
-        `<td class="parts-carries"></td></tr>`
+        `<tr class="parts-row${output ? " is-wired" : ""}${kindClass(part)}" data-part="${esc(part.id)}">` +
+        `<th scope="row">${nameHtml(part)}` +
+        (gang.length ? `<span class="parts-gang">moves with ${esc(listParts(gang))}</span>` : "") +
+        `</th>` +
+        `<td class="parts-on">${chosen}</td>` +
+        `<td class="parts-carries"></td>` +
+        `<td class="parts-acts">${actHtml("off", output ? "take off" : "remove")}</td></tr>`
       );
     };
 
-    // A dome Part's row: its command where an Output select would be, and no
-    // control at all. It keeps its Part Kind's treatment, a light's included.
-    // Its `.parts-gang` names a body Output it sits on anyway, which a builder
-    // can record, so a Part on a wire is never invisible here.
-    const domeRowHtml = (part) => {
-      const kind = kinds ? kinds.treatmentClass(part) : "";
-      const shorthand = part.shorthand ? `<span class="parts-shorthand">${esc(part.shorthand)}</span>` : "";
-      const light = kinds?.isLight(part) ? `<span class="parts-kind">light</span>` : "";
+    // The free Outputs, by what the board prints, and which of them a light
+    // can go on as well as a servo.
+    const freeRowHtml = (outputs) => {
+      const free = outputs.filter((output) => output.parts.length === 0);
       return (
-        `<tr class="parts-row parts-dome-row${kind ? ` ${kind}` : ""}" data-dome-part="${esc(part.id)}">` +
-        `<th scope="row"><span class="parts-name">${esc(part.name)}</span>${shorthand}${light}` +
-        `<span class="parts-gang"></span></th>` +
-        `<td class="parts-command" colspan="2">${esc(domeCommandText(part))}</td></tr>`
+        `<tr class="parts-foot" data-foot="free"><th scope="row">${FREE}</th><td colspan="${COLUMNS - 1}">` +
+        `<span class="parts-free-list">` +
+        (free.length
+          ? free.map((output) =>
+            `<span data-free="${esc(output.address)}"><span class="parts-out">${esc(output.name)}</span>` +
+            (output.canLight ? ` <span class="parts-word">servo or light</span>` : "") + `</span>`).join("")
+          : `<span class="parts-word">none</span>`) +
+        `</span></td></tr>`
       );
     };
 
-    const groupBody = (id, heading, rowsHtml) =>
-      `<tbody data-group="${id}"><tr class="parts-group"><th colspan="3" scope="colgroup">` +
-      `${esc(heading)}</th></tr>${rowsHtml}</tbody>`;
+    // The body Parts on no Output and not yet added, as wrapping pills in the
+    // groups a builder thinks of them in. A pill pressed is a row.
+    const addRowHtml = () => {
+      const waiting = body.filter((part) => outputOf(part.id) === null && !added.includes(part.id));
+      if (!waiting.length) return "";
+      return (
+        `<tr class="parts-foot" data-foot="add"><th scope="row">add a part</th><td colspan="${COLUMNS - 1}">` +
+        groupParts(waiting).map((group) =>
+          `<div class="part-pills-group"><span class="part-pills-name">${esc(group.label)}</span><span class="part-pills">` +
+          group.parts.map((part) =>
+            `<button class="part-pill" type="button" data-act="add" data-part="${esc(part.id)}">${esc(part.name)}</button>`).join("") +
+          `</span></div>`).join("") +
+        `</td></tr>`
+      );
+    };
 
-    table.innerHTML =
-      `<table class="parts-table"><thead><tr><th scope="col">Part</th><th scope="col">Output</th>` +
-      `<th scope="col">Type</th></tr></thead>` +
-      groupParts(body)
-        .map((group) => groupBody(group.id, groupHeading(group), group.parts.map(rowHtml).join("")))
-        .join("") +
-      (dome.length
-        ? groupBody("dome-controller", groupHeading({ label: "Dome Controller", parts: dome }), dome.map(domeRowHtml).join(""))
-        : "") +
-      `</table>`;
+    const boardHtml = (outputs) => {
+      const counts = wiredCounts(outputs);
+      const heads = cards ? cards.board() : [];
+      const parts = rowParts();
+      return (
+        `<tbody data-group="board-outputs">` +
+        groupHead(TABLE.board, `${counts.wired} wired · ${counts.free} ${FREE}`,
+          heads.map((product) => cardAct(product, product.word)).join("")) +
+        heads.map(cardRow).join("") +
+        (parts.length
+          ? parts.map((part) => partRowHtml(part, outputs)).join("")
+          : `<tr class="parts-row parts-empty"><td colspan="${COLUMNS}"><span class="parts-word">no part on an output yet</span></td></tr>`) +
+        freeRowHtml(outputs) +
+        addRowHtml() +
+        `</tbody>`
+      );
+    };
 
-    const rows = new Map();
-    table.querySelectorAll("[data-part]").forEach((node) => {
-      rows.set(node.dataset.part, {
-        node,
-        part: partById.get(node.dataset.part),
-        select: node.querySelector("select"),
-        gang: node.querySelector(".parts-gang"),
-        carries: node.querySelector(".parts-carries"),
-        addresses: null,
-        drawn: null,
-      });
-    });
-    const domeRows = new Map();
-    table.querySelectorAll("[data-dome-part]").forEach((node) => {
-      domeRows.set(node.dataset.domePart, node.querySelector(".parts-gang"));
-    });
+    // A serial link: read only here, because it is switched in Configuration.
+    // Every word on it is the caller's, which draws the same link on the
+    // sheet.
+    const linkRowHtml = (link) =>
+      `<tr class="parts-row parts-link-row${link.fitted ? " is-wired" : ""}" data-link="${esc(link.key)}">` +
+      `<th scope="row"><span class="parts-name">${esc(link.name)}</span>` +
+      (link.product ? `<span class="parts-detail">${esc(link.product.name)}</span>` : "") + `</th>` +
+      `<td><span class="parts-out">${esc(link.output)}</span>` +
+      (link.note ? `<span class="parts-detail">${esc(link.note)}</span>` : "") + `</td>` +
+      `<td><span class="${link.fitted ? "parts-detail" : "parts-word"}">${esc(link.wire)}</span></td>` +
+      `<td class="parts-acts">${cardAct(link.product, "wiring card")}` +
+      `<a class="btn btn-sm btn-quiet link-btn parts-act" href="${esc(link.route.href)}">${esc(link.route.label)}</a></td></tr>` +
+      cardRow(link.product);
+
+    const linksHtml = (rows) => {
+      if (!rows.length) return "";
+      const fitted = rows.filter((link) => link.fitted).length;
+      const count = `${fitted} wired${rows.length - fitted ? ` · ${rows.length - fitted} not fitted` : ""}`;
+      return `<tbody data-group="serial-links">${groupHead(TABLE.links, count)}${rows.map(linkRowHtml).join("")}</tbody>`;
+    };
+
+    // A dome Part's row: its command across the columns an Output and its wire
+    // would take, and no control at all. It keeps its Part Kind's treatment, a
+    // light's included.
+    const domeRowHtml = (part) =>
+      `<tr class="parts-row parts-dome-row${kindClass(part)}" data-dome-part="${esc(part.id)}">` +
+      `<th scope="row">${nameHtml(part)}</th>` +
+      `<td class="parts-command" colspan="${COLUMNS - 1}">${esc(domeCommandText(part))}</td></tr>`;
+
+    const domeHtml = () =>
+      dome.length
+        ? `<tbody data-group="dome-controller">` +
+          groupHead(TABLE.dome, countOf(dome.length, ["part", "parts"]),
+            actHtml("dome", domeOpen ? "hide" : "show", ` aria-expanded="${domeOpen}"`)) +
+          (domeOpen ? dome.map(domeRowHtml).join("") : "") +
+          `</tbody>`
+        : "";
+
+    const tableHtml = (outputs) =>
+      `<table class="parts-table parts-wiring"><thead><tr>` +
+      TABLE.columns.map((column) => `<th scope="col">${esc(column)}</th>`).join("") +
+      `<th scope="col"></th></tr></thead>` +
+      boardHtml(outputs) + linksHtml(links()) + domeHtml() + `</table>`;
 
     // Declared before the mover and the finder, which are handed a way to
     // repaint.
@@ -519,14 +672,12 @@
       say,
       reload: () => OUTPUTS.refresh(),
       repaint: () => paint(),
-      onSending: (partId) => {
-        const row = rows.get(partId);
-        if (row) row.select.disabled = true;
-      },
+      // The row's bar takes no second press while its move is on its way.
+      onSending: () => paint(),
     });
 
     // Find by Moving, run from a Part's row (data/find_by_moving.js). Its That
-    // one is the same move this row's select makes, question and all. Absent
+    // one is the same move this row's bar makes, question and all. Absent
     // where the page carries no run, and then no row offers one.
     const finder = find && window.PAFindByMoving
       ? window.PAFindByMoving.runner({
@@ -539,94 +690,169 @@
       })
       : null;
 
-    table.addEventListener("click", (event) => {
-      const act = event.target?.closest?.("[data-find]");
-      if (!act || act.disabled || finder === null) return;
-      finder.start(act.dataset.find);
-    });
-
-    // The control the builder has hold of: the one focused, or the one whose
-    // move is being asked about or is on its way. Its value and its options
-    // are theirs until they let go.
-    const held = (id, select) => id === move.pending() || document.activeElement === select;
+    // The Output a Part is on, as a bar of every Output by what its board
+    // prints, the one it is on lit. An Output another Part is on carries a
+    // mark, in ink and never a Status Color: two Parts on one wire move
+    // together, which is a choice and not a fault. An Output a light cannot go
+    // on stays on a light Part's bar, refused, with the reason under the bar.
+    const outputBar = (part, outputs) => {
+      const here = outputOf(part.id);
+      const refused = refusedFor(part, outputs, here);
+      const sending = move.pending() === part.id;
+      const bar = window.PAOutputSettings.segmented(
+        `Output for ${part.name}`,
+        outputs.map((output) => {
+          const others = output.parts.filter((id) => id !== part.id);
+          const usual = output.suggestedPart === part.id;
+          const state = others.length ? `, wired: ${listParts(others)}` : output === here ? "" : `, ${FREE}`;
+          return {
+            id: output.address,
+            label: output.name,
+            disabled: sending || refused.includes(output),
+            className: [others.length ? "is-taken" : "", usual ? "is-suggested" : ""].filter(Boolean).join(" "),
+            name: `${output.name}${state}${usual ? `, ${SUGGESTED}` : ""}`,
+          };
+        }),
+        here ? here.address : null,
+        (address) => {
+          // The control the builder chose with, which is where focus goes back
+          // to if they cancel.
+          const control = Array.from(bar.querySelectorAll("button")).find((each) => each.dataset.value === address);
+          move.request(moveFor(OUTPUTS.list(), part.id, address), control || null);
+        }
+      );
+      return bar;
+    };
 
     // A Part on no Output has no wire yet, and its row offers to find the one
     // it is on by moving the free Outputs (data/find_by_moving.js; operator,
     // 2026-09-30 on #411: "Pulse free Outputs in a run"). Refused while the
     // estop is latched or the droid is out of reach, and while a run is going.
-    const drawFind = (row, id) => {
-      const live = finder !== null && finder.live();
-      const running = finder !== null && finder.running() !== null;
-      const drawn = finder === null ? "none" : `find|${live}|${running}`;
-      if (row.drawn === drawn) return;
-      row.drawn = drawn;
-      if (finder === null) {
-        row.carries.replaceChildren();
-        return;
-      }
+    const findAct = (part) => {
       const act = document.createElement("button");
       act.type = "button";
       act.className = "btn btn-sm btn-quiet parts-find-act";
-      act.dataset.find = id;
+      act.dataset.find = part.id;
       // The magnifying glass beside the words (operator, 2026-09-30 on #411),
       // in the markup data/shell.js icon() writes: the sprite is the shell's,
       // and a module names a symbol by its literal <use> so
       // tools/check_surface_anatomy.py can resolve it.
       act.innerHTML =
         `<svg class="i" aria-hidden="true" focusable="false"><use href="#i-magnify"/></svg>find by moving`;
-      act.setAttribute("aria-label", `Find the output ${row.part.name} is on by moving each free one`);
-      window.PAApi.gateControls([act], live && !running);
-      row.carries.replaceChildren(act);
+      act.setAttribute("aria-label", `Find the output ${part.name} is on by moving each free one`);
+      window.PAApi.gateControls([act], finder.live() && finder.running() === null);
+      return act;
     };
 
     // What is on the wire a Part is on, on the Part's own row: which servo
-    // for a servo Part, which Light Type for a light Part, and the find act
-    // until the Part is on an Output. It is the Output's answer (CONTEXT.md
-    // "Output"), so two Parts ganged on one wire show the same pick, and a
-    // pick saves the Output's row. Redrawn only when what it shows changes.
-    const drawCarries = (row, output, id) => {
-      if (!output) {
-        drawFind(row, id);
-        return;
-      }
-      const light = Boolean(kinds?.isLight(row.part));
+    // for a servo Part, which Light Type for a light Part. It is the Output's
+    // answer (CONTEXT.md "Output"), so two Parts ganged on one wire show the
+    // same pick, and a pick saves the Output's row.
+    const typeBar = (part, output) => {
+      const light = Boolean(kinds?.isLight(part));
       const options = light ? OUTPUTS.LIGHT_TYPES : OUTPUTS.SERVO_MODELS;
       const current = light ? output.light?.id ?? null : output.servo?.id ?? null;
-      const drawn = `${output.address}|${current}`;
-      if (row.drawn === drawn) return;
-      row.drawn = drawn;
-      row.carries.replaceChildren(
-        window.PAOutputSettings.segmented(`${row.part.name} ${light ? "light type" : "servo"}`, options, current,
-          (value) => carry(output, value))
-      );
+      return window.PAOutputSettings.segmented(`${part.name} ${light ? "light type" : "servo"}`, options, current,
+        (value) => carry(output, value));
     };
 
-    const paintRow = (id, row, outputs) => {
-      const output = outputOf(id);
-      row.node.classList.toggle("is-wired", output !== null);
-      const gang = output ? output.parts.filter((other) => other !== id) : [];
-      row.gang.textContent = gang.length ? ` moves with ${listParts(gang)}` : "";
-      drawCarries(row, output, id);
-      if (held(id, row.select)) return;
-      // The only rebuild, and only of a control nobody is holding: the set of
-      // Outputs a Part may go on is fixed from boot, so this runs once per
-      // row in practice.
-      const offered = outputsFor(row.part, outputs, output);
-      const addresses = offered.map((each) => each.address).join(",");
-      if (row.addresses !== addresses) {
-        row.select.innerHTML =
-          `<option value="${NO_OUTPUT}">${NOT_WIRED}</option>` +
-          offered.map((each) => `<option value="${esc(each.address)}"></option>`).join("");
-        row.addresses = addresses;
-      }
-      const options = row.select.querySelectorAll("option");
-      offered.forEach((each, index) => {
-        const text = each.suggestedPart === id ? `${optionText(each)} · ${SUGGESTED}` : optionText(each);
-        if (options[index + 1].textContent !== text) options[index + 1].textContent = text;
+    // The controls of the rows just written: each Part's Output bar, and what
+    // is on its wire or the act that finds it.
+    const fillRows = (outputs) => {
+      Array.from(table.querySelectorAll("[data-part]")).forEach((node) => {
+        // The add pills carry data-part too; only a row is filled.
+        if (!node.classList.contains("parts-row")) return;
+        const part = partById.get(node.dataset.part);
+        const output = outputOf(part.id);
+        node.querySelector("[data-bar]")?.replaceChildren(outputBar(part, outputs));
+        const carries = node.querySelector(".parts-carries");
+        if (output) carries.replaceChildren(typeBar(part, output));
+        else if (finder !== null) carries.replaceChildren(findAct(part));
       });
-      row.select.value = output ? output.address : NO_OUTPUT;
-      row.select.disabled = false;
     };
+
+    // Which control a node is, in words that survive a rebuild: its row or
+    // its group, what kind of control, and the choice it stands for.
+    const controlKey = (node) => {
+      if (!node || !node.closest?.(".parts-table")) return null;
+      const row = node.closest("tr");
+      const where = row?.dataset.part || row?.dataset.link || node.closest("tbody")?.dataset.group || "";
+      const kind = node.dataset.act || (node.dataset.find ? "find" : node.closest("[data-bar]") ? "output" : "wire");
+      return `${where}|${kind}|${node.dataset.value || node.dataset.product || ""}`;
+    };
+    const focusControl = (key) => {
+      if (key === null) return;
+      Array.from(table.querySelectorAll("button")).find((each) => controlKey(each) === key)?.focus?.();
+    };
+
+    // Everything the filled controls are drawn from that the markup does not
+    // spell out: each Output's row as a bar shows it, the move on its way, and
+    // whether a run may start.
+    const stateOf = (outputs) =>
+      outputs.map((output) =>
+        [output.address, output.name, output.parts.join("+"), output.canLight, output.suggestedPart, output.type].join(":")).join(";") +
+      `|${move.pending()}|${finder === null ? "" : `${finder.live()}:${finder.running() !== null}`}`;
+
+    let drawn = null;
+    const draw = (outputs) => {
+      // A Part that has landed on an Output is the droid's now; taken off
+      // again, it goes back among the pills.
+      added.splice(0, added.length, ...added.filter((id) => outputOf(id) === null));
+      const html = tableHtml(outputs);
+      const state = `${html}|${stateOf(outputs)}`;
+      if (state === drawn) return;
+      const held = controlKey(document.activeElement);
+      drawn = state;
+      table.innerHTML = html;
+      fillRows(outputs);
+      focusControl(held);
+    };
+
+    const rowOf = (partId) =>
+      Array.from(table.querySelectorAll("[data-part]")).find((node) =>
+        node.dataset.part === partId && node.classList.contains("parts-row")) || null;
+
+    // The first control of a Part's row a builder can press: the Output it is
+    // on, else the first it may go on.
+    const focusRow = (partId) => {
+      const row = rowOf(partId);
+      if (!row) return;
+      row.scrollIntoView?.({ block: "center" });
+      const buttons = Array.from(row.querySelectorAll("button")).filter((each) => !each.disabled);
+      (buttons.find((each) => each.classList.contains("active")) || buttons[0])?.focus?.();
+    };
+
+    table.addEventListener("click", (event) => {
+      const find = event.target?.closest?.("[data-find]");
+      if (find && !find.disabled && finder !== null) {
+        finder.start(find.dataset.find);
+        return;
+      }
+      const act = event.target?.closest?.("[data-act]");
+      if (!act || act.disabled || !answered()) return;
+      const partId = act.dataset.part || act.closest("[data-part]")?.dataset.part || null;
+      if (act.dataset.act === "add") {
+        added.push(partId);
+        paint();
+        focusRow(partId);
+      } else if (act.dataset.act === "off") {
+        // Off an Output is a move to none, sent as one; off this page's own
+        // list sends nothing, since the droid never held it.
+        if (outputOf(partId)) {
+          move.request(moveFor(OUTPUTS.list(), partId, NO_OUTPUT), act);
+        } else if (added.includes(partId)) {
+          added.splice(added.indexOf(partId), 1);
+          paint();
+        }
+      } else if (act.dataset.act === "card") {
+        const id = act.dataset.product;
+        if (!cardsOpen.delete(id)) cardsOpen.add(id);
+        paint();
+      } else if (act.dataset.act === "dome") {
+        domeOpen = !domeOpen;
+        paint();
+      }
+    });
 
     // A pick of what is on a wire saves that Output's row, and the droid's
     // answer is what is drawn after it, taken or refused (data/outputs.js).
@@ -657,23 +883,28 @@
       timing.classList.add("hidden");
     };
 
-    // A Part handed over by routeToOutput(), taken once the picker is on
+    // A Part handed over by routeToOutput(), taken once the table is on
     // screen with the droid's answer in it: before then there is no Output to
-    // choose, and a focus on a control that is not showing lands nowhere.
-    const claimWanted = () => {
+    // choose, and a focus on a control that is not showing lands nowhere. A
+    // Part on no Output is added as a row, so there is a bar to choose on.
+    const claimWanted = (outputs) => {
       if (wanted === null || !answered() || document.body?.dataset?.page !== PICKER_SURFACE) return;
       const { part, off } = wanted;
       wanted = null;
-      const row = rows.get(part);
-      if (!row) {
-        if (domeRows.has(part)) say(`The Dome Controller moves ${partLabel(part)}, not an output.`);
+      const entry = partById.get(part);
+      if (!entry) return;
+      if (isDomePart(entry) && outputOf(part) === null) {
+        say(`The Dome Controller moves ${partLabel(part)}, not an output.`);
         return;
       }
-      row.node.scrollIntoView?.({ block: "center" });
-      row.select.focus();
+      if (outputOf(part) === null && !added.includes(part)) {
+        added.push(part);
+        draw(outputs);
+      }
+      focusRow(part);
       say(
         off
-          ? `Pick ${NOT_WIRED} in ${partLabel(part)}'s row if the wire came off too.`
+          ? `Press take off in ${partLabel(part)}'s row if the wire came off too.`
           : `Choose the output that moves ${partLabel(part)} in its row.`
       );
     };
@@ -681,16 +912,10 @@
     paint = () => {
       if (!answered()) return;
       const outputs = OUTPUTS.list();
-      rows.forEach((row, id) => paintRow(id, row, outputs));
+      draw(outputs);
       paintTiming(outputs);
-      domeRows.forEach((gang, id) => {
-        const output = outputOf(id);
-        gang.textContent = output ? ` on ${output.name} too` : "";
-      });
 
-      const on = body.filter((part) => outputOf(part.id) !== null).length;
-      const empty = outputs.filter((output) => output.parts.length === 0).length;
-      let text = `${on} of ${body.length} parts on an output · ${empty} of ${outputs.length} outputs ${FREE}`;
+      let text = wiredSummary(outputs);
       // A Part on an Output that this page has no row for would otherwise be
       // invisible, which is the one thing this table must never be.
       const unknown = outputs.flatMap((output) => output.parts).filter((id) => !partById.has(id));
@@ -698,25 +923,17 @@
         text += ` · ${unknown.join(", ")} on an output too, unknown to this page - upload the matching web UI`;
       }
       summary.textContent = text;
-      claimWanted();
+      claimWanted(outputs);
     };
 
-    table.addEventListener("change", (event) => {
-      const select = event.target;
-      const id = select?.closest?.("[data-part]")?.dataset.part;
-      if (!id || !answered()) return;
-      move.request(moveFor(OUTPUTS.list(), id, select.value), select);
-    });
-
-    // A control that was held catches up with whatever arrived while it was.
-    table.addEventListener("focusout", () => paint());
-
     // Every read of the Outputs - this surface's, a move's, a save made on
-    // another surface - publishes once, and this is the one place the picker
+    // another surface - publishes once, and this is the one place the table
     // paints from it.
     OUTPUTS.onChange(() => paint());
     paint();
-    return true;
+    // What the caller hands over - the serial links, the cards - changes
+    // without the Outputs changing, and the caller says when.
+    return Object.freeze({ repaint: () => paint() });
   };
 
   window.PAParts = Object.freeze({
@@ -728,7 +945,6 @@
     listParts,
     servoWord,
     hasServoWord,
-    optionText,
     isLightRow,
     moveFor,
     announcement,
@@ -739,6 +955,10 @@
     unclaimed,
     offButMapped,
     routeToOutput,
+    TABLE,
+    FREE,
+    wiredCounts,
+    wiredSummary,
     picker,
   });
 })();
