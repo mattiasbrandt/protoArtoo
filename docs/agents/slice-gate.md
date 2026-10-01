@@ -94,7 +94,10 @@ every `data/` JS and CSS file through esbuild and resolves the HTML includes -
 the only syntax check `data/` files no web test opens ever get. It is not
 `-t buildfs`: in a fresh worktree that target half-runs the framework rebuild
 and leaves the machine-wide artoo framework pool pristine behind a stamp that
-claims otherwise (measured on #405, 2026-09-18). Anything else in the diff -
+claims otherwise (measured on #405, 2026-09-18). Pricing a staged directory
+without `buildfs` is `tools/fs_price.py` (`--order` is required, #462). It is
+not a second gate; `make check-build-budgets` is still the number that can
+fail a build. Anything else in the diff -
 `data/console_help.txt` (a native test reads it), `data/asset-sets/`, `src/`,
 `tools/`, `platformio.ini` - is not web-only and runs every row. It is derived
 from the diff; there is no flag.

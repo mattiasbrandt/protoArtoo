@@ -867,6 +867,9 @@ def main():
     # image's order is owned there, not here. Writing the stage in the same
     # order keeps a creation-order host's listing (btrfs) identical to the
     # image, and makes the stage itself a function of the commit (#429).
+    # Pricing that order, or a modified copy of the stage, without buildfs is
+    # tools/fs_price.py (--order is required). It is not the number that can
+    # fail a build; make check-build-budgets is.
     out_bytes = 0
     for path in sorted(staged, key=lambda p: (-staged[p][0], p)):
         size, data, source = staged[path]
