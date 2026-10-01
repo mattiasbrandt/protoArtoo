@@ -581,7 +581,9 @@ about Learned Sequence storage, which is the operator's.
 
 A question about what a staged directory would cost, including the same bytes
 written in another order, is `tools/fs_price.py` (`--order` is required; #462).
-That number is not the gate. Do not write a private LittleFS imager for it.
+It images with the LittleFS call of that env's installed platform pin, so each
+pin keeps its own `mount`. That number is not the gate. Do not write a private
+LittleFS imager for it.
 
 **JSON API test rule:** JSON API response builders that are new or materially
 changed should have high-signal native coverage for the typical case and serialized

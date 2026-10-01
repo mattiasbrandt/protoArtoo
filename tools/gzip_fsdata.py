@@ -184,9 +184,12 @@ def main():
     set_count = 0
     src_bytes = 0
     out_bytes = 0
-    # Pricing a staged directory, or another write order, without buildfs is
-    # tools/fs_price.py (--order is required). It is not the number that can
-    # fail a build; make check-build-budgets is.
+    # This walk follows the host's directory order. A fixed order is
+    # tools/fs_price.py --order name (names sorted at each directory, files
+    # before the walk descends) or --order size (directories by path, then
+    # the largest file first). Pricing a staged directory without buildfs is
+    # that script. It is not the number that can fail a build;
+    # make check-build-budgets is.
     for walk_src, in_set in roots:
         for root, _dirs, files in os.walk(walk_src):
             rel = os.path.relpath(root, walk_src)

@@ -11,20 +11,27 @@ stage, change the copy, and compare.
     tools/fs_price.py --env artoo_esp32 --order size .pio/build/artoo_esp32/fsdata_gz
     tools/fs_price.py --env artoo_esp32 --order name --compare stage-a stage-b
 
-`--order` is required. `name` is the order tools/gzip_fsdata.py creates files
-in, which is the order the platform builder then walks. `size` writes the
-largest file first. A silent sort would match today and lie the day that
-creation order changes.
+`--order` is required. The order files are written into a LittleFS image
+changes its block count, and the platform builder writes them in whatever
+order the host directory lists.
 
-The LittleFS parameters below are a copy of the platform builder's
-`build_fs_image` (pioarduino platform-espressif32,
-`builder/main.py`, the `LittleFS(...)` call in that function): read_size 1,
-prog_size 1, cache_size = block size, lookahead_size 32, block_cycles 500,
-name_max 64, disk version 2.1 unless `board_build.littlefs_version` says
-otherwise. Both the artoo and the firebeetle2 platform trees carry that same
-call. `littlefs` is imported from the PlatformIO environment that builds the
-named env. A missing import exits with the path it tried; it does not fall
-through to system Python.
+`name` writes each directory's files in name order before it descends. A
+flat sort of every path is a different image: a later file in the parent
+would be written after a subdirectory's files. `size` makes every directory
+first, by path, then writes files largest first, ties by path. This script
+does not read tools/gzip_fsdata.py to choose. Pass the order the image
+writer uses; the comment on that writer's loop names which one.
+
+The LittleFS geometry is read from the installed platform builder for the
+env's own pin (`builder/main.py`, `build_fs_image`, its `LittleFS(...)`
+call). The unversioned `platforms/espressif32` directory is whichever pin
+was installed last, so it is not consulted unless its `.piopm` uri is this
+env's. The two pins disagree on `mount`: artoo's 55.03.37 constructs mounted
+and the library formats the blank image when that mount fails; the P4 pin
+constructs unmounted, then formats and mounts. A call whose other arguments
+are not the ones this script writes fails the run, with the builder path.
+`littlefs` comes from that env's PlatformIO environment. A missing import
+exits with the path it tried; it does not fall through to system Python.
 
 Two counters come back, and they are not the same number. `written_blocks`
 counts blocks that are not 0xFF, which is what tools/check_build_budgets.py
@@ -35,8 +42,11 @@ the block size (`usedBytes()`).
 from __future__ import annotations
 
 import argparse
+import ast
+import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,16 +61,33 @@ from check_build_budgets import (  # noqa: E402
     platform_for_env,
 )
 
-# Copied from the platform builder's build_fs_image. block_size is the
-# partition's FS_BLOCK, which defaults to 4096; cache_size follows it.
-# disk_version is (major << 16) | minor, default 2.1.
-READ_SIZE = 1
-PROG_SIZE = 1
-LOOKAHEAD_SIZE = 32
-BLOCK_CYCLES = 500
-NAME_MAX = 64
+# Arguments of build_fs_image's LittleFS(...) that are the same on both pins.
+# A name is an expression in the builder; a literal is the value it passes.
+# block_size is the partition's FS_BLOCK, which defaults to 4096, and
+# cache_size follows it. disk_version is (major << 16) | minor, default 2.1.
+# `mount` is not in this table: the pins disagree, and it is read per env.
+EXPECTED_LITTLEFS = {
+    "block_size": "block_size",
+    "block_count": "block_count",
+    "read_size": 1,
+    "prog_size": 1,
+    "cache_size": "block_size",
+    "lookahead_size": 32,
+    "block_cycles": 500,
+    "name_max": 64,
+    "disk_version": "disk_version",
+}
 
 _REENC_ENV = "FS_PRICE_REEXEC"
+
+
+@dataclass(frozen=True)
+class PlatformLittleFS:
+    """The installed builder this env's pin actually images with."""
+
+    mount: bool
+    version: str
+    builder: Path
 
 
 def die(message: str, code: int = 1) -> None:
@@ -165,6 +192,121 @@ def partition_blocks(env_name: str) -> tuple[int, Path]:
     return size // LITTLEFS_BLOCK_SIZE, csv_path
 
 
+def platform_dir_for_url(platforms_dir: Path, url: str) -> Path:
+    """The installed platform whose `.piopm` uri is `url`.
+
+    PlatformIO keeps one pin at `platforms/espressif32` and detaches the other
+    to `espressif32@src-<md5 of its uri>`. The plain directory is whichever
+    pin was installed last, so matching the uri is the whole lookup.
+    """
+    if not platforms_dir.is_dir():
+        die(f"PlatformIO platforms directory not found: {platforms_dir}")
+    matches = []
+    for child in sorted(platforms_dir.iterdir()):
+        meta_path = child / ".piopm"
+        if not meta_path.is_file():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            die(f"platform metadata is not JSON: {meta_path} ({exc})")
+        if meta.get("spec", {}).get("uri") == url:
+            matches.append(child)
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        die(
+            f"no installed platform under {platforms_dir} has uri {url}. "
+            "The unversioned espressif32 directory is used only when its uri is this pin."
+        )
+    joined = ", ".join(str(path) for path in matches)
+    die(f"more than one installed platform matches {url}: {joined}")
+
+
+def littlefs_mount(source: str, origin: str = "the platform builder") -> bool:
+    """Return build_fs_image's LittleFS(mount=...), or exit when the call drifted.
+
+    Both pins pass the same geometry and disagree only on mount. artoo's
+    55.03.37 passes mount=True and never calls format(); the library formats
+    when that first mount fails. The P4 pin passes mount=False and then calls
+    format() and mount(). Anything else is a builder this script would image
+    differently from, so the run stops.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        die(f"{origin} could not be parsed: {exc}")
+    func = next(
+        (node for node in ast.walk(tree)
+         if isinstance(node, ast.FunctionDef) and node.name == "build_fs_image"),
+        None,
+    )
+    if func is None:
+        die(f"{origin} has no build_fs_image()")
+    calls = [
+        node for node in ast.walk(func)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "LittleFS"
+    ]
+    if len(calls) != 1:
+        die(f"{origin} build_fs_image() makes {len(calls)} LittleFS() calls")
+    found: dict[str, object] = {}
+    for keyword in calls[0].keywords:
+        if keyword.arg is None:
+            die(f"{origin} LittleFS() call has a positional argument")
+        value = keyword.value
+        if isinstance(value, ast.Constant):
+            found[keyword.arg] = value.value
+        elif isinstance(value, ast.Name):
+            found[keyword.arg] = value.id
+        else:
+            found[keyword.arg] = ast.unparse(value)
+    problems = [
+        f"LittleFS({name}={found.get(name, '<absent>')!r}, expected {expected!r})"
+        for name, expected in EXPECTED_LITTLEFS.items()
+        if found.get(name, "<absent>") != expected
+    ]
+    for name in sorted(set(found) - set(EXPECTED_LITTLEFS) - {"mount"}):
+        problems.append(f"LittleFS({name}=...) is not written by this pricer")
+    mount = found.get("mount", "<absent>")
+    body = {ast.unparse(node) for node in ast.walk(func) if isinstance(node, ast.expr)}
+    if mount is True:
+        if "fs.format()" in body:
+            problems.append(
+                "LittleFS(mount=True) and build_fs_image() also calls fs.format()"
+            )
+    elif mount is False:
+        for expr in ("fs.format()", "fs.mount()"):
+            if expr not in body:
+                problems.append(f"LittleFS(mount=False) but build_fs_image() has no `{expr}`")
+    else:
+        problems.append(f"LittleFS(mount={mount!r}) is neither True nor False")
+    if problems:
+        die(f"{origin} LittleFS call does not match this pricer:\n  " + "\n  ".join(problems))
+    return True if mount is True else False
+
+
+def platform_littlefs(env_name: str) -> PlatformLittleFS:
+    """The LittleFS construction the named env's installed pin images with."""
+    url = resolved_env(env_name).get("platform", "")
+    if not url.startswith(("http://", "https://")):
+        die(f"{env_name} platform {url!r} is not a zip pin this script can locate")
+    _key, spec = platform_for_env(env_name, load_budgets())
+    core = Path(os.path.expanduser(spec["core_dir"]))
+    directory = platform_dir_for_url(core / "platforms", url)
+    builder = directory / "builder" / "main.py"
+    if not builder.is_file():
+        die(f"platform builder not found: {builder}")
+    try:
+        described = json.loads((directory / "platform.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        die(f"platform.json in {directory} could not be read: {exc}")
+    version = str(described.get("version", ""))
+    if not version:
+        die(f"{directory / 'platform.json'} has no version")
+    mount = littlefs_mount(builder.read_text(encoding="utf-8"), str(builder))
+    return PlatformLittleFS(mount=mount, version=version, builder=builder)
+
+
 def penv_python(env_name: str) -> Path:
     """Python for the PlatformIO environment that builds this env.
 
@@ -204,21 +346,41 @@ def ensure_littlefs(env_name: str):
 
 
 def ordered_entries(source: Path, order: str) -> list[Path]:
-    entries = [item for item in source.rglob("*")]
+    """Entries in the order `image_directory` writes them.
+
+    `name` is a sorted walk: within a directory, files in name order, then
+    subdirectories. A flat sort of every relative path writes a subdirectory's
+    files before a later file in the parent, and that is a different image.
+    `size` is directories by path, then files largest first.
+    """
+    walked: list[Path] = []
+    directories: list[Path] = []
+    files: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(source):
+        dirnames.sort()
+        filenames.sort()
+        current = Path(dirpath)
+        if current != source:
+            walked.append(current)
+            directories.append(current)
+        for name in filenames:
+            path = current / name
+            walked.append(path)
+            files.append(path)
     if order == "name":
-        entries.sort(key=lambda item: item.relative_to(source).as_posix())
-        return entries
-    dirs = [item for item in entries if item.is_dir()]
-    files = [item for item in entries if item.is_file()]
-    dirs.sort(key=lambda item: item.relative_to(source).as_posix())
-    files.sort(key=lambda item: (-item.stat().st_size, item.relative_to(source).as_posix()))
-    return dirs + files
+        return walked
+    directories.sort(key=lambda path: path.relative_to(source).as_posix())
+    files.sort(key=lambda path: (-path.stat().st_size, path.relative_to(source).as_posix()))
+    return directories + files
 
 
-def image_directory(source: Path, block_count: int, order: str, disk_version: int) -> tuple[int, int]:
+def image_directory(source: Path, block_count: int, order: str, disk_version: int, mount: bool) -> tuple[int, int]:
     """Write `source` and return (written non-0xFF blocks, lfs_fs_size).
 
     Caller has already run ensure_littlefs, so this import is the PlatformIO one.
+    `mount` is the pin's own LittleFS(mount=...). Mounted, the library formats
+    the blank buffer when the first mount fails. Unmounted, the builder formats
+    and mounts on a fresh instance, and so does this.
     """
     from littlefs import LittleFS as LFS
 
@@ -226,17 +388,18 @@ def image_directory(source: Path, block_count: int, order: str, disk_version: in
     fs = LFS(
         block_size=block,
         block_count=block_count,
-        read_size=READ_SIZE,
-        prog_size=PROG_SIZE,
+        read_size=EXPECTED_LITTLEFS["read_size"],
+        prog_size=EXPECTED_LITTLEFS["prog_size"],
         cache_size=block,
-        lookahead_size=LOOKAHEAD_SIZE,
-        block_cycles=BLOCK_CYCLES,
-        name_max=NAME_MAX,
+        lookahead_size=EXPECTED_LITTLEFS["lookahead_size"],
+        block_cycles=EXPECTED_LITTLEFS["block_cycles"],
+        name_max=EXPECTED_LITTLEFS["name_max"],
         disk_version=disk_version,
-        mount=False,
+        mount=mount,
     )
-    fs.format()
-    fs.mount()
+    if not mount:
+        fs.format()
+        fs.mount()
     for item in ordered_entries(source, order):
         rel = item.relative_to(source).as_posix()
         if item.is_dir():
@@ -272,14 +435,17 @@ def measure(source: Path, env_name: str, order: str) -> dict:
     if not source.is_dir():
         die(f"not a directory: {source}")
     ensure_littlefs(env_name)
+    built = platform_littlefs(env_name)
     blocks, csv_path = partition_blocks(env_name)
     version = disk_version_for(resolved_env(env_name))
-    written, fs_size = image_directory(source, blocks, order, version)
+    written, fs_size = image_directory(source, blocks, order, version, built.mount)
     rows = file_rows(source)
     return {
         "path": source,
         "env": env_name,
         "order": order,
+        "platform_version": built.version,
+        "littlefs_mount": built.mount,
         "partition_blocks": blocks,
         "partition_csv": csv_path.relative_to(ROOT).as_posix(),
         "block_size": LITTLEFS_BLOCK_SIZE,
@@ -296,6 +462,8 @@ def format_report(report: dict) -> str:
         f"path: {report['path']}",
         f"env: {report['env']}",
         f"order: {report['order']}",
+        f"platform_version: {report['platform_version']}",
+        f"littlefs_mount: {str(report['littlefs_mount']).lower()}",
         f"partition_csv: {report['partition_csv']}",
         f"partition_blocks: {report['partition_blocks']}",
         f"block_size: {report['block_size']}",
@@ -326,7 +494,12 @@ def format_compare(left: dict, right: dict) -> str:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--env", required=True, help="PlatformIO environment, for its partition table")
-    parser.add_argument("--order", required=True, choices=("name", "size"), help="name matches gzip_fsdata creation; size is largest file first")
+    parser.add_argument(
+        "--order",
+        required=True,
+        choices=("name", "size"),
+        help="name: sorted walk, files before descent; size: directories by path, then largest file first",
+    )
     parser.add_argument("stage", nargs="?", type=Path, help="staged directory to image")
     parser.add_argument("--compare", nargs=2, metavar=("A", "B"), type=Path, help="image two directories and print the difference")
     args = parser.parse_args(argv)
