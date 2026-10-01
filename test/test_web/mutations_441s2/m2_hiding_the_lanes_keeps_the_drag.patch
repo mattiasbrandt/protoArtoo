@@ -1,0 +1,13 @@
+diff --git i/data/seq_timeline.js w/data/seq_timeline.js
+index ecb8ad2a..723f686b 100644
+--- i/data/seq_timeline.js
++++ w/data/seq_timeline.js
+@@ -1181,7 +1181,7 @@
+       dragging: () => drag !== null,
+       // The lanes are about to go out of sight with the view still mounted:
+       // a drag under way is abandoned, as a pointercancel abandons it.
+-      cancel: () => dragCancel(),
++      cancel: () => {},
+       picked,
+       movePickedTo,
+       removePicked: removeSelected,
