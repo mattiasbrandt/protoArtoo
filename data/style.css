@@ -175,6 +175,11 @@
   /* The Sequences timeline's lane-name column (data/seq_timeline.js): the one
      place its width is written, so nothing else repeats the number. */
   --tl-lane-w: 200px;
+  /* How far in from a block's end the timeline's resize grip reaches: the
+     one place it is written. The script reads it from here to decide whether
+     a press took the edge (data/seq_timeline.js), so the grip and the press
+     cannot disagree. */
+  --tl-grip: 8px;
 
   /* Type, by job. Each step carries the job it does, so a new surface picks a
      size by asking what it is rather than by copying whatever the neighbour
@@ -6480,10 +6485,10 @@ body[data-page="maintenance"] .status-item .hint {
 
    One ink, by weight: a move is the solid block, a Part standing open is the
    span, and "still open when this finishes" is the lighter run to the edge.
-   The interaction blue is spent on the marker alone, which is the one thing a
-   builder moves here. No block and no lane is amber: a Part this droid cannot
-   move is said once, in the note above the routine, and its lane is dim and
-   italic (ADR 0062).
+   The interaction blue is spent on what a builder has hold of: the marker,
+   the selected blocks, and the line a drag is about to land on (#441). No
+   block and no lane is amber: a Part this droid cannot move is said once, in
+   the note above the routine, and its lane is dim and italic (ADR 0062).
 
    The lane column's width is --tl-lane-w, in :root, and nothing else. Every
    position is a fraction of the track, so the script never needs to know it:
@@ -6716,6 +6721,127 @@ body[data-page="maintenance"] .status-item .hint {
 
 .tl-marker {
   border-left: 2px solid var(--accent);
+}
+
+/* Editing (#441): a block the builder can take hold of. The script marks
+   each one in data-edit - can-move, can-size-l, can-size-r, is-selected - and
+   decides body or edge by the width the grips are drawn at, --tl-grip, which
+   it reads from :root. */
+.tl-loop-mode[hidden] {
+  display: none;
+}
+
+.tl-grid:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tl-grid[data-dragging="body"] {
+  cursor: grabbing;
+}
+
+.tl-grid[data-dragging="edge"] {
+  cursor: ew-resize;
+}
+
+.tl-grid[data-dragging="body"],
+.tl-grid[data-dragging="edge"] {
+  user-select: none;
+}
+
+.tl-item[data-edit~="can-move"] {
+  cursor: grab;
+  touch-action: none;
+}
+
+.tl-grid[data-dragging="body"] .tl-item[data-edit~="can-move"],
+.tl-grid[data-dragging="edge"] .tl-item[data-edit~="can-move"] {
+  cursor: inherit;
+}
+
+.tl-item[data-edit~="is-selected"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A tick is two pixels wide: it is given a wider place to press. */
+.tl-tick[data-edit~="can-move"] {
+  overflow: visible;
+}
+
+.tl-tick[data-edit~="can-move"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: calc(var(--space-2xs) * -1);
+  bottom: 0;
+  left: calc(var(--space-2xs) * -1);
+}
+
+.tl-item[data-edit~="can-size-l"]::before,
+.tl-item[data-edit~="can-size-r"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: min(var(--tl-grip), 33.3%);
+  cursor: ew-resize;
+}
+
+.tl-item[data-edit~="can-size-l"]::before {
+  left: 0;
+}
+
+.tl-item[data-edit~="can-size-r"]::after {
+  right: 0;
+}
+
+.tl-item[data-edit~="can-size-l"]:hover::before,
+.tl-item[data-edit~="can-size-r"]:hover::after,
+.tl-item[data-edit~="is-selected"]::before,
+.tl-item[data-edit~="is-selected"]::after {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* The end of the routine is a line the builder drags, with room to press. */
+.tl-end[data-edit~="can-move"] {
+  pointer-events: auto;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.tl-end[data-edit~="can-move"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--space-2xs) * -1);
+  width: var(--space-sm);
+}
+
+/* Where a drag will land: a dashed line, named when it lands on a block. */
+.tl-snap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed var(--accent);
+}
+
+.tl-snap-label {
+  position: absolute;
+  top: var(--space-2xs);
+  left: var(--space-2xs);
+  padding: 0 var(--space-2xs);
+  background: var(--surface);
+  color: var(--accent-bright);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  white-space: nowrap;
+}
+
+.seq-editor-show {
+  margin-bottom: var(--space-md);
 }
 
 .tl-side {

@@ -1,10 +1,10 @@
 // =============================================================================
 // test/test_web/test_seq_timeline.js
 //
-// A saved sequence read as time, on the Sequences surface (data/seq_timeline.js,
-// ADR 0062, #440).
+// A sequence read as time, on the Sequences surface (data/seq_timeline.js,
+// ADR 0062, #440), and edited there (ADR 0057, #441).
 //
-// The invariant: moving the marker is silent. A press on the ruler, a drag and
+// The first invariant: moving the marker is silent. A press on the ruler, a drag and
 // the arrow keys move it, and the picture and the readout follow it to that
 // moment of the routine - and nothing reaches the droid. The droid moves only
 // on a separate, deliberate press; nothing follows a dragging finger (ADR
@@ -18,6 +18,12 @@
 // request. The view is a real mini_dom tree, so the ruler it binds and the
 // window listeners a drag adds are the ones the page really holds; the moment
 // is checked in the readout, so a marker that did not move cannot pass.
+//
+// The second: a drag on the timeline edits the one sequence the editor holds.
+// The block is written into that object as it moves, lands on a neighbour's
+// edge inside a tolerance that is a time, is one entry in the editor's one
+// history whatever it passed on the way, and what Save sends is in the time
+// order Protocol Check accepts. A press that moves nothing is no edit.
 // Per test/test_web/README.md: executed, not pattern-matched.
 // =============================================================================
 import test from "node:test";
@@ -27,6 +33,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { webcrypto } from "node:crypto";
 
 import { MiniDocument } from "./helpers/mini_dom.js";
 
@@ -115,6 +122,10 @@ function openPage() {
   const mini = new MiniDocument();
   const timelineView = mini.createElement("div");
   mini.body.appendChild(timelineView);
+  // Where the editor mounts the timeline of the sequence being edited: a real
+  // node, found by the id the editor's own markup gives it.
+  const editorTimeline = mini.createElement("div");
+  mini.body.appendChild(editorTimeline);
 
   // The Factory card and its Timeline button, handed back the way the browser
   // would find them in the markup renderListView() just wrote.
@@ -122,7 +133,7 @@ function openPage() {
   const card = stub({ querySelector: (selector) => (selector === ".seq-card-test-feedback" ? cardFeedback : null) });
   const timelineButton = stub({ dataset: { action: "timeline", builtinName: ROUTINE.name }, closest: () => card });
 
-  const elements = new Map([["seq-timeline-view", timelineView]]);
+  const elements = new Map([["seq-timeline-view", timelineView], ["seq-editor-timeline", editorTimeline]]);
   const byId = (id) => {
     if (!elements.has(id)) elements.set(id, stub());
     return elements.get(id);
@@ -178,6 +189,7 @@ function openPage() {
     removeEventListener(type, fn) {
       windowListeners[type] = (windowListeners[type] || []).filter((each) => each !== fn);
     },
+    crypto: webcrypto, // the browser's own, which the editor mints ids with
     setTimeout,
     clearTimeout,
     setInterval,
@@ -196,7 +208,10 @@ function openPage() {
     requests,
     writes,
     timelineView,
+    editorTimeline,
     timelineButton,
+    byId,
+    seam: sandbox.__seqEditorForTesting,
     settle,
     fireWindow: (type, event) => (windowListeners[type] || []).slice().forEach((fn) => fn(event)),
   };
@@ -272,4 +287,95 @@ test("a step on a beat is drawn where its beat falls, not at a stale time", () =
   const panel = model.parts.find((lane) => lane.part === "panel1");
   assert.ok(panel, "the panel the step opens has no lane");
   assert.equal(panel.changes[0].t, 2000);
+});
+
+// A dome turn, then a ring panel opened and closed, with room either side.
+const EDITED = {
+  name: "DM:DRAGGED",
+  toggleGroup: "none",
+  suppressMs: 8000,
+  steps: [
+    { t: 0, type: "audio", cmd: "$H" },
+    { t: 500, type: "domeRotate", speedPct: 40, durationMs: 1000 },
+    { t: 2000, type: "dome", cmd: ":OP01" },
+    { t: 3000, type: "dome", cmd: ":CL01" },
+    { t: 4000, type: "end" },
+  ],
+};
+
+test("a drag on the timeline is one edit to the sequence the editor saves", async () => {
+  const page = openPage();
+  await page.settle();
+  page.seam.renderEditorView(JSON.parse(JSON.stringify(EDITED)));
+  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
+
+  const view = page.editorTimeline;
+  assert.ok(view.querySelector(".tl-grid"), "the editor drew no timeline");
+  const steps = () => Array.from(page.seam.editorState.current.steps, (step) => [step.type, step.t]);
+  const turn = () => page.seam.editorState.current.steps.find((step) => step.type === "domeRotate");
+
+  // The track is 1000 px wide. The drawing is rebuilt as a block moves, so the
+  // ruler and the block are looked up, and given their boxes, at each press.
+  const press = (clientX, extra = {}) => {
+    const ruler = view.querySelector(".tl-ruler");
+    const windowMs = Number(ruler.getAttribute("aria-valuemax"));
+    ruler.getBoundingClientRect = () => ({ left: 0, width: 1000 });
+    const block = view.querySelector('[data-lane="spin"]').querySelector(".tl-item");
+    const left = (turn().t / windowMs) * 1000;
+    const width = (turn().durationMs / windowMs) * 1000;
+    block.getBoundingClientRect = () => ({ left, right: left + width, width });
+    const at = left + width / 2;
+    view.querySelector(".tl-grid").fire("pointerdown", { target: block, clientX: at + (clientX || 0), preventDefault() {}, ...extra });
+    return { at, pxPerMs: 1000 / windowMs };
+  };
+
+  // Dragged 1560 ms: its start comes within 60 ms of the panel's open at
+  // 2000 ms and lands on it, and the sequence the editor holds has moved
+  // before the pointer is let go.
+  let held = press();
+  page.fireWindow("pointermove", { clientX: held.at + 1560 * held.pxPerMs });
+  assert.equal(turn().t, 2000, "the block did not land on the edge it came within the tolerance of");
+  assert.ok(view.querySelector(".tl-snap"), "nothing shows where the drag will land");
+  page.fireWindow("pointerup", {});
+  assert.equal(page.byId("seq-editor-undo").disabled, false);
+
+  // A press that moves nothing only selects.
+  press();
+  page.fireWindow("pointerup", {});
+
+  // An Undo asked for with a block still held does nothing: the drag's writes
+  // are in the routine and not yet an entry, and the steps a restore would put
+  // back are not the ones the drag is holding. Taking the view down under a
+  // drag puts the block back where the press found it.
+  held = press();
+  page.fireWindow("pointermove", { clientX: held.at + 450 * held.pxPerMs });
+  (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
+  assert.equal(turn().t, 2450, "Undo ran under a drag");
+  (page.byId("seq-editor-show-steps").listeners.click || []).forEach((fn) => fn());
+  assert.equal(turn().t, 2000, "a drag torn down mid-gesture left its half-made move in the routine");
+  (page.byId("seq-editor-show-timeline").listeners.click || []).forEach((fn) => fn());
+
+  // Dragged on past the open, out of reach of any edge: it stays where it is put.
+  held = press();
+  page.fireWindow("pointermove", { clientX: held.at + 450 * held.pxPerMs });
+  page.fireWindow("pointerup", {});
+  assert.equal(turn().t, 2450);
+
+  // One Undo is the last drag and nothing else: the press between the two
+  // drags left no entry behind.
+  (page.byId("seq-editor-undo").listeners.click || []).forEach((fn) => fn());
+  assert.equal(turn().t, 2000, "one Undo did not take back exactly the last drag");
+  (page.byId("seq-editor-redo").listeners.click || []).forEach((fn) => fn());
+
+  // The turn now starts after the open, so it follows it in the step list:
+  // Protocol Check refuses a step timed before the one above it.
+  assert.deepEqual(steps(), [["audio", 0], ["dome", 2000], ["domeRotate", 2450], ["dome", 3000], ["end", 4000]]);
+  (page.byId("seq-editor-save").listeners.click || []).forEach((fn) => fn());
+  await page.settle();
+  const saved = page.writes.filter((write) => write.startsWith("POST /api/seq {"));
+  assert.equal(saved.length, 1, "Save did not send the sequence the timeline edited");
+  assert.deepEqual(
+    JSON.parse(saved[0].slice("POST /api/seq ".length)).steps.map((step) => [step.type, step.t]),
+    [["audio", 0], ["dome", 2000], ["domeRotate", 2450], ["dome", 3000], ["end", 4000]],
+  );
 });

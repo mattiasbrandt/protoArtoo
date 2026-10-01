@@ -657,13 +657,15 @@
   };
 
   // A surface can hold its own unmount open: decide() returns true while it
-  // must not be taken off screen yet. This is the capability, not a feature --
-  // nothing registers a hold today, and the surface that will (an unsaved
-  // sequence edit, #289/#299) is the one that owns the question it asks.
+  // must not be taken off screen yet. Sequences holds it over an unsaved edit
+  // (data/seq.js, #441) and owns the question it asks; the other surfaces
+  // that register one never hold, and only hear that they are being left.
   //
   // decide() being called is also how a surface learns it is being asked to
-  // leave, which is the moment it would put that question on screen; when it
-  // has an answer it calls releaseUnmount() and the navigation goes through.
+  // leave, which is the moment it puts that question on screen. It is called
+  // again on every attempt to leave, so a surface already asking must not ask
+  // twice. When it has an answer it calls releaseUnmount() and the navigation
+  // goes through, or stayOnSurface() and the address comes back to it.
   //
   // A hold cannot strand the operator: the estop is chrome the shell renders
   // once and never unmounts, so it stays live behind a surface that is holding.
@@ -695,10 +697,20 @@
     window.dispatchEvent(new CustomEvent("pa:surface-release"));
   };
 
+  // The surface that was holding has its answer, and it is to stay. The shell
+  // put the address on where the operator was going before it asked, so the
+  // address and the nav say one surface while another is on screen; this asks
+  // the shell to put them back.
+  const stayOnSurface = () => {
+    if (typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new CustomEvent("pa:surface-stay"));
+  };
+
   window.PASurface = {
     poll: createSurfacePoll,
     holdUnmount,
     releaseUnmount,
+    stayOnSurface,
     // The shell's half of the contract; nothing else calls these.
     showing: showingSurfaceIs,
     isStale: surfaceIsStale,

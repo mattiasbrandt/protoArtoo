@@ -26,6 +26,13 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **Edit a sequence on its timeline.** Open your own sequence and switch
+  from Steps to Timeline: drag a block to move it, drag its edge to make it
+  longer or shorter, drag the end line to give the routine more room. A block
+  that comes close to another block's edge lands on it. Every edit, on the
+  timeline or in the step list, is one Undo and one Redo, and Revert still
+  takes the whole sequence back to how it was saved. Leave with edits unsaved
+  and the page asks before it drops them.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring ends with a card for each product on the droid: its supply, its
   draw, its logic level, where each wire goes, and what breaks hardware. Fit

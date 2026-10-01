@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index 6f6a424a..4f968256 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -1715,7 +1715,6 @@
+   // applyRoute() writes it, and not as a navigation: a new history entry
+   // would leave the refused address one Back away, and Back would ask again.
+   window.addEventListener("pa:surface-stay", () => {
+-    if (currentSurface) setAddress(currentSurface.page);
+   });
+ 
+   // A click on a link to a surface's own document is a route change, not a page

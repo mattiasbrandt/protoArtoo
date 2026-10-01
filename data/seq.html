@@ -87,6 +87,24 @@
          opened as a timeline) -->
     <div id="seq-timeline-view" class="hidden"></div>
 
+    <!-- Discard dialog: asked before an unsaved edit is dropped, by whichever
+         way the builder is leaving it (data/seq.js leaveSession()) -->
+    <div id="seq-modal-discard" class="seq-modal hidden" role="dialog" aria-labelledby="seq-modal-discard-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-discard-title">Discard your unsaved edits?</h4>
+        </div>
+        <div class="seq-modal-body">
+          <p class="prose" id="seq-discard-what"></p>
+        </div>
+        <div class="seq-modal-footer">
+          <button id="seq-modal-discard-keep" class="btn" type="button">Keep editing</button>
+          <button id="seq-modal-discard-confirm" class="btn danger" type="button">Discard edits</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Memory wipe dialog: the title is the question, the buttons are verbs -->
     <div id="seq-modal-memory-wipe" class="seq-modal hidden" role="dialog" aria-labelledby="seq-modal-wipe-title">
       <div class="seq-modal-overlay"></div>

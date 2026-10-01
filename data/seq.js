@@ -17,17 +17,87 @@
   let learnedAnswered = false;
   let factoryAnswered = false;
   let currentEditingSeq = null; // The sequence being edited (or null)
-  let timeline = null; // the open timeline's handle (data/seq_timeline.js), or null
+  let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
+  let sessionTimeline = null; // the timeline inside the editor, over the sequence being edited, or null
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
-  // Editor state tracking
-  let editorState = {
+  // Editor state tracking. One object for the life of the page: it is reset in
+  // place, never replaced, so the set of expanded steps is always there and
+  // the test seam at the foot of this file holds the object the editor reads.
+  const editorState = {
     original: null,   // snapshot at open time (for Revert)
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
     expanded: new Set(), // Set of step indices that are expanded (presentation-only)
+    view: "steps",    // which reading of the routine is on screen: "steps" or "timeline"
   };
+
+  // ---------------------------------------------------------------------------
+  // Undo and redo (ADR 0057): every edit to the routine, one at a time, from
+  // either view, on one stack.
+  //
+  // An entry is a copy of everything a builder authors - the steps, the close
+  // half, the interrupt group and the tempo, which re-times every step on a
+  // beat - so no edit needs an undo of its own kind. It is bracketed two ways
+  // (the pattern is r2d2-astromech-simulator's blockHistPush / blockHistCommit):
+  //   historyPush()          BEFORE an edit made in one act that always
+  //                          changes something: add, remove, reorder
+  //   historyCommit(before)  AFTER an edit made over time - a drag, a run of
+  //                          typing - or one that may turn out to change
+  //                          nothing, given the copy from historyBegin(). An
+  //                          edit that changed nothing records nothing, so a
+  //                          press that only selects costs no entry.
+  // Revert is not on the stack: it discards the whole session, history and all.
+  // ---------------------------------------------------------------------------
+  const HISTORY_DEPTH = 100;
+  const HISTORY_FIELDS = ["steps", "closeSteps", "toggleGroup", "tempo"];
+  // `base` is the routine as the last finished edit left it, which is what a
+  // typing run starts from: the dome fields write the step before they read
+  // the form back, so the run cannot take its own copy when it begins. `run`
+  // is that copy while a run is open, and `runStep` the step being typed in.
+  const history = { undo: [], redo: [], base: null, run: null, runStep: null };
+
+  const historyCapture = () =>
+    JSON.stringify(Object.fromEntries(HISTORY_FIELDS.map((key) => [key, editorState.current[key]])));
+
+  const historyRecord = (snapshot) => {
+    history.undo.push(snapshot);
+    if (history.undo.length > HISTORY_DEPTH) history.undo.shift();
+    history.redo.length = 0;
+  };
+
+  const historyCommit = (before) => {
+    if (historyCapture() !== before) historyRecord(before);
+  };
+
+  // A run of typing ends: at the field's change, and before anything else
+  // reads or writes the stack.
+  const historySettle = () => {
+    if (history.run !== null) historyCommit(history.run);
+    history.run = null;
+    history.runStep = null;
+    history.base = historyCapture();
+  };
+
+  const historyPush = () => {
+    historySettle();
+    historyRecord(history.base);
+  };
+
+  // The copy an edit made over time hands back to historyCommit().
+  const historyBegin = () => {
+    historySettle();
+    return history.base;
+  };
+
+  const historyReset = () => {
+    Object.assign(history, { undo: [], redo: [], run: null, runStep: null });
+    history.base = editorState.current ? historyCapture() : null;
+  };
+
+  // A run still open is an edit not yet on the stack.
+  const runChanged = () => history.run !== null && historyCapture() !== history.run;
 
   // How many Learned Sequences this droid lets a builder save. It is a board
   // fact the droid reports - five on the artoo-esp32, ten elsewhere (ADR 0065,
@@ -244,6 +314,12 @@
     wipeDanglingInfo: document.getElementById("seq-wipe-dangling-info"),
     modalWipeCancel: document.getElementById("seq-modal-wipe-cancel"),
     modalWipeConfirm: document.getElementById("seq-modal-wipe-confirm"),
+
+    // Discard dialog
+    modalDiscard: document.getElementById("seq-modal-discard"),
+    discardWhat: document.getElementById("seq-discard-what"),
+    modalDiscardKeep: document.getElementById("seq-modal-discard-keep"),
+    modalDiscardConfirm: document.getElementById("seq-modal-discard-confirm"),
   };
 
   // =========================================================================
@@ -258,7 +334,7 @@
   // the same move the Page Recovery View makes (data/page_bootstrap.js,
   // holdSurfacesInert).
   //
-  // The surface's OTHER top-level nodes rather than the surface itself: both
+  // The surface's OTHER top-level nodes rather than the surface itself: the
   // dialogs are children of it, and inert is inherited, so a descendant
   // cannot opt back in.
   // =========================================================================
@@ -294,7 +370,7 @@
   const hideModal = (modal) => {
     if (!modal) return;
     modal.classList.add("hidden");
-    // The other dialog may still be up; the surface comes back only when the
+    // Another dialog may still be up; the surface comes back only when the
     // last one closes.
     if (anotherDialogIsOpen(modal)) return;
     surfaceBehind(modal).forEach((node) => {
@@ -346,6 +422,11 @@
   const WAITING_SLOT = '<p class="hint waiting seq-section-waiting" role="status"></p>';
 
   const renderListView = () => {
+    // The list gives way to whatever is open - the editor, or a Factory
+    // sequence's timeline - and comes back when that closes. Without this a
+    // save, which reads the list again, drew it back in above the editor.
+    els.mainCard.classList.toggle("hidden", editorState.current !== null || timeline !== null);
+
     // Update capacity (Learned sequences only). Empty while the list has not
     // answered, so the slot's waiting class shows the dots instead of a count
     // of nothing.
@@ -421,7 +502,7 @@
       els.cardsContainer.querySelectorAll('[data-action="tune"]').forEach((btn) => {
         btn.addEventListener("click", () => {
           const builtinName = btn.dataset.builtinName;
-          handleCloneBuiltin(builtinName);
+          leaveSession(() => handleCloneBuiltin(builtinName));
         });
       });
 
@@ -429,9 +510,11 @@
       // which of the two reads the sequence.
       els.cardsContainer.querySelectorAll('[data-action="timeline"]').forEach((btn) => {
         btn.addEventListener("click", () =>
-          handleOpenTimeline(
-            btn.dataset.builtinName ? { builtinName: btn.dataset.builtinName } : { seqName: btn.dataset.seqName },
-            btn.closest(".seq-card")
+          leaveSession(() =>
+            handleOpenTimeline(
+              btn.dataset.builtinName ? { builtinName: btn.dataset.builtinName } : { seqName: btn.dataset.seqName },
+              btn.closest(".seq-card")
+            )
           )
         );
       });
@@ -547,11 +630,6 @@
     editorState.isNew = true; // Cloning is treated as new sequence
     editorState.tuningFactory = full.name; // Mark that we're tuning this Factory sequence
 
-    // Hide list, show editor
-    els.emptyState.classList.add("hidden");
-    els.populatedState.classList.add("hidden");
-    els.editorView.classList.remove("hidden");
-
     // Render editor with this builtin
     renderEditorView(currentEditingSeq);
 
@@ -566,14 +644,20 @@
   };
 
   // =========================================================================
-  // Timeline (#440, ADR 0062)
+  // Timeline (#440, ADR 0062; #441, ADR 0057)
   //
-  // A saved sequence read as time. It reads what the droid stores - GET
-  // /api/seq for the builder's own, GET /api/seq/builtins for a Factory one -
-  // and the droid facts the Rehearsal reads, and it writes nothing. Its way
-  // back to the cards opens the card view of the same sequence: the editor for
-  // the builder's own, Tune for a Factory one, exactly as the list's own
-  // buttons do.
+  // A sequence read as time, two ways through one view (data/seq_timeline.js).
+  //
+  // A Factory sequence opens read-only, from GET /api/seq/builtins: the builder
+  // has not made it theirs, and Tune is the act that does.
+  //
+  // The builder's own opens in the editor, with the timeline shown in place of
+  // the step list: one sequence object, editorState.current, behind both, so
+  // an edit in one is there in the other and Save sends it either way
+  // (showSessionView() below).
+  //
+  // Neither moves the droid except on the pose press, and that poses what the
+  // droid has stored under the name - never the edits on screen.
   // =========================================================================
   const closeTimeline = () => {
     if (timeline) {
@@ -583,59 +667,266 @@
     els.timelineView.classList.add("hidden");
   };
 
+  // The one request the pose press sends: the sequence's name and the instant.
+  // What the droid does at that instant, and how far apart, is the firmware's
+  // to work out from what it stores (include/sequence_pose.h); a latched estop
+  // or Sleep Mode refuses it there, in words this shows.
+  const poseOnDroid = (name, atMs, which = "") =>
+    PAApi.postJson("/api/seq/pose", { name, t: atMs })
+      .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s${which}, one part at a time.`, level: "ok" }))
+      .catch((error) => ({ text: PAApi.messageFor(error), level: "error" }));
+
   const handleOpenTimeline = async ({ seqName = null, builtinName = null }, cardEl = null) => {
-    const name = builtinName || seqName;
-    const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
-    const sayOnCard = (message) => {
-      console.error(`[seq] timeline for ${name}: ${message}`);
-      if (!feedbackEl) return;
-      feedbackEl.textContent = message;
-      feedbackEl.className = "seq-card-test-feedback feedback error";
-    };
+    if (!builtinName) {
+      await handleEditSequence(seqName, "timeline", cardEl);
+      return;
+    }
+    const sayOnCard = cardSayer(builtinName, cardEl);
     if (!window.SeqTimeline) {
       sayOnCard("The timeline did not load. Reload the page to try again.");
       return;
     }
     let seq = null;
     try {
-      const path = builtinName ? "/api/seq/builtins" : "/api/seq";
-      const result = await PAApi.get(`${path}?name=${encodeURIComponent(name)}`);
+      const result = await PAApi.get(`/api/seq/builtins?name=${encodeURIComponent(builtinName)}`);
       seq = result.data;
     } catch (error) {
-      sayOnCard(`Could not read ${name}: ${PAApi.messageFor(error)}`);
+      sayOnCard(`Could not read ${builtinName}: ${PAApi.messageFor(error)}`);
       return;
     }
     if (!seq || !Array.isArray(seq.steps)) {
-      sayOnCard(`The droid sent ${name} back with no steps.`);
+      sayOnCard(`The droid sent ${builtinName} back with no steps.`);
       return;
     }
     closeTimeline();
-    els.emptyState.classList.add("hidden");
-    els.populatedState.classList.add("hidden");
-    els.editorView.classList.add("hidden");
     els.timelineView.classList.remove("hidden");
     timeline = window.SeqTimeline.mount(els.timelineView, seq, {
       context: rehearsalContext(),
       describe: stepPreview,
-      cardsLabel: builtinName ? "Tune" : "Edit steps",
+      cardsLabel: "Tune",
       onCards: () => {
         closeTimeline();
-        if (builtinName) handleCloneBuiltin(builtinName);
-        else handleEditSequence(seqName);
+        handleCloneBuiltin(builtinName);
       },
       onClose: () => {
         closeTimeline();
         renderListView();
       },
-      // The one request the pose press sends: the sequence's name and the
-      // instant. What the droid does at that instant, and how far apart, is the
-      // firmware's to work out from what it stores (include/sequence_pose.h);
-      // a latched estop or Sleep Mode refuses it there, in words this shows.
-      onPose: (atMs) =>
-        PAApi.postJson("/api/seq/pose", { name, t: atMs })
-          .then(() => ({ text: `Moving the droid to ${(atMs / 1000).toFixed(2)} s, one part at a time.`, level: "ok" }))
-          .catch((error) => ({ text: PAApi.messageFor(error), level: "error" })),
+      onPose: (atMs) => poseOnDroid(builtinName, atMs),
     });
+    renderListView();
+  };
+
+  // A list card's own feedback line, for an open that failed.
+  const cardSayer = (name, cardEl) => (message) => {
+    console.error(`[seq] opening ${name}: ${message}`);
+    const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
+    if (!feedbackEl) return;
+    feedbackEl.textContent = message;
+    feedbackEl.className = "seq-card-test-feedback feedback error";
+  };
+
+  // The steps of a sequence as the units Protocol Check orders: a step, or a
+  // loop with the steps it repeats, which travel with it.
+  const stepUnits = (steps) => {
+    const units = [];
+    for (let at = 0; at < steps.length; ) {
+      const step = steps[at] || {};
+      const body = step.type === "loop" && step.body > 0 ? Math.min(step.body, steps.length - at - 1) : 0;
+      units.push({ at, size: body + 1, t: Number(step.t) || 0 });
+      at += body + 1;
+    }
+    return units;
+  };
+
+  // Protocol Check refuses a step timed before the one above it, so a block
+  // dragged past its neighbour changes places with it in the step list. The
+  // end step, and anything written after it, stays where it is.
+  const orderSteps = () => {
+    const steps = editorState.current.steps;
+    const units = stepUnits(steps);
+    const endAt = steps.findIndex((step) => step && step.type === "end");
+    const tail = endAt === -1 ? units.length : units.findIndex((unit) => unit.at + unit.size > endAt);
+    const order = [...units.slice(0, tail).sort((a, b) => a.t - b.t), ...units.slice(tail)]
+      .flatMap((unit) => Array.from({ length: unit.size }, (_, k) => unit.at + k));
+    if (order.every((from, to) => from === to)) return;
+    editorState.current.steps = order.map((from) => steps[from]);
+    editorState.expanded = new Set([...editorState.expanded].map((from) => order.indexOf(from)));
+  };
+
+  // Remove steps by index: the one removal, for the step list and the timeline
+  // alike. A loop is one object: removing it takes the steps it repeats,
+  // removing one of those shortens it, and a loop left repeating nothing goes
+  // too - otherwise it would reach for the step after it.
+  const removeSteps = (indices) => {
+    const steps = editorState.current.steps;
+    const gone = new Set(indices);
+    const shorter = [];
+    stepUnits(steps).forEach((unit) => {
+      if (unit.size === 1) return;
+      const members = Array.from({ length: unit.size - 1 }, (_, k) => unit.at + 1 + k);
+      if (gone.has(unit.at)) {
+        members.forEach((member) => gone.add(member));
+        return;
+      }
+      const left = members.filter((member) => !gone.has(member)).length;
+      if (left === 0) gone.add(unit.at);
+      else if (left < members.length) shorter.push([steps[unit.at], left]);
+    });
+    if (gone.size === 0) return;
+    historyPush();
+    shorter.forEach(([loop, left]) => {
+      loop.body = left;
+    });
+    editorState.current.steps = steps.filter((_, index) => !gone.has(index));
+    // A card still there stays open, at the place it has moved up to.
+    const removed = [...gone];
+    editorState.expanded = new Set(
+      [...editorState.expanded]
+        .filter((index) => !gone.has(index))
+        .map((index) => index - removed.filter((at) => at < index).length));
+    rerenderStepTable();
+    edited();
+  };
+
+  const closeSessionTimeline = () => {
+    if (sessionTimeline) {
+      sessionTimeline.destroy();
+      sessionTimeline = null;
+    }
+  };
+
+  // Show the routine being edited as its step list or as its timeline. The
+  // timeline is handed a way to read editorState.current, never a copy of it,
+  // and the three things an edit there needs from the editor: the history's
+  // two brackets, and removal, which changes which steps there are.
+  const showSessionView = (view) => {
+    let shown = view === "timeline" ? "timeline" : "steps";
+    if (shown === "timeline" && !window.SeqTimeline) {
+      showEditorFeedback("The timeline did not load. Reload the page to try again.", "error");
+      shown = "steps";
+    }
+    editorState.view = shown;
+    const onTimeline = shown === "timeline";
+    const host = document.getElementById("seq-editor-timeline");
+    document.getElementById("seq-editor-steps")?.classList.toggle("hidden", onTimeline);
+    host?.classList.toggle("hidden", !onTimeline);
+    ["steps", "timeline"].forEach((name) =>
+      document.getElementById(`seq-editor-show-${name}`)?.setAttribute("aria-pressed", String(name === shown)));
+    if (!onTimeline) {
+      closeSessionTimeline();
+      return;
+    }
+    if (sessionTimeline || !host) return;
+    sessionTimeline = window.SeqTimeline.mount(host, () => editorState.current, {
+      context: rehearsalContext(),
+      describe: stepPreview,
+      onPose: (atMs) => {
+        // The droid poses what it stores, so a sequence never saved has
+        // nothing to pose, and unsaved edits are not in the pose.
+        const name = editorState.tuningFactory || (editorState.isNew ? null : editorState.original?.name);
+        if (!name) return Promise.resolve({ text: "Save it first, so the droid has the routine to move to.", level: "error" });
+        return poseOnDroid(name, atMs, sessionDirty() ? " of the routine as last saved" : "");
+      },
+      edit: {
+        begin: historyBegin,
+        commit: (before) => {
+          orderSteps();
+          historyCommit(before);
+          rerenderStepTable();
+          edited();
+        },
+        remove: removeSteps,
+      },
+    });
+  };
+
+  // =========================================================================
+  // Leaving an edit (#441, operator decision 2026-09-30)
+  //
+  // An unsaved edit is not kept, and it is never dropped without being asked
+  // about: leaving the editor, opening another sequence, or leaving the
+  // Sequences surface with edits unsaved asks once, and nothing is written to
+  // browser storage. The question is a dialog of this surface, like the other
+  // two, so the estop on the chrome stays live behind it (ADR 0048); a browser
+  // confirm() would freeze the whole page, STOP included.
+  // =========================================================================
+  // Key order is not a difference: an undo can put a field back in another
+  // place than the one it was read in.
+  const canonical = (value) =>
+    JSON.stringify(value, (_key, part) =>
+      part && typeof part === "object" && !Array.isArray(part)
+        ? Object.fromEntries(Object.keys(part).sort().map((key) => [key, part[key]]))
+        : part);
+
+  const sessionDirty = () =>
+    editorState.current !== null && canonical(editorState.current) !== canonical(editorState.original);
+
+  const closeSession = () => {
+    closeSessionTimeline();
+    els.editorView.classList.add("hidden");
+    currentEditingSeq = null;
+    Object.assign(editorState, {
+      original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(), view: "steps",
+    });
+    historyReset();
+    renderListView();
+    refreshLearned();
+  };
+
+  // What the builder was on the way to when asked: `go` once the edit is
+  // discarded, `stay` if they keep editing.
+  let asked = null;
+
+  const askDiscard = (go, stay = null) => {
+    asked = { go, stay };
+    // Named by what the droid holds, not by a name typed since: the saved
+    // sequence under the name it was saved as, a Factory sequence being tuned
+    // under its own, and one never saved under the name it has now.
+    const typedName = editorState.current.name || "This sequence";
+    if (editorState.tuningFactory) {
+      els.discardWhat.textContent = `${editorState.tuningFactory} stays the factory sequence.`;
+    } else if (editorState.isNew) {
+      els.discardWhat.textContent = `${typedName} was never saved. Discard it and it is gone.`;
+    } else {
+      els.discardWhat.textContent = `${editorState.original.name || typedName} goes back to how it was last saved.`;
+    }
+    showModal(els.modalDiscard);
+  };
+
+  const answerDiscard = (discard) => {
+    const answered = asked;
+    asked = null;
+    hideModal(els.modalDiscard);
+    if (!answered) return;
+    if (discard) {
+      closeSession();
+      answered.go();
+    } else if (answered.stay) {
+      answered.stay();
+    }
+  };
+
+  // Close the edit that is open, asking first when it has unsaved edits, and
+  // then do `then`. With no edit open it is just `then`.
+  const leaveSession = (then) => {
+    if (editorState.current === null) {
+      then();
+      return;
+    }
+    if (sessionDirty()) {
+      askDiscard(then);
+      return;
+    }
+    closeSession();
+    then();
+  };
+
+  // Every way a dialog closes without a verb being pressed - the overlay,
+  // Escape - is an answer too: for the discard question it is "keep editing".
+  const dismissModal = (modal) => {
+    if (modal === els.modalDiscard) answerDiscard(false);
+    else hideModal(modal);
   };
 
   // =========================================================================
@@ -1057,47 +1348,32 @@
       if (patch[key] === null) delete step[key];
       else step[key] = patch[key];
     });
+    const before = historyBegin();
     editorState.current.steps[stepIdx] = step;
     editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
-    retimeUndo = null;
+    historyCommit(before);
     rerenderStepTable();
-    updateValidationSummary();
-    showRetime("");
+    edited();
   };
 
-  // Retime to the grid, and the one press that takes it back (ADR 0060). The
-  // steps from before the retime are kept until the next edit to a step or to
-  // the tempo, which is what makes the undo one press rather than one per
-  // step - and never a press that throws a later edit away.
-  let retimeUndo = null;
-
+  // Retime to the grid (ADR 0060), with its receipt: how many steps actually
+  // landed on a beat. It is one entry in the editor's history, so the one
+  // Undo takes it back, and the receipt goes with the next edit.
   const showRetime = (receipt) => {
     const receiptEl = document.getElementById("seq-editor-retime-receipt");
-    const undoBtn = document.getElementById("seq-editor-retime-undo");
     const retimeBtn = document.getElementById("seq-editor-retime");
     if (retimeBtn) retimeBtn.classList.toggle("hidden", !tempoOf());
     if (receiptEl) receiptEl.textContent = receipt || "";
-    if (undoBtn) undoBtn.classList.toggle("hidden", !retimeUndo);
   };
 
   const retimeToGrid = () => {
     const result = window.SeqTempo?.retime(editorState.current);
     if (!result) return;
-    retimeUndo = JSON.parse(JSON.stringify({ steps: editorState.current.steps, closeSteps: editorState.current.closeSteps }));
+    const before = historyBegin();
     editorState.current = result.seq;
+    historyCommit(before);
     rerenderStepTable();
-    updateValidationSummary();
-    showRetime(`${result.landed} of ${result.total} steps landed on a beat.`);
-  };
-
-  const undoRetime = () => {
-    if (!retimeUndo) return;
-    editorState.current.steps = retimeUndo.steps;
-    if (retimeUndo.closeSteps !== undefined) editorState.current.closeSteps = retimeUndo.closeSteps;
-    retimeUndo = null;
-    rerenderStepTable();
-    updateValidationSummary();
-    showRetime("");
+    edited(`${result.landed} of ${result.total} steps landed on a beat.`);
   };
 
   // Helper to render a grouped field section with optional label
@@ -1802,18 +2078,125 @@
   const setTempo = (tempo) => {
     // Every step on a beat moves to where its beat now falls; a step placed in
     // milliseconds stays put (ADR 0058).
+    const before = historyBegin();
     const next = { ...editorState.current, tempo };
     if (tempo === undefined) delete next.tempo;
     editorState.current = SeqProtocolCheck.resolveBeats(next, { written: true });
+    historyCommit(before);
+    paintAuthoredHeader();
+    rerenderStepTable();
+    edited();
+  };
+
+  // The header controls that show something the history holds: the tempo and
+  // the interrupt group. Painted by the edit that changes one and by an undo.
+  const paintAuthoredHeader = () => {
+    const tempo = editorState.current.tempo;
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) bpmInput.value = tempo ? String(tempo.bpm) : "";
     const sourceEl = document.getElementById("seq-editor-tempo-source");
     if (sourceEl) sourceEl.textContent = tempoSourceLabel(tempo);
     document.getElementById("seq-editor-downbeat")?.classList.toggle("hidden", !tempo);
-    retimeUndo = null;
-    rerenderStepTable();
+    const group = editorState.current.toggleGroup || "none";
+    document.getElementById("seq-editor-toggle")?.querySelectorAll("button").forEach((button) =>
+      button.setAttribute("aria-pressed", button.dataset.value === group ? "true" : "false"));
+  };
+
+  // ---------------------------------------------------------------------------
+  // The one door an edit leaves by, from either view: the verdict, the
+  // Rehearsal, the history buttons and the timeline are all read again from
+  // the routine as it now is, so no view can drift from it. An undo leaves by
+  // the same door.
+  // ---------------------------------------------------------------------------
+  const paintHistory = () => {
+    const undoBtn = document.getElementById("seq-editor-undo");
+    const redoBtn = document.getElementById("seq-editor-redo");
+    if (undoBtn) undoBtn.disabled = history.undo.length === 0 && !runChanged();
+    if (redoBtn) redoBtn.disabled = history.redo.length === 0 || runChanged();
+  };
+
+  const edited = (receipt = "") => {
+    if (history.run === null) history.base = historyCapture();
+    showRetime(receipt);
     updateValidationSummary();
-    showRetime("");
+    paintHistory();
+    if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
+  };
+
+  const historyRestore = (snapshot) => {
+    const kept = JSON.parse(snapshot);
+    HISTORY_FIELDS.forEach((key) => {
+      if (kept[key] === undefined) delete editorState.current[key];
+      else editorState.current[key] = kept[key];
+    });
+    paintAuthoredHeader();
+    rerenderStepTable();
+    edited();
+  };
+
+  // Neither runs while a block is being dragged on the timeline: the drag's
+  // writes are in the routine but not yet an entry, and restoring a copy
+  // would replace the very steps the drag is holding.
+  const historyBusy = () => !editorState.current || Boolean(sessionTimeline?.dragging());
+
+  const undo = () => {
+    if (historyBusy()) return;
+    historySettle();
+    if (history.undo.length === 0) return;
+    history.redo.push(history.base);
+    historyRestore(history.undo.pop());
+  };
+
+  const redo = () => {
+    if (historyBusy()) return;
+    historySettle();
+    if (history.redo.length === 0) return;
+    history.undo.push(history.base);
+    historyRestore(history.redo.pop());
+  };
+
+  // A run of typing in one step is one edit. It starts at the first keystroke
+  // and ends at the field's change, or when the builder moves to another step.
+  const openRun = (stepIdx) => {
+    if (history.run !== null && history.runStep !== stepIdx) historySettle();
+    if (history.run === null) {
+      history.run = history.base;
+      history.runStep = stepIdx;
+    }
+  };
+
+  const typed = (stepIdx) => {
+    openRun(stepIdx);
+    validateAndUpdateStep(stepIdx);
+  };
+
+  // A picker writes its step itself and then reads the form back. The run has
+  // to be this step's BEFORE that write: a run still open on another step is
+  // settled against the routine as it stands, and after the write that would
+  // file this step's change under the other step's entry, for one Undo to
+  // take back both.
+  const picked = (stepIdx, write) => {
+    openRun(stepIdx);
+    write();
+    validateAndUpdateStep(stepIdx);
+  };
+
+  // The same, for a picker that is one act and has no field whose `change`
+  // would end the run: a panel pressed on the dome map, a panel or an action
+  // chosen from the list. Each press is its own entry.
+  const pickedOnce = (stepIdx, write) => {
+    picked(stepIdx, write);
+    historySettle();
+    paintHistory();
+  };
+
+  const bindStepField = (input, stepIdx) => {
+    input.addEventListener("input", () => typed(stepIdx));
+    input.addEventListener("change", () => {
+      typed(stepIdx);
+      historySettle();
+      paintHistory();
+    });
   };
 
   const tapCountText = () => {
@@ -1822,10 +2205,15 @@
     return result ? `${n} taps, ${result.bpm} BPM` : `${n} ${n === 1 ? "tap" : "taps"}`;
   };
 
+  // Open `seq` in the editor: a fresh edit, with a fresh history. Revert comes
+  // through here too, which is what makes it the whole-session discard.
   const renderEditorView = (seq) => {
-    // isNew must be set by the caller before calling renderEditorView
+    // isNew, and the view to show, must be set by the caller before calling renderEditorView
+    closeTimeline();
+    closeSessionTimeline();
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
+    historyReset();
     droppedTrack = null;
 
     // Load DomeLayout if available so the live picker in panel-intent steps can
@@ -1856,7 +2244,7 @@
 
     els.editorView.innerHTML = `
       <div class="card">
-        <div class="sect"><h2>Editing</h2><span class="sub">${window.PAUtils.escapeHtml(seq.name || "a new sequence")} &middot; ${seq.steps.length} ${seq.steps.length === 1 ? "step" : "steps"}</span></div>
+        <div class="sect"><h2>Editing</h2><span class="sub" id="seq-editor-sub">${window.PAUtils.escapeHtml(seq.name || "a new sequence")}</span></div>
         ${tuneNotice}
 
         <div class="seq-editor-metadata">
@@ -1944,23 +2332,35 @@
           <!-- Populated by updateValidationSummary() -->
         </div>
 
-        <div class="seq-editor-steps">
-          <div class="sect"><h3>Steps</h3><span class="sub">${seq.steps.length} ${seq.steps.length === 1 ? "step" : "steps"}, in the order they run</span></div>
-          <p class="hint">Every step starts collapsed. Press one to open it.</p>
-          <div class="seq-editor-step-table" id="seq-editor-step-table">
-            ${stepRows}
+        <!-- The routine, read two ways over the one sequence: its steps in
+             the order they run, or as time. -->
+        <div class="seq-editor-routine">
+          <div class="sect"><h3>Routine</h3><span class="sub" id="seq-editor-routine-sub"></span></div>
+          <div class="seq-row-ctl seq-editor-show">
+            <span class="seg seg-sm" role="group" aria-label="How the routine is shown">
+              <button id="seq-editor-show-steps" type="button" aria-pressed="true">Steps</button>
+              <button id="seq-editor-show-timeline" type="button" aria-pressed="false">Timeline</button>
+            </span>
           </div>
-          <div class="seq-row-ctl">
-            <button id="seq-editor-add-step" class="seq-act" type="button">Add a step</button>
-            <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
-            <span class="seq-unit" id="seq-editor-retime-receipt" role="status"></span>
-            <button id="seq-editor-retime-undo" class="seq-act hidden" type="button">Undo</button>
+          <div class="seq-editor-steps" id="seq-editor-steps">
+            <p class="hint">Every step starts collapsed. Press one to open it.</p>
+            <div class="seq-editor-step-table" id="seq-editor-step-table">
+              ${stepRows}
+            </div>
+            <div class="seq-row-ctl">
+              <button id="seq-editor-add-step" class="seq-act" type="button">Add a step</button>
+              <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
+              <span class="seq-unit" id="seq-editor-retime-receipt" role="status"></span>
+            </div>
           </div>
+          <div id="seq-editor-timeline" class="seq-editor-timeline hidden"></div>
         </div>
 
         <div class="seq-editor-footer">
           <button id="seq-editor-save" class="btn btn-sm accent" type="button">Save</button>
           <button id="seq-editor-test" class="seq-act" type="button">Test on the droid</button>
+          <button id="seq-editor-undo" class="seq-act" type="button" disabled>Undo</button>
+          <button id="seq-editor-redo" class="seq-act" type="button" disabled>Redo</button>
           <button id="seq-editor-revert" class="seq-act" type="button" aria-label="Discard unsaved changes">Revert</button>
           <button id="seq-editor-cancel" class="seq-act" type="button" aria-label="Cancel editing">Cancel</button>
           <p class="hint seq-editor-prerun hidden" id="seq-editor-prerun" aria-live="polite"></p>
@@ -1986,12 +2386,28 @@
     attachMetadataListeners();
     attachStepListeners();
     updateValidationSummary();
+    paintHistory();
+    showSessionView(editorState.view);
+    els.editorView.classList.remove("hidden");
+    renderListView();
   };
 
   const updateValidationSummary = () => {
     const validation = SeqProtocolCheck.validateSequence(editorState.current);
     const summaryEl = document.getElementById("seq-editor-validation-summary");
     if (!summaryEl) return;
+
+    // The two subtitles are read off the routine as it is now: its name, and
+    // how many steps it has and how long it runs.
+    const steps = editorState.current.steps || [];
+    const endStep = steps.find((step) => step && step.type === "end");
+    const nameEl = document.getElementById("seq-editor-sub");
+    if (nameEl) nameEl.textContent = editorState.current.name || "a new sequence";
+    const routineEl = document.getElementById("seq-editor-routine-sub");
+    if (routineEl) {
+      routineEl.textContent = `${steps.length} ${steps.length === 1 ? "step" : "steps"}`
+        + (endStep ? ` \u00b7 ${((Number(endStep.t) || 0) / 1000).toFixed(2)} s` : "");
+    }
 
     // No glyph in front of the verdict. Protocol Check's two outcomes take the
     // signal colors their own meanings already have - green for a sequence the
@@ -2048,6 +2464,7 @@
     if (editorState.current && !els.editorView.classList.contains("hidden")) updateValidationSummary();
     if (lastRehearsalReport) showRehearsalReport(...lastRehearsalReport);
     if (timeline) timeline.refresh(rehearsalContext());
+    if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
   };
 
   const validateAndUpdateStep = (stepIdx) => {
@@ -2155,11 +2572,7 @@
 
     // Update editor state
     editorState.current.steps[stepIdx] = step;
-    if (retimeUndo) {
-      retimeUndo = null;
-      showRetime("");
-    }
-    updateValidationSummary();
+    edited();
   };
 
   // Called once from renderEditorView — persistent metadata + footer elements only.
@@ -2201,9 +2614,11 @@
       // A joined bar of the four groups: the pressed one is the group.
       toggleSelect.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", () => {
+          const before = historyBegin();
           editorState.current.toggleGroup = btn.dataset.value;
-          toggleSelect.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
-          updateValidationSummary();
+          historyCommit(before);
+          paintAuthoredHeader();
+          edited();
         });
       });
     }
@@ -2320,7 +2735,10 @@
     }
 
     document.getElementById("seq-editor-retime")?.addEventListener("click", retimeToGrid);
-    document.getElementById("seq-editor-retime-undo")?.addEventListener("click", undoRetime);
+    document.getElementById("seq-editor-undo")?.addEventListener("click", undo);
+    document.getElementById("seq-editor-redo")?.addEventListener("click", redo);
+    ["steps", "timeline"].forEach((view) =>
+      document.getElementById(`seq-editor-show-${view}`)?.addEventListener("click", () => showSessionView(view)));
 
     const bpmInput = document.getElementById("seq-editor-bpm");
     if (bpmInput) {
@@ -2359,6 +2777,7 @@
         const newStep = { t: 0, type: "audio", cmd: "$H" };
         const steps = editorState.current.steps;
         const terminalIdx = steps.findIndex((step) => step.type === "end");
+        historyPush();
         if (terminalIdx >= 0) {
           const terminalT = steps[terminalIdx].t || 0;
           newStep.t = terminalT;
@@ -2367,7 +2786,7 @@
           steps.push(newStep);
         }
         rerenderStepTable();
-        updateValidationSummary();
+        edited();
       });
     }
 
@@ -2380,19 +2799,11 @@
     if (saveBtn) saveBtn.addEventListener("click", handleSave);
 
     if (revertBtn) {
-      revertBtn.addEventListener("click", () => {
-        editorState.current = JSON.parse(JSON.stringify(editorState.original));
-        renderEditorView(editorState.original);
-      });
+      revertBtn.addEventListener("click", () => renderEditorView(editorState.original));
     }
 
     if (cancelBtn) {
-      cancelBtn.addEventListener("click", () => {
-        els.editorView.classList.add("hidden");
-        currentEditingSeq = null;
-        editorState = { original: null, current: null, isNew: false, tuningFactory: null };
-        refreshLearned();
-      });
+      cancelBtn.addEventListener("click", () => leaveSession(() => {}));
     }
   };
 
@@ -2443,8 +2854,9 @@
         hiddenInput.value = cmd;
         if (targetSelect) targetSelect.value = newTarget;
         if (preview) preview.textContent = cmd;
-        editorState.current.steps[stepIdx].cmd = cmd;
-        validateAndUpdateStep(stepIdx);
+        pickedOnce(stepIdx, () => {
+          editorState.current.steps[stepIdx].cmd = cmd;
+        });
       }
     };
 
@@ -2462,8 +2874,9 @@
       // Keep the target dropdown in sync by recovering the bare command target
       // from the full command (":OP07" -> "07", ":OPP1" -> "P1").
       if (targetSelect) targetSelect.value = fullCmd.replace(/^:(OP|CL|OF)/, "");
-      editorState.current.steps[stepIdx].cmd = fullCmd;
-      validateAndUpdateStep(stepIdx);
+      pickedOnce(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = fullCmd;
+      });
     };
 
     // Handle both live (data-element-id) and legacy (data-target) pickers
@@ -2656,16 +3069,22 @@
     // Dome visual preset selector updates the hidden cmd field
     const presetSelect = fieldsContainer.querySelector(".step-field-preset");
     if (presetSelect) {
-      presetSelect.addEventListener("change", () => {
+      // On input as well as change: the select is a form field too, and its
+      // run ends at its change, so the command has to be written before that
+      // or one choice would leave two entries behind.
+      const choosePreset = () => {
         const preset = presetSelect.value;
         const cmd = `DV:${preset}`;
         const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
         if (hiddenInput) {
           hiddenInput.value = cmd;
         }
-        editorState.current.steps[stepIdx].cmd = cmd;
-        validateAndUpdateStep(stepIdx);
-      });
+        picked(stepIdx, () => {
+          editorState.current.steps[stepIdx].cmd = cmd;
+        });
+      };
+      presetSelect.addEventListener("input", choosePreset);
+      presetSelect.addEventListener("change", choosePreset);
     }
 
     // Dome mode toggle, one cycle: panel -> preset -> advanced -> panel. Each
@@ -2693,6 +3112,7 @@
           nextMode = "panel";
         }
 
+        const before = historyBegin();
         // If toggling to panel from preset/advanced, ensure a valid panel cmd
         if (nextMode === "panel") {
           const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
@@ -2717,13 +3137,12 @@
         renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
 
         // Re-attach listeners for the newly rendered fields
-        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => {
-          input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
-          input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
-        });
+        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => bindStepField(input, stepIdx));
 
         attachDomePanelIntentListeners(fieldsContainer, stepIdx);
         validateAndUpdateStep(stepIdx);
+        historyCommit(before);
+        paintHistory();
       });
     }
   };
@@ -2749,8 +3168,9 @@
         cmd += `:DEFAULT:${durationInput.value}`;
       }
       hiddenCmd.value = cmd;
-      editorState.current.steps[stepIdx].cmd = cmd;
-      validateAndUpdateStep(stepIdx);
+      picked(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = cmd;
+      });
     };
 
     [targetSelect, modeSelect, colorSelect, durationInput].forEach((el) => {
@@ -2785,8 +3205,9 @@
       const speed = speedInput ? speedInput.value : "0";
       const cmd = `DT:${targetSelect.value}:${colorSelect.value}:${duration}:${speed}:${encodedText}`;
       hiddenCmd.value = cmd;
-      editorState.current.steps[stepIdx].cmd = cmd;
-      validateAndUpdateStep(stepIdx);
+      picked(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = cmd;
+      });
     };
 
     [targetSelect, colorSelect, textInput, durationInput, speedInput].forEach((el) => {
@@ -2818,8 +3239,9 @@
         cmd += `:DEFAULT:${durationInput.value}`;
       }
       hiddenCmd.value = cmd;
-      editorState.current.steps[stepIdx].cmd = cmd;
-      validateAndUpdateStep(stepIdx);
+      picked(stepIdx, () => {
+        editorState.current.steps[stepIdx].cmd = cmd;
+      });
     };
 
     [targetSelect, effectSelect, colorSelect, durationInput].forEach((el) => {
@@ -2852,9 +3274,12 @@
         const fields = pill.closest(".step-fields");
         const hidden = fields?.querySelector(`input[data-field="${pill.dataset.pick}"]`);
         if (!hidden || !Number.isInteger(stepIdx)) return;
+        const before = historyBegin();
         hidden.value = pill.dataset.value;
         validateAndUpdateStep(stepIdx);
+        historyCommit(before);
         rerenderStepTable();
+        paintHistory();
       });
     });
     document.querySelectorAll(".gesture-beats").forEach((input) => {
@@ -2914,12 +3339,9 @@
       if (removeBtn) {
         removeBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          if (confirm("Remove this step?")) {
-            editorState.current.steps.splice(stepIdx, 1);
-            editorState.expanded.delete(stepIdx);
-            rerenderStepTable();
-            updateValidationSummary();
-          }
+          // The same removal the timeline makes, so a loop is kept whole
+          // from either view.
+          if (confirm("Remove this step?")) removeSteps([stepIdx]);
         });
       }
     });
@@ -2947,6 +3369,7 @@
         });
 
         const newType = chip.dataset.type;
+        const before = historyBegin();
         // Clear all old type-specific fields; keep only t, assign new type + defaults
         const { t } = editorState.current.steps[stepIdx];
         let newDefaults = stepTypeDefaults[newType] || {};
@@ -2966,10 +3389,7 @@
         const fieldsContainer = card.querySelector(".step-fields");
         renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
 
-        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => {
-          input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
-          input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
-        });
+        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => bindStepField(input, stepIdx));
 
         // If switching to dome type, attach appropriate listeners
         if (newType === "dome") {
@@ -2995,12 +3415,14 @@
               if (direction === "stop" && durationInput) {
                 durationInput.value = "0";
               }
-              validateAndUpdateStep(stepIdx);
+              typed(stepIdx);
             });
           }
         }
 
         validateAndUpdateStep(stepIdx);
+        historyCommit(before);
+        paintHistory();
       });
     });
 
@@ -3010,9 +3432,7 @@
     // time never reached the step, and Save sent the old one.
     document.querySelectorAll(".step-fields [data-field], .step-card .step-t").forEach((input) => {
       const card = input.closest(".step-card");
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
-      input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
+      bindStepField(input, parseInt(card.dataset.stepIndex, 10));
     });
 
     // Reference panel toggle (What Each Step Type Does)
@@ -3064,7 +3484,7 @@
             if (direction === "stop" && durationInput) {
               durationInput.value = "0";
             }
-            validateAndUpdateStep(stepIdx);
+            typed(stepIdx);
           });
         }
       }
@@ -3106,10 +3526,12 @@
       card.addEventListener("drop", (e) => {
         e.preventDefault();
         if (draggedIndex !== null && draggedIndex !== idx) {
+          historyPush();
           const [movedStep] = editorState.current.steps.splice(draggedIndex, 1);
           const insertIdx = draggedIndex < idx ? idx - 1 : idx;
           editorState.current.steps.splice(insertIdx, 0, movedStep);
           rerenderStepTable();
+          edited();
         }
         card.classList.remove("drop-above", "drop-below");
       });
@@ -3222,12 +3644,16 @@
     // Every sequence saved from here on has a stable id, so another can hold
     // it; one loaded without gets its id on this save and keeps it.
     if (!editorState.current.id) editorState.current.id = mintSequenceId();
+    // What is saved is the copy that was sent, taken once, before the request:
+    // an edit made while the droid is still answering is not in it, so it
+    // still counts as unsaved and is still asked about.
+    const sent = JSON.parse(JSON.stringify(editorState.current));
     try {
-      await PAApi.postJson("/api/seq", editorState.current);
-      showRehearsalReport("Saved.", "ok", editorState.current, "list");
+      await PAApi.postJson("/api/seq", sent);
+      showRehearsalReport("Saved.", "ok", sent, "list");
       editorState.isNew = false;
       editorState.tuningFactory = null;
-      editorState.original = JSON.parse(JSON.stringify(editorState.current));
+      editorState.original = sent;
       refreshLearned();
     } catch (error) {
       showEditorFeedback("Save failed: " + PAApi.messageFor(error), "error");
@@ -3261,13 +3687,13 @@
   const handleSeqAction = async (action, seqName, cardEl) => {
     switch (action) {
       case "edit":
-        await handleEditSequence(seqName);
+        leaveSession(() => handleEditSequence(seqName, "steps", cardEl));
         break;
       case "test":
         await handleTestSequence(seqName, cardEl);
         break;
       case "duplicate":
-        await handleDuplicateSequence(seqName);
+        leaveSession(() => handleDuplicateSequence(seqName));
         break;
       case "memory-wipe":
         handleMemoryWipePrompt(seqName);
@@ -3281,21 +3707,26 @@
     }
   };
 
-  const handleEditSequence = async (seqName) => {
+  // Open one of the builder's own sequences in the editor, on its step list or
+  // on its timeline. A read that fails says so on the card that was pressed.
+  const handleEditSequence = async (seqName, view = "steps", cardEl = null) => {
+    const sayOnCard = cardSayer(seqName, cardEl);
+    let seq = null;
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      currentEditingSeq = result.data;
-      editorState.isNew = false;
-
-      // Hide list, show editor
-      els.emptyState.classList.add("hidden");
-      els.populatedState.classList.add("hidden");
-      els.editorView.classList.remove("hidden");
-
-      renderEditorView(currentEditingSeq);
+      seq = result.data;
     } catch (error) {
-      console.error("Error loading sequence:", error);
+      sayOnCard(`Could not read ${seqName}: ${PAApi.messageFor(error)}`);
+      return;
     }
+    if (!seq || !Array.isArray(seq.steps)) {
+      sayOnCard(`The droid sent ${seqName} back with no steps.`);
+      return;
+    }
+    currentEditingSeq = seq;
+    editorState.isNew = false;
+    editorState.view = view;
+    renderEditorView(currentEditingSeq);
   };
 
   const handleTestSequence = async (seqName, cardEl) => {
@@ -3347,11 +3778,6 @@
       // Open editor with copy
       currentEditingSeq = original;
       editorState.isNew = true; // Duplicate is a new sequence
-
-      els.emptyState.classList.add("hidden");
-      els.populatedState.classList.add("hidden");
-      els.editorView.classList.remove("hidden");
-
       renderEditorView(currentEditingSeq);
     } catch (error) {
       console.error("Error duplicating sequence:", error);
@@ -3543,16 +3969,13 @@
     }
 
     hideModal(els.modalImport);
-    // Restore sits beside the title, so it can be pressed with a timeline open.
-    closeTimeline();
-    editorState.isNew = true;
-    editorState.original = JSON.parse(JSON.stringify(parsed));
-    editorState.current = JSON.parse(JSON.stringify(parsed));
-    currentEditingSeq = editorState.current;
-    els.emptyState.classList.add("hidden");
-    els.populatedState.classList.add("hidden");
-    els.editorView.classList.remove("hidden");
-    renderEditorView(editorState.current);
+    // Restore sits beside the title, so it can be pressed with an edit open:
+    // that edit is asked about before the restored sequence takes its place.
+    leaveSession(() => {
+      editorState.isNew = true;
+      currentEditingSeq = parsed;
+      renderEditorView(parsed);
+    });
   };
 
   const showImportModal = () => {
@@ -3607,12 +4030,16 @@
     els.modalWipeCancel.addEventListener("click", () => hideModal(els.modalWipe));
     els.modalWipeConfirm.addEventListener("click", handleMemoryWipeConfirm);
 
+    // Discard dialog
+    els.modalDiscardKeep.addEventListener("click", () => answerDiscard(false));
+    els.modalDiscardConfirm.addEventListener("click", () => answerDiscard(true));
+
     // Modal overlays close on click
     document.querySelectorAll(".seq-modal-overlay").forEach((overlay) => {
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) {
           const modal = overlay.closest(".seq-modal");
-          hideModal(modal);
+          dismissModal(modal);
         }
       });
     });
@@ -3620,12 +4047,32 @@
     // Escape key closes modals
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        [els.modalImport, els.modalWipe].forEach((modal) => {
+        [els.modalImport, els.modalWipe, els.modalDiscard].forEach((modal) => {
           if (modal && !modal.classList.contains("hidden")) {
-            hideModal(modal);
+            dismissModal(modal);
           }
         });
       }
+    });
+
+    // Undo and redo from the keyboard, anywhere in the editor. A text field
+    // keeps the browser's own undo for what was typed in it.
+    els.editorView.addEventListener("keydown", (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = String(e.key).toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      if (e.target?.closest?.("input, textarea, select")) return;
+      e.preventDefault();
+      if (key === "y" || e.shiftKey) redo();
+      else undo();
+    });
+
+    // A reload or a closed tab is leaving too, and the browser's own question
+    // is the only one a page may ask there.
+    window.addEventListener("beforeunload", (e) => {
+      if (!sessionDirty()) return;
+      e.preventDefault();
+      e.returnValue = "";
     });
   };
 
@@ -3687,6 +4134,17 @@
   } else {
     init();
   }
+
+  // Leaving the Sequences surface with unsaved edits holds the unmount while
+  // the builder is asked. Discard lets the navigation through; keep editing
+  // puts the address back on this surface. Registered in the script body,
+  // which is the one moment the shell guarantees is inside this surface's own
+  // mount (data/page_bootstrap.js holdUnmount()).
+  window.PASurface?.holdUnmount?.(() => {
+    if (!sessionDirty()) return false;
+    askDiscard(() => window.PASurface.releaseUnmount(), () => window.PASurface.stayOnSurface());
+    return true;
+  });
 
   // Expose for testing
   window.__seqEditorForTesting = {
