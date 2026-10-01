@@ -1710,12 +1710,12 @@
   window.addEventListener("pa:surface-release", () => applyRoute());
 
   // A surface that was holding its unmount is staying. The address was moved
-  // to where the operator was going before the surface was asked, so it and
-  // the nav name a surface that is not the one on screen: go back to the one
-  // that is. The surface is still dirty and still holding, and that is fine:
-  // nothing is being left, so nothing is asked.
+  // to where the operator was going before the surface was asked, so it names
+  // a surface that is not the one on screen: put it back. In place, as
+  // applyRoute() writes it, and not as a navigation: a new history entry
+  // would leave the refused address one Back away, and Back would ask again.
   window.addEventListener("pa:surface-stay", () => {
-    if (currentSurface) navigateTo(currentSurface.page);
+    if (currentSurface) setAddress(currentSurface.page);
   });
 
   // A click on a link to a surface's own document is a route change, not a page
