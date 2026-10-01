@@ -5688,7 +5688,6 @@ body[data-page="maintenance"] .status-item .hint {
 .seq-editor-metadata {
   display: flex;
   flex-direction: column;
-  gap: 24px;
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
@@ -9915,12 +9914,12 @@ button.droid-build-card:disabled {
   display: none;
 }
 
-.seq-header-more {
-  margin-top: var(--space-md);
-}
-
-.seq-header-more > .setting-rows {
-  margin-top: var(--space-xs);
+/* More settings sits on the row grid: its line is a row's height with a row's
+   seam under it, and what it folds away follows straight on. */
+details.seq-header-more > summary {
+  display: flex;
+  min-height: var(--row);
+  border-bottom: 1px solid var(--border);
 }
 
 .seq-act {
