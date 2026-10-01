@@ -6996,6 +6996,24 @@ body[data-page="maintenance"] .status-item .hint {
   background: var(--border);
 }
 
+/* Protocol Check's refusal is a sentence: it takes the line under the acts,
+   above what the strip says back, and the seam that divides the short verdict
+   from the run goes with it rather than hang at the end of the line. */
+.seq-verdict.is-refused {
+  order: 1;
+  flex-basis: 100%;
+  align-items: baseline;
+}
+
+.seq-strip:has(.seq-verdict.is-refused) .seq-strip-seam {
+  display: none;
+}
+
+.seq-strip .seq-editor-prerun,
+.seq-strip .seq-editor-feedback {
+  order: 2;
+}
+
 /* Tuning a Factory sequence: said once, between the strip and the stage. */
 .seq-tuning {
   border-right: 1px solid var(--border);

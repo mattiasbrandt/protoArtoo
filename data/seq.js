@@ -3316,6 +3316,8 @@
     // for one it would refuse - and the sentence says which on its own
     // (CONTEXT.md "Status Color", ADR 0044).
     const status = validation.ok ? "valid" : "error";
+    // A refusal is a sentence, so it takes a line of its own under the acts.
+    summaryEl.classList.toggle("is-refused", !validation.ok);
     summaryEl.innerHTML = `
       <span class="indicator ${validation.ok ? "ok" : "fail"}" aria-hidden="true"></span>
       <span class="seq-validation-status seq-validation-${status}">${window.PAUtils.escapeHtml(validation.ok ? "Sequence is valid" : validation.error || "Validation error")}</span>
