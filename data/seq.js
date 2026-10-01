@@ -239,15 +239,18 @@
         end(record.outcome || "completed");
         return;
       }
-      // Not this run's record. Once this run was seen, or once the record
-      // has changed at all, something else has the droid: a later run, or a
-      // restart that wiped the record.
-      if (run.seen || fresh) {
+      // Not this run's record. Once this run was seen, that is something
+      // else having the droid: a later run, or a restart that wiped the
+      // record.
+      if (run.seen) {
         end("replaced");
         return;
       }
-      // Still the record from before the press.
-      if (Date.now() - run.sentAt >= RUN_START_WAIT_MS) end("not-started");
+      // Not seen yet. Inside the start wait even a new record decides
+      // nothing: a run sent just before this one writes its record first, and
+      // this run's follows it. Past the wait, a new record is something else's
+      // run, and the record from before the press is a run that never began.
+      if (Date.now() - run.sentAt >= RUN_START_WAIT_MS) end(fresh ? "replaced" : "not-started");
     };
 
     // Resolves once the droid has accepted the run, and rejects when it could

@@ -345,3 +345,21 @@ test("a droid that stops answering mid-run does not read as running for ever, an
   await page.tick();
   assert.equal(page.readsOfTheRecord(), asked, "the record is still being asked for after the page gave up");
 });
+
+test("another run's record landing just after the press does not end this run before its own record is there", async () => {
+  // A run sent a moment before this one - from another row, the radio, the
+  // Dashboard - writes its record first; this run preempts it and writes next.
+  const page = newSurface({ valid: false });
+  await page.press("seq-editor-test");
+  page.droid.record = record("DM:OTHER", 7_000, "running");
+  await page.tick();
+  assert.ok(page.saysRunning(), "the run before this one ended it");
+
+  page.droid.record = record("DM:GREET", 7_050, "running");
+  await page.tick();
+  assert.ok(page.saysRunning());
+
+  page.droid.record = record("DM:GREET", 7_050, "completed");
+  await page.tick();
+  assert.equal(page.saysRunning(), false);
+});
