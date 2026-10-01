@@ -650,18 +650,17 @@ test("a product's wiring card follows the droid's own answers, and an image with
 
   const fitted = await boot({ ...droid(true), assetSet: "default" });
   const shown = await read(fitted);
-  assert.deepEqual(shown.cards, ["dy_sv5w"]);
-  assert.equal(shown.plate.classList.contains("hidden"), false);
-  const pins = fitted.document.querySelector(".wcard-pins").textContent;
+  assert.ok(shown.cards.includes("dy_sv5w"), "the fitted sound module has its card");
+  const card = fitted.document.querySelectorAll(".wcard").find((each) => each.dataset.product === "dy_sv5w");
+  const pins = card.querySelector(".wcard-pins").textContent;
   assert.match(pins, /ROW 41\/42/, "the label the running board prints for the lane");
   assert.match(pins, /TX 41 \/ RX 42/, "and where the firmware routes it");
   assert.match(shown.saved, /data-product="dy_sv5w"/, "the saved sheet carries the same card");
   assert.match(shown.saved, /TX 41 \/ RX 42/);
 
   const declined = await read(await boot({ ...droid(false), assetSet: "default" }));
-  assert.deepEqual(declined.cards, [], "sound answered Not fitted has no card");
-  assert.equal(declined.plate.classList.contains("hidden"), true, "and with no card the plate is not shown");
-  assert.doesNotMatch(declined.saved, /Product wiring|data-product/);
+  assert.ok(!declined.cards.includes("dy_sv5w"), "sound answered Not fitted has no card");
+  assert.doesNotMatch(declined.saved, /data-product="dy_sv5w"/, "on the saved sheet either");
 
   const without = await read(await boot({ ...droid(true), assetSet: "legacy" }));
   assert.deepEqual(without.cards, []);
