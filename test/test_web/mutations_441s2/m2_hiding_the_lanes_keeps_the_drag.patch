@@ -1,5 +1,5 @@
 diff --git i/data/seq_timeline.js w/data/seq_timeline.js
-index ecb8ad2a..723f686b 100644
+index 16e78eb1..df395fba 100644
 --- i/data/seq_timeline.js
 +++ w/data/seq_timeline.js
 @@ -1181,7 +1181,7 @@
@@ -9,5 +9,5 @@ index ecb8ad2a..723f686b 100644
 -      cancel: () => dragCancel(),
 +      cancel: () => {},
        picked,
-       movePickedTo,
-       removePicked: removeSelected,
+       // Pick the steps at these indices. What is picked is held as the steps
+       // themselves, so an edit that writes new steps in their place - a beat
