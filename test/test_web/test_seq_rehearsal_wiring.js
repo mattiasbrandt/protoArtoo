@@ -145,6 +145,9 @@ function newPage({ sequence = helloBefore(), failRead = false, outputs = [], con
       refreshSections() {},
     },
     PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
+    // The surface's poll handle, as data/page_bootstrap.js hands it out. The
+    // run watch (data/seq.js) takes one as the page loads; nothing here runs it.
+    PASurface: { poll: () => ({ start() {}, stop() {} }) },
     localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
     document: {
       readyState: "complete",
