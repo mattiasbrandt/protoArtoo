@@ -80,13 +80,13 @@ wiring_card:
     - { from: "TX", to: "the board's Foot Drive RX", note: "crossed" }
     - { from: "RX", to: "the board's Foot Drive TX", note: "crossed" }
     - { from: "GND", to: "the board's ground", note: "the two sides share nothing else" }
-    - { from: "Red wire", to: "nothing", note: "12-15 V, not 5 V" }
+    - { from: "Red wire", to: "nothing" }
   hazards:
-    - "On a Gen 2 hoverboard the wires go to the empty header by the flash header, PB6/PB7. The 4-pin header is the link between its two motor boards."
-    - "The red wire on a sensor cable is 12-15 V, not 5 V. On some hoverboards the black wire is live too: meter it before calling it ground."
-    - "On a hoverboard with a 6-wire hall cable, the right sensor cable carries battery voltage, 36-42 V."
-    - "Nothing isolates the two sides. A fault on the 36 V side reaches the Body Controller through the shared ground."
-    - "The battery reading needs calibrating on each hoverboard. Until then it is not good to a tenth of a volt."
+    - "Gen 2: wire to the empty header by the flash header, PB6/PB7. The 4-pin header joins its two motor boards."
+    - "The red wire on a sensor cable is 12-15 V, not 5 V. On some hoverboards the black wire is live too."
+    - "With a 6-wire hall cable, the right sensor cable carries battery voltage, 36-42 V."
+    - "Nothing isolates the two sides. A fault on the 36 V side reaches the Body Controller through ground."
+    - "The battery reading is not good to a tenth of a volt until that hoverboard is calibrated."
   source: "The configuration that has to be right on the board, 9.2, 9.3, 9.4, 12.1, 15"
 ```
 
