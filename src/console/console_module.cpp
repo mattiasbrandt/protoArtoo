@@ -1282,8 +1282,8 @@ static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
 // One buffer for both loops: this runs on the Console task, whose worst-case
 // static chain is a measured constant ADR 0040's checker re-derives from the
 // linked image, so two buffers in two scopes is a frame this row does not need
-// to cost. 256 B against a longest row of 216 today (`hoverboard`, the one part
-// carrying a Board Capability Gate name, measured with `included:false`);
+// to cost. 256 B against a longest row of 215 today (`hoverboard`, the one part
+// carrying a Board Capability Gate name; 216 on an image that leaves it out);
 // snprintf truncates in silence, so the margin is the guard, and
 // test_console_module asserts every part item still ends in its last field.
 static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
