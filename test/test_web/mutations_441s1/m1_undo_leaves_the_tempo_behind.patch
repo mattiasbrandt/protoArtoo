@@ -1,0 +1,13 @@
+diff --git i/data/seq.js w/data/seq.js
+index dc4323ba..124f7f41 100644
+--- i/data/seq.js
++++ w/data/seq.js
+@@ -51,7 +51,7 @@
+   // Revert is not on the stack: it discards the whole session, history and all.
+   // ---------------------------------------------------------------------------
+   const HISTORY_DEPTH = 100;
+-  const HISTORY_FIELDS = ["steps", "closeSteps", "toggleGroup", "tempo"];
++  const HISTORY_FIELDS = ["steps", "closeSteps", "toggleGroup"];
+   // `base` is the routine as the last finished edit left it, which is what a
+   // typing run starts from: the dome fields write the step before they read
+   // the form back, so the run cannot take its own copy when it begins. `run`

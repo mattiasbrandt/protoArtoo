@@ -1,0 +1,12 @@
+diff --git i/data/seq_timeline.js w/data/seq_timeline.js
+index 20ca2024..66477ad2 100644
+--- i/data/seq_timeline.js
++++ w/data/seq_timeline.js
+@@ -900,7 +900,6 @@
+           if (Math.abs(off) <= SNAP_MS && (best === null || Math.abs(off) < Math.abs(best.off))) best = { off, target };
+         });
+       });
+-      if (best) by += best.off;
+       const [lo, hi] = drag.reach;
+       const held = Math.max(lo, Math.min(hi, by));
+       // A snap the limits would not let the block reach is not shown.

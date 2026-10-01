@@ -1,0 +1,13 @@
+diff --git i/data/page_bootstrap.js w/data/page_bootstrap.js
+index e1547e2c..9efcb0de 100644
+--- i/data/page_bootstrap.js
++++ w/data/page_bootstrap.js
+@@ -703,7 +703,7 @@
+   // the shell to put them back.
+   const stayOnSurface = () => {
+     if (typeof window.dispatchEvent !== "function") return;
+-    window.dispatchEvent(new CustomEvent("pa:surface-stay"));
++    window.dispatchEvent(new CustomEvent("pa:surface-release"));
+   };
+ 
+   window.PASurface = {

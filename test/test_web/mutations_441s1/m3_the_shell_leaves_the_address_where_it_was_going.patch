@@ -1,0 +1,12 @@
+diff --git i/data/shell.js w/data/shell.js
+index aefa0741..205bc63e 100644
+--- i/data/shell.js
++++ w/data/shell.js
+@@ -1715,7 +1715,6 @@
+   // that is. The surface is still dirty and still holding, and that is fine:
+   // nothing is being left, so nothing is asked.
+   window.addEventListener("pa:surface-stay", () => {
+-    if (currentSurface) navigateTo(currentSurface.page);
+   });
+ 
+   // A click on a link to a surface's own document is a route change, not a page
