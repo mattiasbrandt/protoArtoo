@@ -226,6 +226,9 @@ function newPage({ onDroid = null } = {}) {
     PABootstrap: { registerSection() {}, setResourceLabels() {}, retryNow() {}, refreshSections() {} },
     PAStatusStream: { isSupported: () => false, subscribe: () => () => {}, getLastStatus: () => null },
     PASurface: {
+      // The poll handle the run watch (data/seq.js) takes as the page loads;
+      // nothing here runs it.
+      poll: () => ({ start() {}, stop() {} }),
       holdUnmount: (decide) => {
         surface.decide = decide;
       },

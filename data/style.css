@@ -6945,6 +6945,47 @@ body[data-page="maintenance"] .status-item .hint {
   white-space: nowrap;
 }
 
+/* A run started here, while it is under way: the green lamp and the word, on
+   the strip and in the running sequence's row. The lamp breathes slowly so a
+   run reads as live at a glance; it holds still for a builder who has asked
+   for less motion. */
+.seq-running,
+.seq-row-run {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text);
+  font-size: var(--fs-cell);
+  white-space: nowrap;
+}
+
+.seq-live {
+  animation: seq-live 1.6s ease-in-out infinite;
+}
+
+@keyframes seq-live {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seq-live {
+    animation: none;
+  }
+}
+
+/* The run's own Stop: a small neutral button with a quiet border. Never red
+   and never .danger - red is the shell's STOP, the estop, alone. */
+.btn.btn-sm.seq-stop {
+  border-color: var(--text-faint);
+}
+
+/* The row of the sequence that is running: a green seam down its left edge. */
+.seq-item.is-running th[scope="row"] {
+  box-shadow: inset 2px 0 0 var(--success);
+}
+
 .seq-strip-seam {
   width: 1px;
   height: 20px;

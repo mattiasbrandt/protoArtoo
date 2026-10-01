@@ -666,6 +666,19 @@ pause Duplicate DM:BENCH, save DM:BENCH_COPY, then press Enter
 http GET /api/seq/list > seq-list-after-duplicate.json
 send dome.api.list-sequences
 
+# #441 - Running and its Stop against the real firmware. The droid writes a
+# run's record only when its dispatcher takes the run up, a moment after it
+# answers the press, and that gap is what a stub cannot show. On the list,
+# press Test on DM:BENCH: its row reads Running with the green lamp and offers
+# Stop DM:BENCH. Let it end by itself and press Test again: it reads Running
+# again, and does not flick straight back to Test on the earlier run's record.
+# Then press Stop DM:BENCH while it reads Running: the row goes back to Test.
+# The record then says aborted - or completed, when the routine was too short
+# to catch.
+@row 441 a-run-reads-running-and-its-stop-ends-it
+pause On the list press Test on DM:BENCH and let it end; press Test again, then Stop DM:BENCH while it reads Running, then press Enter
+http GET /api/seq/last-run > seq-last-run-after-stop.json
+
 # #441 slices 1-2 - Test and the pose press against the real firmware, not a
 # stub: the droid takes both and reports the run. Nothing is connected, so
 # nothing moves; the answer is what proves it. Then Memory Wipe both bench

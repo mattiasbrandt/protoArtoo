@@ -150,6 +150,150 @@
     trackHash: droppedTrack ? droppedTrack.hash : null,
   });
 
+  // =========================================================================
+  // The run watch (#441, #451)
+  //
+  // One run started from the browser: it starts it, knows while it is under
+  // way, stops it, and says when it has ended. It holds no markup, so another
+  // surface that starts runs takes this unit rather than a second poll.
+  //
+  // The droid answers POST /api/seq/test before anything has started: the run
+  // is queued, the dispatcher takes it up later and only then writes the run's
+  // record, and it can still refuse it there
+  // (src/tasks/sequence_dispatcher.cpp). Nothing on the status stream says a
+  // sequence is running, so the record (GET /api/seq/last-run) is read once a
+  // second, and ONLY while a run started here is under way: each answer is a
+  // multi-KB document the droid has to build.
+  //
+  // Which record is this run's. The record is read once BEFORE the press, and
+  // a later answer is this run's only when it is another record - another
+  // start time - under this run's name. Never by name alone: the first answers
+  // after a press can still be the previous run of the same sequence, long
+  // ended, and that must not end this one.
+  // =========================================================================
+  const RUN_POLL_MS = 1000;
+  // How long the droid gets to take up a run it accepted. It does so within a
+  // dispatcher pass, so this is generous. Judged when an answer lands: only an
+  // answer can say the record is still the one from before the press.
+  const RUN_START_WAIT_MS = 5000;
+  // How long the record may go unanswered before the page stops saying the run
+  // is under way. A droid that drops off the network mid-run answers nothing,
+  // so no answer can end the run: this is judged at each read, before it is
+  // sent, from the first read since the last answer - the time the page has
+  // been asking, never the time a hidden tab or another surface kept it from
+  // asking. The run itself is not stopped, and may still be playing.
+  const RUN_QUIET_MS = 5000;
+
+  // `onChange({ name, running, outcome })` is called when a run starts being
+  // watched and when it stops being one. `outcome` is the record's own word
+  // (completed, aborted, preempted, estop, reconnect), "replaced" when the
+  // record became something else's, "not-started" when the droid accepted
+  // the run and never began it, or "lost" when the droid stopped answering.
+  const createRunWatch = (onChange) => {
+    // { name, before, sentAt, seen, unheardSince } while a run started here is
+    // under way. `unheardSince` is when the first read since the last answer
+    // was sent, or null when the last read was answered.
+    let run = null;
+
+    const sameRecord = (a, b) =>
+      Boolean(a?.valid) === Boolean(b?.valid) && (!a?.valid || (a.startMs === b.startMs && a.name === b.name));
+
+    // Owned by the surface this is created on: the shell stops it when that
+    // surface is left and starts it again on the way back (ADR 0048), so
+    // create the watch in the surface's script body. The rejection of a read
+    // that got no answer is left to PASurface.poll(), which reports it.
+    const poll = window.PASurface.poll(() => {
+      const now = Date.now();
+      if (run.unheardSince !== null && now - run.unheardSince >= RUN_QUIET_MS) {
+        // Nothing was asked this time, so nothing is handed back to be read
+        // as an answer.
+        end("lost");
+        return undefined;
+      }
+      if (run.unheardSince === null) run.unheardSince = now;
+      const asked = run;
+      return window.PAApi.get("/api/seq/last-run").then((answer) => {
+        // An answer to a question asked about an earlier run says nothing
+        // about this one.
+        if (run === null || run !== asked) return;
+        run.unheardSince = null;
+        judge(answer.data || {});
+      });
+    }, { cadenceMs: RUN_POLL_MS, runOnStart: true, refreshOnReturn: true });
+
+    const end = (outcome) => {
+      const { name } = run;
+      run = null;
+      poll.stop();
+      onChange({ name, running: false, outcome });
+    };
+
+    const judge = (record) => {
+      const fresh = !sameRecord(record, run.before);
+      const ours = fresh && record.valid === true && record.name === run.name;
+      if (ours && record.running === true) {
+        run.seen = true;
+        return;
+      }
+      if (ours) {
+        end(record.outcome || "completed");
+        return;
+      }
+      // Not this run's record. Once this run was seen, that is something
+      // else having the droid: a later run, or a restart that wiped the
+      // record.
+      if (run.seen) {
+        end("replaced");
+        return;
+      }
+      // Not seen yet. Inside the start wait even a new record decides
+      // nothing: a run sent just before this one writes its record first, and
+      // this run's follows it. Past the wait, a new record is something else's
+      // run, and the record from before the press is a run that never began.
+      if (Date.now() - run.sentAt >= RUN_START_WAIT_MS) end(fresh ? "replaced" : "not-started");
+    };
+
+    // Resolves once the droid has accepted the run, and rejects when it could
+    // not be asked or refused. A droid that cannot answer the read before the
+    // press is not sent the run: with no record from before, an earlier run of
+    // the same sequence could not be told from this one, and the run would
+    // read as ended while it plays, or as running after it never started.
+    const start = async (name) => {
+      const before = (await window.PAApi.get("/api/seq/last-run")).data || {};
+      await window.PAApi.postJson("/api/seq/test", { name });
+      // A run already watched is over the moment the droid accepts this one:
+      // the later run preempts it.
+      run = { name, before, sentAt: Date.now(), seen: false, unheardSince: null };
+      poll.start();
+      onChange({ name, running: true });
+    };
+
+    // The droid's non-latching stop. The run is over when its record says so,
+    // not when this is answered.
+    const stop = () => window.PAApi.postJson("/api/seq/stop", {});
+
+    return { start, stop, running: () => (run ? run.name : null) };
+  };
+
+  // The one run this surface has started: the strip and the list row both
+  // show it, and both are painted from it (paintRun() below).
+  // The endings the surface has a sentence for. A run that ends by itself, is
+  // stopped, or gives way to a later run ends without one: the lamp going out
+  // is the word.
+  const RUN_ENDINGS = {
+    "not-started": (name) => `The droid did not start ${name}.`,
+    lost: (name) => `Lost touch with the droid; ${name} may still be running.`,
+    // The droid takes a run even under a latched estop and ends it in the same
+    // pass (src/tasks/sequence_dispatcher.cpp), so the lamp is on for a moment
+    // and then off.
+    estop: (name) => `The estop stopped ${name}.`,
+  };
+
+  const runWatch = createRunWatch(({ name, running, outcome }) => {
+    paintRun();
+    if (!running && RUN_ENDINGS[outcome]) sayOfRun(name, RUN_ENDINGS[outcome](name));
+  });
+
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
   let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen
 
@@ -537,6 +681,69 @@
     els.cardsContainer.querySelectorAll("[data-action]").forEach((btn) => {
       btn.addEventListener("click", () => handleSeqAction(btn));
     });
+    // The table was just written as if nothing were running.
+    paintRun();
+  };
+
+  // ---------------------------------------------------------------------------
+  // The run, on the surface: the row of the sequence that is running and the
+  // workspace's strip say the same run, from the one watch. A row is written
+  // with both its Test and its Stop and the strip with both its halves, and
+  // this shows the half that is true - in place, so what a row has said under
+  // itself (a refusal, its Rehearsal) is not wiped by a run starting or ending.
+  // ---------------------------------------------------------------------------
+  const rowOf = (name) =>
+    [...els.cardsContainer.querySelectorAll(".seq-item")].find((item) => item.dataset.seqName === name) || null;
+
+  const paintStripRun = () => {
+    const name = runWatch.running();
+    const show = (id, on) => document.getElementById(id)?.classList.toggle("hidden", !on);
+    show("seq-editor-test", name === null);
+    // A run uses the copy the droid holds, which is said only while there are
+    // edits it does not hold and a run to offer.
+    show("seq-editor-test-hint", name === null && sessionDirty());
+    show("seq-editor-running", name !== null);
+    show("seq-editor-stop", name !== null);
+    if (name === null) return;
+    const saysEl = document.getElementById("seq-editor-running-name");
+    if (saysEl) saysEl.textContent = `Running ${name}`;
+    const stopBtn = document.getElementById("seq-editor-stop");
+    if (stopBtn) stopBtn.textContent = `Stop ${name}`;
+  };
+
+  const paintRun = () => {
+    const name = runWatch.running();
+    els.cardsContainer.querySelectorAll(".seq-item").forEach((item) => {
+      const running = name !== null && item.dataset.seqName === name;
+      item.classList.toggle("is-running", running);
+      item.querySelector(".seq-row-run")?.classList.toggle("hidden", !running);
+      item.querySelector('[data-action="test"]')?.classList.toggle("hidden", running);
+      item.querySelector('[data-action="stop"]')?.classList.toggle("hidden", !running);
+    });
+    paintStripRun();
+  };
+
+  // What the surface says of a run that is not its lamp: on the strip while
+  // the workspace is open, and on the sequence's row.
+  const sayOfRun = (name, message) => {
+    if (editorState.current !== null) showEditorFeedback(message, "error");
+    const feedbackEl = rowOf(name)?.querySelector(".seq-item-feedback");
+    if (!feedbackEl) return;
+    feedbackEl.textContent = message;
+    feedbackEl.className = "seq-item-feedback feedback error";
+  };
+
+  // A press on a run's Stop, on the strip or on its row.
+  const handleStopRun = async (btn) => {
+    const name = runWatch.running();
+    btn.disabled = true;
+    try {
+      await runWatch.stop();
+    } catch (error) {
+      if (name !== null) sayOfRun(name, "Stop failed: " + PAApi.messageFor(error));
+    } finally {
+      btn.disabled = false;
+    }
   };
 
   // When the droid says a sequence was last saved, as the list words it:
@@ -596,13 +803,15 @@
       <tbody class="seq-item" data-seq-name="${name}">
         <tr>
           <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(seq.name)}</span>${badges.join("")}</th>
-          <td>${purposeHtml(seq)}${saved ? `<span class="seq-meta">${saved}</span>` : ""}</td>
+          <td>${purposeHtml(seq)}${saved ? `<span class="seq-meta">${saved}</span>` : ""}
+            <span class="seq-row-run hidden" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span></td>
           <td class="seq-count-cell">${reportedSteps(seq)}</td>
           <td class="seq-count-cell"></td>
           <td class="seq-item-acts">
             <span class="seq-acts">
               <button type="button" class="seq-act is-strong" data-action="edit" data-seq-name="${name}">Edit</button>
               <button type="button" class="seq-act" data-action="test" ${testBtnDisabled}>Test</button>
+              <button type="button" class="btn btn-sm seq-stop hidden" data-action="stop" data-seq-name="${name}">Stop ${window.PAUtils.escapeHtml(seq.name)}</button>
               <button type="button" class="seq-act seq-disclose" data-action="more" data-seq-name="${name}" aria-expanded="${more}">${chevron}More</button>
               <span class="seq-item-more${more ? "" : " hidden"}">
                 <button type="button" class="seq-act" data-action="duplicate" data-seq-name="${name}">Duplicate</button>
@@ -2461,6 +2670,8 @@
           <span class="seq-run">
             <button id="seq-editor-test" class="btn btn-sm" type="button">Test on the droid</button>
             <span class="hint hidden" id="seq-editor-test-hint">Runs the last saved copy.</span>
+            <span class="seq-running hidden" id="seq-editor-running" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span><span id="seq-editor-running-name"></span></span>
+            <button id="seq-editor-stop" class="btn btn-sm seq-stop hidden" type="button"></button>
           </span>
           <span class="seq-strip-seam" aria-hidden="true"></span>
           <span class="seq-verdict" id="seq-editor-validation-summary" aria-live="polite" aria-label="Validation status">
@@ -2487,7 +2698,7 @@
                   <input id="seq-editor-bpm" class="number-cell" type="number" min="1" max="600" step="0.1" value="${seq.tempo ? esc(seq.tempo.bpm) : ""}" placeholder="none" aria-label="Tempo in beats per minute">
                   <span class="setting-unit">BPM</span>
                 </span>
-                <button id="seq-editor-tap-open" class="seq-act" type="button">Tap along</button>
+                <button id="seq-editor-tap-open" class="seq-act" type="button" aria-expanded="false" aria-controls="seq-editor-tap">Tap along</button>
                 <label class="seq-act" for="seq-editor-track">Analyze a track</label>
                 <input id="seq-editor-track" class="hidden" type="file" accept="audio/*" aria-label="Your copy of the track">
                 <button id="seq-editor-retime" class="seq-act${seq.tempo ? "" : " hidden"}" type="button">Retime to the grid</button>
@@ -2649,7 +2860,7 @@
     if (dirty && saidSaved) showEditorFeedback("");
     const stateEl = document.getElementById("seq-editor-state");
     if (stateEl) stateEl.textContent = dirty ? "Unsaved edits" : editorState.saved ? "Saved" : "No edits";
-    document.getElementById("seq-editor-test-hint")?.classList.toggle("hidden", !dirty);
+    paintStripRun();
     // Revert has nothing to take back until there is an edit. Save stays live
     // either way: a sequence being tuned or restored is saved with no edit.
     const revertBtn = document.getElementById("seq-editor-revert");
@@ -2912,7 +3123,8 @@
         resetTaps();
         showTaps();
         tempoFeedback("");
-        tapPanel.classList.toggle("hidden");
+        const shut = tapPanel.classList.toggle("hidden");
+        tapOpen.setAttribute("aria-expanded", String(!shut));
       });
     }
     if (tapPlay) {
@@ -2925,7 +3137,7 @@
         }
         tapPlay.disabled = true;
         try {
-          await PAApi.postJson("/api/seq/test", { name: editorState.original.name });
+          await runWatch.start(editorState.original.name);
           resetTaps();
           tapState.startedAt = nowMs();
           showTaps();
@@ -2952,6 +3164,7 @@
         setTempo(window.SeqTempo.tappedTempo(result));
         resetTaps();
         tapPanel?.classList.add("hidden");
+        tapOpen?.setAttribute("aria-expanded", "false");
       });
     }
     const trackInput = document.getElementById("seq-editor-track");
@@ -3078,6 +3291,8 @@
     const cancelBtn = document.getElementById("seq-editor-cancel");
 
     if (testBtn) testBtn.addEventListener("click", handleTestOnDroid);
+    const stopBtn = document.getElementById("seq-editor-stop");
+    if (stopBtn) stopBtn.addEventListener("click", () => handleStopRun(stopBtn));
     if (saveBtn) saveBtn.addEventListener("click", handleSave);
 
     if (revertBtn) {
@@ -3961,7 +4176,7 @@
     if (testBtn) testBtn.disabled = true;
     showEditorFeedback(`Sending ${seqName} to droid...`, "info");
     try {
-      await PAApi.postJson("/api/seq/test", { name: seqName });
+      await runWatch.start(seqName);
       // The droid ran what is saved under that name, not the edits on screen,
       // so the badge rehearses the last saved or cloned copy.
       showRunBadge(`${seqName} dispatched.`, editorState.original);
@@ -3985,7 +4200,10 @@
         leaveSession(() => handleEditSequence(seqName, rowEl));
         break;
       case "test":
-        await handleTestSequence(seqName, rowEl);
+        await handleTestSequence(seqName, rowEl, btn);
+        break;
+      case "stop":
+        await handleStopRun(btn);
         break;
       case "more": {
         // The acts used less often, folded behind the row's More.
@@ -4038,18 +4256,23 @@
     renderEditorView(currentEditingSeq);
   };
 
-  const handleTestSequence = async (seqName, rowEl) => {
+  const handleTestSequence = async (seqName, rowEl, btn) => {
     const feedbackEl = rowEl?.querySelector(".seq-item-feedback");
     if (feedbackEl) {
-      feedbackEl.textContent = "Running...";
+      feedbackEl.textContent = `Sending ${seqName} to droid...`;
       feedbackEl.className = "seq-item-feedback feedback info";
-      feedbackEl.classList.remove("hidden");
     }
+    // Held until the droid has accepted or refused the run: starting one is
+    // two requests, and a second press in that time would send a second run,
+    // which preempts the first.
+    btn.disabled = true;
     try {
-      await PAApi.postJson("/api/seq/test", { name: seqName });
+      await runWatch.start(seqName);
+      // Accepted: the row's lamp is the word now, and this line would only
+      // outlive the run.
       if (feedbackEl) {
-        feedbackEl.textContent = "Dispatched.";
-        feedbackEl.className = "seq-item-feedback feedback success";
+        feedbackEl.textContent = "";
+        feedbackEl.className = "seq-item-feedback feedback hidden";
       }
     } catch (error) {
       if (feedbackEl) {
@@ -4057,6 +4280,8 @@
         feedbackEl.className = "seq-item-feedback feedback error";
       }
       return;
+    } finally {
+      btn.disabled = false;
     }
     await showRowRehearsal(seqName, rowEl);
   };

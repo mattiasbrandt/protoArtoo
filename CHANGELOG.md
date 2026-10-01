@@ -41,6 +41,11 @@ the patch releases, whose notes live on their own GitHub Release.
   block you picked, the parts, the sequence's own settings and the Rehearsal.
   A factory sequence's Timeline opens the same view to look at, with Tune as
   the way to make it yours.
+- **A test run says it is running, and stops where you started it.** Test a
+  sequence from its row or from the workspace and it reads Running, with a
+  green lamp, until the droid says the run has ended. Stop beside it ends
+  that run and nothing else; the red STOP is still the estop. A run the droid
+  accepts and never starts says so.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring has a card for each product on the droid, opened from the product's
   own row: its supply, its draw, its logic level, where each wire goes, and
