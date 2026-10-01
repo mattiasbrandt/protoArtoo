@@ -495,11 +495,10 @@ class ZopfliStaging(_StagingCase):
         self.assertIn("zopfli is not on PATH", str(ctx.exception))
 
     def test_the_stage_is_written_largest_file_first(self):
-        """The order the stager writes in is (-size, path). Staging controls
-        only that order; whether it reaches the image depends on the host
-        filesystem's directory listing (see the comment at the writer loop),
-        so this records the writes themselves rather than reading the stage
-        back from disk."""
+        """The order the stager writes in is (-size, path), the order
+        tools/littlefs_image.py images in. This records the writes themselves
+        rather than reading the stage back from disk, whose listing order is
+        the host filesystem's."""
         import builtins
         import shutil as shutil_module
         from unittest import mock
