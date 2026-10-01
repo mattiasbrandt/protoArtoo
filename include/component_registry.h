@@ -59,8 +59,8 @@ constexpr bool COMPONENT_NOT_CONFIRMED_ON_DROID = false;
 // -----------------------------------------------------------------------------
 enum ComponentCategoryId : uint8_t {
 #define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key) enumerator,
-#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, gate, \
-                          included)
+#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, \
+                          gate, included)
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
 #undef PA_COMPONENT_CATEGORY

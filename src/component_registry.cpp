@@ -14,8 +14,8 @@
 
 const ComponentCategoryEntry COMPONENT_CATEGORIES[] = {
 #define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key) {enumerator, id, name, member_key},
-#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, gate, \
-                          included)
+#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, \
+                          gate, included)
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
 #undef PA_COMPONENT_CATEGORY
@@ -26,9 +26,9 @@ const size_t COMPONENT_CATEGORY_TABLE_SIZE =
 
 const ComponentPartEntry COMPONENT_PARTS[] = {
 #define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key)
-#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, gate, \
-                          included)                                                              \
-    {value, id, name, category, protocol, status, confirmed, (uint8_t)(capabilities), gate,      \
+#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, \
+                          gate, included)                                                       \
+    {value, id, name, category, protocol, status, confirmed, (uint8_t)(capabilities), gate,     \
      (included) != 0},
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
@@ -49,15 +49,15 @@ static_assert(sizeof(COMPONENT_CATEGORIES) / sizeof(COMPONENT_CATEGORIES[0]) ==
 // selectable-member count rests on it. For the same reason it cannot be
 // Confirmed on a Droid: that is evidence about a driver that ran (#455).
 #define PA_COMPONENT_CATEGORY(enumerator, id, name, member_key)
-#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, gate, \
-                          included)                                                              \
-    static_assert((status) != COMPONENT_STATUS_ROADMAP || (included) == 0,                       \
-                  "roadmap row " id " declares a driver; drivers are carried only for "          \
-                  "supported parts");                                                            \
-    static_assert((status) != COMPONENT_STATUS_ROADMAP || !(confirmed),                          \
-                  "roadmap row " id " says it has run on a droid; there is no driver to have "   \
-                  "run");                                                                        \
-    static_assert((value) != COMPONENT_MEMBER_NONE,                                              \
+#define PA_COMPONENT_PART(value, id, name, category, protocol, status, confirmed, capabilities, \
+                          gate, included)                                                       \
+    static_assert((status) != COMPONENT_STATUS_ROADMAP || (included) == 0,                      \
+                  "roadmap row " id " declares a driver; drivers are carried only for "         \
+                  "supported parts");                                                           \
+    static_assert((status) != COMPONENT_STATUS_ROADMAP || !(confirmed),                         \
+                  "roadmap row " id " says it has run on a droid; there is no driver to have "  \
+                  "run");                                                                       \
+    static_assert((value) != COMPONENT_MEMBER_NONE,                                             \
                   "row " id " takes the value that means no member is stored");
 #include "component_registry.inc"
 #undef PA_COMPONENT_PART
