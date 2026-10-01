@@ -1250,7 +1250,7 @@
           + settingRow("Jitter", numberCell("jitterMs", fieldOf(step, "jitterMs"), STEP_LIMITS.jitterMs, "Jitter, in milliseconds"));
       }
       case "loop":
-        return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), STEP_LIMITS.body, "Steps it repeats", "steps"))
+        return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), loopReach(editorState.current.steps, at), "Steps it repeats", "steps"))
           + settingRow("Every", numberCell("periodMs", fieldOf(step, "periodMs"), STEP_LIMITS.periodMs, "Every, in milliseconds"))
           + settingRow("For", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.loopMs, "For, in milliseconds"));
       default:
@@ -1312,7 +1312,7 @@
   };
 
   // One field of the picked step, written. `raw` is the control's own value.
-  const PICKED_NUMBERS = ["moveMs", "jitterMs", "body", "periodMs", "durationMs"];
+  const PICKED_NUMBERS = ["moveMs", "jitterMs", "periodMs", "durationMs"];
   const writePicked = (step, field, raw, way = null) => {
     const number = parseInt(raw, 10);
     if (field === "howFar") {
@@ -1332,6 +1332,11 @@
       if (Number.isInteger(number)) Object.assign(step, turnOf(way || (step.speedPct < 0 ? "left" : "right"), number, step.durationMs));
     } else if (field === "distinct") {
       step.distinct = raw === true;
+    } else if (field === "body") {
+      // Held to the steps there are to repeat, whatever was typed.
+      if (!Number.isInteger(number)) return;
+      const [least, most] = loopReach(editorState.current.steps, editorState.current.steps.indexOf(step));
+      step.body = Math.max(least, Math.min(most, number));
     } else if (PICKED_NUMBERS.includes(field)) {
       if (!Number.isInteger(number)) return;
       // A duration typed over a span of beats is a millisecond instead
@@ -1909,6 +1914,20 @@
   // (SLOTSET_HOLD, include/sequence_engine.h) - and what it does to the pick.
   const RANDOM_SETS = ["ring", "pie", "all", "hold"];
   const RANDOM_MODES = ["flutter", "open", "close"];
+
+  // What a loop cannot repeat: another loop, a sequence inside this one, and
+  // the end.
+  const NOT_REPEATED = ["loop", "sequence", "end"];
+
+  // How many steps the loop at `at` may repeat: the ones after it, up to the
+  // first it cannot repeat, and no more than a loop holds. The droid refuses
+  // a loop that reaches past them ("loop body overruns the branch",
+  // src/protocol_check.cpp). A loop with nothing after it still asks for one.
+  const loopReach = (steps, at) => {
+    let room = 0;
+    while (room < STEP_LIMITS.body[1] && steps[at + 1 + room] && !NOT_REPEATED.includes(steps[at + 1 + room].type)) room += 1;
+    return [STEP_LIMITS.body[0], Math.max(STEP_LIMITS.body[0], room)];
+  };
 
   // A dome turn is stored as one signed speed: negative left, positive right,
   // zero the neutral stop, which runs for no time.
