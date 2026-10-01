@@ -125,7 +125,7 @@
   // fails leaves them null: the rules that need them stay silent, the Gap lines
   // say what went unchecked, and nothing waits on them.
   const rehearsalFacts = { outputs: null, config: null };
-  let lastRunBadge = null; // the badge beside the last run, repainted when facts land
+  let lastRunBadge = null; // the copy the last run's badge rehearses, repainted when facts land
   let saidSaved = false; // whether the strip's feedback line is the receipt of a save
 
   // The droid's per-file byte cap, the size figure's denominator (GET
@@ -3372,7 +3372,7 @@
       updateValidationSummary();
       paintParts();
     }
-    if (lastRunBadge) showRunBadge(...lastRunBadge);
+    if (lastRunBadge) showRunBadge(lastRunBadge);
     if (timeline) timeline.refresh(rehearsalContext());
     if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
   };
@@ -4536,19 +4536,20 @@
     feedbackEl.innerHTML = message ? feedbackHtml(message, kind) : "";
   };
 
-  // A run's line of feedback with the Rehearsal's folded badge under it. The
-  // badge rehearses `seq`, the copy the droid ran - which is not the edits on
+  // The Rehearsal's folded badge for a run the droid accepted, in place of
+  // the line that said it was being sent: the lamp on the strip is the word
+  // that it is running, and a line saying so would outlive the run. The badge
+  // rehearses `seq`, the copy the droid ran - which is not the edits on
   // screen, and so not what the Rehearsal tab is reading. It is only ever shown
   // after the run has been sent, so nothing it finds can stand in the run's
   // way (#287 specific 6).
-  const showRunBadge = (message, seq) => {
+  const showRunBadge = (seq) => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
-    lastRunBadge = [message, seq];
+    lastRunBadge = seq;
     saidSaved = false;
     const rehearsal = window.SeqRehearsal;
-    const badge = rehearsal ? rehearsal.badgeHtml(rehearsal.rehearse(seq, rehearsalContext())) : "";
-    feedbackEl.innerHTML = feedbackHtml(message, "ok") + badge;
+    feedbackEl.innerHTML = rehearsal ? rehearsal.badgeHtml(rehearsal.rehearse(seq, rehearsalContext())) : "";
   };
 
   const handleSave = async () => {
@@ -4603,7 +4604,7 @@
       await runWatch.start(seqName);
       // The droid ran what is saved under that name, not the edits on screen,
       // so the badge rehearses the last saved or cloned copy.
-      showRunBadge(`${seqName} dispatched.`, editorState.original);
+      showRunBadge(editorState.original);
     } catch (error) {
       showEditorFeedback("Test failed: " + PAApi.messageFor(error), "error");
     } finally {
