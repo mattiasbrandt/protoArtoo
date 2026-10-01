@@ -489,7 +489,9 @@
       if (!learnedAnswered) {
         said = WAITING_SLOT;
       } else if (sequences.length === 0) {
-        said = '<p class="hint seq-section-empty"><b>Nothing of your own yet.</b> Tune a factory sequence below and it lands here.</p>';
+        // "below" only where the Factory group is on screen under this one.
+        const where = listShow === "yours" ? "" : " below";
+        said = `<p class="hint seq-section-empty"><b>Nothing of your own yet.</b> Tune a factory sequence${where} and it lands here.</p>`;
       } else if (cap !== null && sequences.length > cap) {
         // A firmware-only update can leave a droid holding more than it now
         // stores. Everything it holds still lists and plays; only a new save
