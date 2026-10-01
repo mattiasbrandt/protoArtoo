@@ -1329,7 +1329,12 @@
     } else if (field === "way") {
       Object.assign(step, turnOf(raw, step.speedPct, step.durationMs));
     } else if (field === "speed") {
-      if (Number.isInteger(number)) Object.assign(step, turnOf(way || (step.speedPct < 0 ? "left" : "right"), number, step.durationMs));
+      if (!Number.isInteger(number)) return;
+      // A stop given a speed becomes a turn in the one edit: it takes the
+      // time a turn starts with, or the droid would refuse it until a second
+      // edit gave it one.
+      const starts = number > 0 && !step.speedPct && !step.durationMs;
+      Object.assign(step, turnOf(way || (step.speedPct < 0 ? "left" : "right"), number, starts ? TURN_STARTS_MS : step.durationMs));
     } else if (field === "distinct") {
       step.distinct = raw === true;
     } else if (field === "body") {
@@ -1912,6 +1917,9 @@
     jitterMs: [0, 2000],
   };
   const limits = ([min, max]) => `min="${min}" max="${max}"`;
+  // How long a dome turn runs when a stop is first given a speed: a turn with
+  // a speed and no time is refused, and a new Spin Dome is the neutral stop.
+  const TURN_STARTS_MS = 1000;
 
   // A field of a step as anything here reads it - an inspector row, a card,
   // the words on a block: the step's own value, or what a step of its kind
