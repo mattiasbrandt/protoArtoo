@@ -354,3 +354,25 @@ test("a saved sequence always carries a stable id, and keeps the one it has", as
   const second = kept.posts.filter((post) => post.url === "/api/seq");
   assert.equal(second[0].body.id, "abcd1234", "the save replaced the sequence's id");
 });
+
+// Cancel used to swap the editor's state for a new object that had no set of
+// expanded steps, so the next sequence opened from the list threw before it
+// drew a single step (#441) - and the seam above went on holding the object
+// Cancel had thrown away.
+test("a sequence opens after another was closed with Cancel", () => {
+  const page = newPage();
+  const sequence = {
+    name: "DM:AGAIN",
+    suppressMs: 8000,
+    toggleGroup: "none",
+    steps: [
+      { t: 0, type: "audio", cmd: "$H" },
+      { t: 1000, type: "end" },
+    ],
+  };
+  page.open(sequence, []);
+  fire(page.byId("seq-editor-cancel"), "click");
+
+  page.open(sequence, [0]);
+  assert.ok(page.card(0), "the sequence opened after a Cancel drew no step");
+});

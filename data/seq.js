@@ -20,8 +20,10 @@
   let timeline = null; // the open timeline's handle (data/seq_timeline.js), or null
   let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
-  // Editor state tracking
-  let editorState = {
+  // Editor state tracking. One object for the life of the page: it is reset in
+  // place, never replaced, so the set of expanded steps is always there and
+  // the test seam at the foot of this file holds the object the editor reads.
+  const editorState = {
     original: null,   // snapshot at open time (for Revert)
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
@@ -2390,7 +2392,7 @@
       cancelBtn.addEventListener("click", () => {
         els.editorView.classList.add("hidden");
         currentEditingSeq = null;
-        editorState = { original: null, current: null, isNew: false, tuningFactory: null };
+        Object.assign(editorState, { original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set() });
         refreshLearned();
       });
     }
