@@ -1203,9 +1203,7 @@
       grid.addEventListener("keydown", gridKey);
     }
 
-    // The pose press: one press, one request, at the marker's instant as it is
-    // when pressed. The answer -- under way, or why not -- is said beside it.
-    // What is said beside the press: the droid's answer to it, or the
+    // What is said beside the pose press: the droid's answer to it, or the
     // caller's word on something the builder just tried here ({text, level}).
     const said = hosts.bar.querySelector(".tl-said");
     const say = (answer) => {
@@ -1213,6 +1211,9 @@
       said.textContent = answer && answer.text ? answer.text : "";
       said.className = `hint tl-said${answer && answer.level === "error" ? " is-refused" : ""}`;
     };
+
+    // The pose press: one press, one request, at the marker's instant as it is
+    // when pressed. The answer -- under way, or why not -- is said beside it.
     const pose = (button) => {
       const at = t;
       button.disabled = true;

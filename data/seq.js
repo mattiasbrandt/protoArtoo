@@ -1382,12 +1382,20 @@
   // A fader is an edit made over time: the routine follows it as it moves,
   // and the whole run is one entry, recorded when it is let go. `way` is the
   // turn's direction as the run began, which a pass through zero would lose.
+  //
+  // Let go is the fader's `change`, and the pointer coming up anywhere: a
+  // fader brought back to the value it started on sends no `change`, and a
+  // run left open would hold Undo and the inspector for good.
   let faderRun = null;
 
   const faderMoved = (input) => {
     const picked = pickedStep();
     if (!picked || (faderRun === null && historyBusy())) return;
-    if (faderRun === null) faderRun = { before: historyBegin(), way: picked.step.speedPct < 0 ? "left" : "right" };
+    if (faderRun === null) {
+      faderRun = { before: historyBegin(), way: picked.step.speedPct < 0 ? "left" : "right" };
+      window.addEventListener("pointerup", faderLetGo);
+      window.addEventListener("pointercancel", faderLetGo);
+    }
     writePicked(picked.step, input.dataset.picked, input.value, faderRun.way);
     const valueEl = input.closest(".setting-row")?.querySelector(".setting-value");
     if (valueEl) valueEl.textContent = `${input.value}%`;
@@ -1395,14 +1403,16 @@
     edited();
   };
 
-  const faderLetGo = () => {
+  function faderLetGo() {
+    window.removeEventListener("pointerup", faderLetGo);
+    window.removeEventListener("pointercancel", faderLetGo);
     if (faderRun === null) return;
     const { before } = faderRun;
     faderRun = null;
     historyCommit(before);
     paintHistory();
     repaintPicked();
-  };
+  }
 
   // ---------------------------------------------------------------------------
   // The library (#441): the Parts tab, and Drop a part beside the inspector.
@@ -3262,6 +3272,8 @@
     pickedBlocks = [];
     pickedShown = null;
     faderRun = null;
+    window.removeEventListener("pointerup", faderLetGo);
+    window.removeEventListener("pointercancel", faderLetGo);
     partsFind = "";
     libraryStop();
     showPicked([]);
