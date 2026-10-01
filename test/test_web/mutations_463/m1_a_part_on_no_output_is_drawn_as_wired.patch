@@ -1,0 +1,13 @@
+diff --git i/data/parts_mapping.js w/data/parts_mapping.js
+index e11091fc..23e20980 100644
+--- i/data/parts_mapping.js
++++ w/data/parts_mapping.js
+@@ -560,7 +560,7 @@
+         ? `<span class="parts-out">${esc(output.name)}</span>`
+         : `<span class="parts-bar" data-bar="output"></span>${whyHtml(part, output, outputs)}`;
+       return (
+-        `<tr class="parts-row${output ? " is-wired" : ""}${kindClass(part)}" data-part="${esc(part.id)}">` +
++        `<tr class="parts-row is-wired${kindClass(part)}" data-part="${esc(part.id)}">` +
+         `<th scope="row">${nameHtml(part)}` +
+         (gang.length ? `<span class="parts-gang">moves with ${esc(listParts(gang))}</span>` : "") +
+         `</th>` +

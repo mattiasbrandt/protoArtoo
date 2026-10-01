@@ -1,0 +1,13 @@
+diff --git i/data/output_settings.js w/data/output_settings.js
+index b5755a82..e6a106ec 100644
+--- i/data/output_settings.js
++++ w/data/output_settings.js
+@@ -64,7 +64,7 @@
+         button.setAttribute("aria-disabled", "true");
+       }
+       button.addEventListener("click", () => {
+-        if (!on && !off) onPick(option.id);
++        if (!on) onPick(option.id);
+       });
+       row.appendChild(button);
+     });

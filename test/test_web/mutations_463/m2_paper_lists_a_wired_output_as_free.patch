@@ -1,0 +1,13 @@
+diff --git i/data/wiring.js w/data/wiring.js
+index ba5265c2..fa761681 100644
+--- i/data/wiring.js
++++ w/data/wiring.js
+@@ -736,7 +736,7 @@
+     const wired = outputs
+       .flatMap((output) => output.parts.map((id) => ({ id, output })))
+       .sort((a, b) => (place.get(a.id) ?? parts.length) - (place.get(b.id) ?? parts.length));
+-    const free = outputs.filter((output) => !hasPart(output)).map((output) => output.name);
++    const free = outputs.map((output) => output.name);
+     const links = linkRows(model);
+     return (
+       `<table class="sheet-table"><thead>${sheetRow(["", ...words.columns.map(esc)], "th")}</thead><tbody>` +
