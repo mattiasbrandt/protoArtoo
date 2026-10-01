@@ -4256,9 +4256,8 @@
   const handleTestSequence = async (seqName, rowEl, btn) => {
     const feedbackEl = rowEl?.querySelector(".seq-item-feedback");
     if (feedbackEl) {
-      feedbackEl.textContent = "Running...";
+      feedbackEl.textContent = `Sending ${seqName} to droid...`;
       feedbackEl.className = "seq-item-feedback feedback info";
-      feedbackEl.classList.remove("hidden");
     }
     // Held until the droid has accepted or refused the run: starting one is
     // two requests, and a second press in that time would send a second run,
@@ -4266,9 +4265,11 @@
     btn.disabled = true;
     try {
       await runWatch.start(seqName);
+      // Accepted: the row's lamp is the word now, and this line would only
+      // outlive the run.
       if (feedbackEl) {
-        feedbackEl.textContent = "Dispatched.";
-        feedbackEl.className = "seq-item-feedback feedback success";
+        feedbackEl.textContent = "";
+        feedbackEl.className = "seq-item-feedback feedback hidden";
       }
     } catch (error) {
       if (feedbackEl) {

@@ -237,7 +237,8 @@ test("a card whose sequence cannot be read back says so instead of looking all c
   page.seam.renderListWithMocks([{ name: "DM:HELLO", stepCount: 10, valid: true }], []);
   await page.click(page.card.testButton);
 
-  assert.equal(page.card.feedback.textContent, "Dispatched.");
+  // The run was accepted, so the row's own line has nothing left to say.
+  assert.equal(page.card.feedback.textContent, "");
   assert.equal(page.card.rehearsal.innerHTML, "");
   assert.match(page.card.rehearsal.textContent, /Could not read DM:HELLO back to rehearse it: controller not reachable/);
 });
