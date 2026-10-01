@@ -1714,6 +1714,9 @@
     return SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
   };
 
+  // "an alert", "a happy": a sound category behind its article.
+  const aOrAn = (word) => `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
+
   // Plain-English preview text for each step type
   const stepPreview = (step) => {
     switch (step.type) {
@@ -1825,7 +1828,7 @@
       }
       case "audioCat": {
         const category = step.category || "alert";
-        return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
+        return `Play ${aOrAn(category)} sound (fallback ${audioFallbackLabel(step.fallback)})`;
       }
       case "sequence":
         return phraseName(step);
@@ -2269,7 +2272,7 @@
       }
       case "audioCat": {
         const category = step.category || "alert";
-        return `Plays a ${category} sound`;
+        return `Plays ${aOrAn(category)} sound`;
       }
       case "end":
         return "Marks the end of the sequence";
