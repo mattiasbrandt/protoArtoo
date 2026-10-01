@@ -25,8 +25,10 @@
 //   6  Stop there sends exactly one POST /api/seq/stop;
 //   7  when the record says the run ended, the strip offers Test on the droid
 //      again, and the row Test;
-//   8  from then on the run record is not read again;
-//   9  a run the droid accepts and never starts stops reading as running, and
+//   8  Play on the droid, on the tap row, starts the same kind of run: the
+//      strip says Running DM:GREET, with its Stop;
+//   9  once that run has ended too, the run record is not read again;
+//   10 a run the droid accepts and never starts stops reading as running, and
 //      the row says "The droid did not start DM:GREET.".
 //
 // WHY A REAL BROWSER. The real request log against real timers, across the
@@ -38,7 +40,7 @@
 //     FIXTURE=1 HEADLESS=true BASE_URL=http://127.0.0.1:<port> \
 //     node test/playwright/seq/run-shows-running-and-its-stop.js
 // Self-test: SELFTEST=peek reads the run record from the page before the
-// press and again after the run has ended; rows 1 and 8 must FAIL.
+// press and again after the runs have ended; rows 1 and 9 must FAIL.
 const lib = require('../_lib/checks.js');
 const seq = require('./_lib/sequences_droid.js');
 
@@ -151,6 +153,19 @@ lib.runCheck({
       writes.slice(since).map(lib.describeWrite).join('; ') || 'no write');
 
     strip = await stripState(page);
+
+    // The third way a run starts here: the tap row's Play on the droid.
+    const testOffered = () => page.waitForFunction(() => !document.getElementById('seq-editor-test').classList.contains('hidden'), null, { timeout: 5000 }).catch(() => {});
+    await testOffered();
+    await page.click('#seq-editor-tap-open');
+    await page.click('#seq-editor-tap-play');
+    await page.waitForFunction(() => !document.getElementById('seq-editor-running').classList.contains('hidden'), null, { timeout: 5000 }).catch(() => {});
+    const played = await stripState(page);
+    // Stopped once the stand-in has started it, so its record ends.
+    for (let waited = 0; waited < 5000 && !droid.lastRun.running; waited += 100) await page.waitForTimeout(100);
+    if (played.stop) await page.click('#seq-editor-stop');
+    await testOffered();
+
     await page.click('#seq-editor-cancel');
     await page.waitForSelector(ROW, { timeout: 5000 });
     row = await rowState(page);
@@ -158,11 +173,14 @@ lib.runCheck({
       lib.verdict(strip.test && strip.says === null && strip.stop === null && row.test && !row.running && row.stop === null),
       `record ${droid.lastRun.outcome}; strip ${JSON.stringify(strip)}; row ${JSON.stringify(row)}`);
 
+    report.add('8', `Play on the droid, on the tap row, starts the same kind of run: the strip says Running ${NAME}, with its Stop`,
+      lib.verdict(played.says === `Running ${NAME}` && played.lamp && played.stop === `Stop ${NAME}` && !played.test), JSON.stringify(played));
+
     const ended = droid.reads(RECORD).length;
     if (selftest === 'peek') await peek();
     await page.waitForTimeout(QUIET_MS);
-    report.add('8', 'From then on the run record is not read', lib.verdict(droid.reads(RECORD).length === ended),
-      `${droid.reads(RECORD).length - ended} read(s) of ${RECORD} in the ${QUIET_MS} ms after the run ended`);
+    report.add('9', 'With both runs ended, the run record is not read', lib.verdict(droid.lastRun.running === false && droid.reads(RECORD).length === ended),
+      `record ${droid.lastRun.outcome}; ${droid.reads(RECORD).length - ended} read(s) of ${RECORD} in the ${QUIET_MS} ms after`);
 
     // The droid says ok and never starts the run.
     droid.starts = false;
@@ -170,7 +188,7 @@ lib.runCheck({
     await page.waitForSelector(`${ROW}.is-running`, { timeout: 5000 });
     await page.waitForSelector(`${ROW}:not(.is-running)`, { timeout: 12000 }).catch(() => {});
     row = await rowState(page);
-    report.add('9', `A run the droid never starts stops reading as running, and the row says so`,
+    report.add('10', 'A run the droid never starts stops reading as running, and the row says so',
       lib.verdict(!row.running && row.test && row.said === `The droid did not start ${NAME}.`), JSON.stringify(row));
     await page.screenshot({ path: `${ARTIFACTS}/run-not-started.png` });
   },
