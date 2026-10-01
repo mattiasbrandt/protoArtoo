@@ -556,8 +556,10 @@
   };
 
   // An Output with no Part on it, in the one word for it (CONTEXT.md "Wiring"),
-  // which is the parts wiring table's own (data/parts_mapping.js).
-  const FREE = window.PAParts.FREE;
+  // which is the parts wiring table's own (data/parts_mapping.js). The word is
+  // kept here too for a page where that script did not load: the drawing and
+  // its count stand without the table, and say so in the same word.
+  const FREE = window.PAParts?.FREE ?? "free";
 
   // Titled with the board it draws, by the product name the lineup gives it
   // (operator, 2026-09-19 on #411: "it would make more sense for it to name and
@@ -821,8 +823,10 @@
         `${plural(wires.length, ["wire", "wires"])}` +
         (free ? ` · ${plural(free, ["output", "outputs"])} ${FREE}` : ""),
       wiresHtml: wires.length ? wiresDiagramHtml(wires, made, boardName) : `<p class="hint">Nothing is wired yet.</p>`,
-      partsSummary: window.PAParts.wiredSummary(model.outputs || []),
-      partsHtml: partsSheetHtml(model),
+      // Empty where the table's own script did not load: the sheet then has
+      // the wires and their power, and no table section, rather than nothing.
+      partsSummary: window.PAParts ? window.PAParts.wiredSummary(model.outputs || []) : "",
+      partsHtml: window.PAParts ? partsSheetHtml(model) : "",
       // Empty when no fitted product has a card, which is every droid on an
       // image built without them: both callers then leave the section out.
       productsSummary: plural(carded.length, ["product", "products"]),
@@ -875,7 +879,9 @@
       `<p>${sheet.madeHtml}</p>` +
       `<p>${sheet.promiseHtml}</p>` +
       `<h2>${esc(sheet.plates.wires)}</h2><p>${sheet.wiresSummary}</p>${pictured(sheet.wiresHtml)}` +
-      `<h2>${esc(sheet.plates.parts)}</h2><p>${esc(sheet.partsSummary)}</p>${sheet.partsHtml}` +
+      (sheet.partsHtml
+        ? `<h2>${esc(sheet.plates.parts)}</h2><p>${esc(sheet.partsSummary)}</p>${sheet.partsHtml}`
+        : "") +
       `<h2>${esc(sheet.plates.rail)}</h2>${sheet.railHtml}` +
       (sheet.productsHtml
         ? `<h2>${esc(sheet.plates.products)}</h2><p>${sheet.productsSummary}</p>${sheet.productsHtml}`
