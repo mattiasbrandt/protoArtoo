@@ -12,8 +12,9 @@
 // about the switched-off lane. Writes nothing.
 //
 // WHAT IT PROVES. Once the sheet has painted (#wiring-wires-summary carries
-// its count), there is no .wd-link[data-wire="protor2link"] in it, and no
-// pin for it in the used/free strip.
+// its count), there is no .wd-link[data-wire="protor2link"] in it, and the
+// link's row of the parts table - the one place the page says what is wired
+// (#463) - is not marked wired and reads "not fitted".
 //
 // WHY A REAL BROWSER. The sheet is generated from three live reads.
 //
@@ -23,8 +24,8 @@
 //   BASE_URL=http://<board>   (default http://10.0.0.22)   HEADLESS=true   no window
 // Offline proof: FIXTURE=1 BASE_URL=http://127.0.0.1:<port> HEADLESS=true
 // against tools/serve_editor_fixture.py (routes in ../_lib/fixture_routes.js).
-// Self-test: SELFTEST=drawn puts a line for the lane back into the sheet; the
-// row must FAIL.
+// Self-tests, each must FAIL the row: SELFTEST=drawn puts a line for the lane
+// back into the sheet; SELFTEST=wired marks the link's table row wired.
 const lib = require('../_lib/checks.js');
 
 const ARTIFACTS = 'output/playwright/wiring';
@@ -32,7 +33,7 @@ const ARTIFACTS = 'output/playwright/wiring';
 lib.runCheck({
   rule: 'Wiring: a dome link switched off draws no line',
   artifactDir: ARTIFACTS,
-  selftests: ['drawn'],
+  selftests: ['drawn', 'wired'],
   precondition: async ({ page }) => {
     const lanes = (await lib.readJson(page, '/api/identity')).json?.board_lanes || {};
     if (!lanes.protor2link) return 'this board reports no protor2link lane';
@@ -51,13 +52,21 @@ lib.runCheck({
         document.querySelector('#wiring-wires').appendChild(line);
       });
     }
-    const lane = await page.evaluate(() => ({
-      line: document.querySelectorAll('.wd-link[data-wire="protor2link"]').length,
-      pin: document.querySelectorAll('.wd-pin[data-pin="lane:protor2link"]').length,
-      summary: document.querySelector('#wiring-wires-summary').textContent,
-    }));
+    await page.waitForSelector('#wiring-parts-table tr[data-link="protor2link"]', { timeout: 15000 });
+    if (selftest === 'wired') {
+      await page.evaluate(() => document.querySelector('#wiring-parts-table tr[data-link="protor2link"]').classList.add('is-wired'));
+    }
+    const lane = await page.evaluate(() => {
+      const row = document.querySelector('#wiring-parts-table tr[data-link="protor2link"]');
+      return {
+        line: document.querySelectorAll('.wd-link[data-wire="protor2link"]').length,
+        wired: row.classList.contains('is-wired'),
+        says: row.children[2].textContent,
+        summary: document.querySelector('#wiring-wires-summary').textContent,
+      };
+    });
     await page.locator('#wiring-wires').screenshot({ path: `${ARTIFACTS}/wires.png` });
-    report.add('a', 'The switched-off dome link has no line and no pin', lib.verdict(lane.line === 0 && lane.pin === 0),
-      `${lane.line} line(s), ${lane.pin} pin(s); summary "${lane.summary}"`);
+    report.add('a', 'The switched-off dome link has no line, and its table row reads not fitted', lib.verdict(lane.line === 0 && !lane.wired && lane.says === 'not fitted'),
+      `${lane.line} line(s); table row wired: ${lane.wired}, says "${lane.says}"; summary "${lane.summary}"`);
   },
 });

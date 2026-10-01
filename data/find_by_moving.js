@@ -58,7 +58,12 @@
   const runner = ({ panel, say, move, pending, changed = () => {}, surface }) => {
     const OUTPUTS = window.PAOutputs;
     const P = window.PAParts;
-    const { NOT_WIRED, partLabel, servoWord, hasServoWord } = P;
+    const { partLabel, servoWord, hasServoWord } = P;
+
+    // What a run that ends without an Output says of its Part, in the words
+    // the table says a Part taken off in ("... is not on any output now"): it
+    // is where it was, a row of the table with no Output lit.
+    const stillOff = (label) => `${label} is still not on any output.`;
 
     let run = null;
     // Whether anything may be asked to move: the Live Reading's answer
@@ -126,7 +131,7 @@
       const count = current.candidates.length;
       if (current.at >= count) {
         end(
-          `None of the ${count} free ${count === 1 ? "output" : "outputs"} moved ${label} in one pass, so it stays ${NOT_WIRED}. ` +
+          `None of the ${count} free ${count === 1 ? "output" : "outputs"} moved ${label} in one pass. ${stillOff(label)} ` +
             `Check the wire, or run it again.`,
           "warning"
         );
@@ -138,7 +143,7 @@
         // The droid's answer changed shape under the run: a reboot, or a
         // different firmware. Nothing is asked of an Output the page cannot
         // tell has finished.
-        end(`${address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+        end(`${address} is not in the droid's answer any more, so the run stopped. ${stillOff(label)}`, "warning");
         return;
       }
       current.address = address;
@@ -152,7 +157,7 @@
         await current.nudging;
       } catch (error) {
         if (run === current) {
-          end(`The nudge did not reach the droid: ${window.PAApi.messageFor(error)}. ${label} stays ${NOT_WIRED}.`, "error");
+          end(`The nudge did not reach the droid: ${window.PAApi.messageFor(error)}. ${stillOff(label)}`, "error");
         }
         return;
       }
@@ -171,7 +176,7 @@
       }
       const output = OUTPUTS.at(run.address);
       if (!output || output.nudgesDone === null) {
-        end(`${run.address} is not in the droid's answer any more, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning");
+        end(`${run.address} is not in the droid's answer any more, so the run stopped. ${stillOff(label)}`, "warning");
         return;
       }
       // Ended - returned, cut short or refused. The run's hold on a free
@@ -189,7 +194,7 @@
       if (state === "pulsing") {
         run.pulsed = true;
       } else if (state === "limp" && run.pulsed) {
-        end(`${output.name} is limp, so the run stopped. ${label} stays ${NOT_WIRED}.`, "warning", { release: false });
+        end(`${output.name} is limp, so the run stopped. ${stillOff(label)}`, "warning", { release: false });
       }
     };
 
@@ -244,7 +249,7 @@
 
     line.querySelector(".parts-find-stop").addEventListener("click", () => {
       if (run === null) return;
-      end(`Stopped. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+      end(`Stopped. ${stillOff(partLabel(run.partId))}`);
     });
 
     // Every read of the Outputs - the run's own, a move's, a save's - is the
@@ -256,7 +261,7 @@
     // motion the builder did not press for. Never a hold - leaving is always
     // allowed; this only hears it happening.
     window.PASurface?.holdUnmount(() => {
-      if (run !== null) end(`The run stopped when you left ${surface}. ${partLabel(run.partId)} stays ${NOT_WIRED}.`);
+      if (run !== null) end(`The run stopped when you left ${surface}. ${stillOff(partLabel(run.partId))}`);
       return false;
     });
 
@@ -266,7 +271,7 @@
       const was = moveActsLive;
       moveActsLive = reading.moveActsLive;
       if (reading.estopLatched && run !== null) {
-        end(`The estop stopped the run. ${partLabel(run.partId)} stays ${NOT_WIRED}.`, "error", { release: false });
+        end(`The estop stopped the run. ${stillOff(partLabel(run.partId))}`, "error", { release: false });
         return;
       }
       if (was !== moveActsLive) changed();
