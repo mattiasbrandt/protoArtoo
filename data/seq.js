@@ -4193,7 +4193,7 @@
         leaveSession(() => handleEditSequence(seqName, rowEl));
         break;
       case "test":
-        await handleTestSequence(seqName, rowEl);
+        await handleTestSequence(seqName, rowEl, btn);
         break;
       case "stop":
         await handleStopRun(btn);
@@ -4249,13 +4249,17 @@
     renderEditorView(currentEditingSeq);
   };
 
-  const handleTestSequence = async (seqName, rowEl) => {
+  const handleTestSequence = async (seqName, rowEl, btn) => {
     const feedbackEl = rowEl?.querySelector(".seq-item-feedback");
     if (feedbackEl) {
       feedbackEl.textContent = "Running...";
       feedbackEl.className = "seq-item-feedback feedback info";
       feedbackEl.classList.remove("hidden");
     }
+    // Held until the droid has accepted or refused the run: starting one is
+    // two requests, and a second press in that time would send a second run,
+    // which preempts the first.
+    btn.disabled = true;
     try {
       await runWatch.start(seqName);
       if (feedbackEl) {
@@ -4268,6 +4272,8 @@
         feedbackEl.className = "seq-item-feedback feedback error";
       }
       return;
+    } finally {
+      btn.disabled = false;
     }
     await showRowRehearsal(seqName, rowEl);
   };
