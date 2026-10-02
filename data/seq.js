@@ -2127,6 +2127,11 @@
   //   - the phrase's steps before its end step, each timed from where the
   //     phrase step starts. A step a loop repeats is timed from the pass, so
   //     it keeps its time and its loop keeps it (stepUnits());
+  //   - and of those, only the ones that start before this routine's end
+  //     step: the droid cuts what it splices in past the end
+  //     (seqStoreSplicePhrase(), include/seq_store_util.h), as a Gesture's
+  //     moves past the end are left out of its split. A loop goes or stays
+  //     with the steps it repeats;
   //   - at the milliseconds the droid runs them at, by the phrase's own
   //     tempo, and with no beat of their own: this routine's grid is not the
   //     phrase's. That reading (loadPhrases()) also states the extent a
@@ -2143,8 +2148,8 @@
   //
   // More steps than a sequence holds is refused first (splitOverfull()). Then
   // it is tried on a copy (splitRefused()): a result Protocol Check refuses -
-  // a step past the end, a sequence that would land inside a loop - lands
-  // nothing, and the stage says Protocol Check's reason.
+  // a sequence that would land inside a loop, a flutter left without its
+  // close - lands nothing, and the stage says Protocol Check's reason.
   const splitPhrase = () => {
     const picked = pickedStep();
     if (!picked || picked.step.type !== "sequence" || historyBusy()) return;
@@ -2153,12 +2158,22 @@
     if (!phrase) return;
     const steps = editorState.current.steps;
     const startsAt = Number(SeqProtocolCheck.resolveBeats(editorState.current).steps[at].t) || 0;
-    const endAt = phrase.steps.findIndex((each) => each?.type === "end");
-    const runs = endAt === -1 ? phrase.steps : phrase.steps.slice(0, endAt);
-    if (runs.length === 0) {
+    const phraseEnd = phrase.steps.findIndex((each) => each?.type === "end");
+    const whole = phraseEnd === -1 ? phrase.steps : phrase.steps.slice(0, phraseEnd);
+    if (whole.length === 0) {
       sayOnStage(`${phraseName(step)} has no steps before its end.`, "error");
       return;
     }
+    // A step a loop repeats is timed from the pass, where the end is not.
+    const loop = loopRepeating(steps, at);
+    const endAt = steps.findIndex((each) => each?.type === "end");
+    const last = loop || endAt === -1 ? Infinity : Number(steps[endAt].t) || 0;
+    const kept = stepUnits(whole).filter((unit) => unit.t + startsAt < last);
+    if (kept.length === 0) {
+      sayOnStage(`${phraseName(step)} starts at the end, so it adds no steps.`, "error");
+      return;
+    }
+    const runs = kept.flatMap((unit) => whole.slice(unit.at, unit.at + unit.size));
     const outer = new Set(stepUnits(runs).map((unit) => unit.at));
     const timed = phrase.seq.tempo !== undefined && SeqProtocolCheck.validateTempo(phrase.seq.tempo).ok;
     const write = () => runs.map((each, index) => {
@@ -2170,7 +2185,7 @@
     });
     // A loop cannot repeat a sequence (Protocol Check), and a routine that
     // has one doing so is split by the same rule as any step a loop repeats.
-    const place = splitPlace(loopRepeating(steps, at), at);
+    const place = splitPlace(loop, at);
     if (splitOverfull(runs.length) || splitRefused(write, place)) return;
 
     const made = write();

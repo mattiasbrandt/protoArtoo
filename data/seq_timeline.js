@@ -484,8 +484,8 @@
           // (`context.phrase`). What it does is not drawn inside it, and its
           // Parts are not in the pose.
           //
-          // It has no edges: its length is the phrase's own, so a drag only
-          // moves where it starts.
+          // It has no edges: its length is the phrase's own, or what this
+          // routine's end leaves of it, so a drag only moves where it starts.
           //
           // One the caller has not read - it is not on this droid, or the
           // read failed - is a mark on the Sequence row where it starts. One
@@ -533,6 +533,14 @@
       if (item.kind === "light" && item.t1 > endMs) item.t1 = endMs;
     }));
     if (domeVisual.item && domeVisual.item.t1 === null) domeVisual.item.t1 = endMs;
+    // A sequence inside this one stops at this routine's end step too: the
+    // droid cuts what it splices in past the end (seqStoreSplicePhrase(),
+    // include/seq_store_util.h).
+    if (endIndex !== -1) {
+      [...lanes.values(), ...rows.values()].forEach((lane) => lane.items.forEach((item) => {
+        if (item.kind === "phrase" && item.t1 > endMs) item.t1 = endMs;
+      }));
+    }
 
     const lastItem = [...lanes.values(), ...rows.values()]
       .reduce((max, lane) => lane.items.reduce((m, item) => Math.max(m, item.t1 ?? item.t0), max), 0);
