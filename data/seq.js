@@ -2883,10 +2883,14 @@
   //
   // ONE REQUEST AT A TIME. Each read is a JSON document the droid builds, and
   // a routine names up to eight phrases; `reading` is the one loop under way.
+  // `leaving` cancels the read in flight when the session closes, so the
+  // droid is not left building an answer nobody will read.
   // ---------------------------------------------------------------------------
-  let phrases = { read: new Map(), reading: false };
+  const newPhrases = () => ({ read: new Map(), reading: false, leaving: new AbortController() });
+  let phrases = newPhrases();
   const forgetPhrases = () => {
-    phrases = { read: new Map(), reading: false };
+    phrases.leaving.abort();
+    phrases = newPhrases();
   };
 
   // Where the droid finds a reference when it runs it (nestResolve(),
@@ -2928,10 +2932,12 @@
         let entry = { url: source.url, failed: true };
         let refused = "";
         try {
-          const seq = (await PAApi.get(source.url)).data;
+          const seq = (await PAApi.get(source.url, { signal: mine.leaving.signal })).data;
           if (seq && Array.isArray(seq.steps)) entry = { url: source.url, seq, steps: SeqProtocolCheck.resolveBeats(seq).steps };
           else refused = `The droid sent ${source.name} back with no steps.`;
         } catch (error) {
+          // Cancelled with the session it was read for: nothing failed.
+          if (mine !== phrases) return;
           console.error(`[seq] reading ${source.name}, a sequence inside this one:`, error);
           refused = `Could not read ${source.name}: ${PAApi.messageFor(error)}`;
         }
