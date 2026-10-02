@@ -152,6 +152,30 @@
     return { ids, durationMs: durationSec * 1000 };
   };
 
+  // A sequence inside this one, read from its own steps at the milliseconds
+  // they run at: how long it runs - to its end step, where the engine stops -
+  // and the Parts it names, each kind of step read as build() reads it. A
+  // Random Flutter names a set the droid picks from when it runs, not a Part.
+  // One level only: a sequence inside the phrase is not followed.
+  const phraseRuns = (steps) => {
+    const end = steps.findIndex((step) => step && step.type === "end");
+    return end === -1 ? steps : steps.slice(0, end);
+  };
+  const phraseLength = (steps) => {
+    const end = steps.find((step) => step && step.type === "end");
+    return end ? Number(end.t) || 0 : 0;
+  };
+  const phraseParts = (steps) => {
+    const ids = new Set();
+    phraseRuns(steps).forEach((step) => {
+      if (!step) return;
+      if (step.type === "body" && step.part) ids.add(step.part);
+      else if (step.type === "dome") (panelCommand(step.cmd) || lightCommand(step.cmd) || { ids: [] }).ids.forEach((id) => ids.add(id));
+      else if (step.type === "gesture" && window.SeqGesture) window.SeqGesture.members(step).forEach((id) => ids.add(id));
+    });
+    return [...ids];
+  };
+
   // ---------------------------------------------------------------------------
   // build() -- the whole drawing, as data. Pure: the sequence and the facts the
   // droid reported go in, lanes and items come out.
@@ -169,6 +193,9 @@
   //   gesture  a Gesture, on the lane of every Part it spreads across: the
   //            one step drawn once per lane, so the lanes' pieces are one
   //            block (as a light mode on a group of lights is)
+  //   phrase   a sequence inside this one, on the lane of every Part it
+  //            names, for as long as it runs: one linked block, as a Gesture
+  //            is one, and what it does is not drawn inside it
   //   tick     one command at its instant: every step draws at least this
   // `ghost` marks an item from a loop's second pass or later, which the
   // as-written reading draws faintly.
@@ -448,12 +475,34 @@
           });
           return;
         }
-        case "sequence":
-          // A sequence inside this one, where it starts. What it does is read
-          // when it runs; drawing it as one linked block comes with nesting
-          // on the timeline (#441).
-          add(rowLane("phrase", "Sequence"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+        case "sequence": {
+          // A sequence inside this one (ADR 0046): one linked block from
+          // where it starts, for as long as it runs, across the lanes of the
+          // Parts it names (#441). The droid splices its steps in when the
+          // routine runs (src/seq_store.cpp), so the block is the phrase as
+          // the droid holds it now, which the caller reads and hands over
+          // (`context.phrase`). What it does is not drawn inside it, and its
+          // Parts are not in the pose.
+          //
+          // It has no edges: its length is the phrase's own, so a drag only
+          // moves where it starts.
+          //
+          // One the caller has not read - it is not on this droid, or the
+          // read failed - is a mark on the Sequence row where it starts, and
+          // so is the row for one that names no Part, at its length.
+          const inner = def.ref && typeof context.phrase === "function" ? context.phrase(def.ref) : null;
+          if (!Array.isArray(inner)) {
+            add(rowLane("phrase", "Sequence"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+            return;
+          }
+          const block = { kind: "phrase", t0: t, t1: t + phraseLength(inner), label, ghost };
+          const ids = phraseParts(inner);
+          if (ids.length === 0) add(rowLane("phrase", "Sequence"), { ...block, ...drawnFrom(step) });
+          ids.forEach((id) => {
+            add(partLane(id), { ...block, ...drawnFrom(step) });
+          });
           return;
+        }
         case "end":
           return;
         default:
@@ -642,6 +691,9 @@
   // options:
   //   context   what the droid reported, as the Rehearsal reads it: outputs,
   //             config. Absent parts of it make the view say less, never guess.
+  //             Its `phrase(ref)` answers the steps of a sequence this one
+  //             names, at the milliseconds they run at, or null for one the
+  //             caller has not read: this view reads nothing off the droid.
   //   describe  step -> words, the editor's own preview (data/seq.js), so a
   //             block and a step card name a step alike
   //   onPose    the builder pressed to send the droid to the marker's instant:
