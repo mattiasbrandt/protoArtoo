@@ -184,3 +184,32 @@ dome forwards those numbers, so it is a change with reach outside the body.
   step in flight ends where it got to and goes limp, because estop aborts the
   sequence (Sequence Preemption) and releases every Output (ADR 0043); nothing
   resumes afterwards.
+
+## Amended 2026-10-02: a flutter ends closed and owes nothing (operator, #441 grill)
+
+**Supersedes the Decision's "ends open, and owes a later close in the same
+branch", the rejected "body flutter that goes out and back once,
+self-completing", and the Consequence "a flutter owing a later close".**
+
+A flutter, on the dome and on the body alike, swings for its length and **ends
+closed**. It owes no later close, and Protocol Check drops that rule for the
+dome's `:OF`, a Body Step flutter and a Gesture flutter together, so one word
+still means one thing across the droid.
+
+The rejection above rested on a premise that does not hold: that the dome's
+flutter ends open. The dome library this repo pins ends it closed. Reeltwo's
+`SeqPanelAllFlutter` (library 23.5.3, pinned by AstroPixelsPlus) swings each
+panel between 20% and 80% of its range for nine legs and finishes on the start
+pulse, the closed end. MarcDuino's `panel_wiggle`, Eebel's body `panel_spook`
+and the r2d2-astromech-simulator all end a flutter closed too. Keeping "ends
+open" would have made protoArtoo the only droid whose flutter leaves a panel
+standing.
+
+The swing itself is #453's, decided by the operator on 2026-09-30: between the
+Part's closed end and the step's how-far point, each leg at the Output's own
+Motion Profile time for that distance, generated legs paced by the Cadence Floor.
+This amendment changes only how it ends.
+
+Consequences: #453 builds the ending; the browser mirror and the Sequences
+editor drop the owed close after it lands (#441), never before, so the page never
+accepts what the droid still refuses.
