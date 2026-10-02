@@ -101,6 +101,8 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
         const char* payloadRaw = item["payload"] | "";
 
         RcMapEntry entry = {};
+        entry.threshold = kRcMapEntryKeep;
+        entry.quietS = kRcMapEntryKeep;
         if (!rcMapSourceFromString(sourceRaw, &entry.source)) {
             setError(result, "invalid source", nullptr);
             return;
@@ -141,17 +143,15 @@ void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapA
                     setError(result, "threshold out of range", &entry);
                     return;
                 }
-                entry.hasThreshold = true;
                 entry.threshold = (uint16_t)threshold;
             }
             JsonVariantConst quietVar = item["quietS"];
             if (!quietVar.isNull()) {
                 const uint32_t quietS = quietVar | 0xFFFFFFFFu;
-                if (quietS > RC_REACTION_QUIET_MAX_S) {
+                if (quietS < RC_REACTION_QUIET_MIN_S || quietS > RC_REACTION_QUIET_MAX_S) {
                     setError(result, "quiet period out of range", &entry);
                     return;
                 }
-                entry.hasQuietS = true;
                 entry.quietS = (uint16_t)quietS;
             }
         }

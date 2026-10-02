@@ -198,7 +198,10 @@ inline RcTriggerBinding disabledRcTriggerBinding() {
 inline uint16_t rcReactionThreshold(const RcTriggerBinding& binding) { return binding.min; }
 inline uint16_t rcReactionQuietS(const RcTriggerBinding& binding) { return binding.max; }
 
-// The longest quiet period a Reaction may store: an hour.
+// The quiet period a Reaction may store: a second to an hour. Never zero: that
+// would leave only the droid-wide floor, 300 ms, between two firings of one
+// Reaction, which is the car alarm ADR 0053 rejected.
+static constexpr uint16_t RC_REACTION_QUIET_MIN_S = 1;
 static constexpr uint16_t RC_REACTION_QUIET_MAX_S = 3600;
 // What a Reaction nobody set a quiet period on holds. A starting value, not a
 // measurement: long enough that a droid creeping across a threshold does not

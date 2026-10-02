@@ -440,7 +440,8 @@ static bool rcReactionBindingIsValid(const RcTriggerBinding& binding) {
     if (thresholdMax == 0 ? threshold != 0 : (threshold < 1 || threshold > thresholdMax)) {
         return false;
     }
-    if (rcReactionQuietS(binding) > RC_REACTION_QUIET_MAX_S) {
+    if (rcReactionQuietS(binding) < RC_REACTION_QUIET_MIN_S ||
+        rcReactionQuietS(binding) > RC_REACTION_QUIET_MAX_S) {
         return false;
     }
     return binding.center == 0 && binding.deadband == 0 && !binding.reverse;

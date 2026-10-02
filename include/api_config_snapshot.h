@@ -33,14 +33,17 @@ struct RcMapEntry {
     RobotActionId action;
     char payload[16];
     // A Reaction's two numbers (a droid-condition source; include/
-    // rc_action_types.h). One a request leaves out keeps what the stored
-    // Reaction on that condition holds, or takes its default, the way a radio
-    // binding keeps its calibration.
-    bool hasThreshold;
+    // rc_action_types.h). One a request leaves out is kRcMapEntryKeep: it
+    // keeps what the stored Reaction on that condition holds, or takes its
+    // default, the way a radio binding keeps its calibration. A sentinel
+    // rather than a flag each, because rcMapApply() holds fourteen of these on
+    // the HTTP server task's stack.
     uint16_t threshold;
-    bool hasQuietS;
     uint16_t quietS;
 };
+
+// Past every threshold and quiet period a Reaction accepts.
+static constexpr uint16_t kRcMapEntryKeep = 0xFFFF;
 
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap);
 void clearRcMapSlots(ConfigSnapshot* working);

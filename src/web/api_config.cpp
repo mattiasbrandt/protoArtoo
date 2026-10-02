@@ -178,17 +178,23 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
     if (rcBindingSourceIsDroidCondition(entry.source)) {
         uint16_t threshold = rcReactionThresholdDefault(entry.source);
         uint16_t quietS = RC_REACTION_QUIET_DEFAULT_S;
-        RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
-        const size_t slotCount = rcTriggerSlotsCopy(existing.system, slots, RC_TRIGGER_SLOT_COUNT);
-        for (size_t i = 0; i < slotCount; ++i) {
-            if (slots[i].source == entry.source && slots[i].channel == entry.channel) {
-                threshold = rcReactionThreshold(slots[i]);
-                quietS = rcReactionQuietS(slots[i]);
+        // By pointer, never a copy of the slots: this runs on the HTTP server
+        // task under two ConfigSnapshots already.
+        const SystemConfig& sys = existing.system;
+        const RcTriggerBinding* stored[RC_TRIGGER_SLOT_COUNT] = {
+            &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
+            &sys.rc_aux3,  &sys.rc_audio, &sys.rc_opmode, &sys.rc_free0,
+            &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
+        };
+        for (const RcTriggerBinding* slot : stored) {
+            if (slot->source == entry.source && slot->channel == entry.channel) {
+                threshold = rcReactionThreshold(*slot);
+                quietS = rcReactionQuietS(*slot);
                 break;
             }
         }
-        if (entry.hasThreshold) threshold = entry.threshold;
-        if (entry.hasQuietS) quietS = entry.quietS;
+        if (entry.threshold != kRcMapEntryKeep) threshold = entry.threshold;
+        if (entry.quietS != kRcMapEntryKeep) quietS = entry.quietS;
         *out = makeRcReactionBinding(entry.source, entry.channel, entry.action, entry.payload,
                                      threshold, quietS);
         return rcTriggerBindingIsValid(*out);
