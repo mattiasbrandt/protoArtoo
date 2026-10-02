@@ -4,10 +4,10 @@
 // The Dome Bearing in the browser (ADR 0051, #445): where the dome believes it
 // points, and the one marker every dome drawing shows for it.
 //
-// ONE ACCESSOR. Every drawing of the dome - the Dashboard's, the Parts
-// picture's, the Sequences picker's - and the Dome page's readout read the
+// ONE ACCESSOR. Every drawing of the dome that carries the marker - the
+// Dashboard's and the Parts picture's - and the Dome page's readout read the
 // bearing through read() here, so no two surfaces can disagree about where the
-// dome points. It comes from the status frame's `domeBearing` and
+// dome points. A drawing that adds the marker later reads it here too. It comes from the status frame's `domeBearing` and
 // `domeBearingDeg`, through the Live Reading.
 //
 // UNKNOWN IS ITS OWN ANSWER. read() is {believed: true, deg} or {believed:
