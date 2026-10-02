@@ -510,10 +510,11 @@
       if (!timed(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
       if (!timed(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
       if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
-      // An absent duration is stored as 0, and the firmware judges the 0, as
-      // it does a Body Step's: any other shape may say 0, and a flutter that
-      // says none is accepted - one that says a time is held to a flutter's
-      // bounds.
+      // An absent duration is stored as 0, and the firmware judges the 0.
+      // Any other shape may say 0, as on a Body Step. A flutter is where the
+      // two part: a Body Step's flutter with no length is refused, and a
+      // Gesture's is accepted - only one that says a time is held to a
+      // flutter's bounds.
       const flutterMs = step.flutterMs !== undefined && step.flutterMs !== null ? step.flutterMs : 0;
       if (step.shape !== "flutter") {
         if (flutterMs !== 0) return fail("flutterMs", "Only a flutter lasts a time");
