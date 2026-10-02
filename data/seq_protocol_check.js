@@ -656,19 +656,14 @@
         };
       }
 
-      if (typeof durationMs !== "number" || durationMs < 100 || durationMs > 120000) {
+      // 1..120000, and no rule ties it to the interval: the droid takes a loop
+      // that runs for less than one interval, which makes the one pass
+      // (protocolCheckBranch(), src/protocol_check.cpp).
+      if (typeof durationMs !== "number" || durationMs < 1 || durationMs > 120000) {
         return {
           ok: false,
           field: "durationMs",
-          error: "The loop must run for between 100 and 120000 milliseconds",
-        };
-      }
-
-      if (periodMs > durationMs) {
-        return {
-          ok: false,
-          field: "periodMs",
-          error: "The repeat interval can't be longer than the loop's total run time",
+          error: "The loop must run for between 1 and 120000 milliseconds",
         };
       }
 
