@@ -68,9 +68,9 @@
       "partition_fs_bytes": 10354688,
       "fs_ceiling_bytes": 10354688,
       "fs_budget_bytes": 1048576,
-      "fs_baseline_measured_at": "0b55e00f",
-      "fs_baseline_bytes": 397312,
-      "fs_budget_rationale": "Measured 397,312 B at fs_baseline_measured_at -- byte for byte what artoo_esp32 measures, because one data/ image is still built for both, which is the whole reason #382 exists: this board has 9,957,376 B free and carries the 4 MB board's filesystem. Ceiling is the whole 10,354,688 B partition. Budget at 1,048,576 B is deliberately loose and guards a different thing from artoo_esp32's: with 9.5 MB spare there is no scarcity here, so this number exists to catch an accident -- a build that images something enormous -- not to ration. It is expected to rise when each file declares which environments carry it and the default asset set's photographs land here and not on the legacy set (ADR 0065)."
+      "fs_baseline_measured_at": "bce927eb",
+      "fs_baseline_bytes": 655360,
+      "fs_budget_rationale": "Measured 655,360 B in 160 written 4,096 B blocks at fs_baseline_measured_at: 83 staged files, 512,387 B of content, the default asset set staged with tools/stage_fsdata.py and priced with tools/fs_price.py --order size, the order tools/littlefs_image.py writes the image in. This is the board's own image and not artoo_esp32's: each board carries its own asset set (ADR 0065, data/asset-sets/), and the product photographs are in the default set here and not in the legacy one. The 397,312 B this row carried before was measured at 0b55e00f, when one data/ image was still built for both boards. Ceiling is the whole 10,354,688 B partition. Budget at 1,048,576 B is deliberately loose and guards a different thing from artoo_esp32's: with 9.5 MB spare there is no scarcity here, so this number exists to catch an accident -- a build that images something enormous -- not to ration. At 160 blocks the image is 96 blocks under the 256 the budget allows."
     }
   }
 }
