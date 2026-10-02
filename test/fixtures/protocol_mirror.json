@@ -1,0 +1,129 @@
+{
+  "what": "One corpus for src/protocol_check.cpp and data/seq_protocol_check.js. expect is the verdict both must give. make check-protocol-mirror runs the browser side; test_protocol_mirror runs the firmware side.",
+  "cases": [
+    {
+      "name": "dome-and-end",
+      "expect": true,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR1",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "loop-shorter-than-its-period",
+      "expect": true,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR2",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "loop", "body": 1, "periodMs": 1000, "durationMs": 1},
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "nested-loop",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR3",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "loop", "body": 3, "periodMs": 500, "durationMs": 2000},
+          {"t": 0, "type": "loop", "body": 1, "periodMs": 200, "durationMs": 400},
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"},
+          {"t": 3000, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "close-half-outside-a-group",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR4",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"}
+        ],
+        "closeSteps": [
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "close-half-in-a-group",
+      "expect": true,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR5",
+        "suppressMs": 8000,
+        "toggleGroup": "pies",
+        "steps": [
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"}
+        ],
+        "closeSteps": [
+          {"t": 0, "type": "dome", "cmd": "DL:LOGIC:NORMAL"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "logic-text-newline",
+      "expect": true,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR6",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "dome", "cmd": "DT:FLD:DEFAULT:5:0:Hi%0A"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "logic-text-mixed-case-hex",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR7",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "dome", "cmd": "DT:FLD:DEFAULT:5:0:Hi%aC"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    },
+    {
+      "name": "logic-text-carriage-return",
+      "expect": false,
+      "seq": {
+        "format": 1,
+        "name": "DM:MIRROR8",
+        "suppressMs": 8000,
+        "toggleGroup": "none",
+        "steps": [
+          {"t": 0, "type": "dome", "cmd": "DT:FLD:DEFAULT:5:0:%0D"},
+          {"t": 100, "type": "end"}
+        ]
+      }
+    }
+  ]
+}
