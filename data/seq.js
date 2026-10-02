@@ -1692,8 +1692,13 @@
     // Picking a beat (ADR 0060): the bars and their beats, under where the
     // block starts, for a routine with a tempo. A step a loop repeats is
     // timed from its pass and gets none, as on its card.
+    // Only the beats the block can be moved to are offered: those inside
+    // the limits a move of it keeps (the timeline's pickedRange()).
+    const range = sessionTimeline?.pickedRange();
+    const reachable = (index) => Boolean(range)
+      && range.from <= SeqProtocolCheck.tempoBeatMs(tempoOf(), index) && SeqProtocolCheck.tempoBeatMs(tempoOf(), index) <= range.to;
     const beatRow = tempoOf() && window.SeqTempo && !SeqProtocolCheck.loopBodySteps(stageSteps()).has(at)
-      ? settingRow("Beat", beatBarsHtml(step, stageReachMs(), "", (index) => `data-picked="beat" data-value="${index}"`))
+      ? settingRow("Beat", beatBarsHtml(step, stageReachMs(), "", (index) => `data-picked="beat" data-value="${index}"`, reachable))
       : "";
     const move = moveOf(step);
     const jumps = move?.settles && firstMoveJumps(step, move)
@@ -1971,9 +1976,11 @@
     } else if (field === "runs") {
       sessionTimeline.sizeStanding(at, Number(raw));
     } else if (field === "beat") {
-      // The beat picked: the block starts there, and one entry of its own
-      // (setStepBeat()). The beat it is already on changes nothing.
-      setStepBeat(at, { beat: parseInt(raw, 10) });
+      // The beat picked: the whole block starts there, moved as Starts at
+      // moves it - within its limits, back in time order, one entry - and
+      // placed on the beat (movePickedTo()'s `landed`).
+      const beat = parseInt(raw, 10);
+      if (Number.isInteger(beat) && tempoOf()) sessionTimeline.movePickedTo(SeqProtocolCheck.tempoBeatMs(tempoOf(), beat), true);
     } else if (field === "spanBeats") {
       // The length in beats, within what a span holds; emptied, the length
       // is its milliseconds again.
@@ -2197,7 +2204,7 @@
   // An edit tried on a copy first: `change(list)` is made to the half on the
   // stage in a copy of the whole sequence, the copy's steps are put in the
   // order the routine's would be, and Protocol Check reads the copy - both
-  // halves, and the sequences the opening half names. Answers {list,
+  // halves, and the sequences either half names. Answers {list,
   // refused}: the copy's stage list, and Protocol Check's verdict where the
   // edit would turn a sequence the droid accepts into one it refuses, else
   // null. An edit to a sequence the droid already refuses is not held to
@@ -3336,8 +3343,8 @@
     try {
       for (;;) {
         if (mine !== phrases || !editorState.current) return;
-        // Either half can name one - a file written by hand, never a drop
-        // here - and the droid splices its phrases into both (seqStorePrepare(),
+        // Either half can name one, dropped here or written by hand, and the
+        // droid splices its phrases into both (seqStorePrepare(),
         // src/seq_store.cpp).
         const ref = [...(editorState.current.steps || []), ...(editorState.current.closeSteps || [])]
           .map((step) => (step?.type === "sequence" ? step.ref : null))
@@ -3402,16 +3409,17 @@
   // its beats as one joined bar, the first beat weighted; the bars sit side
   // by side and wrap. The one markup, for the inspector and the step list's
   // card. `reachMs` is how far the routine it is in reaches, `cls` the class
-  // a beat's button takes and `attrs(index)` what makes it the caller's to
-  // hear.
-  const beatBarsHtml = (step, reachMs, cls, attrs) =>
+  // a beat's button takes, `attrs(index)` what makes it the caller's to
+  // hear, and `offered(index)` whether the step can be put there at all - a
+  // beat it cannot reach is drawn and cannot be pressed.
+  const beatBarsHtml = (step, reachMs, cls, attrs, offered = () => true) =>
     `<div class="seq-bars">${window.SeqTempo.bars(tempoOf(), Math.max(reachMs, Number(step.t) || 0))
       .map((bar) => {
         const name = bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`;
         const beats = bar.beats
           .map(
             (b) =>
-              `<button type="button" class="${cls}${b.strong ? " strong" : ""}" ${attrs(b.index)} aria-pressed="${step.beat === b.index ? "true" : "false"}" aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
+              `<button type="button" class="${cls}${b.strong ? " strong" : ""}" ${attrs(b.index)} aria-pressed="${step.beat === b.index ? "true" : "false"}"${offered(b.index) ? "" : " disabled"} aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
           )
           .join("");
         return `<span class="seq-bar"><span class="seq-bar-num" aria-hidden="true">${bar.bar === 0 ? "-" : bar.bar}</span><span class="seg seg-sm seq-beats" role="group" aria-label="${name}">${beats}</span></span>`;

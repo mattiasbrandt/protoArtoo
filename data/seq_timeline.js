@@ -767,13 +767,17 @@
   // closer than a line can be told from the next - a fast tempo over a long
   // routine, at the scale the lanes are never drawn below - only the bars'
   // first beats are drawn.
+  // shownBeats() is that choice, and the beats a drag can land on are the
+  // same ones: a landing is always on a line the builder can see.
   const BEAT_MIN_PX = 6;
-  const barsRowHtml = (beats, windowMs) => {
-    if (beats.length === 0) return "";
+  const shownBeats = (beats) => {
     const gapMs = beats.length > 1 ? beats[1].t - beats[0].t : Infinity;
     const every = (gapMs / 1000) * PX_PER_SECOND >= BEAT_MIN_PX;
-    const marks = beats
-      .filter((beat) => every || beat.strong)
+    return beats.filter((beat) => every || beat.strong);
+  };
+  const barsRowHtml = (beats, windowMs) => {
+    if (beats.length === 0) return "";
+    const marks = shownBeats(beats)
       .map((beat) =>
         `<span class="tl-beat${beat.strong ? " is-bar" : ""}" style="left:${pct(beat.t, windowMs)}">${beat.strong && beat.bar > 0 ? beat.bar : ""}</span>`)
       .join("");
@@ -836,7 +840,8 @@
   //             knows which they are.
   //
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
-  // pick(indices), movePickedTo(ms, landed), removePicked(), aim(point, isEnd),
+  // pick(indices), movePickedTo(ms, landed), pickedRange(), removePicked(),
+  // aim(point, isEnd),
   // beatAt(ms), standing(index), sizeStanding(index, ms), say(answer),
   // destroy()}.
   // ---------------------------------------------------------------------------
@@ -1198,8 +1203,25 @@
       });
     };
 
-    // The beat whose millisecond is exactly `ms`, as its index, or null.
-    const beatAt = (ms) => beats.find((beat) => beat.t === ms)?.index ?? null;
+    // The stored tempo, where it is one the droid would accept, or null.
+    const tempoNow = () => {
+      const tempo = seqNow().tempo;
+      return tempo && window.SeqProtocolCheck?.validateTempo(tempo).ok ? tempo : null;
+    };
+
+    // The beat whose millisecond is exactly `ms`, as its index, or null. Any
+    // beat the droid counts, drawn or not, on screen or past it: a beat
+    // picked in the inspector need not be one a drag can land on. Beat k
+    // resolves to phase + round(k * 60000 / bpm), so only the beats either
+    // side of the nearest can.
+    const beatAt = (ms) => {
+      const check = window.SeqProtocolCheck;
+      const tempo = tempoNow();
+      if (!tempo || !Number.isFinite(ms)) return null;
+      const near = Math.round((ms - (Number(tempo.phase) || 0)) / check.tempoSpanMs(tempo, 1));
+      return [near - 1, near, near + 1].find((index) =>
+        index >= 0 && index <= check.SPAN_BEATS[1] && check.tempoBeatMs(tempo, index) === ms) ?? null;
+    };
 
     // What landed on a beat is placed on it (ADR 0060), for a plan already
     // written at where it landed:
@@ -1218,7 +1240,7 @@
     // editor says landed on one.
     const onBeats = (plan) => {
       const check = window.SeqProtocolCheck;
-      if (beats.length === 0 || !check?.spansBeats) return;
+      if (!tempoNow() || !check?.spansBeats) return;
       const steps = seqNow().steps;
       const repeated = check.loopBodySteps(steps);
       plan.writes.forEach((w) => {
@@ -1252,7 +1274,7 @@
       const moving = new Set(plan.writes.map((w) => w.step));
       const tempo = seqNow().tempo;
       const targets = [
-        ...beats.map((beat) => ({ t: beat.t, label: window.SeqTempo.beatWords(tempo, beat.index), beat: beat.index })),
+        ...shownBeats(beats).map((beat) => ({ t: beat.t, label: window.SeqTempo.beatWords(tempo, beat.index), beat: beat.index })),
         { t: 0, label: "" },
       ];
       [{ name: "Loop", items: loopItems(model, true) }, ...model.parts, ...model.rows].forEach((lane) =>
@@ -1443,8 +1465,9 @@
     // Typed rather than dragged: the picked blocks start at `ms`, moved as a
     // drag of their bodies moves them, as far as their limits allow, and it is
     // one edit. A typed time is a millisecond (ADR 0058); `landed` says the
-    // time is where something dropped on the lanes landed (aim()), and then a
-    // block that starts on a beat is placed on it, as a dragged one is.
+    // time is a beat - where something dropped on the lanes landed (aim()),
+    // or the beat picked in the inspector - and then a block that starts on
+    // a beat is placed on it, as a dragged one is.
     const movePickedTo = (ms, landed = false) => {
       const blocks = picked();
       if (drag || blocks.length === 0 || !Number.isFinite(ms)) return;
@@ -1453,8 +1476,19 @@
       const by = Math.max(lo, Math.min(hi, Math.round(ms) - Math.min(...blocks.map((block) => block.t0))));
       const before = edit.begin();
       apply(plan, by);
-      if (landed && by !== 0) onBeats(plan);
+      // At by 0 too: a block already at that millisecond is put on its beat.
+      if (landed) onBeats(plan);
       edit.commit(before);
+    };
+
+    // Where the picked blocks can start, as movePickedTo() would take them:
+    // {from, to} in ms, or null with nothing picked.
+    const pickedRange = () => {
+      const blocks = picked();
+      if (blocks.length === 0) return null;
+      const [lo, hi] = reach(planFor(null, null));
+      const t0 = Math.min(...blocks.map((block) => block.t0));
+      return { from: t0 + lo, to: t0 + hi };
     };
 
     // A Part standing open is one block made of two steps. By the step that
@@ -1637,6 +1671,7 @@
         redraw();
       },
       movePickedTo,
+      pickedRange,
       removePicked: removeSelected,
       aim,
       beatAt,
