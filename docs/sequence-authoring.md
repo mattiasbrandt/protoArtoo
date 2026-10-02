@@ -114,8 +114,9 @@ full turn). The Part's bearing is read when the step runs, so a corrected
 `bearing_deg` reaches every saved step.
 
 It is a different promise from `domeRotate`: a duration always completes, and a
-bearing may not. With the bearing unknown (after a boot, an estop or Sleep
-Mode, until **Front is here**), the dome not calibrated or the Dome ESC off, the
+turn to a target may not. While where the dome points is unknown (after a boot,
+an estop or Sleep Mode, until **Front is here**), the dome not calibrated or the
+Dome ESC off, the
 step does not move the dome; the run reports `bearing-unknown`,
 `dome-not-calibrated` or `component-disabled` and carries on. It saves either
 way. A sequence's end stops the dome, so leave the end at least half the

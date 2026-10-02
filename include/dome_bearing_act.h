@@ -73,7 +73,7 @@ inline const char* domeBearingRefusalWords(DomeBearingRefusal refusal) {
         case DOME_BEARING_NOT_CALIBRATED:
             return "Time the dome's full turn first.";
         case DOME_BEARING_UNKNOWN:
-            return "Bearing unknown: turn the dome to front and press Front is here.";
+            return "Where the dome points is unknown. Turn it to front and press Front is here.";
         case DOME_BEARING_OK:
         default:
             return nullptr;

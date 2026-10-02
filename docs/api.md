@@ -492,13 +492,14 @@ nothing.
 
 Go home: turn the dome the short way to where it believes front is, at the
 speed its full turn was timed at, and stop on time (#445). The end-of-show act,
-not the recovery one - with the bearing unknown it does not move the dome.
+not the recovery one - while where the dome points is unknown it does not move
+the dome.
 
 - Body: none
 - Success: `200` `{"ok":true}` - queued; the turn's progress is `domeBearingDeg`
   on the status stream
 - Errors: as `POST /api/dome/front`, and
-- `409` `Bearing unknown: turn the dome to front and press Front is here.`
+- `409` `Where the dome points is unknown. Turn it to front and press Front is here.`
 
 ### POST /api/dome/cmd
 
