@@ -2936,6 +2936,10 @@
           refused = `Could not read ${source.name}: ${PAApi.messageFor(error)}`;
         }
         if (mine !== phrases) return;
+        // A list answered while this was being read, and the reference
+        // resolves somewhere else now: this answer is not kept, and the loop
+        // reads it from there.
+        if (phraseSource(ref)?.url !== source.url) continue;
         mine.read.set(ref, entry);
         if (!entry.failed) sessionTimeline?.refresh(rehearsalContext());
         else sayOnStage(refused, "error");
