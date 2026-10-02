@@ -748,17 +748,30 @@
     ];
   };
 
-  const partLeftOpen = (events) => {
+  // Where each body Part is left by the last step that moves it.
+  const lastBodyShapes = (events) => {
     const lastShape = new Map();
     events.forEach((event) => {
       if (event.def.type === "body" && event.def.part) {
         lastShape.set(event.def.part, { shape: event.def.shape || "open", step: event.step });
       }
     });
+    return lastShape;
+  };
+
+  // `run` is the sequence the events were read from. Where it is a toggle's
+  // opening half - in an interrupt group, with a close half - a Part that
+  // half leaves open is meant to stay open, and one its close half leaves
+  // closed is closed for the builder there: nothing is said of it. A Part
+  // the close half does not close is still said.
+  const partLeftOpen = (events, run) => {
+    const closeHalf = run?.toggleGroup && run.toggleGroup !== "none" && Array.isArray(run.closeSteps)
+      ? lastBodyShapes(expand(run.closeSteps)) : new Map();
+    const closedLater = (part) => closeHalf.has(part) && closeHalf.get(part).shape !== "open";
     // Only an open leaves it open: a flutter ends closed (ADR 0049, amended
     // 2026-10-02).
-    return [...lastShape.entries()]
-      .filter(([, last]) => last.shape === "open")
+    return [...lastBodyShapes(events).entries()]
+      .filter(([part, last]) => last.shape === "open" && !closedLater(part))
       .map(([part, last]) =>
         finding(
           "note",
@@ -1015,7 +1028,7 @@
       ...switchedOff(events, context),
       ...domeUnavailable(events, context),
       ...bodyOverlap(events, context),
-      ...partLeftOpen(events),
+      ...partLeftOpen(events, run),
       ...flutterCut(events, steps),
       ...audioOutlivesShow(events),
       ...gestureDome(events),

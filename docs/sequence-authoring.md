@@ -272,7 +272,7 @@ and a fix:
 | `dispatch-spacing` | warning | dome commands less than 200 ms apart, or at the same moment | the dome's eight-entry command queue dropped a close on 2026-06-18 |
 | `retarget-before-arrival` | warning | the same open or close sent again to a panel or Part with nothing in between | `DM:HELLO`'s five identical opens made one |
 | `quiet-in-sequence` | warning | a `$s` step | it turned idle chatter off until reboot on 2026-06-17 |
-| `part-left-open` | note | a body Part whose last step is not a close | the body undoes nothing (ADR 0049) |
+| `part-left-open` | note | a body Part whose last step is an open; not said on a toggle's opening half of a Part its close half closes | the body undoes nothing (ADR 0049) |
 | `gesture-dome` | warning | a dome Gesture the dome performs only in part, or not at all | a dome Gesture is the dome's `$` command (ADR 0046) |
 | `dome-how-far` | warning | a part-way move of PP3 or PP5 | our dome firmware has no part-way move for them |
 | `tempo-confidence` | warning | a tempo that is only a guess (confidence under 0.5) | Cantina's ~200 BPM read as 127.8 (ADR 0058) |
