@@ -42,8 +42,9 @@ outputs are what today's generator makes of today's catalog; it says nothing
 about whether the catalog is right. The dome `position:` words are the standing
 example: for as long as they contradicted the documented bearing convention
 this check pinned the contradiction into the committed output quite happily,
-and it took an operator decision rather than a checker to settle it (#445). It
-still compares no word with a bearing.
+and it took a decision rather than a checker to settle it (operator, 2026-09-30
+(convention) and 2026-10-02 (drawing), #445). It still compares no word with a
+bearing.
 
 The bearing table in include/droid_parts.h (#438, and #445's Part-targeted dome
 turn) needs no check of its own here: it is part of the header, and the byte
