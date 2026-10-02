@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa
+ * Source digest: sha256 4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -62,7 +62,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa",
+    "sourceSha256": "4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453",
     "designs": [
       {
         "id": "mk4",
@@ -234,8 +234,8 @@
           "PP1",
           "Dome pie 1"
         ],
-        "position": "rear-right",
-        "bearingDeg": 150,
+        "position": "front",
+        "bearingDeg": 179.5,
         "control": "dome-link"
       },
       {
@@ -249,8 +249,8 @@
           "PP2",
           "Dome pie 2"
         ],
-        "position": "right",
-        "bearingDeg": 90,
+        "position": "front-left",
+        "bearingDeg": 119.5,
         "control": "dome-link"
       },
       {
@@ -264,8 +264,8 @@
           "PP3",
           "Dome pie 3"
         ],
-        "position": "front-right",
-        "bearingDeg": 30,
+        "position": "rear-left",
+        "bearingDeg": 59.5,
         "control": "dome-link"
       },
       {
@@ -279,8 +279,8 @@
           "PP4",
           "Dome pie 4"
         ],
-        "position": "front-left",
-        "bearingDeg": 330,
+        "position": "rear",
+        "bearingDeg": 359.5,
         "control": "dome-link"
       },
       {
@@ -294,8 +294,8 @@
           "PP5",
           "Dome pie 5"
         ],
-        "position": "left",
-        "bearingDeg": 270,
+        "position": "rear-right",
+        "bearingDeg": 299.5,
         "control": "dome-link"
       },
       {
@@ -309,8 +309,8 @@
           "PP6",
           "Dome pie 6"
         ],
-        "position": "rear-left",
-        "bearingDeg": 210,
+        "position": "front-right",
+        "bearingDeg": 239.5,
         "control": "dome-link"
       },
       {
@@ -324,8 +324,8 @@
           "P1",
           "Dome side panel 1"
         ],
-        "position": "rear-right",
-        "bearingDeg": 142.5,
+        "position": "front",
+        "bearingDeg": 162.5,
         "control": "dome-link"
       },
       {
@@ -339,8 +339,8 @@
           "P2",
           "Dome side panel 2"
         ],
-        "position": "rear-right",
-        "bearingDeg": 128,
+        "position": "front-left",
+        "bearingDeg": 144.5,
         "control": "dome-link"
       },
       {
@@ -354,8 +354,8 @@
           "P3",
           "Dome side panel 3"
         ],
-        "position": "right",
-        "bearingDeg": 114,
+        "position": "front-left",
+        "bearingDeg": 126.5,
         "control": "dome-link"
       },
       {
@@ -369,8 +369,8 @@
           "P4",
           "Dome side panel 4"
         ],
-        "position": "right",
-        "bearingDeg": 94,
+        "position": "left",
+        "bearingDeg": 100,
         "control": "dome-link"
       },
       {
@@ -384,8 +384,8 @@
           "P5",
           "Dome side panel 5"
         ],
-        "position": "right",
-        "bearingDeg": 75.5,
+        "position": "left",
+        "bearingDeg": 78,
         "control": "none"
       },
       {
@@ -399,8 +399,8 @@
           "P6",
           "Dome side panel 6"
         ],
-        "position": "front-right",
-        "bearingDeg": 62.5,
+        "position": "left",
+        "bearingDeg": 69,
         "control": "none"
       },
       {
@@ -414,8 +414,8 @@
           "P7",
           "Dome side panel 7"
         ],
-        "position": "front-right",
-        "bearingDeg": 45,
+        "position": "rear-left",
+        "bearingDeg": 47,
         "control": "dome-link"
       },
       {
@@ -429,8 +429,8 @@
           "P8",
           "Dome side panel 8"
         ],
-        "position": "front",
-        "bearingDeg": 24,
+        "position": "rear",
+        "bearingDeg": 19,
         "control": "none"
       },
       {
@@ -444,8 +444,8 @@
           "P9",
           "Dome side panel 9"
         ],
-        "position": "rear-left",
-        "bearingDeg": 300,
+        "position": "rear-right",
+        "bearingDeg": 324,
         "control": "none"
       },
       {
@@ -459,8 +459,8 @@
           "P10",
           "Dome side panel 10"
         ],
-        "position": "left",
-        "bearingDeg": 242,
+        "position": "right",
+        "bearingDeg": 279,
         "control": "dome-link"
       },
       {
@@ -474,8 +474,8 @@
           "P11",
           "Dome side panel 11"
         ],
-        "position": "rear-left",
-        "bearingDeg": 217,
+        "position": "right",
+        "bearingDeg": 251,
         "control": "dome-link"
       },
       {
@@ -489,8 +489,8 @@
           "P12",
           "Dome side panel 12"
         ],
-        "position": "rear",
-        "bearingDeg": 204,
+        "position": "front-right",
+        "bearingDeg": 235,
         "control": "none"
       },
       {
@@ -504,8 +504,8 @@
           "P13",
           "Dome side panel 13"
         ],
-        "position": "rear",
-        "bearingDeg": 194,
+        "position": "front-right",
+        "bearingDeg": 219,
         "control": "dome-link"
       },
       {
@@ -519,8 +519,8 @@
           "P14",
           "Dome side panel 14"
         ],
-        "position": "rear",
-        "bearingDeg": 184,
+        "position": "front",
+        "bearingDeg": 202,
         "control": "none"
       },
       {
@@ -533,8 +533,8 @@
           "FLD",
           "Front display"
         ],
-        "position": "rear",
-        "bearingDeg": 204,
+        "position": "front-right",
+        "bearingDeg": 235,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel12"
@@ -549,8 +549,8 @@
           "RLD",
           "Rear display"
         ],
-        "position": "rear-left",
-        "bearingDeg": 300,
+        "position": "rear-right",
+        "bearingDeg": 324,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel9"
@@ -564,8 +564,8 @@
         "aliases": [
           "MP"
         ],
-        "position": "right",
-        "bearingDeg": 75.5,
+        "position": "left",
+        "bearingDeg": 73.5,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel5"
@@ -579,8 +579,8 @@
         "aliases": [
           "FPSI"
         ],
-        "position": "rear",
-        "bearingDeg": 184,
+        "position": "front",
+        "bearingDeg": 202,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel14"
@@ -594,8 +594,8 @@
         "aliases": [
           "RPSI"
         ],
-        "position": "front",
-        "bearingDeg": 24,
+        "position": "rear",
+        "bearingDeg": 19,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel8"
@@ -607,8 +607,8 @@
         "name": "Small upper panel",
         "half": "dome",
         "aliases": [],
-        "position": "front-right",
-        "bearingDeg": 62.5,
+        "position": "left",
+        "bearingDeg": 69,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel6"
@@ -624,8 +624,8 @@
           "HP1-1",
           "Holoprojector 1 pan"
         ],
-        "position": "rear",
-        "bearingDeg": 165,
+        "position": "front",
+        "bearingDeg": 181,
         "control": "none",
         "unit": 1,
         "axis": "pan"
@@ -641,8 +641,8 @@
           "HP1-2",
           "Holoprojector 1 tilt"
         ],
-        "position": "rear",
-        "bearingDeg": 165,
+        "position": "front",
+        "bearingDeg": 181,
         "control": "none",
         "unit": 1,
         "axis": "tilt"
@@ -658,8 +658,8 @@
           "HP2-1",
           "Holoprojector 2 pan"
         ],
-        "position": "front",
-        "bearingDeg": 350,
+        "position": "rear",
+        "bearingDeg": 0,
         "control": "none",
         "unit": 2,
         "axis": "pan"
@@ -675,8 +675,8 @@
           "HP2-2",
           "Holoprojector 2 tilt"
         ],
-        "position": "front",
-        "bearingDeg": 350,
+        "position": "rear",
+        "bearingDeg": 0,
         "control": "none",
         "unit": 2,
         "axis": "tilt"
@@ -692,8 +692,8 @@
           "HP3-1",
           "Holoprojector 3 pan"
         ],
-        "position": "front-right",
-        "bearingDeg": 38,
+        "position": "rear-left",
+        "bearingDeg": 50,
         "control": "none",
         "unit": 3,
         "axis": "pan"
@@ -709,8 +709,8 @@
           "HP3-2",
           "Holoprojector 3 tilt"
         ],
-        "position": "front-right",
-        "bearingDeg": 38,
+        "position": "rear-left",
+        "bearingDeg": 50,
         "control": "none",
         "unit": 3,
         "axis": "tilt"
@@ -722,7 +722,7 @@
         "name": "Dome button 1",
         "half": "dome",
         "aliases": [],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 8,
         "control": null
       },
@@ -733,7 +733,7 @@
         "name": "Dome button 2",
         "half": "dome",
         "aliases": [],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 20,
         "control": null
       },

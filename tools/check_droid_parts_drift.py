@@ -39,11 +39,16 @@ the generator rather than about staleness:
 
 This checker guards STALENESS, never TRUTH. A green run says the committed
 outputs are what today's generator makes of today's catalog; it says nothing
-about whether the catalog is right. The bearing convention recorded in
-docs/droid-parts.yaml's header is the standing example: the position words and
-the documented bearing convention contradict each other, this check pins that
-contradiction into the committed output quite happily, and settling it needs a
-drawing rather than a checker.
+about whether the catalog is right. The dome `position:` words are the standing
+example: for as long as they contradicted the documented bearing convention
+this check pinned the contradiction into the committed output quite happily,
+and it took a decision rather than a checker to settle it (operator, 2026-09-30
+(convention) and 2026-10-02 (drawing), #445). It still compares no word with a
+bearing.
+
+The bearing table in include/droid_parts.h (#438, and #445's Part-targeted dome
+turn) needs no check of its own here: it is part of the header, and the byte
+comparison pins every line of that.
 
 Deliberately NOT merged with the three checks D2 owns. They follow the same
 report-never-rewrite convention and should read the same way, but they are

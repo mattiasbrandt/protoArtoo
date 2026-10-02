@@ -4,15 +4,23 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa
+// Source digest: sha256 4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453
 //
-// The Droid Parts Catalog's id vocabulary, and only that. A Part is
-// identity; an Output Address is only wiring, so there is no parts table
-// in firmware beyond these ids - which Output drives which Part is
-// answered by the Servo Output rows the builder's own droid stores
-// (#301). Names, shorthand, aliases and position live in the browser
-// module this generator writes beside this file; a rename there can
-// never produce a new id here.
+// The Droid Parts Catalog's id vocabulary, and where each Part sits. A
+// Part is identity; an Output Address is only wiring, so nothing here
+// says which Output drives which Part - that is answered by the Servo
+// Output rows the builder's own droid stores (#301). Names, shorthand,
+// aliases and the position word live in the browser module this
+// generator writes beside this file; a rename there can never produce
+// a new id here.
+//
+// ONE fact about a Part beyond its id is here: its bearing, in the
+// table further down. It is in firmware because where a Part sits is
+// resolved when a sequence RUNS, never when it is saved - a Gesture
+// orders its Parts by bearing (#438), and a Part-targeted dome turn
+// will turn until that Part faces front (#445) - so a bearing the
+// catalog corrects is corrected in every saved sequence that names
+// the Part.
 //
 // EVERY Part the catalog declares is here, whatever drives it. A Part
 // being KNOWN and a Part being DRIVEABLE HERE are separate facts: a
@@ -346,11 +354,30 @@ inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DE
 // Where each Part sits, and the sets a Gesture spreads across (ADR 0046, #438)
 //
 // Bearings are degrees clockwise viewed from above, in TENTHS, by the
-// catalog's convention: 0 is dead astern and 180 dead ahead (operator
-// decision, 2026-09-30 on #438). The convention is held in ONE constant,
+// catalog's convention: 0 is dead astern and 180 dead ahead. The dome
+// bearings are taken from the vendored dome drawing (operator,
+// 2026-09-30 (convention) and 2026-10-02 (drawing), #445). Seen from
+// above, facing the way the droid faces, 900 is its left and 2700 its
+// right. The convention is held in ONE constant,
 // DROID_BEARING_DEAD_AHEAD_TENTHS, so "from the front" is measured from it
-// and nowhere else. -1 is a Part the catalog gives no bearing: every body
-// Part today, placed by a position word until one is measured.
+// and nowhere else. DROID_BEARING_NONE (-1) is a Part the catalog gives no
+// bearing: every body Part today, placed by a position word until one is
+// measured. It is never 0, which is a real bearing - dead astern.
+//
+// CHECK VALUE, so a sign error is caught by reading rather than by driving:
+// panel14 (P14, the panel the Front PSI sits on) reads 2020 - 22 degrees to
+// the droid's right of dead ahead - and panel8 (P8, the Rear PSI's) reads
+// 190 - 161 degrees to the droid's left of dead ahead. A table with the
+// Front PSI's panel near 0 has the convention backwards.
+//
+// THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is
+// measured from the droid's own front, so front is 0 there and 1800 here
+// (CONTEXT.md "Dome Bearing"). The two meet in one place, the
+// Part-targeted dome turn (#445).
+//
+// One reader today: a Gesture orders its Parts by these
+// (include/sequence_gesture.h, #438). #445's Part-targeted dome turn will
+// be the second, resolving its Part's bearing here when it runs.
 //
 // A set is the Parts one Gesture token means, on one half of the droid,
 // in emission order. Their order round the droid is the Gesture's to work
@@ -360,38 +387,38 @@ constexpr int16_t DROID_BEARING_NONE = -1;
 constexpr int16_t DROID_BEARING_DEAD_AHEAD_TENTHS = 1800;
 
 inline constexpr int16_t DROID_PART_BEARING_TENTHS[DROID_PART_COUNT] = {
-    1500,  // pie1
-    900,  // pie2
-    300,  // pie3
-    3300,  // pie4
-    2700,  // pie5
-    2100,  // pie6
-    1425,  // panel1
-    1280,  // panel2
-    1140,  // panel3
-    940,  // panel4
-    755,  // panel5
-    625,  // panel6
-    450,  // panel7
-    240,  // panel8
-    3000,  // panel9
-    2420,  // panel10
-    2170,  // panel11
-    2040,  // panel12
-    1940,  // panel13
-    1840,  // panel14
-    2040,  // logicFront
-    3000,  // logicRear
-    755,  // magicPanel
-    1840,  // psiFront
-    240,  // psiRear
-    625,  // upperPanel
-    1650,  // hp1Pan
-    1650,  // hp1Tilt
-    3500,  // hp2Pan
-    3500,  // hp2Tilt
-    380,  // hp3Pan
-    380,  // hp3Tilt
+    1795,  // pie1
+    1195,  // pie2
+    595,  // pie3
+    3595,  // pie4
+    2995,  // pie5
+    2395,  // pie6
+    1625,  // panel1
+    1445,  // panel2
+    1265,  // panel3
+    1000,  // panel4
+    780,  // panel5
+    690,  // panel6
+    470,  // panel7
+    190,  // panel8
+    3240,  // panel9
+    2790,  // panel10
+    2510,  // panel11
+    2350,  // panel12
+    2190,  // panel13
+    2020,  // panel14
+    2350,  // logicFront
+    3240,  // logicRear
+    735,  // magicPanel
+    2020,  // psiFront
+    190,  // psiRear
+    690,  // upperPanel
+    1810,  // hp1Pan
+    1810,  // hp1Tilt
+    0,  // hp2Pan
+    0,  // hp2Tilt
+    500,  // hp3Pan
+    500,  // hp3Tilt
     80,  // domeBtn1
     200,  // domeBtn2
     DROID_BEARING_NONE,  // bodyPanel1

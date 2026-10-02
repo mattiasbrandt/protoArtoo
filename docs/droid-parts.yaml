@@ -9,8 +9,9 @@
 #     python3 tools/generate_droid_parts_catalog.py
 #
 # It rewrites two committed outputs: include/droid_parts.h, the id vocabulary
-# firmware resolves a Part against, and data/droid_parts.js, the names,
-# shorthand, aliases and position every operator surface labels a Part with.
+# firmware resolves a Part against and the bearing each Part sits at, and
+# data/droid_parts.js, the names, shorthand, aliases and position every
+# operator surface labels a Part with.
 # Editing this file without regenerating them leaves the firmware's vocabulary
 # gate and every Part name on screen stale against the catalog they came from
 # — a Part a builder can see and not wire, or wire and not see (#301, #356).
@@ -60,9 +61,9 @@
 #   `other_slots` escape hatch at the foot of this file sits outside every
 #   design too.
 #   Adding a design is one block here and no edit to any part row — the
-#   operation ADR 0047 exists to make cheap. Bearings are community geometry
-#   rather than design geometry (one Printed Droid drawing for the character),
-#   so no design carries coordinates of its own.
+#   operation ADR 0047 exists to make cheap. Bearings are one drawing's
+#   geometry for the character rather than design geometry (the vendored dome
+#   map, see `bearing_deg` below), so no design carries coordinates of its own.
 #
 # Design entry fields:
 #   id:         stable design id — what a stored Droid Build refers to.
@@ -150,41 +151,42 @@
 #               no geometry from those files lives in this repository).
 #   aliases:    community/plain-English names that must match on import/search.
 #   bearing_deg: degrees clockwise viewed from above, 0 = dead astern,
-#               180 = dead ahead (Printed Droid drawing convention). Dome
-#               entries carry real bearings; body entries carry position
-#               words only until measured on our droid.
+#               180 = dead ahead (Printed Droid drawing convention). Seen from
+#               above, facing the way the droid faces, 90 is its left and 270
+#               its right. Dome entries carry bearings; body entries carry
+#               position words only until measured on our droid.
 #
-#               UNRESOLVED, and visible in the rows below: the convention on
-#               the line above and the `position:` words on the same rows do
-#               not agree, and the drawing that settles it is not in this
-#               repository. Of the 27 dome rows carrying both a bearing and a
-#               front-or-rear position word, reading 0 as dead ASTERN puts 25
-#               of them on the wrong half of the droid, while reading 0 as dead
-#               AHEAD puts 2 there — and those 2 are one row and the light that
-#               inherits from it: `panel9` at 300 degrees, written `rear-left`.
-#               So the position words were almost all written as if 0 were dead
-#               ahead, and `panel9` is the lone outlier under that reading
-#               (measured 2026-09-11, #358; A1c measured the dome_panels subset
-#               alone and got 22 rows, 21 against 1, which says the same thing).
+#               DECIDED (operator, 2026-09-30 (convention) and 2026-10-02
+#               (drawing), #445): the convention above stands, and the dome
+#               bearings are taken from the vendored dome drawing
+#               (data/dome_panel_model.js), which is right where the numbers
+#               this file used to carry disagreed with it.
 #
-#               The NAMES go the other way and side with the documented
-#               convention: `panel8` at 24 degrees is the Rear PSI and
-#               `panel14` at 184 degrees is the Front PSI, and the vendored
-#               dome map agrees with the names (data/dome_panel_model.js labels
-#               P8 RPSI, P14 FPSI, P12 FLDs, P9 RLD). That is why a light
-#               generated below reads `psiRear` at `position: front`: a light
-#               inherits its host panel's geometry, so the contradiction is
-#               carried into the generated output rather than introduced by it.
-#               Do not "fix" either side from this file — the drawing decides.
-#
-#               Nothing consumes `position` yet. C4a (#352) and C4b (#372) are
-#               the first slices that would place a Part by it, and this must
-#               be settled before either draws anything. The drift check
-#               (tools/check_droid_parts_drift.py) will pin an output whose
-#               position words contradict their names quite happily: it guards
-#               staleness, never truth, so a green drift check is not agreement
-#               that the geometry is right.
+#               HOW THEY WERE MEASURED, 2026-10-02 (#445). The drawing is
+#               viewed from above with the droid's front at the bottom, centred
+#               on (240, 240). A bearing is the angle of a point about that
+#               centre, clockwise on the page from straight up. A pie or a ring
+#               panel is the midpoint of its outer arc; a holoprojector is the
+#               centre of its mark. Rounded to the half degree.
+#               Two things the drawing does not settle:
+#                 - `panel6`, `magicPanel` and `panel5` are drawn as ONE fixed
+#                   piece ("P6/MP/P5", 67 to 80 degrees). They are that piece
+#                   split in thirds, in the order it names them clockwise, and
+#                   each carries its third's midpoint: 69, 73.5 and 78. They
+#                   are not measured separately.
+#                 - `domeBtn1` and `domeBtn2` are not on the drawing. Their
+#                   bearings are the ones this file carried before and were
+#                   never measured from it.
 #   position:   compass-ish word — easier to find on a real droid than a number.
+#               Left and right are the droid's own. On a dome row the word is
+#               derived from the row's `bearing_deg`, never chosen by hand:
+#               eight 45-degree sectors centred on dead ahead, the droid's
+#               right, dead astern and its left (dead ahead plus or minus 22.5
+#               is `front`, the next 45 clockwise `front-right`, and so on
+#               round). Whoever corrects a bearing re-derives its word. The
+#               drift check (tools/check_droid_parts_drift.py) guards
+#               staleness, never truth: it does not compare a word with a
+#               bearing.
 #   control:    how protoArtoo can reach the part TODAY:
 #               dome-link  = AstroPixelsPlus serial (:OPnn/:CLnn panel numbers)
 #               body-ledc  = local LEDC PWM channel on the Artoo PCB
@@ -352,30 +354,30 @@ designs:
     seeds: []
 
 dome_pies:
-  - { id: pie1, cad_name: TBD, shorthand: PP1, aliases: ["PP1", "Dome pie 1"], bearing_deg: 150, position: rear-right,  control: dome-link, dome_link_panel: TBD }
-  - { id: pie2, cad_name: TBD, shorthand: PP2, aliases: ["PP2", "Dome pie 2"], bearing_deg: 90,  position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: pie3, cad_name: TBD, shorthand: PP3, aliases: ["PP3", "Dome pie 3"], bearing_deg: 30,  position: front-right, control: dome-link, dome_link_panel: TBD,
+  - { id: pie1, cad_name: TBD, shorthand: PP1, aliases: ["PP1", "Dome pie 1"], bearing_deg: 179.5, position: front,       control: dome-link, dome_link_panel: TBD }
+  - { id: pie2, cad_name: TBD, shorthand: PP2, aliases: ["PP2", "Dome pie 2"], bearing_deg: 119.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
+  - { id: pie3, cad_name: TBD, shorthand: PP3, aliases: ["PP3", "Dome pie 3"], bearing_deg: 59.5,  position: rear-left,   control: dome-link, dome_link_panel: TBD,
       note: usually carries holoprojector 3 }
-  - { id: pie4, cad_name: TBD, shorthand: PP4, aliases: ["PP4", "Dome pie 4"], bearing_deg: 330, position: front-left,  control: dome-link, dome_link_panel: TBD,
+  - { id: pie4, cad_name: TBD, shorthand: PP4, aliases: ["PP4", "Dome pie 4"], bearing_deg: 359.5, position: rear,        control: dome-link, dome_link_panel: TBD,
       note: usually the periscope }
-  - { id: pie5, cad_name: TBD, shorthand: PP5, aliases: ["PP5", "Dome pie 5"], bearing_deg: 270, position: left,        control: dome-link, dome_link_panel: TBD }
-  - { id: pie6, cad_name: TBD, shorthand: PP6, aliases: ["PP6", "Dome pie 6"], bearing_deg: 210, position: rear-left,   control: dome-link, dome_link_panel: TBD }
+  - { id: pie5, cad_name: TBD, shorthand: PP5, aliases: ["PP5", "Dome pie 5"], bearing_deg: 299.5, position: rear-right,  control: dome-link, dome_link_panel: TBD }
+  - { id: pie6, cad_name: TBD, shorthand: PP6, aliases: ["PP6", "Dome pie 6"], bearing_deg: 239.5, position: front-right, control: dome-link, dome_link_panel: TBD }
 
 dome_panels:
-  - { id: panel1,  cad_name: TBD, shorthand: P1,  aliases: ["P1",  "Dome side panel 1"],  bearing_deg: 142.5, position: rear-right,  control: dome-link, dome_link_panel: TBD }
-  - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 128,   position: rear-right,  control: dome-link, dome_link_panel: TBD }
-  - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 114,   position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 94,    position: right,       control: dome-link, dome_link_panel: TBD }
-  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 75.5,  position: right,       control: none }
-  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 62.5,  position: front-right, control: none }
-  - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 45,    position: front-right, control: dome-link, dome_link_panel: TBD }
-  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 24,    position: front,       control: none }
-  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 300,   position: rear-left,   control: none }
-  - { id: panel10, cad_name: TBD, shorthand: P10, aliases: ["P10", "Dome side panel 10"], bearing_deg: 242,   position: left,        control: dome-link, dome_link_panel: TBD }
-  - { id: panel11, cad_name: TBD, shorthand: P11, aliases: ["P11", "Dome side panel 11"], bearing_deg: 217,   position: rear-left,   control: dome-link, dome_link_panel: TBD }
-  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 204,   position: rear,        control: none }
-  - { id: panel13, cad_name: TBD, shorthand: P13, aliases: ["P13", "Dome side panel 13"], bearing_deg: 194,   position: rear,        control: dome-link, dome_link_panel: TBD }
-  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 184,   position: rear,        control: none }
+  - { id: panel1,  cad_name: TBD, shorthand: P1,  aliases: ["P1",  "Dome side panel 1"],  bearing_deg: 162.5, position: front,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 144.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
+  - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 126.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
+  - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 100,   position: left,        control: dome-link, dome_link_panel: TBD }
+  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 78,    position: left,        control: none }
+  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 69,    position: left,        control: none }
+  - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 47,    position: rear-left,   control: dome-link, dome_link_panel: TBD }
+  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 19,    position: rear,        control: none }
+  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 324,   position: rear-right,  control: none }
+  - { id: panel10, cad_name: TBD, shorthand: P10, aliases: ["P10", "Dome side panel 10"], bearing_deg: 279,   position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel11, cad_name: TBD, shorthand: P11, aliases: ["P11", "Dome side panel 11"], bearing_deg: 251,   position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 235,   position: front-right, control: none }
+  - { id: panel13, cad_name: TBD, shorthand: P13, aliases: ["P13", "Dome side panel 13"], bearing_deg: 219,   position: front-right, control: dome-link, dome_link_panel: TBD }
+  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 202,   position: front,       control: none }
 
 dome_lights:              # what a lit panel carries — a part, not a footnote
   # Each of these is the lit device on the panel it sits on, and each is a part
@@ -392,7 +394,11 @@ dome_lights:              # what a lit panel carries — a part, not a footnote
   # already answers to: FLD, RLD, FPSI and RPSI are DL:/DT: targets
   # (src/protocol_check.cpp), and MP is how the vendored dome map labels the
   # Magic Panel (data/dome_panel_model.js).
-  - { id: magicPanel, label: Magic Panel,          aliases: ["MP"],                   kind: light, control: none, sits_on: panel5 }
+  # The one light with a bearing of its own: the drawing puts P6, the Magic
+  # Panel and P5 in one piece, split here in thirds, and the Magic Panel is the
+  # middle third rather than where its host panel's third sits (see
+  # `bearing_deg` in the header). Its position word is still its host's.
+  - { id: magicPanel, label: Magic Panel,          aliases: ["MP"], bearing_deg: 73.5, kind: light, control: none, sits_on: panel5 }
   # The one lit panel no reference gives a device name to. "Small upper panel"
   # is this catalog's own wording for it, kept rather than replaced by a name
   # no builder would recognise.
@@ -403,17 +409,19 @@ dome_lights:              # what a lit panel carries — a part, not a footnote
   - { id: psiFront,   label: Front PSI,            aliases: ["FPSI"],                 kind: light, control: none, sits_on: panel14 }
 
 holoprojectors:
-  - { id: hp1Pan,  cad_name: TBD, shorthand: HP1-1, aliases: ["HP1-1", "Holoprojector 1 pan"],  unit: 1, axis: pan,  bearing_deg: 165, position: rear,  control: none }
-  - { id: hp1Tilt, cad_name: TBD, shorthand: HP1-2, aliases: ["HP1-2", "Holoprojector 1 tilt"], unit: 1, axis: tilt, bearing_deg: 165, position: rear,  control: none }
-  - { id: hp2Pan,  cad_name: TBD, shorthand: HP2-1, aliases: ["HP2-1", "Holoprojector 2 pan"],  unit: 2, axis: pan,  bearing_deg: 350, position: front, control: none }
-  - { id: hp2Tilt, cad_name: TBD, shorthand: HP2-2, aliases: ["HP2-2", "Holoprojector 2 tilt"], unit: 2, axis: tilt, bearing_deg: 350, position: front, control: none }
-  - { id: hp3Pan,  cad_name: TBD, shorthand: HP3-1, aliases: ["HP3-1", "Holoprojector 3 pan"],  unit: 3, axis: pan,  bearing_deg: 38,  position: front-right, control: none,
+  - { id: hp1Pan,  cad_name: TBD, shorthand: HP1-1, aliases: ["HP1-1", "Holoprojector 1 pan"],  unit: 1, axis: pan,  bearing_deg: 181, position: front,     control: none }
+  - { id: hp1Tilt, cad_name: TBD, shorthand: HP1-2, aliases: ["HP1-2", "Holoprojector 1 tilt"], unit: 1, axis: tilt, bearing_deg: 181, position: front,     control: none }
+  - { id: hp2Pan,  cad_name: TBD, shorthand: HP2-1, aliases: ["HP2-1", "Holoprojector 2 pan"],  unit: 2, axis: pan,  bearing_deg: 0,   position: rear,      control: none }
+  - { id: hp2Tilt, cad_name: TBD, shorthand: HP2-2, aliases: ["HP2-2", "Holoprojector 2 tilt"], unit: 2, axis: tilt, bearing_deg: 0,   position: rear,      control: none }
+  - { id: hp3Pan,  cad_name: TBD, shorthand: HP3-1, aliases: ["HP3-1", "Holoprojector 3 pan"],  unit: 3, axis: pan,  bearing_deg: 50,  position: rear-left, control: none,
       note: sits inside pie panel PP3 }
-  - { id: hp3Tilt, cad_name: TBD, shorthand: HP3-2, aliases: ["HP3-2", "Holoprojector 3 tilt"], unit: 3, axis: tilt, bearing_deg: 38,  position: front-right, control: none }
+  - { id: hp3Tilt, cad_name: TBD, shorthand: HP3-2, aliases: ["HP3-2", "Holoprojector 3 tilt"], unit: 3, axis: tilt, bearing_deg: 50,  position: rear-left, control: none }
 
 dome_fixtures:            # orientation references — not servos
-  - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: front }
-  - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: front }
+  # Not on the vendored dome drawing, so these two bearings were not measured
+  # from it: they are the ones this file carried before (#445).
+  - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: rear }
+  - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: rear }
 
 # The operator's verified mapping, 2026-09-18 (#409): each row carries
 # MrBaddeley's name for the part, and Printed Droid's where it has one, as

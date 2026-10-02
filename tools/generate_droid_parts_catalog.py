@@ -8,7 +8,8 @@ apart, and what keeps either from depending on a filesystem that can go missing
 (#301, #356).
 
     docs/droid-parts.yaml
-       |-> include/droid_parts.h   the id vocabulary firmware resolves against
+       |-> include/droid_parts.h   the id vocabulary firmware resolves against,
+       |                           and the bearing each Part sits at
        '-> data/droid_parts.js     names, shorthand, aliases, position
 
 Every Part the catalog declares reaches both outputs. A Part is identity, so the
@@ -28,8 +29,8 @@ tools/check_action_registry_drift.py - a purely derived list generates, and then
 has nothing left to check (#301). What can still go stale is the committed
 artefact, and guarding that is #358's.
 
-Five things this generator refuses, each because the alternative is an entry
-nothing can resolve:
+Six things this generator refuses, the first five because the alternative is an
+entry nothing can resolve:
 
   - a `control:` token include/droid_part_control.inc does not declare. The
     firmware declares the control paths; the catalog does not get to invent one.
@@ -49,6 +50,10 @@ nothing can resolve:
   - a `sits_on:` naming no declared part, or one that sits on something itself.
     A light sits where its panel sits and inherits the geometry from it, so an
     unresolvable host would place the light nowhere at all.
+  - a bearing on `panel14` or `panel8` that CHECK_VALUE_BEARINGS does not
+    carry. The firmware header spells those two out as the values a reader
+    checks its bearing table against (#445), and that sentence is written from
+    the dict, so a corrected bearing is corrected there in the same edit.
 
 The first two refusals keep no copy of the firmware's lists: both are read out
 of the firmware headers at generation time, because a list written down twice is
@@ -65,6 +70,7 @@ import hashlib
 import json
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -105,7 +111,8 @@ REGENERATION_NOTE = f"""\
 After editing {CATALOG_NAME}, run this generator. It rewrites two
 committed outputs:
 
-  {FIRMWARE_NAME:<24} the id vocabulary firmware resolves a Part against
+  {FIRMWARE_NAME:<24} the id vocabulary firmware resolves a Part against,
+  {'':<24} and the bearing each Part sits at
   {BROWSER_NAME:<24} the names, shorthand, aliases and position every
   {'':<24} operator surface labels a Part with
 
@@ -241,6 +248,12 @@ DESIGN_HALVES = ("dome", "body")
 # MrBaddeley calls MK4's sparse body "Basic"; it was stored as `simple`).
 VARIANT_KEYS = frozenset(("id", "label", "seeds", "legacy_ids"))
 OTHER_SLOT_KEYS = frozenset(("count", "id_prefix", "label_prefix", "control"))
+
+# The two bearings the generated firmware header spells out as its check value
+# (#445), in degrees as the catalog writes them. ONE source: the sentence is
+# built from this dict (check_value_lines()) and load_catalog() refuses a
+# catalog that disagrees with it.
+CHECK_VALUE_BEARINGS = {"panel14": 202, "panel8": 19}
 
 # A catalog id is an unquoted identifier, the same shape
 # servoOutputPartIdIsValid() accepts on a Servo Output row.
@@ -521,8 +534,8 @@ def read_other_slots(doc, control_paths, declared_ids, problems):
 def resolve_hosts(parts, problems):
     """Settle every `sits_on:` link, and place a part where its host stands.
 
-    A light sits where its panel sits - the Magic Panel is at P5 because it IS
-    what P5 carries - so the geometry is declared once, on the panel, and taken
+    A light sits where its panel sits - the Rear PSI is at P8 because it IS
+    what P8 carries - so the geometry is declared once, on the panel, and taken
     from there rather than copied into the light's own row where the two would
     drift the first time a bearing is corrected.
 
@@ -990,6 +1003,18 @@ def load_catalog(path=None, control_path=None, id_limit_path=None):
 
     sets = read_sets(doc, parts, problems)
 
+    # The firmware header spells these bearings out as the values a reader
+    # checks its table against (check_value_lines()), so the catalog is held to
+    # them here, in the same pass as every other refusal.
+    bearings = {part["id"]: part["bearing_deg"] for part in parts}
+    for part_id, said in CHECK_VALUE_BEARINGS.items():
+        if bearings.get(part_id) != said:
+            problems.append(
+                f"{part_id}: its bearing is {bearings.get(part_id)!r}, and "
+                f"CHECK_VALUE_BEARINGS says {said}; the firmware header's "
+                "check-value sentence is written from that dict, so correct it there"
+            )
+
     if problems:
         raise CatalogError(problems)
 
@@ -1034,7 +1059,7 @@ def provenance(catalog, name, what):
 
 
 def generate_firmware_header(catalog, output_path=None):
-    """Write include/droid_parts.h - the id vocabulary and nothing else."""
+    """Write include/droid_parts.h - the id vocabulary, and where each Part sits."""
     output_path = Path(output_path) if output_path else FIRMWARE_OUTPUT_PATH
     parts = catalog["parts"]
     ids = [part["id"] for part in parts]
@@ -1044,13 +1069,21 @@ def generate_firmware_header(catalog, output_path=None):
         provenance(
             catalog,
             FIRMWARE_NAME,
-            "The Droid Parts Catalog's id vocabulary, and only that. A Part is\n"
-            "// identity; an Output Address is only wiring, so there is no parts table\n"
-            "// in firmware beyond these ids - which Output drives which Part is\n"
-            "// answered by the Servo Output rows the builder's own droid stores\n"
-            "// (#301). Names, shorthand, aliases and position live in the browser\n"
-            "// module this generator writes beside this file; a rename there can\n"
-            "// never produce a new id here.\n"
+            "The Droid Parts Catalog's id vocabulary, and where each Part sits. A\n"
+            "// Part is identity; an Output Address is only wiring, so nothing here\n"
+            "// says which Output drives which Part - that is answered by the Servo\n"
+            "// Output rows the builder's own droid stores (#301). Names, shorthand,\n"
+            "// aliases and the position word live in the browser module this\n"
+            "// generator writes beside this file; a rename there can never produce\n"
+            "// a new id here.\n"
+            "//\n"
+            "// ONE fact about a Part beyond its id is here: its bearing, in the\n"
+            "// table further down. It is in firmware because where a Part sits is\n"
+            "// resolved when a sequence RUNS, never when it is saved - a Gesture\n"
+            "// orders its Parts by bearing (#438), and a Part-targeted dome turn\n"
+            "// will turn until that Part faces front (#445) - so a bearing the\n"
+            "// catalog corrects is corrected in every saved sequence that names\n"
+            "// the Part.\n"
             "//\n"
             "// EVERY Part the catalog declares is here, whatever drives it. A Part\n"
             "// being KNOWN and a Part being DRIVEABLE HERE are separate facts: a\n"
@@ -1143,6 +1176,38 @@ def generate_firmware_header(catalog, output_path=None):
     return ids
 
 
+def check_value_lines():
+    """The header's check-value sentence, built from CHECK_VALUE_BEARINGS.
+
+    Every figure in it - the tenths a reader should find in the table and how
+    far that is from dead ahead, on which side - comes out of the one dict
+    load_catalog() holds the catalog to, so editing the dict rewrites the prose
+    and the two cannot disagree.
+    """
+
+    def figure(part_id):
+        bearing = CHECK_VALUE_BEARINGS[part_id]
+        # Clockwise from dead ahead, folded to -180..180: positive is the
+        # droid's right, because 180 is dead ahead and 270 its right.
+        off = (bearing - 180 + 180) % 360 - 180
+        if off == 0:
+            where = "dead ahead"
+        elif off == -180:
+            where = "dead astern"
+        else:
+            side = "right" if off > 0 else "left"
+            where = f"{abs(off):g} degrees to the droid's {side} of dead ahead"
+        return f"reads {int(round(bearing * 10))} - {where}"
+
+    sentence = (
+        "CHECK VALUE, so a sign error is caught by reading rather than by "
+        f"driving: panel14 (P14, the panel the Front PSI sits on) {figure('panel14')} "
+        f"- and panel8 (P8, the Rear PSI's) {figure('panel8')}. A table with the "
+        "Front PSI's panel near 0 has the convention backwards."
+    )
+    return [f"// {line}" for line in textwrap.wrap(sentence, width=74)]
+
+
 def geometry_header_lines(catalog):
     """Where each Part sits, and the sets a Gesture spreads across (#438).
 
@@ -1158,11 +1223,26 @@ def geometry_header_lines(catalog):
         "// Where each Part sits, and the sets a Gesture spreads across (ADR 0046, #438)",
         "//",
         "// Bearings are degrees clockwise viewed from above, in TENTHS, by the",
-        "// catalog's convention: 0 is dead astern and 180 dead ahead (operator",
-        "// decision, 2026-09-30 on #438). The convention is held in ONE constant,",
+        "// catalog's convention: 0 is dead astern and 180 dead ahead. The dome",
+        "// bearings are taken from the vendored dome drawing (operator,",
+        "// 2026-09-30 (convention) and 2026-10-02 (drawing), #445). Seen from",
+        "// above, facing the way the droid faces, 900 is its left and 2700 its",
+        "// right. The convention is held in ONE constant,",
         "// DROID_BEARING_DEAD_AHEAD_TENTHS, so \"from the front\" is measured from it",
-        "// and nowhere else. -1 is a Part the catalog gives no bearing: every body",
-        "// Part today, placed by a position word until one is measured.",
+        "// and nowhere else. DROID_BEARING_NONE (-1) is a Part the catalog gives no",
+        "// bearing: every body Part today, placed by a position word until one is",
+        "// measured. It is never 0, which is a real bearing - dead astern.",
+        "//",
+        *check_value_lines(),
+        "//",
+        "// THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is",
+        "// measured from the droid's own front, so front is 0 there and 1800 here",
+        "// (CONTEXT.md \"Dome Bearing\"). The two meet in one place, the",
+        "// Part-targeted dome turn (#445).",
+        "//",
+        "// One reader today: a Gesture orders its Parts by these",
+        "// (include/sequence_gesture.h, #438). #445's Part-targeted dome turn will",
+        "// be the second, resolving its Part's bearing here when it runs.",
         "//",
         "// A set is the Parts one Gesture token means, on one half of the droid,",
         "// in emission order. Their order round the droid is the Gesture's to work",
