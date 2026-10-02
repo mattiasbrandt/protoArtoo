@@ -234,10 +234,13 @@
       return rows.get(key);
     };
     // The Gesture whose move is being drawn, as its step's index, or null
-    // while what is drawn was written as a step of its own.
+    // while what is drawn was written as a step of its own. Only an item no
+    // written step draws says so: one a builder wrote - a hand-written open
+    // that a Gesture's move closes - stays where its own step is, and is still
+    // somewhere a dragged Gesture can land.
     let source = null;
     const add = (lane, item) => {
-      if (item.of === undefined && source !== null) item.of = source;
+      if (!item.steps && item.of === undefined && source !== null) item.of = source;
       lane.items.push(item);
       return item;
     };
