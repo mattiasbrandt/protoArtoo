@@ -286,6 +286,9 @@
   // Cached learned sequences (fetched on demand)
   let cachedLearnedSequences = null;
 
+  // Sequence names are matched whatever their case, as this page always has.
+  const sameSequenceName = (a, b) => String(a || '').toUpperCase() === String(b || '').toUpperCase();
+
   const normalizeMarcduinoSequencePayload = (payload) => {
     const raw = String(payload || "").trim().toUpperCase();
     if (/^\d{2}$/.test(raw)) return raw;
@@ -325,10 +328,48 @@
     const sel = String(selectedPayload || '').trim();
     const options = [...FACTORY_DOME_SEQUENCES, ...(cachedLearnedSequences || [])]
       .map((entry) => ({ value: entry.payload, label: entry.label, title: entry.description }));
-    if (sel && !options.some((option) => option.value === sel)) {
-      options.push({ value: sel, label: `${sel} (missing)`, title: 'This sequence is not on the droid.' });
+    const known = options.find((option) => sameSequenceName(option.value, sel));
+    if (sel && !known) {
+      // Kept as its own pill either way, so the binding is never rewritten.
+      // Called missing only once the droid has listed its sequences.
+      const missing = cachedLearnedSequences !== null;
+      options.push({
+        value: sel,
+        label: missing ? `${sel} (missing)` : sel,
+        title: missing ? 'This sequence is not on the droid.' : '',
+      });
     }
-    return payloadPillsHtml('Dome Sequence', options, sel);
+    return payloadPillsHtml('Dome Sequence', options, known ? known.value : sel);
+  };
+
+  // A pill picks its payload: the hidden field beside it takes the value.
+  const wirePayloadPills = (root) => {
+    root.querySelectorAll('[data-payload-pick]').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const group = pill.closest('.rc-editor-cond');
+        const field = group?.querySelector('[data-field="payload"]');
+        if (!field || field.value === pill.dataset.payloadPick) return;
+        field.value = pill.dataset.payloadPick;
+        group.querySelectorAll('[data-payload-pick]').forEach((other) => {
+          const on = other === pill;
+          other.classList.toggle('active', on);
+          other.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+        markEditorDirty();
+      });
+    });
+  };
+
+  // The droid's sequences arrived while the editor is open: only the Dome
+  // Sequence pills are drawn again, around whatever is picked. The editor is
+  // never re-rendered for it - that would throw away a draft.
+  const refreshDomeSequencePills = () => {
+    const group = rcEditorContent?.querySelector('[data-cond="dome_seq"]');
+    if (!group) return;
+    const picked = group.querySelector('[data-field="payload"]')?.value || '';
+    group.innerHTML = `<span class="rc-action-label-head">Dome Sequence</span>
+        ${domeSequencePills(picked)}`;
+    wirePayloadPills(group);
   };
 
   // The droid's own sequences, asked for once. Left null when the droid does
@@ -382,7 +423,7 @@
     { source: 'wamps', channel: 2, label: 'Right wheel current', threshold: WHEEL_AMPS_THRESHOLD },
   ];
   const DROID_SOURCES = new Set(DROID_CONDITIONS.map((condition) => condition.source));
-  const REACTION_QUIET = { max: 3600, fallback: 5 };
+  const REACTION_QUIET = { min: 1, max: 3600, fallback: 5 };
   // What a Reaction may not do: the estop, and the two that change how the
   // droid drives (robotActionValidForReaction(), src/rc_action_types.cpp).
   const REACTION_BLOCKED_TOKENS = new Set(['estop', 'op_mode', 'speed_preset_cycle']);
@@ -568,7 +609,7 @@
   const domeSequenceMissing = (payload) => {
     if (!payload || cachedLearnedSequences === null) return false;
     return ![...FACTORY_DOME_SEQUENCES, ...cachedLearnedSequences]
-      .some((sequence) => sequence.payload === payload);
+      .some((sequence) => sameSequenceName(sequence.payload, payload));
   };
 
   // What a binding does, as the table names it: the action, and what it was
@@ -625,7 +666,6 @@
   const REACTION_REASON = {
     'no-feedback': {
       text: 'No wheel readings in this firmware',
-      note: 'This firmware\'s drive reports no wheel readings.',
       route: { href: '#firmware', label: 'Open Firmware' },
     },
     'no-current': {
@@ -634,11 +674,17 @@
     },
     'feedback-stale': { text: 'Waiting for the drive' },
     'no-play-state': { text: 'Waiting for the sound module' },
+    // The gate: the droid can sense the condition and is holding every
+    // Reaction back. Never Armed, never green, while one of these is on.
+    estop: { text: 'Held: estop is on' },
+    sleep: { text: 'Held: asleep' },
+    'radio-lost': { text: 'Held: radio lost' },
   };
 
-  // A Reaction's state. Armed is a Health Signal and lights green. Not armed
-  // is an Availability Family, told apart by treatment and never by hue:
-  // waiting keeps an unlit lamp, and a settled no has none.
+  // A Reaction's state. Armed is a Health Signal and lights green; held by the
+  // estop, Sleep or a lost radio, its lamp is unlit. Not armed is an
+  // Availability Family, told apart by treatment and never by hue: waiting
+  // keeps an unlit lamp, and a settled no has none.
   const reactionState = (channelKey) => {
     const status = reactionStatusFor(channelKey);
     if (!status) return null;
@@ -650,9 +696,10 @@
     }
     const reason = REACTION_REASON[status.reason] || { text: 'Not armed' };
     const waiting = status.state === 'waiting';
+    const settled = status.state === 'not-in-this-build';
     return {
-      lamp: waiting ? 'indicator' : '',
-      family: waiting ? 'availability-waiting' : 'availability-settled-no',
+      lamp: settled ? '' : 'indicator',
+      family: waiting ? 'availability-waiting' : (settled ? 'availability-settled-no' : ''),
       text: `${reason.text}${held}`,
       note: reason.note || '',
       route: reason.route || null,
@@ -963,14 +1010,14 @@
       const bound = Boolean(mapEntryAction(entry));
       const state = bound ? reactionState(selectedChannel) : null;
       const route = state?.route
-        ? ` <a class="setup-link" href="${state.route.href}">${window.PAUtils.escapeHtml(state.route.label)}.</a>`
+        ? `<a class="setup-link" href="${state.route.href}">${window.PAUtils.escapeHtml(state.route.label)}.</a>`
         : '';
       rcLivePreviewContent.innerHTML = `
         <h4 class="rc-preview-title">${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
         <div class="rc-preview-stack">
           <div>Action: <strong>${bound ? window.PAUtils.escapeHtml(bindingLabel(entry)) : 'Not mapped'}</strong></div>
           ${bound ? `<div>State: ${reactionStateHtml(selectedChannel)}</div>` : ''}
-          ${state?.note ? `<p class="note">${window.PAUtils.escapeHtml(state.note)}${route}</p>` : ''}
+          ${state?.note || route ? `<p class="note">${window.PAUtils.escapeHtml(state.note)}${state.note && route ? ' ' : ''}${route}</p>` : ''}
           ${state?.refused > 0 ? '<p class="note">No body part opens while the droid drives.</p>' : ''}
         </div>`;
       return;
@@ -1150,7 +1197,7 @@
         ${threshold ? numberField('threshold', threshold.label,
           (entry.threshold ?? threshold.fallback) / threshold.scale, threshold.unit,
           threshold.min / threshold.scale, 1 / threshold.scale, threshold.max / threshold.scale) : ''}
-        ${numberField('quietS', 'Quiet after firing', entry.quietS ?? REACTION_QUIET.fallback, 's', 0, 1, REACTION_QUIET.max)}
+        ${numberField('quietS', 'Quiet after firing', entry.quietS ?? REACTION_QUIET.fallback, 's', REACTION_QUIET.min, 1, REACTION_QUIET.max)}
       </div>`
       : `<p class="hint">Source <b>${window.PAUtils.escapeHtml(sourceLabel(source))}</b> &middot; channel <b>${window.PAUtils.escapeHtml(String(channel))}</b></p>`;
 
@@ -1256,46 +1303,7 @@
       }
     };
 
-    // A pill picks its payload: the hidden field beside it takes the value.
-    rcEditorContent.querySelectorAll('[data-payload-pick]').forEach((pill) => {
-      pill.addEventListener('click', () => {
-        const group = pill.closest('.rc-editor-cond');
-        const field = group?.querySelector('[data-field="payload"]');
-        if (!field || field.value === pill.dataset.payloadPick) return;
-        field.value = pill.dataset.payloadPick;
-        group.querySelectorAll('[data-payload-pick]').forEach((other) => {
-          const on = other === pill;
-          other.classList.toggle('active', on);
-          other.setAttribute('aria-checked', on ? 'true' : 'false');
-        });
-        markEditorDirty();
-      });
-    });
-
-    const runActionTest = async (token) => {
-      if (actionPickerInFlightToken) return;
-      const channelAtStart = selectedChannel;
-      actionPickerInFlightToken = token;
-      actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
-      syncActionTestUi();
-      try {
-        const result = await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
-        if (selectedChannel !== channelAtStart) return;
-        actionPickerFeedback = { token, ...actionTestFeedbackForOutcome(result?.data?.outcome) };
-      } catch (error) {
-        if (selectedChannel !== channelAtStart) return;
-        // A refusal the droid named in its own vocabulary comes back as a
-        // sentence and, where there is one, the route to the next move
-        // (data/web_api.js). Everything else is the ordinary transport message.
-        const refusal = window.PAApi.refusalFor(error);
-        actionPickerFeedback = refusal
-          ? { token, kind: 'error', text: refusal.text, route: refusal.route }
-          : { token, kind: 'error', text: window.PAApi.messageFor(error) };
-      } finally {
-        if (actionPickerInFlightToken === token) actionPickerInFlightToken = null;
-        if (selectedChannel === channelAtStart) syncActionTestUi();
-      }
-    };
+    wirePayloadPills(rcEditorContent);
 
     rcEditorContent.querySelectorAll('[data-field]').forEach((field) => {
       field.addEventListener('change', () => {
@@ -1770,8 +1778,8 @@
         reaction.threshold = stored;
       }
       const quietS = Math.round(numberOf('quietS'));
-      if (!Number.isFinite(quietS) || quietS < 0 || quietS > REACTION_QUIET.max) {
-        setEditorFeedback(`Quiet after firing: 0 to ${REACTION_QUIET.max} s.`, 'error');
+      if (!Number.isFinite(quietS) || quietS < REACTION_QUIET.min || quietS > REACTION_QUIET.max) {
+        setEditorFeedback(`Quiet after firing: ${REACTION_QUIET.min} to ${REACTION_QUIET.max} s.`, 'error');
         return;
       }
       reaction.quietS = quietS;
@@ -1802,7 +1810,11 @@
       setEditorDirtyState('error', 'Save failed — unsaved changes');
       if (rcEditorApply) rcEditorApply.disabled = false;
       if (rcEditorRevert) rcEditorRevert.disabled = false;
-      setEditorFeedback(`Failed to save: ${window.PAApi.messageFor(error)}`, 'error');
+      // Every slot is taken: said in the builder's words, not the droid's.
+      const message = window.PAApi.messageFor(error);
+      setEditorFeedback(/no trigger slot available/.test(message)
+        ? 'No room for one more. Unmap another switch or condition first.'
+        : `Failed to save: ${message}`, 'error');
     }
   };
 
@@ -1813,7 +1825,7 @@
   };
 
   const resetToDefaults = async () => {
-    if (!confirm('Are you sure you want to clear all RC mappings?')) return;
+    if (!confirm('Clear every mapping? The droid\'s own conditions go too.')) return;
     setEditorFeedback('Clearing mappings...');
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
@@ -1933,6 +1945,15 @@
     if (selectedChannel) renderEditor();
   };
 
+  // The droid's own sequences arrived: what names one is drawn again, and an
+  // open editor keeps its draft.
+  const redrawSequenceNames = () => {
+    renderSummaryTable();
+    renderChannelList();
+    renderLivePreview();
+    refreshDomeSequencePills();
+  };
+
   const loadActionTargetsWithFallback = async ({ handle = null } = {}) => {
     await loadActionTargets({ handle });
     redrawActionNames();
@@ -1954,7 +1975,7 @@
       });
       loadRcDiagnostics();
       loadActionTargets().then(redrawActionNames);
-      loadLearnedSequences().then(redrawActionNames);
+      loadLearnedSequences().then(redrawSequenceNames);
       return;
     }
 
@@ -1971,7 +1992,7 @@
     );
     // Not a section: the page works without it. Until it answers, no binding
     // is called missing.
-    loadLearnedSequences().then(redrawActionNames);
+    loadLearnedSequences().then(redrawSequenceNames);
   };
 
   startPageLoad();

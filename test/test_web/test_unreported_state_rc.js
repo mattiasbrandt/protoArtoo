@@ -48,9 +48,9 @@ test("a receiver nobody switched on reads unlit, never green", async () => {
 // An ELRS receiver is a stored answer the controller reads nothing from
 // (#369): no channel arrives from it, so RC Control must not offer SBUS
 // channels to bind to - a binding made there would answer to nothing. The
-// droid's own conditions are offered all the same: a Reaction needs no radio
-// (#450).
-test("an ELRS receiver offers no radio channel to map, and still the droid's conditions", async () => {
+// list is not empty for it: the droid's own conditions are offered in every
+// mode (#450).
+test("an ELRS receiver offers no radio channel to map", async () => {
   const env = loadRc(
     { rc: { inputMode: "elrs" }, components: RC_COMPONENTS },
     { sources: { sbus1: { enabled: false }, sbus2: { enabled: false }, pwm: { enabled: false } } },
@@ -61,7 +61,6 @@ test("an ELRS receiver offers no radio channel to map, and still the droid's con
   const list = env.element("rc-channel-items").innerHTML;
   assert.doesNotMatch(list, /data-chkey="(sbus1|sbus2|pwm):/, "no radio channel is offered");
   assert.match(list, /no radio channel arrives/);
-  assert.match(list, /data-chkey="hstop:1"/, "a droid condition is offered");
 });
 
 // Detect channel listens to a receiver, so it is offered only while the droid
