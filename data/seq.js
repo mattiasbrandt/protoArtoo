@@ -1472,7 +1472,7 @@
         // What is left is a Dome command: the command itself, typed.
         const light = lightFields(step.cmd);
         return light ? lightRows(light) : settingRow("Sends",
-          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="@0T6, *HP0, :SE07" data-picked="cmd" aria-label="Dome command">`);
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="@0T6, *HP0, :SE07" maxlength="${DOME_COMMAND_CHARS}" data-picked="cmd" aria-label="Dome command">`);
       }
       case "domeRotate": {
         const speed = Math.abs(fieldOf(step, "speedPct"));
@@ -1785,11 +1785,16 @@
 
   // ---------------------------------------------------------------------------
   // The library (#441): the Parts tab, and Drop a part beside the inspector.
-  // Every Part a step can move is one flat list, dome and body together, the
-  // ones nothing on this droid can move dashed and counted; under it, in the
-  // Parts tab, the steps that are not a Part. The escape-hatch Output slots
-  // and the dome's buttons are not Parts a routine moves, and a Part no step
-  // moves is not listed (partDrop()).
+  // One flat list of Parts, dome and body together; under it, in the Parts
+  // tab, the steps that are not a Part. Two things keep a Part from moving,
+  // and the list treats them differently:
+  //   - not wired: a step can name it, but this droid has nothing to move it
+  //     with - no Output claims it, or the dome link is off (notWired()). It
+  //     is listed, dashed and counted, and it drops.
+  //   - no step for it: no sequence step moves it on any droid (partDrop()
+  //     answers null). It is not listed at all.
+  // The escape-hatch Output slots and the dome's buttons are not Parts a
+  // routine moves, and are not listed either.
   //
   // A press on a pill does nothing to the routine and never moves the droid:
   // it says how to add it. A drag onto the timeline inserts it where the
@@ -1934,7 +1939,11 @@
 
   // Insert what was dragged from the library at `at` ms. Whatever lands is
   // one entry in the history, so one Undo takes the whole drop away; a drop
-  // that lands nothing records nothing and says why.
+  // that lands nothing records nothing. Where the routine is what turns it
+  // away - a loop with nothing to repeat, a step Protocol Check refuses -
+  // the stage says why. A pill for something the library does not list - a
+  // Part, a set or a sequence that is not there - lands nothing and says
+  // nothing: no such pill is drawn.
   const dropOnTimeline = (lib, at) => {
     const [group, id] = libraryKey(lib);
     const steps = editorState.current.steps;
@@ -2472,16 +2481,15 @@
             + (light.color !== "DEFAULT" ? `, ${lightWord("holoColors", light.color)}` : "")
             + (light.count ? `, ${light.count}` : "");
         }
-        // Panel intent mode: parse action and target
-        if (/^(:|)(OP|CL|OF)/.test(cmd)) {
-          const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
-          if (match) {
-            const action = match[1];
-            const target = match[2];
-            const actionLabel = action === "OP" ? "Open" : action === "CL" ? "Close" : "Flutter";
-            const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : target.startsWith("P") ? `pie ${target}` : `ring ${target}`;
-            return `${actionLabel} ${targetLabel} (:${action}${target})`;
-          }
+        // A panel move, by the one reading of what that is (panelIntent()):
+        // the inspector and the step's name read it the same way, so a
+        // command without its colon is a Dome command in all three.
+        const intent = panelIntent(step);
+        if (intent) {
+          const [, action, target] = intent;
+          const actionLabel = action === "OP" ? "Open" : action === "CL" ? "Close" : "Flutter";
+          const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : target.startsWith("P") ? `pie ${target}` : `ring ${target}`;
+          return `${actionLabel} ${targetLabel} (:${action}${target})`;
         }
         // A Dome command, as it is stored. An empty one says no command: it
         // sends none, and Protocol Check refuses it until one is typed.
@@ -2627,6 +2635,9 @@
   // lightKind() nor panelIntent() reads it, so the inspector shows the box to
   // type in. Not stepTypeDefaults.dome, which is a panel move.
   const DOME_COMMAND = { name: "Dome command", starts: "@0T1" };
+  // The longest command the droid takes: PC_CMD_MAX (include/protocol_check.h).
+  // The box holds no more, so a command is never typed past what Save accepts.
+  const DOME_COMMAND_CHARS = 63;
 
   // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
   const lightKind = (cmd) => {
