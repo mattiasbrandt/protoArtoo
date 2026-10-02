@@ -147,9 +147,12 @@
   //     check, which are of the sequence, both halves;
   //   - an edit tried on a copy (triedOnCopy()), which copies the whole
   //     sequence and changes the half on the stage in it;
-  //   - the step list (the card editor), which reads editorState.current.steps
-  //     itself: it knows the opening half only, so it is shown only with
-  //     Opens on the stage (showSessionView()). It retires (ADR 0057).
+  //   - the step list (the card editor), which knows the opening half only.
+  //     Its cards read editorState.current.steps themselves, and its Remove
+  //     and its beats go by a card's place there through removeSteps() and
+  //     setStepBeat(), which act on the stage. So the step list is shown only
+  //     with Opens on the stage (showSessionView(), edited()). It retires
+  //     (ADR 0057).
   //
   // `half` is the editor's and never the sequence's: nothing of it is saved,
   // so a toggle that is only looked at saves back as it was read.
@@ -2156,11 +2159,11 @@
   // An edit tried on a copy first: `change(list)` is made to the half on the
   // stage in a copy of the whole sequence, the copy's steps are put in the
   // order the routine's would be, and Protocol Check reads the copy - both
-  // halves, and the sequences it names. Answers {list, refused}: the copy's
-  // stage list, and Protocol Check's verdict where the edit would turn a
-  // sequence the droid accepts into one it refuses, else null. An edit to a
-  // sequence the droid already refuses is not held to that: it may be the one
-  // that mends it.
+  // halves, and the sequences the opening half names. Answers {list,
+  // refused}: the copy's stage list, and Protocol Check's verdict where the
+  // edit would turn a sequence the droid accepts into one it refuses, else
+  // null. An edit to a sequence the droid already refuses is not held to
+  // that: it may be the one that mends it.
   const triedOnCopy = (change) => {
     const trial = JSON.parse(JSON.stringify(editorState.current));
     const key = stageKey();
@@ -2191,12 +2194,14 @@
     const steps = stageSteps();
     const endAt = steps.findIndex((step) => step?.type === "end");
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
-    const land = (place) => {
+    // `first` is run once the copy is accepted, before anything lands.
+    const land = (place, first = () => {}) => {
       const { refused } = triedOnCopy(place);
       if (refused) {
         sayOnStage(refused.error, "error");
         return;
       }
+      first();
       historyPush();
       landed(place(steps));
     };
@@ -2251,11 +2256,22 @@
       // and its name now as the label a reader of the file sees. The droid's
       // copy of it is read after it lands (edited() asks), and that is no
       // edit: one Undo takes the step away. A phrase whose read failed is
-      // asked for again by the drop.
+      // asked for again by a drop that lands.
+      //
+      // Into Opens only. The rules for a sequence inside another - that it is
+      // on the droid, is no toggle, closes no cycle and fits once spliced in -
+      // are applied to the opening half alone, here and by the droid at Save
+      // (protocolCheckNesting(), src/protocol_check.cpp), while the droid
+      // splices both halves when it runs (seqStorePrepare(),
+      // src/seq_store.cpp). One dropped into Closes would save and then be
+      // left out of the run, or stop it.
       const choice = phraseChoices().find((each) => each.id === id);
       if (!choice) return;
-      phraseAgain(choice.id);
-      land(beforeEnd(() => [{ t: at, type: "sequence", ref: choice.id, name: choice.label }]));
+      if (editorState.half === "closes") {
+        sayOnStage("A sequence inside this one goes in Opens only.", "error");
+        return;
+      }
+      land(beforeEnd(() => [{ t: at, type: "sequence", ref: choice.id, name: choice.label }]), () => phraseAgain(choice.id));
       return;
     }
 
@@ -3275,8 +3291,9 @@
     try {
       for (;;) {
         if (mine !== phrases || !editorState.current) return;
-        // Either half can name one: the droid splices its phrases into both
-        // (seqStoreLoadForRun(), src/seq_store.cpp).
+        // Either half can name one - a file written by hand, never a drop
+        // here - and the droid splices its phrases into both (seqStorePrepare(),
+        // src/seq_store.cpp).
         const ref = [...(editorState.current.steps || []), ...(editorState.current.closeSteps || [])]
           .map((step) => (step?.type === "sequence" ? step.ref : null))
           .find((each) => each && !mine.read.has(each) && phraseSource(each));
@@ -4076,7 +4093,10 @@
   // The pattern is the factory toggles' own close halves (kPiesCloseSteps),
   // less their sound and holo reset, which are those routines' own choices.
   // What is left open is the timeline's reading (SeqTimeline.leftOpen()); a
-  // flutter leaves nothing open, and a random step's pick is not known.
+  // flutter leaves nothing open, and two things are not in it: a random
+  // step's pick, which nobody knows until the droid runs, and what a
+  // sequence inside this one leaves open, which the timeline draws as one
+  // block and does not read into.
   //
   // A branch holds 96 steps by itself (protocolCheckBranch()), so a close
   // half of one step per Part and an end always fits, whatever Opens holds.
@@ -4169,9 +4189,13 @@
 
   const edited = (receipt = "") => {
     if (history.run === null) history.base = historyCapture();
-    // The close half can go in an edit - the group set to None, or an undo of
-    // the edit that started it - and the stage is then on Opens.
-    if (!hasCloseHalf(editorState.current)) editorState.half = "opens";
+    // Closes is on the stage only where there is a close half and the
+    // timeline is what is shown. The close half can go in an edit - the group
+    // set to None, or an undo of the edit that started it - and an undo made
+    // from the step list can be of an edit to Closes: the step list's own
+    // acts go by a card's place in the opening half, so the stage is on Opens
+    // under it, whatever was undone.
+    if (!hasCloseHalf(editorState.current) || editorState.view !== "timeline") editorState.half = "opens";
     paintHalf();
     showRetime(receipt);
     updateValidationSummary();
@@ -4182,10 +4206,11 @@
     loadPhrases();
   };
 
-  // UNDO ACROSS THE SWITCH: an undo or a redo of an edit made in one half
-  // puts that half on the stage, so what it took back is in sight. One that
-  // changed neither list or both - the group, the tempo - leaves the stage
-  // where it is; and where it leaves no close half, edited() shows Opens.
+  // UNDO ACROSS THE SWITCH: an undo or a redo that changes one half's list
+  // and not the other's puts that half on the stage, so what it took back is
+  // in sight. One that changes neither list or both leaves the stage where it
+  // is. Where it leaves no close half, or the step list is what is shown,
+  // edited() puts Opens there.
   const historyRestore = (snapshot) => {
     const kept = JSON.parse(snapshot);
     const moved = (key) => JSON.stringify(kept[key]) !== JSON.stringify(editorState.current[key]);
@@ -4549,7 +4574,9 @@
   // only on some refusals (`closeSteps[2].beat`): one from a step's own rules
   // names the step's field alone (`cmd`, `t`), and the step cap and a missing
   // Sequence End name no field. For those the opening half is read again by
-  // itself: accepted alone, the refusal is in the close half.
+  // itself, and without what it names: a refusal about a sequence inside it
+  // says `steps[n].ref` and is placed above. Accepted alone, the refusal is
+  // in the close half.
   const SEQUENCE_FIELDS = ["name", "suppressMs", "toggleGroup"];
   const refusedHalf = (verdict) => {
     const seq = editorState.current;
@@ -4558,7 +4585,7 @@
     if (SEQUENCE_FIELDS.includes(field) || field.startsWith("tempo")) return "";
     if (field.startsWith("closeSteps")) return "Closes";
     if (field.startsWith("steps")) return "Opens";
-    return routineVerdict({ ...seq, toggleGroup: "none", closeSteps: [] }).ok ? "Closes" : "Opens";
+    return SeqProtocolCheck.validateSequence({ ...seq, toggleGroup: "none", closeSteps: [] }).ok ? "Closes" : "Opens";
   };
 
   // The Rehearsal reads one run, and a toggle is two: each half is rehearsed

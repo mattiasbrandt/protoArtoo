@@ -655,8 +655,9 @@
   // right edge, in lane order, each with how far open the last step left it.
   // The one reading of it: the close half a builder is started with closes
   // these (data/seq.js), and a close half on the stage starts with them open
-  // (`context.open`). A random step's pick is not in it: nobody knows it
-  // until the droid runs.
+  // (`context.open`). Two things are not in it: a random step's pick, which
+  // nobody knows until the droid runs, and what a sequence inside this one
+  // leaves open, which is drawn as one block and not read into.
   // ---------------------------------------------------------------------------
   const leftOpen = (seq, context = {}) => {
     const model = build(seq, { ...context, open: null, staysOpen: true });
