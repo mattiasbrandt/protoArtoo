@@ -1500,7 +1500,8 @@
       // The blocks a step draws change with its Move Shape: a dome panel's
       // flutter is its own block and leaves the close it owes as another, and
       // an open takes that close back as the end of the one block it then is.
-      // A body flutter has a length, so it and its close stay the one block.
+      // A body flutter has a length, so it and its close stay the one block
+      // (data/seq_timeline.js closeAt()).
       if (field === "motion") {
         const pair = raw === "open" || step.type === "body" ? sessionTimeline.standing(at) : null;
         sessionTimeline.pick(pair ? [at, pair.close] : [at]);

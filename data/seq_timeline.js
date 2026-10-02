@@ -216,7 +216,7 @@
           short: part && part.shorthand ? part.shorthand : "",
           items: [],
           changes: [],
-          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, fromUs: null },
+          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, flutter: null, fromUs: null },
         });
       }
       return lanes.get(id);
@@ -261,10 +261,17 @@
       const l = { step: opened, field: "t" };
       return closed === null ? { steps: [opened], l } : { steps: [...new Set([opened, closed])], l, r: { step: closed, field: "t" } };
     };
+    // A body flutter that opened the Part is one block with the close it
+    // owes, as an open is: it has a length of its own, so it is the block a
+    // builder sees and takes hold of, and its body moves the pair. Its edges
+    // stay its own length.
     const closeAt = (lane, t, step) => {
       if (lane.state.open) {
-        add(lane, { kind: "open", t0: lane.state.since, t1: t, sent: lane.state.sent, ghost: lane.state.sinceGhost, ...standing(lane.state.sinceStep, step) });
+        const pair = standing(lane.state.sinceStep, step);
+        add(lane, { kind: "open", t0: lane.state.since, t1: t, sent: lane.state.sent, ghost: lane.state.sinceGhost, ...pair });
+        if (lane.state.flutter && pair.r) lane.state.flutter.steps = pair.steps;
         lane.state.open = false;
+        lane.state.flutter = null;
       }
     };
 
@@ -365,8 +372,10 @@
           }
           if (shape === "flutter") {
             const flutterMs = Number(def.flutterMs) || 0;
-            add(lane, { kind: "flutter", t0: t, t1: t + flutterMs, label, ghost, ...lasts(step, "flutterMs") });
+            const wasOpen = lane.state.open;
+            const item = add(lane, { kind: "flutter", t0: t, t1: t + flutterMs, label, ghost, ...lasts(step, "flutterMs") });
             openFrom(lane, t + flutterMs, ghost, step, t);
+            if (!wasOpen && step !== null) lane.state.flutter = item;
           } else {
             // How long the Part takes to get there is the Output's, not the
             // step's (ADR 0052), so a move is dragged and never resized.
