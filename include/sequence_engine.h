@@ -103,6 +103,14 @@ enum SeqEffectClass : uint8_t {
                                // so short category vocalizations always ring out.
 };
 
+// The dome's whole visual reset: logics, PSIs and holos, one command each
+// (docs/dome-visual-presets.md names the three together as the body-owned
+// visual teardown). Sent where the body cannot say which visual families are
+// running: terminal cleanup of a dome-native :SE## sequence, and the dome
+// resync after an estop clears or the dome (re)connects. A family added here
+// reaches all of them.
+inline constexpr const char* const SEQ_DOME_VISUAL_RESETS[] = {"@0T1", "@0P1", "*ST00"};
+
 // -----------------------------------------------------------------------------
 // Random logical target sets.
 //   RING = P1,P2,P3,P4,P7,P11,P13

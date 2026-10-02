@@ -788,6 +788,18 @@ static void drainBestEffort(SeqEngineState& engine, uint32_t now) {
     }
 }
 
+// The dome's visuals put back to their resting state after an estop clears or
+// the dome (re)connects: every family in SEQ_DOME_VISUAL_RESETS, the list
+// terminal cleanup uses for a run whose visuals it cannot name. Both resyncs
+// send it from here, so a family added to the list reaches both; the holos
+// were once missing from the two of them (#320, #453). None of these moves a
+// servo, so they go at once and are not staged like the ring close.
+static void resyncDomeVisuals() {
+    for (const char* reset : SEQ_DOME_VISUAL_RESETS) {
+        domeQueueTx(reset);
+    }
+}
+
 static void setSuppression(uint32_t untilMs) {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.domeSeqActive  = true;
@@ -1103,14 +1115,14 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             // Stage an individual ring-only close (drained below), never a group
             // :CL15/:CL00: a group close drives every ring servo simultaneously
             // and browns out the dome from a loaded ring (issue #2 hardware
-            // finding). Pies are never auto-closed on resync. Logic/PSI reset is
-            // a single non-servo command, so it stays immediate. A pose taken
-            // on this same tick, before the edge was seen, ends here.
+            // finding). Pies are never auto-closed on resync. The logic, PSI
+            // and holo resets are non-servo commands, so they stay immediate.
+            // A pose taken on this same tick, before the edge was seen, ends
+            // here.
             if (sequenceResyncCloseStage(&poseRun, &resyncCloseIdx, &resyncCloseDueMs, now)) {
                 PA_LOG_INFO(TAG, "pose ended - dome resync");
             }
-            domeQueueTx("@0T1");
-            domeQueueTx("@0P1");
+            resyncDomeVisuals();
             seqEngineClearLatches(engine);
         }
         prevEstop = estopActive;
@@ -1177,8 +1189,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
             // The resync owns the dome's panels now, one motion owner at a time.
             generatedEnd("dome resync");
-            domeQueueTx("@0T1");
-            domeQueueTx("@0P1");
+            resyncDomeVisuals();
             seqEngineClearLatches(engine);
         }
         prevDomeConn = domeConn;

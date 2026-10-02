@@ -288,9 +288,9 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         addFinal(st, SEQ_ACT_DOME_CMD, "DV:RESET_VISUALS");
     }
     if (st.activeFx & FX_DOME_SEQUENCE) {
-        addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
-        addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
-        addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
+        for (const char* reset : SEQ_DOME_VISUAL_RESETS) {
+            addFinal(st, SEQ_ACT_DOME_CMD, reset);
+        }
         // A :SE## dome-native sequence manages its own panels; ring cleanup
         // closes only the ring panels the body itself left open (none for a pure
         // :SE## step). Never a group close.
