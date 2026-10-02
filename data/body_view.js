@@ -592,6 +592,9 @@
         .map(markerHtml)
         .join("") +
       `</g>` +
+      // Where the dome points (#445): the one marker every dome drawing
+      // carries, from the one accessor, on top and taking no pointer.
+      (window.PADomeBearing ? window.PADomeBearing.markerSvg() : "") +
       `</svg>` +
       `<p class="bv-dome-note" hidden></p>`;
 

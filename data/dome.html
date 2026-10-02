@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/dome_bearing.js,/dome.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -53,6 +53,19 @@
         <span>Reverse</span>
         <span>Stop</span>
         <span>Forward</span>
+      </div>
+      <!-- Where the dome believes it points (#445): the number, and the word
+           that says it is believed, in the row it qualifies. Unknown is a word
+           in the number's place. Front is here is how a builder gets it back;
+           Go home turns the dome to it. -->
+      <div class="dome-bearing-row">
+        <span class="dome-bearing-name">Points</span>
+        <span id="dome-bearing-value" class="dome-bearing-value is-unknown">Unknown</span>
+        <span id="dome-bearing-word" class="dome-bearing-word" hidden>believed</span>
+        <div class="dome-bearing-acts">
+          <button id="dome-front-button" class="btn btn-sm btn-quiet" type="button">Front is here</button>
+          <button id="dome-home-button" class="btn btn-sm" type="button">Go home</button>
+        </div>
       </div>
       <div id="dome-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
@@ -121,6 +134,32 @@
         <div class="setting-foot">
           <div id="rnd-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading random movement settings...</div>
           <button id="reload-rnd-button" class="btn btn-sm btn-quiet" type="button">Reload</button>
+        </div>
+      </section>
+
+      <!-- What the droid needs to follow a turn (#445): nothing on it can
+           measure the dome, so the builder times one full turn. -->
+      <section>
+        <div class="sect"><h2>Full turn</h2><span class="sub" id="dome-turn-state">not set</span></div>
+        <form id="dome-turn-form" class="setting-rows">
+          <label class="setting-row">
+            <span class="setting-name">Time for one turn<span class="hint">Stopwatch one full turn.</span></span>
+            <span class="setting-number"><input id="dome-turn-ms" class="number-cell" name="domeEscFullTurnMs" type="number" step="10" placeholder="-"><span class="setting-unit">ms</span></span>
+          </label>
+          <label class="setting-row">
+            <span class="setting-name">Timed at<span class="hint">Of the ESC's full range, not of the limit.</span></span>
+            <span class="setting-number"><input id="dome-turn-pct" class="number-cell" name="domeEscFullTurnPct" type="number" step="1" placeholder="-"><span class="setting-unit">%</span></span>
+          </label>
+          <div class="setting-row">
+            <span class="setting-name" id="dome-turn-dir-name">Positive turns<span class="hint">Seen from above.</span></span>
+            <div class="seg" id="dome-turn-dir" role="radiogroup" aria-labelledby="dome-turn-dir-name">
+              <button type="button" role="radio" aria-checked="false" aria-pressed="false" data-value="cw">Clockwise</button>
+              <button type="button" role="radio" aria-checked="false" aria-pressed="false" data-value="ccw">Anticlockwise</button>
+            </div>
+          </div>
+        </form>
+        <div class="setting-foot">
+          <div id="turn-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading full turn...</div>
         </div>
       </section>
     </div>

@@ -8,14 +8,15 @@
  *     panel or arm opens or closes it - the Parts picture's decision and
  *     request, from data/droid_picture.js, not a copy of them.
  *   - The dome, top-down, from the layout the dome reports or the built-in
- *     map, with click-to-toggle panel actuation.
+ *     map, with click-to-toggle panel actuation, and the Dome Bearing's
+ *     marker for where the dome points (data/dome_bearing.js, #445).
  *   - Both drawn once, when the Dashboard mounts: they are not behind a
  *     disclosure any more, so there is no first expand to wait for.
  *   - Accessibility: keyboard support, status announcements.
  * A refused click sends nothing and says why in the drawings' feedback line.
  *
  * Reuses: BodyView, PADroidPicture, DomeCommandMap, DomeLayout,
- * DomeLayoutRender, PAApi
+ * DomeLayoutRender, PADomeBearing, PAApi
  */
 
 (() => {
@@ -104,6 +105,8 @@
 
       pickerContainer.innerHTML = pickerHtmlFor(model);
       attachPanelClickHandlers(pickerContainer, model);
+      // Where the dome points, on whichever drawing this is, in its own frame.
+      window.PADomeBearing?.mount(pickerContainer.querySelector('svg'));
 
       const svg = pickerContainer.querySelector('svg');
       if (svg) {
