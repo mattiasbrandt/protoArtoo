@@ -34,7 +34,8 @@
 // servo.action.open/close/set-position/stop/nudge: target=<the running
 // board's label for an Output[|both]> - target=arm3 or target="ARM3" on the
 // Artoo PCB, target=gpio49 or target="GPIO 49" on the FireBeetle 2, case and
-// spaces set aside (include/board_outputs.h, ADR 0033 Amendment 2026-09-19).
+// spaces set aside (include/board_outputs.h, ADR 0033 Amendment 2026-09-19) -
+// or an expander's Output by its address, target=pca:3 (#444).
 // set-position also carries position_us=<500..2500>. servoParseTarget() and
 // servoSubmitCommand() (include/api_servo.h) are the SAME word<->Output mapping
 // and the SAME queue submission handleServoPost() uses, reused verbatim - the
@@ -107,11 +108,13 @@ static void consoleExecuteServoCommand(uint32_t requestId, const char* operation
     }
 
     // Schema already confirmed "target" names one of the running board's
-    // Outputs or `both` (consoleParamValueNamesOutput(), include/
-    // console_args.h), through the same boardOutputForWord() servoParseTarget()
-    // reads; servoParseTarget() can only fail here on a disagreement between
-    // the two - defensive, the same "reparse after schema" precedent
-    // drive.action.move set (include/console_direct_action_drive.h).
+    // Outputs, an expander's Output by its address (`pca:3`), or `both`
+    // (consoleParamValueNamesOutput(), include/console_args.h), through the
+    // same boardOutputForWord() and servoOutputParseExpanderAddress()
+    // servoParseTarget() reads; servoParseTarget() can only fail here on a
+    // disagreement between the two - defensive, the same "reparse after
+    // schema" precedent drive.action.move set
+    // (include/console_direct_action_drive.h).
     ServoOutputAddress output = SERVO_OUTPUT_NONE;
     if (!servoParseTarget(consoleArgsFind(args, "target"), &output)) {
         consoleEmitArgFailure(requestId, operationName, "target", CONSOLE_REASON_OUT_OF_RANGE, sink);
