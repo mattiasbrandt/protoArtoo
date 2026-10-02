@@ -759,7 +759,9 @@
   //
   // `source` is the sequence, or a function that returns it. An editor passes
   // the function, so the view always reads the object being edited and never
-  // keeps a copy that an undo or a tempo change would leave behind.
+  // keeps a copy that an undo or a tempo change would leave behind. It is
+  // also how the caller puts the other half of a toggle on the stage: the
+  // function answers the half to show, and refresh() draws it.
   //
   // options:
   //   context   what the droid reported, as the Rehearsal reads it: outputs,
@@ -767,6 +769,8 @@
   //             Its `phrase(ref)` answers the steps of a sequence this one
   //             names, at the milliseconds they run at, or null for one the
   //             caller has not read: this view reads nothing off the droid.
+  //             Its `open` is the Parts standing open when the routine
+  //             starts, for a toggle's close half (build()).
   //   describe  step -> words, the editor's own preview (data/seq.js), so a
   //             block and a step card name a step alike
   //   onPose    the builder pressed to send the droid to the marker's instant:

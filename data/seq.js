@@ -8,6 +8,8 @@
 //
 // Where things are. Look up the name; a line number is only a hint.
 //   historyBegin / historyPush / historyCommit   undo stack
+//   stageSteps / halfRoutine / showHalf          the half on the stage (Opens, Closes)
+//   setGroup / startedCloseHalf                  the interrupt group and its close half
 //   list, stage, drawer                          the three surfaces
 //   pickedHtml                                   inspector rows
 //   stepPreview / stepTypeDefaults               card text, and a new step's values
