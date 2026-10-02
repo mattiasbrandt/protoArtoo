@@ -316,8 +316,8 @@ static SeqGestureRun gestureRun;
 static SeqAction gestureMove;
 
 // -----------------------------------------------------------------------------
-// The flutters a sequence has fired (#453, include/sequence_flutter.h), on the
-// Coordinator's own cursor,
+// The flutters a sequence has fired (#453, include/sequence_flutter.h): a Body
+// Step's, and each member's of a body Gesture. On the Coordinator's own cursor,
 // like the Gestures, so a two-second shake never holds the engine's. Static,
 // off this task's measured stack (ADR 0040), and so are the row a leg is
 // resolved against and the move it is planned as.
@@ -372,7 +372,8 @@ static void flutterEndPart(const char* partId) {
 }
 
 // -----------------------------------------------------------------------------
-// flutterStartPart  --  a flutter handed to the run.
+// flutterStartPart  --  a flutter handed to the run: a Body Step's, or one
+// member's of a body Gesture.
 //
 // Whether anything can move the Part is asked here, the way a Body Step's move
 // asks it: a Part no Output claims is reported and starts no flutter, and the
@@ -492,7 +493,8 @@ static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& ac
 // command to the dome; a body Gesture's move goes down the very path a Body
 // Step takes (dispatchBodyMove()), resolved against the live Output rows, and
 // the run holds the next body move off by the pace every generated motion
-// keeps. A full queue leaves the item where it is, to come round next tick.
+// keeps. A member's flutter is handed to the flutter run instead. A full queue
+// leaves the item where it is, to come round next tick.
 // Out of line, as gestureStartFromAction() below is, so neither's locals sit
 // on the root frame or on dispatchAction()'s: both are on the measured chain.
 static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
@@ -506,6 +508,14 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
             return;
         }
         sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+        return;
+    }
+    // A member's flutter is the flutter run's to perform, with the Gesture's
+    // own length, speed and easing (#453). Handing it over starts no motion.
+    if (next.shape == BODY_SHAPE_FLUTTER) {
+        const bool taken = flutterStartPart(droidPartIdAt(next.part), next.howFar, next.flutterMs,
+                                            next.speedMs, next.easing, now);
+        sequenceGestureFlutterHandedOver(&gestureRun, next, taken);
         return;
     }
     memset(&gestureMove, 0, sizeof(gestureMove));
