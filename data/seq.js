@@ -1115,7 +1115,7 @@
 
   // What kind of step this is, as the step list names it.
   const stepKindName = (step) =>
-    (step.type === "dome" ? domeSubmodeName(step.cmd) : stepTypeName[step.type] || step.type || "Step");
+    (step.type === "dome" ? domeStepName(step) : stepTypeName[step.type] || step.type || "Step");
 
   // ---------------------------------------------------------------------------
   // The Picked block tab (#441): what the timeline says is picked, and for one
@@ -1132,7 +1132,8 @@
   //
   // The dome's four light commands have rows of their own (lightRows()): each
   // is one `cmd`, read into its fields and written back whole, and only by an
-  // edit that changes it.
+  // edit that changes it. Any other dome command that is not a panel move
+  // has one row, SENDS: the command as it is stored, in a box to type in.
   //
   // A dome panel pair and a body pair are read by the one path (moveOf(),
   // moveRows()). They differ in where the Move Shape is stored - a panel
@@ -1467,8 +1468,11 @@
     if (move) return moveRows(step, at, move);
     switch (step.type) {
       case "dome": {
+        // A panel move was read above, and a light command has its rows.
+        // What is left is a Dome command: the command itself, typed.
         const light = lightFields(step.cmd);
-        return light ? lightRows(light) : "";
+        return light ? lightRows(light) : settingRow("Sends",
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="@0T6, *HP0, :SE07" data-picked="cmd" aria-label="Dome command">`);
       }
       case "domeRotate": {
         const speed = Math.abs(fieldOf(step, "speedPct"));
@@ -1795,16 +1799,25 @@
   // The steps that are not a Part, in More steps' order: a kind of step by
   // its type, or one of the dome's light commands by its prefix (DOME_SUBMODES)
   // - a Visual Preset and a Holo Effect name no Part, so they are dropped from
-  // here and land on the Dome row.
+  // here and land on the Dome row. With them, as the third dome kind, the Dome
+  // command (DOME_COMMAND): a command the dome reads as written, which names
+  // no Part either and lands on the same row.
   //
   // Between the two, the Sets: the tokens a Gesture spreads across (the
   // catalog's `sets`). A set dropped is one Gesture over it.
   //
   // Last, the Sequences: every sequence this one can hold (phraseChoices()).
   // One dropped is one step that names it, drawn as one linked block.
-  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", "random", "loop", "end"];
+  //
+  // The Dome command's pill goes by an id of its own, which is neither a step
+  // type nor a light command's prefix.
+  const DOME_COMMAND_KIND = "domeCommand";
+  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", DOME_COMMAND_KIND, "random", "loop", "end"];
   const librarySets = () => window.DroidParts?.sets || [];
-  const libraryKindName = (id) => DOME_SUBMODES[id]?.name || stepTypeName[id];
+  // A kind that is a dome step, as its name and the command a dropped one
+  // holds; null for a kind that is a step type of its own.
+  const libraryDome = (id) => DOME_SUBMODES[id] || (id === DOME_COMMAND_KIND ? DOME_COMMAND : null);
+  const libraryKindName = (id) => libraryDome(id)?.name || stepTypeName[id];
   // The Sequence End pill: the one thing that may be dropped past the end.
   const END_PILL = "kind:end";
   // How far the pointer goes before a press on a pill is a drag.
@@ -2032,8 +2045,9 @@
       return;
     }
 
-    const made = DOME_SUBMODES[id]
-      ? { t: at, type: "dome", cmd: DOME_SUBMODES[id].starts }
+    const dome = libraryDome(id);
+    const made = dome
+      ? { t: at, type: "dome", cmd: dome.starts }
       : { t: at, type: id, ...stepTypeDefaults[id] };
     historyPush();
     if (id === "end") {
@@ -2577,6 +2591,23 @@
     DH: { name: "Holo Effect", starts: "DH:A:FLASH" },
   };
 
+  // A dome command as the dome itself reads it, sent as written: any dome
+  // step whose `cmd` is neither one of the four above nor a panel move
+  // (panelIntent()). It is a kind by what the command says and nothing else,
+  // so one typed into a light command or a panel move is that from the next
+  // draw on, with that kind's rows; nothing pins a step as raw.
+  //
+  // `starts` is what one dropped from More steps holds: @0T1, the logic
+  // displays' reset. Three reasons, and a new command there must keep all
+  // three. The droid's Protocol Check and the browser's both accept it
+  // (src/protocol_check.cpp classifyDome(), _validateDomeStep()), so the
+  // command never makes a routine the droid refuses. The droid counts it as
+  // starting no effect (FX_NONE there), so a step nobody has typed into yet
+  // does no more than put the logic displays back to normal. And neither lightKind() nor panelIntent()
+  // reads it, so the inspector shows the box to type in. Not
+  // stepTypeDefaults.dome, which is a panel move.
+  const DOME_COMMAND = { name: "Dome command", starts: "@0T1" };
+
   // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
   const lightKind = (cmd) => {
     const kind = /^(D[VLTH]):/.exec(String(cmd || ""))?.[1];
@@ -2708,9 +2739,10 @@
     end: "Sequence End",
   };
 
-  // What kind of dome step a command makes it, by name: one of the four light
-  // commands, or a Panel Action.
-  const domeSubmodeName = (cmd) => DOME_SUBMODES[lightKind(cmd)]?.name || stepTypeName.dome;
+  // What kind of dome step its command makes it, by name: one of the four
+  // light commands, a Panel Action, or a Dome command.
+  const domeStepName = (step) =>
+    DOME_SUBMODES[lightKind(step.cmd)]?.name || (panelIntent(step) ? stepTypeName.dome : DOME_COMMAND.name);
 
   // Step type descriptions for reference panel
   const stepTypeDescriptions = {
