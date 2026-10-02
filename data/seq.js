@@ -2939,7 +2939,8 @@
 
   // Read every phrase the routine names that has not been read, one after the
   // other. It is not an edit and records nothing: when a phrase lands, the
-  // timeline draws the routine again and the inspector follows it.
+  // timeline draws the routine again and the inspector follows it; when a
+  // read fails, the inspector is written again all the same.
   //
   // A read that fails is said once on the stage, and the phrase stays the
   // mark on the Sequence row it was. It is not asked for again until the
@@ -2979,7 +2980,12 @@
           // spliced, so the verdict is read again with it.
           updateValidationSummary();
           sessionTimeline?.refresh(rehearsalContext());
-        } else sayOnStage(refused, "error");
+        } else {
+          sayOnStage(refused, "error");
+          // The timeline has nothing new to draw, so nothing has told the
+          // inspector: a picked phrase now says its read failed.
+          showPicked(sessionTimeline ? sessionTimeline.picked() : []);
+        }
       }
     } finally {
       mine.reading = false;
