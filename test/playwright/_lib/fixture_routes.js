@@ -201,6 +201,16 @@ const outputRow = ({ n, id, name, wired, parts, calibrated, lightCapable, compon
   nudgesDone: 0,
   held: false,
   limp: 'off',
+  // What the droid started with (#364, src/web/api_config.cpp
+  // handleServoOutputsGet()): this fixture's droid started as its rows stand,
+  // and a save after that leaves these four alone, which is a save waiting for
+  // a restart. `driven` is the wired tick at start with no light on the wire;
+  // `activeLight` is null on a servo wire; `activeLedCount` is only on a row a
+  // light can go on.
+  activeWired: wired,
+  driven: wired && component !== 'rgb',
+  activeLight: component === 'rgb' ? 'rgb' : null,
+  ...(lightCapable ? { activeLedCount: 16 } : {}),
   // Not a firmware field: which row the 'bench' droid moves on every read.
   // Stripped from every answer.
   following,
