@@ -1161,7 +1161,8 @@
     // Check :OF cleanup over one branch, every step of it in stored order.
     // Every :OF<target> step must be followed by a matching :CL command in
     // the same branch. See the panel intent contract in docs/adr/0008.
-    _checkBranchOfCleanup(steps) {
+    // `label` is the branch's key, for the field a refusal names.
+    _checkBranchOfCleanup(steps, label) {
       const pending = []; // { target, group }
 
       for (const step of steps) {
@@ -1188,7 +1189,7 @@
         const targets = pending.map((f) => `:OF${f.target}`).join(", ");
         return {
           ok: false,
-          field: "steps",
+          field: label,
           error: `These panels are left fluttering and never closed: ${targets}. Add a Close action for each one later in the sequence.`,
         };
       }
@@ -1530,7 +1531,7 @@
       // inside a loop is cleaned by a close after the loop, and one before a
       // loop by a close inside it (protocolCheckBranch()'s pendingFlutter,
       // checked once at the branch's end).
-      return this._checkBranchOfCleanup(steps);
+      return this._checkBranchOfCleanup(steps, label);
     },
 
     /**
