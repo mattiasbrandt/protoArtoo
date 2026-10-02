@@ -382,6 +382,48 @@ rows:
     missing_metadata:
       - "parameter 'speed' lacks description and default value"
     notes: ""
+  - name: dome.action.front-is-here
+    type: action
+    registry_api_path: /api/dome/front
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_drive.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_params: []
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/dome/front\", WebMethod::kPost, handleDomeFrontPost)`"
+      - "include/api_drive.h - `void handleDomeFrontPost(WebRequest& req)`"
+      - "src/web/api_drive.cpp - `domeBearingActRequest()`: domeBearingActRefusal(), then DOME_CMD_FRONT_IS_HERE on domeCmdQueue"
+      - "src/tasks/dome_task.cpp - `bearingDeclareFront()` sets the Dome Bearing to 0, believed"
+    executor_or_core: "domeBearingActRequest"
+    missing_metadata: []
+    notes: "Web-API and Console (#445). Refused under a latched estop, in Sleep Mode, with the Dome ESC off, and before the full turn is timed."
+  - name: dome.action.go-home
+    type: action
+    registry_api_path: /api/dome/home
+    registry_cpp_enum: null
+    registry_cpp_file: src/web/api_drive.cpp
+    registry_sse_event: null
+    registry_nvs_key: null
+    registry_params: []
+    registry_requires_web_control: false
+    registry_sources:
+      - web_api
+    registry_marcduino_cmd: null
+    anchor_kind: "api"
+    evidence:
+      - "src/web/web_seam_routes.cpp - `webRegisterRoute(\"/api/dome/home\", WebMethod::kPost, handleDomeHomePost)`"
+      - "include/api_drive.h - `void handleDomeHomePost(WebRequest& req)`"
+      - "src/web/api_drive.cpp - `domeBearingActRequest()`: domeBearingActRefusal(), then DOME_CMD_TURN_TO front on domeCmdQueue"
+      - "src/tasks/dome_task.cpp - `bearingPlanTurn()` rewrites it into the timed turn domeBearingTurnPlan() names"
+    executor_or_core: "domeBearingActRequest"
+    missing_metadata: []
+    notes: "Web-API and Console (#445). Does not move the dome while the bearing is unknown or the dome is not calibrated, and says which."
   - name: dome.action.save-sequence
     type: action
     registry_api_path: /api/seq
@@ -1206,6 +1248,8 @@ rows:
       - "include/api_status.h - `captureDomeStatusSnapshot(DomeStatusSnapshot* out)` declaration"
       - "src/web/api_status_serializers.cpp - `captureDomeStatusSnapshot()` definition"
       - "src/web/web_server.cpp - `buildStatusJson()` calls `captureDomeStatusSnapshot()` for `domeTargetSpeed`/`domeEnabled` (#223)"
+      - "include/robot_state.h - `domeBearingRead()`, the one reader of `domeBearingBelieved`/`domeBearingDeg` (#445)"
+      - "src/web/api_status_serializers.cpp - `captureDomeStatusSnapshot()` reads the Dome Bearing through `domeBearingRead()` (#445)"
     executor_or_core: "captureDomeStatusSnapshot"
     missing_metadata: []
     notes: "Status query via /api/status SSE stream. #223: promoted to a real console query; captureDomeStatusSnapshot() is the Zone Snapshot capture buildStatusJson() and the Console module both call (ADR 0036)."

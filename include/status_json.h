@@ -23,6 +23,7 @@
 #include "audio_sound_member.h"  // SoundStatusIdentity
 #include "board_outputs.h"
 #include "config.h"
+#include "dome_bearing.h"  // DomeBearingReading - the Dome Bearing's two keys
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "robot_state.h"  // FailsafeDiagnostics, RcInputMode, DomeUartOwner
@@ -48,6 +49,7 @@ struct StatusJsonInputs {
     int driveSteer;
     float domeTargetSpeed;
     bool enableDome;
+    DomeBearingReading domeBearing;  // "domeBearing" and "domeBearingDeg", null when unknown
     int speedLimitMax;
     SpeedPresetId speedPresetActive;
     bool stationary;
@@ -121,7 +123,11 @@ void captureStatusHeapReadings(StatusJsonInputs* in);
 //
 // Sized to the document's worst case - every component on and every value at
 // its longest, 4,153 B plus its terminator on artoo-esp32, which
-// test/test_native/test_status_json measures - rounded up to 4,160. The 3,072 B
+// test/test_native/test_status_json measures - rounded up to 4,160, and then
+// 64 B more for the Dome Bearing's two keys (#445): 48 B at their widest,
+// `,"domeBearing":"believed","domeBearingDeg":359.9`, which puts the worst
+// case at 4,201 B. That figure is added, not measured: the suites were paused
+// when it moved (#464), and the test above is what measures it again. The 3,072 B
 // it replaces held a fresh-boot droid with every component on (about 3,176 B)
 // only as an overflow answer (#381, #428). A board with ESP-Hosted also carries
 // the hostedLink block, which src/web/status_json.cpp formats into 256 B first,
@@ -132,7 +138,7 @@ constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 255;
 #else
 constexpr size_t STATUS_JSON_HOSTED_LINK_MAX = 0;
 #endif
-constexpr size_t STATUS_JSON_BUFFER_BYTES = 4160 + STATUS_JSON_HOSTED_LINK_MAX;
+constexpr size_t STATUS_JSON_BUFFER_BYTES = 4224 + STATUS_JSON_HOSTED_LINK_MAX;
 
 // Writes the status document into buffer. False when it did not fit, and then
 // buffer holds {"ok":false,"error":"status payload overflow"} instead - the

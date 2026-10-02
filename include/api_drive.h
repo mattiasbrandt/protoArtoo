@@ -16,7 +16,9 @@
 
 #include "web_request.h"
 
+#include "dome_bearing_act.h"  // DomeBearingAct, DomeBearingRefusal
 #include "drive_speed_preset.h"
+#include "robot_state.h"       // CommandSource
 
 // Format JSON response for speed preset endpoint.
 // Output: {"ok":true,"preset":"slow|normal|turbo","speedLimitMax":<0..600>}
@@ -31,6 +33,19 @@ void handleWebControlEnablePost(WebRequest& req);
 void handleWebControlDisablePost(WebRequest& req);
 void handleDomeCmdPost(WebRequest& req);
 void handleDomeSpeedPost(WebRequest& req);
+void handleDomeFrontPost(WebRequest& req);
+void handleDomeHomePost(WebRequest& req);
+
+// Front is here or go home, asked for by `source` (#445): the one way either
+// press reaches DomeTask, for the web routes above and the Console's two
+// actions alike. Decides with domeBearingActRefusal()
+// (include/dome_bearing_act.h) from the droid as it is now, and only on OK
+// sends the command, without waiting. `queued` false with OK is a full queue.
+struct DomeBearingActOutcome {
+    DomeBearingRefusal refusal;
+    bool queued;
+};
+DomeBearingActOutcome domeBearingActRequest(DomeBearingAct act, CommandSource source);
 
 // What executeManualCommand() did with a command, which is four things and
 // not two (#376, #379).

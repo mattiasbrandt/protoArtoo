@@ -471,6 +471,35 @@ curl -s -X POST http://artoo.local/api/dome \
 {"ok":true}
 ```
 
+### POST /api/dome/front
+
+Front is here: the builder has turned the dome to face the droid's front, by
+hand or by stick, and says so. The Dome Bearing is believed again, at `0`, and
+moves with every turn the droid commands from then on (ADR 0051, #445). Moves
+nothing.
+
+- Body: none
+- Success: `200` `{"ok":true}`
+- Errors, each with its one clause in `error`:
+- `409` `Estop latched. Clear it first.`
+- `423` `The droid is asleep. Wake it first.`, `"hint":"POST /api/wake"`
+- `409` `Dome ESC is switched off in Configuration.`
+- `409` `Time the dome's full turn first.` - the full-turn time, its speed or
+  which way positive turns is not set, so no turn could be followed
+- `503` `dome command queue full`
+
+### POST /api/dome/home
+
+Go home: turn the dome the short way to where it believes front is, at the
+speed its full turn was timed at, and stop on time (#445). The end-of-show act,
+not the recovery one - with the bearing unknown it does not move the dome.
+
+- Body: none
+- Success: `200` `{"ok":true}` - queued; the turn's progress is `domeBearingDeg`
+  on the status stream
+- Errors: as `POST /api/dome/front`, and
+- `409` `Bearing unknown: turn the dome to front and press Front is here.`
+
 ### POST /api/dome/cmd
 
 Sends a raw dome command or a factory sequence (DM:* name).
@@ -1810,6 +1839,12 @@ Updates supported config fields and persists to NVS.
     max`): out of order, a stop does not put neutral on the ESC. A set stored
     out of order by an older firmware loads as `1000`/`1500`/`2000`.
 - domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
+- domeEsc full turn, the Dome Bearing's calibration (#445): `domeEscFullTurnMs(0..60000)`
+  - how long one full turn takes; `domeEscFullTurnPct(0..100)` - the speed it was
+  timed at, as a share of the ESC's full pulse range, not of the speed limit;
+  `domeEscPositiveTurn(unset|cw|ccw)` - which way a positive command turns the
+  dome, seen from above. `0` and `unset` are "never recorded", and the bearing
+  cannot be believed until all three are set.
 - protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
 - servo capture (ADR 0064, the calibration dial): `captureOutput`,
   `captureEnd`, `captureUs` — sent together or not at all. `captureOutput` is
@@ -2309,6 +2344,11 @@ Returns controller status snapshot.
   run: both are cumulative since boot, so the evidence is the delta between two
   readings, not the absolute value.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
+- `domeBearing` - `believed` or `unknown`, and `domeBearingDeg` - where the dome
+  believes it points, degrees from the droid's front clockwise seen from above,
+  `0.0..359.9`, or `null` while `unknown`. Integrated from the turns the droid
+  commands, never measured; unknown after a boot, an estop or Sleep Mode until
+  `POST /api/dome/front` (#445).
 - `speedLimitMax`, `speedPreset`, `stationary`
 - `uptimeMs`, `firmwareVersion`, `fsVersion`, `resetReason`
 - `heapFree`, `heapMin`, `heapLargestBlock` — the **Internal Data Heap**
@@ -2353,7 +2393,7 @@ curl -s http://artoo.local/api/status
 #### Example response (abridged)
 
 ```json
-{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","fsVersion":"fs-v1.0.0","resetReason":"POWERON","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"lights":{"aux1":{"r":0,"g":0,"b":0,"effect":"off","available":true}}}
+{"estop":false,"webControlEnabled":false,"sbusSignalLost":false,"sbusHwFailsafe":false,"webDriveExpired":false,"failsafeSource":0,"driveSpeed":0,"driveSteer":0,"domeTargetSpeed":0.0,"domeEnabled":true,"domeBearing":"unknown","domeBearingDeg":null,"speedLimitMax":600,"speedPreset":"normal","stationary":false,"uptimeMs":27790,"firmwareVersion":"v1.0.0","fsVersion":"fs-v1.0.0","resetReason":"POWERON","heapFree":173152,"heapMin":150932,"heapLargestBlock":132000,"wifiRssi":-70,"wifiConnected":true,"wifiClientConnected":true,"littleFsReady":true,"sleepMode":false,"sleepSinceMs":0,"activeMood":14,"lights":{"aux1":{"r":0,"g":0,"b":0,"effect":"off","available":true}}}
 ```
 
 ### GET /api/health

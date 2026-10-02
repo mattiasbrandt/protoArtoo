@@ -188,6 +188,7 @@ static void captureStatusJsonInputs(StatusJsonInputs* in) {
     captureDomeStatusSnapshot(&domeSnap);
     in->domeTargetSpeed = domeSnap.domeTargetSpeed;
     in->enableDome = domeSnap.domeEnabled;
+    in->domeBearing = domeSnap.bearing;
 
     taskENTER_CRITICAL(&robotStateMux);
     copyFailsafeDiagnosticsLocked(&in->diag);

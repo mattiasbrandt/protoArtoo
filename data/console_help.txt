@@ -37,8 +37,10 @@ dome.event.cue-cantina|BD:CANTINA|The dome asks for the Cantina, about 17 s.|aud
 dome.event.cue-heart|BD:HEART|The dome asks for a sentimental sound.|audioQueuePlayCategory|
 dome.event.cue-hello|BD:HELLO|The dome asks for a general sound.|audioQueuePlayCategory|
 dome.event.cue-reset|BD:RESET|The dome asks the body to stop the track. Chatter carries on.|audioQueueTrackStop|
-dome.status.current|Dome Status|Dome motor speed, and whether the dome is linked.|captureDomeStatusSnapshot|
+dome.status.current|Dome Status|Dome motor speed, whether the dome is linked, and where the dome believes it points, or unknown.|captureDomeStatusSnapshot|
 dome.action.move|Dome Speed (Web)|Turn the dome from the browser. Refused while asleep or with the dome motor off.|domeCmdQueue|speed:float:1
+dome.action.front-is-here|Front Is Here|Say the dome points at the droid's front now, after turning it there by hand or by stick. Where the dome points is believed again from here. Refused while the estop is latched, asleep, with the dome motor off, or before its full turn is timed.|domeBearingActRequest|
+dome.action.go-home|Dome Go Home|Turn the dome the short way to where it believes front is, at the speed its full turn was timed at. Does not move the dome while where it points is unknown or its full turn is not timed.|domeBearingActRequest|
 dome.api.list-sequences|List Learned Sequences|Your Learned Sequences: name, toggle group, mute time, and whether each one checks out.|seqStoreIndexAt|
 dome.api.list-builtin-sequences|List Factory Sequences|The Factory Sequences, by name, without their steps.|sequenceCatalogAt|
 dome.api.get-sequence|Get Learned Sequence|One Learned Sequence, as its saved JSON.|seqStoreReadFileSlice|name:string:1

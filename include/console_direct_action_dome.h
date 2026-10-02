@@ -10,8 +10,9 @@
 // was wired at that point - this file and its cascade entry are what closes
 // that gap.
 //
-// Six of dome's 21 dome.action.* rows are wired below, and a seventh landed
-// later with its route (dome.action.pose-sequence, #440). The rest already
+// Six of dome's 21 dome.action.* rows are wired below, and three more landed
+// later with their routes (dome.action.pose-sequence, #440;
+// dome.action.front-is-here and dome.action.go-home, #445). The rest already
 // dispatch through the existing ACTION_REGISTRY[] fallback with no direct
 // executor needed (verified with a temporary diagnostic sweep before writing
 // this file, not assumed):
@@ -548,6 +549,54 @@ static void consoleExecuteDomePoseSequence(uint32_t requestId, const char* opera
     }
 }
 
+// dome.action.front-is-here / dome.action.go-home: the Dome Bearing's two
+// presses (#445), through domeBearingActRequest() (src/web/api_drive.cpp) -
+// the call POST /api/dome/front and POST /api/dome/home make - so the Console
+// and the page refuse for one reason (include/dome_bearing_act.h). Neither
+// takes an argument. A halt or a missing calibration or belief is `blocked`,
+// the Dome ESC switched off `unavailable`, each with its reason.
+static void consoleEmitDomeBearingAct(uint32_t requestId, const char* operationName,
+                                      const ConsoleArgs& args, ConsoleCommandSource source,
+                                      const ConsoleRecordSink* sink, DomeBearingAct act) {
+    const ConsoleCatalogEntry* entry = consoleCatalogFindByName(operationName);
+    char badKey[40] = {};
+    if (consoleValidateArgsAgainstSchema(entry != nullptr ? entry->params : nullptr, args, badKey,
+                                         sizeof(badKey)) != CONSOLE_ARG_SCHEMA_OK) {
+        consoleEmitArgFailure(requestId, operationName, badKey, CONSOLE_REASON_UNKNOWN_ARGUMENT, sink);
+        return;
+    }
+    const DomeBearingActOutcome outcome =
+        domeBearingActRequest(act, consoleCommandSourceFor(source));
+    if (sink->onRecordResult == nullptr) {
+        return;
+    }
+    if (outcome.refusal == DOME_BEARING_DOME_OFF) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_UNAVAILABLE,
+                             domeBearingRefusalReason(outcome.refusal));
+    } else if (outcome.refusal != DOME_BEARING_OK) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_BLOCKED,
+                             domeBearingRefusalReason(outcome.refusal));
+    } else if (!outcome.queued) {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_ERR, CONSOLE_OUTCOME_QUEUE_FULL,
+                             CONSOLE_REASON_QUEUE_FULL);
+    } else {
+        sink->onRecordResult(requestId, CONSOLE_STATUS_OK, CONSOLE_OUTCOME_QUEUED, CONSOLE_REASON_NONE);
+    }
+}
+
+static void consoleExecuteDomeFrontIsHere(uint32_t requestId, const char* operationName,
+                                          const ConsoleArgs& args, ConsoleCommandSource source,
+                                          const ConsoleRecordSink* sink) {
+    consoleEmitDomeBearingAct(requestId, operationName, args, source, sink,
+                              DOME_BEARING_ACT_FRONT_IS_HERE);
+}
+
+static void consoleExecuteDomeGoHome(uint32_t requestId, const char* operationName,
+                                     const ConsoleArgs& args, ConsoleCommandSource source,
+                                     const ConsoleRecordSink* sink) {
+    consoleEmitDomeBearingAct(requestId, operationName, args, source, sink, DOME_BEARING_ACT_TURN);
+}
+
 // dome.seq.<name>: the sixteen registry rows that name one body-owned
 // sequence outright (dome.seq.vader ... dome.seq.overload), as opposed to
 // dome.action.dome-sequence above, which takes the name as an argument. They
@@ -606,6 +655,8 @@ static const ConsoleDirectActionExecutorEntry g_domeDirectActionExecutors[] = {
     {"dome.action.delete-sequence", consoleExecuteDomeDeleteSequence},
     {"dome.action.test-sequence", consoleExecuteDomeTestSequence},
     {"dome.action.pose-sequence", consoleExecuteDomePoseSequence},
+    {"dome.action.front-is-here", consoleExecuteDomeFrontIsHere},
+    {"dome.action.go-home", consoleExecuteDomeGoHome},
 };
 static const size_t kDomeDirectActionExecutorCount =
     sizeof(g_domeDirectActionExecutors) / sizeof(g_domeDirectActionExecutors[0]);

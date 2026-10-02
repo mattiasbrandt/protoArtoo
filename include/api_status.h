@@ -93,21 +93,25 @@ struct WifiStatusSnapshot {
 // thread-safe: yes (no RobotState access; config cache is its own mutex)
 void captureWifiStatusSnapshot(WifiStatusSnapshot* out);
 
-// The two dynamic fields of dome.status.current, verbatim JSON keys from
-// buildStatusJson() (src/web/web_server.cpp): "domeTargetSpeed" and
-// "domeEnabled". buildStatusJson's other ~60 fields belong to aggregate-field
-// registry rows (is_query: false, #212), not independently console-queryable;
-// this snapshot exists only for the two fields the registry promotes to a
-// real query (docs/action-registry.yaml: dome.status.current).
+// The dynamic fields of dome.status.current, verbatim JSON keys from
+// buildStatusJson() (src/web/web_server.cpp): "domeTargetSpeed",
+// "domeEnabled", "domeBearing" and "domeBearingDeg". buildStatusJson's other
+// ~60 fields belong to aggregate-field registry rows (is_query: false, #212),
+// not independently console-queryable; this snapshot exists only for the
+// fields the registry promotes to a real query (docs/action-registry.yaml:
+// dome.status.current).
 struct DomeStatusSnapshot {
     float domeTargetSpeed;
     bool domeEnabled;
+    // The Dome Bearing (#445), read through domeBearingRead(): "domeBearing"
+    // is its state word and "domeBearingDeg" its number, null when unknown.
+    DomeBearingReading bearing;
 };
 
 // Capture the dome slice of the /api/status snapshot. Used by both
-// buildStatusJson() (replacing its own inline reads of the same two fields)
-// and the Console module, so the two can never disagree about what
-// "domeTargetSpeed"/"domeEnabled" mean.
+// buildStatusJson() (replacing its own inline reads of the same fields) and
+// the Console module, so the two can never disagree about what any of them
+// mean.
 // thread-safe: yes (owns its own short critical section, independent of any
 // caller's already-open one - see the call site comment in web_server.cpp for
 // why a second short critical section is preferred over nesting)

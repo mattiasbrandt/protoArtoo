@@ -116,6 +116,16 @@ typedef enum {
     // nothing is out of range, and no `accepts=` can say what would be taken.
     // Names the argument that was sent.
     CONSOLE_REASON_CONFLICT = 18,
+    // The dome does not know where it points, so there is nothing to turn
+    // from: an estop, Sleep Mode or a boot forgot it, and only the builder's
+    // "front is here" makes it believed again (ADR 0051, #445). Go home and a
+    // bearing step report it; neither moves the dome.
+    CONSOLE_REASON_BEARING_UNKNOWN = 19,
+    // The dome's full turn has not been timed, or which way positive turns it
+    // has not been said, so no turn can be planned and no bearing believed
+    // (#445). A fact about the builder's calibration, the way part-not-assigned
+    // is one about their wiring.
+    CONSOLE_REASON_DOME_NOT_CALIBRATED = 20,
 } ConsoleReason;
 
 // =============================================================================

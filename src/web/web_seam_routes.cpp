@@ -99,6 +99,8 @@ void webRegisterSeamRoutes() {
 
     webRegisterRoute("/api/dome", WebMethod::kPost, handleDomeSpeedPost);
     webRegisterRoute("/api/dome/cmd", WebMethod::kPost, handleDomeCmdPost);
+    webRegisterRoute("/api/dome/front", WebMethod::kPost, handleDomeFrontPost);
+    webRegisterRoute("/api/dome/home", WebMethod::kPost, handleDomeHomePost);
     webRegisterRoute("/api/dome/layout", WebMethod::kGet, handleDomeLayoutGet);
 
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);

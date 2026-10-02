@@ -30,7 +30,9 @@
 #pragma once
 
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "dome_math.h"  // domePulsesInOrder(), domeSpeedToPulseUs()
 
@@ -94,6 +96,29 @@ struct DomeBearingReading {
     bool  believed;
     float deg;  // 0 <= deg < 360 while believed; NaN while unknown
 };
+
+// The state word every surface reads beside the number: `believed`, or
+// `unknown` - the status document's `domeBearing` and the Console's field.
+inline const char* domeBearingStateWord(const DomeBearingReading& reading) {
+    return reading.believed ? "believed" : "unknown";
+}
+
+// The number as the status document and the Console write it: degrees to one
+// decimal, 0.0..359.9, or `null` for an unknown bearing - never a number.
+constexpr size_t DOME_BEARING_DEG_TEXT_MAX = 8;  // "359.9" or "null", and its terminator
+
+inline void domeBearingFormatDeg(const DomeBearingReading& reading, char* buf, size_t bufSize) {
+    if (!reading.believed || isnan(reading.deg)) {
+        snprintf(buf, bufSize, "null");
+        return;
+    }
+    // Rounded to tenths and wrapped, so 359.96 reads 0.0 rather than 360.0.
+    long tenths = lroundf(reading.deg * 10.0f) % 3600L;
+    if (tenths < 0) {
+        tenths += 3600L;
+    }
+    snprintf(buf, bufSize, "%ld.%ld", tenths / 10L, tenths % 10L);
+}
 
 // 0 <= result < 360.
 inline float domeBearingWrap(float deg) {

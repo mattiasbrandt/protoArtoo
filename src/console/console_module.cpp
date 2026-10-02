@@ -749,9 +749,15 @@ static void consoleExecuteDomeStatusCurrent(uint32_t requestId, const ConsoleRec
     // (src/web/web_server.cpp) so the value reads identically on both adapters.
     char tempBuf[24] = {};
     snprintf(tempBuf, sizeof(tempBuf), "%.3f", (double)snap.domeTargetSpeed);
+    // The Dome Bearing in the status document's own words (#445): its state,
+    // and its number or null - an unknown bearing has no number.
+    char bearingBuf[DOME_BEARING_DEG_TEXT_MAX] = {};
+    domeBearingFormatDeg(snap.bearing, bearingBuf, sizeof(bearingBuf));
     if (sink->onRecordField) {
         sink->onRecordField(requestId, "domeTargetSpeed", tempBuf);
         sink->onRecordField(requestId, "domeEnabled", snap.domeEnabled ? "true" : "false");
+        sink->onRecordField(requestId, "domeBearing", domeBearingStateWord(snap.bearing));
+        sink->onRecordField(requestId, "domeBearingDeg", bearingBuf);
     }
 
     if (sink->onRecordEnd) {
