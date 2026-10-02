@@ -56,6 +56,8 @@ struct SeqIndexEntry {
                                   // beats resolved (seqStoreRunLengthMs())
     char           purpose[SEQ_INDEX_PURPOSE_BYTES + 1];  // start of meta.purpose
     bool           purposeCut;    // the file's purpose runs on past `purpose`
+    bool           mayOpenBody;   // a step of either branch can open a body Part
+                                  // (seqStepsMayOpenBodyPart()); rides in padding
 };
 
 // Empty the index.

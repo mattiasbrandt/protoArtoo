@@ -39,3 +39,8 @@ void rcInputAllocateDecoders(const RcInputStartupPlan& plan);
 // callers stop reporting success on a dropped command.
 RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* payload,
                                               bool pressed, CommandSource src);
+
+// The same dispatch core for a Reaction (ADR 0053, #450), attributed to
+// SRC_REACTION. Refuses what a Reaction may not do before anything is
+// dispatched. Called from ReactionTask only.
+RcDispatchOutcome dispatchReactionAction(RobotActionId target, const char* payload, bool pressed);

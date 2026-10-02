@@ -52,6 +52,17 @@ size_t driveBackendEncode(uint8_t* buf, size_t bufSize, int16_t speed, int16_t s
     return kFrameBytes;
 }
 
+// The frame the parser calls FOC, 18 bytes, carries no current and the parser
+// writes 0; only the 26-byte Gen2.x frame carries one (include/hoverboard_uart.h).
+// The format is detected on the first good frame and kept.
+DriveCurrentReport driveBackendCurrentReport() {
+    if (!g_feedbackParser.formatKnown) {
+        return DriveCurrentReport::Unknown;
+    }
+    return g_feedbackParser.isFoc ? DriveCurrentReport::NotReported
+                                  : DriveCurrentReport::Reported;
+}
+
 #ifdef ARDUINO_ARCH_ESP32
 void driveBackendBegin(HardwareSerial& uart) {
     uart.begin(kDriveBackend.baud, SERIAL_8N1, PIN_DRIVE_RX, PIN_DRIVE_TX);

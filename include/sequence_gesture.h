@@ -268,6 +268,29 @@ inline bool seqGestureIsDome(const char* payload) {
     return dome;
 }
 
+// Whether a branch of steps can open a body Part: a Body Step that opens or
+// flutters one, or a Gesture over body Parts - any shape, because a spread
+// that sends a member "back" opens what a close closed
+// (seqGestureMoveShape()). A sequence inside it counts as one that can: its
+// steps are the store's to splice in when the run loads, and are not here to
+// read. So the answer errs towards yes, which is the side a caller holding a
+// Part shut wants (a Reaction while the droid is driving, #450).
+inline bool seqStepsMayOpenBodyPart(const SeqStep* steps, uint8_t count) {
+    for (uint8_t i = 0; steps != nullptr && i < count; ++i) {
+        const SeqStep& step = steps[i];
+        if (step.type == STEP_BODY && seqBodyShape(step.params) != BODY_SHAPE_CLOSE) {
+            return true;
+        }
+        if (step.type == STEP_GESTURE && !seqGestureIsDome(step.payload)) {
+            return true;
+        }
+        if (step.type == STEP_SEQUENCE) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Clockwise angular distance from the start, in tenths; a Part with no bearing
 // sorts after every Part that has one.
 inline int32_t seqGestureOrderKey(uint8_t partIndex, uint8_t start, uint8_t direction) {

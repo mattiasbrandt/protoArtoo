@@ -121,6 +121,23 @@ struct DriveFeedback {
 // -----------------------------------------------------------------------------
 size_t driveBackendEncode(uint8_t* buf, size_t bufSize, int16_t speed, int16_t steer);
 
+// Whether this backend's feedback frames carry a motor current. A frame that
+// does not still fills DriveFeedback.currentL/R - with 0 - so a reader that
+// needs to tell "no current drawn" from "no current reported" asks here.
+enum class DriveCurrentReport : uint8_t {
+    Unknown = 0,  // no feedback frame decoded since begin
+    Reported,
+    NotReported,
+};
+
+// driveBackendCurrentReport()
+// thread-safe: any task. It reads decode state DriveTask owns without a lock,
+// and may: the answer is two flags, each a single byte the decoder sets on the
+// first good frame and then leaves. The worst a reader can see is that one
+// frame's answer half-written, for one read, and a current that is not
+// reported reads 0 either way. Nothing is added to DriveTask's loop for it.
+DriveCurrentReport driveBackendCurrentReport();
+
 #ifdef ARDUINO_ARCH_ESP32
 // driveBackendBegin()
 // Opens the drive lane at the backend's own baud and resets whatever decode

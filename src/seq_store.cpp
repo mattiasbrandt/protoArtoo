@@ -21,6 +21,7 @@
 #include "seq_json.h"
 #include "seq_store_index.h"
 #include "sequence_dispatcher.h"  // sequenceCatalogFind() - a Factory phrase
+#include "sequence_gesture.h"     // seqStepsMayOpenBodyPart() - the index row's flag
 
 static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
@@ -220,6 +221,8 @@ static void fillIndexEntry(SeqIndexEntry& e, const SeqDraft& d, JsonVariantConst
     e.lengthMs = seqStoreRunLengthMs(d.steps, d.stepCount);
     e.purposeCut = seqStoreCutPurpose(root["meta"]["purpose"] | (const char*)nullptr,
                                       e.purpose, sizeof(e.purpose));
+    e.mayOpenBody = seqStepsMayOpenBodyPart(d.steps, d.stepCount) ||
+                    seqStepsMayOpenBodyPart(d.closeSteps, d.closeStepCount);
 }
 
 // -----------------------------------------------------------------------------

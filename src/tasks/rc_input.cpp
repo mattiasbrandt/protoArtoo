@@ -292,6 +292,11 @@ static RcDispatchOutcome processTriggerAction(RobotActionId target, const char* 
     }
     if (res.setStationary) {
         commandedSetStationary(res.newStationaryMode, src);
+        // RCInputTask's own state, written here from whichever task the caller
+        // is on. The Console and the REST test button reach this line; a
+        // Reaction never does, which is how ReactionTask may call this door
+        // without a lock: dispatchReactionAction() below refuses the one
+        // action that sets it (#450).
         s_rcProcessor.stationaryLocked = res.newStationaryMode;
     }
     if (res.setSpeedPreset) {
@@ -304,6 +309,21 @@ static RcDispatchOutcome processTriggerAction(RobotActionId target, const char* 
 RcDispatchOutcome dispatchRcTriggerActionTest(RobotActionId target, const char* payload,
                                               bool pressed, CommandSource src) {
     return processTriggerAction(target, payload, pressed, src);
+}
+
+// The door's third caller: a Reaction, fired by ReactionTask (ADR 0053, #450).
+// The guard is here at the caller, as it is for the other two: what a Reaction
+// may do is robotActionValidForReaction()'s to say (include/rc_action_types.h)
+// - never the estop, and never the drive lock or the speed preset, so a
+// Reaction changes nothing on the drive path and never writes
+// s_rcProcessor.stationaryLocked above. A stored Reaction already passed this
+// when it was saved; it is asked again because this is the last line before
+// the action.
+RcDispatchOutcome dispatchReactionAction(RobotActionId target, const char* payload, bool pressed) {
+    if (!robotActionValidForReaction(target)) {
+        return RcDispatchOutcome::kNotExecutable;
+    }
+    return processTriggerAction(target, payload, pressed, SRC_REACTION);
 }
 
 static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {

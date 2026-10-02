@@ -49,6 +49,9 @@ enum CommandSource : uint8_t {
     // over HTTP.
     SRC_SERIAL_CONSOLE,  // Physical serial terminal (embedded-cli adapter)
     SRC_WEB_CONSOLE,     // Browser Live Logs command box (POST /api/console)
+    // A Reaction (ADR 0053, #450): the droid fired the binding itself, on a
+    // condition of its own. Appended, for the reason the two above were.
+    SRC_REACTION,
 };
 
 inline const char* commandSourceToString(CommandSource src) {
@@ -65,6 +68,8 @@ inline const char* commandSourceToString(CommandSource src) {
             return "SERIAL_CONSOLE";
         case SRC_WEB_CONSOLE:
             return "WEB_CONSOLE";
+        case SRC_REACTION:
+            return "REACTION";
         default:
             return "?";
     }
@@ -310,6 +315,21 @@ struct DomeCommand {
 // -----------------------------------------------------------------------------
 // RobotState  --  shared state, all access under robotStateMux
 // -----------------------------------------------------------------------------
+// What one trigger slot's Reaction is doing (ADR 0053, #450), slot for slot
+// with rcTriggerSlotsCopy() (include/config_store.h, which this header cannot
+// include; ReactionTask asserts the counts agree). `source` is RC_BINDING_NONE
+// in a slot that holds no Reaction. This is how "my Reaction never fires" gets
+// an answer on the RC page: it is not armed (`availability`), or it was held
+// back while the droid was driving (`refusals`).
+struct ReactionStatus {
+    uint8_t source;        // RcBindingSource
+    uint8_t channel;
+    uint8_t availability;  // ReactionAvailability (include/reaction_evaluator.h)
+    uint16_t fires;
+    uint16_t refusals;
+};
+constexpr size_t REACTION_STATUS_SLOTS = 11;
+
 struct RobotState {
     // --- Zone 1: Drive output + drive backend feedback + failsafe gate (DriveTask) ---
     int16_t driveOutputSpeed;
@@ -455,6 +475,9 @@ struct RobotState {
     bool flutterRequest;
     ServoOutputAddress flutterRequestOutput;
     uint16_t flutterRequestMs;
+
+    // --- Zone 10: Reactions (ReactionTask writes; the RC diagnostics read) ---
+    ReactionStatus reactions[REACTION_STATUS_SLOTS];
 };
 
 // -----------------------------------------------------------------------------
@@ -614,6 +637,18 @@ inline int16_t getDriveSteer() {
     steer = robotState.driveOutputSteer;
     taskEXIT_CRITICAL(&robotStateMux);
     return steer;
+}
+
+// Whether the droid is driving: the resolved drive output is not zero. The
+// output is a command, not a measurement, so there is no noise to set a
+// threshold above. Resting Behaviour is held while this is true, and a
+// Reaction may not open a body Part (ADR 0053, #450).
+inline bool droidIsDriving() {
+    bool driving;
+    taskENTER_CRITICAL(&robotStateMux);
+    driving = robotState.driveOutputSpeed != 0 || robotState.driveOutputSteer != 0;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return driving;
 }
 
 // Read failsafe source under mutex

@@ -25,6 +25,7 @@
 #include "console_module.h"
 #include "console_serial_output.h"
 #include "console_task.h"
+#include "reaction_task.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
@@ -623,6 +624,16 @@ void setup() {
     // overflowed the stack on the board (#226).
     xTaskCreatePinnedToCore(consoleTask, "Console", CONSOLE_TASK_STACK_BYTES, nullptr, 2, nullptr,
                             0);
+
+    // ReactionTask: Core 0 (non-RT), 20 Hz - fires the Reactions the builder
+    // bound to the droid's own conditions (ADR 0053, #450). Created on every
+    // droid and not only one with a radio: with no RC source there is no
+    // RCInputTask above, and a Reaction must fire all the same. It reads the
+    // drive from RobotState and adds nothing to DriveTask.
+    // Size is chip-target specific; REACTION_TASK_STACK_BYTES (tools/task_stack_recipes.json)
+    // carries the measured chain and the sizing rule.
+    xTaskCreatePinnedToCore(reactionTask, "ReactionTask", REACTION_TASK_STACK_BYTES, nullptr, 2,
+                            nullptr, 0);
 
     // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
