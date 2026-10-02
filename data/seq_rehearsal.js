@@ -332,13 +332,16 @@
 
   // seqBodyTargetUs() (include/sequence_body_step.h): how far is measured along
   // the shape's own direction of travel, rounded half away from zero on a
-  // reversed pair too, and a flutter lands where an open does. Then the row's
+  // reversed pair too. A flutter resolves to the closed end, whatever its how
+  // far, because a flutter ends closed (ADR 0049, amended 2026-10-02): this
+  // is where it leaves the Part, not the swing on the way. Then the row's
   // component band bounds it (servoOutputClampPulse()).
   const targetOf = (output, shape, howFar) => {
     const span = output.openUs - output.closeUs;
     const bias = span >= 0 ? 50 : -50;
     const travelled = Math.trunc((span * howFar + bias) / 100);
-    const target = shape === "close" ? output.openUs - travelled : output.closeUs + travelled;
+    const target = shape === "flutter" ? output.closeUs
+      : shape === "close" ? output.openUs - travelled : output.closeUs + travelled;
     const bounded = Math.min(0xffff, Math.max(0, target));
     return output.bandHiUs > 0 ? Math.min(output.bandHiUs, Math.max(output.bandLoUs, bounded)) : bounded;
   };
