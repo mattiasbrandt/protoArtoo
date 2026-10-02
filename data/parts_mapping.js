@@ -23,8 +23,9 @@
 // leaves, what that Output keeps and what the Part will move with, and asks
 // with the verb. The firmware refuses a move that does not name the Output the
 // Part is leaving, so a surface cannot skip the question by accident.
-// moveFor() and announcement() are exported so guided Setup and an import ask
-// it in the same words.
+// moveFor() and announcement() are exported; announcement() answers in the
+// shape window.PAOverlay.ask() takes (data/overlay.js), so any other surface
+// can ask the same question in the same words.
 //
 // An Output is called by what its board prints beside its pin, and that label
 // is also the word POST /api/servo moves it by (ADR 0033 Amendment
