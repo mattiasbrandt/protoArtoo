@@ -2208,7 +2208,7 @@ entries:
   executor: robotState.bulkCentreRequest
 - name: servo.config.cadence-floor
   display_name: Gap Between Servo Starts
-  description: The least time, in ms, between servos the droid starts itself. 450 is the dome's figure; nobody has measured the body's.
+  description: The least time, in ms, between servos the droid starts itself, so several do not start at once and sag the supply. 450 is the dome's figure; nobody has measured the body's.
   domain: servo
   type: config
   marcduino_cmd: null

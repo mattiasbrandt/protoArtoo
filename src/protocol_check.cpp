@@ -145,7 +145,6 @@ static bool charsetOk(const char* s) {
 struct PanelIntent {
     bool valid;
     char action;  // P=open, L=close, F=flutter: the command's third character
-    char target[3];
 };
 
 static bool isAllowedRingTarget(const char* t) {
@@ -160,7 +159,7 @@ static bool isAllowedPieTarget(const char* t) {
 }
 
 static PanelIntent parsePanelIntent(const char* cmd) {
-    PanelIntent pi = { false, 0, "" };
+    PanelIntent pi = { false, 0 };
     if (cmd == nullptr || cmd[0] != ':' ||
         (strncmp(cmd + 1, "OP", 2) != 0 &&
          strncmp(cmd + 1, "CL", 2) != 0 &&
@@ -174,9 +173,6 @@ static PanelIntent parsePanelIntent(const char* cmd) {
     if (len != 2) {
         return pi;
     }
-    strncpy(pi.target, t, sizeof(pi.target) - 1);
-    pi.target[sizeof(pi.target) - 1] = '\0';
-
     // The three group targets (all, pies, ring), or one panel of either kind.
     pi.valid = strcmp(t, "00") == 0 || strcmp(t, "14") == 0 || strcmp(t, "15") == 0 ||
                isAllowedRingTarget(t) || isAllowedPieTarget(t);

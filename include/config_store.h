@@ -325,6 +325,9 @@ struct ConfigSnapshot {
 // them already carried. A deletion is not automatically a shrink, and the
 // figure here is the compiler's rather than the arithmetic's.
 //
+// #453 added SystemConfig.cadence_floor_ms, the Cadence Floor, and the number
+// did NOT move either: two bytes, in the padding after rc_member. Still 916 B.
+//
 // A field addition that moves the number is a decision, not an accident: it
 // changes what every seam that crosses this struct costs, so re-measure the
 // Console task's chain before updating the value here. The recipe moved out of

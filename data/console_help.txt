@@ -110,7 +110,7 @@ servo.action.travel|Travel|Run one part open, closed and back, on the ends you m
 servo.action.hold|Hold|Drive one output to a width and keep it there while you watch and listen. It lets go 3 s after the last hold, or after ten minutes.|servoCmdQueue|target:string:1|position_us:uint16:1
 servo.action.release|Pulses Off|Take the pulse off. The part goes limp where it is, and its next move is a jump.|servoCmdQueue|target:string:1
 servo.action.centre-all|Back To Centre|Send every output to its own centre, one at a time, so the servos do not brown out. LED strips are skipped; the estop ends it.|robotState.bulkCentreRequest|
-servo.config.cadence-floor|Gap Between Servo Starts|The least time, in ms, between servos the droid starts itself. 450 is the dome's figure; nobody has measured the body's.|configApply|
+servo.config.cadence-floor|Gap Between Servo Starts|The least time, in ms, between servos the droid starts itself, so several do not start at once and sag the supply. 450 is the dome's figure; nobody has measured the body's.|configApply|
 servo.action.stop|Stop|Drive the servo to centre. It does not hold where it is.|servoCmdQueue|target:string:1
 servo.action.toggle-arm1|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|
 servo.action.toggle-arm2|{output} Toggle|Open or close the part on {output}.|servoCmdQueue|

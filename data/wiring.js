@@ -602,8 +602,9 @@
   // is the opposite of adopting it quietly.
   //
   // The figure is the droid's stored one, and so is whose it is. One a builder
-  // set is not called the dome's, and either way the body's is still
-  // unmeasured, which the line goes on saying. Until the droid has answered
+  // set is not called the dome's and is stated exactly; the "~" belongs to the
+  // dome's measured figure. Either way the body's is still unmeasured, which
+  // the line goes on saying. Until the droid has answered
   // there is no figure to state, and none is invented.
   const cadenceOf = (config) => {
     const servo = config && typeof config.servo === "object" && config.servo ? config.servo : {};
@@ -617,7 +618,7 @@
     `<p class="hint">Every servo shares one supply, and too many starting at once sag it. ` +
     `So the droid starts its own moves, like centring every output, ` +
     (cadence
-      ? `<b>${esc(`~${cadence.ms} ms (one servo at a time)`)}</b> apart.</p>` +
+      ? `<b>${esc(`${cadence.dome ? "~" : ""}${cadence.ms} ms (one servo at a time)`)}</b> apart.</p>` +
         `<p class="hint">${
           cadence.dome ? "That figure is the dome's, from its seven ring servos." : "That figure was set on this droid."
         } ${UNMEASURED}</p>`
