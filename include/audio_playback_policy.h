@@ -110,6 +110,7 @@ enum AudioPlaybackNoneReason : uint8_t {
     AUDIO_PLAYBACK_NONE_INTERVAL_NOT_READY,
     AUDIO_PLAYBACK_NONE_INTERVAL_ZERO,
     AUDIO_PLAYBACK_NONE_DOME_SEQUENCE_ACTIVE,
+    AUDIO_PLAYBACK_NONE_DRIVING,
     AUDIO_PLAYBACK_NONE_RANDOM_DISABLED,
 };
 
@@ -180,6 +181,9 @@ struct AudioPlaybackRandomContext {
     uint32_t lastRandMs = 0;
     uint8_t activeMood = 0;
     uint32_t randomValue = 0;
+    // The droid is driving. Last, so every positional initializer that already
+    // exists keeps meaning what it meant.
+    bool driving = false;
 };
 
 struct AudioPlaybackIntent {

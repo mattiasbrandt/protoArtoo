@@ -55,6 +55,7 @@
 #include "config_nvsio.h"
 #include "config_cache.h"
 #include "dome_link.h"
+#include "drive_motion.h"  // driveOutputIsDriving() - idle chatter waits while driving
 #include "logging.h"
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
@@ -473,6 +474,7 @@ static const char* noneReasonToString(AudioPlaybackNoneReason reason) {
         case AUDIO_PLAYBACK_NONE_INTERVAL_NOT_READY: return "interval not ready";
         case AUDIO_PLAYBACK_NONE_INTERVAL_ZERO: return "interval zero";
         case AUDIO_PLAYBACK_NONE_DOME_SEQUENCE_ACTIVE: return "dome sequence active";
+        case AUDIO_PLAYBACK_NONE_DRIVING: return "driving";
         case AUDIO_PLAYBACK_NONE_RANDOM_DISABLED: return "random disabled";
         case AUDIO_PLAYBACK_NONE_OK:
         default:
@@ -973,9 +975,11 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         uint8_t activeMood;
         bool domeSeqActive;
+        bool driving;
         taskENTER_CRITICAL(&robotStateMux);
         activeMood = robotState.activeMood;
         domeSeqActive = robotState.domeSeqActive;
+        driving = driveOutputIsDriving(robotState.driveOutputSpeed, robotState.driveOutputSteer);
         taskEXIT_CRITICAL(&robotStateMux);
 
         AudioStepIdleInputs idleIn{};
@@ -986,6 +990,7 @@ void audioTask(void* pvParameters) {
         idleIn.webOtaActive = webOtaActive();
         idleIn.activeMood = activeMood;
         idleIn.domeSeqActive = domeSeqActive;
+        idleIn.driving = driving;
         idleIn.randomValue = esp_random();
         idleIn.playback = &playback;
         idleIn.bindings = &s_audioBindings;

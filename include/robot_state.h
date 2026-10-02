@@ -639,18 +639,6 @@ inline int16_t getDriveSteer() {
     return steer;
 }
 
-// Whether the droid is driving: the resolved drive output is not zero. The
-// output is a command, not a measurement, so there is no noise to set a
-// threshold above. Resting Behaviour is held while this is true, and a
-// Reaction may not open a body Part (ADR 0053, #450).
-inline bool droidIsDriving() {
-    bool driving;
-    taskENTER_CRITICAL(&robotStateMux);
-    driving = robotState.driveOutputSpeed != 0 || robotState.driveOutputSteer != 0;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return driving;
-}
-
 // Read failsafe source under mutex
 inline FailsafeSource getFailsafeSource() {
     FailsafeSource source;

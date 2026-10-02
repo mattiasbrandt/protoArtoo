@@ -97,6 +97,17 @@ inline bool domeRndMoodStartsMoves(uint8_t mood) {
     return mood != 10;
 }
 
+// Random movement is standing down - switched off, Quiet chosen, a dome
+// sequence starting, the droid driving, the estop or Sleep Mode - while one of
+// its turns is running. Whether the dome goes to neutral with it: yes, unless
+// a manual command was taken on this very tick, which owns the dome now and
+// must not be overwritten by a turn that is only ending (#450). The estop and
+// Sleep Mode still win, and need no word here: DomeTask takes no command
+// under either, so no manual command exists on such a tick.
+inline bool domeRndStandDownGoesNeutral(bool manualCommandThisTick) {
+    return !manualCommandThisTick;
+}
+
 // Next pause in ms, drawn from the Mood-scaled window with the caller's random
 // value (esp_random() on the device; passed in so the endpoints are testable).
 // Returns 0 when the Mood starts no move (Quiet): a real pause is never under

@@ -140,6 +140,7 @@ struct AudioStepIdleInputs {
     bool webOtaActive = false;
     uint8_t activeMood = 0;
     bool domeSeqActive = false;
+    bool driving = false;  // the resolved drive output is not zero
     uint32_t randomValue = 0;
     const AudioPlaybackConfig* playback = nullptr;
     const AudioBindingCache* bindings = nullptr;

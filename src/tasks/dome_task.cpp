@@ -29,6 +29,7 @@
 #include "config.h"
 #include "config_cache.h"
 #include "dome_math.h"
+#include "drive_motion.h"  // driveOutputIsDriving() - Resting Behaviour waits while driving
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -225,6 +226,8 @@ void domeTask(void* pvParameters) {
 
         // Random dome idle rotation state machine
         //
+        // It is Resting Behaviour, so it waits while the droid is driving.
+        //
         // How often it turns follows the Mood (#452): domeRndPauseMsForMood()
         // scales the stored pause window, and Quiet starts no move at all.
         // Quiet goes through the same not-active branch as Sleep and Estop, so
@@ -242,6 +245,7 @@ void domeTask(void* pvParameters) {
             uint8_t  rndSpeedPct, rndPauseMin, rndPauseMax;
             uint16_t rndMoveMs;
             bool     domeSeqActive;
+            bool     driving;
             uint8_t  mood;
             uint32_t now = millis();
             DomeConfig rndCfg = {};
@@ -254,10 +258,16 @@ void domeTask(void* pvParameters) {
             taskENTER_CRITICAL(&robotStateMux);
             domeSeqActive = robotState.domeSeqActive;
             mood          = robotState.activeMood;
+            driving       = driveOutputIsDriving(robotState.driveOutputSpeed,
+                                                 robotState.driveOutputSteer);
             taskEXIT_CRITICAL(&robotStateMux);
 
+            // Resting Behaviour is held while the droid is driving (CONTEXT.md,
+            // #450): driving goes through the same not-active branch, and the
+            // first tick at rest draws a fresh pause, so the dome does not turn
+            // on the tick the droid stops.
             if (rndEnabled && domeRndMoodStartsMoves(mood) && !sleepMode && !estop &&
-                !domeSeqActive) {
+                !domeSeqActive && !driving) {
                 // Every pause below is drawn at the Mood the droid is in now, and
                 // records it in rndPauseMood so a later change can be noticed.
                 if (!rndWasActive) {
@@ -306,9 +316,14 @@ void domeTask(void* pvParameters) {
             } else {
                 rndWasActive = false;
                 if (rndState == DOME_RND_MOVING) {
-                    currentSpeed = 0.0f;
-                    setDomeNeutral();
-                    hasCommand = false;
+                    // The random turn ends either way. A manual command taken
+                    // this tick keeps the speed it set: writing neutral here
+                    // would lose it, and a one-shot command for good.
+                    if (domeRndStandDownGoesNeutral(manualCommandThisTick)) {
+                        currentSpeed = 0.0f;
+                        setDomeNeutral();
+                        hasCommand = false;
+                    }
                     rndNextMs  = now;
                     rndState   = DOME_RND_PAUSING;
                 }

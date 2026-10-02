@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "audio_playback_policy.h"  // AUDIO_PLAYBACK_ANTI_SPAM_MS - the beat the floor reuses
+#include "drive_motion.h"           // driveOutputIsDriving()
 #include "rc_action_types.h"        // RcTriggerBinding, the Reaction accessors
 
 // -----------------------------------------------------------------------------
@@ -89,14 +90,6 @@ struct ReactionInputs {
     ReactionCurrentReport currentReport;
     uint8_t audioPlayState;  // 0 stop, 1 playing, 2 paused, 0xFF unknown
 };
-
-// While the droid is driving. The resolved output is a command, not a
-// measurement, so it has no noise to set a threshold above: zero is at rest
-// and anything else is driving. Resting Behaviour is held on the same
-// reading (droidIsDriving(), include/robot_state.h).
-inline bool reactionDriving(int16_t driveSpeed, int16_t driveSteer) {
-    return driveSpeed != 0 || driveSteer != 0;
-}
 
 // Why a Reaction is not simply armed, in the Availability Family's words
 // (CONTEXT.md): `notInThisBuild` is "change it elsewhere", `waiting` is
@@ -173,7 +166,7 @@ inline bool reactionIsReaction(const RcTriggerBinding& binding) {
 // Follows the drive whether or not anything is armed, so a Reaction armed
 // mid-run reads a history that is true.
 inline void reactionTrackMotion(ReactionMotion* motion, const ReactionInputs& in) {
-    const bool moving = reactionDriving(in.driveSpeed, in.driveSteer);
+    const bool moving = driveOutputIsDriving(in.driveSpeed, in.driveSteer);
     if (moving) {
         if (!motion->moving) {
             motion->restValid = false;
@@ -307,7 +300,7 @@ inline void reactionEvaluatorTick(ReactionEvaluator* ev, const RcTriggerBinding*
     const bool gateLifted = !ev->gateOpen;
     ev->gateOpen = true;
 
-    const bool driving = reactionDriving(in.driveSpeed, in.driveSteer);
+    const bool driving = driveOutputIsDriving(in.driveSpeed, in.driveSteer);
 
     for (size_t i = 0; i < count && i < REACTION_SLOT_MAX; ++i) {
         ReactionSlotState& slot = ev->slots[i];
