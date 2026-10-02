@@ -153,8 +153,9 @@
   };
 
   // A sequence inside this one, read from its own steps at the milliseconds
-  // they run at: how long it runs - to its end step, where the engine stops -
-  // and the Parts it names, each kind of step read as build() reads it. A
+  // they run at: how long it runs - the length its own end step gives it;
+  // spliced into a routine, the engine runs on to that routine's end - and
+  // the Parts it names, each kind of step read as build() reads it. A
   // Random Flutter names a set the droid picks from when it runs, not a Part.
   // One level only: a sequence inside the phrase is not followed.
   const phraseRuns = (steps) => {
