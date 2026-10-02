@@ -658,6 +658,13 @@
   // (`context.open`). Two things are not in it: a random step's pick, which
   // nobody knows until the droid runs, and what a sequence inside this one
   // leaves open, which is drawn as one block and not read into.
+  //
+  // A KNOWN OVER-READ. Where the opening half holds a Marcduino sequence
+  // (:SE##), the engine closes the ring panels that run opened even on a
+  // toggle's opening half (`wantRingClose` under FX_DOME_SEQUENCE,
+  // beginFinish(), src/tasks/sequence_engine.cpp), while build() lists them
+  // open. A close half started from this closes them a second time, which is
+  // harmless: a close of a closed panel.
   // ---------------------------------------------------------------------------
   const leftOpen = (seq, context = {}) => {
     const model = build(seq, { ...context, open: null, staysOpen: true });

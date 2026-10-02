@@ -947,7 +947,7 @@
   };
   // The pose is the opening half's: the droid takes a name and an instant,
   // and reads the instant off that sequence's steps (POST /api/seq/pose).
-  const POSE_OPENS_ONLY = { text: "The droid moves to a moment of Opens only.", level: "error" };
+  const POSE_OPENS_ONLY = { text: "Pose works on Opens only.", level: "error" };
 
   // What opens in place of the list starts at its strip, however far down
   // the list the row that opened it was.
@@ -1802,17 +1802,31 @@
   // Where the next step to move the Part already is that close, none is
   // added: a sequence saved while a flutter still owed a close has one after
   // every flutter, and the open takes it for its pair.
-  const addPairClose = (step, ms) => {
+  //
+  // `reopen(step)` is what turns the step itself back into an open. The two
+  // are one change, tried on a copy first (triedOnCopy()): the close is one
+  // step more, and a routine that is full must not become one the droid
+  // refuses. Refused, the flutter stays a flutter and the stage says why.
+  // Where the close goes is read off the routine before it is changed, and
+  // holds for the copy.
+  const reopenAsPair = (step, ms, reopen) => {
     const steps = stageSteps();
     const at = steps.indexOf(step);
     const moves = (other) => Boolean(other) && (step.type === "body"
       ? other.type === "body" && other.part === step.part
       : panelIntent(other)?.[2] === panelIntent(step)[2]);
-    if (closesOnly(step, steps.slice(at + 1).find(moves))) return;
+    const hasClose = closesOnly(step, steps.slice(at + 1).find(moves));
     const { t, last, loop, outer, endAt } = reachOf(step);
     const close = { t: Math.min(t + ms, last), ...closeFor(step) };
-    if (loop) steps[loop.at].body += 1;
-    steps.splice(outer ? endAt : at + 1, 0, close);
+    const place = (list) => {
+      reopen(list[at]);
+      if (hasClose) return;
+      if (loop) list[loop.at].body += 1;
+      list.splice(outer ? endAt : at + 1, 0, { ...close });
+    };
+    const { refused } = triedOnCopy(place);
+    if (refused) sayOnStage(refused.error, "error");
+    else place(steps);
   };
 
   // One field of the picked step, written. `raw` is the control's own value.
@@ -1867,10 +1881,11 @@
         if (pair) dropPairClose(step, pair);
       } else if (raw === "open" && step.shape === "flutter") {
         const lasted = Number(stageRun()[stageSteps().indexOf(step)].flutterMs);
-        delete step.shape;
-        delete step.flutterMs;
-        delete step.spanBeats;
-        addPairClose(step, lasted > 0 ? lasted : DROPPED_OPEN_MS);
+        reopenAsPair(step, lasted > 0 ? lasted : DROPPED_OPEN_MS, (opened) => {
+          delete opened.shape;
+          delete opened.flutterMs;
+          delete opened.spanBeats;
+        });
       }
     } else if (field === "flutterMs") {
       // A body flutter's own length, within its bounds. One typed over a
@@ -1893,8 +1908,9 @@
         delete step.howFar;
         if (pair) dropPairClose(step, pair);
       } else if (raw === "open" && shape === "flutter") {
-        step.cmd = step.cmd.replace(/^:OF/, ":OP");
-        addPairClose(step, DROPPED_OPEN_MS);
+        reopenAsPair(step, DROPPED_OPEN_MS, (opened) => {
+          opened.cmd = opened.cmd.replace(/^:OF/, ":OP");
+        });
       }
     } else if (field === "way") {
       Object.assign(step, turnOf(raw, step.speedPct, step.durationMs));
@@ -4086,10 +4102,15 @@
   //     panel's own :CLxx, a body Part's Body Step with the shape close. Never
   //     a group close (:CL00, :CL14, :CL15): several servos starting at once
   //     browned the dome out (src/tasks/sequence_catalog.cpp, 2026-06-17);
-  //   - one at a time, a Cadence Floor apart: the droid's own, as the
-  //     Rehearsal reads it (SeqRehearsal.cadenceFloor());
-  //   - the end step one floor after the last close. With nothing left open
-  //     it is the end step alone, which the droid accepts.
+  //   - one at a time. A body Part's close comes a Cadence Floor after the
+  //     step before it: the droid's own, which a builder can set
+  //     (SeqRehearsal.cadenceFloor()). A dome panel's comes no sooner than the
+  //     dome's measured cadence (domeCadenceMs()), however low that floor is
+  //     set: a floor set for the body's Outputs does not change what browned
+  //     the dome out, and it is the figure the Rehearsal judges panel moves
+  //     by, so a started close half never warns on itself;
+  //   - the end step that same gap after the last close. With nothing left
+  //     open it is the end step alone, which the droid accepts.
   // The pattern is the factory toggles' own close halves (kPiesCloseSteps),
   // less their sound and holo reset, which are those routines' own choices.
   // What is left open is the timeline's reading (SeqTimeline.leftOpen()); a
@@ -4098,26 +4119,40 @@
   // sequence inside this one leaves open, which the timeline draws as one
   // block and does not read into.
   //
-  // A branch holds 96 steps by itself (protocolCheckBranch()), so a close
-  // half of one step per Part and an end always fits, whatever Opens holds.
+  // It fits by steps: a branch holds 96 by itself (protocolCheckBranch()), so
+  // one step per Part and an end is never too many, whatever Opens holds. The
+  // file's size is another cap, which setGroup() reads.
   //
-  // Null when the page cannot say how far apart the closes go - the motion
-  // model did not load. None is started then: closes sent together are what
-  // the spacing is there to prevent.
+  // Answers {steps, stays}: the close half, and the names of the Parts left
+  // open that it does not close - a dome Part the dome has no close command
+  // for. Or {refused}: why none can be started - the timeline did not load,
+  // or the motion model did not, and then the page cannot say how far apart
+  // the closes go; closes sent together are what the spacing is there to
+  // prevent.
   // ---------------------------------------------------------------------------
   const startedCloseHalf = () => {
+    if (!window.SeqTimeline) return { refused: "The timeline did not load. Reload the page to try again." };
     const floor = window.SeqRehearsal?.cadenceFloor(rehearsalContext())?.ms;
-    if (!window.SeqTimeline || !(floor > 0)) return null;
-    const closes = window.SeqTimeline.leftOpen(editorState.current, rehearsalContext())
-      .map(({ part }) => {
-        const entry = catalogPart(part);
-        if (entry?.half !== "dome") return { type: "body", part, shape: "close" };
-        const cmd = window.DomeCommandMap?.resolvePanelCommand(entry.shorthand, "close");
-        return cmd ? { type: "dome", cmd } : null;
-      })
-      .filter(Boolean)
-      .map((close, index) => ({ t: index * floor, ...close }));
-    return [...closes, { t: closes.length * floor, type: "end", ...stepTypeDefaults.end }];
+    const dome = window.SeqRehearsal?.domeCadenceMs();
+    if (!(floor > 0) || !(dome > 0)) return { refused: "The spacing between moves did not load. Reload the page to try again." };
+    const steps = [];
+    const stays = [];
+    let t = 0;
+    let gap = 0;
+    window.SeqTimeline.leftOpen(editorState.current, rehearsalContext()).forEach(({ part }) => {
+      const entry = catalogPart(part);
+      const onDome = entry?.half === "dome";
+      const cmd = onDome ? window.DomeCommandMap?.resolvePanelCommand(entry.shorthand, "close") : null;
+      if (onDome && !cmd) {
+        stays.push(entry.name);
+        return;
+      }
+      gap = onDome ? Math.max(floor, dome) : floor;
+      if (steps.length > 0) t += gap;
+      steps.push(onDome ? { t, type: "dome", cmd } : { t, type: "body", part, shape: "close" });
+    });
+    steps.push({ t: t + gap, type: "end", ...stepTypeDefaults.end });
+    return { steps, stays };
   };
 
   // Put the sequence in `group`.
@@ -4129,15 +4164,35 @@
   //     the droid sends a sequence with none - empty, where it sent the key
   //     at all - so None pressed straight after a group leaves no edit.
   // The stage says what became of Closes, because the control is in the
-  // drawer and the half is on the stage.
+  // drawer and the half is on the stage. Its line is the timeline's, in the
+  // bar over the routine, which is there under the step list too; where the
+  // timeline did not load there is no such line, and the strip says it.
+  //
+  // A started close half is refused where it would take the file past what
+  // this droid stores for one sequence (SEQ_FILE_MAX_BYTES, which the droid
+  // reports and the Rehearsal weighs the routine against): Protocol Check
+  // here does not read the size, and Save would be the first to say.
   const setGroup = (group) => {
     if (historyBusy()) return;
     const seq = editorState.current;
     const had = Array.isArray(seq.closeSteps) && seq.closeSteps.length > 0;
-    const started = group !== "none" && !had ? startedCloseHalf() : null;
-    if (group !== "none" && !had && !started) {
-      sayOnStage("The spacing between moves did not load. Reload the page to try again.", "error");
+    const say = (text, level = "") => (sessionTimeline ? sayOnStage(text, level) : showEditorFeedback(text, level || "info"));
+    const made = group !== "none" && !had ? startedCloseHalf() : null;
+    if (made?.refused) {
+      say(made.refused, "error");
       return;
+    }
+    const started = made ? made.steps : null;
+    if (started && window.SeqRehearsal) {
+      const { bytes, maxBytes } = window.SeqRehearsal
+        .rehearse({ ...seq, toggleGroup: group, closeSteps: started }, rehearsalContext()).figures;
+      if (maxBytes !== null && bytes > maxBytes) {
+        // By how much, in bytes: rounded to KB, a file just past the cap
+        // reads the same as the cap.
+        const cap = `${Number((maxBytes / 1024).toFixed(1))} KB`;
+        say(`Closes does not fit: the sequence would be ${countOf(bytes - maxBytes, "byte", "bytes")} over the ${cap} this droid stores.`, "error");
+        return;
+      }
     }
     const before = historyBegin();
     if (started) seq.closeSteps = started;
@@ -4151,11 +4206,13 @@
     edited();
     if (started) {
       const closes = started.length - 1;
-      sayOnStage(closes === 0
-        ? "Closes started: Opens leaves nothing open, so it only ends."
-        : `Closes started: ${countOf(closes, "part closes", "parts close")}, one at a time.`);
+      const stays = made.stays.length === 0 ? ""
+        : ` ${made.stays.join(", ")} ${made.stays.length === 1 ? "has no close; it stays" : "have no close; they stay"} open.`;
+      say((closes > 0 ? `Closes started: ${countOf(closes, "part closes", "parts close")}, one at a time.`
+        : stays ? "Closes started: it only ends."
+          : "Closes started: Opens leaves nothing open, so it only ends.") + stays);
     } else if (group === "none" && had) {
-      sayOnStage("Closes is gone. Undo brings it back.");
+      say("Closes is gone. Undo brings it back.");
     }
   };
 

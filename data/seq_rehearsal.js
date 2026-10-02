@@ -1194,6 +1194,9 @@
     // The Cadence Floor as the rules read it, for the editor to space the
     // closes of a close half it starts by the same figure (#441).
     cadenceFloor,
+    // And the dome's own measured cadence, which a dome panel's close is
+    // never spaced closer than, whatever the floor is set to.
+    domeCadenceMs,
     unmeasuredOutputs,
     countsHtml,
     figuresText,
