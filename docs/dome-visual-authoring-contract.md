@@ -46,8 +46,13 @@ DH:<target>:<effect>[:<color>[:<durationOrCount>]]
 DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
 ```
 
-General validation (server `src/protocol_check.cpp` + client
-`data/seq_protocol_check.js`, identical mirror):
+General validation (server `src/protocol_check.cpp` `percentDecode`,
+`protocolCheckNesting`, and the `closeSteps` branch of `protocolCheck`; client
+`data/seq_protocol_check.js` `SeqProtocolCheck.validateSequence` and
+`decodeTextBytes`). The two stay in step through
+`test/fixtures/protocol_mirror.json`: `make check-protocol-mirror` runs the
+browser half, and `test_protocol_mirror` runs the firmware half on the same
+`expect` flag. A disagreement is a failed check, not a claim that the files match:
 - uppercase command family and enum tokens; no lowercase aliases (first slice)
 - full-string match only; no extra fields
 - total command length `<= 63`
@@ -81,12 +86,14 @@ DH:<target>:<effect>[:<color>[:<durationOrCount>]]
 - **Examples:** `DH:A:FLASH:RED:10`, `DH:F:RAINBOW`, `DH:A:WAG:DEFAULT:5`, `DH:A:RESET`, `DH:T:PULSE:RANDOM`
 - **Dome behavior:** translate to existing `HPF`/`HPR`/`HPT`/`HPA` and `*` internally.
 
-#### Effect/color + duration matrix (strict — mirrored in both Protocol Checks)
+#### Effect/color + duration matrix (strict — both Protocol Checks)
 
-Both `data/seq_protocol_check.js` and `src/protocol_check.cpp` enforce this matrix
-identically, so unsupported combinations (e.g. `DH:A:RAINBOW:RED`) are rejected
-**before send** rather than relying on the dome to reject. `DEFAULT` (or omitted
-color) is always accepted; an omitted duration is treated as `0`.
+Both `data/seq_protocol_check.js` and `src/protocol_check.cpp` are written to
+reject this matrix before send (for example `DH:A:RAINBOW:RED`), rather than
+leaving the rejection to the dome. The corpus in
+`test/fixtures/protocol_mirror.json` is what keeps a later edit of one side
+from drifting. `DEFAULT` (or omitted color) is always accepted; an omitted
+duration is treated as `0`.
 
 | Effect | Allowed colors | Duration/count |
 |---|---|---|

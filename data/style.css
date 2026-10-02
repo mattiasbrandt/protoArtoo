@@ -1,4 +1,6 @@
-/* ---------------------------------------------------------------------------
+/* Where a shared class lives: python3 tools/css_where.py .btn
+   (--sections lists the banners). A line number in this file is a hint.
+   ---------------------------------------------------------------------------
    The palette - and the only place in this file a color literal may appear.
 
    Dark only, by decision (#327): one palette means there is no second one to

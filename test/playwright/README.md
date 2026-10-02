@@ -47,8 +47,13 @@ a droid, or offline against the fixture server.
   before a script that needs it clear is cleared, whoever set it).
   `parts=1,2` runs it once per `PART`.
   `// bench-auto: fixture <page>.html` runs it on the runner's own fixture
-  server with `FIXTURE=1` and `TARGET_URL` at that page. A new script
-  without one stops the runner before it starts.
+  server with the full env `FIXTURE=1 BASE_URL=http://127.0.0.1:<port>
+  TARGET_URL=<that base>/<page>.html`. `BASE_URL` is what the script's
+  fixture routes and status reads use; `TARGET_URL` is the page. Many
+  scripts default `TARGET_URL` to `http://127.0.0.1:4173/seq.html`, so a
+  run that sets only one of the two hits the wrong host. A new script
+  without one stops the runner before it starts. `make pw-fixture DIR=<folder>`
+  sets that env and runs the folder's fixture scripts.
 - **Precondition and exit codes**: a script reads the droid first and refuses
   to run when its rule means nothing in that state.
   `0` every row PASS (NOT ASSESSED beside a PASS allowed),
@@ -78,7 +83,17 @@ PA_FIXTURE_PORT=4186 python3 tools/serve_editor_fixture.py &
 
 NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
   FIXTURE=1 HEADLESS=true BASE_URL=http://127.0.0.1:4186 \
+  TARGET_URL=http://127.0.0.1:4186/servo.html \
   node test/playwright/servo/estop-leaves-outputs-limp.js
 ```
+
+`loadRehearsalFacts()` (`data/seq.js`) caches `GET /api/servo/outputs` on
+first load. Install a fixture route that should change that answer before
+the page loads, or call `page.reload()` after installing it. A route added
+after mount is not what the page already cached.
+
+`make pw-fixture DIR=servo` starts the fixture server on a free port, sets
+`FIXTURE`, `BASE_URL` and `TARGET_URL`, and runs that folder's
+`// bench-auto: fixture` scripts. Stop a server you started by its PID.
 
 Stop the server by its PID when done.

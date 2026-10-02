@@ -381,6 +381,8 @@ make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt ROWS=discovery,respo
 make bench-rows BENCH_ROWS=tools/bench_rows/firebeetle2.txt SKIP_MANUAL=1
 ```
 
+`python3 tools/console_client.py --check-sheet <file>` checks the sheet and exits without opening a port: every `@row` has a label, labels are unique, and every directive is one this client knows.
+
 `--skip-manual` drops every row containing a `pause`, which is what makes a sheet
 runnable by an agent with nobody at the bench. It applies on top of `--rows`. An
 `http` step needs no person, so it never makes a row manual - but a selected row

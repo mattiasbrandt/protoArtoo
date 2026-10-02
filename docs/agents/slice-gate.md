@@ -2,6 +2,8 @@
 
 **Suites paused through 2026-10-31 (#464).** The native, web, and mutation stages of `tools/slice_verify.py` skip themselves and print `SKIP (suites paused until 2026-11-01, #464)`. That row is not a pass of the suite. A missing suite run is not a reject. The build, the diff checks, and the tooling self-tests still run. CI on a pull request into `main` still runs the native and web suites. Do not add tests or mutation patches during the pause. The date lives in `tools/suite_pause.py` and the skip ends on 2026-11-01 with no further edit. `PROTOARTOO_SUITES=1` runs the stages.
 
+**The gate in a pane.** A pipe through `tee` records tee's status. Run it as `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <ref> --json /tmp/gate.json`. The log's last line is `GATE_EXIT=<n>`, the command's own exit code. `--json` writes a boolean `ok` (true when the gate has no failures). After the command, the script restores `data/fw-version.json` and `data/fs-version.json`, which a firmware build rewrites and which are never committed.
+
 `tools/slice_verify.py` is the mechanical PASS/FAIL floor for a branch against a
 base ref. `python3 tools/slice_verify.py --help` is the flag reference; this file
 is the contract: what the block must contain, who may waive what, and what
