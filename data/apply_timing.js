@@ -75,6 +75,7 @@
   // What a failed save adds when an earlier one still waits on the builder, so
   // the restart owed is not lost behind the error.
   const STILL_OWED = {
+    [AT_REBOOT]: "An earlier change still waits for the next start.",
     [RESTART_REQUIRED]: "An earlier change still waits for a restart.",
   };
 

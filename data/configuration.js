@@ -639,8 +639,8 @@ const BOARD_LABELS = {
     ? TIMING.AT_REBOOT
     : TIMING.latest(...STEP_SETTINGS[stepKey].map(window.PAApi.timingOf)));
 
-  // The latest timing any waiting change on this page is held to: what a save
-  // line and the save pill say.
+  // The latest timing any waiting change on this page is held to: what the
+  // save line says, after a save that worked and after one that failed.
   const waitingTiming = () => TIMING.latest(TIMING.IMMEDIATE,
     ...Object.keys(WAITING).filter(isPending).map(stepTiming));
 
@@ -722,12 +722,11 @@ const BOARD_LABELS = {
       notifyTimingChange();
     } catch (error) {
       console.error("[configuration] saveFeatures failed:", error);
-      // A restart an earlier save left owed is still owed after this one
-      // failed, and the line says so beside the error.
-      setFeatureFeedback(
-        TIMING.failed(window.PAApi.messageFor(error), rcRestartPending ? TIMING.RESTART_REQUIRED : TIMING.NOTHING),
-        "error",
-      );
+      // What an earlier save left waiting on the droid still waits after
+      // this one failed, and the line says so beside the error - read the way
+      // the saved line reads it, so a next start is not lost any more than a
+      // restart is.
+      setFeatureFeedback(TIMING.failed(window.PAApi.messageFor(error), waitingTiming()), "error");
       // A refused pick is read back rather than left on screen: the cards
       // then show what the droid holds, not the answer it did not take.
       if (carriedPick) loadFeatures({ afterRefusal: true });
