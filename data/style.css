@@ -7672,15 +7672,21 @@ body[data-page="maintenance"] .status-item .hint {
   border-left: 2px dashed var(--border);
 }
 
-/* The move question is opened non-modally (data/parts_mapping.js), so it is
-   not in the top layer and has no ::backdrop: a modal one would put the whole
-   page under it, the Latching Estop included (ADR 0048, #359). It is fixed and
-   centred instead, drawn inside #shell-content's stacking context like the
-   Sequences dialogs, so it covers the surface and never the chrome. Its scrim
-   is a spread shadow, which catches no pointer: what stops a press behind the
-   question is the surface going inert. margin: auto centres it; the reset at
-   the top of this file zeroes every margin, which once pinned it top-left. */
-.parts-move-dialog {
+/* ---------------------------------------------------------------------------
+   Questions and receipts (data/overlay.js, #456)
+
+   A question - the shared one and the Wiring and Servos move dialogs - is
+   opened non-modally, so it is not in the top layer and has no ::backdrop: a
+   modal one would put the whole page under it, the Latching Estop included
+   (ADR 0048, #359). It is fixed and centred instead, drawn inside
+   #shell-content's stacking context like the Sequences dialogs, so it covers
+   the surface and never the chrome. Its scrim is a spread shadow, which catches
+   no pointer: what stops a press behind the question is the surface going
+   inert. margin: auto centres it; the reset at the top of this file zeroes
+   every margin, which once pinned it top-left. Its buttons stay .btn: a
+   question is page-scale, not a card.
+   --------------------------------------------------------------------------- */
+.question-dialog {
   position: fixed;
   inset: 0;
   z-index: 9999;
@@ -7698,15 +7704,67 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* A dialog's title is a question and its buttons are verbs (pattern 10), so the
    title is read as the surface's own voice rather than as another engraving. */
-.parts-move-dialog h4 {
+.question-dialog h4 {
   color: var(--text);
   font-size: var(--fs-h2);
   margin-bottom: var(--space-sm);
 }
 
-.parts-move-dialog .button-row {
+.question-dialog .button-row {
   justify-content: flex-end;
   margin-top: var(--space-lg);
+}
+
+/* A message with nothing to decide has one button: the other is hidden, and
+   .btn's own display would otherwise win over the attribute. */
+.question-dialog .btn[hidden],
+.question-dialog p[hidden] {
+  display: none;
+}
+
+/* The receipt host: the shell's, beside the mounted surface in #shell-content
+   (data/shell.js), at the work area's lower left and clear of the Status
+   Plate. Ranked inside the work area's stacking context, so it can never reach
+   the chrome; under every question (9999) so a receipt never covers one; and
+   under the Dashboard's sleep overlay (1200), which must never be covered
+   either. The host catches no pointer; its plates do, so a click dismisses
+   one. */
+.receipts {
+  position: fixed;
+  left: calc(var(--rail) + var(--gutter));
+  bottom: calc(var(--plate-h) + var(--space-lg));
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  max-width: min(32rem, calc(100vw - var(--rail) - 2 * var(--gutter)));
+  pointer-events: none;
+}
+
+/* A receipt is a plate, not an alarm: its kind is its left edge and nothing
+   else, per Status Color. An act that went through takes no color; amber is
+   one the builder can act on; red is refused or failed. Never blue, never
+   green (CONTEXT.md "Receipt"). */
+.receipt {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--text);
+  font-size: var(--fs-cell);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--elev-2);
+}
+
+.receipt.receipt-act {
+  border-left-color: var(--warning);
+}
+
+.receipt.receipt-refused {
+  border-left-color: var(--danger);
 }
 
 /* ---------------------------------------------------------------------------
@@ -8582,6 +8640,13 @@ body[data-page="maintenance"] .status-item .hint {
     padding: var(--space-lg) var(--space-lg) var(--space-2xl);
   }
 
+  /* The rail is a row across the top here, so the receipts start at the
+     work area's own edge. */
+  .receipts {
+    left: var(--space-lg);
+    max-width: min(32rem, calc(100vw - 2 * var(--space-lg)));
+  }
+
   nav {
     flex-direction: row;
     flex-wrap: wrap;
@@ -8750,6 +8815,7 @@ body[data-page="maintenance"] .status-item .hint {
   #shell-top,
   #shell-nav,
   #shell-status,
+  .receipts,
   .title .acts {
     display: none !important;
   }

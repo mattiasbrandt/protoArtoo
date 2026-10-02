@@ -1435,6 +1435,19 @@
     return;
   }
 
+  // Where a Receipt is shown (CONTEXT.md "Receipt", #456): one host for every
+  // surface, written by data/overlay.js. The shell owns it, beside the mounted
+  // surface rather than in it, because detach() removes only the surface's
+  // own node, so a receipt outlives a surface change. Inside #shell-content,
+  // so it is ranked in the work area's stacking context and can never cover
+  // the chrome or the estop on it (ADR 0048).
+  const receiptHost = document.createElement("div");
+  receiptHost.id = "shell-receipts";
+  receiptHost.className = "receipts";
+  receiptHost.setAttribute("role", "status");
+  receiptHost.setAttribute("aria-live", "polite");
+  shellContent.appendChild(receiptHost);
+
   // Mounting is the bootstrap's Resource Step Recovery doing the work, so
   // without it there is no router -- the same documented degraded path the
   // identity load above already takes.
