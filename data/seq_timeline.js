@@ -607,11 +607,21 @@
     return html;
   };
 
+  // A lane's items in the order they are drawn, the last on top. A Part
+  // standing open (`open`, `left`) is listed when it closes, or at the end,
+  // which is after every block that starts while it stands; drawn in that
+  // place it would lie over them and take their presses. So standing goes
+  // under, and the blocks over it in the order they were listed. The order is
+  // the whole of it: a block given a layer of its own would bury the marks
+  // drawn inside it.
+  const isStanding = (item) => item.kind === "open" || item.kind === "left";
+  const stacked = (items) => [...items.filter(isStanding), ...items.filter((item) => !isStanding(item))];
+
   const laneHtml = (lane, windowMs, authored, dim, handleOf = () => "") =>
     `<div class="tl-row${dim ? " is-unwired" : ""}${lane.part ? "" : " is-kind"}" data-lane="${esc(lane.key)}">` +
     `<div class="tl-name">${lane.short ? `<span class="tl-short">${esc(lane.short)}</span>` : ""}` +
     `<span class="tl-part">${esc(lane.name)}</span></div>` +
-    `<div class="tl-track">${lane.items.map((item) => itemHtml(item, windowMs, authored, handleOf(item, lane))).join("")}</div>` +
+    `<div class="tl-track">${stacked(lane.items).map((item) => itemHtml(item, windowMs, authored, handleOf(item, lane))).join("")}</div>` +
     `</div>`;
 
   // ---------------------------------------------------------------------------
