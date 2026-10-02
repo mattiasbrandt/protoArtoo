@@ -1785,10 +1785,11 @@
 
   // ---------------------------------------------------------------------------
   // The library (#441): the Parts tab, and Drop a part beside the inspector.
-  // Every Part a routine can name is one flat list, dome and body together,
-  // the ones nothing on this droid can move dashed and counted; under it, in
-  // the Parts tab, the steps that are not a Part. The escape-hatch Output
-  // slots and the dome's buttons are not Parts a routine moves.
+  // Every Part a step can move is one flat list, dome and body together, the
+  // ones nothing on this droid can move dashed and counted; under it, in the
+  // Parts tab, the steps that are not a Part. The escape-hatch Output slots
+  // and the dome's buttons are not Parts a routine moves, and a Part no step
+  // moves is not listed (partDrop()).
   //
   // A press on a pill does nothing to the routine and never moves the droid:
   // it says how to add it. A drag onto the timeline inserts it where the
@@ -1826,8 +1827,38 @@
   // long after.
   const DROPPED_OPEN_MS = 1000;
 
+  // What a Part dropped on the timeline makes, or null for a Part no step
+  // moves. The one rule, read by the library's two lists (libraryParts()) and
+  // by the drop (dropOnTimeline()), so a Part is listed exactly when a drop
+  // of it lands something.
+  //
+  //   panel   a dome panel the dome can be told to move: the command that
+  //           opens it.
+  //   lights  a dome light the dome answers for by name - a logic display or
+  //           a PSI, found by its catalog alias the way Lights finds it
+  //           (data/lights.js domeTarget()): that name.
+  //   body    a body Part, its lights among them. One no Output claims
+  //           counts all the same: that is legal to author, it is listed
+  //           dashed, and the note over the lanes says it is not wired.
+  //
+  // What is left has no step that moves it: a dome panel that is fixed, a
+  // dome light the dome has no word for (the Magic Panel, the small upper
+  // panel), a holoprojector's servos. Those are hidden, not refused
+  // (operator, 2026-10-02): the library does not offer what it would have to
+  // turn away.
+  const partDrop = (part) => {
+    if (!part) return null;
+    const panel = window.DomeCommandMap?.resolvePanelCommand(part.shorthand, "open");
+    if (panel) return { panel };
+    const lights = window.DroidPartKind?.isLight(part)
+      ? (part.aliases || []).find((alias) => domeLights.targets.includes(alias))
+      : null;
+    if (lights) return { lights };
+    return part.half === "body" ? { body: true } : null;
+  };
+
   const libraryParts = () =>
-    (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+    (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section) && partDrop(part));
 
   let partsFind = "";
 
@@ -1911,42 +1942,30 @@
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
 
     if (group === "part") {
-      // A dome panel the dome can be told to move lands as a Part standing
-      // open: its open here and its close a second on, never past the end.
+      // What the Part makes is partDrop()'s to say; every listed Part makes
+      // something, and one that is not listed has no pill to drop.
       //
-      // A dome light the dome answers for by name - a logic display or a PSI,
-      // found by its catalog alias the way Lights finds it (data/lights.js
-      // domeTarget()) - lands as a Logic / PSI Mode on its own lane: Normal,
+      // A dome panel lands as a Part standing open: its open here and its
+      // close a second on, never past the end.
+      //
+      // A dome light lands as a Logic / PSI Mode on its own lane: Normal,
       // with no color and no duration, so it holds until the next mode.
       //
-      // A body Part, its lights among them, lands as a dome panel does, in
-      // Body Steps: its open here - open is the Move Shape a step has when it
-      // says none, so none is written - and its close a second on. One no
-      // Output claims lands all the same: that is legal to author, and the
-      // note over the lanes says it is not wired.
-      //
-      // What is left has no step that moves it: a dome panel that is fixed,
-      // a dome light the dome has no word for, a holoprojector's servos.
+      // A body Part lands as a dome panel does, in Body Steps: its open here
+      // - open is the Move Shape a step has when it says none, so none is
+      // written - and its close a second on.
       const part = libraryParts().find((each) => each.id === id);
-      const commands = window.DomeCommandMap;
-      const open = part && commands?.resolvePanelCommand(part.shorthand, "open");
-      const lights = !open && window.DroidPartKind?.isLight(part)
-        ? (part.aliases || []).find((alias) => domeLights.targets.includes(alias))
-        : null;
-      const body = !open && !lights && part?.half === "body";
-      if (!open && !lights && !body) {
-        sayOnStage(`${libraryName(lib)} cannot go on the timeline yet.`, "error");
-        return;
-      }
+      const drop = partDrop(part);
+      if (!drop) return;
       const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
       const closes = Math.min(at + DROPPED_OPEN_MS, last);
-      const made = lights
-        ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: lights }) }]
-        : body
+      const made = drop.lights
+        ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: drop.lights }) }]
+        : drop.body
           ? [{ t: at, type: "body", part: part.id }, { t: closes, type: "body", part: part.id, shape: "close" }]
           : [
-            { t: at, type: "dome", cmd: open },
-            { t: closes, type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+            { t: at, type: "dome", cmd: drop.panel },
+            { t: closes, type: "dome", cmd: window.DomeCommandMap.resolvePanelCommand(part.shorthand, "close") },
           ];
       historyPush();
       steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
@@ -2785,7 +2804,8 @@
   const renderStepRow = (step, idx) => {
     const isExpanded = editorState.expanded.has(idx);
     let typeName = stepTypeName[step.type] || step.type;
-    // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
+    // A dome step is named by what its command makes it, as the inspector
+    // names it (domeStepName()).
     if (step.type === "dome") {
       typeName = domeStepName(step);
     }
