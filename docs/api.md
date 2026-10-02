@@ -2089,6 +2089,13 @@ Returns live RC diagnostics snapshot.
 - `digital` action map (`activeSource`, `bindingChannel`, `pressed`)
 - `mappingProfile.channels` calibration values (`min`, `center`, `max`, `deadband`, `reverse`)
 - `raw` arrays (`sbus1`, `sbus2`, `pwm`) when available
+- `reactions` array, one entry per Reaction (a map entry whose `source` is a
+  droid condition): `source`, `channel`, `state` (`ready`, `waiting` or
+  `not-in-this-build`), `reason` when it is not ready (`no-feedback`,
+  `no-current`, `feedback-stale`, `no-play-state`), `fires`, and
+  `refusedWhileDriving` - the times it was held back because firing would have
+  opened a body Part while the droid was driving. Counts restart when the
+  Reaction is edited and at boot.
 - Errors: `500` json build/stream alloc failures
 
 #### Example request

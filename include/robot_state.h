@@ -20,6 +20,7 @@
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
+#include "reaction_status.h"  // ReactionStatus - one per trigger slot, for the RC page
 #include "servo_backend.h"  // ServoOutputAddress, SERVO_OUTPUT_SLOT_COUNT - one mirror entry per Output
 
 // -----------------------------------------------------------------------------
@@ -315,21 +316,6 @@ struct DomeCommand {
 // -----------------------------------------------------------------------------
 // RobotState  --  shared state, all access under robotStateMux
 // -----------------------------------------------------------------------------
-// What one trigger slot's Reaction is doing (ADR 0053, #450), slot for slot
-// with rcTriggerSlotsCopy() (include/config_store.h, which this header cannot
-// include; ReactionTask asserts the counts agree). `source` is RC_BINDING_NONE
-// in a slot that holds no Reaction. This is how "my Reaction never fires" gets
-// an answer on the RC page: it is not armed (`availability`), or it was held
-// back while the droid was driving (`refusals`).
-struct ReactionStatus {
-    uint8_t source;        // RcBindingSource
-    uint8_t channel;
-    uint8_t availability;  // ReactionAvailability (include/reaction_evaluator.h)
-    uint16_t fires;
-    uint16_t refusals;
-};
-constexpr size_t REACTION_STATUS_SLOTS = 11;
-
 struct RobotState {
     // --- Zone 1: Drive output + drive backend feedback + failsafe gate (DriveTask) ---
     int16_t driveOutputSpeed;

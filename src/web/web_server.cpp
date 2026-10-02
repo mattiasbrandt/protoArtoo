@@ -399,7 +399,8 @@ void eventStreamTask(void*) {
             RcDiagnosticsSnapshot rcSnap;
             captureRcDiagnosticsSnapshot(&rcSnap);
             s_sseRcDoc.clear();
-            if (!populateRcDiagnosticsJson(s_sseRcDoc, rcSnap)) {
+            if (!populateRcDiagnosticsJson(s_sseRcDoc, rcSnap) ||
+                !appendRcReactionsJson(s_sseRcDoc)) {
                 if (!s_rcSseBuildWarned) {
                     PA_LOG_WARN("WebEvents", "rc SSE JSON build failed; event dropped");
                     s_rcSseBuildWarned = true;

@@ -102,6 +102,38 @@ enum class ReactionAvailability : uint8_t {
     NoPlayState,    // waiting: the sound module has not said what it is doing
 };
 
+// The Availability Family a Reaction is in, as every surface spells it, and
+// which of its reasons put it there. nullptr reason: it is armed.
+inline const char* reactionAvailabilityFamily(ReactionAvailability availability) {
+    switch (availability) {
+        case ReactionAvailability::NoFeedback:
+        case ReactionAvailability::NoCurrent:
+            return "not-in-this-build";
+        case ReactionAvailability::FeedbackStale:
+        case ReactionAvailability::NoPlayState:
+            return "waiting";
+        case ReactionAvailability::Ready:
+            break;
+    }
+    return "ready";
+}
+
+inline const char* reactionAvailabilityReason(ReactionAvailability availability) {
+    switch (availability) {
+        case ReactionAvailability::NoFeedback:
+            return "no-feedback";
+        case ReactionAvailability::NoCurrent:
+            return "no-current";
+        case ReactionAvailability::FeedbackStale:
+            return "feedback-stale";
+        case ReactionAvailability::NoPlayState:
+            return "no-play-state";
+        case ReactionAvailability::Ready:
+            break;
+    }
+    return nullptr;
+}
+
 struct ReactionSlotState {
     RcTriggerBinding binding;  // the Reaction this state was armed for
     uint32_t armedAtMs;

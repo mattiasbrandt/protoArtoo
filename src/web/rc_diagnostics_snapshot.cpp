@@ -12,6 +12,7 @@
 
 #include "../../include/config_cache.h"
 #include "../../include/rc_diagnostics.h"
+#include "../../include/reaction_evaluator.h"  // ReactionAvailability and its two spellings
 #include "../../include/robot_state.h"
 
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
@@ -420,5 +421,42 @@ bool populateRcDiagnosticsJson(JsonDocument& doc, const RcDiagnosticsSnapshot& s
         }
     }
 
+    return !doc.overflowed();
+}
+
+// The Reactions: the droid-condition bindings, and for each whether it is
+// armed and how often it fired or was held back. Present and empty on a droid
+// with none, so a reader never has to tell "none" from "not sent".
+bool appendRcReactionsJson(JsonDocument& doc) {
+    ReactionStatus statuses[REACTION_STATUS_SLOTS];
+    taskENTER_CRITICAL(&robotStateMux);
+    for (size_t i = 0; i < REACTION_STATUS_SLOTS; ++i) {
+        statuses[i] = robotState.reactions[i];
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    JsonArray reactions = doc["reactions"].to<JsonArray>();
+    if (reactions.isNull()) {
+        return false;
+    }
+    for (const ReactionStatus& status : statuses) {
+        const RcBindingSource source = (RcBindingSource)status.source;
+        if (!rcBindingSourceIsDroidCondition(source)) {
+            continue;
+        }
+        const ReactionAvailability availability = (ReactionAvailability)status.availability;
+        JsonObject reaction = reactions.add<JsonObject>();
+        if (reaction.isNull()) {
+            return false;
+        }
+        reaction["source"] = rcBindingSourceToString(source);
+        reaction["channel"] = status.channel;
+        reaction["state"] = reactionAvailabilityFamily(availability);
+        if (const char* reason = reactionAvailabilityReason(availability)) {
+            reaction["reason"] = reason;
+        }
+        reaction["fires"] = status.fires;
+        reaction["refusedWhileDriving"] = status.refusals;
+    }
     return !doc.overflowed();
 }
