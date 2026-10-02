@@ -53,6 +53,30 @@
   const TEMPO_HASH = /^[0-9a-f]{1,64}$/;
 
   const isWhole = (value) => Number.isInteger(value);
+
+  // A logic text as the bytes the droid decodes it to, or null where it
+  // refuses the encoding (percentDecode(), src/protocol_check.cpp): an escape
+  // is % and two hex digits whose letters are all capitals or all small - it
+  // has no reading for %aC - and stands for any byte but a carriage return;
+  // anything else is printable ASCII as typed, and never a colon.
+  const DT_ESCAPE = /^(?:[0-9A-F]{2}|[0-9a-f]{2})$/;
+  const decodeTextBytes = (encoded) => {
+    const bytes = [];
+    for (let i = 0; i < encoded.length; i++) {
+      const ch = encoded[i];
+      if (ch === "%") {
+        const hex = encoded.slice(i + 1, i + 3);
+        if (!DT_ESCAPE.test(hex) || parseInt(hex, 16) === 0x0d) return null;
+        bytes.push(parseInt(hex, 16));
+        i += 2;
+      } else if (ch === ":" || ch < " " || ch > "~") {
+        return null;
+      } else {
+        bytes.push(ch.charCodeAt(0));
+      }
+    }
+    return bytes;
+  };
   const bpmTenths = (tempo) => Math.round(Number(tempo?.bpm) * 10);
 
   // seqTempoSpanMs() / seqTempoBeatMs(): round(beats * 60000 / bpm), in the
@@ -971,11 +995,10 @@
         };
       }
 
-      // Decode and validate the text
-      let decodedText = "";
-      try {
-        decodedText = decodeURIComponent(encodedText);
-      } catch (e) {
+      // Decoded as the droid decodes it, byte for byte: a %FF or a %09 is a
+      // byte like any other, and a carriage return is the one it refuses.
+      const decoded = decodeTextBytes(encodedText);
+      if (decoded === null) {
         return {
           ok: false,
           field: "cmd",
@@ -983,11 +1006,9 @@
         };
       }
 
-      // The droid decodes into 32 bytes, one for each escape and one for each
-      // character as typed (all of them ASCII by now). A character outside
-      // ASCII travels as two to four escapes, so it counts for that many.
-      const decodedBytes = encodedText.replace(/%[0-9A-Fa-f]{2}/g, "x").length;
-      if (decodedBytes > 32) {
+      // The droid decodes into 32 bytes. A character outside ASCII travels as
+      // two to four escapes, so it counts for that many.
+      if (decoded.length > 32) {
         return {
           ok: false,
           field: "cmd",
@@ -996,7 +1017,7 @@
       }
 
       // Reject empty text
-      if (decodedText.length === 0) {
+      if (decoded.length === 0) {
         return {
           ok: false,
           field: "cmd",
@@ -1004,31 +1025,8 @@
         };
       }
 
-      // Check for control characters (except newline)
-      for (let i = 0; i < decodedText.length; i++) {
-        const ch = decodedText.charCodeAt(i);
-        if (ch < 32 && ch !== 10) {
-          // < 32 is control char; 10 is newline (allowed)
-          return {
-            ok: false,
-            field: "cmd",
-            error: "Text contains invalid control characters",
-          };
-        }
-      }
-
-      // Check for carriage return (explicitly disallowed)
-      if (decodedText.includes("\r")) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Text contains carriage return (CR); use only newlines",
-        };
-      }
-
       // Check for max one newline
-      const newlineCount = (decodedText.match(/\n/g) || []).length;
-      if (newlineCount > 1) {
+      if (decoded.filter((byte) => byte === 0x0a).length > 1) {
         return {
           ok: false,
           field: "cmd",
