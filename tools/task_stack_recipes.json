@@ -239,10 +239,10 @@
             "domeLinkTask"
           ],
           "frames": [],
-          "chain_bytes": 6112,
+          "chain_bytes": 6128,
           "stack_bytes": 6144,
           "reason": "#248's tight-heap reason, named on #250: the rule's margin costs heap on the scarce chip for cover the Xtensa walk cannot confirm, and the stack still covers the walk (operator decision 2026-09-25). This is the thinnest floor in the table; raising it is where that decision would be recorded.",
-          "note": "The dome layout fetch: fetchDomeLayoutOverWifi (896 B) -> HTTPClient::GET -> handleHeaderResponse -> setCookie -> strptime -> localtime_r -> the time-zone parse, whose siscanf float scan (__ssvfiscanf_r, 704 B) is the deepest part. The root frame is 2176 B."
+          "note": "The dome layout fetch: fetchDomeLayoutOverWifi (896 B) -> HTTPClient::GET -> handleHeaderResponse -> setCookie -> strptime -> localtime_r -> the time-zone parse, whose siscanf float scan (__ssvfiscanf_r, 704 B) is the deepest part. The root frame is 2192 B: it holds a ConfigSnapshot, which #444 grew from 916 to 920 B (the PCA9685's address), and the frame by 16 B with it."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -323,9 +323,9 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 3792,
+          "chain_bytes": 3872,
           "stack_bytes": 5120,
-          "note": "Deepest route: sequenceDispatcherTask (640 B root frame) -> drainBestEffort (304 B) -> dispatchAction -> audioQueueDollar -> logQueueDrop's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. It was the body-move log line under the same two frames until #453: dispatchBodyMove()'s send moved into sendBodyPosition() and its route is now the shallower one. The root frame holds the ServoOutputRow and ServoCommandedPosition of centreOneOutput() and the boot pass's owed-release check, which the compiler inlines into it, and the Cadence Floor each inlined run reads from the config cache. The flutter run (flutterStartPart(), flutterOneLeg()) and the flutter request's intake (flutterTakeRequest() and the functions it calls in turn) are out of line with their state in statics, and no log line of theirs sits under another: nested, the request path walked 4048 B."
+          "note": "Deepest route: sequenceDispatcherTask (640 B root frame) -> drainBestEffort (304 B) -> dispatchAction -> dispatchBodyMove (432 B) -> its 'not moved' log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. dispatchBodyMove() is the same 264 bytes of code with the same 432 B frame as on the image #453 recorded 3792 B against, where the walk took audioQueueDollar -> logQueueDrop instead: that image's walk did not follow dispatchBodyMove's call to paLogLine, and #444's does - a floor rising to what slice a of #444 had already walked (3888 B), not a frame growing. The root frame holds the ServoOutputRow and ServoCommandedPosition of centreOneOutput() and the boot pass's owed-release check, which the compiler inlines into it, and the Cadence Floor each inlined run reads from the config cache. The flutter run (flutterStartPart(), flutterOneLeg()) and the flutter request's intake (flutterTakeRequest() and the functions it calls in turn) are out of line with their state in statics, and no log line of theirs sits under another: nested, the request path walked 4048 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -389,9 +389,9 @@
             }
           ],
           "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). A direct action and an audio config write are reached the same way, through a pointer found in one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors, so those rows are stitched too (#428). A single-field Setting op and aux.config.led-count are direct calls since #431, which the walker follows without a stitch. Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
-          "chain_bytes": 8768,
+          "chain_bytes": 8784,
           "stack_bytes": 11264,
-          "note": "The deepest route is a Console volume save: consoleExecuteCommand -> consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist, down into NVS. The widest frames are consoleExecuteCommand 1856 B, audioSetVolumeCommitApplied 1232 B, consoleExecuteSoundVolumeConfig 1056 B and saveConfigToNvs 960 B."
+          "note": "The deepest route is a Console volume save: consoleExecuteCommand -> consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist, down into NVS. The widest frames are consoleExecuteCommand 1872 B, audioSetVolumeCommitApplied 1232 B, consoleExecuteSoundVolumeConfig 1056 B and saveConfigToNvs 960 B. consoleExecuteCommand grew 1856 -> 1872 B at #444: it holds a ProfilerReading, whose per-task table gained the PCA9685's sender."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -483,9 +483,9 @@
             "pca9685SenderTask"
           ],
           "frames": [],
-          "chain_bytes": 2752,
-          "stack_bytes": 4096,
-          "note": "PROVISIONAL"
+          "chain_bytes": 2816,
+          "stack_bytes": 3584,
+          "note": "A failed bus write's log line: pca9685SenderTask -> sendBatch (336 B, the batch's channel frame and the error line's arguments) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. The I2C writes themselves (Wire -> i2cWrite -> i2c_master_transmit) are shallower than that log route."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -511,10 +511,10 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 4992,
+          "chain_bytes": 5008,
           "stack_bytes": 6144,
           "reason": "#248's tight-heap reason, named on #256: the rule's margin costs heap on the scarce chip for cover the Xtensa walk cannot confirm, and the stack still covers the walk.",
-          "note": "The status build: buildStatusJson (1376 B) -> networkManagerQueryConnectivity -> WiFiAPClass::softAPgetStationNum -> esp_wifi_ap_get_sta_list -> the closed WiFi driver's ioctl and power-management path. The root frame is 896 B."
+          "note": "The status build: buildStatusJson (1392 B) -> networkManagerQueryConnectivity -> WiFiAPClass::softAPgetStationNum -> esp_wifi_ap_get_sta_list -> the closed WiFi driver's ioctl and power-management path. The root frame is 896 B. buildStatusJson holds a ConfigSnapshot, which #444 grew from 916 to 920 B, and its frame by 16 B with it."
         },
         "esp32p4": {
           "env": "firebeetle2",
