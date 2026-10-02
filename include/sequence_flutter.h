@@ -270,13 +270,14 @@ inline void sequenceFlutterDrop(SeqFlutterRun* run, uint8_t idx) {
 //
 // It holds the Part's own next leg off for its time, and every other generated
 // motion off by the pace (`paceDueMs`, `paceAwait`: the Coordinator's one pace
-// for what a sequence generates, shared with its Gestures). The turn passes
-// on. A leg back that leaves no room for another swing is the flutter's last:
+// for what a sequence generates, shared with its Gestures; `floorMs` is the
+// Cadence Floor in use). The turn passes on. A leg back that leaves no room for another swing is the flutter's last:
 // the entry ends here, with the Part on its way to its closed end.
 // -----------------------------------------------------------------------------
 inline void sequenceFlutterSent(SeqFlutterRun* run, uint8_t idx, uint32_t nowMs, SeqFlutterLeg leg,
                                 uint16_t outMs, uint16_t backMs, ServoOutputAddress output,
-                                uint32_t* paceDueMs, ServoOutputAddress* paceAwait) {
+                                uint32_t* paceDueMs, ServoOutputAddress* paceAwait,
+                                uint32_t floorMs) {
     if (run == nullptr || idx >= SEQ_FLUTTER_PARTS_MAX || leg == SEQ_FLUTTER_OVER) return;
     SeqFlutterEntry& e = run->f[idx];
     const uint16_t legMs = (leg == SEQ_FLUTTER_LEG_OUT) ? outMs : backMs;
@@ -285,7 +286,7 @@ inline void sequenceFlutterSent(SeqFlutterRun* run, uint8_t idx, uint32_t nowMs,
     e.output = output;
     e.dueMs = nowMs + legMs;
     sequencePaceMotion(paceDueMs, paceAwait, nowMs, /*started=*/true, /*moves=*/true,
-                       /*bodyOutput=*/true, legMs, output);
+                       /*bodyOutput=*/true, legMs, output, floorMs);
     run->lastLeg = idx;
     run->turn = (uint8_t)((idx + 1) % SEQ_FLUTTER_PARTS_MAX);
     run->legs++;

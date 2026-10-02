@@ -716,9 +716,11 @@ inline void sequenceGestureAdvance(SeqGestureRunEntry& e) {
 // The item sequenceGestureNext() handed out has been dealt with at nowMs.
 // `started` is whether a body move reached ServoTask; a member nothing drives
 // was reported and passed over and holds nothing off. A dome pass holds no
-// body move off: the dome's motion is the dome's.
+// body move off: the dome's motion is the dome's. `floorMs` is the Cadence
+// Floor in use.
 inline void sequenceGestureDone(SeqGestureRun* run, const SeqGestureNext& next, uint32_t nowMs,
-                                bool started, uint16_t throwMs, ServoOutputAddress output) {
+                                bool started, uint16_t throwMs, ServoOutputAddress output,
+                                uint32_t floorMs) {
     if (run == nullptr || next.entry >= SEQ_GESTURE_RUNS_MAX) return;
     SeqGestureRunEntry& e = run->g[next.entry];
     if (!e.active) return;
@@ -726,7 +728,7 @@ inline void sequenceGestureDone(SeqGestureRun* run, const SeqGestureNext& next, 
     else run->skipped++;
     if (!e.dome) {
         sequencePaceMotion(&run->dueMs, &run->awaitOutput, nowMs, started, true, true, throwMs,
-                           output);
+                           output, floorMs);
     }
     sequenceGestureAdvance(e);
 }

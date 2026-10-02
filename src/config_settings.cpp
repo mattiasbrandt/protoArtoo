@@ -18,6 +18,8 @@
 #include "component_registry.h"
 #include "config.h"               // SPEED_*, SBUS_TIMEOUT_MS, WEB_DRIVE_TIMEOUT_MS, PA_LOG_LEVEL*
 #include "mood_sound_mapping.h"   // MOOD_CATEGORY_MASK_MAX - a mood mask's bits
+#include "protocol_check.h"       // PC_SM_MOVE_MIN/MAX - what bounds the Cadence Floor
+#include "sequence_bulk_centre.h" // SEQ_CADENCE_FLOOR_* - the Cadence Floor's default and bounds
 #include "servo_component_helpers.h"
 
 namespace {
@@ -165,12 +167,26 @@ const ConfigSetting kConfigSettings[] = {
      PA_SETTING_FIELD(Dome, DomeConfig, dome_wifi_peer_ip), SettingRule::Ipv4, 0, 0, 0, nullptr, 0,
      "must be empty or a valid IPv4 address"},
 
+    // The Cadence Floor (CONTEXT.md, #453): the pace the Sequence Coordinator
+    // holds between body Outputs it starts itself. It reads it from the cache
+    // each time it paces something, so a saved value is Immediate. The default
+    // is the dome's figure and the body's own is unmeasured; the bounds are the
+    // model's (include/sequence_bulk_centre.h), and the low one is why the
+    // floor can never be zero.
+    PA_RANGE("cadenceFloorMs", "servo.cadenceFloorMs", "cad_floor_ms", Immediate, System, SystemConfig,
+             cadence_floor_ms, SEQ_CADENCE_FLOOR_MIN_MS, SEQ_CADENCE_FLOOR_MAX_MS, SEQ_CADENCE_FLOOR_MS),
+
     // The log level takes its words as well as its number, at every door, and
     // GET reads the number (#423's round trip).
     {"logLevel", "system.logLevel", "log_level", ApplyTiming::Immediate,
      PA_SETTING_FIELD(System, SystemConfig, logLevel), SettingRule::Range, PA_LOG_LEVEL_ERROR, PA_LOG_LEVEL_DEBUG, PA_LOG_LEVEL, &kLogLevelWords, 0,
      nullptr},
 };
+
+// The floor's bounds are the shortest and the longest servo move a sequence may
+// ask for; held equal here so neither moves without the other.
+static_assert(SEQ_CADENCE_FLOOR_MIN_MS == PC_SM_MOVE_MIN && SEQ_CADENCE_FLOOR_MAX_MS == PC_SM_MOVE_MAX,
+              "the Cadence Floor is bounded by the servo moves Protocol Check accepts");
 
 #undef PA_RANGE
 #undef PA_BOOL

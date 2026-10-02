@@ -55,25 +55,52 @@
 // (src/tasks/sequence_catalog.cpp, DM:RESET's staggered ring closes). THE
 // BODY'S CADENCE FLOOR IS UNMEASURED. The body has thirteen to twenty-three
 // servos on a shared rail and has never been browned out on a bench, so nobody
-// knows its number. This constant is the dome's figure adopted DELIBERATELY AND
+// knows its number. This default is the dome's figure adopted DELIBERATELY AND
 // EXPLICITLY as a stand-in until the body's own is taken (#355 carries that
 // measurement, and it needs a built body). Do not restate it anywhere as a body
 // figure, and do not quietly let it become one by copying it into a comment
 // that drops this paragraph.
 //
-// CONTEXT.md says the number is settable. It is not settable yet, and that is
-// deliberate: a builder cannot be asked to set a number nobody has measured.
-// Whoever takes the body measurement is the one who decides whether it becomes
-// a stored field or a better constant.
+// THE FLOOR IS A STORED SETTING, and this constant is only what a droid nobody
+// has set holds (#453; CONTEXT.md "Cadence Floor" has said settable from the
+// start). It lives on the droid as the Setting `cadenceFloorMs`
+// (src/config_settings.cpp): GET /api/config reports it at
+// `servo.cadenceFloorMs`, POST /api/config and the Controller Console's
+// `servo.config.cadence-floor` set it, and the Sequence Coordinator reads it
+// from the config cache every time it paces something
+// (configCacheCadenceFloorMs()). Setting it does not make it measured: every
+// surface that shows the number still says the body's own is unmeasured.
 //
-// It bounds THIS expansion and nothing else. It is not retrofitted onto
-// authored steps: the `:SE` Factory routines fire nine BODY_CLOSE steps at
-// t=0 (kSe31Steps), and flooring those would change what seven shipped
-// sequences do, on a number nobody has measured for the body, and would rewrite
-// what an author asked for. Pacing what you generated is not rewriting what
-// somebody wrote (CONTEXT.md "Cadence Floor").
+// The rules below take the floor as an argument, so they stay pure and say
+// nothing about where the number came from.
+//
+// It bounds what the Coordinator GENERATES and nothing else: the bulk centre,
+// the boot pass, a pose, a body Gesture's expansion, a flutter's legs. It is
+// not retrofitted onto authored steps: the `:SE` Factory routines fire nine
+// BODY_CLOSE steps at t=0 (kSe31Steps), and flooring those would change what
+// seven shipped sequences do, on a number nobody has measured for the body,
+// and would rewrite what an author asked for. Pacing what you generated is not
+// rewriting what somebody wrote (CONTEXT.md "Cadence Floor").
 // -----------------------------------------------------------------------------
 constexpr uint32_t SEQ_CADENCE_FLOOR_MS = 450;
+
+// What the Setting accepts. Never zero: a floor of nothing is no floor, and
+// every Output the Coordinator generated would start together. Both ends are
+// the model's own rather than a measurement of the body, which nobody has
+// taken: the shortest and the longest servo move a sequence may ask for
+// (PC_SM_MOVE_MIN and PC_SM_MOVE_MAX, include/protocol_check.h; src/
+// config_settings.cpp holds each pair equal).
+constexpr uint32_t SEQ_CADENCE_FLOOR_MIN_MS = 50;
+constexpr uint32_t SEQ_CADENCE_FLOOR_MAX_MS = 5000;
+
+// The floor to pace by, given what is stored. A value outside what the Setting
+// accepts cannot be saved and is repaired on load, so this is the last line
+// rather than the rule: whatever reaches here, the floor in use is never zero.
+inline uint32_t sequenceCadenceFloorInUse(uint32_t storedMs) {
+    return (storedMs < SEQ_CADENCE_FLOOR_MIN_MS || storedMs > SEQ_CADENCE_FLOOR_MAX_MS)
+               ? SEQ_CADENCE_FLOOR_MS
+               : storedMs;
+}
 
 // -----------------------------------------------------------------------------
 // sequenceCadenceSpacingMs()
@@ -88,15 +115,17 @@ constexpr uint32_t SEQ_CADENCE_FLOOR_MS = 450;
 // REFUSING (r2d2-astromech-simulator v1.79.0, src/js/maestro/blocks.js:180 --
 // blockMinTravelMs() returns the rail's pace for a duration faster than the
 // rail allows, with no error dialog). A 200 ms throw does not get a warning and
-// does not get refused; it gets 450 ms and the sweep carries on.
+// does not get refused; it gets the floor and the sweep carries on.
+//
+// `floorMs` is the floor in use, handed in by the Coordinator from the stored
+// Setting.
 //
 // Nothing here rewrites the throw. The Output is still asked to move exactly
 // as far, exactly as fast, as its own Motion Profile says -- the only thing
 // this decides is when the NEXT one is allowed to start (#365 criterion 5).
 // -----------------------------------------------------------------------------
-inline uint32_t sequenceCadenceSpacingMs(uint16_t throwMs) {
-    return ((uint32_t)throwMs > SEQ_CADENCE_FLOOR_MS) ? (uint32_t)throwMs
-                                                      : SEQ_CADENCE_FLOOR_MS;
+inline uint32_t sequenceCadenceSpacingMs(uint16_t throwMs, uint32_t floorMs) {
+    return ((uint32_t)throwMs > floorMs) ? (uint32_t)throwMs : floorMs;
 }
 
 // -----------------------------------------------------------------------------
@@ -172,23 +201,24 @@ inline bool sequencePaceOpen(uint32_t dueMs, ServoOutputAddress* awaitOutput, bo
 }
 
 // A motion was dealt with at nowMs. A motion that STARTED holds the next one
-// off: a dome panel by the Cadence Floor, a body Output by its own throw,
-// floored, and until it stops (`output`). One that did not start - a Part
+// off: a dome panel by the Cadence Floor (`floorMs`, the one in use), a body
+// Output by its own throw, floored, and until it stops (`output`). One that did
+// not start - a Part
 // nothing drives, passed over - holds nothing off, because nothing moved; nor
 // does a command that moves nothing (`moves` false: a sound, a light).
 inline void sequencePaceMotion(uint32_t* dueMs, ServoOutputAddress* awaitOutput, uint32_t nowMs,
                                bool started, bool moves, bool bodyOutput, uint16_t throwMs,
-                               ServoOutputAddress output) {
+                               ServoOutputAddress output, uint32_t floorMs) {
     if (dueMs == nullptr || awaitOutput == nullptr) return;
     if (!started || !moves) {
         *dueMs = nowMs;
         return;
     }
     if (bodyOutput) {
-        *dueMs = nowMs + sequenceCadenceSpacingMs(throwMs);
+        *dueMs = nowMs + sequenceCadenceSpacingMs(throwMs, floorMs);
         *awaitOutput = output;
     } else {
-        *dueMs = nowMs + SEQ_CADENCE_FLOOR_MS;
+        *dueMs = nowMs + floorMs;
     }
 }
 
@@ -434,8 +464,9 @@ inline void sequenceBulkCentreAwaitOver(SeqBulkCentreRun* run, uint8_t rowCount)
 // The row whose turn it was has been dealt with; move the cursor on.
 //
 // `started` says whether that row was actually commanded. A started row spaces
-// the next one by sequenceCadenceSpacingMs(); a skipped one spaces nothing,
-// because nothing moved and there is no inrush to hold apart.
+// the next one by sequenceCadenceSpacingMs(), on the Cadence Floor in use
+// (`floorMs`); a skipped one spaces nothing, because nothing moved and there is
+// no inrush to hold apart.
 //
 // `rowCount` is re-read from the live table on every step rather than captured
 // at the start, so a table that shrank under the run ends it here instead of
@@ -444,13 +475,13 @@ inline void sequenceBulkCentreAwaitOver(SeqBulkCentreRun* run, uint8_t rowCount)
 // only awaits a move ends, since there is no next row to hold back.
 // -----------------------------------------------------------------------------
 inline void sequenceBulkCentreAdvance(SeqBulkCentreRun* run, uint8_t rowCount, uint32_t nowMs,
-                                      bool started, uint16_t throwMs) {
+                                      bool started, uint16_t throwMs, uint32_t floorMs) {
     if (run == nullptr || !run->active) {
         return;
     }
     if (started) {
         run->centred++;
-        run->dueMs = nowMs + sequenceCadenceSpacingMs(throwMs);
+        run->dueMs = nowMs + sequenceCadenceSpacingMs(throwMs, floorMs);
     } else {
         run->skipped++;
     }

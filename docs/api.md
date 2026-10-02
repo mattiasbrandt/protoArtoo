@@ -1727,7 +1727,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2}}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"servo":{"cadenceFloorMs":450},"system":{"logLevel":2}}
 ```
 
 ### POST /api/config
@@ -1736,6 +1736,7 @@ Updates supported config fields and persists to NVS.
 
 - Supported form fields include:
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
+- servo: `cadenceFloorMs(50..5000)` — the Cadence Floor: the least time, in ms, between two body Outputs the droid starts itself (back to centre, the power-up pass, a pose, a Gesture, a flutter's legs). Steps an author wrote keep their own timing. The default, 450, is the dome's measured figure; nobody has measured the body's. Takes effect from the next move. The Console's `servo.config.cadence-floor` sets the same value.
 - system: `logLevel(1..4|error|warning|info|debug)` — 1 Error, 2 Warning, 3 Info, 4 Debug; the words are taken as well as the numbers, at every door (the Console's `system.config.log-level` takes the same), and GET always reads the number. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs|not_fitted)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver. `not_fitted`: no Radio Controller at all, a droid driven from the web alone; storing it also clears `rcMember` and sets `enableRcCh1`..`enableRcCh6` false, each unless the same request states it, and the RC path starts nothing, so the SBUS boot lock and the two radio failsafe layers stand down), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
 - components (bool): `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`.

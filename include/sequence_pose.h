@@ -61,7 +61,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "sequence_bulk_centre.h"  // SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs()
+#include "sequence_bulk_centre.h"  // the Cadence Floor and the pace generated motion keeps
 #include "sequence_dome_how_far.h" // a panel move's how far, as the run sends it
 #include "sequence_engine.h"       // SequenceEntry, SeqStep, SeqAction, panel targets
 #include "sequence_gesture.h"      // a Gesture's members, order and spread
@@ -597,9 +597,9 @@ inline bool sequencePoseAwaitDone(SeqPoseRun* run, bool outputMoving) {
 // was sent; a skipped one spaces nothing, because nothing moved. A dome panel
 // holds the next command off by the Cadence Floor, a body Output by its own
 // full throw, floored (sequenceCadenceSpacingMs()), and `output` is then the
-// Output the next command waits on.
+// Output the next command waits on. `floorMs` is the Cadence Floor in use.
 inline void sequencePoseAdvance(SeqPoseRun* run, uint32_t nowMs, uint8_t cls, bool started,
-                                uint16_t throwMs, ServoOutputAddress output) {
+                                uint16_t throwMs, ServoOutputAddress output, uint32_t floorMs) {
     if (run == nullptr || !run->active) return;
     if (started) {
         run->sent++;
@@ -607,7 +607,7 @@ inline void sequencePoseAdvance(SeqPoseRun* run, uint32_t nowMs, uint8_t cls, bo
         run->skipped++;
     }
     sequencePaceMotion(&run->dueMs, &run->awaitOutput, nowMs, started, cls != SEQ_POSE_INSTANT,
-                       cls == SEQ_POSE_BODY, throwMs, output);
+                       cls == SEQ_POSE_BODY, throwMs, output, floorMs);
     run->next++;
 }
 

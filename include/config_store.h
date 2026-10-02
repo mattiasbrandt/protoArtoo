@@ -231,6 +231,13 @@ struct SystemConfig {
     // builder's statement of their product, kept on the droid so every browser
     // shows the same one.
     uint8_t rc_member;
+    // The Cadence Floor (CONTEXT.md): the least time, in ms, the Sequence
+    // Coordinator leaves between two body Outputs it starts itself. Its
+    // default is the dome's measured figure, standing in for the body's, which
+    // nobody has measured; include/sequence_bulk_centre.h says so at length.
+    // Read from the cache each time something is paced, so a saved value is
+    // the pace from the next move on.
+    uint16_t cadence_floor_ms;
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;

@@ -209,6 +209,7 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
 // -----------------------------------------------------------------------------
 static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     const uint8_t rowCount = configCacheServoOutputCount();
+    const uint32_t floorMs = configCacheCadenceFloorMs();
 
     if (run.awaitOutput != SERVO_OUTPUT_NONE) {
         const ServoCommandedPosition at = servoCommandedOf(run.awaitOutput);
@@ -245,7 +246,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
 
     const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
     if (!step.centre) {
-        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0, floorMs);
         return;
     }
 
@@ -253,7 +254,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     if (!plan.drive) {
         PA_LOG_INFO(TAG, "output %u not centred - %s", (unsigned)run.nextRow,
                     consoleReasonString(plan.reason));
-        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0, floorMs);
         return;
     }
     // An Output ServoTask does not drive since boot - a wired tick saved
@@ -264,7 +265,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     if (!servoTaskDrivesOutput(plan.output)) {
         PA_LOG_INFO(TAG, "%s:%u not centred - restart the droid to use it",
                     servoOutputDriverToString(plan.output.driver), (unsigned)plan.output.channel);
-        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0, floorMs);
         return;
     }
 
@@ -280,7 +281,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
         return;  // the cursor stays put: this row's turn comes round again
     }
     sequenceBulkCentreAwait(&run, plan.output, step.releaseAfter);
-    sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms);
+    sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms, floorMs);
 }
 
 // -----------------------------------------------------------------------------
@@ -457,10 +458,11 @@ static __attribute__((noinline)) void flutterOneLeg(uint32_t now) {
     const uint16_t closedUs = seqBodyTargetUs(*driving, BODY_SHAPE_FLUTTER, e.howFar);
     ServoMotionProfile profile = servoMotionProfileOf(*driving);
     servoMotionOverride(&profile, e.speedMs, e.easing);
-    const uint16_t outMs = sequenceFlutterLegTimeMs(servoMotionArrivalMs(closedUs, farUs, profile),
-                                                    SEQ_CADENCE_FLOOR_MS);
-    const uint16_t backMs = sequenceFlutterLegTimeMs(servoMotionArrivalMs(farUs, closedUs, profile),
-                                                     SEQ_CADENCE_FLOOR_MS);
+    const uint32_t floorMs = configCacheCadenceFloorMs();
+    const uint16_t outMs =
+        sequenceFlutterLegTimeMs(servoMotionArrivalMs(closedUs, farUs, profile), floorMs);
+    const uint16_t backMs =
+        sequenceFlutterLegTimeMs(servoMotionArrivalMs(farUs, closedUs, profile), floorMs);
 
     const SeqFlutterLeg leg = sequenceFlutterLeg(e, now, outMs, backMs);
     if (leg == SEQ_FLUTTER_OVER) {
@@ -472,7 +474,7 @@ static __attribute__((noinline)) void flutterOneLeg(uint32_t now) {
         return;
     }
     sequenceFlutterSent(&flutterRun, idx, now, leg, outMs, backMs, plan.output, &gestureRun.dueMs,
-                        &gestureRun.awaitOutput);
+                        &gestureRun.awaitOutput, floorMs);
 }
 
 // A Gesture the engine has just handed over, copied into the run NOW, while
@@ -507,7 +509,8 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
         if (!domeQueueTx(gestureRun.g[next.entry].domeCmd)) {
             return;
         }
-        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SERVO_OUTPUT_NONE,
+                            configCacheCadenceFloorMs());
         return;
     }
     // A member's flutter is the flutter run's to perform, with the Gesture's
@@ -536,10 +539,12 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     if (moved.sent) {
         sequenceFlutterOtherMotion(&flutterRun);
     }
-    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.output);
+    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.output,
+                        configCacheCadenceFloorMs());
 }
 
 static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
+    const uint32_t floorMs = configCacheCadenceFloorMs();
     if (run.awaitOutput != SERVO_OUTPUT_NONE) {
         const bool moving = servoCommandedOf(run.awaitOutput).moving;
         if (!sequencePoseAwaitDone(&run, moving)) {
@@ -557,7 +562,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!domeQueueTx(cmd.act.payload)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE, floorMs);
             return;
 
         case SEQ_POSE_BODY: {
@@ -567,7 +572,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!dispatchBodyMove(cmd.act, &moved)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.output);
+            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.output, floorMs);
             return;
         }
 
@@ -576,7 +581,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!dispatchAction(cmd.act)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE, floorMs);
             return;
     }
 }
@@ -858,7 +863,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         taskEXIT_CRITICAL(&robotStateMux);
         if (sequenceBootPassStart(&centreRun, millis(), bootEstop, bootSleep)) {
             PA_LOG_INFO(TAG, "boot pass - %u rows, at least %u ms apart",
-                        (unsigned)configCacheServoOutputCount(), (unsigned)SEQ_CADENCE_FLOOR_MS);
+                        (unsigned)configCacheServoOutputCount(), (unsigned)configCacheCadenceFloorMs());
         } else {
             PA_LOG_WARN(TAG, "boot pass skipped - %s, every Output stays limp",
                         bootEstop ? "estop latched" : "sleep mode active");
@@ -966,7 +971,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                                       (uint8_t)poseAsk.src, &resyncCloseIdx);
                     PA_LOG_INFO(TAG, "[%s] pose %s at %u ms - %u commands, motions at least %u ms apart",
                                 commandSourceToString(poseAsk.src), poseAsk.name, (unsigned)poseAsk.atMs,
-                                (unsigned)posePlan.count, (unsigned)SEQ_CADENCE_FLOOR_MS);
+                                (unsigned)posePlan.count, (unsigned)configCacheCadenceFloorMs());
                     if (posePlan.truncated) {
                         PA_LOG_WARN(TAG, "pose %s names more than %u targets; the latest are left out",
                                     poseAsk.name, (unsigned)SEQ_POSE_MAX);
@@ -1245,7 +1250,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 PA_LOG_INFO(TAG, "[%s] back to centre - %u rows, at least %u ms apart",
                             commandSourceToString(centreSrc),
                             (unsigned)configCacheServoOutputCount(),
-                            (unsigned)SEQ_CADENCE_FLOOR_MS);
+                            (unsigned)configCacheCadenceFloorMs());
             }
         }
 

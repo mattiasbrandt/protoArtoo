@@ -57,6 +57,10 @@ size_t configCacheReadRcTriggerSlots(RcTriggerBinding* out, size_t cap);
 // configCacheSbusTimeoutMs: drive.sbusTimeoutMs, the RC signal watchdog's
 // timeout.
 uint32_t configCacheSbusTimeoutMs();
+// configCacheCadenceFloorMs: the Cadence Floor in use, in ms - the stored
+// Setting, and never zero (sequenceCadenceFloorInUse(),
+// include/sequence_bulk_centre.h).
+uint32_t configCacheCadenceFloorMs();
 
 // The addressed Servo Output rows (ADR 0041). They sit outside ConfigSnapshot,
 // on their own NVS keys -- see include/config_serializer.h for why the table is
