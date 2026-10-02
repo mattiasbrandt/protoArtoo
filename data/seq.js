@@ -3592,9 +3592,12 @@
     const typeButtons = row.querySelectorAll(".step-type-chip");
     const fieldsContainer = row.querySelector(".step-fields");
 
+    // A kind the card has no chip for - a Body Step - has no active chip, and
+    // stays the kind it is.
+    const prev = editorState.current.steps[stepIdx] || {};
     const step = {
       t: parseInt(tInput.value || 0, 10),
-      type: Array.from(typeButtons).find((btn) => btn.classList.contains("active"))?.dataset.type || "audio",
+      type: Array.from(typeButtons).find((btn) => btn.classList.contains("active"))?.dataset.type || prev.type || "audio",
     };
 
     // Collect conditional fields
@@ -3628,7 +3631,6 @@
     // beat-placed step keeps its beat through an edit of anything else. Typing
     // a new time is choosing a millisecond instead, and the beat goes; a span
     // in beats goes the same way when its duration is typed over (ADR 0058).
-    const prev = editorState.current.steps[stepIdx] || {};
     if (prev.beat !== undefined && step.t === prev.t) step.beat = prev.beat;
     // A Gesture's times in beats have no form field either, so they ride
     // along the same way (their inputs set them directly, setStepBeat()); and
@@ -3646,6 +3648,14 @@
         if (prev[key] !== undefined) step[key] = prev[key];
       });
       if (step.set === undefined && Array.isArray(prev.parts)) step.parts = prev.parts;
+    }
+    // A Body Step has no form fields at all - it is authored on the timeline -
+    // so everything it says but its time rides along; its span in beats goes
+    // by the rule below, as any step's does.
+    if (step.type === "body" && prev.type === "body") {
+      ["part", "shape", "howFar", "flutterMs"].forEach((key) => {
+        if (prev[key] !== undefined) step[key] = prev[key];
+      });
     }
     if (prev.spanBeats !== undefined && step.type === prev.type && step.durationMs === prev.durationMs) {
       step.spanBeats = prev.spanBeats;
