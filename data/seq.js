@@ -680,11 +680,13 @@
     }
   };
 
-  // When the droid says a sequence was last saved, as the list words it:
-  // "saved 30 Sep 19:42". Nothing when the droid gave no time it can be read as.
+  // When a sequence was last saved, as the list words it: "saved 30 Sep 19:42".
+  // Nothing unless the droid gave a time. It gives none today: the `modified`
+  // GET /api/seq/list sends is a yes or no - a shared sequence edited in place
+  // (src/web/api_seq.cpp) - and a yes read as a time would be 1 Jan 1970.
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const savedWords = (modified) => {
-    const at = modified ? new Date(modified) : null;
+    const at = typeof modified === "string" || typeof modified === "number" ? new Date(modified) : null;
     if (!at || Number.isNaN(at.getTime())) return "";
     const two = (n) => String(n).padStart(2, "0");
     return `saved ${at.getDate()} ${MONTHS[at.getMonth()]} ${two(at.getHours())}:${two(at.getMinutes())}`;
