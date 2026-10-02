@@ -1150,15 +1150,23 @@
         // A holo effect takes only the colors its rule allows - the row is
         // there when that is more than DEFAULT - and a number only where the
         // rule says so: seconds for a flash, how many times for a wag or nod.
+        //
+        // A stored command can hold what its rule refuses: a color the effect
+        // does not take (DH:A:RAINBOW:RED), a number on an effect that takes
+        // none (DH:A:ON:BLUE:5). Protocol Check refuses the step, so the row
+        // is drawn all the same and it can be put right: the color row with
+        // the colors the effect does take, none of them picked, and the
+        // number to be emptied.
         const rule = domeLights.holoRules[fields.effect];
         const colors = rule ? rule.colors : domeLights.holoColors;
         const times = rule?.counts === "times";
+        const seconds = rule?.counts === "seconds";
         return settingRow("Holo", segOf("target", words("holoSides", domeLights.holoTargets), fields.target, "Which holo"))
           + settingRow("Effect", pillsOf("effect", words("holoEffects", domeLights.holoEffects), fields.effect, "Holo effect"))
-          + (colors.length > 1 ? color("holoColors", colors) : "")
-          + (rule?.duration === "range"
+          + (colors.length > 1 || !colors.includes(fields.color) ? color("holoColors", colors) : "")
+          + (rule?.duration === "range" || fields.count !== ""
             ? settingRow(times ? "Times" : "Runs for",
-              numberCell("count", fields.count, STEP_LIMITS.lightCount, times ? "How many times" : "Runs for, in seconds", times ? "" : "s", true))
+              numberCell("count", fields.count, STEP_LIMITS.lightCount, times ? "How many times" : seconds ? "Runs for, in seconds" : "Runs for", seconds ? "s" : "", true))
             : "");
       }
     }
