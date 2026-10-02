@@ -4457,7 +4457,10 @@
     } catch (error) {
       // The dialog is still open, so the refusal is a line inside it
       // (docs/ui-copy-voice.md rule 18), and the builder can press again.
+      // Focus goes back to the button: it was disabled while it held focus,
+      // which drops focus to <body> behind the open dialog.
       els.modalWipeConfirm.disabled = false;
+      els.modalWipeConfirm.focus();
       PAUtils.showFeedback(els.wipeFeedback,
         `Could not wipe ${seqName}: ${PAApi.messageFor(error)} - it is still on the droid.`, "error");
       els.wipeFeedback.classList.remove("hidden");
