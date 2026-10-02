@@ -79,9 +79,9 @@
             "driveTask"
           ],
           "frames": [],
-          "chain_bytes": 5088,
+          "chain_bytes": 5104,
           "stack_bytes": 6656,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1312 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1312 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. #444 took driveTask's root frame 1312 -> 1328 B, the walk 5088 -> 5104 B; the stack still sits on the rule."
         }
       }
     },
@@ -192,9 +192,9 @@
             "audioTask"
           ],
           "frames": [],
-          "chain_bytes": 7120,
+          "chain_bytes": 7136,
           "stack_bytes": 9216,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1520 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450)."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1520 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450). #444 took the root frame 1520 -> 1536 B and the walk 7120 -> 7136 B, within the same stack on the rule."
         }
       }
     },
@@ -250,9 +250,9 @@
             "domeLinkTask"
           ],
           "frames": [],
-          "chain_bytes": 9712,
+          "chain_bytes": 9728,
           "stack_bytes": 12288,
-          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2192 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B."
+          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2192 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B. #444 took the root frame to 2208 B: it holds a ConfigSnapshot, which grew 916 -> 920 B for the PCA9685's address."
         }
       }
     },
@@ -333,9 +333,9 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 6128,
+          "chain_bytes": 6112,
           "stack_bytes": 7680,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: sequenceDispatcherTask (672 B root frame) -> seqStorePrepare() (720 B) -> ArduinoJson deserialize<JsonDeserializer, JsonDocument&, fs::File&>() -> _Unwind_Resume (912 B) -> uw_init_context_1 -> pthread_once -> esp_log -> paLogIdfVprintf() -> paLogLine() -> ... -> _svfprintf_r (1152 B). seqStorePrepare splices the phrases a sequence holds into its staging on every load (#438), reusing its own JsonDocument, File, draft and staging for each phrase so the parse is never stacked a second time. The root frame is the same inlined one as the artoo-esp32 arm: the ServoOutputRow and ServoCommandedPosition of centreOneOutput() and the boot pass's owed-release check, the Gesture run's intake, and since #453 the Cadence Floor each inlined run reads from the config cache, which took it from 656 B to 672 B and the chain from 6112 B to 6128 B. The flutter run and the flutter request's intake are out of line with their state in statics and are not on this route. 6128 B is 20 B short of the rule step (6128 -> 7660 of 7680): the next 32 B on this route is a stack decision."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: sequenceDispatcherTask (672 B root frame) -> seqStorePrepare() (720 B) -> ArduinoJson deserialize<JsonDeserializer, JsonDocument&, fs::File&>() -> _Unwind_Resume (912 B) -> uw_init_context_1 -> pthread_once -> esp_log -> paLogIdfVprintf() -> paLogLine() -> ... -> _svfprintf_r (1152 B). seqStorePrepare splices the phrases a sequence holds into its staging on every load (#438), reusing its own JsonDocument, File, draft and staging for each phrase so the parse is never stacked a second time. The root frame is the same inlined one as the artoo-esp32 arm: the ServoOutputRow and ServoCommandedPosition of centreOneOutput() and the boot pass's owed-release check, the Gesture run's intake, and since #453 the Cadence Floor each inlined run reads from the config cache, which took it from 656 B to 672 B and the chain from 6112 B to 6128 B. The flutter run and the flutter request's intake are out of line with their state in statics and are not on this route. 6128 B is 20 B short of the rule step (6128 -> 7660 of 7680): the next 32 B on this route is a stack decision. At #444 the root frame walked 656 B, 16 B less, with nothing in this task's own source changed."
         }
       }
     },
@@ -437,9 +437,9 @@
             }
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status, api, direct-action or audio-config op through a pointer read from g_statusExecutors, one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors; the Setting ops are direct calls (#431).",
-          "chain_bytes": 11536,
+          "chain_bytes": 11552,
           "stack_bytes": 14848,
-          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1872 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1200 B, _svfprintf_r 1152 B."
+          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1872 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1200 B, _svfprintf_r 1152 B. consoleExecuteCommand grew to 1888 B at #444: it holds a ProfilerReading, whose per-task table gained the PCA9685's sender."
         }
       }
     },
@@ -493,9 +493,9 @@
             "pca9685SenderTask"
           ],
           "frames": [],
-          "chain_bytes": 5456,
-          "stack_bytes": 7168,
-          "note": "PROVISIONAL"
+          "chain_bytes": 3312,
+          "stack_bytes": 4608,
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: pca9685SenderTask -> sendBatch() (a failed write's log line) -> paLogLine() -> emitFramedLineCounted() [clone .part.0] -> writeFrameCounted() -> consoleCdcProbeLog() -> snprintf -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, consoleCdcProbeLog() 352 B. The I2C writes themselves are shallower than that log route."
         }
       }
     },
