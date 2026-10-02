@@ -1128,6 +1128,7 @@
   // open: how long from its open to its close, how far (stored as howFar,
   // absent meaning the whole throw) and the Move Shape. None of them is a
   // speed, an acceleration or an easing: those are the Output's (ADR 0052).
+  // On a body light how far is said as BRIGHTNESS (operator, 2026-10-02).
   //
   // The dome's four light commands have rows of their own (lightRows()): each
   // is one `cmd`, read into its fields and written back whole, and only by an
@@ -1316,7 +1317,8 @@
     return { shape, words: light ? SHAPE_WORDS.light : SHAPE_WORDS.servo, body: true, light, settles: shape !== "close" };
   };
 
-  // RUNS FOR, OPENS TO and MOTION, for a dome panel and a body Part alike.
+  // RUNS FOR, OPENS TO (BRIGHTNESS on a body light) and MOTION, for a dome
+  // panel and a body Part alike.
   // A close is one choice. A flutter owes a later close (Protocol Check), so
   // it is offered where one already follows - on a pair, which keeps that
   // close - and on the flutter itself.
@@ -1329,8 +1331,13 @@
       [["open", words.open], ...(pair || flutter ? [["flutter", words.flutter]] : [])], move.shape, "Motion"));
     if (!move.settles) return motion;
     const far = step.howFar ?? STEP_LIMITS.howFar[1];
+    // How far is the one stored `howFar`, said by Part Kind as the Move Shape
+    // is: a servo opens to it, a body light is that bright.
+    const howFar = move.light
+      ? settingRow("Brightness", faderOf("howFar", far, STEP_LIMITS.howFar, "Brightness, percent of full"), `${far}%`)
+      : settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`);
     return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
-      + settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`)
+      + howFar
       + motion;
   };
 
