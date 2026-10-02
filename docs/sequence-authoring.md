@@ -121,6 +121,11 @@ what it does in the same three words a dome panel already uses:
   routine. A value below 5% is *floored* to 5% rather than refused, because the
   model has no way to mean "does not move".
 - `flutterMs`: how long a flutter goes on, 50..60000. Only a flutter carries it.
+  The part swings between its closed end and `howFar`, each swing at the
+  Servo Output's own speed, and is back on its closed end when the time is up.
+  The rest of the sequence keeps its timing while it swings. A later step that
+  moves the same part ends the flutter. Two parts fluttering together take
+  turns, one move at a time, at least the Cadence Floor apart.
 
 Speed, acceleration and easing are **not** on the step. They live on the Servo
 Output and apply to every use of that part, so your choreography travels between
@@ -216,7 +221,10 @@ A `gesture` step spreads one shape across a **set** of Parts (ADR 0046):
   `alternate` or `pulse`. The dome orders its own panels and keeps its own
   speed. Any other pair still saves, and the Rehearsal says the dome does
   nothing with it.
-- A flutter Gesture owes no close after it: every member ends closed.
+- A flutter Gesture flutters each member for `flutterMs`, or for one step when
+  it states none, and owes no close after it: every member ends closed. Where
+  the spread sends a member back (`chase`, `alternate`, `pulse`), that close
+  ends its flutter.
 - A Gesture stops at the end step, mid-pass if it has to: nothing it would
   move at or after the end is sent, and the Rehearsal says when a pass is cut
   short.

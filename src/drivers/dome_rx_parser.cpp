@@ -44,9 +44,15 @@ static const char* TAG = "MARCDUINO";
 // line routed here is one this handler can place, and it goes out as that
 // board Output's address.
 //
-// :OF is a flutter, a Move Shape the body models (ADR 0049), and it ends
-// open. Until the flutter oscillation is performed it resolves to that open
-// end - the one part of the shape the body can already do.
+// :OF is a flutter, a Move Shape the body models (ADR 0049). HERE IT IS NOT
+// PERFORMED AS ONE: the line opens the Output and leaves it open. A flutter
+// swings for a length and ends closed, and the Sequence Coordinator's flutter
+// run performs that for a Body Step and a Gesture (include/sequence_flutter.h,
+// #453), but this line names an Output rather than a Part, carries no length,
+// and is handled on the caller's task with no way in to that run. Nobody has
+// decided how long such a flutter lasts (#453 records the question); until
+// somebody does, this is an open by another name, and
+// docs/marcduino_commands.md says so.
 // -----------------------------------------------------------------------------
 MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
     const ServoOutputAddress output = marcduino_panel_command_output(cmd);

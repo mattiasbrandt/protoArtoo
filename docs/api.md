@@ -1517,7 +1517,7 @@ Sends the droid to one instant of a sequence (Learned or factory): the pose pres
 The request names the sequence and the instant, and nothing else. The firmware works out the pose from the sequence it stores, and the Sequence Coordinator sends it one command at a time:
 - Sound and lights go first: each light in the mode it is in at that instant, and the sound that was playing, started from its beginning.
 - Then each dome panel and body Part goes to where the last step before that instant left it, one at a time. Consecutive motions are at least the Cadence Floor apart, a body Output also holds the next one off for its own throw, and nothing is ever sent as a group command.
-- A Part the routine has not yet moved is not commanded, and neither is a flutter's end position, a random step's pick, a dome turn or a raw light code.
+- A Part the routine has not yet moved is not commanded, and neither is a dome panel's flutter, a random step's pick, a dome turn or a raw light code. A body Part whose last word is a flutter goes to its closed end, where a flutter leaves it; a pose swings nothing.
 - Past the end, the pose is what the routine's own ending leaves: ring panels closed, pies and body Parts where they were.
 - The later word wins. A sequence started, or `POST /api/seq/stop`, after the press cancels a pose the controller has not taken yet. A second press replaces the first, and its first motion still waits out the first one's spacing. A dome resync (after an estop clears, or when the dome link comes up) ends a pose being reached, and a pose that starts ends a resync's panel-by-panel close.
 

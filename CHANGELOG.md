@@ -59,6 +59,19 @@ the patch releases, whose notes live on their own GitHub Release.
   light block and the drawer has its lights, its mode, its color as swatches
   and how long it runs. A logic display can show a text instead, and a holo
   offers only the colors its effect takes.
+- **A body flutter shakes.** A flutter step swings its part between closed and
+  how far you set, for as long as the step says, and ends closed. It needs no
+  close after it, on the dome or on the body. The rest of the routine keeps
+  its timing while the part swings, and two parts fluttering together take
+  turns, one move at a time. A flutter across a set of body parts does the
+  same for each part.
+- **Set the gap between servo starts.** The droid leaves 450 ms between servos
+  it starts itself: back to centre, the power-up pass, a pose, a move across a
+  set, a flutter. That number is now yours to set, 50 to 5000 ms, as
+  `cadenceFloorMs` on `POST /api/config` or `servo.config.cadence-floor` on
+  the Controller Console. Wiring shows the number the droid holds. 450 is the
+  dome's figure; nobody has measured the body's yet. Steps you wrote keep
+  their own timing.
 - **Put a body part in a sequence on its timeline.** Drag a door, an arm or a
   body light onto the timeline and it lands on its own lane, open for a
   second. Pick it and the drawer has how long it runs, how far it opens, and
@@ -516,6 +529,9 @@ the patch releases, whose notes live on their own GitHub Release.
   load a little slower, about a tenth of a second each.
 
 ### Fixed
+- **Clearing the estop resets the holos.** Clearing an estop, or the dome
+  coming back on the link, brought the logics and PSIs back and left the holos
+  running. They reset too now.
 - **Sequences no longer says "Nothing learned yet" while it is still loading.**
   Right after the droid starts, the page shows the waiting dots until your
   sequences arrive.
