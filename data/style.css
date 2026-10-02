@@ -8849,16 +8849,16 @@ body[data-page="maintenance"] .status-item .hint {
   margin-block: var(--space-sm);
 }
 
-/* Find by Moving and back to centre, over the rows on one line (#412, #399):
-   find a Part on the left, send every Output to centre on the right with its
-   one line of answer before the button. Find by moving opens its tray of
-   Parts under the line; the run panel takes the button's place while it
-   lasts. */
+/* Back to centre, over the rows (#412, #399): send every Output to centre,
+   on the right, with its one line of answer before the button. Find by
+   Moving shared this line from the left until it went to Wiring (#411), and
+   .outputs-find below is Wiring's now; alone on the line, the button is
+   held to the right. */
 .outputs-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-sm) var(--space-xl);
   margin-bottom: var(--space-md);
 }
