@@ -1034,7 +1034,7 @@ def provenance(catalog, name, what):
 
 
 def generate_firmware_header(catalog, output_path=None):
-    """Write include/droid_parts.h - the id vocabulary and nothing else."""
+    """Write include/droid_parts.h - the id vocabulary, and where each Part sits."""
     output_path = Path(output_path) if output_path else FIRMWARE_OUTPUT_PATH
     parts = catalog["parts"]
     ids = [part["id"] for part in parts]
@@ -1044,13 +1044,20 @@ def generate_firmware_header(catalog, output_path=None):
         provenance(
             catalog,
             FIRMWARE_NAME,
-            "The Droid Parts Catalog's id vocabulary, and only that. A Part is\n"
-            "// identity; an Output Address is only wiring, so there is no parts table\n"
-            "// in firmware beyond these ids - which Output drives which Part is\n"
-            "// answered by the Servo Output rows the builder's own droid stores\n"
-            "// (#301). Names, shorthand, aliases and position live in the browser\n"
-            "// module this generator writes beside this file; a rename there can\n"
-            "// never produce a new id here.\n"
+            "The Droid Parts Catalog's id vocabulary, and where each Part sits. A\n"
+            "// Part is identity; an Output Address is only wiring, so nothing here\n"
+            "// says which Output drives which Part - that is answered by the Servo\n"
+            "// Output rows the builder's own droid stores (#301). Names, shorthand,\n"
+            "// aliases and the position word live in the browser module this\n"
+            "// generator writes beside this file; a rename there can never produce\n"
+            "// a new id here.\n"
+            "//\n"
+            "// ONE fact about a Part beyond its id is here: its bearing, in the\n"
+            "// table further down. It is in firmware because where a Part sits is\n"
+            "// resolved when a sequence RUNS, never when it is saved - a Gesture\n"
+            "// orders its Parts by bearing (#438), and a Part-targeted dome turn\n"
+            "// turns until that Part faces front (#445) - so a bearing the catalog\n"
+            "// corrects is corrected in every saved sequence that names the Part.\n"
             "//\n"
             "// EVERY Part the catalog declares is here, whatever drives it. A Part\n"
             "// being KNOWN and a Part being DRIVEABLE HERE are separate facts: a\n"
@@ -1143,6 +1150,11 @@ def generate_firmware_header(catalog, output_path=None):
     return ids
 
 
+# The two bearings the generated header's check-value sentence spells out, in
+# degrees as the catalog writes them.
+CHECK_VALUE_BEARINGS = {"panel14": 184, "panel8": 24}
+
+
 def geometry_header_lines(catalog):
     """Where each Part sits, and the sets a Gesture spreads across (#438).
 
@@ -1151,18 +1163,51 @@ def geometry_header_lines(catalog):
     the droid must know it (ADR 0046). Tenths of a degree so a 142.5 degree
     panel keeps its half degree; -1 for a Part with no bearing, which orders
     last and is never dropped.
+
+    The header's check-value sentence names two bearings in words, so it is
+    held to the catalog here: a corrected bearing must correct the sentence in
+    the same edit, or the comment a reader checks the table against is the one
+    thing in the file that is wrong.
     """
     parts = catalog["parts"]
+    bearings = {part["id"]: part["bearing_deg"] for part in parts}
+    stale = [
+        f"{part_id} is {bearings.get(part_id)!r} in the catalog and {said} in the "
+        "check-value sentence geometry_header_lines() writes; correct the sentence"
+        for part_id, said in CHECK_VALUE_BEARINGS.items()
+        if bearings.get(part_id) != said
+    ]
+    if stale:
+        raise CatalogError(stale)
     lines = [
         "// -----------------------------------------------------------------------------",
         "// Where each Part sits, and the sets a Gesture spreads across (ADR 0046, #438)",
         "//",
         "// Bearings are degrees clockwise viewed from above, in TENTHS, by the",
         "// catalog's convention: 0 is dead astern and 180 dead ahead (operator",
-        "// decision, 2026-09-30 on #438). The convention is held in ONE constant,",
-        "// DROID_BEARING_DEAD_AHEAD_TENTHS, so \"from the front\" is measured from it",
-        "// and nowhere else. -1 is a Part the catalog gives no bearing: every body",
-        "// Part today, placed by a position word until one is measured.",
+        "// decision, 2026-09-30, #438 and #445). Seen from above, facing the way",
+        "// the droid faces, 900 is its left and 2700 its right. The convention is",
+        "// held in ONE constant, DROID_BEARING_DEAD_AHEAD_TENTHS, so \"from the",
+        "// front\" is measured from it and nowhere else. DROID_BEARING_NONE (-1) is",
+        "// a Part the catalog gives no bearing: every body Part today, placed by a",
+        "// position word until one is measured. It is never 0, which is a real",
+        "// bearing - dead astern.",
+        "//",
+        "// CHECK VALUE, so a sign error is caught by reading rather than by",
+        "// driving: panel14 (P14, the panel the Front PSI sits on) reads 1840 -",
+        "// dead ahead, 4 degrees to the droid's right - and panel8 (P8, the Rear",
+        "// PSI's) reads 240. A table with the Front PSI's panel near 0 has the",
+        "// convention backwards.",
+        "//",
+        "// THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is",
+        "// measured from the droid's own front, so front is 0 there and 1800 here",
+        "// (CONTEXT.md \"Dome Bearing\"). The two meet in one place, the",
+        "// Part-targeted dome turn (#445).",
+        "//",
+        "// Two readers. A Gesture orders its Parts by these",
+        "// (include/sequence_gesture.h, #438). A Part-targeted dome turn resolves",
+        "// its Part's bearing here when it runs; that reader is #445's, and until",
+        "// it lands the Gesture is the only one.",
         "//",
         "// A set is the Parts one Gesture token means, on one half of the droid,",
         "// in emission order. Their order round the droid is the Gesture's to work",

@@ -6,13 +6,20 @@
 //
 // Source digest: sha256 54ecbe192dfed50343a39420da9fcb18233b0e363e6ec70a6f76667304fde624
 //
-// The Droid Parts Catalog's id vocabulary, and only that. A Part is
-// identity; an Output Address is only wiring, so there is no parts table
-// in firmware beyond these ids - which Output drives which Part is
-// answered by the Servo Output rows the builder's own droid stores
-// (#301). Names, shorthand, aliases and position live in the browser
-// module this generator writes beside this file; a rename there can
-// never produce a new id here.
+// The Droid Parts Catalog's id vocabulary, and where each Part sits. A
+// Part is identity; an Output Address is only wiring, so nothing here
+// says which Output drives which Part - that is answered by the Servo
+// Output rows the builder's own droid stores (#301). Names, shorthand,
+// aliases and the position word live in the browser module this
+// generator writes beside this file; a rename there can never produce
+// a new id here.
+//
+// ONE fact about a Part beyond its id is here: its bearing, in the
+// table further down. It is in firmware because where a Part sits is
+// resolved when a sequence RUNS, never when it is saved - a Gesture
+// orders its Parts by bearing (#438), and a Part-targeted dome turn
+// turns until that Part faces front (#445) - so a bearing the catalog
+// corrects is corrected in every saved sequence that names the Part.
 //
 // EVERY Part the catalog declares is here, whatever drives it. A Part
 // being KNOWN and a Part being DRIVEABLE HERE are separate facts: a
@@ -347,10 +354,29 @@ inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DE
 //
 // Bearings are degrees clockwise viewed from above, in TENTHS, by the
 // catalog's convention: 0 is dead astern and 180 dead ahead (operator
-// decision, 2026-09-30 on #438). The convention is held in ONE constant,
-// DROID_BEARING_DEAD_AHEAD_TENTHS, so "from the front" is measured from it
-// and nowhere else. -1 is a Part the catalog gives no bearing: every body
-// Part today, placed by a position word until one is measured.
+// decision, 2026-09-30, #438 and #445). Seen from above, facing the way
+// the droid faces, 900 is its left and 2700 its right. The convention is
+// held in ONE constant, DROID_BEARING_DEAD_AHEAD_TENTHS, so "from the
+// front" is measured from it and nowhere else. DROID_BEARING_NONE (-1) is
+// a Part the catalog gives no bearing: every body Part today, placed by a
+// position word until one is measured. It is never 0, which is a real
+// bearing - dead astern.
+//
+// CHECK VALUE, so a sign error is caught by reading rather than by
+// driving: panel14 (P14, the panel the Front PSI sits on) reads 1840 -
+// dead ahead, 4 degrees to the droid's right - and panel8 (P8, the Rear
+// PSI's) reads 240. A table with the Front PSI's panel near 0 has the
+// convention backwards.
+//
+// THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is
+// measured from the droid's own front, so front is 0 there and 1800 here
+// (CONTEXT.md "Dome Bearing"). The two meet in one place, the
+// Part-targeted dome turn (#445).
+//
+// Two readers. A Gesture orders its Parts by these
+// (include/sequence_gesture.h, #438). A Part-targeted dome turn resolves
+// its Part's bearing here when it runs; that reader is #445's, and until
+// it lands the Gesture is the only one.
 //
 // A set is the Parts one Gesture token means, on one half of the droid,
 // in emission order. Their order round the droid is the Gesture's to work
