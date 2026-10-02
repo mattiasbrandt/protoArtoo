@@ -297,6 +297,10 @@
     // control that sets one offers, read from here rather than kept again.
     BODY_FLUTTER_MS,
 
+    // How many beats a span, or a Gesture's pace, repeat or extent, may be, as
+    // [least, most] (_validateBeats()): what a control that sets one offers.
+    SPAN_BEATS: Object.freeze([1, TEMPO_BEAT_MAX]),
+
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a

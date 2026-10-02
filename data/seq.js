@@ -929,13 +929,20 @@
   // Protocol Check refuses a step timed before the one above it, so a block
   // dragged past its neighbour changes places with it in the step list. The
   // end step, and anything written after it, stays where it is.
-  const orderSteps = () => {
-    const steps = editorState.current.steps;
+  //
+  // stepOrder() is that order for any list of steps, as the index each place
+  // takes its step from, so a change tried on a copy is put in the order the
+  // routine itself would be.
+  const stepOrder = (steps) => {
     const units = stepUnits(steps);
     const endAt = steps.findIndex((step) => step && step.type === "end");
     const tail = endAt === -1 ? units.length : units.findIndex((unit) => unit.at + unit.size > endAt);
-    const order = [...units.slice(0, tail).sort((a, b) => a.t - b.t), ...units.slice(tail)]
+    return [...units.slice(0, tail).sort((a, b) => a.t - b.t), ...units.slice(tail)]
       .flatMap((unit) => Array.from({ length: unit.size }, (_, k) => unit.at + k));
+  };
+  const orderSteps = () => {
+    const steps = editorState.current.steps;
+    const order = stepOrder(steps);
     if (order.every((from, to) => from === to)) return;
     editorState.current.steps = order.map((from) => steps[from]);
     editorState.expanded = new Set([...editorState.expanded].map((from) => order.indexOf(from)));
@@ -1083,19 +1090,24 @@
   // flutter says: a body flutter has a length and may say how far, a panel's
   // has neither (`settles`). How far is the step's `howFar` on both.
   //
-  // Kinds with no rows of their own yet show where they start and are edited
-  // in the step list until theirs land: a Gesture and a sequence inside this
-  // one.
+  // A Gesture is edited as the one thing it is (gestureRows()): its Parts, the
+  // Move Shape, how it travels across them, and - folded away - its pace, its
+  // repeat and the feel only a Gesture overrides. Its words and its bounds
+  // are the one vocabulary's (data/seq_gesture.js).
+  //
+  // A sequence inside this one has no rows of its own yet: it shows where it
+  // starts and is edited in the step list until they land.
   // ---------------------------------------------------------------------------
   const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
 
   const settingRow = (name, control, value = "") =>
     `<div class="setting-row"><span class="setting-name">${name}</span>${control}<span class="setting-value">${value}</span></div>`;
   // `optional` is a number that may be left empty, where empty says something
-  // of its own: no duration. Any other number left empty goes back to the one
-  // the routine holds.
+  // of its own: no duration. Given as words, they are what the empty field
+  // shows - what the step does when it says no number. Any other number left
+  // empty goes back to the one the routine holds.
   const numberCell = (field, value, bounds, label, unit = "ms", optional = false) =>
-    `<span class="setting-number"><input class="number-cell" type="number" ${limits(bounds)} step="${unit === "ms" ? 10 : 1}" value="${value}" data-picked="${field}"${optional ? ' data-optional placeholder="-"' : ""} aria-label="${label}">${unit ? `<span class="setting-unit">${unit}</span>` : ""}</span>`;
+    `<span class="setting-number"><input class="number-cell" type="number" ${limits(bounds)} step="${unit === "ms" ? 10 : 1}" value="${value}" data-picked="${field}"${optional ? ` data-optional placeholder="${optional === true ? "-" : optional}"` : ""} aria-label="${label}">${unit ? `<span class="setting-unit">${unit}</span>` : ""}</span>`;
   // Up to five peers are a joined bar, more are pills that wrap. An option is
   // [value, words] and, for a bar, whether it cannot be pressed now.
   const segOf = (field, options, current, label) =>
@@ -1284,6 +1296,108 @@
     return Boolean(facts && facts.output && !facts.output.light && !facts.timed);
   };
 
+  // ---------------------------------------------------------------------------
+  // A Gesture's words (data/seq_gesture.js has the one vocabulary). The first
+  // of each list is what a Gesture means when it does not say - the droid
+  // stores an absent word as zero - so a word is stored only where it differs
+  // from that, and an untouched Gesture saves back as it was read.
+  // ---------------------------------------------------------------------------
+  const GESTURE_DEFAULTED = ["shape", "spread", "direction", "start"];
+  const gestureChoices = (field) => {
+    const G = window.SeqGesture;
+    const list = { shape: G.SHAPES, spread: G.SPREADS, direction: G.DIRECTIONS, start: G.STARTS }[field];
+    return list.map((choice) => (typeof choice === "string" ? { id: choice, label: capital(choice) } : choice));
+  };
+  const gestureWord = (step, field) => step[field] ?? gestureChoices(field)[0].id;
+  // A Gesture's times: empty, or zero, is absence - its default.
+  const GESTURE_TIMES = ["flutterMs", "stepMs", "repeatMs", "extentMs", "speedMs"];
+  const GESTURE_BEATS = ["stepBeats", "repeatBeats", "extentBeats"];
+  // Whether the fold has been opened by hand: it then stays open through the
+  // inspector being written again.
+  let gestureMoreOpen = false;
+
+  // The Move Shape's words over a Gesture's set: a light's when every Part it
+  // spreads across is a light, a servo's otherwise (CONTEXT.md "Move Shape").
+  const gestureShapeWords = (step) => {
+    const members = window.SeqGesture.members(step);
+    const lights = members.length > 0 && members.every((id) => window.DroidPartKind?.isLight(catalogPart(id)));
+    return lights ? SHAPE_WORDS.light : SHAPE_WORDS.servo;
+  };
+
+  // The Gesture's rows, in the step list card's words: Parts, Move, Travels,
+  // Order, How far.
+  const gestureRows = (step) => {
+    const G = window.SeqGesture;
+    if (!G) return "";
+    const esc = window.PAUtils.escapeHtml;
+    const choices = (field) => gestureChoices(field).map((choice) => [choice.id, esc(choice.label)]);
+    // A Gesture over a listed set of Parts names them; the list itself is
+    // authored in the step list.
+    const parts = Array.isArray(step.parts)
+      ? `<span class="seq-row-ctl">${esc(step.parts.map((id) => catalogPart(id)?.name || id).join(", "))}</span>`
+      : pillsOf("set", (window.DroidParts?.sets || []).map((set) => [set.id, esc(set.label)]), step.set, "Which parts");
+    const words = gestureShapeWords(step);
+    const shape = gestureWord(step, "shape");
+    const far = step.howFar ?? STEP_LIMITS.howFar[1];
+    return settingRow("Parts", parts)
+      + settingRow("Move", segOf("shape", G.SHAPES.map((id) => [id, words[id]]), shape, "Move"))
+      + (shape === "flutter"
+        ? settingRow("Lasts", numberCell("flutterMs", step.flutterMs ?? "", SeqProtocolCheck.BODY_FLUTTER_MS, "How long each part flutters, in milliseconds", "ms", true))
+        : "")
+      + settingRow("Travels", pillsOf("spread", choices("spread"), gestureWord(step, "spread"), "How it travels"))
+      + settingRow("Order", `<span class="seq-row-ctl">${segOf("direction", choices("direction"), gestureWord(step, "direction"), "Which way round")}${segOf("start", choices("start"), gestureWord(step, "start"), "Where it starts")}</span>`)
+      + settingRow("How far", faderOf("howFar", far, STEP_LIMITS.howFar, "How far, percent of each part's throw"), `${far}%`);
+  };
+
+  // What is rarely set, folded under the card's own line: the pace, the
+  // repeat, and the full-throw time and easing only a Gesture overrides
+  // (CONTEXT.md "Body Step"). Every and Again are in beats where the routine
+  // has a tempo and in milliseconds where it has none, as on the card. An
+  // empty field shows what the Gesture does when it says nothing.
+  const gestureMore = (step) => {
+    const G = window.SeqGesture;
+    if (!G) return "";
+    const beats = SeqProtocolCheck.SPAN_BEATS;
+    const tempo = tempoOf();
+    const every = tempo
+      ? numberCell("stepBeats", step.stepBeats ?? "", beats, "Beats between parts", "beats", "1")
+      : numberCell("stepMs", step.stepMs ?? "", G.STEP_MS, "Milliseconds between parts", "ms", String(G.STEP_DEFAULT_MS));
+    const again = tempo
+      ? numberCell("repeatBeats", step.repeatBeats ?? "", beats, "Repeat every beats", "beats", true)
+      : numberCell("repeatMs", step.repeatMs ?? "", G.REPEAT_MS, "Repeat every milliseconds", "ms", true);
+    const said = [...GESTURE_BEATS, ...GESTURE_TIMES, "easing"].some((key) => key !== "flutterMs" && step[key]);
+    return `<details class="seq-more seq-picked-more"${gestureMoreOpen || said ? " open" : ""}>`
+      + `<summary>${chevron}Pace, repeat and feel</summary>`
+      + `<div class="setting-rows seq-picked-rows">`
+      + settingRow("Every", every)
+      + settingRow("Again", again)
+      + settingRow("For", numberCell("extentMs", step.extentMs ?? "", [0, G.EXTENT_MS_MAX], "Repeat for milliseconds, to the end when empty", "ms", "end"))
+      + settingRow("Full throw", numberCell("speedMs", step.speedMs ?? "", G.SPEED_MS, "Full throw time for each part, the part's own when empty", "ms", "own"))
+      + settingRow("Easing", segOf("easing", [["", "Own"], ...G.EASINGS.map((word) => [word, capital(word)])], step.easing || "", "Easing"))
+      + `</div></details>`;
+  };
+
+  // One field of a Gesture, written. A word is stored only where it differs
+  // from what a Gesture means without it, and pressing the choice it already
+  // is changes nothing; a time left empty is absence.
+  const writeGesture = (step, field, raw) => {
+    if (GESTURE_TIMES.includes(field)) {
+      const number = parseInt(raw, 10);
+      if (raw === "" || number === 0) delete step[field];
+      else if (Number.isInteger(number)) step[field] = number;
+    } else if (field === "set") {
+      if (window.SeqGesture.setOf(raw)) step.set = raw;
+    } else if (field === "easing") {
+      if (raw === "") delete step.easing;
+      else step.easing = raw;
+    } else if (GESTURE_DEFAULTED.includes(field) && raw !== gestureWord(step, field)) {
+      if (raw === gestureChoices(field)[0].id) delete step[field];
+      else step[field] = raw;
+      // Only a flutter lasts a time (Protocol Check).
+      if (field === "shape" && raw !== "flutter") delete step.flutterMs;
+    }
+  };
+
   // The rows of the block's kind, under where it starts.
   const kindRows = (step, at) => {
     const esc = window.PAUtils.escapeHtml;
@@ -1323,6 +1437,8 @@
         return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), loopReach(editorState.current.steps, at), "Steps it repeats", "steps"))
           + settingRow("Every", numberCell("periodMs", fieldOf(step, "periodMs"), STEP_LIMITS.periodMs, "Every, in milliseconds"))
           + settingRow("For", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.loopMs, "For, in milliseconds"));
+      case "gesture":
+        return gestureRows(step);
       default:
         return "";
     }
@@ -1337,7 +1453,9 @@
         + '<p class="hint">Press a block to change it. Shift-press adds another.</p>';
     }
     const stepCount = new Set(blocks.flatMap((block) => block.steps)).size;
-    const remove = `<div class="seq-picked-acts"><button type="button" class="seq-act" data-picked="remove">${stepCount > 1 ? `Remove ${stepCount} steps` : "Remove"}</button></div>`;
+    const acts = (others = "") =>
+      `<div class="seq-picked-acts">${others}<button type="button" class="seq-act" data-picked="remove">${stepCount > 1 ? `Remove ${stepCount} steps` : "Remove"}</button></div>`;
+    const remove = acts();
     if (blocks.length > 1) {
       const nudge = window.SeqTimeline;
       return head(`${blocks.length} blocks`, countOf(stepCount, "step", "steps"))
@@ -1360,11 +1478,20 @@
     const light = step.type === "dome" ? lightFields(step.cmd) : null;
     const lights = light?.kind === "DL" ? lightWord("targets", light.target)
       : light?.kind === "DT" ? lightWord("textTargets", light.target) : "";
+    // A Gesture: what the dome makes of one it performs, said under its rows
+    // in the Rehearsal's words; its fold; and, for one the body performs, the
+    // act that writes it out as the Body Steps it becomes. The dome performs
+    // its own as one command, which the body never breaks up (ADR 0046).
+    const G = step.type === "gesture" ? window.SeqGesture : null;
+    const domeSays = (G?.domeReading(step)?.notes || []).map((note) => `<p class="hint seq-brick">${esc(note)}</p>`).join("");
+    const split = G && !G.onDome(step) ? '<button type="button" class="seq-act" data-picked="split">Split into steps</button>' : "";
     return head(block.name || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
       + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
+      + domeSays
+      + (G ? gestureMore(step) : "")
       + jumps
       + (move?.settles ? `<p class="hint seq-brick">${BRICK_SENTENCE}</p>` : "")
-      + remove;
+      + acts(split);
   };
 
   // Called by the timeline whenever it draws the routine: the inspector is
@@ -1427,6 +1554,8 @@
       if (!Number.isInteger(number)) return;
       if (number >= STEP_LIMITS.howFar[1]) delete step.howFar;
       else step.howFar = number;
+    } else if (step.type === "gesture") {
+      writeGesture(step, field, raw);
     } else if (field === "motion" && step.type === "body") {
       // A body flutter has a length of its own: turned into one, the open
       // lasts the pair, within a flutter's bounds, and the close it owes
@@ -1493,6 +1622,11 @@
       sessionTimeline.movePickedTo(Number(raw));
     } else if (field === "runs") {
       sessionTimeline.sizeStanding(at, Number(raw));
+    } else if (GESTURE_BEATS.includes(field)) {
+      // A Gesture's pace or repeat in beats: resolved from the tempo as the
+      // droid resolves it, and one entry of its own (setStepBeat()).
+      const beats = parseInt(raw, 10);
+      setStepBeat(at, { [field]: Number.isInteger(beats) ? beats : null });
     } else {
       const before = historyBegin();
       writePicked(step, field, raw);
@@ -1564,7 +1698,11 @@
   // its type, or one of the dome's light commands by its prefix (DOME_SUBMODES)
   // - a Visual Preset and a Holo Effect name no Part, so they are dropped from
   // here and land on the Dome row.
+  //
+  // Between the two, the Sets: the tokens a Gesture spreads across (the
+  // catalog's `sets`). A set dropped is one Gesture over it.
   const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", "random", "loop", "end"];
+  const librarySets = () => window.DroidParts?.sets || [];
   const libraryKindName = (id) => DOME_SUBMODES[id]?.name || stepTypeName[id];
   // The Sequence End pill: the one thing that may be dropped past the end.
   const END_PILL = "kind:end";
@@ -1601,14 +1739,22 @@
     write("seq-editor-parts-sub", sub);
     write("seq-drop-sub", sub);
     write("seq-lib-parts", pills(found) || '<span class="hint">No part by that name.</span>', true);
+    // A set none of whose Parts this droid can move is dashed as a Part is.
+    const setOff = (set) => set.members.length > 0 && set.members.every((id) => {
+      const part = catalogPart(id);
+      return Boolean(part) && off(part);
+    });
+    write("seq-lib-sets", librarySets().map((set) => pill(`set:${set.id}`, "", set.label, setOff(set))).join(""), true);
     write("seq-lib-kinds", LIBRARY_KINDS.map((id) => pill(`kind:${id}`, "", libraryKindName(id))).join(""), true);
     write("seq-drop-parts", pills(parts), true);
   };
 
-  // What a pill is called: the Part's name, or the kind of step.
+  // What a pill is called: the Part's name, the set's, or the kind of step.
   const libraryName = (lib) => {
     const [group, id] = lib.split(":");
-    return group === "kind" ? libraryKindName(id) : libraryParts().find((part) => part.id === id)?.name || id;
+    if (group === "kind") return libraryKindName(id);
+    if (group === "set") return librarySets().find((set) => set.id === id)?.label || id;
+    return libraryParts().find((part) => part.id === id)?.name || id;
   };
 
   const sayOnStage = (text, level = "") => sessionTimeline?.say(text ? { text, level } : null);
@@ -1683,6 +1829,19 @@
       return;
     }
 
+    if (group === "set") {
+      // One Gesture over the set, and it says nothing but the set: every
+      // other word left off is its default - open, all together, clockwise
+      // from the front, at the pace a Gesture takes - so it is stored only
+      // where a builder makes it differ.
+      if (!librarySets().some((set) => set.id === id)) return;
+      const made = { t: at, type: "gesture", set: id };
+      historyPush();
+      steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
+      landed([made]);
+      return;
+    }
+
     if (id === "loop") {
       // A loop is one object over the steps it repeats: the run of steps that
       // start inside its first period after the drop, up to the first a loop
@@ -1744,6 +1903,71 @@
       steps.splice(endAt === -1 ? steps.length : endAt, 0, made);
     }
     landed([made]);
+  };
+
+  // Split into steps: the picked body Gesture is replaced by the moves it
+  // already makes, written out as Body Steps, in one entry of the history.
+  //
+  // The moves are the one expansion there is (SeqGesture.bodyMoves()), read
+  // off the Gesture as the droid runs it - its pace and its extent resolved
+  // from the tempo and the end - and only those it makes before the end step,
+  // where the droid stops a Gesture. A written step says nothing of a full
+  // throw's time or an easing: those are the Output's, and only a Gesture
+  // overrides them (CONTEXT.md "Body Step"). What was generated and paced by
+  // the droid is hand-written after this, and keeps the timing written here
+  // (CONTEXT.md "Cadence Floor").
+  //
+  // Tried on a copy first. If it would leave a step Protocol Check refuses -
+  // a flutter that owed its close to a close Gesture now owes a close of its
+  // own Part - nothing lands, and the stage says Protocol Check's reason.
+  const splitGesture = () => {
+    const picked = pickedStep();
+    const G = window.SeqGesture;
+    if (!picked || picked.step.type !== "gesture" || !G || G.onDome(picked.step) || historyBusy()) return;
+    const { at, step } = picked;
+    const steps = editorState.current.steps;
+    const run = SeqProtocolCheck.resolveBeats(editorState.current).steps[at];
+    // A step a loop repeats is timed from the pass, where the end is not.
+    const loop = stepUnits(steps).find((unit) => unit.size > 1 && at > unit.at && at < unit.at + unit.size);
+    const endAt = steps.findIndex((each) => each?.type === "end");
+    const last = loop || endAt === -1 ? Infinity : Number(steps[endAt].t) || 0;
+    const moves = G.bodyMoves(run, Number(run.t) || 0).filter((move) => move.t < last);
+    if (moves.length === 0) {
+      sayOnStage("This gesture makes no move before the end.", "error");
+      return;
+    }
+    const write = () => moves.map((move) => ({
+      t: move.t,
+      type: "body",
+      part: move.part,
+      ...(move.shape === "open" ? {} : { shape: move.shape }),
+      ...(step.howFar === undefined ? {} : { howFar: step.howFar }),
+      ...(move.shape === "flutter" && step.flutterMs !== undefined ? { flutterMs: step.flutterMs } : {}),
+    }));
+    // The loop that repeats the Gesture repeats the steps it becomes.
+    const place = (list, made) => {
+      if (loop) list[loop.at].body += made.length - 1;
+      list.splice(at, 1, ...made);
+    };
+
+    const trial = JSON.parse(JSON.stringify(editorState.current));
+    const tried = write();
+    place(trial.steps, tried);
+    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
+    const refusedStep = tried
+      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
+      .find((verdict) => !verdict.ok);
+    const refused = refusedStep
+      || (SeqProtocolCheck.validateSequence(editorState.current).ok ? SeqProtocolCheck.validateSequence(trial) : { ok: true });
+    if (!refused.ok) {
+      sayOnStage(refused.error, "error");
+      return;
+    }
+
+    const made = write();
+    historyPush();
+    place(steps, made);
+    landed(made);
   };
 
   // A pill held: `ghost` is the pill that follows the pointer once the press
@@ -1830,6 +2054,7 @@
     closeSessionTimeline();
     els.editorView.classList.add("hidden");
     currentEditingSeq = null;
+    gestureMoreOpen = false;
     Object.assign(editorState, {
       original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(),
       view: "timeline", tab: "block", saved: false,
@@ -2434,7 +2659,7 @@
     const span = spansBeats(step)
       ? `<span class="seq-row-label">Lasts</span>
          <div class="seq-row-ctl">
-           <input class="seq-num step-beat-span" type="number" min="1" max="1200" step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts">
+           <input class="seq-num step-beat-span" type="number" ${limits(SeqProtocolCheck.SPAN_BEATS)} step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts">
            <span class="seq-unit">beats</span>
          </div>`
       : "";
@@ -2954,49 +3179,55 @@
         // form value, so the step still reads back through its [data-field]
         // inputs like every other type. Pace and repeat are rarely set and
         // fold away.
+        //
+        // The hidden value is what the step stores, not what is shown as
+        // picked: a word the Gesture does not say is shown as its default and
+        // held empty, so reading the form back does not write the default
+        // into a step that never said it.
         const G = window.SeqGesture;
         if (!G) break;
         const esc = window.PAUtils.escapeHtml;
-        const hidden = (field, current) => `<input type="hidden" data-field="${field}" value="${esc(current || "")}">`;
-        const bar = (field, options, current) => `
+        const hidden = (field) => `<input type="hidden" data-field="${field}" value="${esc(step[field] || "")}">`;
+        const shown = (field) => (GESTURE_DEFAULTED.includes(field) ? gestureWord(step, field) : step[field] || "");
+        const bar = (field, options) => `
           <span class="seg seg-sm" role="group" aria-label="${field}">
             ${options
               .map(
                 (o) =>
-                  `<button type="button" class="gesture-pick" data-pick="${field}" data-value="${esc(o.id)}" aria-pressed="${o.id === current ? "true" : "false"}">${esc(o.label)}</button>`,
+                  `<button type="button" class="gesture-pick" data-pick="${field}" data-value="${esc(o.id)}" aria-pressed="${o.id === shown(field) ? "true" : "false"}">${esc(o.label)}</button>`,
               )
               .join("")}
-          </span>${hidden(field, current)}`;
-        const pills = (field, options, current) => `
+          </span>${hidden(field)}`;
+        const pills = (field, options) => `
           <span class="seq-pills" role="radiogroup" aria-label="${field}">
             ${options
               .map(
                 (o) =>
-                  `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="${field}" data-value="${esc(o.id)}" aria-checked="${o.id === current ? "true" : "false"}">${esc(o.label)}</button>`,
+                  `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="${field}" data-value="${esc(o.id)}" aria-checked="${o.id === shown(field) ? "true" : "false"}">${esc(o.label)}</button>`,
               )
               .join("")}
-          </span>${hidden(field, current)}`;
+          </span>${hidden(field)}`;
         const num = (field, value, placeholder, label, extra = "") =>
           `<input class="seq-num" type="number" ${extra} value="${value ?? ""}" placeholder="${placeholder}" aria-label="${label}">`;
         const sets = (window.DroidParts?.sets || []).map((x) => ({ id: x.id, label: x.label }));
-        const shapes = G.SHAPES.map((x) => ({ id: x, label: x[0].toUpperCase() + x.slice(1) }));
+        const beats = limits(SeqProtocolCheck.SPAN_BEATS);
         const tempo = tempoOf();
         const every = tempo
-          ? `${num("stepBeats", step.stepBeats, "1", "Beats between parts", 'min="1" max="1200" data-beats="stepBeats"').replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
-          : `${num("stepMs", step.stepMs, G.STEP_DEFAULT_MS, "Milliseconds between parts", 'min="50" max="60000" data-field="stepMs"')}<span class="seq-unit">ms</span>`;
+          ? `${num("stepBeats", step.stepBeats, "1", "Beats between parts", `${beats} data-beats="stepBeats"`).replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
+          : `${num("stepMs", step.stepMs, G.STEP_DEFAULT_MS, "Milliseconds between parts", `${limits(G.STEP_MS)} data-field="stepMs"`)}<span class="seq-unit">ms</span>`;
         const again = tempo
-          ? `${num("repeatBeats", step.repeatBeats, "-", "Repeat every beats", 'min="1" max="1200" data-beats="repeatBeats"').replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
-          : `${num("repeatMs", step.repeatMs, "-", "Repeat every milliseconds", 'min="100" max="60000" data-field="repeatMs"')}<span class="seq-unit">ms</span>`;
+          ? `${num("repeatBeats", step.repeatBeats, "-", "Repeat every beats", `${beats} data-beats="repeatBeats"`).replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
+          : `${num("repeatMs", step.repeatMs, "-", "Repeat every milliseconds", `${limits(G.REPEAT_MS)} data-field="repeatMs"`)}<span class="seq-unit">ms</span>`;
         fieldsContainer.innerHTML = `
           <div class="seq-rows">
             <span class="seq-row-label">Parts</span>
-            <div class="seq-row-ctl">${pills("set", sets, step.set || "")}</div>
+            <div class="seq-row-ctl">${pills("set", sets)}</div>
             <span class="seq-row-label">Move</span>
-            <div class="seq-row-ctl">${bar("shape", shapes, step.shape || "open")}</div>
+            <div class="seq-row-ctl">${bar("shape", gestureChoices("shape"))}</div>
             <span class="seq-row-label">Travels</span>
-            <div class="seq-row-ctl">${pills("spread", G.SPREADS, step.spread || "together")}</div>
+            <div class="seq-row-ctl">${pills("spread", gestureChoices("spread"))}</div>
             <span class="seq-row-label">Order</span>
-            <div class="seq-row-ctl">${bar("direction", G.DIRECTIONS, step.direction || "cw")}${bar("start", G.STARTS, step.start || "front")}</div>
+            <div class="seq-row-ctl">${bar("direction", gestureChoices("direction"))}${bar("start", gestureChoices("start"))}</div>
             <span class="seq-row-label">How far</span>
             <div class="seq-row-ctl">${num("howFar", step.howFar, "100", "How far, percent of each part's throw", `${limits(STEP_LIMITS.howFar)} data-field="howFar"`)}<span class="seq-unit">%</span></div>
           </div>
@@ -3008,11 +3239,11 @@
               <span class="seq-row-label">Again</span>
               <div class="seq-row-ctl">${again}</div>
               <span class="seq-row-label">For</span>
-              <div class="seq-row-ctl">${num("extentMs", step.extentMs, "end", "Repeat for milliseconds, to the end when empty", 'min="0" max="120000" data-field="extentMs"')}<span class="seq-unit">ms</span></div>
+              <div class="seq-row-ctl">${num("extentMs", step.extentMs, "end", "Repeat for milliseconds, to the end when empty", `${limits([0, G.EXTENT_MS_MAX])} data-field="extentMs"`)}<span class="seq-unit">ms</span></div>
               <span class="seq-row-label">Full throw</span>
-              <div class="seq-row-ctl">${num("speedMs", step.speedMs, "own", "Full throw time for each part, the part's own when empty", 'min="50" max="5000" data-field="speedMs"')}<span class="seq-unit">ms</span></div>
+              <div class="seq-row-ctl">${num("speedMs", step.speedMs, "own", "Full throw time for each part, the part's own when empty", `${limits(G.SPEED_MS)} data-field="speedMs"`)}<span class="seq-unit">ms</span></div>
               <span class="seq-row-label">Easing</span>
-              <div class="seq-row-ctl">${bar("easing", [{ id: "", label: "Own" }, ...G.EASINGS.map((x) => ({ id: x, label: x[0].toUpperCase() + x.slice(1) }))], step.easing || "")}</div>
+              <div class="seq-row-ctl">${bar("easing", [{ id: "", label: "Own" }, ...G.EASINGS.map((x) => ({ id: x, label: capital(x) }))])}</div>
             </div>
           </details>`;
         return;
@@ -3381,6 +3612,7 @@
             <div class="seq-lib" id="seq-editor-parts">
               <input id="seq-editor-find" class="number-cell text-cell" type="search" placeholder="Find a part" aria-label="Find a part">
               <div class="part-pills-group"><span class="part-pills-name">Parts</span><span class="part-pills" id="seq-lib-parts"></span></div>
+              <div class="part-pills-group"><span class="part-pills-name">Sets</span><span class="part-pills" id="seq-lib-sets"></span></div>
               <div class="part-pills-group"><span class="part-pills-name">More steps</span><span class="part-pills" id="seq-lib-kinds"></span></div>
             </div>`)}
           ${pane("sequence", `
@@ -3647,10 +3879,19 @@
       else if (prev.name && prev.ref === step.ref) step.name = prev.name;
     }
     if (step.type === "gesture" && prev.type === "gesture") {
-      ["stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
+      GESTURE_BEATS.forEach((key) => {
         if (prev[key] !== undefined) step[key] = prev[key];
       });
       if (step.set === undefined && Array.isArray(prev.parts)) step.parts = prev.parts;
+      // A time the card shows no field for rides along too: a flutter's
+      // length, which is set in the inspector, and the pace and the repeat in
+      // milliseconds while a tempo has the card showing them in beats. A
+      // flutter's length goes with the flutter (Protocol Check).
+      GESTURE_TIMES.forEach((key) => {
+        const shownOnCard = fieldsContainer.querySelector(`[data-field="${key}"]`) !== null;
+        const kept = key !== "flutterMs" || step.shape === "flutter";
+        if (!shownOnCard && kept && prev[key] !== undefined) step[key] = prev[key];
+      });
     }
     // A Body Step has no form fields at all - it is authored on the timeline -
     // so everything it says but its time rides along; its span in beats goes
@@ -3868,10 +4109,16 @@
         if (!pressed) return;
         const act = pressed.dataset.picked;
         if (act === "remove") sessionTimeline?.removePicked();
+        else if (act === "split") splitGesture();
         else if (act === "off-beat") {
           if (pickedBlocks.length === 1) setStepBeat(pickedBlocks[0].steps[0], { beat: null });
         } else inspect(act, pressed.dataset.value);
       });
+      // A Gesture's fold, opened or shut: `toggle` does not bubble, so it is
+      // heard on its way down.
+      pickedPane.addEventListener("toggle", (event) => {
+        if (event.target?.classList?.contains("seq-picked-more")) gestureMoreOpen = event.target.open;
+      }, true);
       // Which control a field is, read from the markup the inspector wrote.
       const kindOf = (input) => input?.getAttribute?.("type") || "";
       pickedPane.addEventListener("input", (event) => {
@@ -4424,8 +4671,14 @@
         const fields = pill.closest(".step-fields");
         const hidden = fields?.querySelector(`input[data-field="${pill.dataset.pick}"]`);
         if (!hidden || !Number.isInteger(stepIdx)) return;
+        // The choice it already shows changes nothing, and the choice a
+        // Gesture means without saying is held empty, so it is stored only
+        // where it differs (gestureWord()).
+        if ((pill.getAttribute("aria-pressed") || pill.getAttribute("aria-checked")) === "true") return;
+        const field = pill.dataset.pick;
+        const unsaid = GESTURE_DEFAULTED.includes(field) && pill.dataset.value === gestureChoices(field)[0].id;
         const before = historyBegin();
-        hidden.value = pill.dataset.value;
+        hidden.value = unsaid ? "" : pill.dataset.value;
         validateAndUpdateStep(stepIdx);
         historyCommit(before);
         rerenderStepTable();

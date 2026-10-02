@@ -6804,7 +6804,9 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .tl-grid[data-dragging="body"] .tl-item[data-edit~="can-move"],
-.tl-grid[data-dragging="edge"] .tl-item[data-edit~="can-move"] {
+.tl-grid[data-dragging="edge"] .tl-item[data-edit~="can-move"],
+.tl-grid[data-dragging="body"] .tl-item[data-of],
+.tl-grid[data-dragging="edge"] .tl-item[data-of] {
   cursor: inherit;
 }
 
@@ -7297,6 +7299,16 @@ body[data-page="maintenance"] .status-item .hint {
 
 .seq-brick {
   margin-top: var(--space-sm);
+}
+
+/* A Gesture's fold - its pace, its repeat and its feel - under its rows, in
+   the same rows; and a Gesture's row that names its Parts in words. */
+.seq-picked-more {
+  margin-top: var(--space-sm);
+}
+
+.seq-picked-rows .setting-row > .seq-row-ctl {
+  justify-self: start;
 }
 
 .seq-picked-acts {
