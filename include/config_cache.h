@@ -383,11 +383,6 @@ uint8_t configCacheReadSoundMember();
 void configCacheSetActiveBodyServoMember(uint8_t memberValue);
 uint8_t configCacheReadActiveBodyServoMember();
 
-// configCacheReadBodyServoMember: the body servo controller the builder last
-// SAVED, as a Component Registry part `value`. One field under the lock, like
-// configCacheReadSoundMember().
-uint8_t configCacheReadBodyServoMember();
-
 // configCacheReadRcMember: the Radio Controller's stored Component Member, as
 // a Component Registry part `value` - the radio the builder picked. Unlike
 // Sound there is no boot latch: nothing on the controller branches on the

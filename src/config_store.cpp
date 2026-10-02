@@ -751,15 +751,6 @@ uint8_t configCacheReadActiveBodyServoMember() {
 }
 
 // See declaration comment in config_cache.h.
-uint8_t configCacheReadBodyServoMember() {
-    uint8_t result;
-    taskENTER_CRITICAL(&configCacheMux);
-    result = configCache.system.body_servo_member;
-    taskEXIT_CRITICAL(&configCacheMux);
-    return result;
-}
-
-// See declaration comment in config_cache.h.
 uint8_t configCacheReadRcMember() {
     uint8_t result;
     taskENTER_CRITICAL(&configCacheMux);
