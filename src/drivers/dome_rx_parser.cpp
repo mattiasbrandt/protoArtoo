@@ -44,36 +44,25 @@ static const char* TAG = "MARCDUINO";
 // line routed here is one this handler can place, and it goes out as that
 // board Output's address.
 //
-// :OF is a flutter, a Move Shape the body models (ADR 0049). HERE IT IS NOT
-// PERFORMED AS ONE: the line opens the Output and leaves it open. A flutter
-// swings for a length and ends closed, and the Sequence Coordinator's flutter
-// run performs that for a Body Step and a Gesture (include/sequence_flutter.h,
-// #453), but this line names an Output rather than a Part, carries no length,
-// and is handled on the caller's task with no way in to that run. Nobody has
-// decided how long such a flutter lasts (#453 records the question); until
-// somebody does, this is an open by another name, and
-// docs/marcduino_commands.md says so.
+// :OF is a flutter, a Move Shape the body models (ADR 0049): the Part on that
+// Output swings between its closed end and its full throw for
+// MARCDUINO_BODY_FLUTTER_MS and ends closed. The line is not performed here.
+// It runs on whichever task read it, so it hands the Output and the length to
+// the Sequence Coordinator (sequenceFlutterRequest()), whose flutter run
+// performs it like a Body Step's flutter: each leg at the Output's own Motion
+// Profile, the Cadence Floor between Outputs (include/sequence_flutter.h,
+// #453). "Applied" therefore says the flutter was asked for; an Output with no
+// Part on it, or a halt that lands first, is the Coordinator's to report.
 // -----------------------------------------------------------------------------
+
+// How long a body-owned `:OFnn` shakes. The line carries no length, so it is
+// stated here: two seconds, at full throw (operator, 2026-10-02 on #453).
+static const uint16_t MARCDUINO_BODY_FLUTTER_MS = 2000;
+
 MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
     const ServoOutputAddress output = marcduino_panel_command_output(cmd);
     if (output == SERVO_OUTPUT_NONE) {
         return MarcduinoBodyOutcome::NotHandled;
-    }
-
-    ServoCommand servoCmd = {};
-    servoCmd.source = SRC_INTERNAL;
-    servoCmd.output = output;
-
-    if (strncmp(cmd, ":OP", 3) == 0 || strncmp(cmd, ":OF", 3) == 0) {
-        servoCmd.type = SERVO_CMD_OPEN;
-    } else if (strncmp(cmd, ":CL", 3) == 0) {
-        servoCmd.type = SERVO_CMD_CLOSE;
-    } else {
-        // :MV - marcduino_panel_command_arm_id() admits no fourth head.
-        // marcduino_panel_command_well_formed() has already required a value
-        // of digits after the two-digit number.
-        servoCmd.type = SERVO_CMD_POSITION;
-        servoCmd.positionUs = marcduino_mv_value_to_pulse_us(atoi(cmd + 5));
     }
 
     taskENTER_CRITICAL(&robotStateMux);
@@ -83,6 +72,28 @@ MarcduinoBodyOutcome handlePanelCommand(const char* cmd) {
     if (estop) {
         PA_LOG_WARN(TAG, "[SERVO] panel command rejected - estop active");
         return MarcduinoBodyOutcome::BlockedByEstop;
+    }
+
+    if (strncmp(cmd, ":OF", 3) == 0) {
+        sequenceFlutterRequest(output, MARCDUINO_BODY_FLUTTER_MS);
+        PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
+        return MarcduinoBodyOutcome::Applied;
+    }
+
+    ServoCommand servoCmd = {};
+    servoCmd.source = SRC_INTERNAL;
+    servoCmd.output = output;
+
+    if (strncmp(cmd, ":OP", 3) == 0) {
+        servoCmd.type = SERVO_CMD_OPEN;
+    } else if (strncmp(cmd, ":CL", 3) == 0) {
+        servoCmd.type = SERVO_CMD_CLOSE;
+    } else {
+        // :MV - marcduino_panel_command_arm_id() admits no fourth head.
+        // marcduino_panel_command_well_formed() has already required a value
+        // of digits after the two-digit number.
+        servoCmd.type = SERVO_CMD_POSITION;
+        servoCmd.positionUs = marcduino_mv_value_to_pulse_us(atoi(cmd + 5));
     }
 
     if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {

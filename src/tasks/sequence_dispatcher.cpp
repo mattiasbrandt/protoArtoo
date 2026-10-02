@@ -482,6 +482,90 @@ static __attribute__((noinline)) void flutterOneLeg(uint32_t now) {
                         &gestureRun.awaitOutput, floorMs);
 }
 
+// -----------------------------------------------------------------------------
+// flutterTakeRequest  --  a flutter asked for by Output
+// (sequenceFlutterRequest(), a body-owned Marcduino `:OFnn`).
+//
+// The request names an Output, as the line does, and a flutter is of a Part:
+// the Part is the first one the live row at that address carries, which moves
+// every Part on that Output, since they share its servo. An Output with no
+// Part on it has nothing to flutter and is reported. From there it is a Body
+// Step's flutter at full throw: flutterStartPart(), the same run, the same
+// pace, ending closed. No run fired it, so only its own length bounds it.
+//
+// Refused under either halt, like a pose press, and while a back to centre or
+// a pose is still putting Outputs out one at a time on a pace of its own: two
+// paces side by side is what the Cadence Floor is there to prevent.
+//
+// Each step is its own out-of-line function and none calls the next: the
+// request is taken, the Part found, the flutter started, one after another
+// from flutterTakeRequest(), and each log line sits in a function that only
+// logs. A log line's frame under another's is what puts a route on this task's
+// measured chain (ADR 0040); nested, this path walked 192 B past it. The
+// Part's id is in a static because flutterStartPart() reads rows into
+// flutterRow, so the id cannot be left pointing into it.
+// -----------------------------------------------------------------------------
+static char flutterAskPart[DROID_PART_ID_MAX_LEN + 1];
+
+// The first Part the live row at `output` carries, into flutterAskPart. False
+// when no row has that address, or no Part is on it.
+static __attribute__((noinline)) bool flutterFindPartOn(ServoOutputAddress output) {
+    flutterAskPart[0] = '\0';
+    const uint8_t rowCount = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < rowCount; ++i) {
+        if (configCacheReadServoOutput(i, &flutterRow) &&
+            ServoOutputAddress{flutterRow.driver, flutterRow.channel} == output &&
+            servoOutputPartCount(flutterRow) > 0) {
+            strncpy(flutterAskPart, servoOutputPartAt(flutterRow, 0), sizeof(flutterAskPart) - 1);
+            flutterAskPart[sizeof(flutterAskPart) - 1] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+static __attribute__((noinline)) void flutterLogNoPart(ServoOutputAddress output) {
+    PA_LOG_INFO(TAG, "%s:%u not fluttered - no Part is on it",
+                servoOutputDriverToString(output.driver), (unsigned)output.channel);
+}
+
+static __attribute__((noinline)) void flutterLogRefused(const char* refusal) {
+    PA_LOG_WARN(TAG, "flutter request refused - %s", refusal);
+}
+
+static __attribute__((noinline)) void flutterTakeRequest(uint32_t now, const char* refusal) {
+    bool asked = false;
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    uint16_t flutterMs = 0;
+    taskENTER_CRITICAL(&robotStateMux);
+    if (robotState.flutterRequest) {
+        asked = true;
+        output = robotState.flutterRequestOutput;
+        flutterMs = robotState.flutterRequestMs;
+        robotState.flutterRequest = false;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (!asked) {
+        return;
+    }
+    if (refusal != nullptr) {
+        flutterLogRefused(refusal);
+        return;
+    }
+    // The 0/99 broadcast is the board's first two Outputs, each its own
+    // flutter, so they take turns like any two.
+    const bool both = (output == SERVO_OUTPUT_BOTH_ARMS);
+    for (uint8_t n = 0; n < (both ? 2 : 1); ++n) {
+        const ServoOutputAddress one = both ? boardOutputAddress(n) : output;
+        if (!flutterFindPartOn(one)) {
+            flutterLogNoPart(one);
+            continue;
+        }
+        flutterStartPart(flutterAskPart, SEQ_BODY_HOWFAR_MAX, flutterMs, 0, 0, now,
+                         /*runEndAtMs=*/0);
+    }
+}
+
 // A Gesture the engine has just handed over, copied into the run NOW, while
 // the engine that fired it is still active: a Learned run's steps are freed
 // when the run ends, and the Gesture is read on every pass until then
@@ -696,7 +780,25 @@ bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src) {
 void sequenceStopRequest() {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.poseRequest = SRC_NONE;
+    robotState.flutterRequest = false;
     robotState.seqStopRequested = true;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// =============================================================================
+// sequenceFlutterRequest  --  a body-owned `:OFnn`'s way in (#453).
+//
+// The line's handler runs on whichever task read the line, so it touches none
+// of the flutter run's state: it leaves the Output and the length here, the
+// shape a pose press uses, and the Coordinator takes them on its next tick
+// (flutterTakeRequest()).
+// =============================================================================
+
+void sequenceFlutterRequest(ServoOutputAddress output, uint16_t flutterMs) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.flutterRequestOutput = output;
+    robotState.flutterRequestMs = flutterMs;
+    robotState.flutterRequest = true;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -1275,6 +1377,14 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                             (unsigned)configCacheCadenceFloorMs());
             }
         }
+
+        // A flutter asked for by Output (a body-owned `:OFnn`), taken after the
+        // halts, the Stop and a back to centre press above have had their say.
+        flutterTakeRequest(now, estopActive    ? "estop active"
+                                : sleepActive  ? "sleep mode active"
+                                : centreRun.active ? "back to centre is running"
+                                : poseRun.active   ? "a pose is being reached"
+                                                   : nullptr);
 
         // One row per tick, and only when its turn is due. One servo actuating
         // at a time is the rail rule the Cadence Floor holds; a row the sweep

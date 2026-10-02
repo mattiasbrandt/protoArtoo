@@ -41,7 +41,7 @@ Every line gets one of three answers, and they never share a value:
 | `:OPnn` | `01`-`05` | Opens a body Output: `01` ARM1, `02` ARM2, `03` AUX1, `04` AUX2, `05` AUX3 |
 | `:OPnn` | `00`, `99` | Opens ARM1 and ARM2 together |
 | `:CLnn` | as `:OP` | Closes the same Outputs |
-| `:OFnn` | as `:OP` | Opens the same Outputs and leaves them open. It does not shake them yet: the line carries no length for a flutter. A flutter in a sequence does shake, and ends closed |
+| `:OFnn` | as `:OP` | Flutters the part on the same Outputs: it shakes for two seconds at its full throw and ends closed. `00`/`99` shake ARM1 and ARM2 in turn. An Output with no part on it does nothing |
 | `:MVnnvvvv` | `01`-`05` | Moves one Output. `vvvv` from `0000` to `0180` is degrees across the servo's range; above `0500` it is a pulse width in microseconds. No `00`/`99` here |
 | `:SE10` `:SE11` `:SE13` `:SE14` | Moods | Quiet, Full-Awake, Mid-Awake, Awake+. The body sets its sound for the Mood and, with the dome connected, sends the Mood on to it itself |
 | `:SE30`-`:SE36` | body routines | Runs the body routine of that number, the Factory Sequence `DM:SE30`-`DM:SE36` |
