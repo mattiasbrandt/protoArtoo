@@ -493,9 +493,9 @@
             "pca9685SenderTask"
           ],
           "frames": [],
-          "chain_bytes": 3312,
-          "stack_bytes": 4608,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: pca9685SenderTask -> sendBatch() (a failed write's log line) -> paLogLine() -> emitFramedLineCounted() [clone .part.0] -> writeFrameCounted() -> consoleCdcProbeLog() -> snprintf -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, consoleCdcProbeLog() 352 B. The I2C writes themselves are shallower than that log route."
+          "chain_bytes": 3808,
+          "stack_bytes": 5120,
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: pca9685SenderTask (64 B) -> readMode1() (the idle liveness read) -> TwoWire::endTransmission() -> i2cWrite -> i2c_master_transmit -> i2c_master_multi_buffer_transmit -> s_i2c_asynchronous_transaction -> ... -> s_i2c_hw_fsm_reset (the IDF I2C driver's own failure log) -> esp_log -> paLogIdfVprintf() -> emitFramedLineCounted() [clone .part.0] -> consoleCdcProbeLog() -> _svfprintf_r -> ...; widest frames _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B, consoleCdcProbeLog() 352 B. Stack raised 4608 -> 5120 B onto the rule (operator decision 2026-10-02 on #444): +512 B of heap, only on a P4 with the PCA9685 chosen, since the task is created only then."
         }
       }
     },
