@@ -33,11 +33,11 @@
 void webRegisterSeamRoutes() {
     webRegisterRoute("/api/identity", WebMethod::kGet, handleIdentityGet);
     webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost);
-    // The Component Registry lineup. Order does not matter for this pair the way
-    // it does for /api/audio/tracks below: that note is the async backend's, and
-    // the psychic backend matches with httpd_uri_match_wildcard(), which for a
-    // template carrying neither '*' nor '?' requires equal lengths -- so
-    // /api/identity cannot swallow /api/identity/components
+    // The Component Registry lineup. Order does not decide between this and the
+    // shorter /api/identity above it, nor between any other pair in this table:
+    // PsychicHttp matches with httpd_uri_match_wildcard(), which for a template
+    // carrying neither '*' nor '?' requires equal lengths -- so /api/identity
+    // cannot swallow /api/identity/components
     // (framework-espidf esp_http_server/src/httpd_uri.c:57-64).
     webRegisterRoute("/api/identity/components", WebMethod::kGet, handleComponentsGet);
 
@@ -103,12 +103,11 @@ void webRegisterSeamRoutes() {
 
     webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
     webRegisterRoute("/api/servo/outputs", WebMethod::kGet, handleServoOutputsGet);
-    // Order does NOT decide between this and the shorter /api/servo above it,
-    // unlike the /api/audio pair further up. PsychicHttp matches with
-    // httpd_uri_match_wildcard(), and a template carrying neither `*` nor `?`
-    // takes the `len != exact_match_chars` branch -- an exact comparison, so a
-    // prefix cannot swallow a longer path (checked in the vendored
-    // esp_http_server's httpd_uri.c, 2026-09-17).
+    // Order does NOT decide between this and the shorter /api/servo above it.
+    // PsychicHttp matches with httpd_uri_match_wildcard(), and a template
+    // carrying neither `*` nor `?` takes the `len != exact_match_chars`
+    // branch -- an exact comparison, so a prefix cannot swallow a longer path
+    // (checked in the vendored esp_http_server's httpd_uri.c, 2026-09-17).
     webRegisterRoute("/api/servo/centre", WebMethod::kPost, handleServoCentrePost);
 
     webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
@@ -123,9 +122,9 @@ void webRegisterSeamRoutes() {
 
     // Audio. The read and control surface, the two track-assignment routes and
     // the mood map, all reusing the ADR 0011 apply cores and the ADR 0013 config
-    // map. /api/audio/tracks is registered ahead of /api/audio because the async
-    // backend matches in registration order, and the shorter path would
-    // otherwise swallow requests for the longer one.
+    // map. /api/audio/tracks sits ahead of /api/audio, and that order decides
+    // nothing: PsychicHttp matches a path exactly (the /api/servo/centre note
+    // above), so the shorter path cannot swallow requests for the longer one.
     webRegisterRoute("/api/audio/tracks", WebMethod::kGet, handleAudioTracksGet);
     webRegisterRoute("/api/audio/tracks", WebMethod::kPost, handleAudioTracksPost);
     webRegisterRoute("/api/audio/category-range", WebMethod::kPost,
