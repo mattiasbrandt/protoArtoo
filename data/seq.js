@@ -2032,7 +2032,10 @@
     lightCount: [0, 99],
     scroll: [0, 9],
   };
-  // How many characters a logic text holds, a line break among them.
+  // How many characters a logic text holds, a line break among them. The box
+  // counts characters and the droid counts bytes (Protocol Check, the 32-byte
+  // rule), so a text with a letter outside ASCII fits the box sooner than it
+  // fits the droid: the verdict says when it is too long.
   const LIGHT_TEXT_CHARS = 32;
   const limits = ([min, max]) => `min="${min}" max="${max}"`;
   // How long a dome turn runs when a stop is first given a speed: a turn with
