@@ -124,6 +124,9 @@ class CommitMessageGuard(unittest.TestCase):
             self.decide(f'git commit --no-edit -F {self.project / "message.txt"}'),
             "deny",
         )
+        self.assertEqual(self.decide("git commit --no-edit -Fmessage.txt"), "deny")
+        self.assertEqual(self.decide("git commit --no-edit -qF message.txt"), "deny")
+        self.assertEqual(self.decide("git commit --no-edit -qFmessage.txt"), "deny")
         msg = self.project / ".git" / "MERGE_MSG"
         original = msg.read_text()
         msg.write_text(original + "\nCo-Authored-By: X <x@y>\n")

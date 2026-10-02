@@ -47,9 +47,13 @@ HEREDOC_MSG_PATTERN = re.compile(
     re.DOTALL,
 )
 NO_EDIT_PATTERN = re.compile(r"(?:^|\s)--no-edit(?:\s|$)")
-# -F/--file is never a message this hook can read. It stays rejected, including
-# when combined with --no-edit during a merge.
-FILE_ARG_PATTERN = re.compile(r"(?:^|\s)(?:--file(?:=|\s)|-F(?:\s|$))")
+# -F/--file is never a message this hook can read. Git accepts the argument
+# attached (-Fmessage.txt) and as the last letter of a short cluster (-qF).
+# Both stay rejected, including with --no-edit during a merge: Git would use
+# that file and the hook would only have scanned MERGE_MSG.
+FILE_ARG_PATTERN = re.compile(
+    r"(?:^|\s)(?:--file(?:\s|=|$)|-[A-Za-z]*F(?:\s|=|$|\S))"
+)
 COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
     r"--trailer(?:=|\s+)[^\n]*co-authored-by", re.IGNORECASE
