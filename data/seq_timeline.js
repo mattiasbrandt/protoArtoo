@@ -488,8 +488,8 @@
           // moves where it starts.
           //
           // One the caller has not read - it is not on this droid, or the
-          // read failed - is a mark on the Sequence row where it starts, and
-          // so is the row for one that names no Part, at its length.
+          // read failed - is a mark on the Sequence row where it starts. One
+          // that names no Part is a block on that row, at its length.
           const inner = def.ref && typeof context.phrase === "function" ? context.phrase(def.ref) : null;
           if (!Array.isArray(inner)) {
             add(rowLane("phrase", "Sequence"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });

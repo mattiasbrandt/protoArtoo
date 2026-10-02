@@ -4175,6 +4175,8 @@
     // A phrase step keeps a label for a reader of the file: its current name.
     if (step.type === "sequence") {
       if (step.ref === "") delete step.ref;
+      // Picked here, a phrase whose read failed is asked for again.
+      if (step.ref && step.ref !== prev.ref) phraseAgain(step.ref);
       const label = step.ref ? phraseName(step) : "";
       if (label && !label.endsWith("(not on this droid)")) step.name = label;
       else if (prev.name && prev.ref === step.ref) step.name = prev.name;
