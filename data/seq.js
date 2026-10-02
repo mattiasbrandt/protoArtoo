@@ -692,14 +692,27 @@
     return `saved ${at.getDate()} ${MONTHS[at.getMonth()]} ${two(at.getHours())}:${two(at.getMinutes())}`;
   };
 
-  // What a list row says about its sequence in the Steps column and beside
-  // its purpose: only what the droid reported. GET /api/seq/builtins sends a
-  // Factory sequence's purpose and step count; GET /api/seq/list sends neither
-  // for a Learned one (src/web/api_seq.cpp), and nothing sends how long a
-  // sequence runs, so those cells stay empty rather than read 0.
+  // What a list row says about its sequence in What it does, Steps and Runs:
+  // only what the droid reported, in the same keys from GET /api/seq/list and
+  // GET /api/seq/builtins (src/web/api_seq.cpp). A cell the droid said nothing
+  // for stays empty rather than read 0.
   const reportedSteps = (entry) => (Number.isInteger(entry.stepCount) ? entry.stepCount : "");
+
+  // How long a run is: "6 s", "1.5 s", worded as the Rehearsal words its
+  // "runs 6 s" (data/seq_rehearsal.js). The droid sends 0 for a stored
+  // sequence it could not find the end of, which is only ever an invalid one,
+  // so that row's Runs stays empty.
+  const lengthWords = (ms) => `${Number((ms / 1000).toFixed(2))} s`;
+  const reportedLength = (entry) =>
+    (!Number.isInteger(entry.lengthMs) || (entry.lengthMs === 0 && entry.valid === false) ? "" : lengthWords(entry.lengthMs));
+
+  // The droid's list keeps the start of a Learned sequence's purpose and says
+  // when there was more (`purposeCut`); the whole of it is in the editor's
+  // Sequence tab.
   const purposeHtml = (entry) =>
-    (entry.purpose ? `<span class="seq-purpose">${window.PAUtils.escapeHtml(entry.purpose)}</span> ` : "");
+    (entry.purpose
+      ? `<span class="seq-purpose">${window.PAUtils.escapeHtml(entry.purpose)}${entry.purposeCut ? "..." : ""}</span> `
+      : "");
 
   // What a row says back - a test's outcome, its Rehearsal - on a line of its
   // own under it.
@@ -742,7 +755,7 @@
           <td>${purposeHtml(seq)}${saved ? `<span class="seq-meta">${saved}</span>` : ""}
             <span class="seq-row-run hidden" role="status"><span class="indicator ok seq-live" aria-hidden="true"></span>Running</span></td>
           <td class="seq-count-cell">${reportedSteps(seq)}</td>
-          <td class="seq-count-cell"></td>
+          <td class="seq-count-cell">${reportedLength(seq)}</td>
           <td class="seq-item-acts">
             <span class="seq-acts">
               <button type="button" class="seq-act is-strong" data-action="edit" data-seq-name="${name}">Edit</button>
@@ -775,7 +788,7 @@
           <th scope="row"><span class="seq-name">${window.PAUtils.escapeHtml(builtin.name)}</span></th>
           <td>${purposeHtml(builtin)}${group}</td>
           <td class="seq-count-cell">${reportedSteps(builtin)}</td>
-          <td class="seq-count-cell"></td>
+          <td class="seq-count-cell">${reportedLength(builtin)}</td>
           <td class="seq-item-acts">
             <span class="seq-acts">
               <button type="button" class="seq-act is-strong" data-action="tune" data-builtin-name="${name}" title="Open to edit. Save under the same name to retrain it.">Tune</button>

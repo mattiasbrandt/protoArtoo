@@ -45,9 +45,19 @@ const install = async (page, { sequences, lastRun = { valid: false, note: 'no se
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
     if (method === 'GET' && apiPath === '/api/seq/list') {
-      return json([...droid.sequences.values()].map((seq) => ({
-        name: seq.name, id: seq.id, source: seq.meta?.source || 'user', valid: true, toggleGroup: seq.toggleGroup || 'none',
-      })));
+      // What the list row says without the file (handleSeqListGet(),
+      // src/web/api_seq.cpp): the step count, the end step's time and the
+      // first 40 characters of the purpose.
+      return json([...droid.sequences.values()].map((seq) => {
+        const steps = Array.isArray(seq.steps) ? seq.steps : [];
+        const last = steps[steps.length - 1];
+        const purpose = seq.meta?.purpose || '';
+        return {
+          name: seq.name, id: seq.id, source: seq.meta?.source || 'user', valid: true, toggleGroup: seq.toggleGroup || 'none',
+          stepCount: steps.length, lengthMs: last && last.type === 'end' ? last.t : 0,
+          purpose: purpose.slice(0, 40), purposeCut: purpose.length > 40,
+        };
+      }));
     }
     if (method === 'GET' && apiPath === '/api/seq/builtins') return json([]);
     if (method === 'GET' && apiPath === '/api/seq' && name) {
