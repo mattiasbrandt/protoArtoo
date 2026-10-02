@@ -34,9 +34,7 @@
 #include "../../../test/stubs/config/setting_samples.h"
 #include "config_settings.h"
 #include "drive_speed_preset.h"
-
-extern bool g_test_commanded_stationary;
-extern unsigned g_test_status_broadcast_count;
+#include "commanded_modes_test_hooks.h"  // g_test_commanded_stationary, g_test_status_broadcast_count
 
 namespace {
 
