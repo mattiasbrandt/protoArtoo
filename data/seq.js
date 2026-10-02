@@ -1925,6 +1925,15 @@
   // Tried on a copy first. If it would leave a step Protocol Check refuses -
   // a flutter that owed its close to a close Gesture now owes a close of its
   // own Part - nothing lands, and the stage says Protocol Check's reason.
+  //
+  // Three things are refused before that, each in words that say what to do,
+  // and whatever else the routine has wrong:
+  //   - a flutter Gesture that states no length: a written flutter must
+  //     state one, and the Gesture has none to hand on;
+  //   - more steps than a sequence holds: a Gesture that repeats can make
+  //     thousands of moves;
+  //   - inside a loop, a move at or past the end of the loop's pass, where a
+  //     step the loop repeats cannot be.
   const splitGesture = () => {
     const picked = pickedStep();
     const G = window.SeqGesture;
@@ -1939,6 +1948,21 @@
     const moves = G.bodyMoves(run, Number(run.t) || 0).filter((move) => move.t < last);
     if (moves.length === 0) {
       sayOnStage("This gesture makes no move before the end.", "error");
+      return;
+    }
+    if (moves.some((move) => move.shape === "flutter") && !step.flutterMs) {
+      sayOnStage("Set how long it flutters (Lasts) before splitting.", "error");
+      return;
+    }
+    const most = SeqProtocolCheck.MAX_STEPS;
+    const count = steps.length - 1 + moves.length;
+    if (count > most) {
+      sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
+      return;
+    }
+    const period = loop ? Number(steps[loop.at].periodMs) || 0 : Infinity;
+    if (moves.some((move) => move.t >= period)) {
+      sayOnStage(`Its moves run past the loop's ${period} ms pass, so it cannot be split inside the loop.`, "error");
       return;
     }
     const write = () => moves.map((move) => ({
@@ -1973,6 +1997,9 @@
     historyPush();
     place(steps, made);
     landed(made);
+    // A written step has no full-throw time or easing of its own, so what
+    // the Gesture said of either is gone, and the stage says so.
+    if (step.speedMs || step.easing) sayOnStage("The steps move at each part's own speed and easing.");
   };
 
   // A pill held: `ghost` is the pill that follows the pointer once the press
