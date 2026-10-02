@@ -1293,19 +1293,19 @@ entries:
   requires_web_control: false
   params:
   - name: quiet
-    explanation: Category mask for Quiet, one bit per category, 0 to 4095. In Quiet the droid chatters only from the categories set in it.
+    explanation: Category mask for Quiet, one bit per category, 0 to 4095. Quiet chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: mid
-    explanation: Category mask for Mid-Awake, one bit per category, 0 to 4095. In Mid-Awake the droid chatters only from the categories set in it.
+    explanation: Category mask for Mid-Awake, one bit per category, 0 to 4095. Mid-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: full
-    explanation: Category mask for Full-Awake, one bit per category, 0 to 4095. In Full-Awake the droid chatters only from the categories set in it.
+    explanation: Category mask for Full-Awake, one bit per category, 0 to 4095. Full-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: awakeplus
-    explanation: Category mask for Awake+, one bit per category, 0 to 4095. In Awake+ the droid chatters only from the categories set in it.
+    explanation: Category mask for Awake+, one bit per category, 0 to 4095. Awake+ chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   executor: audioMoodMapApply
@@ -1325,11 +1325,11 @@ entries:
   requires_web_control: false
   params:
   - name: lo_key
-    explanation: The Setting holding the category's lowest track, such as snd_cat_hum_lo. It names the category whose range moves.
+    explanation: Which category, named by its low-end Setting, such as snd_cat_hum_lo. That category's random picks start at the track you give.
     type: string
     required: true
   - name: hi_key
-    explanation: The Setting holding the category's highest track, such as snd_cat_hum_hi. It names the category whose range moves.
+    explanation: Which category, named by its high-end Setting, such as snd_cat_hum_hi. That category's random picks stop at the track you give.
     type: string
     required: true
   - name: lo
@@ -2025,11 +2025,11 @@ entries:
   requires_web_control: false
   params:
   - name: lo_key
-    explanation: The Setting holding the category's lowest track, such as snd_cat_hum_lo. It names the category whose range moves.
+    explanation: Which category, named by its low-end Setting, such as snd_cat_hum_lo. That category's random picks start at the track you give.
     type: string
     required: true
   - name: hi_key
-    explanation: The Setting holding the category's highest track, such as snd_cat_hum_hi. It names the category whose range moves.
+    explanation: Which category, named by its high-end Setting, such as snd_cat_hum_hi. That category's random picks stop at the track you give.
     type: string
     required: true
   - name: lo
@@ -2057,19 +2057,19 @@ entries:
   requires_web_control: false
   params:
   - name: quiet
-    explanation: Category mask for Quiet, one bit per category, 0 to 4095. With none set, Quiet chatters from the random range.
+    explanation: Category mask for Quiet, one bit per category, 0 to 4095. Quiet chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: mid
-    explanation: Category mask for Mid-Awake, one bit per category, 0 to 4095. With none set, Mid-Awake chatters from the random range.
+    explanation: Category mask for Mid-Awake, one bit per category, 0 to 4095. Mid-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: full
-    explanation: Category mask for Full-Awake, one bit per category, 0 to 4095. With none set, Full-Awake chatters from the random range.
+    explanation: Category mask for Full-Awake, one bit per category, 0 to 4095. Full-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: awakeplus
-    explanation: Category mask for Awake+, one bit per category, 0 to 4095. With none set, Awake+ chatters from the random range.
+    explanation: Category mask for Awake+, one bit per category, 0 to 4095. Awake+ chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   executor: audioMoodMapApply
@@ -2090,7 +2090,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to drive, by the name the board prints, or both for the two arms. Its part swings to its open end.
+    explanation: The output to move, by the name the board prints, or both for the two arms. Its part swings to its open end.
     type: string
     board_output: true
     values:
@@ -2114,7 +2114,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to drive, by the name the board prints, or both for the two arms. Its part swings to its closed end.
+    explanation: The output to move, by the name the board prints, or both for the two arms. Its part swings to its closed end.
     type: string
     board_output: true
     values:
@@ -2137,7 +2137,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to drive, by the name the board prints. Its servo goes to the width you give.
+    explanation: The output to move, by the name the board prints. Its servo goes to the width you give.
     type: string
     board_output: true
     required: true
@@ -2297,7 +2297,7 @@ entries:
   # target enum/shape rather than inventing a second one.
   params:
   - name: target
-    explanation: The output to center, by the name the board prints, or both for the two arms. Its servo drives to center.
+    explanation: The output to center, by the name the board prints, or both for the two arms. Its servo goes to center.
     type: string
     board_output: true
     values:
