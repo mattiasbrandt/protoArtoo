@@ -639,6 +639,15 @@
         };
       }
 
+      // No loop inside another's body ("nested loops are not allowed").
+      if (allSteps.slice(stepIndex + 1, stepIndex + 1 + body).some((inner) => inner && inner.type === "loop")) {
+        return {
+          ok: false,
+          field: "body",
+          error: "A loop can't repeat another loop",
+        };
+      }
+
       if (typeof periodMs !== "number" || periodMs < 100 || periodMs > 60000) {
         return {
           ok: false,
