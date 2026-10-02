@@ -1813,62 +1813,28 @@
         return `Play sound (${fieldOf(step, "cmd")})`;
       case "dome": {
         const cmd = step.cmd || "";
-        // Visual preset mode
-        if (cmd.startsWith("DV:")) {
-          const presetName = cmd.slice(3);
-          return `Visual preset: ${lightWord("presets", presetName)}`;
+        // One of the four light commands, from its fields (lightFields()).
+        // One too short to say what it is for is shown as it is stored:
+        // lightFields() would fill what is missing from a new step's.
+        const light = lightFields(cmd);
+        const said = cmd.split(":").length;
+        if (light?.kind === "DV") return `Visual preset: ${lightWord("presets", light.preset)}`;
+        if (light?.kind === "DL") {
+          if (said < 3) return `Logic/PSI: ${cmd.slice(3)}`;
+          return `${lightWord("targets", light.target)}: ${lightWord("modes", light.mode)}`
+            + (light.color !== "DEFAULT" ? `, ${lightWord("colors", light.color)}` : "")
+            + (light.seconds ? `, ${light.seconds}s` : "");
         }
-        // Logic/PSI mode
-        if (cmd.startsWith("DL:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 3) {
-            const target = parts[1];
-            const mode = parts[2];
-            const color = parts[3] || "";
-            const duration = parts[4] || "";
-            let preview = `${lightWord("targets", target)}: ${lightWord("modes", mode)}`;
-            if (color && color !== "DEFAULT") {
-              preview += `, ${lightWord("colors", color)}`;
-            }
-            if (duration) {
-              preview += `, ${duration}s`;
-            }
-            return preview;
-          }
-          return `Logic/PSI: ${cmd.slice(3)}`;
+        if (light?.kind === "DT") {
+          if (said < 5) return `Logic text: ${cmd.slice(3)}`;
+          // A line break is shown as a slash.
+          return `${lightWord("textTargets", light.target)} text: "${light.text.replace(/\n/g, " / ")}"`;
         }
-        // Logic Text mode
-        if (cmd.startsWith("DT:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 5) {
-            const target = parts[1];
-            const color = parts[2];
-            const duration = parts[3];
-            const speed = parts[4];
-            // Render newline visibly for preview
-            const displayText = lightFields(cmd).text.replace(/\n/g, " / ");
-            return `${lightWord("textTargets", target)} text: "${displayText}"`;
-          }
-          return `Logic text: ${cmd.slice(3)}`;
-        }
-        // Holo Effect mode
-        if (cmd.startsWith("DH:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 3) {
-            const target = parts[1];
-            const effect = parts[2];
-            const color = parts[3] || "";
-            const durationOrCount = parts[4] || "";
-            let preview = `${lightWord("holoTargets", target)}: ${lightWord("holoEffects", effect)}`;
-            if (color && color !== "DEFAULT") {
-              preview += `, ${lightWord("holoColors", color)}`;
-            }
-            if (durationOrCount) {
-              preview += `, ${durationOrCount}`;
-            }
-            return preview;
-          }
-          return `Holo: ${cmd.slice(3)}`;
+        if (light?.kind === "DH") {
+          if (said < 3) return `Holo: ${cmd.slice(3)}`;
+          return `${lightWord("holoTargets", light.target)}: ${lightWord("holoEffects", light.effect)}`
+            + (light.color !== "DEFAULT" ? `, ${lightWord("holoColors", light.color)}` : "")
+            + (light.count ? `, ${light.count}` : "");
         }
         // Panel intent mode: parse action and target
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
@@ -2447,14 +2413,12 @@
         return "Plays a sound";
       case "dome": {
         const cmd = step.cmd || "";
-        if (cmd.startsWith("DL:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 3) {
-            const target = lightWord("targets", parts[1]);
-            const mode = lightWord("modes", parts[2]);
-            return `Sets ${target} to ${mode}`;
-          }
-          return "Sets logic/PSI mood";
+        const light = lightFields(cmd);
+        if (light?.kind === "DL") {
+          // One too short to name its lights and its mode says no more than
+          // what kind it is.
+          if (cmd.split(":").length < 3) return "Sets logic/PSI mood";
+          return `Sets ${lightWord("targets", light.target)} to ${lightWord("modes", light.mode)}`;
         }
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
           return "Operates dome panels";
@@ -4155,8 +4119,7 @@
       // run ends at its change, so the command has to be written before that
       // or one choice would leave two entries behind.
       const choosePreset = () => {
-        const preset = presetSelect.value;
-        const cmd = `DV:${preset}`;
+        const cmd = lightCmd({ kind: "DV", preset: presetSelect.value });
         const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
         if (hiddenInput) {
           hiddenInput.value = cmd;
