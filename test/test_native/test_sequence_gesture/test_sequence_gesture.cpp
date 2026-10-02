@@ -44,17 +44,18 @@ static const char* idAt(const uint8_t* members, uint8_t i) { return droidPartIdA
 
 // "The ring, clockwise, from the front": the order is where the panels sit,
 // not the order the catalog lists them in. Bearings read 0 dead astern and 180
-// dead ahead (operator decision, 2026-09-30).
+// dead ahead, and the dome's are taken from the vendored drawing (operator,
+// 2026-09-30 (convention) and 2026-10-02 (drawing), #445).
 static void test_ring_orders_by_bearing_from_the_front() {
     uint8_t m[SEQ_GESTURE_MEMBERS_MAX];
     SeqStep cw = gestureStep("ring", BODY_SHAPE_OPEN, GESTURE_SPREAD_WAVE, GESTURE_START_FRONT,
                              GESTURE_DIR_CLOCKWISE);
     const uint8_t n = seqGestureMembers(cw, m, SEQ_GESTURE_MEMBERS_MAX);
     TEST_ASSERT_EQUAL_UINT8(14, n);
-    TEST_ASSERT_EQUAL_STRING("panel14", idAt(m, 0));  // 184 degrees
-    TEST_ASSERT_EQUAL_STRING("panel13", idAt(m, 1));  // 194
-    TEST_ASSERT_EQUAL_STRING("panel12", idAt(m, 2));  // 204
-    TEST_ASSERT_EQUAL_STRING("panel1", idAt(m, 13));  // 142.5, the last before the front again
+    TEST_ASSERT_EQUAL_STRING("panel14", idAt(m, 0));  // 202 degrees
+    TEST_ASSERT_EQUAL_STRING("panel13", idAt(m, 1));  // 219
+    TEST_ASSERT_EQUAL_STRING("panel12", idAt(m, 2));  // 235
+    TEST_ASSERT_EQUAL_STRING("panel1", idAt(m, 13));  // 162.5, the last before the front again
 
     SeqStep ccw = gestureStep("ring", BODY_SHAPE_OPEN, GESTURE_SPREAD_WAVE, GESTURE_START_FRONT,
                               GESTURE_DIR_COUNTERCLOCKWISE);
