@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa
+ * Source digest: sha256 54ecbe192dfed50343a39420da9fcb18233b0e363e6ec70a6f76667304fde624
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -62,7 +62,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "c806fba94d334c2208bd8ad859fc4783e54fa83207e877d6895cd3258dbfe8fa",
+    "sourceSha256": "54ecbe192dfed50343a39420da9fcb18233b0e363e6ec70a6f76667304fde624",
     "designs": [
       {
         "id": "mk4",
@@ -234,7 +234,7 @@
           "PP1",
           "Dome pie 1"
         ],
-        "position": "rear-right",
+        "position": "front-left",
         "bearingDeg": 150,
         "control": "dome-link"
       },
@@ -249,7 +249,7 @@
           "PP2",
           "Dome pie 2"
         ],
-        "position": "right",
+        "position": "left",
         "bearingDeg": 90,
         "control": "dome-link"
       },
@@ -264,7 +264,7 @@
           "PP3",
           "Dome pie 3"
         ],
-        "position": "front-right",
+        "position": "rear-left",
         "bearingDeg": 30,
         "control": "dome-link"
       },
@@ -279,7 +279,7 @@
           "PP4",
           "Dome pie 4"
         ],
-        "position": "front-left",
+        "position": "rear-right",
         "bearingDeg": 330,
         "control": "dome-link"
       },
@@ -294,7 +294,7 @@
           "PP5",
           "Dome pie 5"
         ],
-        "position": "left",
+        "position": "right",
         "bearingDeg": 270,
         "control": "dome-link"
       },
@@ -309,7 +309,7 @@
           "PP6",
           "Dome pie 6"
         ],
-        "position": "rear-left",
+        "position": "front-right",
         "bearingDeg": 210,
         "control": "dome-link"
       },
@@ -324,7 +324,7 @@
           "P1",
           "Dome side panel 1"
         ],
-        "position": "rear-right",
+        "position": "front-left",
         "bearingDeg": 142.5,
         "control": "dome-link"
       },
@@ -339,7 +339,7 @@
           "P2",
           "Dome side panel 2"
         ],
-        "position": "rear-right",
+        "position": "front-left",
         "bearingDeg": 128,
         "control": "dome-link"
       },
@@ -354,7 +354,7 @@
           "P3",
           "Dome side panel 3"
         ],
-        "position": "right",
+        "position": "left",
         "bearingDeg": 114,
         "control": "dome-link"
       },
@@ -369,7 +369,7 @@
           "P4",
           "Dome side panel 4"
         ],
-        "position": "right",
+        "position": "left",
         "bearingDeg": 94,
         "control": "dome-link"
       },
@@ -384,7 +384,7 @@
           "P5",
           "Dome side panel 5"
         ],
-        "position": "right",
+        "position": "left",
         "bearingDeg": 75.5,
         "control": "none"
       },
@@ -399,7 +399,7 @@
           "P6",
           "Dome side panel 6"
         ],
-        "position": "front-right",
+        "position": "rear-left",
         "bearingDeg": 62.5,
         "control": "none"
       },
@@ -414,7 +414,7 @@
           "P7",
           "Dome side panel 7"
         ],
-        "position": "front-right",
+        "position": "rear-left",
         "bearingDeg": 45,
         "control": "dome-link"
       },
@@ -429,7 +429,7 @@
           "P8",
           "Dome side panel 8"
         ],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 24,
         "control": "none"
       },
@@ -444,7 +444,7 @@
           "P9",
           "Dome side panel 9"
         ],
-        "position": "rear-left",
+        "position": "rear-right",
         "bearingDeg": 300,
         "control": "none"
       },
@@ -459,7 +459,7 @@
           "P10",
           "Dome side panel 10"
         ],
-        "position": "left",
+        "position": "right",
         "bearingDeg": 242,
         "control": "dome-link"
       },
@@ -474,7 +474,7 @@
           "P11",
           "Dome side panel 11"
         ],
-        "position": "rear-left",
+        "position": "front-right",
         "bearingDeg": 217,
         "control": "dome-link"
       },
@@ -489,7 +489,7 @@
           "P12",
           "Dome side panel 12"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 204,
         "control": "none"
       },
@@ -504,7 +504,7 @@
           "P13",
           "Dome side panel 13"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 194,
         "control": "dome-link"
       },
@@ -519,7 +519,7 @@
           "P14",
           "Dome side panel 14"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 184,
         "control": "none"
       },
@@ -533,7 +533,7 @@
           "FLD",
           "Front display"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 204,
         "control": "none",
         "kind": "light",
@@ -549,7 +549,7 @@
           "RLD",
           "Rear display"
         ],
-        "position": "rear-left",
+        "position": "rear-right",
         "bearingDeg": 300,
         "control": "none",
         "kind": "light",
@@ -564,7 +564,7 @@
         "aliases": [
           "MP"
         ],
-        "position": "right",
+        "position": "left",
         "bearingDeg": 75.5,
         "control": "none",
         "kind": "light",
@@ -579,7 +579,7 @@
         "aliases": [
           "FPSI"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 184,
         "control": "none",
         "kind": "light",
@@ -594,7 +594,7 @@
         "aliases": [
           "RPSI"
         ],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 24,
         "control": "none",
         "kind": "light",
@@ -607,7 +607,7 @@
         "name": "Small upper panel",
         "half": "dome",
         "aliases": [],
-        "position": "front-right",
+        "position": "rear-left",
         "bearingDeg": 62.5,
         "control": "none",
         "kind": "light",
@@ -624,7 +624,7 @@
           "HP1-1",
           "Holoprojector 1 pan"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 165,
         "control": "none",
         "unit": 1,
@@ -641,7 +641,7 @@
           "HP1-2",
           "Holoprojector 1 tilt"
         ],
-        "position": "rear",
+        "position": "front",
         "bearingDeg": 165,
         "control": "none",
         "unit": 1,
@@ -658,7 +658,7 @@
           "HP2-1",
           "Holoprojector 2 pan"
         ],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 350,
         "control": "none",
         "unit": 2,
@@ -675,7 +675,7 @@
           "HP2-2",
           "Holoprojector 2 tilt"
         ],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 350,
         "control": "none",
         "unit": 2,
@@ -692,7 +692,7 @@
           "HP3-1",
           "Holoprojector 3 pan"
         ],
-        "position": "front-right",
+        "position": "rear-left",
         "bearingDeg": 38,
         "control": "none",
         "unit": 3,
@@ -709,7 +709,7 @@
           "HP3-2",
           "Holoprojector 3 tilt"
         ],
-        "position": "front-right",
+        "position": "rear-left",
         "bearingDeg": 38,
         "control": "none",
         "unit": 3,
@@ -722,7 +722,7 @@
         "name": "Dome button 1",
         "half": "dome",
         "aliases": [],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 8,
         "control": null
       },
@@ -733,7 +733,7 @@
         "name": "Dome button 2",
         "half": "dome",
         "aliases": [],
-        "position": "front",
+        "position": "rear",
         "bearingDeg": 20,
         "control": null
       },
