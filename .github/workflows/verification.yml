@@ -252,6 +252,15 @@ jobs:
         continue-on-error: true
         run: make check-color-drift
 
+      # docs/servo-motion.yaml generates the planner ServoTask moves with and
+      # the one the Rehearsal times a move with (#439). The tooling tests below
+      # run the same check; this names it in the summary beside the other
+      # report-never-rewrite checks.
+      - name: 🦾 Servo motion drift
+        id: servo-motion-drift
+        continue-on-error: true
+        run: make check-servo-motion-drift
+
       - name: 🌐 Web logic tests
         id: web-tests
         continue-on-error: true
@@ -283,6 +292,7 @@ jobs:
           VOCABULARY_OUTCOME: ${{ steps.vocabulary-drift.outcome }}
           BOARD_LABEL_OUTCOME: ${{ steps.board-label-drift.outcome }}
           COLOR_OUTCOME: ${{ steps.color-drift.outcome }}
+          SERVO_MOTION_OUTCOME: ${{ steps.servo-motion-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -321,6 +331,7 @@ jobs:
             row "$VOCABULARY_OUTCOME" "Vocabulary drift"   "make check-vocabulary-drift"
             row "$BOARD_LABEL_OUTCOME" "Board label drift" "make check-board-label-drift"
             row "$COLOR_OUTCOME"      "Color drift"        "make check-color-drift"
+            row "$SERVO_MOTION_OUTCOME" "Servo motion drift" "make check-servo-motion-drift"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             row "$TOOLING_OUTCOME"  "Tooling tests"         "python3 -m unittest discover -s test/test_tools -q"
             echo ""
@@ -352,6 +363,7 @@ jobs:
           VOCABULARY_OUTCOME: ${{ steps.vocabulary-drift.outcome }}
           BOARD_LABEL_OUTCOME: ${{ steps.board-label-drift.outcome }}
           COLOR_OUTCOME: ${{ steps.color-drift.outcome }}
+          SERVO_MOTION_OUTCOME: ${{ steps.servo-motion-drift.outcome }}
           WEB_OUTCOME: ${{ steps.web-tests.outcome }}
           TOOLING_OUTCOME: ${{ steps.tooling-tests.outcome }}
           CODE_CHANGED: ${{ steps.changes.outputs.code }}
@@ -380,6 +392,7 @@ jobs:
           check "$VOCABULARY_OUTCOME"   "vocabulary-drift"
           check "$BOARD_LABEL_OUTCOME"  "board-label-drift"
           check "$COLOR_OUTCOME"        "color-drift"
+          check "$SERVO_MOTION_OUTCOME" "servo-motion-drift"
           check "$WEB_OUTCOME"          "web-tests"
           check "$TOOLING_OUTCOME"      "tooling-tests"
 
