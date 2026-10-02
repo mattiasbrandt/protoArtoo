@@ -91,9 +91,9 @@ struct ReactionInputs {
     uint8_t audioPlayState;  // 0 stop, 1 playing, 2 paused, 0xFF unknown
 };
 
-// Why a Reaction is not simply armed, in the Availability Family's words
-// (CONTEXT.md): `notInThisBuild` is "change it elsewhere", `waiting` is
-// "the droid has not been told yet".
+// Why a Reaction is not simply armed. Each reason belongs to an Availability
+// Family (CONTEXT.md): two are "change it elsewhere", spelled
+// `not-in-this-build` on every surface, and two are "waiting".
 enum class ReactionAvailability : uint8_t {
     Ready = 0,
     NoFeedback,     // not in this build: this drive reports nothing back
@@ -249,9 +249,10 @@ inline ReactionAvailability reactionAvailabilityOf(const RcTriggerBinding& bindi
 // after the Reaction was armed. That is their baseline: a droid already at
 // rest when the estop clears has not just come to rest.
 inline bool reactionConditionHolds(const ReactionSlotState& slot, const ReactionMotion& motion,
-                    const ReactionInputs& in) {
+                                   const ReactionInputs& in) {
     const RcTriggerBinding& binding = slot.binding;
     const uint16_t threshold = rcReactionThreshold(binding);
+    const bool rightWheel = binding.channel == RC_REACTION_WHEEL_RIGHT;
     const bool stoppedSinceArmed = !motion.moving && motion.restValid &&
                                    (int32_t)(motion.restSinceMs - slot.armedAtMs) >= 0;
     switch (binding.source) {
@@ -266,13 +267,9 @@ inline bool reactionConditionHolds(const ReactionSlotState& slot, const Reaction
         case RC_BINDING_DROID_TRACK:
             return in.audioPlayState == 1;
         case RC_BINDING_DROID_WHEEL_SPEED:
-            return reactionMagnitude(binding.channel == RC_REACTION_WHEEL_RIGHT ? in.wheelSpeedR
-                                                                        : in.wheelSpeedL) >=
-                   threshold;
+            return reactionMagnitude(rightWheel ? in.wheelSpeedR : in.wheelSpeedL) >= threshold;
         case RC_BINDING_DROID_WHEEL_AMPS:
-            return reactionMagnitude(binding.channel == RC_REACTION_WHEEL_RIGHT ? in.wheelCurrentR
-                                                                        : in.wheelCurrentL) >=
-                   threshold;
+            return reactionMagnitude(rightWheel ? in.wheelCurrentR : in.wheelCurrentL) >= threshold;
         default:
             return false;
     }

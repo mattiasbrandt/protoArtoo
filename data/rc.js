@@ -615,17 +615,30 @@
     return list.find((status) => channelKeyOf(status.source, status.channel) === channelKey) || null;
   };
 
-  // Why a Reaction is not armed, in the droid's words. A reason this page does
-  // not know still says it is not armed, rather than nothing.
+  // Why a Reaction is not armed: the short word for a row, and for the two
+  // the builder can do something about, the move (CONTEXT.md "Availability
+  // Family": every no names the next move). `no-feedback` is this firmware's
+  // drive, so its move is another image and the route is Firmware, in the
+  // words data/feature_availability.js gives that destination. `no-current`
+  // is the drive board's own firmware, which no page here uploads, so it has
+  // a move and no route. The two waiting ones ask nothing of anybody.
   const REACTION_REASON = {
-    'no-feedback': 'This drive reports no wheel readings',
-    'no-current': 'This drive reports no current',
-    'feedback-stale': 'Waiting for the drive',
-    'no-play-state': 'Waiting for the sound module',
+    'no-feedback': {
+      text: 'No wheel readings in this firmware',
+      note: 'This firmware\'s drive reports no wheel readings.',
+      route: { href: '#firmware', label: 'Open Firmware' },
+    },
+    'no-current': {
+      text: 'No current from this drive',
+      note: 'This drive\'s firmware sends no current. One that does will arm this.',
+    },
+    'feedback-stale': { text: 'Waiting for the drive' },
+    'no-play-state': { text: 'Waiting for the sound module' },
   };
 
-  // A Reaction's state: lamp, family and words. Armed is nominal; waiting is
-  // something that may yet arrive; not in this build is settled, and unlit.
+  // A Reaction's state. Armed is a Health Signal and lights green. Not armed
+  // is an Availability Family, told apart by treatment and never by hue:
+  // waiting keeps an unlit lamp, and a settled no has none.
   const reactionState = (channelKey) => {
     const status = reactionStatusFor(channelKey);
     if (!status) return null;
@@ -633,20 +646,25 @@
     const held = refused > 0 ? ` · held back ${refused} while driving` : '';
     if (status.state === 'ready') {
       const fires = Number(status.fires || 0);
-      return { lamp: 'ok', family: '', text: `${fires > 0 ? `Armed · fired ${fires}` : 'Armed'}${held}` };
+      return { lamp: 'indicator ok', family: '', text: `${fires > 0 ? `Armed · fired ${fires}` : 'Armed'}${held}`, refused };
     }
-    const settled = status.state === 'not-in-this-build';
+    const reason = REACTION_REASON[status.reason] || { text: 'Not armed' };
+    const waiting = status.state === 'waiting';
     return {
-      lamp: settled ? 'off' : 'warn',
-      family: settled ? 'availability-settled-no' : 'availability-waiting',
-      text: `${REACTION_REASON[status.reason] || 'Not armed'}${held}`,
+      lamp: waiting ? 'indicator' : '',
+      family: waiting ? 'availability-waiting' : 'availability-settled-no',
+      text: `${reason.text}${held}`,
+      note: reason.note || '',
+      route: reason.route || null,
+      refused,
     };
   };
 
   const reactionStateHtml = (channelKey) => {
     const state = reactionState(channelKey);
     if (!state) return '<span class="rc-trigger-state waiting"></span>';
-    return `<span class="rc-trigger-state"><span class="indicator ${state.lamp}" aria-hidden="true"></span>${window.PAUtils.escapeHtml(state.text)}</span>`;
+    const lamp = state.lamp ? `<span class="${state.lamp}" aria-hidden="true"></span>` : '';
+    return `<span class="rc-trigger-state">${lamp}${window.PAUtils.escapeHtml(state.text)}</span>`;
   };
 
   const setEditorDirtyState = (state, text) => {
@@ -942,13 +960,17 @@
 
     if (droidConditionFor(selectedChannel)) {
       const bound = Boolean(mapEntryAction(entry));
-      const refused = Number(reactionStatusFor(selectedChannel)?.refusedWhileDriving || 0);
+      const state = bound ? reactionState(selectedChannel) : null;
+      const route = state?.route
+        ? ` <a class="setup-link" href="${state.route.href}">${window.PAUtils.escapeHtml(state.route.label)}.</a>`
+        : '';
       rcLivePreviewContent.innerHTML = `
         <h4 class="rc-preview-title">${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
         <div class="rc-preview-stack">
           <div>Action: <strong>${bound ? window.PAUtils.escapeHtml(bindingLabel(entry)) : 'Not mapped'}</strong></div>
           ${bound ? `<div>State: ${reactionStateHtml(selectedChannel)}</div>` : ''}
-          ${refused > 0 ? '<p class="note">No body part opens while the droid drives.</p>' : ''}
+          ${state?.note ? `<p class="note">${window.PAUtils.escapeHtml(state.note)}${route}</p>` : ''}
+          ${state?.refused > 0 ? '<p class="note">No body part opens while the droid drives.</p>' : ''}
         </div>`;
       return;
     }
