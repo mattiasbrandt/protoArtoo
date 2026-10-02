@@ -1567,7 +1567,7 @@ When a run has been recorded:
 - `fxScopes`: string array, any of `panel`, `logic_psi`, `holo`, `audio`, `dome_seq`
 - `netOpenRingPanels` / `touchedRingPanels`: panel numbers still net-open, and panel numbers the run touched
 - `cleanup`: `{count, total, truncated, cmds}` — the cleanup commands kept, and how many there were in all
-- `tx`: `{total, capacity, omittedFromRecent, truncated, retained, recent}`. `capacity` is `SEQ_EVID_TX_CAP` (112 on the artoo-esp32 image, 32 on the smaller image). `recent` is the retained ring, oldest first
+- `tx`: `{total, capacity, omittedFromRecent, truncated, retained, recent}`. `capacity` is `SEQ_EVID_TX_CAP` (32 on artoo-esp32, 112 on firebeetle2). `recent` is the retained ring, oldest first
 - `warnings`: `bodyQueueFullDelta`, `dispatchRetryCount`, and `remoteDomeQueue` (`sampled`, `queueFullDelta`). The builder currently emits `sampled: false` and `queueFullDelta: null`
 
 There is no `runDurationMs`, `step`, or `state` field.
@@ -1584,7 +1584,7 @@ curl -s http://artoo.local/api/seq/last-run
 #### Example response (abridged)
 
 ```json
-{"valid":true,"name":"DM:ROCKMARCH","source":1,"outcome":"aborted","running":false,"reason":"web stop","startMs":1234567890,"endMs":1234572890,"fxScopes":["panel"],"netOpenRingPanels":[],"touchedRingPanels":[1],"cleanup":{"count":0,"total":0,"truncated":false,"cmds":[]},"tx":{"total":3,"capacity":112,"omittedFromRecent":0,"truncated":false,"retained":3,"recent":[]},"warnings":{"bodyQueueFullDelta":0,"dispatchRetryCount":0,"remoteDomeQueue":{"sampled":false,"queueFullDelta":null}}}
+{"valid":true,"name":"DM:ROCKMARCH","source":1,"outcome":"aborted","running":false,"reason":"web stop","startMs":1234567890,"endMs":1234572890,"fxScopes":["panel"],"netOpenRingPanels":[],"touchedRingPanels":[1],"cleanup":{"count":0,"total":0,"truncated":false,"cmds":[]},"tx":{"total":3,"capacity":32,"omittedFromRecent":0,"truncated":false,"retained":3,"recent":[]},"warnings":{"bodyQueueFullDelta":0,"dispatchRetryCount":0,"remoteDomeQueue":{"sampled":false,"queueFullDelta":null}}}
 ```
 
 ### GET /api/seq

@@ -275,8 +275,10 @@ red-run block during the pause. Keep the comment to the frontier, under about
 20 KB. When it would pass that, post the current text as a new history comment
 and reset the marked one.
 
-The done signal is one line in that comment, `WORKER_DONE: ok` or
-`WORKER_DONE: blocked`. The same fact may also be `/tmp/slice-<n>.json` with
+The done signal is the last line of that comment, `WORKER_DONE: ok` or
+`WORKER_DONE: blocked`. A trailing `//` signature is not that line, and a
+later line that is not the token means the worker is not done. The same fact
+may also be `/tmp/slice-<n>.json` with
 `{"ok": true}` or `{"ok": false}`. The coordinator waits with
 `python3 tools/wait_worker.py --issue {ISSUE} --marker '<!-- worker-status-{ISSUE}-<slug> -->'`.
 An idle pane is not the signal.

@@ -120,6 +120,26 @@ class CommitMessageGuard(unittest.TestCase):
             cwd=self.project, check=True, capture_output=True,
         )
         self.assertEqual(self.decide("git commit --no-edit"), "allow")
+        self.assertEqual(
+            self.decide(f'git commit --no-edit -F {self.project / "message.txt"}'),
+            "deny",
+        )
+        msg = self.project / ".git" / "MERGE_MSG"
+        original = msg.read_text()
+        msg.write_text(original + "\nCo-Authored-By: X <x@y>\n")
+        self.assertEqual(self.decide("git commit --no-edit"), "deny")
+        msg.write_text(original)
+        self.assertEqual(self.decide("git commit --no-edit"), "allow")
+        self.assertEqual(
+            self.decide(f"git -C {self.project} commit --no-edit", cwd=self.other),
+            "allow",
+        )
+
+    def test_no_edit_with_a_message_still_needs_a_merge(self):
+        self.assertEqual(
+            self.decide(f'git commit -m "{GOOD}" --no-edit'),
+            "deny",
+        )
 
 
 if __name__ == "__main__":

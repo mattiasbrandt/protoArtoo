@@ -47,6 +47,9 @@ HEREDOC_MSG_PATTERN = re.compile(
     re.DOTALL,
 )
 NO_EDIT_PATTERN = re.compile(r"(?:^|\s)--no-edit(?:\s|$)")
+# -F/--file is never a message this hook can read. It stays rejected, including
+# when combined with --no-edit during a merge.
+FILE_ARG_PATTERN = re.compile(r"(?:^|\s)(?:--file(?:=|\s)|-F(?:\s|$))")
 COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
     r"--trailer(?:=|\s+)[^\n]*co-authored-by", re.IGNORECASE
@@ -75,21 +78,39 @@ def _extract_message(cmd: str) -> str | None:
     return None
 
 
-def _merge_in_progress(git_args: list[str], cwd: str) -> bool:
-    """True when this worktree has MERGE_HEAD. A merge's own message is then the commit."""
+def _absolute_git_path(git_args: list[str], cwd: str, name: str) -> str | None:
+    """An absolute path inside the repo selected by git_args, not the session cwd."""
     try:
         r = subprocess.run(
-            ["git", *git_args, "rev-parse", "--git-path", "MERGE_HEAD"],
+            ["git", *git_args, "rev-parse", "--path-format=absolute", "--git-path", name],
             cwd=cwd, capture_output=True, text=True, timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
+        return None
     if r.returncode != 0 or not r.stdout.strip():
-        return False
+        return None
     path = r.stdout.strip()
     if not os.path.isabs(path):
-        path = os.path.join(cwd, path)
-    return os.path.isfile(path)
+        return None
+    return path
+
+
+def _merge_in_progress(git_args: list[str], cwd: str) -> bool:
+    """True when this worktree has MERGE_HEAD. A merge's own message is then the commit."""
+    path = _absolute_git_path(git_args, cwd, "MERGE_HEAD")
+    return path is not None and os.path.isfile(path)
+
+
+def _merge_msg_has_coauthor(git_args: list[str], cwd: str) -> bool:
+    """True when MERGE_MSG carries a co-author trailer, or cannot be read."""
+    path = _absolute_git_path(git_args, cwd, "MERGE_MSG")
+    if path is None or not os.path.isfile(path):
+        return True
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return True
+    return COAUTHOR_LINE_PATTERN.search(text) is not None
 
 
 def _git_args_and_cwd(cmd: str, commit: re.Match, session_cwd: str) -> tuple[list[str], str] | None:
@@ -184,15 +205,31 @@ def main() -> int:
     if _targets_other_repo(cmd, commit, str(data.get("cwd") or os.getcwd())):
         return 0
 
-    message = _extract_message(cmd)
-    if message is None and NO_EDIT_PATTERN.search(cmd):
-        located = _git_args_and_cwd(cmd, commit, str(data.get("cwd") or os.getcwd()))
-        if located is not None and _merge_in_progress(*located):
-            return 0
+    if FILE_ARG_PATTERN.search(cmd):
         _deny(
-            "Commit blocked: --no-edit is accepted when MERGE_HEAD exists "
-            "(a merge). Otherwise pass a quoted -m/--message, including -qam."
+            "Commit blocked: -F/--file is rejected. "
+            "Pass a quoted -m/--message (a short cluster ending in m, such as -qam, counts)."
         )
+        return 0
+
+    located = _git_args_and_cwd(cmd, commit, str(data.get("cwd") or os.getcwd()))
+    merging = located is not None and _merge_in_progress(*located)
+    if NO_EDIT_PATTERN.search(cmd) and not merging:
+        _deny(
+            "Commit blocked: --no-edit is accepted only when MERGE_HEAD exists "
+            "(a merge), including when -m is also present. "
+            "Otherwise pass a quoted -m/--message, including -qam."
+        )
+        return 0
+
+    message = _extract_message(cmd)
+    if message is None and NO_EDIT_PATTERN.search(cmd) and merging:
+        if _merge_msg_has_coauthor(*located):
+            _deny(
+                "Commit blocked: co-author trailers are not allowed in any commit. "
+                "Remove any 'Co-authored-by:' lines from the merge message."
+            )
+            return 0
         return 0
     if message is None:
         _deny(

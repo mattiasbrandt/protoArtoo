@@ -49,10 +49,12 @@ DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
 General validation (server `src/protocol_check.cpp` `percentDecode`,
 `protocolCheckNesting`, and the `closeSteps` branch of `protocolCheck`; client
 `data/seq_protocol_check.js` `SeqProtocolCheck.validateSequence` and
-`decodeTextBytes`). The two stay in step through
-`test/fixtures/protocol_mirror.json`: `make check-protocol-mirror` runs the
+`decodeTextBytes`). The sampled rows in `test/fixtures/protocol_mirror.json`
+are what those two are checked against: `make check-protocol-mirror` runs the
 browser half, and `test_protocol_mirror` runs the firmware half on the same
-`expect` flag. A disagreement is a failed check, not a claim that the files match:
+`expect` flag. The file does not cover every rule on this page. Where the two
+verdicts on a row disagree, the firmware verdict is the one `expect` should
+name:
 - uppercase command family and enum tokens; no lowercase aliases (first slice)
 - full-string match only; no extra fields
 - total command length `<= 63`
@@ -90,10 +92,10 @@ DH:<target>:<effect>[:<color>[:<durationOrCount>]]
 
 Both `data/seq_protocol_check.js` and `src/protocol_check.cpp` are written to
 reject this matrix before send (for example `DH:A:RAINBOW:RED`), rather than
-leaving the rejection to the dome. The corpus in
-`test/fixtures/protocol_mirror.json` is what keeps a later edit of one side
-from drifting. `DEFAULT` (or omitted color) is always accepted; an omitted
-duration is treated as `0`.
+leaving the rejection to the dome. `test/fixtures/protocol_mirror.json` has no
+`DH:` row, so a drift in this matrix is not something that corpus catches.
+Where the two checkers disagree, the firmware verdict stands. `DEFAULT` (or
+omitted color) is always accepted; an omitted duration is treated as `0`.
 
 | Effect | Allowed colors | Duration/count |
 |---|---|---|

@@ -518,8 +518,9 @@ in review / rework / merged). Keep it under about 20 KB. When the next edit
 would pass that, post the current body as a new history comment and reset the
 evolving one to the frontier. History comments are append-only.
 
-A worker is done when its status comment contains `WORKER_DONE: ok` or
-`WORKER_DONE: blocked`, or `/tmp/slice-<n>.json` is `{"ok": true}` or
+A worker is done when the last line of its status comment is `WORKER_DONE: ok`
+or `WORKER_DONE: blocked` (a trailing `//` signature does not count), or
+`/tmp/slice-<n>.json` is `{"ok": true}` or
 `{"ok": false}`. Wait with
 `python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<slug> -->'`.
 An idle pane is not that signal: the gate runs in a sibling pane.

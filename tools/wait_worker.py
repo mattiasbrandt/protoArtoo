@@ -8,8 +8,10 @@ this waits on it:
     WORKER_DONE: ok
     WORKER_DONE: blocked
 
-on the last line of its status comment (the comment whose body starts with
---marker), or a JSON file --file with a boolean "ok".
+as the last non-empty line of its status comment (the comment whose body
+starts with --marker). A trailing "//" signature is not that line. A later
+line that is not the token means the worker is not done. Or a JSON file
+--file with a boolean "ok".
 
     python3 tools/wait_worker.py --issue 441 --marker '<!-- worker-status-441-slug -->'
     python3 tools/wait_worker.py --file /tmp/slice-441.json
@@ -21,10 +23,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+_SIGNATURE = re.compile(r"^//\S")
 
 
 def _comment_bodies(issue: int) -> list[str]:
@@ -44,17 +49,29 @@ def _comment_bodies(issue: int) -> list[str]:
     return bodies
 
 
+def _verdict_from_text(body: str) -> str | None:
+    """The token only counts as the last line. A trailing // signature is ignored."""
+    lines = [line.strip() for line in body.splitlines()]
+    while lines and lines[-1] == "":
+        lines.pop()
+    if lines and _SIGNATURE.match(lines[-1]):
+        lines.pop()
+        while lines and lines[-1] == "":
+            lines.pop()
+    if not lines:
+        return None
+    if lines[-1] == "WORKER_DONE: ok":
+        return "ok"
+    if lines[-1] == "WORKER_DONE: blocked":
+        return "blocked"
+    return None
+
+
 def _verdict_from_comment(issue: int, marker: str) -> str | None:
     for body in _comment_bodies(issue):
         if not body.startswith(marker):
             continue
-        for line in reversed(body.splitlines()):
-            text = line.strip()
-            if text == "WORKER_DONE: ok":
-                return "ok"
-            if text == "WORKER_DONE: blocked":
-                return "blocked"
-        return None
+        return _verdict_from_text(body)
     return None
 
 

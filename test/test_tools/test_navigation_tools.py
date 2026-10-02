@@ -6,9 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import importlib.util
+
 ROOT = Path(__file__).resolve().parents[2]
 CSS = ROOT / "tools" / "css_where.py"
 CONSOLE = ROOT / "tools" / "console_client.py"
+WAIT = ROOT / "tools" / "wait_worker.py"
 
 
 def _run(args, **kwargs):
@@ -62,6 +65,20 @@ class CheckSheet(unittest.TestCase):
             nope = _run([str(CONSOLE), "--check-sheet", str(unknown)])
             self.assertEqual(nope.returncode, 1)
             self.assertIn("unknown directive", nope.stderr)
+
+
+class WaitWorker(unittest.TestCase):
+    def verdict(self, body):
+        spec = importlib.util.spec_from_file_location("wait_worker", WAIT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod._verdict_from_text(body)
+
+    def test_token_is_the_last_line_and_a_signature_does_not_count(self):
+        self.assertEqual(self.verdict("WORKER_DONE: ok\n//Grok Build Grok 4.7\n"), "ok")
+        self.assertEqual(self.verdict("WORKER_DONE: blocked\n"), "blocked")
+        self.assertIsNone(self.verdict("WORKER_DONE: ok\n\nGate restarted; still running.\n"))
+        self.assertIsNone(self.verdict("WORKER_DONE: ok\nGate restarted; still running.\n//sig\n"))
 
 
 if __name__ == "__main__":
