@@ -458,8 +458,18 @@
    */
   const saveAll = (changes, { timeoutMs = 5000 } = {}) => {
     const run = queue.then(async () => {
-      const api = apiFor(null);
-      const body = { outputs: rowsFor(changes) };
+      // Nothing has gone out yet, and an error from here says so (`unsent`):
+      // a page that words a failed save can then say nothing was sent and
+      // mean it, which no later error lets it (data/servo.js applyTicked()).
+      let api;
+      let body;
+      try {
+        api = apiFor(null);
+        body = { outputs: rowsFor(changes) };
+      } catch (error) {
+        error.unsent = true;
+        throw error;
+      }
       try {
         const result = await api.postJson("/api/config", body, { timeoutMs });
         // The droid answers a save with the config it now holds
