@@ -3241,10 +3241,6 @@ p.output-parts {
   padding: 0 0 var(--space-sm);
 }
 
-.rc-learn-bar .btn {
-  width: 100%;
-}
-
 .rc-learn-banner {
   display: flex;
   align-items: center;
@@ -4466,10 +4462,6 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text-dim);
 }
 
-.rc-editor-actions .btn {
-  min-width: 150px;
-}
-
 @media (max-width: 700px) {
   .rc-mapper-grid {
     grid-template-columns: 1fr;
@@ -4828,6 +4820,87 @@ body[data-page="maintenance"] .status-item .hint {
 
 .rc-editor-cond.block {
   display: block;
+}
+
+/* A payload picked from many: the house pills (.part-pills), with the picked
+   one lit the way a segmented control lights its choice. */
+.rc-pills .part-pill.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* A Reaction's two numbers (#450), and the one text payload: label, a field
+   as wide as what it holds, and its unit - never stretched to the card. */
+.rc-reaction-fields {
+  display: grid;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.rc-reaction-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+}
+
+.rc-reaction-field > span:first-child {
+  min-width: 18ch;
+}
+
+.rc-reaction-field input {
+  width: 9ch;
+  min-height: 30px;
+  padding: 0 var(--space-sm);
+  color: var(--text);
+  background: var(--well);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-reaction-field input[type="text"] {
+  width: 18ch;
+}
+
+.rc-reaction-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rc-reaction-unit {
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
+}
+
+/* Unmap sits under whatever the picked action asks for, never between the
+   action and its payload. */
+.rc-editor-unmap {
+  margin-top: var(--space-md);
+}
+
+/* What a bound droid condition is doing, under its action in the source list. */
+.rc-ch-state {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+}
+
+/* Which SBUS input the one receiver is on: its label beside a two-way
+   segmented control that is only as wide as its two answers. */
+.rc-recv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: var(--fs-cell);
+}
+
+.rc-recv-row .seg {
+  flex: 0 0 auto;
 }
 
 /* Animations */

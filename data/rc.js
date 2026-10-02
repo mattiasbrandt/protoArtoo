@@ -31,10 +31,10 @@
   const rcReceiverCard = document.getElementById("rc-receiver-card");
   
   const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
-  const sbusRecvSel = document.getElementById("sbus-recv-sel");
+  const sbusRecvSeg = document.getElementById("sbus-recv-seg");
   const sbusRecvFeedback = document.getElementById("sbus-recv-feedback");
   let sbusRecvFeedbackTimer = null;
-  let confirmedSbusRecvValue = null;
+  let confirmedSbusRecvCh2 = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
   const rcSummaryCount = document.getElementById("rc-summary-count");
   
@@ -293,58 +293,59 @@
     return match ? match[1] : raw;
   };
 
-  const renderMarcduinoSequenceOptions = (selectedPayload) => {
-    const normalizedSelected = normalizeMarcduinoSequencePayload(selectedPayload);
-    return MARCDUINO_SEQUENCES.map((entry) => {
-      const value = String(entry.id);
-      const selected = normalizedSelected === value ? " selected" : "";
-      const label = `SE${entry.id} - ${entry.name}`;
-      const title = entry.description || "";
-      return `<option value="${value}" title="${window.PAUtils.escapeHtml(title)}"${selected}>${window.PAUtils.escapeHtml(label)}</option>`;
-    }).join("\n            ");
+  // A payload picker: one choice among many, as pills that wrap, with the
+  // picked value in a hidden field the save reads. `options` are
+  // { value, label, title }.
+  const payloadPillsHtml = (name, options, selectedValue) => {
+    const picked = options.some((option) => option.value === selectedValue)
+      ? selectedValue
+      : (options[0]?.value ?? '');
+    const pills = options.map((option) => {
+      const on = option.value === picked;
+      return `<button type="button" class="part-pill${on ? ' active' : ''}" role="radio" aria-checked="${on ? 'true' : 'false'}" data-payload-pick="${window.PAUtils.escapeHtml(option.value)}" title="${window.PAUtils.escapeHtml(option.title || '')}">${window.PAUtils.escapeHtml(option.label)}</button>`;
+    }).join('');
+    return `<input data-field="payload" type="hidden" value="${window.PAUtils.escapeHtml(picked)}">
+        <div class="part-pills rc-pills" role="radiogroup" aria-label="${window.PAUtils.escapeHtml(name)}">${pills}</div>`;
   };
 
-  const renderDomeSequenceOptions = (selectedPayload) => {
-    const sel = String(selectedPayload || '').trim().toUpperCase();
-    // Use factory sequences only for initial render
-    // Learned sequences will be fetched asynchronously
-    return FACTORY_DOME_SEQUENCES.map((entry) => {
-      const selected = sel === entry.payload ? ' selected' : '';
-      return `<option value="${window.PAUtils.escapeHtml(entry.payload)}" title="${window.PAUtils.escapeHtml(entry.description)}"${selected}>${window.PAUtils.escapeHtml(entry.label)}</option>`;
-    }).join('\n            ');
-  };
+  const marcduinoSequencePills = (selectedPayload) => payloadPillsHtml(
+    'Marcduino Sequence',
+    MARCDUINO_SEQUENCES.map((entry) => ({
+      value: String(entry.id),
+      label: `SE${entry.id} ${entry.name}`,
+      title: entry.description || '',
+    })),
+    normalizeMarcduinoSequencePayload(selectedPayload));
 
-  const updateDomeSequenceOptions = async (selectedPayload) => {
-    const sel = String(selectedPayload || '').trim().toUpperCase();
-
-    // Fetch learned sequences if not cached
-    if (cachedLearnedSequences === null) {
-      try {
-        const result = await PAApi.get('/api/seq/list');
-        if (result.ok && Array.isArray(result.data)) {
-          cachedLearnedSequences = result.data.map((seq) => ({
-            payload: seq.name,
-            label: seq.name,
-            description: `Learned sequence (${seq.stepCount || 0} steps, ${seq.suppressMs}ms suppress)`,
-          }));
-        } else {
-          cachedLearnedSequences = [];
-        }
-      } catch {
-        cachedLearnedSequences = [];
-      }
+  // The Factory sequences, the droid's own once it has listed them, and the
+  // one this binding already names if it is in neither: a sequence that was
+  // deleted stays offered, marked missing, so opening the editor never
+  // rewrites the binding to something else.
+  const domeSequencePills = (selectedPayload) => {
+    const sel = String(selectedPayload || '').trim();
+    const options = [...FACTORY_DOME_SEQUENCES, ...(cachedLearnedSequences || [])]
+      .map((entry) => ({ value: entry.payload, label: entry.label, title: entry.description }));
+    if (sel && !options.some((option) => option.value === sel)) {
+      options.push({ value: sel, label: `${sel} (missing)`, title: 'This sequence is not on the droid.' });
     }
+    return payloadPillsHtml('Dome Sequence', options, sel);
+  };
 
-    // Combine factory + learned sequences
-    const allSequences = [...FACTORY_DOME_SEQUENCES, ...cachedLearnedSequences];
-
-    // Find the dome_seq select element and update it
-    const domeSeqSelect = rcEditorContent.querySelector('[data-cond="dome_seq"] select');
-    if (domeSeqSelect) {
-      domeSeqSelect.innerHTML = allSequences.map((entry) => {
-        const selected = sel === entry.payload ? ' selected' : '';
-        return `<option value="${window.PAUtils.escapeHtml(entry.payload)}" title="${window.PAUtils.escapeHtml(entry.description)}"${selected}>${window.PAUtils.escapeHtml(entry.label)}</option>`;
-      }).join('\n            ');
+  // The droid's own sequences, asked for once. Left null when the droid does
+  // not answer: an empty list would mark every binding to one as missing.
+  const loadLearnedSequences = async () => {
+    if (cachedLearnedSequences !== null) return;
+    try {
+      const result = await window.PAApi.get('/api/seq/list');
+      if (result.ok && Array.isArray(result.data)) {
+        cachedLearnedSequences = result.data.map((seq) => ({
+          payload: seq.name,
+          label: seq.name,
+          description: `Learned sequence (${seq.stepCount || 0} steps, ${seq.suppressMs}ms suppress)`,
+        }));
+      }
+    } catch (error) {
+      console.warn('[RC] Sequence list not loaded:', window.PAApi.messageFor(error));
     }
   };
 
@@ -359,7 +360,43 @@
     not_fitted: [],
   };
 
+  // The droid's own conditions (ADR 0053, #450): a binding on one is a
+  // Reaction, which the droid fires itself, radio or no radio. So they are
+  // offered in every receiver mode, beside whatever SOURCE_OPTIONS gives it.
+  // `source` and `channel` are the stored pair (include/rc_binding_types.h); a
+  // condition has no channel to ask for, so each row is one pair, named.
+  // `threshold` is the one number a condition takes, shown in the builder's
+  // unit: `scale` stored units to one of theirs. The list has nothing for the
+  // room or for how loud a sound is, because the droid cannot sense either.
+  const SPEED_THRESHOLD = { label: 'Speed at or over', unit: 'of 1000', scale: 1, min: 1, max: 1000, fallback: 300 };
+  const WHEEL_SPEED_THRESHOLD = { label: 'Speed at or over', unit: 'RPM', scale: 1, min: 1, max: 1000, fallback: 30 };
+  const WHEEL_AMPS_THRESHOLD = { label: 'Current at or over', unit: 'A', scale: 100, min: 1, max: 5000, fallback: 300 };
+  const DROID_CONDITIONS = [
+    { source: 'speed', channel: 1, label: 'Drive speed', threshold: SPEED_THRESHOLD },
+    { source: 'hstop', channel: 1, label: 'Hard stop', threshold: { ...SPEED_THRESHOLD, label: 'Stopping from', fallback: 400 } },
+    { source: 'rest', channel: 1, label: 'Comes to rest', threshold: { label: 'At rest for', unit: 's', scale: 10, min: 1, max: 600, fallback: 20 } },
+    { source: 'track', channel: 1, label: 'Track starts', threshold: null },
+    { source: 'wspeed', channel: 1, label: 'Left wheel speed', threshold: WHEEL_SPEED_THRESHOLD },
+    { source: 'wspeed', channel: 2, label: 'Right wheel speed', threshold: WHEEL_SPEED_THRESHOLD },
+    { source: 'wamps', channel: 1, label: 'Left wheel current', threshold: WHEEL_AMPS_THRESHOLD },
+    { source: 'wamps', channel: 2, label: 'Right wheel current', threshold: WHEEL_AMPS_THRESHOLD },
+  ];
+  const DROID_SOURCES = new Set(DROID_CONDITIONS.map((condition) => condition.source));
+  const REACTION_QUIET = { max: 3600, fallback: 5 };
+  // What a Reaction may not do: the estop, and the two that change how the
+  // droid drives (robotActionValidForReaction(), src/rc_action_types.cpp).
+  const REACTION_BLOCKED_TOKENS = new Set(['estop', 'op_mode', 'speed_preset_cycle']);
+
+  const isDroidSource = (source) => DROID_SOURCES.has(source);
+
   const channelKeyOf = (source, channel) => `${source}:${Number(channel)}`;
+
+  const droidConditionFor = (channelKey) => DROID_CONDITIONS
+    .find((condition) => channelKeyOf(condition.source, condition.channel) === channelKey) || null;
+
+  // Whether a source can be bound in this receiver mode.
+  const sourceAllowedInMode = (source, mode) =>
+    isDroidSource(source) || (SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm).includes(source);
 
   const parseChannelKey = (channelKey) => {
     const [source = "", channelValue = "0"] = String(channelKey || "").split(":");
@@ -385,9 +422,13 @@
 
   const getSingleSbusRecvCh2 = (cfg) => cfg?.rc?.sbus?.recvCh2 === true;
 
-  const setSingleSbusRecvSelect = (recvCh2) => {
-    if (!sbusRecvSel) return;
-    sbusRecvSel.value = recvCh2 ? "true" : "false";
+  // Which SBUS input the one receiver is on, painted on the segmented control.
+  const paintSbusRecv = (recvCh2) => {
+    sbusRecvSeg?.querySelectorAll("button").forEach((button) => {
+      const on = (button.dataset.value === "true") === recvCh2;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-checked", on ? "true" : "false");
+    });
   };
 
   const updateRecvSel = (mode) => {
@@ -458,6 +499,10 @@
     if (!source || channel <= 0 || !action) return null;
     const normalized = { source, channel, action };
     if (payload) normalized.payload = payload;
+    if (isDroidSource(source)) {
+      if (Number.isFinite(Number(entry.threshold))) normalized.threshold = Number(entry.threshold);
+      if (Number.isFinite(Number(entry.quietS))) normalized.quietS = Number(entry.quietS);
+    }
     return normalized;
   };
 
@@ -496,7 +541,7 @@
   const getChannelTelemetry = (channelKey) => {
     if (!rcSnapshot) return null;
     const { source, channel } = parseChannelKey(channelKey);
-    if (!source || channel <= 0) return null;
+    if (!source || channel <= 0 || isDroidSource(source)) return null;
     const raw = rawForChannel(source, channel);
     if (raw == null) return { raw: null, mapped: 0, pressed: false, pressedLevel: false };
     const center = source === 'pwm' ? 1500 : 992;
@@ -517,6 +562,28 @@
     return found ? found.label : token;
   };
 
+  // Whether a Dome Sequence binding points at a sequence the droid no longer
+  // has. Only once the droid has listed its own (null: not known yet), so a
+  // slow answer never marks one missing that is there.
+  const domeSequenceMissing = (payload) => {
+    if (!payload || cachedLearnedSequences === null) return false;
+    return ![...FACTORY_DOME_SEQUENCES, ...cachedLearnedSequences]
+      .some((sequence) => sequence.payload === payload);
+  };
+
+  // What a binding does, as the table names it: the action, and what it was
+  // given. A sequence that is gone stays named, and says so.
+  const bindingLabel = (entry) => {
+    const token = mapEntryAction(entry);
+    const label = actionLabelFromToken(token);
+    if (!entry?.payload) return label;
+    if (token === 'seq') return `${label} · SE${entry.payload}`;
+    if (token === 'dome_seq') {
+      return `${label} · ${entry.payload}${domeSequenceMissing(entry.payload) ? ' (missing)' : ''}`;
+    }
+    return `${label} · ${entry.payload}`;
+  };
+
   const sourceLabel = (source) => {
     if (source === "pwm") return "PWM";
     if (source === "sbus1") return "SBUS#1";
@@ -535,8 +602,51 @@
   const modeLabel = (mode) => MODE_LABEL[mode] || mode;
 
   const channelTitleFromKey = (channelKey) => {
+    const condition = droidConditionFor(channelKey);
+    if (condition) return condition.label;
     const { source, channel } = parseChannelKey(channelKey);
     return `${sourceLabel(source)} CH ${channel || '—'}`;
+  };
+
+  // What the droid last said about the Reaction on a condition (the
+  // `reactions` array of GET /api/rc and the rc event), or null.
+  const reactionStatusFor = (channelKey) => {
+    const list = Array.isArray(rcSnapshot?.reactions) ? rcSnapshot.reactions : [];
+    return list.find((status) => channelKeyOf(status.source, status.channel) === channelKey) || null;
+  };
+
+  // Why a Reaction is not armed, in the droid's words. A reason this page does
+  // not know still says it is not armed, rather than nothing.
+  const REACTION_REASON = {
+    'no-feedback': 'This drive reports no wheel readings',
+    'no-current': 'This drive reports no current',
+    'feedback-stale': 'Waiting for the drive',
+    'no-play-state': 'Waiting for the sound module',
+  };
+
+  // A Reaction's state: lamp, family and words. Armed is nominal; waiting is
+  // something that may yet arrive; not in this build is settled, and unlit.
+  const reactionState = (channelKey) => {
+    const status = reactionStatusFor(channelKey);
+    if (!status) return null;
+    const refused = Number(status.refusedWhileDriving || 0);
+    const held = refused > 0 ? ` · held back ${refused} while driving` : '';
+    if (status.state === 'ready') {
+      const fires = Number(status.fires || 0);
+      return { lamp: 'ok', family: '', text: `${fires > 0 ? `Armed · fired ${fires}` : 'Armed'}${held}` };
+    }
+    const settled = status.state === 'not-in-this-build';
+    return {
+      lamp: settled ? 'off' : 'warn',
+      family: settled ? 'availability-settled-no' : 'availability-waiting',
+      text: `${REACTION_REASON[status.reason] || 'Not armed'}${held}`,
+    };
+  };
+
+  const reactionStateHtml = (channelKey) => {
+    const state = reactionState(channelKey);
+    if (!state) return '<span class="rc-trigger-state waiting"></span>';
+    return `<span class="rc-trigger-state"><span class="indicator ${state.lamp}" aria-hidden="true"></span>${window.PAUtils.escapeHtml(state.text)}</span>`;
   };
 
   const setEditorDirtyState = (state, text) => {
@@ -654,9 +764,16 @@
   // rather than typed into the markup (ADR 0066, docs/ui-copy-voice.md rule 8).
   const setSummaryCount = (count) => {
     if (!rcSummaryCount) return;
-    rcSummaryCount.textContent = count === 0
-      ? "nothing mapped yet"
-      : `${count} ${count === 1 ? "channel" : "channels"} mapped`;
+    rcSummaryCount.textContent = count === 0 ? "nothing mapped yet" : `${count} mapped`;
+  };
+
+  // The Live cell of one binding: a stick's travel, a switch's press, or what
+  // a Reaction is doing.
+  const liveCellHtml = (token, channelKey, telemetry) => {
+    if (droidConditionFor(channelKey)) return reactionStateHtml(channelKey);
+    return isAnalogAction(token)
+      ? miniBarHtml(telemetry?.mapped || 0)
+      : triggerStateHtml(token, channelKey, telemetry);
   };
 
   const renderSummaryTable = () => {
@@ -669,7 +786,7 @@
 
     if (!rows.length) {
       rcSummaryBody.innerHTML =
-        '<tr><td colspan="3"><b>No channel does anything yet.</b> Pick one below and say what it should do.</td></tr>';
+        '<tr><td colspan="3"><b>Nothing is mapped yet.</b> Pick a source below and say what it should do.</td></tr>';
       return;
     }
 
@@ -682,11 +799,9 @@
       const channelKey = channelKeyOf(entry.source, entry.channel);
       const telemetry = getChannelTelemetry(channelKey);
       const token = mapEntryAction(entry);
-      const live = isAnalogAction(token)
-        ? miniBarHtml(telemetry?.mapped || 0)
-        : triggerStateHtml(token, channelKey, telemetry);
+      const live = liveCellHtml(token, channelKey, telemetry);
       return `<tr data-chkey="${window.PAUtils.escapeHtml(channelKey)}" class="${selectedChannel === channelKey ? 'active-channel' : ''}">
-        <td>${window.PAUtils.escapeHtml(actionLabelFromToken(token))}</td>
+        <td>${window.PAUtils.escapeHtml(bindingLabel(entry))}</td>
         <td>${window.PAUtils.escapeHtml(channelTitleFromKey(channelKey))}</td>
         <td>${live}</td>
       </tr>`;
@@ -728,6 +843,30 @@
       </div>`;
     };
 
+    // The droid's own conditions, the same in every mode. A bound one shows
+    // its state where a channel shows its raw value; one the droid cannot
+    // sense on this build is drawn in its Availability Family, not as armed.
+    const renderDroidGroup = () => {
+      const items = DROID_CONDITIONS.map((condition) => {
+        const channelKey = channelKeyOf(condition.source, condition.channel);
+        const entry = assignmentForChannel(channelKey);
+        const state = entry ? reactionState(channelKey) : null;
+        const isActive = channelKey === selectedChannel;
+        return `<div class="rc-channel-item${isActive ? ' active' : ''}${state?.family ? ` ${state.family}` : ''}" data-chkey="${window.PAUtils.escapeHtml(channelKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
+          <div class="rc-channel-item-head">
+            <span class="rc-ch-num">${window.PAUtils.escapeHtml(condition.label)}</span>
+          </div>
+          <div class="rc-ch-action">${entry ? window.PAUtils.escapeHtml(bindingLabel(entry)) : '<span class="rc-ch-unassigned">not mapped</span>'}</div>
+          ${state ? `<div class="rc-ch-state">${window.PAUtils.escapeHtml(state.text)}</div>` : ''}
+        </div>`;
+      });
+      return `<div class="rc-channel-group">
+        <div class="rc-channel-group-title">Droid</div>
+        ${items.join('')}
+        <p class="hint">The droid cannot sense the room.</p>
+      </div>`;
+    };
+
     let html = '';
     if ((SOURCE_OPTIONS[mode] || []).length === 0) {
       // A receiver the controller reads nothing from (ELRS, #369): no channel
@@ -739,6 +878,7 @@
       html = renderGroup('SBUS1', 'sbus1', snap?.raw?.sbus1, 6)
            + renderGroup('SBUS2', 'sbus2', snap?.raw?.sbus2, 6);
     }
+    html += renderDroidGroup();
 
     rcChannelItems.innerHTML = html;
 
@@ -766,6 +906,14 @@
   const updateChannelListRaw = () => {
     if (!rcChannelItems || !rcSnapshot?.raw) return;
     rcChannelItems.querySelectorAll('.rc-channel-item').forEach(el => {
+      if (droidConditionFor(el.dataset.chkey)) {
+        const state = assignmentForChannel(el.dataset.chkey) ? reactionState(el.dataset.chkey) : null;
+        const stateEl = el.querySelector('.rc-ch-state');
+        if (stateEl && state) stateEl.textContent = state.text;
+        el.classList.toggle('availability-waiting', state?.family === 'availability-waiting');
+        el.classList.toggle('availability-settled-no', state?.family === 'availability-settled-no');
+        return;
+      }
       const { source, channel } = parseChannelKey(el.dataset.chkey);
       const raw = rawForChannel(source, channel);
       const rawEl = el.querySelector('.rc-ch-raw');
@@ -786,11 +934,25 @@
 
     if (!selectedChannel) {
       rcLivePreviewContent.innerHTML =
-        '<p class="note"><b>No channel selected.</b> Pick one below to see what it sends.</p>';
+        '<p class="note"><b>Nothing selected.</b> Pick a source below.</p>';
       return;
     }
 
     const entry = assignmentForChannel(selectedChannel) || { ...parseChannelKey(selectedChannel), payload: '' };
+
+    if (droidConditionFor(selectedChannel)) {
+      const bound = Boolean(mapEntryAction(entry));
+      const refused = Number(reactionStatusFor(selectedChannel)?.refusedWhileDriving || 0);
+      rcLivePreviewContent.innerHTML = `
+        <h4 class="rc-preview-title">${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+        <div class="rc-preview-stack">
+          <div>Action: <strong>${bound ? window.PAUtils.escapeHtml(bindingLabel(entry)) : 'Not mapped'}</strong></div>
+          ${bound ? `<div>State: ${reactionStateHtml(selectedChannel)}</div>` : ''}
+          ${refused > 0 ? '<p class="note">No body part opens while the droid drives.</p>' : ''}
+        </div>`;
+      return;
+    }
+
     const telemetry = getChannelTelemetry(selectedChannel);
     const mapped = Number(telemetry?.mapped || 0);
     const raw = telemetry?.raw ?? '—';
@@ -814,9 +976,16 @@
       </div>`;
   };
 
+  // What the selected source may be bound to. A radio channel: everything. A
+  // droid condition: no axis, and not the three a Reaction may not do.
+  const actionAllowedOnSelected = (item) => {
+    if (!droidConditionFor(selectedChannel)) return true;
+    return !ANALOG_ACTION_TOKENS.has(item.token) && !REACTION_BLOCKED_TOKENS.has(item.token);
+  };
+
   const groupedActionTargets = () => {
     const groups = new Map();
-    actionTargets.forEach((item) => {
+    actionTargets.filter(actionAllowedOnSelected).forEach((item) => {
       if (!groups.has(item.group)) groups.set(item.group, []);
       groups.get(item.group).push(item);
     });
@@ -883,7 +1052,7 @@
 
     const recentItems = recentActionTokens
       .map((token) => actionTargets.find((item) => item.token === token))
-      .filter((item) => Boolean(item) && actionMatchesQuery(item, query));
+      .filter((item) => Boolean(item) && actionAllowedOnSelected(item) && actionMatchesQuery(item, query));
 
     const hasMatches = recentItems.length > 0 || groups.length > 0;
     const recentBlock = recentItems.length > 0
@@ -919,7 +1088,7 @@
       rcEditorContent.innerHTML = '';
       if (rcEditorApply) rcEditorApply.disabled = true;
       if (rcEditorRevert) rcEditorRevert.disabled = true;
-      setEditorDirtyState('clean', 'Select a channel to edit');
+      setEditorDirtyState('clean', 'Pick a source to edit');
       return;
     }
 
@@ -944,35 +1113,48 @@
     const entry = assignmentForChannel(selectedChannel) || { source, channel, payload: '' };
     const displayToken = mapEntryAction(entry);
 
+    // A droid condition has no channel to name. It has a threshold, where the
+    // condition takes one, and how long it stays quiet after firing.
+    const condition = droidConditionFor(selectedChannel);
+    const numberField = (field, label, value, unit, min, step, max) => `<label class="rc-reaction-field">
+          <span>${window.PAUtils.escapeHtml(label)}</span>
+          <input data-field="${field}" type="number" inputmode="decimal" min="${min}" max="${max}" step="${step}" value="${value}">
+          <span class="rc-reaction-unit">${window.PAUtils.escapeHtml(unit)}</span>
+        </label>`;
+    const threshold = condition?.threshold || null;
+    const reactionFields = condition
+      ? `<div class="rc-reaction-fields">
+        ${threshold ? numberField('threshold', threshold.label,
+          (entry.threshold ?? threshold.fallback) / threshold.scale, threshold.unit,
+          threshold.min / threshold.scale, 1 / threshold.scale, threshold.max / threshold.scale) : ''}
+        ${numberField('quietS', 'Quiet after firing', entry.quietS ?? REACTION_QUIET.fallback, 's', 0, 1, REACTION_QUIET.max)}
+      </div>`
+      : `<p class="hint">Source <b>${window.PAUtils.escapeHtml(sourceLabel(source))}</b> &middot; channel <b>${window.PAUtils.escapeHtml(String(channel))}</b></p>`;
+
     rcEditorContent.innerHTML = `
       <h4 class="rc-editor-title">Edit ${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
-      <p class="hint">Source <b>${window.PAUtils.escapeHtml(sourceLabel(source))}</b> &middot; channel <b>${window.PAUtils.escapeHtml(String(channel))}</b></p>
+      ${reactionFields}
       <label class="rc-action-label-head">Action</label>
       <input data-field="target" type="hidden" value="${window.PAUtils.escapeHtml(displayToken)}">
       ${renderActionPicker(displayToken, actionPickerQuery)}
-      <div><button type="button" class="btn btn-sm" data-action-unmap>Unmap channel</button></div>
       <div data-cond="seq" class="rc-editor-cond ${displayToken === 'seq' ? 'block' : 'hidden'}">
-        <label>Marcduino Sequence
-          <select data-field="payload">
-            ${renderMarcduinoSequenceOptions(entry.payload)}
-          </select>
-        </label>
+        <span class="rc-action-label-head">Marcduino Sequence</span>
+        ${marcduinoSequencePills(entry.payload)}
       </div>
       <div data-cond="dome_seq" class="rc-editor-cond ${displayToken === 'dome_seq' ? 'block' : 'hidden'}">
-        <label>Dome Sequence
-          <select data-field="payload">
-            ${renderDomeSequenceOptions(entry.payload)}
-          </select>
-        </label>
+        <span class="rc-action-label-head">Dome Sequence</span>
+        ${domeSequencePills(entry.payload)}
       </div>
       <div data-cond="cmd" class="rc-editor-cond ${displayToken === 'cmd' ? 'block' : 'hidden'}">
-        <label>Marcduino Command
+        <label class="rc-reaction-field">
+          <span>Marcduino Command</span>
           <input data-field="payload" type="text" value="${window.PAUtils.escapeHtml(entry.payload || '')}" placeholder=":OP01">
         </label>
       </div>
       <div data-cond="estop" class="rc-editor-cond ${displayToken === 'estop' ? 'block' : 'hidden'}">
         <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
-      </div>`;
+      </div>
+      <div class="rc-editor-unmap"><button type="button" class="btn btn-sm btn-quiet" data-action-unmap>Unmap</button></div>`;
 
     const updateConditionalFields = () => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
@@ -1049,12 +1231,23 @@
       if (keepFocus) {
         rcEditorContent.querySelector('.rc-action-picker')?.focus();
       }
-      // Fetch learned sequences if dome_seq is selected
-      if (token === 'dome_seq') {
-        const currentPayload = rcEditorContent.querySelector('[data-cond="dome_seq"] select')?.value || '';
-        updateDomeSequenceOptions(currentPayload);
-      }
     };
+
+    // A pill picks its payload: the hidden field beside it takes the value.
+    rcEditorContent.querySelectorAll('[data-payload-pick]').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const group = pill.closest('.rc-editor-cond');
+        const field = group?.querySelector('[data-field="payload"]');
+        if (!field || field.value === pill.dataset.payloadPick) return;
+        field.value = pill.dataset.payloadPick;
+        group.querySelectorAll('[data-payload-pick]').forEach((other) => {
+          const on = other === pill;
+          other.classList.toggle('active', on);
+          other.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+        markEditorDirty();
+      });
+    });
 
     const runActionTest = async (token) => {
       if (actionPickerInFlightToken) return;
@@ -1165,7 +1358,7 @@
         event.preventDefault();
 
         const selectable = actionTargets
-          .filter((item) => !item.disabled && actionMatchesQuery(item, actionPickerQuery))
+          .filter((item) => !item.disabled && actionAllowedOnSelected(item) && actionMatchesQuery(item, actionPickerQuery))
           .map((item) => item.token);
         if (!selectable.length) return;
 
@@ -1205,7 +1398,7 @@
       const token = mapEntryAction(entry);
       const cell = row.children[2];
       if (!cell) return;
-      cell.innerHTML = isAnalogAction(token) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(token, channelKey, telemetry);
+      cell.innerHTML = liveCellHtml(token, channelKey, telemetry);
     });
   };
 
@@ -1265,8 +1458,8 @@
       const mode = getRcModeFromConfig(data);
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
       paintModeSelection(mode);
-      setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
-      confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
+      confirmedSbusRecvCh2 = getSingleSbusRecvCh2(data);
+      paintSbusRecv(confirmedSbusRecvCh2);
       updateRecvSel(mode);
       setModeFeedback(`Receiver type: ${modeLabel(mode)}`, 'success');
       setRcInputsEnabled(rcComponentsEnabled(data));
@@ -1289,10 +1482,8 @@
       channelMap = modeMapFromArray(payload.map);
       triggerPulseState = {};
       if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
-      if (selectedChannel) {
-        const { source } = parseChannelKey(selectedChannel);
-        const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
-        if (!allowedSources.includes(source)) selectedChannel = null;
+      if (selectedChannel && !sourceAllowedInMode(parseChannelKey(selectedChannel).source, mode)) {
+        selectedChannel = null;
       }
       renderSummaryTable();
       renderChannelList();
@@ -1536,17 +1727,38 @@
       }
     }
 
-    const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
-    if (!allowedSources.includes(source)) {
+    if (!sourceAllowedInMode(source, mode)) {
       setEditorFeedback(`Channel source ${sourceLabel(source)} is not valid in ${modeLabel(mode)} mode.`, 'error');
       return;
+    }
+
+    // A Reaction's two numbers, from the builder's units to the stored ones.
+    const reaction = {};
+    const condition = droidConditionFor(selectedChannel);
+    if (condition && target) {
+      const numberOf = (field) => Number(rcEditorContent.querySelector(`[data-field="${field}"]`)?.value);
+      if (condition.threshold) {
+        const { label, unit, scale, min, max } = condition.threshold;
+        const stored = Math.round(numberOf('threshold') * scale);
+        if (!Number.isFinite(stored) || stored < min || stored > max) {
+          setEditorFeedback(`${label}: ${min / scale} to ${max / scale} ${unit}.`, 'error');
+          return;
+        }
+        reaction.threshold = stored;
+      }
+      const quietS = Math.round(numberOf('quietS'));
+      if (!Number.isFinite(quietS) || quietS < 0 || quietS > REACTION_QUIET.max) {
+        setEditorFeedback(`Quiet after firing: 0 to ${REACTION_QUIET.max} s.`, 'error');
+        return;
+      }
+      reaction.quietS = quietS;
     }
 
     const nextMap = { ...channelMap };
     if (!target) {
       delete nextMap[selectedChannel];
     } else {
-      nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload });
+      nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload, ...reaction });
     }
 
     setEditorDirtyState('saving', 'Saving changes…');
@@ -1618,20 +1830,22 @@
     rcLearnStop.addEventListener("click", exitLearnMode);
   }
 
-  if (sbusRecvSel) {
-    sbusRecvSel.addEventListener("change", async () => {
-      const recvCh2 = sbusRecvSel.value === "true";
+  sbusRecvSeg?.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const recvCh2 = button.dataset.value === "true";
+      if (recvCh2 === confirmedSbusRecvCh2) return;
+      paintSbusRecv(recvCh2);
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
         setSbusRecvFeedback(`Saved at ${new Date().toLocaleTimeString()}. Restart the Body Controller to apply.`, "success");
-        confirmedSbusRecvValue = sbusRecvSel.value;
+        confirmedSbusRecvCh2 = recvCh2;
       } catch (error) {
-        sbusRecvSel.value = confirmedSbusRecvValue;
+        paintSbusRecv(confirmedSbusRecvCh2 === true);
         setSbusRecvFeedback(`Not saved: ${window.PAApi.messageFor(error)}`, "error", 2000);
       }
     });
-  }
+  });
 
   // The droid's verbose RC logs (POST /api/rc/debug, runtime only) are on
   // while RC is on screen, and only then. Inside the shell a surface is left
@@ -1717,6 +1931,7 @@
       });
       loadRcDiagnostics();
       loadActionTargets().then(redrawActionNames);
+      loadLearnedSequences().then(redrawActionNames);
       return;
     }
 
@@ -1731,6 +1946,9 @@
     SECTIONS.forEach(([name, load, label]) =>
       window.PABootstrap.registerSection(name, load, { label })
     );
+    // Not a section: the page works without it. Until it answers, no binding
+    // is called missing.
+    loadLearnedSequences().then(redrawActionNames);
   };
 
   startPageLoad();
