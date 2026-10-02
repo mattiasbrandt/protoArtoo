@@ -4055,6 +4055,88 @@
     edited();
   };
 
+  // ---------------------------------------------------------------------------
+  // The interrupt group and the close half that goes with it (#441; operator,
+  // 2026-10-02). The droid refuses a sequence in a group with no close half,
+  // and one outside a group with one (protocolCheck(), src/protocol_check.cpp),
+  // so the two are set in the one edit, and one Undo takes both back.
+  //
+  // startedCloseHalf(): the close half a sequence put in a group starts with.
+  // It closes what the opening half leaves standing open, and ends:
+  //   - one close per Part, in lane order, each its own command: a dome
+  //     panel's own :CLxx, a body Part's Body Step with the shape close. Never
+  //     a group close (:CL00, :CL14, :CL15): several servos starting at once
+  //     browned the dome out (src/tasks/sequence_catalog.cpp, 2026-06-17);
+  //   - one at a time, a Cadence Floor apart: the droid's own, as the
+  //     Rehearsal reads it (SeqRehearsal.cadenceFloor());
+  //   - the end step one floor after the last close. With nothing left open
+  //     it is the end step alone, which the droid accepts.
+  // The pattern is the factory toggles' own close halves (kPiesCloseSteps),
+  // less their sound and holo reset, which are those routines' own choices.
+  // What is left open is the timeline's reading (SeqTimeline.leftOpen()); a
+  // flutter leaves nothing open, and a random step's pick is not known.
+  //
+  // A branch holds 96 steps by itself (protocolCheckBranch()), so a close
+  // half of one step per Part and an end always fits, whatever Opens holds.
+  //
+  // Null when the page cannot say how far apart the closes go - the motion
+  // model did not load. None is started then: closes sent together are what
+  // the spacing is there to prevent.
+  // ---------------------------------------------------------------------------
+  const startedCloseHalf = () => {
+    const floor = window.SeqRehearsal?.cadenceFloor(rehearsalContext())?.ms;
+    if (!window.SeqTimeline || !(floor > 0)) return null;
+    const closes = window.SeqTimeline.leftOpen(editorState.current, rehearsalContext())
+      .map(({ part }) => {
+        const entry = catalogPart(part);
+        if (entry?.half !== "dome") return { type: "body", part, shape: "close" };
+        const cmd = window.DomeCommandMap?.resolvePanelCommand(entry.shorthand, "close");
+        return cmd ? { type: "dome", cmd } : null;
+      })
+      .filter(Boolean)
+      .map((close, index) => ({ t: index * floor, ...close }));
+    return [...closes, { t: closes.length * floor, type: "end", ...stepTypeDefaults.end }];
+  };
+
+  // Put the sequence in `group`.
+  //   - Into a group, with no close half: one is started (startedCloseHalf()).
+  //     Pressing the group it is already in does the same for a sequence that
+  //     came without one.
+  //   - Into another group: the close half it has stays.
+  //   - Back to None: the close half is dropped. The list goes back to how
+  //     the droid sends a sequence with none - empty, where it sent the key
+  //     at all - so None pressed straight after a group leaves no edit.
+  // The stage says what became of Closes, because the control is in the
+  // drawer and the half is on the stage.
+  const setGroup = (group) => {
+    if (historyBusy()) return;
+    const seq = editorState.current;
+    const had = Array.isArray(seq.closeSteps) && seq.closeSteps.length > 0;
+    const started = group !== "none" && !had ? startedCloseHalf() : null;
+    if (group !== "none" && !had && !started) {
+      sayOnStage("The spacing between moves did not load. Reload the page to try again.", "error");
+      return;
+    }
+    const before = historyBegin();
+    if (started) seq.closeSteps = started;
+    if (group === "none") {
+      if (editorState.original && "closeSteps" in editorState.original) seq.closeSteps = [];
+      else delete seq.closeSteps;
+    }
+    seq.toggleGroup = group;
+    historyCommit(before);
+    paintAuthoredHeader();
+    edited();
+    if (started) {
+      const closes = started.length - 1;
+      sayOnStage(closes === 0
+        ? "Closes started: Opens leaves nothing open, so it only ends."
+        : `Closes started: ${countOf(closes, "part closes", "parts close")}, one at a time.`);
+    } else if (group === "none" && had) {
+      sayOnStage("Closes is gone. Undo brings it back.");
+    }
+  };
+
   // The controls that show something the history holds: the tempo on the
   // ruler and the interrupt group in the drawer. Painted by the edit that
   // changes one and by an undo.
@@ -4106,6 +4188,8 @@
     const kept = JSON.parse(snapshot);
     const moved = (key) => JSON.stringify(kept[key]) !== JSON.stringify(editorState.current[key]);
     if (moved("steps") !== moved("closeSteps")) editorState.half = moved("steps") ? "opens" : "closes";
+    // What the stage last said was said of the edit now taken back.
+    sayOnStage("");
     HISTORY_FIELDS.forEach((key) => {
       if (kept[key] === undefined) delete editorState.current[key];
       else editorState.current[key] = kept[key];
@@ -4694,13 +4778,7 @@
     if (toggleSelect) {
       // A joined bar of the four groups: the pressed one is the group.
       toggleSelect.querySelectorAll("button").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const before = historyBegin();
-          editorState.current.toggleGroup = btn.dataset.value;
-          historyCommit(before);
-          paintAuthoredHeader();
-          edited();
-        });
+        btn.addEventListener("click", () => setGroup(btn.dataset.value));
       });
     }
 
