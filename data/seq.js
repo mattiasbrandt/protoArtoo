@@ -1001,7 +1001,11 @@
   // alike. A loop is one object: removing it takes the steps it repeats,
   // removing one of those shortens it, and a loop left repeating nothing goes
   // too - otherwise it would reach for the step after it.
-  const removeSteps = (indices) => {
+  //
+  // It is one entry on the history. `within` says the removal is part of an
+  // edit that is already one (historyBegin()), which then records it and
+  // draws the routine again itself.
+  const removeSteps = (indices, within = false) => {
     const steps = editorState.current.steps;
     const gone = new Set(indices);
     const shorter = [];
@@ -1017,7 +1021,7 @@
       else if (left < members.length) shorter.push([steps[unit.at], left]);
     });
     if (gone.size === 0) return;
-    historyPush();
+    if (!within) historyPush();
     shorter.forEach(([loop, left]) => {
       loop.body = left;
     });
@@ -1028,6 +1032,7 @@
       [...editorState.expanded]
         .filter((index) => !gone.has(index))
         .map((index) => index - removed.filter((at) => at < index).length));
+    if (within) return;
     rerenderStepTable();
     edited();
   };
@@ -1320,16 +1325,15 @@
 
   // RUNS FOR, OPENS TO (BRIGHTNESS on a body light) and MOTION, for a dome
   // panel and a body Part alike.
-  // A close is one choice. A flutter owes a later close (Protocol Check), so
-  // it is offered where one already follows - on a pair, which keeps that
-  // close - and on the flutter itself.
+  // A close is one choice. An open may be a flutter instead, pair or not: a
+  // flutter ends closed and owes nothing after it (ADR 0049, amended
+  // 2026-10-02). RUNS FOR is the block's length: a pair's span from its open
+  // to its close, a body flutter's own length.
   const moveRows = (step, at, move) => {
     const { words } = move;
     if (move.shape === "close") return settingRow("Motion", segOf("motion", [["close", words.close]], "close", "Motion"));
     const pair = sessionTimeline?.standing(at) || null;
-    const flutter = move.shape === "flutter";
-    const motion = settingRow("Motion", segOf("motion",
-      [["open", words.open], ...(pair || flutter ? [["flutter", words.flutter]] : [])], move.shape, "Motion"));
+    const motion = settingRow("Motion", segOf("motion", [["open", words.open], ["flutter", words.flutter]], move.shape, "Motion"));
     if (!move.settles) return motion;
     const far = step.howFar ?? STEP_LIMITS.howFar[1];
     // How far is the one stored `howFar`, said by Part Kind as the Move Shape
@@ -1337,9 +1341,10 @@
     const howFar = move.light
       ? settingRow("Brightness", faderOf("howFar", far, STEP_LIMITS.howFar, "Brightness, percent of full"), `${far}%`)
       : settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`);
-    return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
-      + howFar
-      + motion;
+    const runsFor = move.shape === "flutter"
+      ? settingRow("Runs for", numberCell("flutterMs", step.flutterMs ?? "", SeqProtocolCheck.BODY_FLUTTER_MS, "Runs for, in milliseconds"))
+      : pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "";
+    return runsFor + howFar + motion;
   };
 
   // Whether the Part's first move is a jump: an Output claims it and nobody
@@ -1624,6 +1629,57 @@
     [...pane.querySelectorAll(`[data-picked="${had.picked}"]`)].find((control) => control.dataset.value === had.value)?.focus();
   };
 
+  // The pair an open is the start of, as the timeline draws it
+  // (sessionTimeline.standing()): the step that closes the Part and how long
+  // the pair runs, or null.
+  const pairOf = (step) => sessionTimeline?.standing(editorState.current.steps.indexOf(step)) || null;
+
+  // The step that closes what `step` moves, and nothing else: a Body Step
+  // that closes the same Part, or the same panel command with close for its
+  // word. A group close (:CL00) over a single panel's open is not that - it
+  // closes other panels too.
+  const closeFor = (step) => (step.type === "body"
+    ? { type: "body", part: step.part, shape: "close" }
+    : { type: "dome", cmd: step.cmd.replace(/^:(OP|OF)/, ":CL") });
+  const closesOnly = (step, other) => {
+    const close = closeFor(step);
+    return Boolean(other) && other.type === close.type
+      && (close.type === "body" ? other.part === close.part && other.shape === "close" : other.cmd === close.cmd);
+  };
+
+  // Turned into a flutter, an open's pair loses its close, inside the edit
+  // that is already on the history (writePicked()). A close that closes more
+  // than this Part stays.
+  const dropPairClose = (step, pair) => {
+    if (closesOnly(step, editorState.current.steps[pair.close])) removeSteps([pair.close], true);
+  };
+
+  // Turned back into an open, a flutter is a pair again: a close of the same
+  // Part `ms` after the open, never past the end step - or, among the steps a
+  // loop repeats, past the loop's pass. It lands before the end step, or
+  // beside its open where a loop repeats that, which then repeats both.
+  //
+  // Where the next step to move the Part already is that close, none is
+  // added: a sequence saved while a flutter still owed a close has one after
+  // every flutter, and the open takes it for its pair.
+  const addPairClose = (step, ms) => {
+    const steps = editorState.current.steps;
+    const at = steps.indexOf(step);
+    const moves = (other) => Boolean(other) && (step.type === "body"
+      ? other.type === "body" && other.part === step.part
+      : panelIntent(other)?.[2] === panelIntent(step)[2]);
+    if (closesOnly(step, steps.slice(at + 1).find(moves))) return;
+    const run = SeqProtocolCheck.resolveBeats(editorState.current).steps;
+    const loop = loopRepeating(steps, at);
+    const endAt = steps.findIndex((each) => each?.type === "end");
+    const outer = !loop && endAt !== -1 && at < endAt;
+    const last = loop ? Math.max(0, (Number(steps[loop.at].periodMs) || 0) - 1)
+      : outer ? Number(run[endAt].t) || 0 : STEP_LIMITS.t[1];
+    const close = { t: Math.min((Number(run[at].t) || 0) + ms, last), ...closeFor(step) };
+    if (loop) steps[loop.at].body += 1;
+    steps.splice(outer ? endAt : at + 1, 0, close);
+  };
+
   // One field of the picked step, written. `raw` is the control's own value.
   const PICKED_NUMBERS = ["moveMs", "jitterMs", "periodMs", "durationMs"];
   const writePicked = (step, field, raw, way = null) => {
@@ -1660,24 +1716,48 @@
       step.name = choice.label;
     } else if (field === "motion" && step.type === "body") {
       // A body flutter has a length of its own: turned into one, the open
-      // lasts the pair, within a flutter's bounds, and the close it owes
-      // stays. Turned back, it is an open again, stored as absence, and an
-      // open has no length to keep in ms or in beats.
+      // lasts what its pair ran for, or as long as a dropped Part stands
+      // open, within a flutter's bounds. The pair's close goes in the same
+      // edit: a flutter ends closed. Turned back, it is an open again, stored
+      // as absence, with a close where the flutter ended, and an open has no
+      // length to keep in ms or in beats.
       if (raw === "flutter" && step.shape !== "flutter") {
         const [least, most] = SeqProtocolCheck.BODY_FLUTTER_MS;
-        const pair = sessionTimeline?.standing(editorState.current.steps.indexOf(step));
+        const pair = pairOf(step);
         step.shape = "flutter";
-        step.flutterMs = Math.max(least, Math.min(most, Math.round(pair ? pair.ms : least)));
-      } else if (raw === "open") {
+        step.flutterMs = Math.max(least, Math.min(most, Math.round(pair ? pair.ms : DROPPED_OPEN_MS)));
+        if (pair) dropPairClose(step, pair);
+      } else if (raw === "open" && step.shape === "flutter") {
+        const lasted = Number(SeqProtocolCheck.resolveBeats(editorState.current).steps[editorState.current.steps.indexOf(step)].flutterMs);
         delete step.shape;
         delete step.flutterMs;
         delete step.spanBeats;
+        addPairClose(step, lasted > 0 ? lasted : DROPPED_OPEN_MS);
       }
+    } else if (field === "flutterMs") {
+      // A body flutter's own length, within its bounds. One typed over a
+      // span of beats is a millisecond instead (ADR 0058).
+      if (!Number.isInteger(number)) return;
+      const [least, most] = SeqProtocolCheck.BODY_FLUTTER_MS;
+      const lasts = Math.max(least, Math.min(most, number));
+      if (lasts !== step.flutterMs) delete step.spanBeats;
+      step.flutterMs = lasts;
     } else if (field === "motion") {
       // Open and Flutter are the one step's command, at the same time. Only
-      // an open or a close says how far (Protocol Check).
-      step.cmd = step.cmd.replace(/^:(OP|OF)/, raw === "flutter" ? ":OF" : ":OP");
-      if (raw === "flutter") delete step.howFar;
+      // an open or a close says how far (Protocol Check). The dome ends a
+      // flutter closed, so the pair's close goes with the open, and comes
+      // back with it: a dome flutter has no length the body knows, so the
+      // close lands as long after as a dropped panel's does.
+      const shape = PANEL_SHAPES[panelIntent(step)?.[1]];
+      if (raw === "flutter" && shape === "open") {
+        const pair = pairOf(step);
+        step.cmd = step.cmd.replace(/^:OP/, ":OF");
+        delete step.howFar;
+        if (pair) dropPairClose(step, pair);
+      } else if (raw === "open" && shape === "flutter") {
+        step.cmd = step.cmd.replace(/^:OF/, ":OP");
+        addPairClose(step, DROPPED_OPEN_MS);
+      }
     } else if (field === "way") {
       Object.assign(step, turnOf(raw, step.speedPct, step.durationMs));
     } else if (field === "speed") {
@@ -1732,17 +1812,18 @@
     } else {
       const before = historyBegin();
       writePicked(step, field, raw);
+      // A Move Shape changed can add a close or take one away, and the close
+      // it adds goes in time order with the rest.
+      if (field === "motion") orderSteps();
       historyCommit(before);
       rerenderStepTable();
       edited();
-      // The blocks a step draws change with its Move Shape: a dome panel's
-      // flutter is its own block and leaves the close it owes as another, and
-      // an open takes that close back as the end of the one block it then is.
-      // A body flutter has a length, so it and its close stay the one block
-      // (data/seq_timeline.js closeAt()).
+      // The blocks a step draws change with its Move Shape: a flutter is its
+      // own block, and an open is one block with the close after it.
       if (field === "motion") {
-        const pair = raw === "open" || step.type === "body" ? sessionTimeline.standing(at) : null;
-        sessionTimeline.pick(pair ? [at, pair.close] : [at]);
+        const now = editorState.current.steps.indexOf(step);
+        const pair = raw === "open" ? sessionTimeline.standing(now) : null;
+        sessionTimeline.pick(pair ? [now, pair.close] : [now]);
       }
     }
     repaintPicked();
@@ -2144,14 +2225,16 @@
   // the droid is hand-written after this, and keeps the timing written here
   // (CONTEXT.md "Cadence Floor").
   //
-  // Tried on a copy first. If it would leave a step Protocol Check refuses -
-  // a flutter that owed its close to a close Gesture now owes a close of its
-  // own Part - nothing lands, and the stage says Protocol Check's reason.
+  // A flutter Gesture's members each flutter for the length it states, or for
+  // one step of its pace where it states none (seqGestureFlutterMs(),
+  // include/sequence_gesture.h). A written flutter must state its length, so
+  // each step made states that one.
   //
-  // Three things are refused before that, each in words that say what to do,
+  // Tried on a copy first. If it would leave a step Protocol Check refuses,
+  // nothing lands, and the stage says Protocol Check's reason.
+  //
+  // Two things are refused before that, each in words that say what to do,
   // and whatever else the routine has wrong:
-  //   - a flutter Gesture that states no length: a written flutter must
-  //     state one, and the Gesture has none to hand on;
   //   - more steps than a sequence holds: a Gesture that repeats can make
   //     thousands of moves;
   //   - inside a loop, a move at or past the end of the loop's pass, where a
@@ -2168,12 +2251,9 @@
     const endAt = steps.findIndex((each) => each?.type === "end");
     const last = loop || endAt === -1 ? Infinity : Number(steps[endAt].t) || 0;
     const moves = G.bodyMoves(run, Number(run.t) || 0).filter((move) => move.t < last);
+    const flutterMs = Number(run.flutterMs) || Number(run.stepMs) || G.STEP_DEFAULT_MS;
     if (moves.length === 0) {
       sayOnStage("This gesture makes no move before the end.", "error");
-      return;
-    }
-    if (moves.some((move) => move.shape === "flutter") && !step.flutterMs) {
-      sayOnStage("Set how long it flutters (Lasts) before splitting.", "error");
       return;
     }
     if (splitOverfull(moves.length)) return;
@@ -2188,7 +2268,7 @@
       part: move.part,
       ...(move.shape === "open" ? {} : { shape: move.shape }),
       ...(step.howFar === undefined ? {} : { howFar: step.howFar }),
-      ...(move.shape === "flutter" && step.flutterMs !== undefined ? { flutterMs: step.flutterMs } : {}),
+      ...(move.shape === "flutter" ? { flutterMs } : {}),
     }));
     const place = splitPlace(loop, at);
     if (splitRefused(write, place)) return;
@@ -2237,8 +2317,8 @@
   //
   // More steps than a sequence holds is refused first (splitOverfull()). Then
   // it is tried on a copy (splitRefused()): a result Protocol Check refuses -
-  // a sequence that would land inside a loop, a flutter left without its
-  // close - lands nothing, and the stage says Protocol Check's reason.
+  // a sequence that would land inside a loop - lands nothing, and the stage
+  // says Protocol Check's reason.
   const splitPhrase = () => {
     const picked = pickedStep();
     if (!picked || picked.step.type !== "sequence" || historyBusy()) return;
