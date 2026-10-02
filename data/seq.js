@@ -318,122 +318,19 @@
   const audioFallbackLabel = (value) =>
     (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";
 
-  // Map DV: preset names to friendly operator labels
-  const dvPresetLabel = (name) => {
-    const labels = {
-      "ROCKMARCH": "Rock March",
-      "VADER": "Vader",
-      "ALARM": "Alarm",
-      "LEIA": "Leia",
-      "HEART": "Heart",
-      "CANTINA": "Cantina",
-      "SCREAM": "Scream",
-      "OVERLOAD": "Overload",
-      "HELLO": "Hello",
-      "RESET_VISUALS": "Reset Visuals",
-    };
-    return labels[name] || name || "Unknown";
-  };
-
-  // Map DL: targets to friendly operator labels
-  const dlTargetLabel = (target) => {
-    const labels = {
-      "FLD": "Front logic",
-      "RLD": "Rear logic",
-      "LOGIC": "Both logic",
-      "FPSI": "Front PSI",
-      "RPSI": "Rear PSI",
-      "PSI": "Both PSI",
-      "ALL": "All logic + PSI",
-    };
-    return labels[target] || target || "Unknown";
-  };
-
-  // Map DL: modes to friendly operator labels
-  const dlModeLabel = (mode) => {
-    const labels = {
-      "NORMAL": "Normal",
-      "ALARM": "Alarm",
-      "FAILURE": "Failure",
-      "LEIA": "Leia",
-      "MARCH": "March",
-      "FLASHCOLOR": "Flash Color",
-      "REDALERT": "Red Alert",
-      "RAINBOW": "Rainbow",
-      "LIGHTSOUT": "Lights Out",
-    };
-    return labels[mode] || mode || "Unknown";
-  };
-
-  // Map DL: colors to friendly operator labels
-  const dlColorLabel = (color) => {
-    const labels = {
-      "DEFAULT": "Default",
-      "RED": "Red",
-      "BLUE": "Blue",
-      "GREEN": "Green",
-      "WHITE": "White",
-      "YELLOW": "Yellow",
-      "ORANGE": "Orange",
-      "PURPLE": "Purple",
-    };
-    return labels[color] || color || "Default";
-  };
-
-  // Map DT: targets to friendly operator labels
-  const dtTargetLabel = (target) => {
-    const labels = {
-      "FLD": "Front display",
-      "RLD": "Rear display",
-      "LOGIC": "Both displays",
-    };
-    return labels[target] || target || "Unknown";
-  };
-
-  // Map DH: targets to friendly operator labels
-  const dhTargetLabel = (target) => {
-    const labels = {
-      "F": "Front holo",
-      "R": "Rear holo",
-      "T": "Top holo",
-      "A": "All holos",
-    };
-    return labels[target] || target || "Unknown";
-  };
-
-  // Map DH: effects to friendly operator labels
-  const dhEffectLabel = (effect) => {
-    const labels = {
-      "OFF": "Off",
-      "ON": "On",
-      "RESET": "Reset",
-      "RANDOM": "Random",
-      "WAG": "Wag",
-      "NOD": "Nod",
-      "PULSE": "Pulse",
-      "RAINBOW": "Rainbow",
-      "FLASH": "Flash",
-      "SHORTCIRCUIT": "Short Circuit",
-      "SOLID": "Solid",
-    };
-    return labels[effect] || effect || "Unknown";
-  };
-
-  // Map DH: colors to friendly operator labels (same as DL:)
-  const dhColorLabel = (color) => {
-    const labels = {
-      "DEFAULT": "Default",
-      "RED": "Red",
-      "BLUE": "Blue",
-      "GREEN": "Green",
-      "WHITE": "White",
-      "YELLOW": "Yellow",
-      "ORANGE": "Orange",
-      "PURPLE": "Purple",
-      "RANDOM": "Random",
-    };
-    return labels[color] || color || "Default";
-  };
+  // The dome's light vocabulary and the words for it are Protocol Check's
+  // (data/seq_protocol_check.js domeLights): this page keeps no label of its
+  // own. `lightWord` is a token as a builder reads it, in one of the
+  // vocabulary's groups.
+  const domeLights = SeqProtocolCheck.domeLights;
+  const lightWord = (group, token) => domeLights.label(group, token) || "Unknown";
+  // A group's tokens as the <option>s of a step card's picker, `current`
+  // chosen. A target is shown with its token after it, as the dome spells it.
+  const lightOptions = (group, tokens, current, withToken = false) =>
+    tokens
+      .map((token) =>
+        `<option value="${token}" ${token === current ? "selected" : ""}>${window.PAUtils.escapeHtml(lightWord(group, token))}${withToken ? ` (${token})` : ""}</option>`)
+      .join("");
 
   const els = {
     // List view
@@ -1774,7 +1671,7 @@
         // Visual preset mode
         if (cmd.startsWith("DV:")) {
           const presetName = cmd.slice(3);
-          return `Visual preset: ${dvPresetLabel(presetName)}`;
+          return `Visual preset: ${lightWord("presets", presetName)}`;
         }
         // Logic/PSI mode
         if (cmd.startsWith("DL:")) {
@@ -1784,9 +1681,9 @@
             const mode = parts[2];
             const color = parts[3] || "";
             const duration = parts[4] || "";
-            let preview = `${dlTargetLabel(target)}: ${dlModeLabel(mode)}`;
+            let preview = `${lightWord("targets", target)}: ${lightWord("modes", mode)}`;
             if (color && color !== "DEFAULT") {
-              preview += `, ${dlColorLabel(color)}`;
+              preview += `, ${lightWord("colors", color)}`;
             }
             if (duration) {
               preview += `, ${duration}s`;
@@ -1813,7 +1710,7 @@
             }
             // Render newline visibly for preview
             const displayText = decodedText.replace(/\n/g, " / ");
-            return `${dtTargetLabel(target)} text: "${displayText}"`;
+            return `${lightWord("textTargets", target)} text: "${displayText}"`;
           }
           return `Logic text: ${cmd.slice(3)}`;
         }
@@ -1825,9 +1722,9 @@
             const effect = parts[2];
             const color = parts[3] || "";
             const durationOrCount = parts[4] || "";
-            let preview = `${dhTargetLabel(target)}: ${dhEffectLabel(effect)}`;
+            let preview = `${lightWord("holoTargets", target)}: ${lightWord("holoEffects", effect)}`;
             if (color && color !== "DEFAULT") {
-              preview += `, ${dhColorLabel(color)}`;
+              preview += `, ${lightWord("holoColors", color)}`;
             }
             if (durationOrCount) {
               preview += `, ${durationOrCount}`;
@@ -2305,8 +2202,8 @@
         if (cmd.startsWith("DL:")) {
           const parts = cmd.split(":");
           if (parts.length >= 3) {
-            const target = dlTargetLabel(parts[1]);
-            const mode = dlModeLabel(parts[2]);
+            const target = lightWord("targets", parts[1]);
+            const mode = lightWord("modes", parts[2]);
             return `Sets ${target} to ${mode}`;
           }
           return "Sets logic/PSI mood";
@@ -2387,12 +2284,7 @@
           const presetName = (step.cmd || "").slice(3); // Extract from "DV:NAME"
           behaviorHtml = `
             <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
-              ${["ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA", "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS"]
-                .map(
-                  (preset) =>
-                    `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${window.PAUtils.escapeHtml(dvPresetLabel(preset))}</option>`
-                )
-                .join("")}
+              ${lightOptions("presets", domeLights.presets, presetName)}
             </select>
             <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
             <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to advanced mode">Advanced</button>
@@ -2409,37 +2301,16 @@
 
           targetHtml = `
             <select class="step-field dl-target-select" data-field="target" aria-label="Target">
-              <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front logic (FLD)</option>
-              <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear logic (RLD)</option>
-              <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both logic (LOGIC)</option>
-              <option value="FPSI" ${target === "FPSI" ? "selected" : ""}>Front PSI (FPSI)</option>
-              <option value="RPSI" ${target === "RPSI" ? "selected" : ""}>Rear PSI (RPSI)</option>
-              <option value="PSI" ${target === "PSI" ? "selected" : ""}>Both PSI (PSI)</option>
-              <option value="ALL" ${target === "ALL" ? "selected" : ""}>All logic + PSI (ALL)</option>
+              ${lightOptions("targets", domeLights.targets, target, true)}
             </select>
           `;
 
           behaviorHtml = `
             <select class="step-field dl-mode-select" data-field="mode" aria-label="Mode">
-              <option value="NORMAL" ${mode === "NORMAL" ? "selected" : ""}>Normal</option>
-              <option value="ALARM" ${mode === "ALARM" ? "selected" : ""}>Alarm</option>
-              <option value="FAILURE" ${mode === "FAILURE" ? "selected" : ""}>Failure</option>
-              <option value="LEIA" ${mode === "LEIA" ? "selected" : ""}>Leia</option>
-              <option value="MARCH" ${mode === "MARCH" ? "selected" : ""}>March</option>
-              <option value="FLASHCOLOR" ${mode === "FLASHCOLOR" ? "selected" : ""}>Flash Color</option>
-              <option value="REDALERT" ${mode === "REDALERT" ? "selected" : ""}>Red Alert</option>
-              <option value="RAINBOW" ${mode === "RAINBOW" ? "selected" : ""}>Rainbow</option>
-              <option value="LIGHTSOUT" ${mode === "LIGHTSOUT" ? "selected" : ""}>Lights Out</option>
+              ${lightOptions("modes", domeLights.modes, mode)}
             </select>
             <select class="step-field dl-color-select" data-field="color" aria-label="Color">
-              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+              ${lightOptions("colors", domeLights.colors, color)}
             </select>
           `;
 
@@ -2470,22 +2341,13 @@
 
           targetHtml = `
             <select class="step-field dt-target-select" data-field="target" aria-label="Target">
-              <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front display (FLD)</option>
-              <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear display (RLD)</option>
-              <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both displays (LOGIC)</option>
+              ${lightOptions("textTargets", domeLights.textTargets, target, true)}
             </select>
           `;
 
           behaviorHtml = `
             <select class="step-field dt-color-select" data-field="color" aria-label="Color">
-              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+              ${lightOptions("textColors", domeLights.textColors, color)}
             </select>
             <textarea class="step-field dt-text-input" data-field="text" placeholder="Enter text (max 32 chars, one line break allowed)" aria-label="Display text">${window.PAUtils.escapeHtml(decodedText)}</textarea>
           `;
@@ -2511,37 +2373,16 @@
 
           targetHtml = `
             <select class="step-field dh-target-select" data-field="target" aria-label="Target">
-              <option value="F" ${target === "F" ? "selected" : ""}>Front holo (F)</option>
-              <option value="R" ${target === "R" ? "selected" : ""}>Rear holo (R)</option>
-              <option value="T" ${target === "T" ? "selected" : ""}>Top holo (T)</option>
-              <option value="A" ${target === "A" ? "selected" : ""}>All holos (A)</option>
+              ${lightOptions("holoTargets", domeLights.holoTargets, target, true)}
             </select>
           `;
 
           behaviorHtml = `
             <select class="step-field dh-effect-select" data-field="effect" aria-label="Effect">
-              <option value="OFF" ${effect === "OFF" ? "selected" : ""}>Off</option>
-              <option value="ON" ${effect === "ON" ? "selected" : ""}>On</option>
-              <option value="RESET" ${effect === "RESET" ? "selected" : ""}>Reset</option>
-              <option value="RANDOM" ${effect === "RANDOM" ? "selected" : ""}>Random</option>
-              <option value="WAG" ${effect === "WAG" ? "selected" : ""}>Wag</option>
-              <option value="NOD" ${effect === "NOD" ? "selected" : ""}>Nod</option>
-              <option value="PULSE" ${effect === "PULSE" ? "selected" : ""}>Pulse</option>
-              <option value="RAINBOW" ${effect === "RAINBOW" ? "selected" : ""}>Rainbow</option>
-              <option value="FLASH" ${effect === "FLASH" ? "selected" : ""}>Flash</option>
-              <option value="SHORTCIRCUIT" ${effect === "SHORTCIRCUIT" ? "selected" : ""}>Short Circuit</option>
-              <option value="SOLID" ${effect === "SOLID" ? "selected" : ""}>Solid</option>
+              ${lightOptions("holoEffects", domeLights.holoEffects, effect)}
             </select>
             <select class="step-field dh-color-select" data-field="color" aria-label="Color">
-              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
-              <option value="RANDOM" ${color === "RANDOM" ? "selected" : ""}>Random</option>
+              ${lightOptions("holoColors", domeLights.holoColors, color)}
             </select>
           `;
 

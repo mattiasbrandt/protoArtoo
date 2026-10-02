@@ -181,11 +181,17 @@
 
   // The dome controller's own light vocabulary, with the words a builder reads.
   // The tokens are the ones src/protocol_check.cpp validates, above; the labels
-  // are the ones data/seq.js shows when a builder authors a step. Published
-  // because Lights offers the same modes and colors as a live control (#410,
-  // ADR 0067), and two surfaces naming one mode two things is the drift ADR
-  // 0045 exists to stop. data/seq.js still carries its own copy of these
-  // labels: it is the next reader to point here.
+  // are the ones a builder reads when authoring a step. Published because
+  // Lights offers the same modes and colors as a live control (#410, ADR
+  // 0067), and two surfaces naming one mode two things is the drift ADR 0045
+  // exists to stop. This is the one copy: data/seq.js reads every label it
+  // shows from here - a step's words, the step list's pickers and the Picked
+  // block tab (#441) - and data/lights.js reads the logic and PSI groups.
+  //
+  // A group is named for the tokens it labels: the logic and PSI groups
+  // (targets, modes, colors) are DL:'s, the text groups DT:'s, the holo groups
+  // DH:'s. `holoSides` is a holo target as a choice under a row already named
+  // Holo, where "Front holo" would say the row's name twice.
   const DOME_LIGHT_LABELS = {
     targets: {
       FLD: "Front logic", RLD: "Rear logic", LOGIC: "Both logic",
@@ -201,7 +207,37 @@
       DEFAULT: "Default", RED: "Red", BLUE: "Blue", GREEN: "Green",
       WHITE: "White", YELLOW: "Yellow", ORANGE: "Orange", PURPLE: "Purple",
     },
+    presets: {
+      ROCKMARCH: "Rock March", VADER: "Vader", ALARM: "Alarm", LEIA: "Leia",
+      HEART: "Heart", CANTINA: "Cantina", SCREAM: "Scream",
+      OVERLOAD: "Overload", HELLO: "Hello", RESET_VISUALS: "Reset Visuals",
+    },
+    textTargets: {
+      FLD: "Front display", RLD: "Rear display", LOGIC: "Both displays",
+    },
+    textColors: {
+      DEFAULT: "Default", RED: "Red", BLUE: "Blue", GREEN: "Green",
+      WHITE: "White", YELLOW: "Yellow", ORANGE: "Orange", PURPLE: "Purple",
+    },
+    holoTargets: {
+      F: "Front holo", R: "Rear holo", T: "Top holo", A: "All holos",
+    },
+    holoSides: {
+      F: "Front", R: "Rear", T: "Top", A: "All",
+    },
+    holoEffects: {
+      OFF: "Off", ON: "On", RESET: "Reset", RANDOM: "Random", WAG: "Wag",
+      NOD: "Nod", PULSE: "Pulse", RAINBOW: "Rainbow", FLASH: "Flash",
+      SHORTCIRCUIT: "Short Circuit", SOLID: "Solid",
+    },
+    holoColors: {
+      DEFAULT: "Default", RED: "Red", BLUE: "Blue", GREEN: "Green",
+      WHITE: "White", YELLOW: "Yellow", ORANGE: "Orange", PURPLE: "Purple",
+      RANDOM: "Random",
+    },
   };
+
+  const frozenList = (tokens) => Object.freeze(Array.from(tokens));
 
   const SeqProtocolCheck = {
     // The most steps a sequence may hold: PC_MAX_STEPS (include/protocol_check.h).
@@ -212,11 +248,25 @@
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a
      * caller cannot edit the vocabulary it was handed.
+     *
+     * `targets`, `modes` and `colors` are a logic or PSI mode's (DL:);
+     * `presets` a visual preset's (DV:); `textTargets` and `textColors` a
+     * logic text's (DT:); `holoTargets`, `holoEffects` and `holoColors` a holo
+     * effect's (DH:). `holoRules` says, for each holo effect, the colors it
+     * takes and whether it takes a duration or count: "none" or "range".
      */
     domeLights: Object.freeze({
-      targets: Object.freeze(Array.from(DL_TARGETS)),
-      modes: Object.freeze(Array.from(DL_MODES)),
-      colors: Object.freeze(Array.from(DL_COLORS)),
+      targets: frozenList(DL_TARGETS),
+      modes: frozenList(DL_MODES),
+      colors: frozenList(DL_COLORS),
+      presets: frozenList(DV_PRESETS),
+      textTargets: frozenList(DT_TARGETS),
+      textColors: frozenList(DT_COLORS),
+      holoTargets: frozenList(DH_TARGETS),
+      holoEffects: frozenList(DH_EFFECTS),
+      holoColors: frozenList(DH_COLORS),
+      holoRules: Object.freeze(Object.fromEntries(Object.entries(DH_EFFECT_RULES).map(([effect, rule]) =>
+        [effect, Object.freeze({ colors: frozenList(rule.colors), duration: rule.duration })]))),
       label: (group, token) => DOME_LIGHT_LABELS[group]?.[token] || token || "",
     }),
 
