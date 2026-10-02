@@ -42,14 +42,23 @@
 // Rehearsal's dome-timing Gap -- so a panel move is drawn as the instant it is
 // sent and never as though its time were measured.
 //
-// NO BEAT GRID YET. A grid comes only from a tempo stored on the sequence
-// (ADR 0058: the optional `tempo` block at format 1, include/seq_tempo.h),
-// and it is not drawn yet (#441). What this view does read is where the droid
-// runs each step: a step placed on a beat is drawn at the millisecond its beat
-// resolves to (data/seq_protocol_check.js resolveBeats()), the same resolution
-// the firmware makes at parse. The view never infers a tempo from step spacing
-// and never holds one of its own (ADR 0062). A drag sets a millisecond, so a
-// step dragged off its beat leaves it, as a time typed over a beat does.
+// THE BEAT GRID comes only from a tempo stored on the sequence (ADR 0058: the
+// optional `tempo` block at format 1, include/seq_tempo.h). With one, a Bars
+// row under the seconds shows every beat where the droid counts it and
+// numbers the bars from the builder's downbeat (data/seq_tempo.js bars(), the
+// reading the beat picker beside the routine uses), and the beats are places
+// a drag can land (#441, ADR 0060). A step is drawn where the droid runs it:
+// one placed on a beat at the millisecond its beat resolves to
+// (data/seq_protocol_check.js resolveBeats()), the same resolution the
+// firmware makes at parse. The view never infers a tempo from step spacing
+// and never holds one of its own (ADR 0062).
+//
+// A drag sets a millisecond, so a step dragged off its beat leaves it, as a
+// time typed over a beat does - unless the drag lands on a beat. Then the
+// step that starts there is placed on that beat, not at its millisecond, and
+// follows the tempo from then on; and an edge that lands on one gives the
+// step its length in beats, where the step can keep one and starts on a beat
+// itself (onBeats()).
 //
 // WHAT THE END DOES is the engine's, not a guess at it (src/tasks/
 // sequence_engine.cpp beginFinish()): ring panels the run left open close one
@@ -113,6 +122,19 @@
       .replace(/"/g, "&quot;");
 
   const seconds = (ms) => `${(ms / 1000).toFixed(2)} s`;
+
+  // The beats of a stored tempo up to `untilMs`, each with where the droid
+  // counts it: {index, bar, beat, strong, t}. The bars and their numbers are
+  // data/seq_tempo.js bars(), and the millisecond is Protocol Check's
+  // tempoBeatMs(), which a step placed on that beat resolves to. None without
+  // a tempo the droid would accept.
+  const beatsOf = (tempo, untilMs) => {
+    const check = window.SeqProtocolCheck;
+    if (!tempo || !window.SeqTempo || !check?.tempoBeatMs) return [];
+    return window.SeqTempo.bars(tempo, untilMs)
+      .flatMap((bar) => bar.beats.map((beat) => ({ ...beat, t: check.tempoBeatMs(tempo, beat.index) })))
+      .filter((beat) => beat.t <= untilMs);
+  };
 
   // ---------------------------------------------------------------------------
   // The catalog: every lane is a Part from data/droid_parts.js.
@@ -740,6 +762,24 @@
     return html;
   };
 
+  // The Bars row under the seconds: a line at every beat, and the bar's
+  // number at its first. A pickup has no number. Where the beats would stand
+  // closer than a line can be told from the next - a fast tempo over a long
+  // routine, at the scale the lanes are never drawn below - only the bars'
+  // first beats are drawn.
+  const BEAT_MIN_PX = 6;
+  const barsRowHtml = (beats, windowMs) => {
+    if (beats.length === 0) return "";
+    const gapMs = beats.length > 1 ? beats[1].t - beats[0].t : Infinity;
+    const every = (gapMs / 1000) * PX_PER_SECOND >= BEAT_MIN_PX;
+    const marks = beats
+      .filter((beat) => every || beat.strong)
+      .map((beat) =>
+        `<span class="tl-beat${beat.strong ? " is-bar" : ""}" style="left:${pct(beat.t, windowMs)}">${beat.strong && beat.bar > 0 ? beat.bar : ""}</span>`)
+      .join("");
+    return `<div class="tl-row tl-bars-row"><div class="tl-name">Bars</div><div class="tl-track tl-bars" aria-hidden="true">${marks}</div></div>`;
+  };
+
   // A lane's items in the order they are drawn, the last on top. A Part
   // standing open (`open`, `left`) is listed when it closes, or at the end,
   // which is after every block that starts while it stands; drawn in that
@@ -796,8 +836,9 @@
   //             knows which they are.
   //
   // Returns {refresh(context), at(), dragging(), cancel(), picked(),
-  // pick(indices), movePickedTo(ms), removePicked(), aim(point, isEnd),
-  // standing(index), sizeStanding(index, ms), say(answer), destroy()}.
+  // pick(indices), movePickedTo(ms, landed), removePicked(), aim(point, isEnd),
+  // beatAt(ms), standing(index), sizeStanding(index, ms), say(answer),
+  // destroy()}.
   // ---------------------------------------------------------------------------
   const mount = (hosts, source, options = {}) => {
     const seqNow = typeof source === "function" ? source : () => source;
@@ -805,6 +846,8 @@
     let context = { ...(options.context || {}), describe: options.describe };
     let model = build(seqNow(), context);
     let windowMs = model.windowMs;
+    // The stored tempo's beats on screen, read again whenever the routine is.
+    let beats = beatsOf(seqNow()?.tempo, windowMs);
     let authored = true;
     let t = 0;
     let ruler = null;
@@ -957,6 +1000,7 @@
         `<div class="tl-row tl-ruler-row"><div class="tl-name">Time</div>` +
         `<div class="tl-track tl-ruler" role="slider" tabindex="0" aria-label="Moment" ` +
         `aria-valuemin="0" aria-valuemax="${Math.round(windowMs)}">${rulerHtml(windowMs)}</div></div>` +
+        barsRowHtml(beats, windowMs) +
         loopLane +
         model.parts.map((lane) => laneHtml(lane, windowMs, authored, dim.has(lane.part), handleOf)).join("") +
         model.rows.map((row) => laneHtml(row, windowMs, authored, false, handleOf)).join("") +
@@ -1023,6 +1067,7 @@
     const redraw = () => {
       model = build(seqNow(), context);
       windowMs = drag ? drag.windowMs : model.windowMs;
+      beats = beatsOf(seqNow().tempo, windowMs);
       const steps = new Set(seqNow().steps);
       [...selection].forEach((step) => {
         if (!steps.has(step)) selection.delete(step);
@@ -1153,15 +1198,59 @@
       });
     };
 
-    // Time 0, and the start and end of every block the gesture is not moving.
-    // A block is named by its own words, or by its lane when it has none. A
-    // loop's later passes are not landed on: they are the same steps again,
-    // and the ones a gesture is moving would be a target that moves with it.
-    // Nor are the moves a dragged Gesture becomes, which go where it goes.
+    // The beat whose millisecond is exactly `ms`, as its index, or null.
+    const beatAt = (ms) => beats.find((beat) => beat.t === ms)?.index ?? null;
+
+    // What landed on a beat is placed on it (ADR 0060), for a plan already
+    // written at where it landed:
+    //   - a step whose time the plan moved, and which now starts exactly on
+    //     a beat, is on that beat. A step a loop repeats is timed from its
+    //     pass and carries no beat (Protocol Check).
+    //   - a step whose length the plan changed gets that length in beats
+    //     where it can keep one (Protocol Check's spansBeats()), it is on a
+    //     beat itself and its end is now exactly on a later one. The length
+    //     is then written as that many beats resolve - the count of beats
+    //     times one beat, which can be a millisecond off the distance between
+    //     the two rounded beat times - so the step is stored as the droid
+    //     will read it. A step that starts off the beat keeps its
+    //     milliseconds: a whole number of beats from there ends on no beat.
+    // The callers decide when: a drag that landed on a beat, and a move the
+    // editor says landed on one.
+    const onBeats = (plan) => {
+      const check = window.SeqProtocolCheck;
+      if (beats.length === 0 || !check?.spansBeats) return;
+      const steps = seqNow().steps;
+      const repeated = check.loopBodySteps(steps);
+      plan.writes.forEach((w) => {
+        if (w.field !== "t" || repeated.has(steps.indexOf(w.step))) return;
+        const beat = beatAt(w.step.t);
+        if (beat !== null) w.step.beat = beat;
+      });
+      plan.writes.forEach((w) => {
+        if (w.field === "t" || !check.spansBeats(w.step) || !Number.isInteger(w.step.beat)) return;
+        const end = beatAt(w.step.t + w.step[w.field]);
+        if (end === null || end <= w.step.beat) return;
+        w.step.spanBeats = end - w.step.beat;
+        w.step[w.field] = check.tempoSpanMs(seqNow().tempo, w.step.spanBeats);
+      });
+    };
+
+    // The beats of a stored tempo, time 0, and the start and end of every
+    // block the gesture is not moving. A beat is named by its bar and its
+    // place in it, a block by its own words, or by its lane when it has
+    // none. The beats come first: where a beat and a block's edge are the
+    // same moment, the landing is the beat. A loop's later passes are not
+    // landed on: they are the same steps again, and the ones a gesture is
+    // moving would be a target that moves with it. Nor are the moves a
+    // dragged Gesture becomes, which go where it goes.
     const snapTargets = (plan) => {
       const steps = seqNow().steps;
       const moving = new Set(plan.writes.map((w) => w.step));
-      const targets = [{ t: 0, label: "" }];
+      const tempo = seqNow().tempo;
+      const targets = [
+        ...beats.map((beat) => ({ t: beat.t, label: window.SeqTempo.beatWords(tempo, beat.index), beat: beat.index })),
+        { t: 0, label: "" },
+      ];
       [{ name: "Loop", items: loopItems(model, true) }, ...model.parts, ...model.rows].forEach((lane) =>
         lane.items.forEach((item) => {
           if (item.ghost || (item.steps && item.steps.some((index) => moving.has(steps[index])))) return;
@@ -1210,6 +1299,7 @@
       dragStop();
       // commit() comes back through refresh(), which draws the routine again.
       if (done.by !== 0) {
+        if (done.snap && done.snap.beat !== undefined) onBeats(done.plan);
         edit.commit(done.before);
         return;
       }
@@ -1348,8 +1438,10 @@
 
     // Typed rather than dragged: the picked blocks start at `ms`, moved as a
     // drag of their bodies moves them, as far as their limits allow, and it is
-    // one edit.
-    const movePickedTo = (ms) => {
+    // one edit. A typed time is a millisecond (ADR 0058); `landed` says the
+    // time is where something dropped on the lanes landed (aim()), and then a
+    // block that starts on a beat is placed on it, as a dragged one is.
+    const movePickedTo = (ms, landed = false) => {
       const blocks = picked();
       if (drag || blocks.length === 0 || !Number.isFinite(ms)) return;
       const plan = planFor(null, null);
@@ -1357,6 +1449,7 @@
       const by = Math.max(lo, Math.min(hi, Math.round(ms) - Math.min(...blocks.map((block) => block.t0))));
       const before = edit.begin();
       apply(plan, by);
+      if (landed && by !== 0) onBeats(plan);
       edit.commit(before);
     };
 
@@ -1395,8 +1488,10 @@
     };
 
     // Where something dragged in from outside the view would land: the time
-    // under `point` ({clientX, clientY}), on the nearest block edge within
-    // the tolerance, as a dragged block lands, and never past the end step -
+    // under `point` ({clientX, clientY}), on the nearest beat or block edge
+    // within the tolerance, as a dragged block lands (beatAt() says whether
+    // that time is a beat, for the caller to place what it inserts on it),
+    // and never past the end step -
     // unless it is the end that is being dropped (`isEnd`), which may go on
     // past where it is. Null when the pointer is not over the lanes or
     // nothing here is being edited. While it is over them the landing line
@@ -1540,6 +1635,7 @@
       movePickedTo,
       removePicked: removeSelected,
       aim,
+      beatAt,
       standing,
       sizeStanding,
       say,

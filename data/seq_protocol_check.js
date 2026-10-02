@@ -101,6 +101,12 @@
   };
   const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
 
+  // Whether a step's duration can be a span of beats: a turn that moves, and
+  // a body flutter (src/seq_json.cpp parseStepBeats()).
+  const spansBeats = (step) =>
+    Boolean(step) && ((step.type === "domeRotate" && Number(step.speedPct) !== 0)
+      || (step.type === "body" && step.shape === "flutter"));
+
   // How many steps the loop at `at` takes as its body, in a list that may not
   // have that many after it. validateStep() refuses a loop that reaches past
   // the last step; this reading is for everything that walks a sequence
@@ -1195,6 +1201,8 @@
     tempoBeatMs,
     /** How long `beats` beats last, in ms, on this tempo (seqTempoSpanMs()). */
     tempoSpanMs,
+    /** Whether a step's duration can be kept as a span of beats. */
+    spansBeats,
 
     /**
      * The sequence as the droid will run it: every step placed on a beat at
@@ -1304,9 +1312,7 @@
           if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
             return { ok: false, field: `${label}[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
           }
-          const turns = step.type === "domeRotate" && Number(step.speedPct) !== 0;
-          const flutters = step.type === "body" && step.shape === "flutter";
-          if (!turns && !flutters) {
+          if (!spansBeats(step)) {
             return { ok: false, field: `${label}[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
           }
         }
