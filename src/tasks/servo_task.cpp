@@ -6,11 +6,14 @@
 //
 // A command names its Output by its Output Address (#444). This task keeps one
 // state per Output it can drive, in that Output's slot (include/servo_backend.h),
-// and puts widths on pins and takes them off through the backend seam, whose
-// one member today is LEDC on the board's own GPIO Outputs - ARM1/ARM2 (the
-// utility arms) and ARM3-5 on the Artoo PCB. The ramp, the component clamp, the
-// dial's hold and both kinds of release are decided here, above the seam.
-// DOME (GPIO 25) is controlled separately as an ESC, not a servo.
+// and puts widths on pins and takes them off through the backend seam. Its two
+// members are LEDC on the board's own GPIO Outputs - ARM1/ARM2 (the utility
+// arms) and ARM3-5 on the Artoo PCB - and, when a builder has chosen it as the
+// body servo controller, a PCA9685 on the I2C header, `pca:0`-`pca:15`, whose
+// writes leave this core for a task on Core 0 (include/pca9685.h). The ramp,
+// the component clamp, the dial's hold and both kinds of release are decided
+// here, above the seam, for both. DOME (GPIO 25) is controlled separately as an
+// ESC, not a servo.
 // =============================================================================
 
 #include "servo_task.h"
@@ -19,6 +22,7 @@
 
 #include "board_output_enabled.h"  // boardOutputIsWired() - the wired ticks, by Output
 #include "board_outputs.h"  // boardOutputOnChannel(), boardOutputLabel()
+#include "component_registry.h"  // componentPartByValue() - this boot's body servo controller
 #include "config.h"
 #include "config_cache.h"
 #include "ledc_pwm.h"
@@ -51,10 +55,31 @@ static bool s_dome_enabled = false;
 // lit wires (ADR 0067, #413), which is why this is a mask and not the single
 // slot number it replaced.
 static uint32_t s_lit_mask = 0;
-// Whether LEDC came up at start. Only servoTaskDrivesOutput() reads it: an
-// Output on a timer that never started is driven by nothing, whatever its
-// tick says.
+// Whether LEDC came up at start. An Output on a timer that never started is
+// driven by nothing, whatever its tick says (backendReady()).
 static bool s_ledc_ready = false;
+
+// Whether the PCA9685 is this boot's body servo controller: chosen when the
+// droid started, which is when a member choice takes effect (ADR 0027). Its
+// sixteen slots are wired at start the way a board Output is - by having a
+// Part on them (wiredAtStartMask()).
+static bool s_expander_chosen = false;
+
+// The expander's slots, one bit each, in the slot order include/
+// servo_backend.h lays out.
+static constexpr uint32_t kExpanderSlotMask =
+    ((1u << PCA9685_CHANNEL_COUNT) - 1u)
+    << servoOutputSlotOf(ServoOutputAddress{SERVO_DRIVER_PCA9685, 0});
+
+// The Outputs whose backend cannot be reached, one bit per slot: the expander's
+// sixteen when it was chosen and did not answer at start, or stopped answering
+// since (noticeAnUnreachableExpander()). Nothing is driven on one, and it
+// reports why (SERVO_LIMP_UNREACHABLE). Bits are only ever set, by this task -
+// in servoTaskInit() and on its own loop - and the Core 0 readers
+// (servoTaskDrivesOutput(), servoTaskExpanderFacts()) read the aligned word
+// without a lock: a stale read is one frame late saying an Output it can no
+// longer drive is unreachable, and the command it admits is then dropped here.
+static uint32_t s_unreachable_mask = 0;
 
 // -----------------------------------------------------------------------------
 // Where each output is, and the move it is part way through (ADR 0052).
@@ -155,11 +180,22 @@ static bool isOutputEnabled(uint8_t slot);
 // asks, so an unticked strip ends with neither side on the pin. It asks by
 // board index, because a light only goes on the board's own wires.
 // -----------------------------------------------------------------------------
+//
+// An expander's Output has no stored tick (include/board_output_enabled.h), so
+// its slot reads what the tick follows on a board Output: whether a Part is on
+// its row. That, and only while the expander is this boot's member - a row
+// kept from a session it was chosen in is not wired to anything now.
 static uint32_t wiredAtStartMask(const SystemConfig& system) {
     uint32_t mask = 0;
     for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
-        const size_t boardIndex = boardOutputIndexOf(servoOutputSlotAddress(slot));
-        if (boardIndex < BOARD_OUTPUT_COUNT && boardOutputIsWired(system, boardIndex)) {
+        const ServoOutputAddress output = servoOutputSlotAddress(slot);
+        const size_t boardIndex = boardOutputIndexOf(output);
+        const bool wired =
+            boardIndex < BOARD_OUTPUT_COUNT
+                ? boardOutputIsWired(system, boardIndex)
+                : output.driver == SERVO_DRIVER_PCA9685 && s_expander_chosen &&
+                      configCacheServoOutputPartCountAt(output.driver, output.channel) > 0;
+        if (wired) {
             mask |= 1u << slot;
         }
     }
@@ -193,8 +229,28 @@ static uint32_t litOutputMask(const SystemConfig& system) {
 // Per ADR 0027, this function gates all servo operations on the component
 // toggle snapshot captured at startup.
 // -----------------------------------------------------------------------------
+//
+// An Output whose backend cannot be reached (s_unreachable_mask) is not
+// enabled either: a write to it goes nowhere, so a command to it is dropped
+// here like a command to an Output nothing drives.
 static bool isOutputEnabled(uint8_t slot) {
-    return servo_output_enabled(slot, s_wired_at_start_mask, s_lit_mask);
+    return servo_output_enabled(slot, s_wired_at_start_mask & ~s_unreachable_mask, s_lit_mask);
+}
+
+// -----------------------------------------------------------------------------
+// backendReady()
+// Whether the backend an Output is on can put a pulse on it at all: LEDC's
+// timer came up, or the expander was chosen and is answering.
+// -----------------------------------------------------------------------------
+static bool backendReady(uint8_t slot) {
+    switch (servoOutputSlotAddress(slot).driver) {
+        case SERVO_DRIVER_LEDC:
+            return s_ledc_ready;
+        case SERVO_DRIVER_PCA9685:
+            return s_expander_chosen && (s_unreachable_mask & (1u << slot)) == 0;
+        default:
+            return false;
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -244,14 +300,14 @@ static bool isOutputLive(uint8_t slot) {
 static ServoRunTakeInputs runTakeInputs(uint8_t slot) {
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     ServoRunTakeInputs in = {};
-    in.drivenNow = s_ledc_ready && isOutputEnabled(slot);
+    in.drivenNow = backendReady(slot) && isOutputEnabled(slot);
     in.wiredAtStart = wiredAtStart(slot);
     in.litAtStart = (s_lit_mask & (1u << slot)) != 0;
     in.lightNow = outputWirePinKeptForLight(
         {false, configCacheReadServoOutputComponent(output.driver, output.channel)},
         boardOutputIndexOf(output));
     in.partCount = configCacheServoOutputPartCountAt(output.driver, output.channel);
-    in.ledcReady = s_ledc_ready;
+    in.backendReady = backendReady(slot);
     return in;
 }
 
@@ -294,8 +350,9 @@ static bool resolveOutputPulse(uint8_t slot, uint16_t pulseUs, uint16_t* command
     const uint16_t commandedUs =
         configCacheClampServoOutputPulse(output.driver, output.channel, pulseUs, &component);
     if (commandedUs != pulseUs) {
-        PA_LOG_WARN(TAG, "arm%d %d us is outside what a %s takes - sending %d us instead",
-                    slot + 1, pulseUs, servoCompTypeToString(component), commandedUs);
+        PA_LOG_WARN(TAG, "%s %d us is outside what a %s takes - sending %d us instead",
+                    servoOutputSlotName(slot), pulseUs, servoCompTypeToString(component),
+                    commandedUs);
     }
 
     *commandedOut = commandedUs;
@@ -531,7 +588,8 @@ static void legArrived(uint8_t slot, uint32_t nowMs) {
     // from any leg before it (#443).
     armReleaseOnArrival(slot, nowMs);
     publishCommanded(slot);
-    PA_LOG_INFO(TAG, "Arm%d %s returned to %u us", slot + 1, wasNudge ? "nudge" : "travel",
+    PA_LOG_INFO(TAG, "%s %s returned to %u us", servoOutputSlotName(slot),
+                wasNudge ? "nudge" : "travel",
                 (unsigned)s_out[slot].commandedUs);
 }
 
@@ -591,7 +649,7 @@ static void releaseOutput(uint8_t slot, ServoLimpReason reason);
 // themselves, so the buffer is only ever on the stack for the line.
 // -----------------------------------------------------------------------------
 static void __attribute__((noinline)) sayTheOutputLetGo(uint8_t slot, const char* why) {
-    PA_LOG_INFO(TAG, "Arm%d let go - %s", slot + 1, why);
+    PA_LOG_INFO(TAG, "%s let go - %s", servoOutputSlotName(slot), why);
 }
 
 // -----------------------------------------------------------------------------
@@ -628,8 +686,8 @@ static bool takeForRun(uint8_t slot, CommandSource source) {
     }
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
     if (!servoBackendAttach(output)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not taken for the run - its channel would not attach",
-                    commandSourceToString(source), slot + 1);
+        PA_LOG_WARN(TAG, "[%s] %s not taken for the run - its channel would not attach",
+                    commandSourceToString(source), servoOutputSlotName(slot));
         return false;
     }
     uint16_t centreUs = SERVO_PULSE_NEUTRAL_US;
@@ -642,8 +700,9 @@ static bool takeForRun(uint8_t slot, CommandSource source) {
         endMove(slot);
         writeOutputPulse(slot, commandedUs);
     }
-    PA_LOG_INFO(TAG, "[%s] Arm%d taken for a Find by Moving run at %u us (recorded centre %u us)",
-                commandSourceToString(source), slot + 1, (unsigned)commandedUs, (unsigned)centreUs);
+    PA_LOG_INFO(TAG, "[%s] %s taken for a Find by Moving run at %u us (recorded centre %u us)",
+                commandSourceToString(source), servoOutputSlotName(slot), (unsigned)commandedUs,
+                (unsigned)centreUs);
     return true;
 }
 
@@ -656,15 +715,15 @@ static void beginNudge(uint8_t slot, CommandSource source) {
     // time so the builder can say which one moved, and the ARM1+ARM2 broadcast
     // would move two in one press.
     if (slot >= kSlotCount) {
-        PA_LOG_WARN(TAG, "[%s] Nudge rejected - takes one arm, not %d", commandSourceToString(source),
-                    slot);
+        PA_LOG_WARN(TAG, "[%s] Nudge rejected - takes one output, not slot %d",
+                    commandSourceToString(source), slot);
         return;
     }
     // A free Output is taken for the run first (#411); an enabled one is driven
     // already and is nudged about where it is.
     if (!isOutputEnabled(slot) && !takeForRun(slot, source)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - it is not free for a run",
-                    commandSourceToString(source), slot + 1);
+        PA_LOG_WARN(TAG, "[%s] %s not nudged - it is not free for a run",
+                    commandSourceToString(source), servoOutputSlotName(slot));
         s_out[slot].nudgesDone++;
         publishCommanded(slot);
         return;
@@ -672,7 +731,8 @@ static void beginNudge(uint8_t slot, CommandSource source) {
     ServoNudgePlan plan = {};
     if (!s_out[slot].known ||
         !servoNudgePlan(s_out[slot].commandedUs, SERVO_BAND_STD, SERVO_NUDGE_AMPLITUDE_US, &plan)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not nudged - %s", commandSourceToString(source), slot + 1,
+        PA_LOG_WARN(TAG, "[%s] %s not nudged - %s", commandSourceToString(source),
+                    servoOutputSlotName(slot),
                     s_out[slot].known ? "it sits outside the cautious band" : "no pulse on it yet");
         s_out[slot].nudgesDone++;
         publishCommanded(slot);
@@ -685,8 +745,9 @@ static void beginNudge(uint8_t slot, CommandSource source) {
         s_out[slot].legTargetUs[leg - 1] = servoNudgeLegTarget(plan, leg);
     }
     s_out[slot].legIsNudge = true;
-    PA_LOG_INFO(TAG, "[%s] Arm%d nudged %u/%u us about %u us", commandSourceToString(source),
-                slot + 1, (unsigned)plan.hiUs, (unsigned)plan.loUs, (unsigned)plan.homeUs);
+    PA_LOG_INFO(TAG, "[%s] %s nudged %u/%u us about %u us", commandSourceToString(source),
+                servoOutputSlotName(slot), (unsigned)plan.hiUs, (unsigned)plan.loUs,
+                (unsigned)plan.homeUs);
     beginLeg(slot, 1, millis());
 }
 
@@ -720,13 +781,13 @@ static void beginTravel(uint8_t slot, CommandSource source) {
     // and the ARM1+ARM2 broadcast would run two parts through their travel on
     // one press. Refused at the API door too, where the caller hears why.
     if (slot >= kSlotCount) {
-        PA_LOG_WARN(TAG, "[%s] Travel rejected - takes one arm, not %d",
+        PA_LOG_WARN(TAG, "[%s] Travel rejected - takes one output, not slot %d",
                     commandSourceToString(source), slot);
         return;
     }
     if (!s_out[slot].known) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - no pulse on it yet",
-                    commandSourceToString(source), slot + 1);
+        PA_LOG_WARN(TAG, "[%s] %s not travelled - no pulse on it yet",
+                    commandSourceToString(source), servoOutputSlotName(slot));
         return;
     }
     const ServoOutputAddress output = servoOutputSlotAddress(slot);
@@ -735,14 +796,15 @@ static void beginTravel(uint8_t slot, CommandSource source) {
     ServoMotionProfile profile = {};
     if (!configCacheReadServoOutputEndpoints(output.driver, output.channel, &openUs, &closeUs) ||
         !configCacheReadServoOutputMotionProfile(output.driver, output.channel, &profile)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - no output row records its ends",
-                    commandSourceToString(source), slot + 1);
+        PA_LOG_WARN(TAG, "[%s] %s not travelled - no output row records its ends",
+                    commandSourceToString(source), servoOutputSlotName(slot));
         return;
     }
     ServoTravelPlan plan = {};
     if (!profile.calibrated ||
         !servoTravelPlan(s_out[slot].commandedUs, openUs, closeUs, &plan)) {
-        PA_LOG_WARN(TAG, "[%s] Arm%d not travelled - %s", commandSourceToString(source), slot + 1,
+        PA_LOG_WARN(TAG, "[%s] %s not travelled - %s", commandSourceToString(source),
+                    servoOutputSlotName(slot),
                     profile.calibrated ? "its two ends are the same width"
                                        : "nobody has measured its ends");
         return;
@@ -754,8 +816,8 @@ static void beginTravel(uint8_t slot, CommandSource source) {
         s_out[slot].legTargetUs[leg - 1] = servoTravelLegTarget(plan, leg);
     }
     s_out[slot].legIsNudge = false;
-    PA_LOG_INFO(TAG, "[%s] Arm%d travelling open %u us, close %u us, back to %u us",
-                commandSourceToString(source), slot + 1, (unsigned)plan.openUs,
+    PA_LOG_INFO(TAG, "[%s] %s travelling open %u us, close %u us, back to %u us",
+                commandSourceToString(source), servoOutputSlotName(slot), (unsigned)plan.openUs,
                 (unsigned)plan.closeUs, (unsigned)plan.homeUs);
     beginLeg(slot, 1, millis());
 }
@@ -952,6 +1014,48 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 }
 
 // -----------------------------------------------------------------------------
+// noticeAnUnreachableExpander()
+// The expander stopped answering (ADR 0043: "a bus drop is reported, not
+// escalated"). Its sender marks it the moment a write fails, on Core 0
+// (src/drivers/pca9685.cpp); this is where the Outputs on it learn, within a
+// frame. Each ends whatever it was doing - a move, the dial's hold, a run's
+// hold - and goes to no pulse with the reason every surface shows
+// (SERVO_LIMP_UNREACHABLE), and from then on nothing drives it: its bit in
+// s_unreachable_mask takes it out of isOutputEnabled() and backendReady().
+//
+// Nothing is written to it - the bus is what failed, so there is nothing a
+// release could reach - and nothing here touches drive, the estop or the
+// failsafe gate, or latches anything (ADR 0032). It does not log: the sender
+// said which board stopped answering and which Outputs that leaves, and a log
+// line here would put a second formatting route on this task's measured chain
+// (ADR 0040) to say it again.
+//
+// Once a session: a board that dropped off the bus is not trusted to be in the
+// state this task thinks it is in, so the Outputs stay unreachable until the
+// droid restarts with it answering.
+// -----------------------------------------------------------------------------
+static void noticeAnUnreachableExpander() {
+    if (!s_expander_chosen || (s_unreachable_mask & kExpanderSlotMask) != 0 ||
+        pca9685Answering()) {
+        return;
+    }
+    s_unreachable_mask |= kExpanderSlotMask;
+    for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+        if ((kExpanderSlotMask & (1u << slot)) == 0) {
+            continue;
+        }
+        endMove(slot);
+        servoHoldEnd(&s_out[slot].hold);
+        if (s_runSlot == slot) {
+            s_runSlot = SERVO_RUN_NONE;
+        }
+        s_out[slot].known = false;
+        s_out[slot].limp = SERVO_LIMP_UNREACHABLE;
+        publishCommanded(slot);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // holdOutput()
 // The calibration dial's hold (ADR 0064, #364): drive one output to a width and
 // keep the pulse on it until the builder lets go or a bound fires.
@@ -978,21 +1082,21 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // -----------------------------------------------------------------------------
 static void holdOutput(uint8_t slot, uint16_t positionUs, CommandSource source, ServoHoldAsk ask) {
     if (slot >= kSlotCount) {
-        PA_LOG_WARN(TAG, "[%s] Hold rejected - takes one arm, not %d", commandSourceToString(source),
-                    slot);
+        PA_LOG_WARN(TAG, "[%s] Hold rejected - takes one output, not slot %d",
+                    commandSourceToString(source), slot);
         return;
     }
     const ServoHoldOutcome outcome = servoHoldCommand(&s_out[slot].hold, millis(), ask);
     if (outcome == SERVO_HOLD_DROPPED) {
-        PA_LOG_DEBUG(TAG, "[%s] Arm%d hold refresh dropped - the dial no longer holds it",
-                     commandSourceToString(source), slot + 1);
+        PA_LOG_DEBUG(TAG, "[%s] %s hold refresh dropped - the dial no longer holds it",
+                     commandSourceToString(source), servoOutputSlotName(slot));
         return;
     }
     servoReleaseCancel(&s_out[slot].release);
     const bool taken = outcome == SERVO_HOLD_TAKEN;
     if (taken) {
-        PA_LOG_INFO(TAG, "[%s] Arm%d held by the dial at %u us", commandSourceToString(source),
-                    slot + 1, (unsigned)positionUs);
+        PA_LOG_INFO(TAG, "[%s] %s held by the dial at %u us", commandSourceToString(source),
+                    servoOutputSlotName(slot), (unsigned)positionUs);
     }
     // Where the move ends, which on an overshoot is where it settles, not its
     // aim: a keepalive for the width the builder asked for is still a refresh.
@@ -1029,10 +1133,10 @@ static void expireHolds() {
         const bool run = s_runSlot == slot;
         releaseOutput(slot, servoRunLimpReason(run, bound));
         if (run) {
-            PA_LOG_INFO(TAG, "Arm%d let go - %s", slot + 1,
+            PA_LOG_INFO(TAG, "%s let go - %s", servoOutputSlotName(slot),
                         ceiling ? "held for the most a run may" : "the run's nudges moved on");
         } else {
-            PA_LOG_WARN(TAG, "Arm%d released - %s", slot + 1,
+            PA_LOG_WARN(TAG, "%s released - %s", servoOutputSlotName(slot),
                         ceiling ? "held for the most a dial may" : "the dial's commands stopped arriving");
         }
     }
@@ -1077,6 +1181,12 @@ static void letGoIfTheRunsOutputIsNoLongerFree() {
     }
     releaseOutput(slot, SERVO_LIMP_OFF);
     sayTheOutputLetGo(slot, "a Part or a light is on it now");
+}
+
+// What a log line calls a command's target: `both arms` for the broadcast,
+// which has no slot, and otherwise the Output's own name (servoOutputSlotName()).
+static const char* targetName(ServoOutputAddress output, uint8_t slot) {
+    return output == SERVO_OUTPUT_BOTH_ARMS ? "both arms" : servoOutputSlotName(slot);
 }
 
 // -----------------------------------------------------------------------------
@@ -1130,8 +1240,8 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
     const bool runRelease = cmd.type == SERVO_CMD_RELEASE && slot < kSlotCount &&
                             s_runSlot == slot;
     if (!isTargetEnabled(cmd.output) && !runNudge && !runRelease) {
-        PA_LOG_DEBUG(TAG, "[%s] Command rejected - arm%d disabled or reserved",
-                     commandSourceToString(cmd.source), slot);
+        PA_LOG_DEBUG(TAG, "[%s] Command rejected - %s disabled or reserved",
+                     commandSourceToString(cmd.source), targetName(cmd.output, slot));
         return;
     }
     const bool both = cmd.output == SERVO_OUTPUT_BOTH_ARMS;
@@ -1149,7 +1259,8 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
             } else {
                 getOpenClosePositions(slot, openUs, closeUs);
                 driveOutputTo(slot, openUs);
-                PA_LOG_INFO(TAG, "[%s] Arm%d opened", commandSourceToString(cmd.source), slot + 1);
+                PA_LOG_INFO(TAG, "[%s] %s opened", commandSourceToString(cmd.source),
+                            servoOutputSlotName(slot));
             }
             break;
 
@@ -1163,7 +1274,8 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
             } else {
                 getOpenClosePositions(slot, openUs, closeUs);
                 driveOutputTo(slot, closeUs);
-                PA_LOG_INFO(TAG, "[%s] Arm%d closed", commandSourceToString(cmd.source), slot + 1);
+                PA_LOG_INFO(TAG, "[%s] %s closed", commandSourceToString(cmd.source),
+                            servoOutputSlotName(slot));
             }
             break;
 
@@ -1180,8 +1292,8 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
             } else {
                 driveOutputTo(slot, cmd.positionUs, cmd.motionThrowMs, cmd.motionEasing);
             }
-            PA_LOG_INFO(TAG, "[%s] Arm%d set to %d us", commandSourceToString(cmd.source), slot + 1,
-                        cmd.positionUs);
+            PA_LOG_INFO(TAG, "[%s] %s set to %d us", commandSourceToString(cmd.source),
+                        targetName(cmd.output, slot), cmd.positionUs);
             break;
 
         case SERVO_CMD_NUDGE:
@@ -1215,8 +1327,8 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
                 PA_LOG_INFO(TAG, "[%s] Both arms released - pulses off", commandSourceToString(cmd.source));
             } else {
                 releaseOutput(slot, SERVO_LIMP_RELEASED);
-                PA_LOG_INFO(TAG, "[%s] Arm%d released - pulses off", commandSourceToString(cmd.source),
-                            slot + 1);
+                PA_LOG_INFO(TAG, "[%s] %s released - pulses off", commandSourceToString(cmd.source),
+                            servoOutputSlotName(slot));
             }
             break;
     }
@@ -1231,6 +1343,12 @@ static inline __attribute__((always_inline)) void processCommand(const ServoComm
 // Channels reserved by AUX LED are excluded from the mask.
 // -----------------------------------------------------------------------------
 void servoTaskInit() {
+    // Which body servo controller this boot runs, read once like a toggle
+    // (ADR 0027): setup() latched it, and brought the expander up first when
+    // it is the one (pca9685Begin()), so whether it answered is known here.
+    s_expander_chosen = servoBackendMemberIsPca9685(
+        componentPartByValue(configCacheReadActiveBodyServoMember()));
+
     // Capture toggles snapshot once at startup.
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
@@ -1239,6 +1357,22 @@ void servoTaskInit() {
     s_lit_mask = litOutputMask(cfg.system);
 
     const bool anyServo = s_wired_at_start_mask != 0;
+
+    // An expander chosen and not answering: every one of its Outputs says so
+    // from the first read, whatever LEDC does below. pca9685Begin() logged the
+    // board, its span and the consequence. Every Output the expander answers
+    // for starts limp, which is what bring-up left on the chip and what a
+    // zero-filled mirror already reads.
+    if (s_expander_chosen && !pca9685Answering()) {
+        s_unreachable_mask = kExpanderSlotMask;
+        for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
+            if ((kExpanderSlotMask & (1u << slot)) != 0) {
+                s_out[slot].known = false;
+                s_out[slot].limp = SERVO_LIMP_UNREACHABLE;
+                publishCommanded(slot);
+            }
+        }
+    }
 
     // LEDC comes up whatever is wired: its timer is what a Find by Moving run
     // attaches a free Output's channel to (ledcPwmAttach(), #411), and a droid
@@ -1263,7 +1397,7 @@ void servoTaskInit() {
         }
         s_ledc_ready = true;
         for (uint8_t slot = 0; slot < kSlotCount; ++slot) {
-            if (isOutputEnabled(slot)) {
+            if (backendReady(slot) && isOutputEnabled(slot)) {
                 s_out[slot].known = false;
                 s_out[slot].limp = SERVO_LIMP_OFF;
                 publishCommanded(slot);
@@ -1284,9 +1418,10 @@ void servoTaskInit() {
     }
 
     if (anyServo) {
-        PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 limp until moved)");
+        PA_LOG_INFO(TAG, "Servo outputs ready (%s, limp until moved)",
+                    s_expander_chosen ? "the board's and the PCA9685's" : "the board's");
     } else {
-        PA_LOG_INFO(TAG, "arm/aux outputs disabled");
+        PA_LOG_INFO(TAG, "No servo output has a Part on it");
     }
 }
 
@@ -1303,7 +1438,15 @@ bool servoTaskWiredAtStart(ServoOutputAddress output) {
 
 bool servoTaskDrivesOutput(ServoOutputAddress output) {
     const uint8_t slot = servoOutputSlotOf(output);
-    return slot < kSlotCount && s_ledc_ready && isOutputEnabled(slot);
+    return slot < kSlotCount && backendReady(slot) && isOutputEnabled(slot);
+}
+
+ServoExpanderFacts servoTaskExpanderFacts() {
+    ServoExpanderFacts facts = {};
+    facts.chosen = s_expander_chosen;
+    facts.address = pca9685Address();
+    facts.answering = s_expander_chosen && (s_unreachable_mask & kExpanderSlotMask) == 0;
+    return facts;
 }
 
 // Read from Core 0 (the servo route, the Console): the boot snapshot is
@@ -1363,8 +1506,16 @@ void servoTask(void* pvParameters) {
         if (haltEdge.release) {
             stopAllMoves("estop or sleep mode entered");
             releaseAllOutputs(haltEdge.reason);
+            // Straight away, not at the frame's end: an expander's releases
+            // leave this core here, as one ALL_LED_OFF_H (include/pca9685.h).
+            servoBackendCommit();
         }
         prevHalt = haltNow;
+
+        // An expander that stopped answering since the last frame: its
+        // Outputs go unreachable before a command or a frame can be sent to
+        // them.
+        noticeAnUnreachableExpander();
 
         // Process any pending commands (non-blocking)
         while (xQueueReceive(servoCmdQueue, &cmd, 0) == pdTRUE) {
@@ -1385,6 +1536,10 @@ void servoTask(void* pvParameters) {
 
         // And a run's Output that a commit took from it since the last frame.
         letGoIfTheRunsOutputIsNoLongerFree();
+
+        // Hand this frame's writes to a member that sends them off this core
+        // (include/servo_backend.h), all of them at once.
+        servoBackendCommit();
 
         // Feed watchdog
         esp_task_wdt_reset();

@@ -567,21 +567,28 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
 namespace {
 
-// The Sound family's active Component Member: the module AudioTask actually
-// bound at boot, as against the saved choice populateConfigJson() reports. The
-// two differ exactly while a member change is staged and the droid has not
-// rebooted, which is the state an operator surface has to be able to show.
+// The active Component Members of the families read once at start: the sound
+// module AudioTask actually bound at boot, and the body servo controller
+// ServoTask runs (#444), as against the saved choices populateConfigJson()
+// reports. Each pair differs exactly while a member change is staged and the
+// droid has not rebooted, which is the state an operator surface has to be
+// able to show.
 //
 // Out here rather than in populateConfigJson(): the boot-latched value is
 // runtime state a pure snapshot serializer cannot see.
-void addAudioMemberFields(JsonDocument& doc) {
+void addActiveMemberFields(JsonDocument& doc) {
     JsonObject components = doc["components"];
     if (components.isNull()) {
         return;
     }
-    const ComponentPartEntry* active = componentPartByValue(configCacheReadActiveSoundMember());
-    if (active != nullptr) {
-        components["audio"]["activeMember"] = active->id;
+    const ComponentPartEntry* sound = componentPartByValue(configCacheReadActiveSoundMember());
+    if (sound != nullptr) {
+        components["audio"]["activeMember"] = sound->id;
+    }
+    const ComponentPartEntry* bodyServo =
+        componentPartByValue(configCacheReadActiveBodyServoMember());
+    if (bodyServo != nullptr) {
+        components["bodyServo"]["activeMember"] = bodyServo->id;
     }
 }
 
@@ -757,7 +764,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap,
     if (commit != nullptr) {
         addClampedEndpointFields(doc, *commit);
     }
-    addAudioMemberFields(doc);
+    addActiveMemberFields(doc);
     addActiveFields(doc);
     addRecordFields(doc);
     WifiConfig activeWifi = {};

@@ -56,6 +56,7 @@
 #include "board_outputs.h"  // boardOutputOnChannel(), boardOutputLabel() - an Output's name
 #include "droid_parts.h"  // droidPartIdIsKnown() - the compiled Part vocabulary
 #include "ledc_pwm.h"     // LedcChannel, SERVO_PULSE_* / ESC_PULSE_* constants
+#include "pca9685.h"      // PCA9685_CHANNEL_COUNT - the expander's Outputs
 #include "robot_state.h"  // ServoComponentType (firmware and native alike)
 #include "servo_component_helpers.h"  // servoCompTypeToString, parseServoCompType
 // ServoOutputDriver, SERVO_OUTPUT_CHANNEL_UNSET - the Output Address a row
@@ -156,26 +157,21 @@ constexpr uint8_t SERVO_OUTPUT_PART_ID_MAX = 12;
 constexpr uint8_t SERVO_OUTPUT_PART_SLOTS = 4;
 
 // ADR 0052 sizes the model at thirteen-to-twenty-three Outputs once an expander
-// is fitted. Twenty-four rows covers that with one spare.
+// is fitted. Twenty-four rows covers that with one spare: the board's five and
+// a PCA9685's sixteen are twenty-one (#444).
 //
-// Except on artoo-esp32 while LEDC is its only Output driver: LEDC addresses
-// five Outputs there (servoOutputChannelIsValid() below, include/ledc_pwm.h),
-// so it holds five rows, and every static byte on that board is a heap byte.
-// It goes back to twenty-four when an expander driver lands (operator
-// decision 2026-09-25, #428).
-//
-// `#if defined`: PA_CHIP_TARGET_* are presence macros from config.h (included
-// through board_outputs.h above), not 0/1 gates.
-#if defined(PA_CHIP_TARGET_ESP32)
-constexpr uint8_t SERVO_OUTPUT_ROW_MAX = 5;
-#else
+// On every board, artoo-esp32 included. #428 held artoo-esp32 to five rows
+// while LEDC was its only Output driver, because every static byte on that
+// board is a heap byte, and the operator's decision of 2026-09-25 was that it
+// goes back to twenty-four when an expander driver lands - which the PCA9685
+// is.
 constexpr uint8_t SERVO_OUTPUT_ROW_MAX = 24;
-#endif
 
 // The five LEDC outputs this controller drives today.
 constexpr uint8_t SERVO_OUTPUT_ROW_DEFAULT_COUNT = 5;
-static_assert(SERVO_OUTPUT_ROW_DEFAULT_COUNT <= SERVO_OUTPUT_ROW_MAX,
-              "the table must hold the Outputs this controller ships with");
+static_assert(SERVO_OUTPUT_ROW_DEFAULT_COUNT + PCA9685_CHANNEL_COUNT <= SERVO_OUTPUT_ROW_MAX,
+              "the table must hold the Outputs this controller ships with and a fitted "
+              "expander's");
 
 // -----------------------------------------------------------------------------
 // The row
@@ -463,6 +459,8 @@ inline bool servoOutputChannelIsValid(ServoOutputDriver driver, uint8_t channel)
     switch (driver) {
         case SERVO_DRIVER_LEDC:
             return channel < LEDC_CH_MAX && channel != LEDC_CH_DOME;
+        case SERVO_DRIVER_PCA9685:
+            return channel < PCA9685_CHANNEL_COUNT;
         default:
             return false;
     }
@@ -666,10 +664,60 @@ inline uint8_t servoOutputTableFindByAddress(const ServoOutputTable& table,
 }
 
 // -----------------------------------------------------------------------------
+// servoOutputTableAddDriverRows()
+// A member's Outputs as rows: each channel of `driver` up to `channelCount`
+// that the table holds no row for is appended at its defaults. Returns how many
+// it added.
+//
+// This is how a fitted PCA9685's sixteen Outputs become rows beside the board's
+// own (#444): loadConfigToState() runs it at every start the expander is the
+// chosen body servo controller, and it is idempotent, because a row already
+// addressed there - one a builder has calibrated and saved - is found and kept.
+// Nothing ever removes one: choosing the board's GPIO again leaves the rows
+// and their calibration where they are, and nothing drives them.
+//
+// A channel a row cannot be addressed at is skipped rather than stored, and a
+// full table stops the append rather than writing past the end; `missing`, when
+// given, is then how many channels are still without a row, so the caller can
+// say so instead of the Outputs quietly not existing.
+//
+// A row appended here carries a servo, the cautious MG996R band: an expander's
+// channel cannot carry a light (only the board's own wires can, ADR 0067), and
+// an Output that cannot carry a light always carries a servo (data/outputs.js).
+// -----------------------------------------------------------------------------
+inline uint8_t servoOutputTableAddDriverRows(ServoOutputTable* table, ServoOutputDriver driver,
+                                             uint8_t channelCount, uint8_t* missing = nullptr) {
+    uint8_t added = 0;
+    uint8_t without = 0;
+    for (uint8_t channel = 0; table != nullptr && channel < channelCount; ++channel) {
+        if (!servoOutputChannelIsValid(driver, channel) ||
+            servoOutputTableFindByAddress(*table, driver, channel) < SERVO_OUTPUT_ROW_MAX) {
+            continue;
+        }
+        if (table->count >= SERVO_OUTPUT_ROW_MAX) {
+            without++;
+            continue;
+        }
+        servoOutputRowDefaults(&table->rows[table->count], driver, channel, SERVO_COMP_MG996R);
+        table->count++;
+        added++;
+    }
+    if (missing != nullptr) {
+        *missing = without;
+    }
+    return added;
+}
+
+// -----------------------------------------------------------------------------
 // Token vocabulary  --  the stored form of the three enums
 // -----------------------------------------------------------------------------
+// `pca` is the token the browser and the tests already spelled an expander's
+// channel with (`pca:3`), and it fits SERVO_OUTPUT_ADDRESS_STR_MAX's eight
+// characters where `pca9685:15` would not.
 inline const char* servoOutputDriverToString(ServoOutputDriver driver) {
     switch (driver) {
+        case SERVO_DRIVER_PCA9685:
+            return "pca";
         case SERVO_DRIVER_LEDC:
         default:
             return "ledc";
@@ -682,6 +730,10 @@ inline bool servoOutputParseDriver(const char* raw, ServoOutputDriver* out) {
     }
     if (strcmp(raw, "ledc") == 0) {
         *out = SERVO_DRIVER_LEDC;
+        return true;
+    }
+    if (strcmp(raw, "pca") == 0) {
+        *out = SERVO_DRIVER_PCA9685;
         return true;
     }
     return false;
@@ -788,7 +840,7 @@ inline bool servoOutputParseU16(const char* raw, uint16_t* out) {
 // (servoOutputChannelIsValid), so `ledc:2` -- the dome ESC -- is not an Output
 // however well it is spelled.
 // -----------------------------------------------------------------------------
-constexpr size_t SERVO_OUTPUT_ADDRESS_STR_MAX = 8;  // "ledc:255"
+constexpr size_t SERVO_OUTPUT_ADDRESS_STR_MAX = 8;  // "ledc:255"; an expander's "pca:15" is six
 
 inline bool servoOutputFormatAddress(char* buf, size_t bufSize, ServoOutputDriver driver,
                                      uint8_t channel) {

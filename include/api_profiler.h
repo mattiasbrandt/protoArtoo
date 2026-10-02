@@ -38,10 +38,11 @@
 
 #define PROF_LABEL_MAX 20
 #define PROF_SNAPSHOT_MAX 8
-// Fourteen project-created tasks plus loopTask. Raised from 11 at #271, when
+// Fifteen project-created tasks plus loopTask. Raised from 11 at #271, when
 // the three created outside src/main.cpp joined the list (api_profiler.cpp),
-// and from 14 at #450, for ReactionTask.
-#define PROF_TASK_MAX 15
+// from 14 at #450, for ReactionTask, and from 15 at #444, for the PCA9685's
+// sender (src/drivers/pca9685.cpp).
+#define PROF_TASK_MAX 16
 #define PROF_REQUEST_PATH_MAX 28
 #define PROF_REQUEST_TRACE_MAX 32
 

@@ -18,6 +18,7 @@
 #include "component_registry.h"
 #include "config.h"               // SPEED_*, SBUS_TIMEOUT_MS, WEB_DRIVE_TIMEOUT_MS, PA_LOG_LEVEL*
 #include "mood_sound_mapping.h"   // MOOD_CATEGORY_MASK_MAX - a mood mask's bits
+#include "pca9685.h"              // PCA9685_ADDRESS_* - where one expander board may answer
 #include "protocol_check.h"       // PC_SM_MOVE_MIN/MAX - what bounds the Cadence Floor
 #include "sequence_bulk_centre.h" // SEQ_CADENCE_FLOOR_* - the Cadence Floor's default and bounds
 #include "servo_component_helpers.h"
@@ -131,6 +132,18 @@ const ConfigSetting kConfigSettings[] = {
               "is not a sound module this firmware can drive"),
     PA_BOOL("enableProtoR2link", "components.protoR2link.enabled", "en_r2link", AtReboot, System,
             SystemConfig, enable_protor2link, false),
+    // The body servo controller (#444): the board's GPIO alone, or a PCA9685
+    // beside it. Bound once at start, as the sound module is (ADR 0042), and
+    // the expander's address with it. The address's range is every address a
+    // board may be strapped to (include/pca9685.h); the four inside it that
+    // every PCA9685 answers are refused by configApply(), a rule this
+    // declaration cannot state.
+    PA_MEMBER("bodyServoMember", "components.bodyServo.member", "srv_member", AtReboot, System,
+              SystemConfig, body_servo_member, COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER,
+              "is not a body servo controller this firmware can drive"),
+    PA_RANGE("pcaAddress", "components.bodyServo.pcaAddress", "pca_addr", AtReboot, System,
+             SystemConfig, pca_address, PCA9685_ADDRESS_FIRST, PCA9685_ADDRESS_LAST,
+             PCA9685_ADDRESS_DEFAULT),
 
     // Each board Output's wired tick. GET reads it on the Output's row and POST
     // takes it back there (`wired`), so it has no path here; the form name is

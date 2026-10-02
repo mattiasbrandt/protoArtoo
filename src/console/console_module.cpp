@@ -1276,8 +1276,8 @@ static void consoleExecuteRcApiGetBindableActions(uint32_t requestId,
 // setting, no active member, no Board Capability Gate.
 //
 // Each family with a member setting is named explicitly rather than keyed off
-// memberKey, because each brings its own accessor: Sound's is boot-latched,
-// the Radio Controller's is the saved choice (nothing on the controller runs
+// memberKey, because each brings its own accessor: Sound's and the body servo
+// controller's are boot-latched, the Radio Controller's is the saved choice (nothing on the controller runs
 // on the radio), resolved the way GET /api/identity/components resolves it.
 // Reusing one family's accessor for another would report its member under the
 // wrong family's name.
@@ -1299,6 +1299,8 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
             const ComponentPartEntry* active = nullptr;
             if (cat.id == COMPONENT_CATEGORY_SOUND) {
                 active = componentPartByValue(configCacheReadActiveSoundMember());
+            } else if (cat.id == COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER) {
+                active = componentPartByValue(configCacheReadActiveBodyServoMember());
             } else if (cat.id == COMPONENT_CATEGORY_RADIO_CONTROLLER) {
                 active = componentResolveRadio(configCacheReadRcMember());
             }

@@ -361,12 +361,12 @@ class TaskStackRecipes(unittest.TestCase):
                     "chain without saying what the walker could not follow",
                 )
 
-    def test_the_table_covers_fourteen_tasks_thirteen_of_them_on_artoo(self):
-        self.assertEqual(len(self.recipes["tasks"]), 14)
+    def test_the_table_covers_fifteen_tasks_fourteen_of_them_on_artoo(self):
+        self.assertEqual(len(self.recipes["tasks"]), 15)
         self.assertEqual(
-            sum(1 for e in self.recipes["tasks"] if "esp32" in e["chips"]), 13)
+            sum(1 for e in self.recipes["tasks"] if "esp32" in e["chips"]), 14)
         self.assertEqual(
-            sum(1 for e in self.recipes["tasks"] if "esp32p4" in e["chips"]), 14)
+            sum(1 for e in self.recipes["tasks"] if "esp32p4" in e["chips"]), 15)
 
 
 class ChainJudgementIsPerChip(unittest.TestCase):

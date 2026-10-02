@@ -20,6 +20,7 @@
 #include "dome_math.h"  // domePulsesInOrder() - the one order rule for the ESC pulse set
 #include "drive_speed_preset.h"
 #include "ledc_pwm.h"  // SERVO_PULSE_MIN_US/MAX_US - what any servo takes
+#include "pca9685.h"   // pca9685AddressReserved() - the addresses no one expander may take
 #include "servo_component_helpers.h"
 
 namespace {
@@ -849,6 +850,22 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         working->dome.dome_rnd_pause_min > working->dome.dome_rnd_pause_max) {
         setError(result, "domeEscRndPauseMin must be at most domeEscRndPauseMax",
                  ApplyRefusalReason::Conflict, domePauseSent);
+        return;
+    }
+
+    // The PCA9685's address (#444): one a board may be strapped to and not
+    // one of the four every PCA9685 on the bus answers, 0x70 (LED All Call)
+    // and 0x71-0x73 (the sub-addresses). A write meant for one board landing
+    // on every expander at once is a whole-droid simultaneous move, the
+    // brownout ADR 0043 was written around, so it is refused here - the
+    // config door - and again where the bus is brought up (pca9685Begin()).
+    if (configParamHas(params, "pcaAddress") &&
+        pca9685AddressReserved(working->system.pca_address)) {
+        char err[112];
+        snprintf(err, sizeof(err),
+                 "pcaAddress %u: every PCA9685 on the bus answers 0x70-0x73, so no one board may",
+                 (unsigned)working->system.pca_address);
+        setError(result, err, ApplyRefusalReason::Conflict, "pcaAddress");
         return;
     }
 

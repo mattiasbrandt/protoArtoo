@@ -20,7 +20,7 @@ void tearDown() {}
 // Each of the board's Outputs has its own slot, and that slot drives the same
 // address back: no two Outputs share one, and none is lost on the way round.
 void test_every_board_output_has_its_own_slot_and_back() {
-    TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUT_COUNT, SERVO_OUTPUT_SLOT_COUNT);
+    TEST_ASSERT_EQUAL_UINT8(BOARD_OUTPUT_COUNT + PCA9685_CHANNEL_COUNT, SERVO_OUTPUT_SLOT_COUNT);
     bool seen[SERVO_OUTPUT_SLOT_COUNT] = {};
     for (size_t index = 0; index < BOARD_OUTPUT_COUNT; ++index) {
         const ServoOutputAddress output = boardOutputAddress(index);

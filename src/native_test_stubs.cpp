@@ -222,7 +222,7 @@ bool servoTaskMayTakeForRun(ServoOutputAddress output) {
         {false, configCacheReadServoOutputComponent(output.driver, output.channel)},
         boardOutputIndexOf(output));
     in.partCount = configCacheServoOutputPartCountAt(output.driver, output.channel);
-    in.ledcReady = true;
+    in.backendReady = true;
     return servoRunMayTake(in);
 }
 

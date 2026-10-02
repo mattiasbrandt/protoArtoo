@@ -47,7 +47,7 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 // plain outcome, not the calling convention.
 //
 // It used to carry a whole ConfigSnapshot under a comment calling the struct
-// small. ConfigSnapshot measured 944 B then (916 B today, static_assert in
+// small. ConfigSnapshot measured 944 B then (920 B today, static_assert in
 // config_store.h), so that one by-value crossing put ~1892 B of snapshot
 // copies on the serial config-write path and helped overflow the Console task
 // on both chips (#226). `working` already holds a snapshot the caller owns; writing the
@@ -104,7 +104,7 @@ struct ConfigCommitOutcome {
 // same reason the Console reads why a write was refused from `*refused` (81 B,
 // on its own stack) rather than from `*result`.
 //
-// The Working Snapshot is the caller's (916 B), as it was when each adapter
+// The Working Snapshot is the caller's (920 B), as it was when each adapter
 // held the lock itself, so no adapter's stack moves for this.
 enum class ConfigWriteWindowAnswer : uint8_t { Busy, Refused, Committed };
 ConfigWriteWindowAnswer configWriteWindow(const ConfigParamSource& params, ConfigSnapshot* working,
