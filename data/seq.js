@@ -2464,8 +2464,9 @@
             return `${actionLabel} ${targetLabel} (:${action}${target})`;
           }
         }
-        // Advanced mode
-        return `Dome command ${cmd || "@0T6"}`;
+        // A Dome command, as it is stored. An empty one says no command: it
+        // sends none, and Protocol Check refuses it until one is typed.
+        return cmd ? `Dome command ${cmd}` : "Dome command";
       }
       case "domeRotate": {
         const speedPct = fieldOf(step, "speedPct");
