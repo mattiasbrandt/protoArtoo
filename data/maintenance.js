@@ -28,14 +28,24 @@
     // controller restarts under it. Restart shared a page with the component
     // toggles until #404 and was greyed out while one saved; now the two are
     // separate surfaces, so Configuration publishes the answer and this asks
-    // it at the press.
-    if (window.PAConfigurationSave?.isPending()) {
+    // it at the press - and again at the answer: the question does not block
+    // the page the way confirm() did, and the chrome stays live under it, so a
+    // save can start while it is open.
+    const savePending = () => {
+      if (!window.PAConfigurationSave?.isPending()) return false;
       setFeedbackState(rebootFeedback, "Still saving a component change. Press again in a moment.", "warning");
-      return;
-    }
-    if (!confirm("Restart the Body Controller? This page drops for about 10 seconds.")) {
-      return;
-    }
+      return true;
+    };
+    if (savePending()) return;
+    const restart = await window.PAOverlay.ask({
+      title: "Restart the Body Controller?",
+      body: "Every output cuts out, and this page drops for about 10 seconds.",
+      yes: "Restart it",
+      no: "Not now",
+      danger: true,
+      near: rebootButton,
+    });
+    if (!restart || savePending()) return;
     if (!window.PAApi) return;
     setFeedbackState(rebootFeedback, "Sending restart...");
     try {
@@ -232,7 +242,7 @@
   let parsedBackup = null;
   let facts = null;
   let factsAsked = 0;
-  // True from the answer to the question until the restore's receipt is in.
+  // True from the answer to the question until the restore's feedback is in.
   let restoring = false;
 
   const setFeedback = (msg, variant = '') => {
@@ -255,7 +265,7 @@
       && keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && sameJson(a[key], b[key]));
   };
 
-  // The receipt line for a write the droid did not take. POST /api/config, the
+  // The feedback line for a write the droid did not take. POST /api/config, the
   // RC Map and the mood map answer 4xx and 503 before anything changes. Their
   // 500 comes later: the config and the RC Map apply to the live settings
   // before they persist (src/web/api_config.cpp), and the mood map's NVS save
@@ -393,7 +403,7 @@
   // body over one unknown id, and must - a live request naming a Part that does
   // not exist is a real error - so the restore drops it here, against the Part
   // catalog this page carries (data/droid_parts.js, generated from the same
-  // list as the firmware's), and names it in the receipt, as it does an Output
+  // list as the firmware's), and names it in the feedback, as it does an Output
   // this droid lacks. The NVS load drops such an id the same way
   // (droidFittedPartsParse).
   const ROW_SETTINGS = [
@@ -422,7 +432,7 @@
   // row's readings - its name, its band, where it was told to be - stay behind:
   // they are not settings, and the body stays inside what the droid buffers.
   // An Output the backup names and this droid does not have is not sent, and
-  // the receipt says so.
+  // the feedback says so.
   const rowsToRestore = (backup, outputs) => {
     const settings = new Map();
     const names = new Map();
@@ -465,7 +475,7 @@
     return { config: { ...config, droidBuild }, retired };
   };
 
-  // The Configuration's receipt line: "restored" only when all of it landed.
+  // The Configuration's feedback line: "restored" only when all of it landed.
   // A read of the droid's Outputs that fails throws, before anything is sent.
   const restoreConfiguration = async (backup) => {
     const { outputs } = await window.PAOutputs.load();
@@ -570,7 +580,7 @@
   //
   // THE INVARIANT: if the droid refuses anything after the library has
   // changed, the library is put back from `prior`, the Sequences read off the
-  // droid just before, and the receipt says so. `held` and `changed` track what
+  // droid just before, and the feedback says so. `held` and `changed` track what
   // the droid holds now, so the put-back deletes only what this restore added
   // and re-posts only what it removed or overwrote.
   //
@@ -654,13 +664,13 @@
   // src/web/api_rc_map_apply.cpp). So a binding whose Sequence will not be on
   // the droid is left out of what is sent and named, and the rest of the map
   // still replaces the droid's (operator, 2026-09-30, #448) - the "not sent,
-  // named on the receipt" shape of an Output this droid lacks, above.
+  // named in the feedback" shape of an Output this droid lacks, above.
   //
   // `holds(name)` answers for a Learned Sequence the droid holds or a Factory
   // one it ships (GET /api/seq/builtins). The droid's own accepted Factory list
   // is narrower than the catalog; a binding to a catalog name outside it that
   // only a Learned copy made valid, when that copy is left out, is kept here
-  // and refused there - and the receipt then says the RC Map did not land.
+  // and refused there - and the feedback then says the RC Map did not land.
   const rcMapToRestore = (rcMap, holds) => {
     const map = Array.isArray(rcMap?.map) ? rcMap.map : [];
     const send = [];
@@ -841,14 +851,14 @@
 
   // ---- ASK BEFORE ANYTHING IS WRITTEN ----
   // Both answers - the parts and the copy - are in before the first request
-  // that changes the droid, so Cancel means nothing was touched (wizard-import.js
-  // :1014).
+  // that changes the droid, so Keep what I have means nothing was touched
+  // (wizard-import.js :1014).
   const askToReplace = () => {
     const parts = tickedParts();
     if (parts.length === 0 || !facts?.library || !question) return;
     const names = parts.map((part) => part.label);
     const said = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-    if (questionText) questionText.textContent = `Replace the droid's ${said}? What is on it now goes.`;
+    if (questionText) questionText.textContent = `What is on the droid now goes. Replace its ${said}?`;
     question.hidden = false;
     if (restoreBtn) restoreBtn.disabled = true;
   };
@@ -971,7 +981,7 @@
     if (sequencesDone) known.library = [...sequencesDone.held];
   };
 
-  // The chooser is locked from the answer until the receipt is in, and a file
+  // The chooser is locked from the answer until the feedback is in, and a file
   // whose read lands meanwhile is dropped (handleFile()).
   const lockChooser = (locked) => {
     restoring = locked;

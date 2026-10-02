@@ -307,83 +307,6 @@ function newPage({ onDroid = null } = {}) {
   };
 }
 
-test("a step's changed time is the time Save sends", async () => {
-  const page = newPage();
-  page.open(
-    {
-      name: "DM:TIMED",
-      suppressMs: 8000,
-      toggleGroup: "none",
-      steps: [
-        { t: 0, type: "audio", cmd: "$H" },
-        { t: 1000, type: "end" },
-      ],
-    },
-    [0],
-  );
-
-  const card = page.card(0);
-  assert.ok(card, "the expanded step drew no time input");
-  assert.equal(card.timeInput.value, "0");
-
-  // The operator types a new time into the step, as the browser delivers it.
-  card.timeInput.value = "400";
-  fire(card.timeInput, "input");
-  fire(card.timeInput, "change");
-
-  await page.save();
-
-  const saved = page.posts.filter((post) => post.url === "/api/seq");
-  assert.equal(saved.length, 1, "Save sent nothing");
-  assert.equal(saved[0].body.steps[0].t, 400, "Save sent the step's old time");
-  // The rest of the step came through the same read-back untouched.
-  assert.equal(saved[0].body.steps[0].type, "audio");
-  assert.equal(saved[0].body.steps[0].cmd, "$H");
-});
-
-// A step placed on a beat keeps the beat through an edit (ADR 0058, #438). The
-// step is rebuilt from the form, which has no beat field, so without the carry
-// the first edit to any step would quietly turn a beat back into a
-// millisecond - and the next tempo change would leave that step behind.
-test("a step on a beat keeps its beat through an edit, and a new tempo moves it", async () => {
-  const page = newPage();
-  page.open(
-    {
-      name: "DM:ONBEAT",
-      suppressMs: 8000,
-      toggleGroup: "none",
-      tempo: { bpm: 130, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
-      steps: [
-        { t: 0, type: "audio", cmd: "$H" },
-        { t: 923, beat: 2, type: "audio", cmd: "$S" },
-        { t: 3000, type: "end" },
-      ],
-    },
-    [1],
-  );
-
-  // An edit to the beat-placed step that leaves its time alone.
-  const card = page.card(1);
-  assert.ok(card, "the expanded step drew no time input");
-  fire(card.timeInput, "change");
-
-  // The builder types a new tempo.
-  const bpm = page.byId("seq-editor-bpm");
-  bpm.value = "120";
-  fire(bpm, "change");
-
-  await page.save();
-
-  const saved = page.posts.filter((post) => post.url === "/api/seq");
-  assert.equal(saved.length, 1, "Save sent nothing");
-  const steps = saved[0].body.steps;
-  assert.equal(steps[1].beat, 2, "the edit dropped the step's beat");
-  assert.equal(steps[1].t, 1000, "the step did not move to where beat 2 falls at 120 BPM");
-  assert.equal(steps[0].t, 0);
-  assert.equal(steps[2].t, 3000, "a step placed in milliseconds moved with the tempo");
-  assert.equal(saved[0].body.tempo.source, "typed");
-});
-
 // Retime to the grid is the most destructive edit on this surface (ADR 0060):
 // it moves every step at once. So it says how many steps actually landed on a
 // beat - a step inside a loop body cannot, and is not counted as if it had,
@@ -456,64 +379,6 @@ test("a sequence opens after another was closed with All sequences", () => {
 
   page.open(sequence, [0]);
   assert.ok(page.card(0), "the sequence opened after another was closed drew no step");
-});
-
-// Every edit is one Undo and one Redo, on one history (ADR 0057, #441): a run
-// of typing in a field is one edit however many keystrokes it took, a tempo
-// change is one edit although it moves every step on a beat, and what comes
-// back is exactly the routine Save would have sent - the tempo with the steps,
-// because a step on a beat is only where its tempo puts it.
-test("a run of typing and a tempo change are each one Undo, and Redo puts them back", async () => {
-  const page = newPage();
-  page.open(
-    {
-      name: "DM:HISTORY",
-      suppressMs: 8000,
-      toggleGroup: "none",
-      tempo: { bpm: 130, phase: 0, barLen: 4, barPhase: 0, source: "typed", confidence: 1 },
-      steps: [
-        { t: 0, type: "audio", cmd: "$H" },
-        { t: 923, beat: 2, type: "audio", cmd: "$S" },
-        { t: 3000, type: "end" },
-      ],
-    },
-    [0],
-  );
-  const undo = page.byId("seq-editor-undo");
-  const redo = page.byId("seq-editor-redo");
-  const times = () => Array.from(page.editing().steps, (step) => step.t);
-  assert.equal(undo.disabled, true, "a sequence just opened has nothing to undo");
-
-  // 4, 40, 400: three keystrokes, then the field is left.
-  const time = page.card(0).timeInput;
-  for (const typed of ["4", "40", "400"]) {
-    time.value = typed;
-    fire(time, "input");
-  }
-  fire(time, "change");
-  assert.deepEqual(times(), [400, 923, 3000]);
-
-  const bpm = page.byId("seq-editor-bpm");
-  bpm.value = "120";
-  fire(bpm, "change");
-  assert.deepEqual(times(), [400, 1000, 3000], "the fixture: the step on beat 2 moved with the tempo");
-
-  fire(undo, "click");
-  assert.deepEqual(times(), [400, 923, 3000], "Undo did not take the step on a beat back with the tempo");
-  assert.equal(page.editing().tempo.bpm, 130, "Undo left the new tempo in place");
-
-  fire(undo, "click");
-  assert.deepEqual(times(), [0, 923, 3000], "one Undo did not take back the whole typed time");
-  assert.equal(undo.disabled, true, "three keystrokes left more than one entry behind");
-
-  fire(redo, "click");
-  fire(redo, "click");
-  assert.equal(redo.disabled, true);
-  await page.save();
-  const saved = page.posts.filter((post) => post.url === "/api/seq");
-  assert.equal(saved.length, 1, "Save sent nothing");
-  assert.deepEqual(saved[0].body.steps.map((step) => step.t), [400, 1000, 3000], "Redo did not put both edits back");
-  assert.equal(saved[0].body.tempo.bpm, 120);
 });
 
 // An unsaved edit is not kept, and it is never dropped without the builder
@@ -591,44 +456,6 @@ test("an edit made while a save is on its way is still unsaved when it lands", a
   assert.equal(saved.length, 1, "Save sent nothing");
   assert.equal(saved[0].body.steps[0].t, 250, "the fixture: the save went out before the second edit");
   assert.equal(page.surface.decide(), true, "an edit the droid never received was let go without asking");
-});
-
-// One picker change is one edit, and it is its own step's (#441). A panel
-// picker writes its step before it reads the form back; when that write came
-// before the history looked at the step edited just before, the second
-// step's change was filed under the first one's entry, and one Undo took
-// back both.
-test("a panel picked on one step and then on another is two edits, and Undo takes back only the last", () => {
-  const page = newPage();
-  page.open(
-    {
-      name: "DM:PICKED",
-      suppressMs: 8000,
-      toggleGroup: "none",
-      steps: [
-        { t: 0, type: "dome", cmd: ":OP01" },
-        { t: 500, type: "dome", cmd: ":OP02" },
-        { t: 1000, type: "end" },
-      ],
-    },
-    [0, 1],
-  );
-  const commands = () => Array.from(page.editing().steps, (step) => step.cmd || step.type);
-  const pick = (index, target) => {
-    const select = page.card(index).picker("dome-target-select");
-    assert.ok(select, `step ${index + 1} drew no panel list`);
-    select.value = target;
-    fire(select, "change");
-  };
-
-  pick(0, "03");
-  pick(1, "04");
-  assert.deepEqual(commands(), [":OP03", ":OP04", "end"], "the fixture: both pickers wrote their step");
-
-  fire(page.byId("seq-editor-undo"), "click");
-  assert.deepEqual(commands(), [":OP03", ":OP02", "end"], "one Undo took back more than the last pick");
-  fire(page.byId("seq-editor-undo"), "click");
-  assert.deepEqual(commands(), [":OP01", ":OP02", "end"]);
 });
 
 // A sequence inside another is found by its id, and the droid takes the first

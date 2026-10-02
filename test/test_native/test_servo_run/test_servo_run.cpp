@@ -23,7 +23,7 @@ namespace {
 // A free servo Output on a board whose LEDC came up.
 ServoRunTakeInputs freeOutput() {
     ServoRunTakeInputs in = {};
-    in.ledcReady = true;
+    in.backendReady = true;
     return in;
 }
 
@@ -62,7 +62,7 @@ void test_a_run_takes_only_a_free_servo_output() {
     TEST_ASSERT_FALSE_MESSAGE(servoRunMayTake(lightNow), "a light's wire is never a servo's");
 
     ServoRunTakeInputs noTimer = freeOutput();
-    noTimer.ledcReady = false;
+    noTimer.backendReady = false;
     TEST_ASSERT_FALSE_MESSAGE(servoRunMayTake(noTimer), "no channel can be attached");
 }
 

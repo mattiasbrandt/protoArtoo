@@ -824,7 +824,7 @@
   //             Its `open` is the Parts standing open when the routine
   //             starts, for a toggle's close half (build()).
   //   describe  step -> words, the editor's own preview (data/seq.js), so a
-  //             block and a step card name a step alike
+  //             block and the inspector name a step alike
   //   onPose    the builder pressed to send the droid to the marker's instant:
   //             called with it in ms, and returns a promise of {text, level}
   //             to show beside the press. Absent, there is no press.

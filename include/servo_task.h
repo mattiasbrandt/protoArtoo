@@ -42,8 +42,9 @@ void servoTask(void* pvParameters);
 bool servoTaskWiredAtStart(ServoOutputAddress output);
 
 // servoTaskDrivesOutput(): ServoTask puts servo pulses on this Output this
-// boot - wired at start, no light on its wire at start, and LEDC came up. An
-// Output this answers false for is one every servo command is dropped for.
+// boot - wired at start, no light on its wire at start, and its backend came
+// up: LEDC's timer, or the PCA9685 chosen and still answering. An Output this
+// answers false for is one every servo command is dropped for.
 bool servoTaskDrivesOutput(ServoOutputAddress output);
 
 // servoTaskMayTakeForRun(): a Find by Moving run may take this Output now - a
@@ -60,3 +61,18 @@ bool servoTaskMayTakeForRun(ServoOutputAddress output);
 // one byte ServoTask writes, and a stale read can only be a release landing
 // just as the run let go, which the task then drops.
 bool servoTaskRunHolds(ServoOutputAddress output);
+
+// What the droid started with for the PCA9685 (#444): whether it is this
+// boot's body servo controller, the address it was brought up at, and whether
+// it is answering now - false from the first write it did not acknowledge, for
+// the rest of the session (include/pca9685.h). GET /api/servo/outputs reports
+// the three beside the span it owns, and POST /api/servo and the Console say
+// which of them keeps an expander Output from moving. Lock-free from Core 0,
+// like the snapshot above: `chosen` and `address` are written once in setup(),
+// and `answering` only ever goes from true to false.
+struct ServoExpanderFacts {
+    bool chosen;
+    uint8_t address;
+    bool answering;
+};
+ServoExpanderFacts servoTaskExpanderFacts();

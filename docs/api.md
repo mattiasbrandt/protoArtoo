@@ -595,6 +595,10 @@ Queues servo command.
   protoArtoo-wide words `aux1`..`aux3` are not taken on any board, and on the
   FireBeetle 2 neither are `arm1`/`arm2`: there is no alias. `both` is the
   first two Outputs together (`ARM1` and `ARM2`, or `GPIO 49` and `GPIO 50`).
+  An Output on a PCA9685 expander (#444) is named by its address, `pca:0` ..
+  `pca:15` - the channel number the expander board prints, counted from 0 -
+  since no board prints a word for it. A board Output's own address (`ledc:3`)
+  is not a second name for it and is refused.
 - `action`: `open|close|stop|position|nudge|travel|hold|release`
 - `positionUs`: required when `action=position` or `action=hold`; range `500..2500`
 - `action=nudge` (Find by Moving, ADR 0050): a small twitch about wherever
@@ -685,7 +689,13 @@ Queues servo command.
   a restart. The sentence says what would let it be used:
   `{"ok":false,"error":"Restart the droid to use ARM2."}` when it is ticked now,
   `"ARM2 has no Part on it. Put one on it on Wiring."` when it is not, and
-  `"ARM3 carries a light, not a servo."` when its wire carries a light.
+  `"ARM3 carries a light, not a servo."` when its wire carries a light. An
+  expander's Output says first what keeps the expander from driving it:
+  `"pca:3 is on the PCA9685. Choose it as the body servo controller to use it."`
+  when the board's GPIO is the only body servo controller running, and
+  `"pca:3 is unreachable - the PCA9685 is not answering."` when it was chosen
+  and did not answer at start or has stopped answering since; past those it
+  reads like a board Output, by whether a Part is on it.
   `GET /api/servo/outputs` `driven` says the same thing ahead of time. The
   Controller Console's `servo.action.*` rows refuse the same Outputs with
   `unavailable` / `component-disabled`, and the same sentence as `detail`.
@@ -798,9 +808,9 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   - `name`: what the running board prints beside the Output - `ARM1`..`ARM5`
     on the Artoo PCB, `GPIO 49`/`GPIO 50`/`GPIO 4`/`GPIO 5`/`GPIO 51` on the
     FireBeetle 2 - which is also the word `POST /api/servo` takes to move it,
-    or `""` for an address no board labels, such as an expander's row (which
-    `POST /api/servo` cannot move). Join a row to anything by its `address`,
-    never by this name.
+    or `""` for an address no board labels, such as an expander's row, which
+    `POST /api/servo` moves by its `address` instead. Join a row to anything by
+    its `address`, never by this name.
   - `id`: the Output's stored config id (`arm1`..`aux3`) where the board has
     one - the key the status frame reports the Output under. Never shown to a
     builder. Absent for an expander's row.
@@ -820,8 +830,9 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     expander's row.
   - `driven`: whether the droid puts servo pulses on this Output since it
     started - wired at start, no light on the wire at start. `POST /api/servo`
-    refuses every act on an Output this is `false` for, with `409`. `false` on
-    an expander's row: nothing drives one yet.
+    refuses every act on an Output this is `false` for, with `409`. On an
+    expander's row: the PCA9685 is the body servo controller the droid started
+    with, it is answering, and a Part was on the Output at start.
   - `lightCapable`: whether a Light Type may go on this wire (ADR 0067), and
     `ledCount`, how many LEDs its light has - present exactly where a light can
     go, which is also exactly where it can be saved.
@@ -886,8 +897,11 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     `null`. One of `off` (nothing has driven it since boot — switched off, or
     never commanded), `pulses-off` (a release let go of it), `expiry` (a dial's
     hold commands stopped arriving), `ceiling` (a dial held it for the full ten
-    minutes), `estop`, `sleep`, or `release` (its `release` time ran out after
-    a move arrived - the Output Release, #443).
+    minutes), `estop`, `sleep`, `release` (its `release` time ran out after
+    a move arrived - the Output Release, #443), or `unreachable` (it is on a
+    PCA9685 that did not answer when the droid started, or has stopped
+    answering since: nothing can put a pulse on it until a restart with the
+    expander answering, #444).
   - `commandedUs`: the width the controller has put on the pin right now, part
     way through a move too. `null` when there is no pulse on the Output at all.
   - `targetUs`: where the move in progress ends, or the same as `commandedUs`
@@ -902,6 +916,18 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
     two one-second reads: read it before you ask for a nudge, and the nudge is
     over when it has gone up. Wraps at 256; compare, never subtract. Always a
     number, `0` for an Output never nudged, pulse or no pulse.
+- `expander`: the PCA9685, when it is the body servo controller the droid
+  started with (#444), else `null`:
+  `{"product":"pca9685","address":"0x40","outputs":"pca:0-pca:15","answering":true}`.
+  `address` is the I2C address it was brought up at, `outputs` the span of
+  Outputs it owns - one row each in `outputs` above, added at start beside the
+  board's own - and `answering` whether it answered at start, every write
+  since and, while nothing is being sent, a check about once a second.
+  `false` is for the rest of the session: the droid makes one last attempt to
+  switch every channel off, its Outputs then report `limp` `unreachable` and
+  `driven` `false`, and nothing else on the droid changes.
+  The Controller Console's `servo.api.get-outputs` gives the same three facts as
+  one more item, `expander:pca9685 address:0x40 outputs:pca:0-pca:15 answering:true`.
 - Errors: `500` if the answer could not be built.
 
 #### Example request
@@ -1740,6 +1766,12 @@ Returns current config snapshot.
   `rcCh1`..`rcCh6`, `drive`, `audio`, `protoR2link` - each with `enabled` and
   `label`, the Board Component Label (`include/component_labels.inc`) where the
   board has one; `audio` also carries `member` and `activeMember`.
+- `components.bodyServo`: the body servo controller (#444) - `member`, the
+  saved choice (`esp32_gpio_ledc`, the board's GPIO, or `pca9685`), and
+  `activeMember`, the one the droid started with, which differs from it exactly
+  while a change waits for a restart; and `pcaAddress`, the PCA9685's I2C
+  address as a number (64 is `0x40`). With the PCA9685 chosen its sixteen
+  Outputs are rows on `GET /api/servo/outputs` (`pca:0`..`pca:15`), never here.
 - **No Output.** An Output - its wired tick, what is on its wire, its light's
   LED count, its Motion Profile and boot behaviour, its ends and its Parts - is
   read whole from its row on `GET /api/servo/outputs` and written back the same
@@ -1803,6 +1835,22 @@ Updates supported config fields and persists to NVS.
   reboot** like a component toggle. Configuration's Component Picker writes
   it from the Sound family's cards, which guided Setup shows as its step; its
   "Not fitted" card is `enableAudio=false` (#369).
+- components (Component Member): `bodyServoMember` — the body servo controller,
+  a Component Registry part id from the `body_servo_controller` category:
+  `esp32_gpio_ledc` (the board's GPIO, the default) or `pca9685`. Anything else
+  is `400` `{"ok":false,"error":"bodyServoMember is not a body servo controller this firmware can drive"}`.
+  Choosing `pca9685` **adds** the expander's sixteen Outputs, `pca:0`..`pca:15`,
+  beside the board's own, which keep working (#444). Saved immediately, **takes
+  effect at the next reboot**. Configuration's Component Picker writes it from
+  the Body servo controller family's cards.
+- `pcaAddress(64..127)` — the PCA9685's I2C address (`0x40`..`0x7F`, base
+  `0x40` plus its address jumpers); default 64 (`0x40`). Takes effect at the
+  next reboot. `112`..`115` (`0x70`..`0x73`) are refused, `400` with `field`
+  `pcaAddress` and `reason` `conflict`:
+  `{"ok":false,"error":"pcaAddress 0x70: 0x70 is answered by every PCA9685, and 0x71-0x73 are kept clear."}`.
+  Every PCA9685 on the bus answers `0x70` (LED All Call), so a write meant for
+  one board would reach them all; `0x71`..`0x73`, the sub-addresses, are off by
+  default and kept clear as a margin.
 - droid build (ADR 0047): `domeDesign` + `domeVariant`, and `bodyDesign` +
   `bodyVariant`. Each half is sent as a **pair** — a variant means nothing
   without the design it belongs to — and each must name a design the catalog

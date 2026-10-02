@@ -30,6 +30,7 @@
 #include "robot_state.h"
 #include "sequence_bulk_centre.h"  // sequenceBulkCentreHasTravel(), sequenceBodyCentrePlan()
 #include "servo_backend.h"  // boardOutputAddress(), boardOutputIndexOf()
+#include "servo_output_row.h"  // servoOutputParseExpanderAddress() - an expander Output's name
 #include "servo_task.h"     // servoTaskDrivesOutput() - what ServoTask started with
 
 extern QueueHandle_t servoCmdQueue;
@@ -48,11 +49,11 @@ bool servoParseTarget(const char* word, ServoOutputAddress* output) {
         return true;
     }
     const BoardOutput* board = boardOutputForWord(word);
-    if (board == nullptr) {
-        return false;
+    if (board != nullptr) {
+        *output = boardOutputAddress((size_t)(board - BOARD_OUTPUTS));
+        return true;
     }
-    *output = boardOutputAddress((size_t)(board - BOARD_OUTPUTS));
-    return true;
+    return servoOutputParseExpanderAddress(word, output);
 }
 
 // See include/api_servo.h for the full contract. `cmd` is zero-initialised
@@ -77,11 +78,36 @@ namespace {
 // read only to say what a restart would do; whether anything drives it NOW is
 // ServoTask's snapshot alone. The tick is stored per board Output, so an
 // address that is not one of the board's has none saved.
+//
+// An expander's Output is named by its address, and says first what keeps its
+// expander from driving anything (#444): not chosen as the body servo
+// controller, or not answering - the words every surface shows for it
+// (data/outputs.js, "unreachable"). Past those, it is wired the way a board
+// Output is, by having a Part on it, read at start.
 bool oneOutputUndriven(ServoOutputAddress output, char* reason, size_t reasonSize) {
     if (servoTaskDrivesOutput(output)) {
         return false;
     }
+    char address[SERVO_OUTPUT_ADDRESS_STR_MAX + 1] = {};
     const char* name = servoOutputAddressName(output.driver, output.channel);
+    if (name[0] == '\0') {
+        servoOutputFormatAddress(address, sizeof(address), output.driver, output.channel);
+        name = address;
+    }
+    if (output.driver == SERVO_DRIVER_PCA9685) {
+        const ServoExpanderFacts expander = servoTaskExpanderFacts();
+        if (!expander.chosen) {
+            snprintf(reason, reasonSize,
+                     "%s is on the PCA9685. Choose it as the body servo controller to use it.", name);
+        } else if (!expander.answering) {
+            snprintf(reason, reasonSize, "%s is unreachable - the PCA9685 is not answering.", name);
+        } else if (configCacheServoOutputPartCountAt(output.driver, output.channel) > 0) {
+            snprintf(reason, reasonSize, "Restart the droid to use %s.", name);
+        } else {
+            snprintf(reason, reasonSize, "%s has no Part on it. Put one on it on Wiring.", name);
+        }
+        return true;
+    }
     const size_t boardIndex = boardOutputIndexOf(output);
     const OutputWireInputs saved = {
         boardIndex < BOARD_OUTPUT_COUNT && configCacheOutputIsWired(boardIndex),

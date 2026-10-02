@@ -2128,7 +2128,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to move, by the name the board prints, or both for the two arms. Its part swings to its open end.
+    explanation: The output to move, by the name the board prints or, on an expander, its address (pca:3), or both for the two arms. Its part swings to its open end.
     type: string
     board_output: true
     values:
@@ -2152,7 +2152,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to move, by the name the board prints, or both for the two arms. Its part swings to its closed end.
+    explanation: The output to move, by the name the board prints or, on an expander, its address (pca:3), or both for the two arms. Its part swings to its closed end.
     type: string
     board_output: true
     values:
@@ -2175,7 +2175,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to move, by the name the board prints. Its servo goes to the width you give.
+    explanation: The output to move, by the name the board prints or, on an expander, its address (pca:3). Its servo goes to the width you give.
     type: string
     board_output: true
     required: true
@@ -2203,7 +2203,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to twitch, by the name the board prints. Whatever is wired to it moves a little and comes back.
+    explanation: The output to twitch, by the name the board prints or, on an expander, its address (pca:3). Whatever is wired to it moves a little and comes back.
     type: string
     board_output: true
     required: true
@@ -2224,7 +2224,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to run, by the name the board prints. Its part goes open, closed and back.
+    explanation: The output to run, by the name the board prints or, on an expander, its address (pca:3). Its part goes open, closed and back.
     type: string
     board_output: true
     required: true
@@ -2245,7 +2245,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to hold, by the name the board prints. Its servo stays powered at the width you give.
+    explanation: The output to hold, by the name the board prints or, on an expander, its address (pca:3). Its servo stays powered at the width you give.
     type: string
     board_output: true
     required: true
@@ -2273,7 +2273,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
-    explanation: The output to let go, by the name the board prints, or both for the two arms. Its part goes limp where it is.
+    explanation: The output to let go, by the name the board prints or, on an expander, its address (pca:3), or both for the two arms. Its part goes limp where it is.
     type: string
     board_output: true
     values:
@@ -2335,7 +2335,7 @@ entries:
   # target enum/shape rather than inventing a second one.
   params:
   - name: target
-    explanation: The output to center, by the name the board prints, or both for the two arms. Its servo goes to center.
+    explanation: The output to center, by the name the board prints or, on an expander, its address (pca:3), or both for the two arms. Its servo goes to center.
     type: string
     board_output: true
     values:

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/seq_protocol_check.js,/seq_tempo.js,/seq_gesture.js,/servo_motion.js,/seq_rehearsal.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/body_art.js,/body_view.js,/parts_mapping.js,/droid_picture.js,/seq_timeline.js,/seq.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/seq_protocol_check.js,/seq_tempo.js,/seq_gesture.js,/servo_motion.js,/seq_rehearsal.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/droid_build.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/body_art.js,/body_view.js,/parts_mapping.js,/droid_picture.js,/seq_timeline.js,/seq.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -39,7 +39,7 @@
         <h4>Nothing learned yet</h4>
         <p>Tune a factory sequence below to make it yours, or restore one you exported earlier.</p>
         <div class="seq-entry-points">
-          <button class="btn" id="seq-empty-import" type="button">Restore backup</button>
+          <button class="btn btn-sm" id="seq-empty-import" type="button">Restore backup</button>
         </div>
       </div>
 
@@ -62,10 +62,9 @@
       <div class="seq-modal-content">
         <div class="seq-modal-header">
           <h4 id="seq-modal-import-title">Restore a sequence you exported?</h4>
-          <button id="seq-modal-import-close" class="btn-close" type="button" aria-label="Close">Close</button>
         </div>
         <div class="seq-modal-body">
-          <p class="prose">Choose the JSON file you exported, or paste it straight in. Nothing reaches the droid until you press Restore.</p>
+          <p class="prose">Choose the JSON file you exported, or paste it straight in. Nothing reaches the droid until you save it.</p>
           <div class="seq-import-file-picker">
             <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
             <label for="seq-import-file-input" class="btn btn-sm">Choose file</label>
@@ -77,10 +76,10 @@
             placeholder="Paste JSON here..."
             aria-label="Paste JSON directly"
           ></textarea>
-          <div id="seq-import-feedback" class="feedback hidden"></div>
+          <div id="seq-import-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-import-cancel" class="btn btn-sm" type="button">Cancel</button>
+          <button id="seq-modal-import-cancel" class="btn btn-sm" type="button">Keep what I have</button>
           <button id="seq-modal-import-confirm" class="btn btn-sm accent" type="button" disabled>Restore and edit</button>
         </div>
       </div>
@@ -123,7 +122,7 @@
         </div>
         <div class="seq-modal-body">
           <p class="prose" id="seq-wipe-seq-name"></p>
-          <div class="seq-wipe-warning">
+          <div id="seq-wipe-warning" class="seq-wipe-warning">
             <p class="prose"><b>Deletes the sequence from the droid, for good.</b> A factory sequence of the same name comes back; otherwise its RC triggers go dead.</p>
             <p class="seq-wipe-confirm-prompt">Type the sequence name to confirm:</p>
             <input
@@ -135,9 +134,10 @@
             >
           </div>
           <div id="seq-wipe-dangling-info" class="seq-wipe-dangling-info hidden"></div>
+          <div id="seq-wipe-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="seq-modal-footer">
-          <button id="seq-modal-wipe-cancel" class="btn btn-sm" type="button">Cancel</button>
+          <button id="seq-modal-wipe-cancel" class="btn btn-sm" type="button">Keep it</button>
           <button id="seq-modal-wipe-confirm" class="btn btn-sm danger" type="button" disabled>Wipe it</button>
         </div>
       </div>

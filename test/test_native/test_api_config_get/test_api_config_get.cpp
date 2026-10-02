@@ -731,11 +731,11 @@ void test_a_full_table_of_outputs_fits_under_the_route_ceiling() {
     // every row its release time, 12-16 B: about 10.8 KB there at the most,
     // estimated the same way.
     //
-    // Twenty-four rows is the expander case nobody has fitted, and since #428
-    // artoo-esp32 - the chip this suite builds - holds five rows until an
-    // expander driver lands, so the 9536 B case is no longer built here: it is
-    // the ESP32-P4's. The five this controller drives answer in 1948 B, which
-    // is what the Parts page's one-second bench feed actually carries.
+    // Twenty-four rows is the most the table holds on every chip again since
+    // the PCA9685 landed (#444; #428 had held artoo-esp32, the chip this suite
+    // builds, to five), so this is the full case once more. The five board
+    // Outputs alone answer in 1948 B, which is what the Parts page's
+    // one-second bench feed carries without an expander.
     TEST_ASSERT_LESS_THAN_UINT32(12288u, (uint32_t)strlen(backend.sentBody));
     JsonDocument doc;
     TEST_ASSERT_FALSE(deserializeJson(doc, backend.sentBody));

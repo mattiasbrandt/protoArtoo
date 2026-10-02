@@ -224,8 +224,8 @@
   // Lights offers the same modes and colors as a live control (#410, ADR
   // 0067), and two surfaces naming one mode two things is the drift ADR 0045
   // exists to stop. This is the one copy: data/seq.js reads every label it
-  // shows from here - a step's words, the step list's pickers and the Picked
-  // block tab (#441) - and data/lights.js reads the logic and PSI groups.
+  // shows from here - a step's words and the Picked block tab (#441) - and
+  // data/lights.js reads the logic and PSI groups.
   //
   // A group is named for the tokens it labels: the logic and PSI groups
   // (targets, modes, colors) are DL:'s, the text groups DT:'s, the holo groups

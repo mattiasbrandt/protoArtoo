@@ -117,10 +117,12 @@ uint8_t componentCategoryDefaultMember(ComponentCategoryId category) {
         }
     }
 
-    // Every other family either has one selectable member or none, so the first
-    // selectable row is both the only answer and the right one. A family that
-    // grows a second driver and wants a different default declares it the way
-    // Sound does above.
+    // Every other family's default is its first selectable row. For most that
+    // is the only one; the Body servo controller has two, and its first row -
+    // the board's own GPIO - is the intended default, so a controller that has
+    // never been told keeps driving what it always drove and a PCA9685 is a
+    // choice a builder makes (#444). A family whose default is not its first
+    // selectable row declares it the way Sound does above.
     for (size_t i = 0; i < COMPONENT_PART_COUNT; ++i) {
         if (COMPONENT_PARTS[i].category == category && componentPartIsSelectable(COMPONENT_PARTS[i])) {
             return COMPONENT_PARTS[i].value;

@@ -140,14 +140,15 @@
       answer: () => pickedIn("dome_controller"),
     },
     {
-      // Shown, not asked, since the Outputs moved to Wiring and Servos
-      // (#369): what drives the servos is the board's own outputs, and
-      // nothing on this step is a choice.
+      // A choice since the PCA9685 was built (#444): the board's own
+      // outputs, or a PCA9685 beside them. The key keeps its underscore, so
+      // the run's count is the same one it always showed; the step still
+      // takes its answer from the cards like any other.
       key: "_servos",
       title: "Body servo controller",
-      q: "The board's own outputs drive the body's servos.",
-      why: "Nothing to pick here. Mark the outputs you wired on Wiring.",
-      applies: TIMING.NOTHING,
+      q: "What drives the body's servos?",
+      why: "A PCA9685 adds sixteen outputs beside the board's own.",
+      applies: stepTiming("_servos"),
       answer: () => pickedIn("body_servo_controller"),
     },
     {

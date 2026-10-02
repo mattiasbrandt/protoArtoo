@@ -104,7 +104,10 @@ PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_CONTROLLER,       "body_controller
 // The Radio Controller's member is the radio a builder holds (operator,
 // 2026-09-18 on #369). "rc_member" is its NVS key (the rcMember Setting, src/config_settings.cpp).
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_RADIO_CONTROLLER,      "radio_controller",      "Radio Controller",      "rc_member")
-PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "body_servo_controller", "Body servo controller", nullptr)
+// The Body servo controller has two selectable members once the PCA9685 is
+// built (#444), so it has a member setting: "srv_member", the bodyServoMember
+// Setting (src/config_settings.cpp).
+PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "body_servo_controller", "Body servo controller", "srv_member")
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_DOME_ROTATION,         "dome_rotation",         "Dome Rotation",         nullptr)
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_DOME_CONTROLLER,       "dome_controller",       "Dome Controller",       nullptr)
 PA_COMPONENT_CATEGORY(COMPONENT_CATEGORY_FOOT_DRIVE,            "foot_drive",            "Foot Drive",            nullptr)
@@ -158,10 +161,19 @@ PA_COMPONENT_PART( 6, "rc_transmitter_elrs", "RC Receiver - ELRS", COMPONENT_CAT
 // a builder sees rather than for the peripheral: "LEDC does not make sense for
 // an operator" (operator, 2026-09-18 on #369). Its card borrows the running
 // board's picture. The spec sheets keep the technical name.
+//
+// Choosing the PCA9685 ADDS its sixteen Outputs, `pca:0`-`pca:15`, and the
+// board's GPIO Outputs keep working beside them (operator, 2026-09-30, #444;
+// the ADR 0042 note): two backends, never one Output shared between them. It
+// needs no Board Capability Gate - the I2C header is declared on both boards,
+// and whether the expander answers is a runtime fact the droid reports. The
+// board's GPIO is the family's default member because it is the first
+// selectable row here (componentCategoryDefaultMember()): a controller that
+// has never been told keeps driving what it always drove.
 // -----------------------------------------------------------------------------
 // Confirmed on a droid: operator, 2026-09-30, #455.
 PA_COMPONENT_PART( 8, "esp32_gpio_ledc", "Body controller board GPIO", COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "ledc",             COMPONENT_STATUS_SUPPORTED, COMPONENT_CONFIRMED_ON_DROID,     0, nullptr, 1)
-PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
+PA_COMPONENT_PART( 9, "pca9685",         "PCA9685",           COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "i2c_pwm_expander", COMPONENT_STATUS_SUPPORTED, COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 1)
 PA_COMPONENT_PART(10, "pololu_maestro",  "Pololu Maestro",    COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER, "maestro_serial",   COMPONENT_STATUS_ROADMAP,   COMPONENT_NOT_CONFIRMED_ON_DROID, 0, nullptr, 0)
 
 // -----------------------------------------------------------------------------

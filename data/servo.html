@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/parts_mapping.js,/servo.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/outputs.js,/parts_mapping.js,/servo.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -75,12 +75,14 @@
       </div>
     </div>
 
-    <dialog class="parts-move-dialog" id="outputs-move-dialog" role="alertdialog" aria-labelledby="outputs-move-title" aria-describedby="outputs-move-body">
+    <!-- The move question, the same one Wiring asks: every word on it is
+         written by data/parts_mapping.js announcement() (#456). -->
+    <dialog class="question-dialog" id="outputs-move-dialog" role="alertdialog" aria-labelledby="outputs-move-title" aria-describedby="outputs-move-body">
       <h4 class="move-title" id="outputs-move-title"></h4>
       <p class="move-body" id="outputs-move-body"></p>
       <div class="button-row">
-        <button class="btn move-cancel" type="button">Cancel</button>
-        <button class="btn accent move-confirm" type="button">Move it</button>
+        <button class="btn move-cancel" type="button"></button>
+        <button class="btn accent move-confirm" type="button"></button>
       </div>
     </dialog>
 

@@ -105,11 +105,15 @@ bool identitySetWriteWindow(const char* droidName, bool mdnsUseName, ConfigSnaps
 // a Component Picker reads one lineup from the controller instead of keeping
 // its own (ADR 0042 as amended 2026-09-09).
 void handleComponentsGet(WebRequest& req) {
-    // Pin the active members before the send. Sound and the Radio Controller
-    // have one; a family without a member setting reports active_member null,
-    // which is what never pinning it gives.
+    // Pin the active members before the send. Sound, the body servo
+    // controller and the Radio Controller have one; a family without a member
+    // setting reports active_member null, which is what never pinning it
+    // gives. The body servo controller's is the one ServoTask runs since the
+    // boot, as Sound's is (#444).
     componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_SOUND,
                                          configCacheReadActiveSoundMember());
+    componentRegistryJsonPinActiveMember(COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER,
+                                         configCacheReadActiveBodyServoMember());
     // The radio member drives nothing on the controller, so there is no boot
     // latch to report: the saved choice is the active one. No radio fitted
     // pins none, which reads as active_member null.
