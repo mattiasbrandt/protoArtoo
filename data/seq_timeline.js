@@ -261,9 +261,11 @@
     // The pick a random step made, for a hold step to attach to: its set.
     let lastRandom = null;
     const light = new Map(); // light Part id -> its current light item
+    // A light's mode ends where the next one for that light starts, or at the
+    // end: one with no time of its own, and one whose time had not run out.
     const lightEnd = (id, t) => {
       const item = light.get(id);
-      if (item && item.t1 === null) item.t1 = t;
+      if (item && (item.t1 === null || item.t1 > t)) item.t1 = t;
       light.delete(id);
     };
     const domeVisual = { item: null };
