@@ -341,11 +341,6 @@
             });
             return;
           }
-          // A dome Gesture is read as where it leaves each of its panels
-          // (seq_rehearsal.js expand()). One the dome cannot address is moved
-          // by nothing - the dome performs the Gesture as one command of its
-          // own - so that reading is no command to draw on the Dome row.
-          if (event.generated) return;
           const lit = lightCommand(def.cmd);
           if (lit) {
             lit.ids.forEach((id) => {

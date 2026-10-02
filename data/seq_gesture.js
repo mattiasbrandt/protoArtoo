@@ -146,6 +146,10 @@
     "panel1", "panel2", "panel3", "panel4", "panel7", "panel11", "panel13",
     "pie1", "pie2", "pie3", "pie4", "pie5", "pie6",
   ]);
+  // Whether the dome has an address of its own for a Part
+  // (seqGestureDomeBit()). One it has none for - ring panels 5, 6, 8, 9, 10,
+  // 12 and 14 - is in no `$` command and stays where it is.
+  const domeAddressed = (id) => DOME_ADDRESSED.has(id);
   const domeCommand = (shape, spread) => {
     if (spread === "together") return shape === "close" ? ":CL$" : shape === "flutter" ? ":OF$" : ":OP$";
     if (shape !== "open") return null;
@@ -160,7 +164,7 @@
     if (!onDome(def)) return null;
     const shape = shapeOf(def);
     const spread = spreadOf(def);
-    const unaddressed = members(def).filter((id) => !DOME_ADDRESSED.has(id));
+    const unaddressed = members(def).filter((id) => !domeAddressed(id));
     const notes = [];
     if (!domeCommand(shape, spread)) {
       return { performs: false, notes: [`The dome has no ${shape} ${spread}, so it does nothing.`] };
@@ -193,6 +197,7 @@
     onDome,
     members,
     bodyMoves,
+    domeAddressed,
     domeCommand,
     domeReading,
   });
