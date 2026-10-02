@@ -2685,10 +2685,18 @@
       if (patch.beat === null) delete step.beat;
       else step.beat = patch.beat;
     }
-    ["spanBeats", "stepBeats", "repeatBeats", "extentBeats"].forEach((key) => {
+    ["spanBeats", ...GESTURE_BEATS].forEach((key) => {
       if (!(key in patch)) return;
-      if (patch[key] === null) delete step[key];
-      else step[key] = patch[key];
+      if (patch[key] === null) {
+        delete step[key];
+        // A Gesture's pace, repeat and extent in beats are written beside
+        // the milliseconds they resolve to (resolveBeats()). Cleared, the
+        // milliseconds go with them: left behind, the field would read empty
+        // while the Gesture still kept that pace.
+        if (GESTURE_BEATS.includes(key)) delete step[key.replace("Beats", "Ms")];
+      } else {
+        step[key] = patch[key];
+      }
     });
     // The steps picked on the timeline, by index: this edit writes new steps
     // in their place and changes no step's place in the routine, so the same
