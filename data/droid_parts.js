@@ -4,7 +4,7 @@
  * Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
  * DO NOT EDIT MANUALLY
  *
- * Source digest: sha256 a46ca77dbfa184c574ce3a73026b0b034717b5a35708c6e3d43aac4f12d311df
+ * Source digest: sha256 4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453
  *
  * Every Part on the droid, with the name to show, the Printed Droid shorthand
  * to show beside it, the aliases to match on import and search, and where to
@@ -62,7 +62,7 @@
   window.DroidParts = {
     "source": "docs/droid-parts.yaml",
     "generator": "tools/generate_droid_parts_catalog.py",
-    "sourceSha256": "a46ca77dbfa184c574ce3a73026b0b034717b5a35708c6e3d43aac4f12d311df",
+    "sourceSha256": "4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453",
     "designs": [
       {
         "id": "mk4",
@@ -385,7 +385,7 @@
           "Dome side panel 5"
         ],
         "position": "left",
-        "bearingDeg": 73.5,
+        "bearingDeg": 78,
         "control": "none"
       },
       {
@@ -400,7 +400,7 @@
           "Dome side panel 6"
         ],
         "position": "left",
-        "bearingDeg": 73.5,
+        "bearingDeg": 69,
         "control": "none"
       },
       {
@@ -608,7 +608,7 @@
         "half": "dome",
         "aliases": [],
         "position": "left",
-        "bearingDeg": 73.5,
+        "bearingDeg": 69,
         "control": "none",
         "kind": "light",
         "sitsOn": "panel6"

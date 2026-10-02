@@ -360,22 +360,27 @@ class GeneratorPromises(unittest.TestCase):
     def test_a_light_stands_where_its_panel_stands(self):
         """Geometry is declared once, on the panel, and taken from there.
 
-        The Magic Panel is at P5 because it IS what P5 carries, so its row
+        The Rear PSI is at P8 because it IS what P8 carries, so its row
         declares no bearing of its own - and the two can therefore never
-        disagree about where they both are.
+        disagree about where they both are. (The Magic Panel is the one light
+        that does declare a bearing: it is the middle third of the piece the
+        drawing gives P6, itself and P5, #445.)
         """
+        rear_psi_row = next(
+            line for line in self.scratch.catalog.read_text(encoding="utf-8").splitlines()
+            if "id: psiRear," in line
+        )
         self.assertNotIn(
-            "bearing_deg", self.scratch.catalog.read_text(encoding="utf-8")
-            .split("dome_lights:", 1)[1].split("holoprojectors:", 1)[0],
-            "a dome light declares geometry of its own; this test covers the inherited case",
+            "bearing_deg", rear_psi_row,
+            "the Rear PSI declares geometry of its own; this test covers the inherited case",
         )
         _, browser = self.scratch.generate()
         parts = {part["id"]: part for part in browser_payload(browser)["parts"]}
         # .get() rather than [], so a light that inherited nothing fails the
         # comparison instead of raising past it.
-        self.assertEqual(parts["magicPanel"].get("bearingDeg"), parts["panel5"]["bearingDeg"])
-        self.assertEqual(parts["magicPanel"].get("position"), parts["panel5"]["position"])
-        self.assertEqual(parts["magicPanel"]["sitsOn"], "panel5")
+        self.assertEqual(parts["psiRear"].get("bearingDeg"), parts["panel8"]["bearingDeg"])
+        self.assertEqual(parts["psiRear"].get("position"), parts["panel8"]["position"])
+        self.assertEqual(parts["psiRear"]["sitsOn"], "panel8")
 
     def test_a_light_is_named_in_both_outputs_and_kinded_in_only_one(self):
         """A light is a Part exactly as a panel is, so firmware names it too

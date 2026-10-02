@@ -534,8 +534,8 @@ def read_other_slots(doc, control_paths, declared_ids, problems):
 def resolve_hosts(parts, problems):
     """Settle every `sits_on:` link, and place a part where its host stands.
 
-    A light sits where its panel sits - the Magic Panel is at P5 because it IS
-    what P5 carries - so the geometry is declared once, on the panel, and taken
+    A light sits where its panel sits - the Rear PSI is at P8 because it IS
+    what P8 carries - so the geometry is declared once, on the panel, and taken
     from there rather than copied into the light's own row where the two would
     drift the first time a bearing is corrected.
 

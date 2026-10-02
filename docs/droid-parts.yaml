@@ -169,10 +169,11 @@
 #               panel is the midpoint of its outer arc; a holoprojector is the
 #               centre of its mark. Rounded to the half degree.
 #               Two things the drawing does not settle:
-#                 - `panel5` and `panel6` are drawn as ONE fixed piece (P6, the
-#                   Magic Panel and P5 together, 67 to 80 degrees), so both
-#                   carry that piece's midpoint. Clockwise P6 comes before P5;
-#                   the shared number does not say so.
+#                 - `panel6`, `magicPanel` and `panel5` are drawn as ONE fixed
+#                   piece ("P6/MP/P5", 67 to 80 degrees). They are that piece
+#                   split in thirds, in the order it names them clockwise, and
+#                   each carries its third's midpoint: 69, 73.5 and 78. They
+#                   are not measured separately.
 #                 - `domeBtn1` and `domeBtn2` are not on the drawing. Their
 #                   bearings are the ones this file carried before and were
 #                   never measured from it.
@@ -367,8 +368,8 @@ dome_panels:
   - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 144.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
   - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 126.5, position: front-left,  control: dome-link, dome_link_panel: TBD }
   - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 100,   position: left,        control: dome-link, dome_link_panel: TBD }
-  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 73.5,  position: left,        control: none }
-  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 73.5,  position: left,        control: none }
+  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 78,    position: left,        control: none }
+  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 69,    position: left,        control: none }
   - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 47,    position: rear-left,   control: dome-link, dome_link_panel: TBD }
   - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 19,    position: rear,        control: none }
   - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 324,   position: rear-right,  control: none }
@@ -393,7 +394,11 @@ dome_lights:              # what a lit panel carries — a part, not a footnote
   # already answers to: FLD, RLD, FPSI and RPSI are DL:/DT: targets
   # (src/protocol_check.cpp), and MP is how the vendored dome map labels the
   # Magic Panel (data/dome_panel_model.js).
-  - { id: magicPanel, label: Magic Panel,          aliases: ["MP"],                   kind: light, control: none, sits_on: panel5 }
+  # The one light with a bearing of its own: the drawing puts P6, the Magic
+  # Panel and P5 in one piece, split here in thirds, and the Magic Panel is the
+  # middle third rather than where its host panel's third sits (see
+  # `bearing_deg` in the header). Its position word is still its host's.
+  - { id: magicPanel, label: Magic Panel,          aliases: ["MP"], bearing_deg: 73.5, kind: light, control: none, sits_on: panel5 }
   # The one lit panel no reference gives a device name to. "Small upper panel"
   # is this catalog's own wording for it, kept rather than replaced by a name
   # no builder would recognise.
@@ -413,6 +418,8 @@ holoprojectors:
   - { id: hp3Tilt, cad_name: TBD, shorthand: HP3-2, aliases: ["HP3-2", "Holoprojector 3 tilt"], unit: 3, axis: tilt, bearing_deg: 50,  position: rear-left, control: none }
 
 dome_fixtures:            # orientation references — not servos
+  # Not on the vendored dome drawing, so these two bearings were not measured
+  # from it: they are the ones this file carried before (#445).
   - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: rear }
   - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: rear }
 

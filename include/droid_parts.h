@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 a46ca77dbfa184c574ce3a73026b0b034717b5a35708c6e3d43aac4f12d311df
+// Source digest: sha256 4a2c49771947619235e5cd1462be3139bc23b06e0e684fd4dfd1186904204453
 //
 // The Droid Parts Catalog's id vocabulary, and where each Part sits. A
 // Part is identity; an Output Address is only wiring, so nothing here
@@ -397,8 +397,8 @@ inline constexpr int16_t DROID_PART_BEARING_TENTHS[DROID_PART_COUNT] = {
     1445,  // panel2
     1265,  // panel3
     1000,  // panel4
-    735,  // panel5
-    735,  // panel6
+    780,  // panel5
+    690,  // panel6
     470,  // panel7
     190,  // panel8
     3240,  // panel9
@@ -412,7 +412,7 @@ inline constexpr int16_t DROID_PART_BEARING_TENTHS[DROID_PART_COUNT] = {
     735,  // magicPanel
     2020,  // psiFront
     190,  // psiRear
-    735,  // upperPanel
+    690,  // upperPanel
     1810,  // hp1Pan
     1810,  // hp1Tilt
     0,  // hp2Pan
