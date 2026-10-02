@@ -1077,9 +1077,13 @@
   // is one `cmd`, read into its fields and written back whole, and only by an
   // edit that changes it.
   //
+  // A dome panel pair and a body pair are read by the one path (moveOf(),
+  // moveRows()): a Body Step stores the same three things as fields that a
+  // panel command spells in its `cmd`.
+  //
   // Kinds with no rows of their own yet show where they start and are edited
-  // in the step list until theirs land: a Body Step, a Gesture and a sequence
-  // inside this one.
+  // in the step list until theirs land: a Gesture and a sequence inside this
+  // one.
   // ---------------------------------------------------------------------------
   const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
 
@@ -1222,29 +1226,71 @@
   // A panel command's halves: [":OP07", "OP", "07"], or null.
   const panelIntent = (step) => (step.type === "dome" ? /^:(OP|CL|OF)(.+)$/.exec(step.cmd || "") : null);
 
+  // The Move Shape as a builder reads it, by Part Kind: one stored token, said
+  // as open / close / flutter on a servo Part and on / off / flash on a light
+  // (CONTEXT.md "Move Shape").
+  const SHAPE_WORDS = {
+    servo: { open: "Open", close: "Close", flutter: "Flutter" },
+    light: { open: "On", close: "Off", flutter: "Flash" },
+  };
+  const PANEL_SHAPES = { OP: "open", CL: "close", OF: "flutter" };
+  const catalogPart = (id) => (window.DroidParts?.parts || []).find((part) => part.id === id) || null;
+
+  // A step that opens, closes or flutters a Part, as its Move Shape and the
+  // words for it: a dome panel command or a Body Step. Null for any other.
+  // `settles` is whether the step itself says how far and for how long: a
+  // dome panel's flutter does neither (Protocol Check), a body flutter both.
+  const moveOf = (step) => {
+    const intent = panelIntent(step);
+    if (intent) {
+      const shape = PANEL_SHAPES[intent[1]];
+      return { shape, words: SHAPE_WORDS.servo, body: false, settles: shape === "open" };
+    }
+    if (step.type !== "body") return null;
+    const shape = step.shape || "open";
+    const light = Boolean(window.DroidPartKind?.isLight(catalogPart(step.part)));
+    return { shape, words: light ? SHAPE_WORDS.light : SHAPE_WORDS.servo, body: true, light, settles: shape !== "close" };
+  };
+
+  // RUNS FOR, OPENS TO and MOTION, for a dome panel and a body Part alike.
+  // A close is one choice. A flutter owes a later close (Protocol Check), so
+  // it is offered where one already follows - on a pair, which keeps that
+  // close - and on the flutter itself.
+  const moveRows = (step, at, move) => {
+    const { words } = move;
+    if (move.shape === "close") return settingRow("Motion", segOf("motion", [["close", words.close]], "close", "Motion"));
+    const pair = sessionTimeline?.standing(at) || null;
+    const flutter = move.shape === "flutter";
+    const motion = settingRow("Motion", segOf("motion",
+      [["open", words.open], ...(pair || flutter ? [["flutter", words.flutter]] : [])], move.shape, "Motion"));
+    if (!move.settles) return motion;
+    const far = step.howFar ?? STEP_LIMITS.howFar[1];
+    return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
+      + settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`)
+      + motion;
+  };
+
+  // Whether the Part's first move is a jump: an Output claims it and nobody
+  // has recorded that Output's ends. Read off the facts the timeline draws
+  // the move by (data/seq_rehearsal.js bodyMove()), so the two cannot
+  // disagree. A Part no Output claims has no move to speak of - the unwired
+  // note says so - and a light, by its Part Kind or by the Output it is on,
+  // has no ends to record.
+  const firstMoveJumps = (step, move) => {
+    if (!move.body || move.light) return false;
+    const facts = window.SeqRehearsal?.bodyMove(step, rehearsalContext());
+    return Boolean(facts && facts.output && !facts.output.light && !facts.timed);
+  };
+
   // The rows of the block's kind, under where it starts.
   const kindRows = (step, at) => {
     const esc = window.PAUtils.escapeHtml;
+    const move = moveOf(step);
+    if (move) return moveRows(step, at, move);
     switch (step.type) {
       case "dome": {
-        const intent = panelIntent(step);
-        if (!intent) {
-          const light = lightFields(step.cmd);
-          return light ? lightRows(light) : "";
-        }
-        if (intent[1] === "CL") return settingRow("Motion", segOf("motion", [["close", "Close"]], "close", "Motion"));
-        // A panel flutter has no length the body knows and owes a later close
-        // (Protocol Check), so it is offered where a close already follows:
-        // on a pair, which keeps that close, and on the flutter itself.
-        const pair = sessionTimeline?.standing(at) || null;
-        const flutter = intent[1] === "OF";
-        const motion = settingRow("Motion", segOf("motion",
-          [["open", "Open"], ...(pair || flutter ? [["flutter", "Flutter"]] : [])], flutter ? "flutter" : "open", "Motion"));
-        if (flutter) return motion;
-        const far = step.howFar ?? STEP_LIMITS.howFar[1];
-        return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
-          + settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`)
-          + motion;
+        const light = lightFields(step.cmd);
+        return light ? lightRows(light) : "";
       }
       case "domeRotate": {
         const speed = Math.abs(fieldOf(step, "speedPct"));
@@ -1303,7 +1349,10 @@
     const startsAt = settingRow("Starts at",
       `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
       + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
-    const opens = panelIntent(step)?.[1] === "OP";
+    const move = moveOf(step);
+    const jumps = move?.settles && firstMoveJumps(step, move)
+      ? `<p class="hint seq-brick">${esc(catalogPart(step.part)?.name || step.part)} has no recorded ends, so its first move is a jump, not a ramp.</p>`
+      : "";
     // A logic or PSI light says which lights it is: the block can be on
     // several lanes, and then it has no one lane's name.
     const light = step.type === "dome" ? lightFields(step.cmd) : null;
@@ -1311,7 +1360,8 @@
       : light?.kind === "DT" ? lightWord("textTargets", light.target) : "";
     return head(block.name || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
       + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
-      + (opens ? `<p class="hint seq-brick">${BRICK_SENTENCE}</p>` : "")
+      + jumps
+      + (move?.settles ? `<p class="hint seq-brick">${BRICK_SENTENCE}</p>` : "")
       + remove;
   };
 
@@ -1375,6 +1425,21 @@
       if (!Number.isInteger(number)) return;
       if (number >= STEP_LIMITS.howFar[1]) delete step.howFar;
       else step.howFar = number;
+    } else if (field === "motion" && step.type === "body") {
+      // A body flutter has a length of its own: turned into one, the open
+      // lasts the pair, within a flutter's bounds, and the close it owes
+      // stays. Turned back, it is an open again, stored as absence, and an
+      // open has no length to keep in ms or in beats.
+      if (raw === "flutter" && step.shape !== "flutter") {
+        const [least, most] = SeqProtocolCheck.BODY_FLUTTER_MS;
+        const pair = sessionTimeline?.standing(editorState.current.steps.indexOf(step));
+        step.shape = "flutter";
+        step.flutterMs = Math.max(least, Math.min(most, Math.round(pair ? pair.ms : least)));
+      } else if (raw === "open") {
+        delete step.shape;
+        delete step.flutterMs;
+        delete step.spanBeats;
+      }
     } else if (field === "motion") {
       // Open and Flutter are the one step's command, at the same time. Only
       // an open or a close says how far (Protocol Check).
@@ -1432,11 +1497,12 @@
       historyCommit(before);
       rerenderStepTable();
       edited();
-      // The blocks a step draws change with its Move Shape: a flutter is its
-      // own block and leaves the close it owes as another, and an open takes
-      // that close back as the end of the one block it then is.
+      // The blocks a step draws change with its Move Shape: a dome panel's
+      // flutter is its own block and leaves the close it owes as another, and
+      // an open takes that close back as the end of the one block it then is.
+      // A body flutter has a length, so it and its close stay the one block.
       if (field === "motion") {
-        const pair = raw === "open" ? sessionTimeline.standing(at) : null;
+        const pair = raw === "open" || step.type === "body" ? sessionTimeline.standing(at) : null;
         sessionTimeline.pick(pair ? [at, pair.close] : [at]);
       }
     }
@@ -1501,7 +1567,8 @@
   const END_PILL = "kind:end";
   // How far the pointer goes before a press on a pill is a drag.
   const LIBRARY_DRAG_PX = 6;
-  // How long a dropped panel stands open: its close lands this long after.
+  // How long a dropped panel or body Part stands open: its close lands this
+  // long after.
   const DROPPED_OPEN_MS = 1000;
 
   const libraryParts = () =>
@@ -1578,25 +1645,35 @@
       // domeTarget()) - lands as a Logic / PSI Mode on its own lane: Normal,
       // with no color and no duration, so it holds until the next mode.
       //
-      // A body Part, and a light the dome has no word for, are listed and are
-      // not steps this view can write yet.
+      // A body Part, its lights among them, lands as a dome panel does, in
+      // Body Steps: its open here - open is the Move Shape a step has when it
+      // says none, so none is written - and its close a second on. One no
+      // Output claims lands all the same: that is legal to author, and the
+      // note over the lanes says it is not wired.
+      //
+      // What is left has no step that moves it: a dome panel that is fixed,
+      // a dome light the dome has no word for, a holoprojector's servos.
       const part = libraryParts().find((each) => each.id === id);
       const commands = window.DomeCommandMap;
       const open = part && commands?.resolvePanelCommand(part.shorthand, "open");
       const lights = !open && window.DroidPartKind?.isLight(part)
         ? (part.aliases || []).find((alias) => domeLights.targets.includes(alias))
         : null;
-      if (!open && !lights) {
+      const body = !open && !lights && part?.half === "body";
+      if (!open && !lights && !body) {
         sayOnStage(`${libraryName(lib)} cannot go on the timeline yet.`, "error");
         return;
       }
       const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
+      const closes = Math.min(at + DROPPED_OPEN_MS, last);
       const made = lights
         ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: lights }) }]
-        : [
-          { t: at, type: "dome", cmd: open },
-          { t: Math.min(at + DROPPED_OPEN_MS, last), type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
-        ];
+        : body
+          ? [{ t: at, type: "body", part: part.id }, { t: closes, type: "body", part: part.id, shape: "close" }]
+          : [
+            { t: at, type: "dome", cmd: open },
+            { t: closes, type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+          ];
       historyPush();
       steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
       landed(made);
@@ -1908,11 +1985,8 @@
         // A Body Step names a Part and a Move Shape (ADR 0049). A light Part
         // hears the same three stored words as on, off and flash, so it reads
         // that way here (CONTEXT.md "Move Shape").
-        const part = (window.DroidParts?.parts || []).find((entry) => entry.id === step.part);
-        const words = window.DroidPartKind?.isLight(part)
-          ? { open: "On", close: "Off", flutter: "Flash" }
-          : { open: "Open", close: "Close", flutter: "Flutter" };
-        const shape = step.shape || "open";
+        const part = catalogPart(step.part);
+        const { shape, words } = moveOf(step);
         const howFar = step.howFar ? `, ${step.howFar}%` : "";
         return `${words[shape] || shape} ${part ? part.name : step.part || "a part"}${howFar}`;
       }

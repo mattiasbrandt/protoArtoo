@@ -59,6 +59,12 @@ the patch releases, whose notes live on their own GitHub Release.
   light block and the drawer has its lights, its mode, its color as swatches
   and how long it runs. A logic display can show a text instead, and a holo
   offers only the colors its effect takes.
+- **Put a body part in a sequence on its timeline.** Drag a door, an arm or a
+  body light onto the timeline and it lands on its own lane, open for a
+  second. Pick it and the drawer has how long it runs, how far it opens, and
+  whether it opens or flutters; a light reads on and flash. A flutter lasts
+  as long as its block. A part on an output with no recorded ends says its
+  first move is a jump.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring has a card for each product on the droid, opened from the product's
   own row: its supply, its draw, its logic level, where each wire goes, and
