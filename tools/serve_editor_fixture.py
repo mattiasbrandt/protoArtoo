@@ -32,6 +32,7 @@ matches src/web/web_request_psychic.cpp's onNotFound() and makes the next
 missing fixture route announce itself instead of hiding.
 """
 
+import argparse
 import json
 import os
 import re
@@ -411,6 +412,13 @@ class FixtureHandler(SimpleHTTPRequestHandler):
 
 def main():
     """Start the fixture server."""
+    # No options: the port is PA_FIXTURE_PORT. The parser is here so that
+    # --help prints and exits, and anything else on the command line is refused,
+    # where both used to be ignored and a server started on the default port.
+    argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    ).parse_args()
+
     if not DATA_DIR.exists():
         print(f"Error: {DATA_DIR} not found", file=sys.stderr)
         sys.exit(1)
