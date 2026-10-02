@@ -65,6 +65,14 @@ the patch releases, whose notes live on their own GitHub Release.
   whether it opens or flutters; a light reads on and flash. A flutter lasts
   as long as its block. A part on an output with no recorded ends says its
   first move is a jump.
+- **Put a move across a set of parts on the timeline.** The Parts tab has
+  Sets: the ring, the pies, the breadpan doors. Drag one onto the timeline
+  and it lands as one block across the lanes of its parts. Pick it and the
+  drawer has its parts, its move, how it travels across them, where it
+  starts and which way round, and how far; pace, repeat and feel are folded
+  under it. Split into steps writes a body set's moves out as steps you can
+  edit one by one. The dome performs its own sets as one move, so those do
+  not split.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring has a card for each product on the droid, opened from the product's
   own row: its supply, its draw, its logic level, where each wire goes, and

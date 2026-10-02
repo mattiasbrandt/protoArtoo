@@ -21,6 +21,17 @@
   // (PC_BODY_FLUTTER_MS_MIN / _MAX, include/protocol_check.h).
   const BODY_SHAPES = ["open", "close", "flutter"];
   const BODY_FLUTTER_MS = Object.freeze([50, 60000]);
+  // A Gesture's times (PC_GESTURE_*, include/protocol_check.h), each as
+  // [least, most] in ms: the pace between Parts, a full throw, how often it
+  // repeats, and the longest it may go on repeating. Their one home in the
+  // browser: the Gesture vocabulary (data/seq_gesture.js) reads them from
+  // here, and so does every control that sets one.
+  const GESTURE_MS = Object.freeze({
+    STEP_MS: Object.freeze([50, 60000]),
+    SPEED_MS: Object.freeze([50, 5000]),
+    REPEAT_MS: Object.freeze([100, 60000]),
+    EXTENT_MS_MAX: 120000,
+  });
   // A sequence reference: a name, or a saved sequence's id (protocolCheckSeqRefValid()).
   const SEQ_REF = new RegExp(`^(${NAME_PATTERN}|[0-9a-z]{1,16})$`);
   const AUDIO_CATEGORIES = [
@@ -297,6 +308,13 @@
     // control that sets one offers, read from here rather than kept again.
     BODY_FLUTTER_MS,
 
+    // A Gesture's times, each as [least, most] in ms, and the longest extent.
+    GESTURE_MS,
+
+    // How many beats a span, or a Gesture's pace, repeat or extent, may be, as
+    // [least, most] (_validateBeats()): what a control that sets one offers.
+    SPAN_BEATS: Object.freeze([1, TEMPO_BEAT_MAX]),
+
     /**
      * The dome's light vocabulary: which targets it answers to, the modes and
      * colors each takes, and the label to show for every token. Frozen, so a
@@ -495,13 +513,32 @@
       if (!known(step.start, ["front", "right", "rear", "left"])) return fail("start", "Pick where it starts");
       if (!known(step.easing, ["none", "soft", "overshoot"])) return fail("easing", "Pick an easing");
       const inRange = (value, lo, hi) => value === undefined || (isWhole(value) && value >= lo && value <= hi);
+      // A time the wire reads as absent - missing, null or 0 - is the
+      // Gesture's default and is held to no bound (parseGestureMs(),
+      // src/seq_json.cpp; checkGesture() bounds a time only when it is not 0).
+      // How far is not one of them: a stated 0 is refused there.
+      const timed = (value, lo, hi) => value === null || value === 0 || inRange(value, lo, hi);
       if (!inRange(step.howFar, 1, 100)) return fail("howFar", "How far is 1 to 100 percent");
-      if (!inRange(step.stepMs, 50, 60000)) return fail("stepMs", "The pace is 50 to 60000 ms");
-      if (!inRange(step.speedMs, 50, 5000)) return fail("speedMs", "A full throw takes 50 to 5000 ms");
-      if (!inRange(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
-      if (!inRange(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
+      const { STEP_MS, SPEED_MS, REPEAT_MS, EXTENT_MS_MAX } = GESTURE_MS;
+      if (!timed(step.stepMs, ...STEP_MS)) return fail("stepMs", `The pace is ${STEP_MS[0]} to ${STEP_MS[1]} ms`);
+      if (!timed(step.speedMs, ...SPEED_MS)) return fail("speedMs", `A full throw takes ${SPEED_MS[0]} to ${SPEED_MS[1]} ms`);
+      if (!timed(step.repeatMs, ...REPEAT_MS)) return fail("repeatMs", `It repeats every ${REPEAT_MS[0]} to ${REPEAT_MS[1]} ms`);
+      if (!timed(step.extentMs, 0, EXTENT_MS_MAX)) return fail("extentMs", `It repeats for at most ${EXTENT_MS_MAX} ms`);
       if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
-      if (step.flutterMs !== undefined && step.shape !== "flutter") return fail("flutterMs", "Only a flutter lasts a time");
+      // An absent duration is stored as 0, and the firmware judges the 0.
+      // Any other shape may say 0, as on a Body Step. A flutter is where the
+      // two part: a Body Step's flutter with no length is refused, and a
+      // Gesture's is accepted - only one that says a time is held to a
+      // flutter's bounds.
+      const flutterMs = step.flutterMs !== undefined && step.flutterMs !== null ? step.flutterMs : 0;
+      if (step.shape !== "flutter") {
+        if (flutterMs !== 0) return fail("flutterMs", "Only a flutter lasts a time");
+      } else if (flutterMs !== 0) {
+        const [least, most] = BODY_FLUTTER_MS;
+        if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
+          return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
+        }
+      }
       // A flutter ends open and owes a close, unless the spread brings each
       // part back itself: a later close gesture over the same parts.
       const spread = step.spread || "together";
@@ -1136,10 +1173,11 @@
       return { ok: true };
     },
 
-    // Check :OF cleanup within a single branch (flat list of steps).
+    // Check :OF cleanup over one branch, every step of it in stored order.
     // Every :OF<target> step must be followed by a matching :CL command in
     // the same branch. See the panel intent contract in docs/adr/0008.
-    _checkBranchOfCleanup(steps) {
+    // `label` is the branch's key, for the field a refusal names.
+    _checkBranchOfCleanup(steps, label) {
       const pending = []; // { target, group }
 
       for (const step of steps) {
@@ -1166,7 +1204,7 @@
         const targets = pending.map((f) => `:OF${f.target}`).join(", ");
         return {
           ok: false,
-          field: "steps",
+          field: label,
           error: `These panels are left fluttering and never closed: ${targets}. Add a Close action for each one later in the sequence.`,
         };
       }
@@ -1456,7 +1494,13 @@
         return { ok: false, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
       }
 
-      // Must end with 'end' type
+      // One Sequence End, and it is the last step: the droid stops reading a
+      // branch there, so one anywhere else is refused before anything after
+      // it is looked at.
+      const early = steps.findIndex((step, i) => step && step.type === "end" && i !== steps.length - 1);
+      if (early >= 0) {
+        return { ok: false, field: `${label}[${early}].type`, error: "Sequence End must be the last step" };
+      }
       const lastStep = steps[steps.length - 1];
       if (!lastStep || lastStep.type !== "end") {
         return { ok: false, error: "The sequence must finish with a Sequence End step" };
@@ -1480,6 +1524,11 @@
             error: stepVal.error,
           };
         }
+        // A Marcduino sequence trigger is refused among the steps a loop
+        // repeats (":SE not allowed inside loops", protocolCheckBranch()).
+        if (isBody && steps[i].type === "dome" && String(steps[i].cmd || "").startsWith(":SE")) {
+          return { ok: false, field: `${label}[${i}].cmd`, error: "A Marcduino sequence (:SE) cannot sit inside a repeat" };
+        }
         if (!isBody) {
           if (lastOuterT >= 0 && steps[i].t < lastOuterT) {
             return {
@@ -1492,29 +1541,12 @@
         }
       }
 
-      // :OF cleanup check — outer branch (all non-body steps)
-      const outerSteps = steps.filter((_, i) => !bodyStepIndices.has(i));
-      const outerCleanup = this._checkBranchOfCleanup(outerSteps);
-      if (!outerCleanup.ok) return outerCleanup;
-
-      // :OF cleanup check — each loop body independently
-      {
-        let j = 0;
-        while (j < steps.length) {
-          const s = steps[j];
-          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = loopBodyCount(steps, j);
-            const bodySteps = steps.slice(j + 1, j + 1 + count);
-            const bodyCleanup = this._checkBranchOfCleanup(bodySteps);
-            if (!bodyCleanup.ok) return bodyCleanup;
-            j += count + 1;
-          } else {
-            j++;
-          }
-        }
-      }
-
-      return { ok: true };
+      // :OF cleanup is one list across the whole branch, in the order the
+      // steps are stored, the steps a loop repeats among them: a flutter
+      // inside a loop is cleaned by a close after the loop, and one before a
+      // loop by a close inside it (protocolCheckBranch()'s pendingFlutter,
+      // checked once at the branch's end).
+      return this._checkBranchOfCleanup(steps, label);
     },
 
     /**

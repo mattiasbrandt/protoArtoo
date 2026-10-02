@@ -216,6 +216,11 @@
   // close as written, a flutter as the dome's to know (nothing), every other
   // command the dome performs ends its panels closed, and a pair with no
   // command moves nothing (include/sequence_gesture.h).
+  //
+  // Only the members the dome has an address for: one it has none for is in
+  // no `$` command and is not moved (domePartTarget(),
+  // include/sequence_pose.h). Its number is not a panel's either - panel 14
+  // would spell `:OP14`, which is the pie group's command.
   const domePanelsOf = (def) => {
     const G = window.SeqGesture;
     if (!G || !G.onDome(def)) return [];
@@ -224,6 +229,7 @@
     if (!G.domeCommand(shape, spread) || (spread === "together" && shape === "flutter")) return [];
     const word = spread === "together" && shape === "open" ? "OP" : "CL";
     return G.members(def)
+      .filter((id) => G.domeAddressed(id))
       .map((id) => {
         const panel = /^panel(\d+)$/.exec(id);
         const pie = /^pie(\d)$/.exec(id);

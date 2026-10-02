@@ -41,12 +41,13 @@
   // The Motion Profile's own easing words; absent is the Output's own.
   const EASINGS = Object.freeze(["none", "soft", "overshoot"]);
 
-  // Bounds (protocol_check.h PC_GESTURE_*), and the pace a Gesture takes with
-  // no tempo to lend it a beat (SEQ_GESTURE_STEP_DEFAULT_MS).
-  const STEP_MS = [50, 60000];
-  const SPEED_MS = [50, 5000];
-  const REPEAT_MS = [100, 60000];
-  const EXTENT_MS_MAX = 120000;
+  // Bounds (protocol_check.h PC_GESTURE_*). Protocol Check's mirror has them
+  // (data/seq_protocol_check.js GESTURE_MS), and they are read from it rather
+  // than kept a second time, so this file loads after that one: every page
+  // that loads it does (seq.html's data-scripts).
+  const { STEP_MS, SPEED_MS, REPEAT_MS, EXTENT_MS_MAX } = window.SeqProtocolCheck.GESTURE_MS;
+  // The pace a Gesture takes with no tempo to lend it a beat
+  // (SEQ_GESTURE_STEP_DEFAULT_MS).
   const STEP_DEFAULT_MS = 500;
   const MEMBERS_MAX = 24;
 
@@ -146,6 +147,10 @@
     "panel1", "panel2", "panel3", "panel4", "panel7", "panel11", "panel13",
     "pie1", "pie2", "pie3", "pie4", "pie5", "pie6",
   ]);
+  // Whether the dome has an address of its own for a Part
+  // (seqGestureDomeBit()). One it has none for - ring panels 5, 6, 8, 9, 10,
+  // 12 and 14 - is in no `$` command and stays where it is.
+  const domeAddressed = (id) => DOME_ADDRESSED.has(id);
   const domeCommand = (shape, spread) => {
     if (spread === "together") return shape === "close" ? ":CL$" : shape === "flutter" ? ":OF$" : ":OP$";
     if (shape !== "open") return null;
@@ -160,7 +165,7 @@
     if (!onDome(def)) return null;
     const shape = shapeOf(def);
     const spread = spreadOf(def);
-    const unaddressed = members(def).filter((id) => !DOME_ADDRESSED.has(id));
+    const unaddressed = members(def).filter((id) => !domeAddressed(id));
     const notes = [];
     if (!domeCommand(shape, spread)) {
       return { performs: false, notes: [`The dome has no ${shape} ${spread}, so it does nothing.`] };
@@ -193,6 +198,7 @@
     onDome,
     members,
     bodyMoves,
+    domeAddressed,
     domeCommand,
     domeReading,
   });

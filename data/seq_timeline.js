@@ -166,6 +166,9 @@
   //   light    a light mode, until it is changed, its time runs out or the
   //            end resets it
   //   span     anything else with a length: a dome visual, a dome turn, a loop
+  //   gesture  a Gesture, on the lane of every Part it spreads across: the
+  //            one step drawn once per lane, so the lanes' pieces are one
+  //            block (as a light mode on a group of lights is)
   //   tick     one command at its instant: every step draws at least this
   // `ghost` marks an item from a loop's second pass or later, which the
   // as-written reading draws faintly.
@@ -181,7 +184,9 @@
   // A Part standing open (`open`) also carries `sent`: when the command that
   // opened it was sent, which for a body Part is before it stands open.
   // An item with no `steps` is derived and is not draggable: a later pass of a
-  // loop, a move a Gesture becomes, what the droid does after the end.
+  // loop, a move a Gesture becomes, what the droid does after the end. One a
+  // Gesture becomes says which step that Gesture is (`of`), because it moves
+  // when the Gesture does.
   //
   // A lane also carries `changes`: [{t, at}] for every moment the routine
   // commands the Part to a position (at 0 closed, 1 fully open), which is what
@@ -218,7 +223,7 @@
           short: part && part.shorthand ? part.shorthand : "",
           items: [],
           changes: [],
-          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, flutter: null, fromUs: null },
+          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, sinceOf: null, flutter: null, fromUs: null },
         });
       }
       return lanes.get(id);
@@ -228,7 +233,14 @@
       if (!rows.has(key)) rows.set(key, { key, name, items: [] });
       return rows.get(key);
     };
+    // The Gesture whose move is being drawn, as its step's index, or null
+    // while what is drawn was written as a step of its own. Only an item no
+    // written step draws says so: one a builder wrote - a hand-written open
+    // that a Gesture's move closes - stays where its own step is, and is still
+    // somewhere a dragged Gesture can land.
+    let source = null;
     const add = (lane, item) => {
+      if (!item.steps && item.of === undefined && source !== null) item.of = source;
       lane.items.push(item);
       return item;
     };
@@ -252,6 +264,7 @@
         lane.state.sent = sent;
         lane.state.sinceGhost = ghost;
         lane.state.sinceStep = step;
+        lane.state.sinceOf = source;
       }
     };
     // A Part standing open is drawn from two steps: its start is the step that
@@ -272,7 +285,8 @@
     const closeAt = (lane, t, step) => {
       if (lane.state.open) {
         const pair = standing(lane.state.sinceStep, step);
-        add(lane, { kind: "open", t0: lane.state.since, t1: t, sent: lane.state.sent, ghost: lane.state.sinceGhost, ...pair });
+        const of = lane.state.sinceOf === null ? {} : { of: lane.state.sinceOf };
+        add(lane, { kind: "open", t0: lane.state.since, t1: t, sent: lane.state.sent, ghost: lane.state.sinceGhost, ...of, ...pair });
         if (lane.state.flutter && pair.r) {
           const flutter = lane.state.flutter;
           flutter.steps = pair.steps;
@@ -302,6 +316,7 @@
       const ghost = (event.iter || 0) > 0;
       const label = context.describe ? context.describe(def) : def.type;
       const step = written(event);
+      source = event.generated ? event.step : null;
       switch (def.type) {
         case "dome": {
           const panel = panelCommand(def.cmd);
@@ -408,14 +423,31 @@
             : { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
           return;
         }
-        case "gesture":
-          // Where the Gesture was fired, which is the one thing of it a drag
-          // takes hold of. The moves it becomes are drawn on their own Parts'
-          // lanes from the same expansion the Rehearsal reads
-          // (seq_rehearsal.js expand()); drawing it as one block across those
-          // lanes comes with Gesture authoring (#441).
-          add(rowLane("gesture", "Gesture"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+        case "gesture": {
+          // One block across the lanes of its Parts, from where it fires
+          // (#441). A body Gesture runs to the last move it makes; a dome
+          // Gesture is the dome's one command, with no length the body
+          // knows, as a dome flutter has none. It has no edges: its length
+          // comes of its pace and its repeat, which no drag owns, so a drag
+          // only moves when it fires. A member no Output claims gets its lane
+          // all the same, dimmed as any such lane is.
+          //
+          // The moves it becomes are drawn inside it on the same lanes, from
+          // the expansion the Rehearsal reads (seq_rehearsal.js expand()),
+          // and are derived: read, never taken hold of.
+          const G = window.SeqGesture;
+          const ids = G ? G.members(def) : [];
+          if (ids.length === 0) {
+            // It names no Part this page knows: still drawn, never dropped.
+            add(rowLane("other", "Other"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+            return;
+          }
+          const until = G.bodyMoves(def, t).reduce((last, move) => Math.max(last, move.t), t);
+          ids.forEach((id) => {
+            add(partLane(id), { kind: "gesture", t0: t, t1: until, label, ghost, ...drawnFrom(step) });
+          });
           return;
+        }
         case "sequence":
           // A sequence inside this one, where it starts. What it does is read
           // when it runs; drawing it as one linked block comes with nesting
@@ -432,6 +464,7 @@
     });
 
     // The end: what the engine does after the end step, in its order.
+    source = null;
     let ringCloses = 0;
     let cleanupEnd = endMs;
     const partLanes = [...lanes.values()].sort((a, b) =>
@@ -459,7 +492,8 @@
     // What is still open closes nowhere: a lighter run to the right edge.
     partLanes.forEach((lane) => {
       if (lane.state.open) {
-        add(lane, { kind: "left", t0: lane.state.since, t1: windowMs, ghost: lane.state.sinceGhost, ...standing(lane.state.sinceStep, null) });
+        const of = lane.state.sinceOf === null ? {} : { of: lane.state.sinceOf };
+        add(lane, { kind: "left", t0: lane.state.since, t1: windowMs, ghost: lane.state.sinceGhost, ...of, ...standing(lane.state.sinceStep, null) });
         lane.state.open = false;
       }
     });
@@ -484,7 +518,7 @@
       windowMs,
       loops,
       parts: partLanes,
-      rows: ["sound", "dome", "spin", "gesture", "phrase", "other"].map((key) => rows.get(key)).filter(Boolean),
+      rows: ["sound", "dome", "spin", "phrase", "other"].map((key) => rows.get(key)).filter(Boolean),
     };
   };
 
@@ -540,7 +574,9 @@
     const ghost = authored && item.ghost ? " is-ghost" : "";
     const title = item.label ? `${item.label}, ${seconds(item.t0)}` : seconds(item.t0);
     const width = item.kind === "tick" ? "" : `;width:${pct(Math.max(0, t1 - item.t0), windowMs)}`;
-    const text = item.kind !== "tick" && item.label ? `<span class="tl-label">${esc(item.label)}</span>` : "";
+    // A Gesture's block holds the moves it becomes, each with its own words,
+    // so its own are in its title and not written over theirs.
+    const text = item.kind !== "tick" && item.kind !== "gesture" && item.label ? `<span class="tl-label">${esc(item.label)}</span>` : "";
     return `<span class="tl-item tl-${item.kind}${ghost}"${handle} style="left:${pct(item.t0, windowMs)}${width}" title="${esc(title)}">${text}</span>`;
   };
 
@@ -574,11 +610,21 @@
     return html;
   };
 
+  // A lane's items in the order they are drawn, the last on top. A Part
+  // standing open (`open`, `left`) is listed when it closes, or at the end,
+  // which is after every block that starts while it stands; drawn in that
+  // place it would lie over them and take their presses. So standing goes
+  // under, and the blocks over it in the order they were listed. The order is
+  // the whole of it: a block given a layer of its own would bury the marks
+  // drawn inside it.
+  const isStanding = (item) => item.kind === "open" || item.kind === "left";
+  const stacked = (items) => [...items.filter(isStanding), ...items.filter((item) => !isStanding(item))];
+
   const laneHtml = (lane, windowMs, authored, dim, handleOf = () => "") =>
     `<div class="tl-row${dim ? " is-unwired" : ""}${lane.part ? "" : " is-kind"}" data-lane="${esc(lane.key)}">` +
     `<div class="tl-name">${lane.short ? `<span class="tl-short">${esc(lane.short)}</span>` : ""}` +
     `<span class="tl-part">${esc(lane.name)}</span></div>` +
-    `<div class="tl-track">${lane.items.map((item) => itemHtml(item, windowMs, authored, handleOf(item, lane))).join("")}</div>` +
+    `<div class="tl-track">${stacked(lane.items).map((item) => itemHtml(item, windowMs, authored, handleOf(item, lane))).join("")}</div>` +
     `</div>`;
 
   // ---------------------------------------------------------------------------
@@ -703,7 +749,10 @@
       return item.steps.every((index) => selection.has(steps[index]));
     };
     const handleOf = (item, lane) => {
-      if (!editing() || !item.steps) return "";
+      if (!editing()) return "";
+      // A move a Gesture becomes, as written, says which Gesture: a press on
+      // it takes hold of that Gesture's block (grab()).
+      if (!item.steps) return item.of !== undefined && !item.ghost ? ` data-of="${item.of}"` : "";
       drawn.push({ item, lane });
       const sized = item.kind === "tick" ? "" : `${item.l ? " can-size-l" : ""}${item.r ? " can-size-r" : ""}`;
       return ` data-item="${drawn.length - 1}" data-edit="can-move${sized}${selected(item) ? " is-selected" : ""}"`;
@@ -975,6 +1024,7 @@
     // A block is named by its own words, or by its lane when it has none. A
     // loop's later passes are not landed on: they are the same steps again,
     // and the ones a gesture is moving would be a target that moves with it.
+    // Nor are the moves a dragged Gesture becomes, which go where it goes.
     const snapTargets = (plan) => {
       const steps = seqNow().steps;
       const moving = new Set(plan.writes.map((w) => w.step));
@@ -982,6 +1032,7 @@
       [{ name: "Loop", items: loopItems(model, true) }, ...model.parts, ...model.rows].forEach((lane) =>
         lane.items.forEach((item) => {
           if (item.ghost || (item.steps && item.steps.some((index) => moving.has(steps[index])))) return;
+          if (item.of !== undefined && moving.has(steps[item.of])) return;
           const label = item.label || lane.name;
           targets.push({ t: item.t0, label });
           if (item.kind !== "tick" && item.kind !== "left" && item.t1 !== null && item.t1 !== undefined) targets.push({ t: item.t1, label });
@@ -1061,12 +1112,44 @@
       if (!editing() || drag || event.button > 0) return;
       const target = event.target && event.target.closest ? event.target : null;
       if (!target || target.closest(".tl-ruler")) return;
-      const node = target.closest(".tl-item, .tl-end");
+      let node = target.closest(".tl-item, .tl-end");
       const isEnd = Boolean(node) && node.classList.contains("tl-end");
       const steps = seqNow().steps;
-      const item = isEnd
-        ? (model.end === -1 ? null : { kind: "tick", t0: model.endMs, t1: model.endMs, steps: [model.end] })
-        : node && node.dataset.item !== undefined ? drawn[Number(node.dataset.item)].item : null;
+      // A press on one of the moves a Gesture becomes is a press on the
+      // Gesture: they are drawn over its block and are not taken hold of
+      // themselves, so the block they belong to answers for them.
+      const within = () => {
+        const of = node ? node.dataset.of : undefined;
+        if (of === undefined) return null;
+        return drawn.find((each) => each.item.kind === "gesture" && each.item.steps[0] === Number(of))?.item || null;
+      };
+      // A press on the mark of the step that opens a Part, or of the step
+      // that closes it, is a press on the Part standing open: standing is
+      // drawn under the blocks (stacked()), so those two marks lie over the
+      // ends of the block they make. Taken by itself, either would move its
+      // one step with nothing to stop it at the other, and past it the pair
+      // changes places. Handed to the standing block, the press is that
+      // block's edge or its body by where it falls, and an edge stops at the
+      // other end.
+      const opened = (pressed) => {
+        const { item: mark, lane } = drawn[pressed];
+        if (mark.kind !== "tick" || mark.steps.length !== 1) return pressed;
+        const ends = (side) => side !== undefined && side.field === "t" && side.step === mark.steps[0];
+        const over = drawn.findIndex((each) =>
+          each.lane === lane && isStanding(each.item) && (ends(each.item.l) || ends(each.item.r)));
+        return over === -1 ? pressed : over;
+      };
+      let item = null;
+      if (isEnd) {
+        item = model.end === -1 ? null : { kind: "tick", t0: model.endMs, t1: model.endMs, steps: [model.end] };
+      } else if (node && node.dataset.item !== undefined) {
+        const taken = opened(Number(node.dataset.item));
+        item = drawn[taken].item;
+        // The block's own box decides edge or body below, not the mark's.
+        node = grid.querySelector(`[data-item="${taken}"]`) || node;
+      } else {
+        item = within();
+      }
       if (!item) {
         clearSelection();
         return;
