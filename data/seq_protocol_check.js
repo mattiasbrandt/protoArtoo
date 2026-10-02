@@ -1486,6 +1486,11 @@
             error: stepVal.error,
           };
         }
+        // A Marcduino sequence trigger is refused among the steps a loop
+        // repeats (":SE not allowed inside loops", protocolCheckBranch()).
+        if (isBody && steps[i].type === "dome" && String(steps[i].cmd || "").startsWith(":SE")) {
+          return { ok: false, field: `${label}[${i}].cmd`, error: "A Marcduino sequence (:SE) cannot sit inside a repeat" };
+        }
         if (!isBody) {
           if (lastOuterT >= 0 && steps[i].t < lastOuterT) {
             return {
