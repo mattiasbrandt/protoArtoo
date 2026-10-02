@@ -1706,14 +1706,15 @@
         list.splice(first, 0, loop);
         return loop;
       };
-      // Tried on a copy first. What a loop repeats is checked on its own, as
-      // the routine round it is: a flutter taken into the loop with its close
-      // left outside, or the other way about, is refused by the droid. A drop
-      // never turns a routine it accepts into one it refuses.
+      // Tried on a copy first: a drop never turns a routine the droid accepts
+      // into one it refuses - a loop is one more step in a routine that may
+      // be full, and there are commands a loop may not repeat. What refuses
+      // it is said in Protocol Check's own words.
       const trial = JSON.parse(JSON.stringify(editorState.current));
       wrap(trial.steps);
-      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !SeqProtocolCheck.validateSequence(trial).ok) {
-        sayOnStage("Servo Loop would split a step from the close it owes.", "error");
+      const refused = SeqProtocolCheck.validateSequence(trial);
+      if (SeqProtocolCheck.validateSequence(editorState.current).ok && !refused.ok) {
+        sayOnStage(refused.error, "error");
         return;
       }
       historyPush();

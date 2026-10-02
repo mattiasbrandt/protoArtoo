@@ -1136,7 +1136,7 @@
       return { ok: true };
     },
 
-    // Check :OF cleanup within a single branch (flat list of steps).
+    // Check :OF cleanup over one branch, every step of it in stored order.
     // Every :OF<target> step must be followed by a matching :CL command in
     // the same branch. See the panel intent contract in docs/adr/0008.
     _checkBranchOfCleanup(steps) {
@@ -1498,29 +1498,12 @@
         }
       }
 
-      // :OF cleanup check — outer branch (all non-body steps)
-      const outerSteps = steps.filter((_, i) => !bodyStepIndices.has(i));
-      const outerCleanup = this._checkBranchOfCleanup(outerSteps);
-      if (!outerCleanup.ok) return outerCleanup;
-
-      // :OF cleanup check — each loop body independently
-      {
-        let j = 0;
-        while (j < steps.length) {
-          const s = steps[j];
-          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = loopBodyCount(steps, j);
-            const bodySteps = steps.slice(j + 1, j + 1 + count);
-            const bodyCleanup = this._checkBranchOfCleanup(bodySteps);
-            if (!bodyCleanup.ok) return bodyCleanup;
-            j += count + 1;
-          } else {
-            j++;
-          }
-        }
-      }
-
-      return { ok: true };
+      // :OF cleanup is one list across the whole branch, in the order the
+      // steps are stored, the steps a loop repeats among them: a flutter
+      // inside a loop is cleaned by a close after the loop, and one before a
+      // loop by a close inside it (protocolCheckBranch()'s pendingFlutter,
+      // checked once at the branch's end).
+      return this._checkBranchOfCleanup(steps);
     },
 
     /**
