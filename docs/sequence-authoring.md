@@ -41,7 +41,7 @@ calibrated servo execution; the body commands the intent.
 |---|---|
 | `:OP<target>` | open a panel or group |
 | `:CL<target>` | close a panel or group |
-| `:OF<target>` | one-shot flutter effect (panel state after is undefined -- requires explicit close) |
+| `:OF<target>` | one-shot flutter effect; the dome ends it with the panel closed |
 
 **Allowed targets:**
 
@@ -56,18 +56,11 @@ calibrated servo execution; the body commands the intent.
 Do not use numeric IDs 08-10 or 12 as pie panel references. AstroPixelsPlus maps those
 compatibility IDs to a mixed set; use the explicit `P1`-`P6` aliases instead.
 
-### `:OF` cleanup rule
+### A flutter needs no close
 
-`:OF` flutter does not leave a defined final panel state. Any branch that issues
-`:OF<target>` must later issue a matching close in the same branch:
-
-| Flutter | Valid close |
-|---|---|
-| `:OF01`-`:OF04`, `:OF07`, `:OF11`, `:OF13` (ring) | `:CL<same>`, `:CL15`, or `:CL00` |
-| `:OFP1`-`:OFP6` (pie) | `:CLP<same>`, `:CL14`, or `:CL00` |
-| `:OF14` (pie group) | `:CL14` or `:CL00` |
-| `:OF15` (ring group) | `:CL15` or `:CL00` |
-| `:OF00` (all) | `:CL00` |
+`:OF` ends with the panel closed: the dome's own flutter finishes on the closed
+end. A branch that issues `:OF<target>` owes no `:CL` after it, and Protocol
+Check asks for none (ADR 0008 and ADR 0049, amended 2026-10-02).
 
 `:OP` needs no same-branch close on a ring panel: terminal and abort cleanup close those one
 at a time. A pie opened with `:OP` stays open unless the branch closes it.
@@ -290,9 +283,6 @@ Sequences the effect class is *inferred* by Protocol Check from each command, so
 correct-by-construction; in Factory tables you tag the first activating step explicitly
 (`FX_PANEL`, `FX_LOGIC_PSI`, `FX_HOLO`, `FX_AUDIO`).
 
-The `:OF` cleanup rule is the one exception where Protocol Check requires explicit same-branch
-close authorship. Auto-reset is a safety net, not a substitute for authored flutter cleanup.
-
 **Body parts are outside all of this.** The engine stamps no effect class on a
 `body` step and schedules nothing for it at the end of a run: a door left open
 stays open, because the Servo Output's own release schedule already stops it
@@ -373,7 +363,6 @@ the format cannot express a bypass for.
 | branch | `<=96` steps; ends with explicit `end`; `t` non-decreasing outside loop bodies |
 | `:OP`/`:CL`/`:OF` | target must be in the allowed set (see Panel intent vocabulary) |
 | `:SM` | **rejected** -- diagnostic only, not allowed in sequences |
-| `:OF` | same-branch explicit close required for every flutter target |
 | `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
 | `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |

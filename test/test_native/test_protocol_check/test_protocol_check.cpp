@@ -81,7 +81,7 @@ static void test_inference_stamps_effect_classes() {
     TEST_ASSERT_EQUAL_UINT8(FX_PANEL, gNod[3].effectClass);
 }
 
-static void test_panel_intent_whitelist_and_of_cleanup() {
+static void test_panel_intent_whitelist_and_a_flutter_owes_no_close() {
     static SeqStep ok[] = {
         SEQ_DOME(0, FX_NONE, ":OFP1"),
         SEQ_DOME(100, FX_NONE, ":CL14"),
@@ -98,13 +98,14 @@ static void test_panel_intent_whitelist_and_of_cleanup() {
     TEST_ASSERT_FALSE(r.ok);
     TEST_ASSERT_EQUAL_STRING("steps[0].cmd", r.field);
 
-    static SeqStep missingCleanup[] = {
+    // A flutter ends closed on the dome, so nothing has to close it afterwards
+    // (ADR 0008 and ADR 0049, amended 2026-10-02).
+    static SeqStep flutterAlone[] = {
         SEQ_DOME(0, FX_NONE, ":OF01"),
         SEQ_TERM(100),
     };
-    r = protocolCheckBranch("steps", missingCleanup, 2);
-    TEST_ASSERT_FALSE(r.ok);
-    TEST_ASSERT_EQUAL_STRING("steps", r.field);
+    r = protocolCheckBranch("steps", flutterAlone, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
 }
 
 static void test_op_without_close_accepts() {
@@ -770,7 +771,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_valid_flat_draft_accepts);
     RUN_TEST(test_inference_stamps_effect_classes);
-    RUN_TEST(test_panel_intent_whitelist_and_of_cleanup);
+    RUN_TEST(test_panel_intent_whitelist_and_a_flutter_owes_no_close);
     RUN_TEST(test_op_without_close_accepts);
     RUN_TEST(test_dm_step_rejected);
     RUN_TEST(test_sm_rejected_as_diagnostic_only);

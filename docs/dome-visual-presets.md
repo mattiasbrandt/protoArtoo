@@ -225,8 +225,8 @@ engine.
 When body-owned Factory/Learned sequences carry `DV:`:
 - whitelist **strict `DV:<KNOWN_NAME>`** values only;
 - **reject unknown `DV:` names** in persisted/replayable sequence authoring;
-- keep `DV:` **out of panel cleanup semantics** (it is visual-only, does not
-  satisfy `:OF` cleanup or close requirements);
+- keep `DV:` **out of panel cleanup semantics** (it is visual-only, and is no
+  panel close);
 - do not let the "advanced raw command" path become a loophole for arbitrary
   unsafe behavior.
 

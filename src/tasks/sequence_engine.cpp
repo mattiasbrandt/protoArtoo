@@ -131,8 +131,10 @@ static void setAllRingOpen(SeqEngineState& st, bool open) {
 }
 
 // Update the per-run net-open RING mask from a dispatched dome command. Only
-// :OP/:CL change logical open state; :OF leaves it uncertain (no mark  --  the
-// authored branch must clean up its own flutters). Pie targets (14 group, P*
+// :OP/:CL change logical open state. :OF changes nothing here: the dome ends a
+// flutter closed (ADR 0049, amended 2026-10-02), and a panel an earlier :OP
+// marked open stays marked, so terminal cleanup still closes it -- a close too
+// many is harmless, a close missed is not. Pie targets (14 group, P*
 // individual) do not affect the ring mask.
 static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     if (cmd == nullptr || cmd[0] != ':') {

@@ -142,17 +142,9 @@ static bool charsetOk(const char* s) {
     return true;
 }
 
-enum PanelTargetGroup : uint8_t {
-    PANEL_TARGET_NONE = 0,
-    PANEL_TARGET_RING,
-    PANEL_TARGET_PIE,
-    PANEL_TARGET_ALL,
-};
-
 struct PanelIntent {
     bool valid;
-    char action;  // O=open, C=close, F=flutter
-    PanelTargetGroup group;
+    char action;  // P=open, L=close, F=flutter: the command's third character
     char target[3];
 };
 
@@ -168,7 +160,7 @@ static bool isAllowedPieTarget(const char* t) {
 }
 
 static PanelIntent parsePanelIntent(const char* cmd) {
-    PanelIntent pi = { false, 0, PANEL_TARGET_NONE, "" };
+    PanelIntent pi = { false, 0, "" };
     if (cmd == nullptr || cmd[0] != ':' ||
         (strncmp(cmd + 1, "OP", 2) != 0 &&
          strncmp(cmd + 1, "CL", 2) != 0 &&
@@ -185,43 +177,10 @@ static PanelIntent parsePanelIntent(const char* cmd) {
     strncpy(pi.target, t, sizeof(pi.target) - 1);
     pi.target[sizeof(pi.target) - 1] = '\0';
 
-    if (strcmp(t, "00") == 0) {
-        pi.group = PANEL_TARGET_ALL;
-        pi.valid = true;
-    } else if (strcmp(t, "14") == 0) {
-        pi.group = PANEL_TARGET_PIE;
-        pi.valid = true;
-    } else if (strcmp(t, "15") == 0) {
-        pi.group = PANEL_TARGET_RING;
-        pi.valid = true;
-    } else if (isAllowedRingTarget(t)) {
-        pi.group = PANEL_TARGET_RING;
-        pi.valid = true;
-    } else if (isAllowedPieTarget(t)) {
-        pi.group = PANEL_TARGET_PIE;
-        pi.valid = true;
-    }
+    // The three group targets (all, pies, ring), or one panel of either kind.
+    pi.valid = strcmp(t, "00") == 0 || strcmp(t, "14") == 0 || strcmp(t, "15") == 0 ||
+               isAllowedRingTarget(t) || isAllowedPieTarget(t);
     return pi;
-}
-
-static bool panelCloseCleansFlutter(const PanelIntent& flutter,
-                                    const PanelIntent& close) {
-    if (!flutter.valid || !close.valid || close.action != 'L') {
-        return false;
-    }
-    if (strcmp(close.target, "00") == 0) {
-        return true;
-    }
-    if (strcmp(flutter.target, close.target) == 0) {
-        return true;
-    }
-    if (flutter.group == PANEL_TARGET_PIE && strcmp(close.target, "14") == 0) {
-        return true;
-    }
-    if (flutter.group == PANEL_TARGET_RING && strcmp(close.target, "15") == 0) {
-        return true;
-    }
-    return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -1103,8 +1062,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 
     // Per-step validation + effect-class stamping + monotonic t (top level only).
     uint32_t prevT = 0;
-    PanelIntent pendingFlutter[PC_MAX_STEPS];
-    uint8_t pendingFlutterCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         SeqStep& s = steps[i];
 
@@ -1131,23 +1088,9 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 if (strncmp(s.payload, ":SE", 3) == 0 && inBody[i]) {
                     return pcFailAt(label, i, "cmd", ":SE not allowed inside loops");
                 }
-                const PanelIntent panel = parsePanelIntent(s.payload);
-                if (panel.valid) {
-                    if (panel.action == 'F') {
-                        if (pendingFlutterCount >= PC_MAX_STEPS) {
-                            return pcFailAt(label, i, "cmd", "too many panel flutter steps");
-                        }
-                        pendingFlutter[pendingFlutterCount++] = panel;
-                    } else if (panel.action == 'L') {
-                        uint8_t write = 0;
-                        for (uint8_t p = 0; p < pendingFlutterCount; ++p) {
-                            if (!panelCloseCleansFlutter(pendingFlutter[p], panel)) {
-                                pendingFlutter[write++] = pendingFlutter[p];
-                            }
-                        }
-                        pendingFlutterCount = write;
-                    }
-                }
+                // A panel flutter (:OF) owes nothing after it: the dome ends a
+                // flutter closed, so there is no later close to look for
+                // (ADR 0008 and ADR 0049, both amended 2026-10-02; #453).
                 s.effectClass = fx;
                 break;
             }
@@ -1305,9 +1248,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             default:
                 return pcFailAt(label, i, "type", "unknown step type");
         }
-    }
-    if (pendingFlutterCount > 0) {
-        return pcFail(label, ":OF requires a later matching :CL in the same branch");
     }
     return pcOk();
 }
