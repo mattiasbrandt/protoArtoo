@@ -104,6 +104,16 @@ static void actionToString(const SeqAction& act, char* out, size_t cap) {
             snprintf(out, cap, "<domeRotate:%d:%u>",
                      (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
             break;
+        case SEQ_ACT_DOME_BEARING: {
+            // The target as the engine handed it over; whether the dome turned
+            // is answered at dispatch and reported there. Sized against the
+            // catalog, as a Body Step's Part is below.
+            char target[DROID_PART_ID_MAX_LEN + 1];
+            strncpy(target, act.payload, sizeof(target) - 1);
+            target[sizeof(target) - 1] = '\0';
+            snprintf(out, cap, "<domeBearing:%s>", target);
+            break;
+        }
         case SEQ_ACT_GESTURE: {
             // The set, or the start of a listed one: what the engine handed
             // over. What the Coordinator then sent for it is its own log.
@@ -214,8 +224,8 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
         } else if (isAudio) {
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }
-        // SEQ_ACT_DOME_ROTATE has no Marcduino payload, so no scope or ring
-        // tracking. SEQ_ACT_BODY_MOVE sets no scope bit either, and that is the
+        // SEQ_ACT_DOME_ROTATE and SEQ_ACT_DOME_BEARING have no Marcduino
+        // payload, so no scope or ring tracking. SEQ_ACT_BODY_MOVE sets no scope bit either, and that is the
         // model rather than a gap: a body step stamps no effect class, so there
         // is no terminal cleanup for a scope bit to be diffed against
         // (ADR 0049).

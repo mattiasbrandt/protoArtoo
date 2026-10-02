@@ -28,6 +28,8 @@
 #include "audio_task.h"
 #include "config_cache.h"
 #include "console_record.h"   // consoleReasonString() - the Availability Reason token
+#include "dome_bearing_act.h"  // domeBearingStepPlan() - what a bearing step does here
+#include "dome_turn_calibration.h"  // domeTurnCalibrationOf() - is the full turn recorded
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -163,6 +165,51 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
         outcome->throwMs = (throwMs != 0) ? throwMs : row.throw_ms;  // the move as asked
     }
     return true;
+}
+
+// -----------------------------------------------------------------------------
+// dispatchDomeBearing  --  a bearing step reaching DomeTask (#445).
+//
+// Resolved HERE, when the step runs, every time: the target's bearing from the
+// catalog table (a corrected `bearing_deg` reaches every saved step), and the
+// dome's belief and calibration as they are now. A step that cannot turn the
+// dome - the bearing unknown, the dome not calibrated, the Dome ESC off - is
+// REPORTED and the sequence carries on, the shape a Body Step's
+// part-not-assigned takes (domeBearingStepPlan(), include/dome_bearing_act.h).
+// Returning true is therefore correct; only a full queue is a retry.
+//
+// What goes out is the target, not a timed turn: DomeTask plans the turn from
+// its own belief when the command reaches it, because the dome may have moved
+// in between, and asks the calibration and belief questions again.
+// -----------------------------------------------------------------------------
+
+// Whether the full turn is recorded, read on its own so dispatchDomeBearing()'s
+// frame does not carry a DomeConfig onto the route its log line takes.
+static bool __attribute__((noinline)) domeCalibratedNow() {
+    DomeConfig dome = {};
+    configCacheReadDome(&dome);
+    return domeTurnCalibrated(domeTurnCalibrationOf(dome));
+}
+
+// Out of line on purpose: dispatchAction() sits on this task's deepest route
+// (drainBestEffort -> dispatchAction -> a queue-drop log line), and inlined
+// there this plan and its log call grew dispatchAction's frame to 352 B and the
+// measured chain by 336 B, past the stack's rule.
+static bool __attribute__((noinline)) dispatchDomeBearing(const SeqAction& act) {
+    const DomeBearingStepPlan plan =
+        domeBearingStepPlan(act.payload, configCacheReadActiveDomeEnabled(), domeCalibratedNow(),
+                            domeBearingRead().believed);
+    if (!plan.turn) {
+        PA_LOG_INFO(TAG, "dome not turned to %s - %s", act.payload,
+                    consoleReasonString(plan.reason));
+        return true;  // inert step; the sequence carries on
+    }
+    DomeCommand cmd = {};
+    cmd.kind = DOME_CMD_TURN_TO;
+    cmd.targetTenths = plan.targetTenths;
+    cmd.source = SRC_SEQ;
+    cmd.timestampMs = millis();
+    return xQueueSend(domeCmdQueue, &cmd, 0) == pdTRUE;
 }
 
 // -----------------------------------------------------------------------------
@@ -831,6 +878,9 @@ static bool dispatchAction(const SeqAction& act) {
             }
             return xQueueSend(domeCmdQueue, &cmd, 0) == pdTRUE;
         }
+
+        case SEQ_DISPATCH_DOME_BEARING:
+            return dispatchDomeBearing(act);
 
         case SEQ_DISPATCH_AUDIO_DOLLAR:
             // Forward audio dollar command to audio queue.

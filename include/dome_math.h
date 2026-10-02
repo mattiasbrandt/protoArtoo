@@ -98,7 +98,8 @@ inline bool domeRndMoodStartsMoves(uint8_t mood) {
 }
 
 // Random movement is standing down - switched off, Quiet chosen, a dome
-// sequence starting, the droid driving, the estop or Sleep Mode - while one of
+// sequence or a timed one-shot turn starting, the droid driving, the estop or
+// Sleep Mode - while one of
 // its turns is running. Whether the dome goes to neutral with it: yes, unless
 // a manual command was taken on this very tick, which owns the dome now and
 // must not be overwritten by a turn that is only ending (#450). The estop and

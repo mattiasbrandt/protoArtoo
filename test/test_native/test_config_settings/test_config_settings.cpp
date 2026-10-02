@@ -60,6 +60,7 @@ const KeyPin kStoredKeys[] = {
     {"enableRcCh6", "en_rc_ch6", SettingStorage::Bool},       {"enableDrive", "en_drive", SettingStorage::Bool},
     {"enableAudio", "en_audio", SettingStorage::Bool},        {"soundMember", "snd_member", SettingStorage::U8},
     {"enableProtoR2link", "en_r2link", SettingStorage::Bool}, {"enableArm1", "en_arm1", SettingStorage::Bool},
+    {"bodyServoMember", "srv_member", SettingStorage::U8},     {"pcaAddress", "pca_addr", SettingStorage::U8},
     {"enableArm2", "en_arm2", SettingStorage::Bool},          {"enableAux1", "en_aux1", SettingStorage::Bool},
     {"enableAux2", "en_aux2", SettingStorage::Bool},          {"enableAux3", "en_aux3", SettingStorage::Bool},
     {"domeEscNeutralUs", "dome_neu", SettingStorage::U16},   {"domeEscMinPulseUs", "dome_minp", SettingStorage::U16},
@@ -67,6 +68,8 @@ const KeyPin kStoredKeys[] = {
     {"domeEscRndEnable", "dome_rnd_en", SettingStorage::Bool}, {"domeEscRndSpeedPct", "dome_rnd_spd", SettingStorage::U8},
     {"domeEscRndPauseMin", "dome_rnd_pmin", SettingStorage::U8}, {"domeEscRndPauseMax", "dome_rnd_pmax", SettingStorage::U8},
     {"domeEscRndMoveMs", "dome_rnd_ms", SettingStorage::U16}, {"protoR2linkWifiPeerIp", "dome_wip", SettingStorage::Text},
+    {"domeEscFullTurnMs", "dome_turn_ms", SettingStorage::U16}, {"domeEscFullTurnPct", "dome_turn_pct", SettingStorage::U8},
+    {"domeEscPositiveTurn", "dome_turn_dir", SettingStorage::U8},
     {"cadenceFloorMs", "cad_floor_ms", SettingStorage::U16},
     {"logLevel", "log_level", SettingStorage::U8},
     // The audio Settings (#431 addendum), by the key their door takes.

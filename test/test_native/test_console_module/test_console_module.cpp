@@ -527,7 +527,8 @@ void test_wifi_carries_active_wifi_config_ssid() {
 // rename there would not fail this test, only a device/controller-upload run.
 void test_dome_status_current_field_match_registry_to_emitter() {
     std::vector<std::string> registryFields = catalogFieldNames("dome.status.current");
-    TEST_ASSERT_TRUE(registryFields == (std::vector<std::string>{"domeEnabled", "domeTargetSpeed"}));
+    TEST_ASSERT_TRUE(registryFields == (std::vector<std::string>{"domeBearing", "domeBearingDeg",
+                                                                 "domeEnabled", "domeTargetSpeed"}));
 
     runQuery("dome.status.current");
     std::vector<std::string> emitted = emittedFieldNames();

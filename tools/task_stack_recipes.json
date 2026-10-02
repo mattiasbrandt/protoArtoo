@@ -68,10 +68,10 @@
             "driveTask"
           ],
           "frames": [],
-          "chain_bytes": 4080,
+          "chain_bytes": 4096,
           "stack_bytes": 5632,
           "reason": "#250 raised the 50 Hz drive loop on both chips rather than only where an overrun is provable, because the Xtensa figure is the floor of an unknown. Lowering this arm onto the rule would undo that decision.",
-          "note": "The root frame is 1328 B. The deepest route is failsafeUpdateWebTimeout -> failsafeTrigger's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf."
+          "note": "The root frame is 1328 B. The deepest route is failsafeUpdateWebTimeout -> failsafeTrigger's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. driveTask's frame grew 1328 -> 1344 B when ConfigSnapshot, which it holds, reached 924 B: #444 and #445 each added 4 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -81,7 +81,7 @@
           "frames": [],
           "chain_bytes": 5104,
           "stack_bytes": 6656,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1312 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. #444 took driveTask's root frame 1312 -> 1328 B, the walk 5088 -> 5104 B; the stack still sits on the rule."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: driveTask -> driveBackendBegin() -> HardwareSerial::begin() -> uartBegin -> uartSetPins -> hardware_serial_end -> ...; widest frames driveTask 1328 B, _svfprintf_r 1152 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. It grew 16 B when ConfigSnapshot, which driveTask's frame holds, reached 924 B: #444 and #445 each added 4 B, and the frame moved one 16 B step."
         }
       }
     },
@@ -181,10 +181,10 @@
             "audioTask"
           ],
           "frames": [],
-          "chain_bytes": 4240,
+          "chain_bytes": 4256,
           "stack_bytes": 6144,
           "reason": "Sized when this chain was deeper, when #248 declined the rule here on its tight-heap reason. The chain has since fallen past a step and the stack was deliberately not lowered with it (#430); lowering it is a separate decision.",
-          "note": "The root frame is 1488 B. audioStepCommand's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf."
+          "note": "The root frame is 1488 B. audioStepCommand's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. audioTask's frame grew 1488 -> 1504 B when ConfigSnapshot, which it holds, reached 924 B: #444 and #445 each added 4 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -194,7 +194,7 @@
           "frames": [],
           "chain_bytes": 7136,
           "stack_bytes": 9216,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1520 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450). #444 took the root frame 1520 -> 1536 B and the walk 7120 -> 7136 B, within the same stack on the rule."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1536 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450). It grew 16 B when ConfigSnapshot, which audioTask's frame holds, reached 924 B: #444 and #445 each added 4 B, and the frame moved one 16 B step."
         }
       }
     },
@@ -242,7 +242,7 @@
           "chain_bytes": 6128,
           "stack_bytes": 6144,
           "reason": "#248's tight-heap reason, named on #250: the rule's margin costs heap on the scarce chip for cover the Xtensa walk cannot confirm, and the stack still covers the walk (operator decision 2026-09-25). This is the thinnest floor in the table; raising it is where that decision would be recorded.",
-          "note": "The dome layout fetch: fetchDomeLayoutOverWifi (896 B) -> HTTPClient::GET -> handleHeaderResponse -> setCookie -> strptime -> localtime_r -> the time-zone parse, whose siscanf float scan (__ssvfiscanf_r, 704 B) is the deepest part. The root frame is 2192 B: it holds a ConfigSnapshot, which #444 grew from 916 to 920 B (the PCA9685's address), and the frame by 16 B with it."
+          "note": "The dome layout fetch: fetchDomeLayoutOverWifi (896 B) -> HTTPClient::GET -> handleHeaderResponse -> setCookie -> strptime -> localtime_r -> the time-zone parse, whose siscanf float scan (__ssvfiscanf_r, 704 B) is the deepest part. The root frame is 2192 B: it holds a ConfigSnapshot, which grew 916 -> 924 B (4 B each from #444's body servo controller and #445's Dome Bearing calibration) and moved the frame one 16 B step. That leaves this chain 16 B under its stack."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -252,7 +252,7 @@
           "frames": [],
           "chain_bytes": 9728,
           "stack_bytes": 12288,
-          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2192 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B. #444 took the root frame to 2208 B: it holds a ConfigSnapshot, which grew 916 -> 920 B for the PCA9685's address."
+          "note": "This task's own frame is about 2.2 KB on RISC-V, and GCC allocates it with two `addi sp,sp,-N` instructions because it exceeds the 12-bit immediate; tools/stack_usage_report.py adds both (#250). On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeLinkTask -> fetchDomeLayoutOverWifi() [clone .isra.0] -> HTTPClient::GET() -> HTTPClient::sendRequest() -> HTTPClient::handleHeaderResponse() -> HTTPClient::setCookie() -> ...; widest frames domeLinkTask 2208 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, _Unwind_Resume_or_Rethrow 912 B. It grew 16 B when ConfigSnapshot, which domeLinkTask's frame holds, reached 924 B: #444 and #445 each added 4 B, and the frame moved one 16 B step."
         }
       }
     },
@@ -323,9 +323,9 @@
             "sequenceDispatcherTask"
           ],
           "frames": [],
-          "chain_bytes": 3872,
+          "chain_bytes": 3856,
           "stack_bytes": 5120,
-          "note": "Deepest route: sequenceDispatcherTask (640 B root frame) -> drainBestEffort (304 B) -> dispatchAction -> dispatchBodyMove (432 B) -> its 'not moved' log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. dispatchBodyMove() is the same 264 bytes of code with the same 432 B frame as on the image #453 recorded 3792 B against, where the walk took audioQueueDollar -> logQueueDrop instead: that image's walk did not follow dispatchBodyMove's call to paLogLine, and #444's does - a floor rising to what slice a of #444 had already walked (3888 B), not a frame growing. The root frame holds the ServoOutputRow and ServoCommandedPosition of centreOneOutput() and the boot pass's owed-release check, which the compiler inlines into it, and the Cadence Floor each inlined run reads from the config cache. The flutter run (flutterStartPart(), flutterOneLeg()) and the flutter request's intake (flutterTakeRequest() and the functions it calls in turn) are out of line with their state in statics, and no log line of theirs sits under another: nested, the request path walked 4048 B."
+          "note": "Deepest route: sequenceDispatcherTask (640 B root frame) -> drainBestEffort (304 B) -> dispatchAction -> domeQueueTx -> logQueueDrop's log line -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. dispatchAction's frame grew by the bearing step's case (#445); dispatchDomeBearing() is out of line, because inlined there its plan and log call made dispatchAction 352 B and this chain 4128 B, past the rule. It was the body-move log line under the same two frames until #453: dispatchBodyMove()'s send moved into sendBodyPosition() and its route is now the shallower one. The root frame holds the ServoOutputRow and ServoCommandedPosition of centreOneOutput() and the boot pass's owed-release check, which the compiler inlines into it, and the Cadence Floor each inlined run reads from the config cache. The flutter run (flutterStartPart(), flutterOneLeg()) and the flutter request's intake (flutterTakeRequest() and the functions it calls in turn) are out of line with their state in statics, and no log line of theirs sits under another: nested, the request path walked 4048 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -389,9 +389,9 @@
             }
           ],
           "stitch_reason": "embedded-cli reaches the command callback through `cli->onCommand`, a call through a function pointer that the walker does not follow, so the chain has to be stitched from its two halves: onCliCommand's total plus the two frames above it. embeddedCliProcess's frame already contains parseCommand and onControlInput, which GCC inlines into it - both are ABSENT as symbols, which is what confirms it rather than a missing measurement. Below the root, consoleExecuteCommand runs a status or api op through `executor(request->requestId, sink)` (src/console/console_module.cpp), a pointer read from g_statusExecutors, so every row of that table is stitched as a callee (#429). A direct action and an audio config write are reached the same way, through a pointer found in one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors, so those rows are stitched too (#428). A single-field Setting op and aux.config.led-count are direct calls since #431, which the walker follows without a stitch. Without it the recorded chain could not include an op's frame, which is how the ESP32-P4 overflow under consoleExecuteDomeApiGetSequenceLastRun (#427) stayed invisible.",
-          "chain_bytes": 8784,
+          "chain_bytes": 8832,
           "stack_bytes": 11264,
-          "note": "The deepest route is a Console volume save: consoleExecuteCommand -> consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist, down into NVS. The widest frames are consoleExecuteCommand 1872 B, audioSetVolumeCommitApplied 1232 B, consoleExecuteSoundVolumeConfig 1056 B and saveConfigToNvs 960 B. consoleExecuteCommand grew 1856 -> 1872 B at #444: it holds a ProfilerReading, whose per-task table gained the PCA9685's sender."
+          "note": "The deepest route is a Console volume save: consoleExecuteCommand -> consoleExecuteSoundVolumeConfig -> audioSetVolumeWriteWindow -> audioSetVolumeCommitApplied -> saveConfigToNvs -> configPersist, down into NVS. The widest frames are consoleExecuteCommand 1872 B, audioSetVolumeCommitApplied 1248 B, consoleExecuteSoundVolumeConfig 1072 B and saveConfigToNvs 976 B: the ConfigSnapshot those frames hold is 924 B, 4 B each from #444's body servo controller and #445's Dome Bearing calibration."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -437,9 +437,9 @@
             }
           ],
           "stitch_reason": "As on artoo-esp32: the command callback is reached through `cli->onCommand`, and a status, api, direct-action or audio-config op through a pointer read from g_statusExecutors, one of the six g_*DirectActionExecutors tables or g_audioConfigExecutors; the Setting ops are direct calls (#431).",
-          "chain_bytes": 11552,
+          "chain_bytes": 11600,
           "stack_bytes": 14848,
-          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1872 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1200 B, _svfprintf_r 1152 B. consoleExecuteCommand grew to 1888 B at #444: it holds a ProfilerReading, whose per-task table gained the PCA9685's sender."
+          "note": "The same config-write route as the artoo-esp32 arm, from consoleExecuteSoundVolumeConfig through saveConfigToNvs and configPersist to configWriteWindowExpectHeld's log line, under the two stitched frames. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: consoleTask -> embeddedCliProcess -> onCliCommand -> consoleExecuteCommand() -> consoleExecuteSoundVolumeConfig() -> audioSetVolumeWriteWindow() -> ...; widest frames consoleExecuteCommand() 1888 B, _Unwind_RaiseException 1296 B, audioSetVolumeCommitApplied() [clone .part.0] 1216 B, _svfprintf_r 1152 B. The ConfigSnapshot on this route is 924 B, 4 B each from #444's body servo controller and #445's Dome Bearing calibration: 11536 -> 11600 B across the two."
         }
       }
     },
@@ -511,10 +511,10 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 5008,
+          "chain_bytes": 5024,
           "stack_bytes": 6144,
           "reason": "#248's tight-heap reason, named on #256: the rule's margin costs heap on the scarce chip for cover the Xtensa walk cannot confirm, and the stack still covers the walk.",
-          "note": "The status build: buildStatusJson (1392 B) -> networkManagerQueryConnectivity -> WiFiAPClass::softAPgetStationNum -> esp_wifi_ap_get_sta_list -> the closed WiFi driver's ioctl and power-management path. The root frame is 896 B. buildStatusJson holds a ConfigSnapshot, which #444 grew from 916 to 920 B, and its frame by 16 B with it."
+          "note": "The status build: buildStatusJson (1408 B) -> networkManagerQueryConnectivity -> WiFiAPClass::softAPgetStationNum -> esp_wifi_ap_get_sta_list -> the closed WiFi driver's ioctl and power-management path. The root frame is 896 B. buildStatusJson grew 32 B: the Dome Bearing's reading in its dome snapshot (#445), and the ConfigSnapshot it captures from, 924 B after #444 and #445 each added 4 B."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -522,9 +522,9 @@
             "eventStreamTask"
           ],
           "frames": [],
-          "chain_bytes": 7264,
+          "chain_bytes": 7280,
           "stack_bytes": 9216,
-          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1488 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B."
+          "note": "The status build: buildStatusJson captures and formatStatusJson serialises on this task, and the serializer's number formatting reaches newlib. On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: eventStreamTask -> buildStatusJson() [clone .part.0] -> networkManagerQueryConnectivity() -> wifiNetworkManagerQueryConnectivityCommon() -> IPAddress::toString() const -> _Unwind_Resume -> ...; widest frames buildStatusJson() [clone .part.0] 1504 B, _svfprintf_r 1152 B, eventStreamTask 912 B, _Unwind_Resume 912 B. buildStatusJson grew 16 B: the Dome Bearing's reading in its dome snapshot (#445), and the ConfigSnapshot it captures from, 924 B after #444 and #445 each added 4 B."
         }
       }
     },

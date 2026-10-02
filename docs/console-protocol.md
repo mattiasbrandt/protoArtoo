@@ -264,9 +264,12 @@ never type an ID.
   | `blocked-by-state` | estop, sleep, stationary or another state rule holds it |
   | `temporarily-unavailable` | busy right now; try again |
   | `part-not-assigned` | the droid knows this Part, but no Output on it drives the Part, so nothing moves (#301) |
+  | `bearing-unknown` | the dome does not know where it points - a boot, an estop or Sleep Mode forgot it - so go home and a bearing step do not move it until the builder says front is here (#445) |
+  | `dome-not-calibrated` | the dome's full turn is not timed, or which way positive turns it is not set, so no turn can be planned and no bearing believed (#445) |
 
   `part-not-assigned` is the one that is a fact about the builder's wiring
-  rather than about the image, the board or a toggle. The body step type that
+  rather than about the image, the board or a toggle (`dome-not-calibrated` is
+  the same kind of fact about their calibration). The body step type that
   names a Part now exists (#349), and the Sequence Coordinator reports this
   reason when a step names a Part no Servo Output on the droid claims - the step
   is inert and the sequence carries on. It is asked of the Servo Output table at

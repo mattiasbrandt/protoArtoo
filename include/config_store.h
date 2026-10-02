@@ -195,6 +195,14 @@ struct DomeConfig {
     uint8_t dome_rnd_pause_max;
     uint16_t dome_rnd_move_ms;
     char dome_wifi_peer_ip[16];
+    // The Dome Bearing's calibration (include/dome_bearing.h, #445): how long
+    // one full turn takes, the share of the ESC's full pulse range it was timed
+    // at, and which way a positive command turns the dome from above. Each is
+    // 0 until the builder records it, and the bearing cannot be believed until
+    // all three are.
+    uint16_t dome_full_turn_ms;
+    uint8_t dome_full_turn_pct;
+    uint8_t dome_positive_turn;  // DomeTurnDirection
 };
 
 struct SystemConfig {
@@ -355,7 +363,13 @@ struct ConfigSnapshot {
 // tools/task_stack_recipes.json, and tools/check_task_stack_chains.py re-walks
 // it against a linked image, so the re-measure is a re-run rather than a
 // procedure to follow by hand.
-static_assert(sizeof(ConfigSnapshot) == 920,
+//
+// #445 grew it to 924 B, on top of #444: the Dome Bearing's calibration,
+// DomeConfig's full-turn time, the speed it was timed at and which way positive
+// turns. Four bytes, and DomeConfig had three spare, so it grew 40 -> 44 B.
+// Measured off a host build of this header after the merge, and every chain
+// re-walked on both chips before this number moved.
+static_assert(sizeof(ConfigSnapshot) == 924,
               "ConfigSnapshot changed size - re-derive the Console task stack from a fresh "
               "chain measurement before moving this number");
 

@@ -97,6 +97,10 @@ const char* consoleReasonString(ConsoleReason reason) {
             return "part-not-assigned";
         case CONSOLE_REASON_CONFLICT:
             return "conflict";
+        case CONSOLE_REASON_BEARING_UNKNOWN:
+            return "bearing-unknown";
+        case CONSOLE_REASON_DOME_NOT_CALIBRATED:
+            return "dome-not-calibrated";
         default:
             return "unknown";
     }

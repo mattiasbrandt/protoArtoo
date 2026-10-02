@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
+#include "dome_bearing_act.h"        // domeBearingTargetValid() - a bearing step's target
 #include "droid_parts.h"             // droidPartIdIsKnown()  --  the Part vocabulary
 #include "sequence_dispatcher.h"     // sequenceCatalogFind()
 #include "sequence_gesture.h"        // the Gesture vocabulary and its stored layout
@@ -1153,6 +1154,20 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                     // Zero speed with positive duration  --  reject (ambiguous intent)
                     return pcFailAt(label, i, "speedPct",
                                   "non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)");
+                }
+                s.effectClass = FX_NONE;
+                break;
+            }
+            case STEP_DOME_BEARING: {
+                // Form, and only form: front, or a dome Part the catalog gives a
+                // bearing, refused at the door like an unknown Body Step id.
+                // Whether the dome is calibrated and its bearing believed is
+                // asked when the step runs, and an unknown one then is a report,
+                // never a refused save (ADR 0051): the bearing a step is saved
+                // under says nothing about the one it will run under.
+                if (!domeBearingTargetValid(s.payload)) {
+                    return pcFailAt(label, i, "target",
+                                  "not front or a dome Part with a bearing");
                 }
                 s.effectClass = FX_NONE;
                 break;

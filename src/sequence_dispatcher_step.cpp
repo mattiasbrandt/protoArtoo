@@ -48,6 +48,13 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
             actions.target = SEQ_DISPATCH_BODY_MOVE;
             break;
 
+        case SEQ_ACT_DOME_BEARING:
+            // Route only. The target's bearing, the dome's belief and its
+            // calibration are the droid's as it is when the step runs, which
+            // this pure core cannot read; domeBearingStepPlan() decides.
+            actions.target = SEQ_DISPATCH_DOME_BEARING;
+            break;
+
         case SEQ_ACT_GESTURE:
             // Route only. Resolving the set against the droid, and pacing a body
             // Gesture, need the live Output rows and ServoTask's reports, which

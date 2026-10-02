@@ -26,6 +26,13 @@ the patch releases, whose notes live on their own GitHub Release.
 ## [Unreleased]
 
 ### Added
+- **The droid knows where its dome points.** Time one full turn on the Dome
+  page, press Front is here, and from then on the droid follows every turn it
+  makes and says where the dome points, marked believed. An arrow on every dome
+  drawing shows it. Go home turns the dome back to front, and a sequence step
+  can turn it to front, or until a dome part faces front. After a restart, an estop
+  or sleep it says Unknown until you turn the dome to front and press Front is
+  here again.
 - **Edit a sequence on its timeline.** Edit opens your sequence on its
   timeline: drag a block to move it, drag its edge to make it longer or
   shorter, drag the end line to give the routine more room. A block that

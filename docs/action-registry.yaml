@@ -744,7 +744,7 @@ entries:
   executor: audioQueueTrackStop
 - name: dome.status.current
   display_name: Dome Status
-  description: Dome motor speed, and whether the dome is linked.
+  description: Dome motor speed, whether the dome is linked, and where the dome believes it points, or unknown.
   domain: dome
   type: status
   marcduino_cmd: null
@@ -760,6 +760,8 @@ entries:
   fields:
   - domeTargetSpeed
   - domeEnabled
+  - domeBearing
+  - domeBearingDeg
 - name: dome.action.move
   display_name: Dome Speed (Web)
   description: Turn the dome from the browser. Refused while asleep or with the dome motor off.
@@ -783,6 +785,42 @@ entries:
     - 1.0
     required: true
   executor: domeCmdQueue
+- name: dome.action.front-is-here
+  display_name: Front Is Here
+  description: Say the dome points at the droid's front now, after turning it there by hand or by stick. Where the dome points is believed again from here. Refused while the estop is latched, asleep, with the dome motor off, or before its full turn is timed.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/dome/front
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_drive.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # The recovery act for an unknown Dome Bearing (ADR 0051, #445): the builder
+  # turns the dome to front and says so. It moves nothing.
+  executor: domeBearingActRequest
+- name: dome.action.go-home
+  display_name: Dome Go Home
+  description: Turn the dome the short way to where it believes front is, at the speed its full turn was timed at. Does not move the dome while where it points is unknown or its full turn is not timed.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/dome/home
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_drive.cpp
+  sources:
+  - web_api
+  safety_critical: false
+  requires_web_control: false
+  # The end-of-show act, never the recovery one: with the bearing unknown it
+  # would drive away from home with confidence (ADR 0051, #445). It turns the
+  # dome the way any dome command does, so it asks no consent the dome speed
+  # route does not.
+  executor: domeBearingActRequest
 - name: dome.api.list-sequences
   display_name: List Learned Sequences
   description: 'Your Learned Sequences: name, toggle group, mute time, and whether each one checks out.'

@@ -205,6 +205,7 @@ void captureDomeStatusSnapshot(DomeStatusSnapshot* out) {
     out->domeTargetSpeed = robotState.domeTargetSpeed;
     taskEXIT_CRITICAL(&robotStateMux);
     out->domeEnabled = cfg.system.enable_dome_esc;
+    out->bearing = domeBearingRead();
 }
 
 void captureServoOutputCommanded(ServoOutputDriver driver, uint8_t channel,

@@ -505,6 +505,7 @@
     window.PABootstrap.setResourceLabels?.({
       "/droid_parts.js": "parts list",
       "/droid_part_kind.js": "parts list",
+      "/dome_bearing.js": "where the dome points",
       "/outputs.js": "the outputs",
       "/parts.js": "the parts",
     });

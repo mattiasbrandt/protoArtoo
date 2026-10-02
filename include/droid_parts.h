@@ -18,7 +18,7 @@
 // table further down. It is in firmware because where a Part sits is
 // resolved when a sequence RUNS, never when it is saved - a Gesture
 // orders its Parts by bearing (#438), and a Part-targeted dome turn
-// will turn until that Part faces front (#445) - so a bearing the
+// turns until that Part faces front (#445) - so a bearing the
 // catalog corrects is corrected in every saved sequence that names
 // the Part.
 //
@@ -373,11 +373,12 @@ inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DE
 // THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is
 // measured from the droid's own front, so front is 0 there and 1800 here
 // (CONTEXT.md "Dome Bearing"). The two meet in one place, the
-// Part-targeted dome turn (#445).
+// Part-targeted dome turn, which converts between them
+// (domeBearingFacingFrontDeg(), include/dome_bearing.h, #445).
 //
-// One reader today: a Gesture orders its Parts by these
-// (include/sequence_gesture.h, #438). #445's Part-targeted dome turn will
-// be the second, resolving its Part's bearing here when it runs.
+// Two readers: a Gesture orders its Parts by these
+// (include/sequence_gesture.h, #438), and a bearing step resolves its
+// Part's bearing here when it runs (include/dome_bearing_act.h, #445).
 //
 // A set is the Parts one Gesture token means, on one half of the droid,
 // in emission order. Their order round the droid is the Gesture's to work

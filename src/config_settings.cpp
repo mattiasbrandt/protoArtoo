@@ -17,6 +17,7 @@
 #include "board_outputs.h"
 #include "component_registry.h"
 #include "config.h"               // SPEED_*, SBUS_TIMEOUT_MS, WEB_DRIVE_TIMEOUT_MS, PA_LOG_LEVEL*
+#include "dome_bearing.h"         // DomeTurnDirection - the dome's calibration words
 #include "mood_sound_mapping.h"   // MOOD_CATEGORY_MASK_MAX - a mood mask's bits
 #include "pca9685.h"              // PCA9685_ADDRESS_* - where one expander board may answer
 #include "protocol_check.h"       // PC_SM_MOVE_MIN/MAX - what bounds the Cadence Floor
@@ -56,6 +57,8 @@ constexpr SettingWords kLogLevelWords = {PA_LOG_LEVEL_ERROR, 4, logLevelName};
 constexpr SettingWords kComponentWords = {SERVO_COMP_NONE, 4, componentName};
 constexpr SettingWords kEasingWords = {SERVO_EASE_NONE, SERVO_EASE_COUNT, easingName};
 constexpr SettingWords kBootWords = {SERVO_BOOT_LIMP, SERVO_BOOT_COUNT, bootName};
+constexpr SettingWords kDomeTurnDirectionWords = {DOME_TURN_DIR_UNSET, DOME_TURN_DIR_COUNT,
+                                               domeTurnDirectionName};
 
 // -----------------------------------------------------------------------------
 // Settings of the droid
@@ -176,6 +179,16 @@ const ConfigSetting kConfigSettings[] = {
              dome_rnd_pause_max, 1, 120, 12),
     PA_RANGE("domeEscRndMoveMs", "domeEsc.rndMoveMs", "dome_rnd_ms", Immediate, Dome, DomeConfig,
              dome_rnd_move_ms, 500, 10000, 2500),
+    // The Dome Bearing's calibration (include/dome_bearing.h, #445). 0 - and
+    // `unset` for the direction - is "never recorded", which is why each range
+    // starts there: the bearing cannot be believed until all three are set.
+    // DomeTask reads them from the cache on every tick, so each is Immediate.
+    PA_RANGE("domeEscFullTurnMs", "domeEsc.fullTurnMs", "dome_turn_ms", Immediate, Dome, DomeConfig,
+             dome_full_turn_ms, 0, DOME_FULL_TURN_MS_MAX, 0),
+    PA_RANGE("domeEscFullTurnPct", "domeEsc.fullTurnPct", "dome_turn_pct", Immediate, Dome, DomeConfig,
+             dome_full_turn_pct, 0, 100, 0),
+    PA_WORDS("domeEscPositiveTurn", "domeEsc.positiveTurn", "dome_turn_dir", Immediate, Dome, DomeConfig,
+             dome_positive_turn, kDomeTurnDirectionWords, DOME_TURN_DIR_UNSET),
     {"protoR2linkWifiPeerIp", "protoR2link.wifiPeerIp", "dome_wip", ApplyTiming::Immediate,
      PA_SETTING_FIELD(Dome, DomeConfig, dome_wifi_peer_ip), SettingRule::Ipv4, 0, 0, 0, nullptr, 0,
      "must be empty or a valid IPv4 address"},

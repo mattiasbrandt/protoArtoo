@@ -9,6 +9,8 @@
 //   POST /api/web-control/disable     - disable browser control
 //   POST /api/dome/cmd                - forward a raw Marcduino line to the dome
 //   POST /api/dome                    - dome rotation speed
+//   POST /api/dome/front              - the dome points front now (#445)
+//   POST /api/dome/home               - turn the dome to the believed front (#445)
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table.
@@ -36,6 +38,7 @@
 #include "config_cache.h"
 #include "config_store.h"  // saveConfigToNvs()
 #include "dome_link.h"
+#include "dome_turn_calibration.h"  // domeTurnCalibrationOf() - is the full turn recorded
 #include "drive_arbiter.h"
 #include "drive_speed_preset.h"
 #include "failsafe_gate.h"
@@ -591,4 +594,79 @@ void handleDomeSpeedPost(WebRequest& req) {
 
     PA_LOG_INFO(TAG, "[WEB] POST /api/dome speed=%.2f", (double)cmd.speed);
     req.send(200, "application/json", "{\"ok\":true}");
+}
+
+DomeBearingActOutcome domeBearingActRequest(DomeBearingAct act, CommandSource source) {
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool estopLatched = robotState.estop;
+    const bool sleepMode = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    DomeConfig dome = {};
+    configCacheReadDome(&dome);
+
+    // The Dome ESC as this boot runs it, not as saved: a switch saved since is
+    // staged until the restart (ADR 0027), and DomeTask runs or not by the
+    // boot's answer.
+    DomeBearingActOutcome outcome = {
+        domeBearingActRefusal(act, estopLatched, sleepMode, configCacheReadActiveDomeEnabled(),
+                              domeTurnCalibrated(domeTurnCalibrationOf(dome)),
+                              domeBearingRead().believed),
+        false};
+    if (outcome.refusal != DOME_BEARING_OK) {
+        return outcome;
+    }
+
+    DomeCommand cmd = {};
+    cmd.kind = (act == DOME_BEARING_ACT_FRONT_IS_HERE) ? DOME_CMD_FRONT_IS_HERE : DOME_CMD_TURN_TO;
+    cmd.targetTenths = 0;  // home is front
+    cmd.source = source;
+    cmd.timestampMs = millis();
+    outcome.queued = xQueueSend(domeCmdQueue, &cmd, 0) == pdTRUE;
+    if (!outcome.queued) {
+        logQueueDrop(QUEUE_DOME_CMD, act == DOME_BEARING_ACT_FRONT_IS_HERE ? "dome front" : "dome home");
+    }
+    return outcome;
+}
+
+namespace {
+
+// One answer for both routes: the refusal's clause, under 409 - or 423 for
+// Sleep Mode, with the way to wake, as POST /api/dome answers it - and 503 for
+// a full queue.
+void sendDomeBearingAct(WebRequest& req, DomeBearingAct act, const char* route) {
+    const DomeBearingActOutcome outcome = domeBearingActRequest(act, SRC_WEB_API);
+    if (outcome.refusal == DOME_BEARING_ASLEEP) {
+        webSendJsonError(req, 423, domeBearingRefusalWords(outcome.refusal), "POST /api/wake");
+        return;
+    }
+    if (outcome.refusal != DOME_BEARING_OK) {
+        webSendJsonError(req, 409, domeBearingRefusalWords(outcome.refusal));
+        return;
+    }
+    if (!outcome.queued) {
+        webSendJsonError(req, 503, "dome command queue full");
+        return;
+    }
+    PA_LOG_INFO(TAG, "[WEB] POST %s", route);
+    req.send(200, "application/json", "{\"ok\":true}");
+}
+
+}  // namespace
+
+// POST /api/dome/front - the builder turned the dome to front, by hand or by
+// stick, and says so (ADR 0051, #445). The recovery act: it makes an unknown
+// bearing believed again, at 0. Refused under a halt, with the Dome ESC off,
+// and before the full turn is timed - with no calibration no turn could be
+// followed, so no belief held.
+void handleDomeFrontPost(WebRequest& req) {
+    sendDomeBearingAct(req, DOME_BEARING_ACT_FRONT_IS_HERE, "/api/dome/front");
+}
+
+// POST /api/dome/home - turn the dome the short way to the believed front, at
+// the speed its full turn was timed at, and stop on time (#445). The
+// end-of-show act, never the recovery one: with the bearing unknown it does not
+// move the dome and says so, because a wrong belief would drive it away from
+// home with confidence (ADR 0051).
+void handleDomeHomePost(WebRequest& req) {
+    sendDomeBearingAct(req, DOME_BEARING_ACT_TURN, "/api/dome/home");
 }

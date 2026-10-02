@@ -142,6 +142,7 @@ StatusJsonInputs widestInputs() {
     in.diag.failsafeLastTriggerToZeroMs = UINT32_MAX;
     in.diag.failsafeLastWatchdogMs = UINT32_MAX;
     in.diag.failsafeLastTriggerSource = FS_WATCHDOG_RESET;
+    in.domeBearing = {true, 359.9f};  // "believed" and five digits are the longest
     in.webControlEnabled = false;
     in.speedLimitMax = INT16_MIN;
     in.speedPresetActive = longestSpeedPreset();

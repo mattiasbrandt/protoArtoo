@@ -2496,10 +2496,53 @@ body[data-page="firmware"] .form-grid {
   color: var(--text-faint);
 }
 
-/* The dome's two settings lists share one bay, side by side. The row's value
-   column is not used here, so the name and the box take the width. */
+/* Where the dome points, under the gauge: the number and the word that
+   qualifies it on one line, and the two acts on it at the end. Unknown is a
+   word in the number's place, in the quiet tier, never a number. */
+.dome-bearing-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+}
+
+.dome-bearing-name {
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+}
+
+.dome-bearing-value {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.dome-bearing-value.is-unknown {
+  color: var(--text-faint);
+}
+
+.dome-bearing-word {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-hint);
+  letter-spacing: 0.08em;
+}
+
+.dome-bearing-acts {
+  display: flex;
+  gap: var(--space-sm);
+  margin-left: auto;
+}
+
+/* The dome's three settings lists share one bay, side by side: the motor, its
+   idle turns and its full turn. The row's value column is not used here, so
+   the name and the box take the width. */
 .dome-settings {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .dome-settings .setting-row {
@@ -9504,6 +9547,45 @@ svg.dome-svg-picker .cf,
 svg.dome-svg-picker .conn-r,
 svg.dome-svg-picker .conn-f,
 svg.dome-svg-picker > g[transform] {
+  display: none;
+}
+
+/* Where the dome points (#445, data/dome_bearing.js): one marker on every dome
+   drawing - this picker and the Parts picture alike - turned about the centre
+   by the Dome Bearing, the droid's front at the bottom. It is a value, so it
+   reads in the ink, not a Status Color. Unknown is its own treatment, a dashed
+   rim and no pointer, so a lost belief never draws as pointing front. It
+   takes no pointer: the panels under it stay the targets. */
+svg .dome-bearing-marker {
+  pointer-events: none;
+}
+
+svg .dome-bearing-marker .dome-bearing-tick {
+  stroke: var(--text);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+svg .dome-bearing-marker .dome-bearing-head {
+  fill: var(--text);
+  stroke: none;
+}
+
+svg .dome-bearing-marker .dome-bearing-unknown {
+  display: none;
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 6;
+  vector-effect: non-scaling-stroke;
+}
+
+svg .dome-bearing-marker.is-unknown .dome-bearing-unknown {
+  display: inline;
+}
+
+svg .dome-bearing-marker.is-unknown .dome-bearing-pointer {
   display: none;
 }
 
