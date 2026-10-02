@@ -520,6 +520,7 @@ inline bool seqGestureDomeCommand(const SeqStep& step, char* out, size_t outLen)
 // WHATEVER THE AUTHORED SPREAD ASKS. The browser never holds that pace. A
 // member nothing drives is reported at dispatch and passed over, costing no
 // time; the rest performs.
+
 //
 // A DOME Gesture is its one `$` command, sent when each pass is due; the dome
 // performs it. Nothing about the dome's motion is paced here, because it is
@@ -645,8 +646,7 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
     for (SeqGestureRunEntry& e : run->g) {
         if (e.active && e.endAtMs != 0 && (int32_t)(nowMs - e.endAtMs) >= 0) e.active = false;
     }
-    const bool bodyMayGo = sequencePaceAwaitDone(&run->awaitOutput, awaitedMoving) &&
-                           (int32_t)(nowMs - run->dueMs) >= 0;
+    const bool bodyMayGo = sequencePaceOpen(run->dueMs, &run->awaitOutput, awaitedMoving, nowMs);
     int8_t best = -1;
     uint32_t bestAt = 0;
     for (uint8_t i = 0; i < SEQ_GESTURE_RUNS_MAX; ++i) {
@@ -675,6 +675,16 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
         out->shape = (SeqBodyShape)e.shape;
     }
     return true;
+}
+
+// Whether a body Gesture has a move whose moment has come and that the pace is
+// still holding back. A flutter asks, and stands aside for it
+// (sequenceFlutterMayGo(), include/sequence_flutter.h).
+inline bool sequenceGestureBodyDue(const SeqGestureRun& run, uint32_t nowMs) {
+    for (const SeqGestureRunEntry& e : run.g) {
+        if (e.active && !e.dome && (int32_t)(nowMs - sequenceGestureDueAt(e)) >= 0) return true;
+    }
+    return false;
 }
 
 // The item sequenceGestureNext() handed out has been dealt with at nowMs.

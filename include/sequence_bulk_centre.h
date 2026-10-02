@@ -143,16 +143,16 @@ enum SeqBulkCentreKind : uint8_t {
 };
 
 // -----------------------------------------------------------------------------
-// The pace every generated motion keeps (#440, #438)
+// The pace every generated motion keeps (#440, #438, #453)
 //
-// A pose and a body Gesture both put motion out one Output at a time, on the
-// Coordinator's own cursor rather than a sequence's: the next motion waits the
-// last one's spacing -- the Cadence Floor after a dome panel, the Output's own
-// full throw, floored, after a body Output -- and, after a body Output, until
-// ServoTask stops reporting that Output moving. These two are that rule, once,
-// over the two fields each run keeps (`dueMs`, `awaitOutput`). Nothing awaited
-// is SERVO_OUTPUT_NONE: a run never starts two Outputs at once, so `both` is
-// never what it waits on.
+// A pose, a body Gesture and a flutter all put motion out one Output at a
+// time, on the Coordinator's own cursor rather than a sequence's: the next
+// motion waits the last one's spacing -- the Cadence Floor after a dome panel,
+// the Output's own full throw, floored, after a body Output -- and, after a
+// body Output, until ServoTask stops reporting that Output moving. These are
+// that rule, once, over the two fields a run keeps (`dueMs`, `awaitOutput`).
+// Nothing awaited is SERVO_OUTPUT_NONE: a run never starts two Outputs at once,
+// so `both` is never what it waits on.
 // -----------------------------------------------------------------------------
 
 // Whether the Output the last motion moved has stopped, given what ServoTask
@@ -162,6 +162,13 @@ inline bool sequencePaceAwaitDone(ServoOutputAddress* awaitOutput, bool outputMo
     if (outputMoving) return false;
     *awaitOutput = SERVO_OUTPUT_NONE;
     return true;
+}
+
+// Whether the pace lets a motion start at nowMs: the Output the last one moved
+// has stopped, and its spacing has run.
+inline bool sequencePaceOpen(uint32_t dueMs, ServoOutputAddress* awaitOutput, bool outputMoving,
+                             uint32_t nowMs) {
+    return sequencePaceAwaitDone(awaitOutput, outputMoving) && (int32_t)(nowMs - dueMs) >= 0;
 }
 
 // A motion was dealt with at nowMs. A motion that STARTED holds the next one

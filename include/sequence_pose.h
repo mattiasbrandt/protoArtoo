@@ -369,6 +369,9 @@ inline void visit(SeqPosePlan& plan, const SeqStep& step, uint32_t fireMs, uint3
             forget(plan, SEQ_POSE_INSTANT, "SND");
             break;
         case STEP_BODY: {
+            // A flutter is posed where it leaves the Part: on its closed end
+            // (seqBodyTargetUs(), include/sequence_body_step.h). A pose never
+            // swings anything.
             SeqAction a = blankAction(SEQ_ACT_BODY_MOVE, step.payload);
             a.bodyShape = (uint8_t)seqBodyShape(step.params);
             a.bodyHowFar = seqBodyHowFar(step.params);
