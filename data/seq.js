@@ -467,9 +467,13 @@
   // A list answered while a sequence is open - after a save, which reads the
   // Learned list again: the lists are what the editor names a phrase from, so
   // the Sequences pills, the blocks' names and which phrases can be read are
-  // all read again from them.
+  // all read again from them - and a phrase read from where its reference no
+  // longer resolves is forgotten, so it is read again from where it does.
   const phrasesListed = () => {
     if (!editorState.current || !sessionTimeline) return;
+    phrases.read.forEach((entry, ref) => {
+      if (phraseSource(ref)?.url !== entry.url) phrases.read.delete(ref);
+    });
     paintParts();
     sessionTimeline.refresh(rehearsalContext());
     loadPhrases();
@@ -1475,7 +1479,7 @@
   const phraseUnread = (step) => {
     if (!step.ref || phraseRead(step.ref)) return "";
     if (!phraseSource(step.ref)) return "Not on this droid.";
-    return phrases.read.get(step.ref) === null ? "Not read from the droid." : "";
+    return phrases.read.get(step.ref)?.failed ? "Not read from the droid." : "";
   };
 
   const pickedHtml = (blocks) => {
@@ -2862,12 +2866,20 @@
   // The phrases this routine names, as the droid holds them (#441): what the
   // timeline draws a linked block from, and what Split into steps writes out.
   //
-  // `read` is reference -> { seq, steps } - the sequence as the droid sent it,
-  // and its steps at the milliseconds they run at, resolved with the phrase's
-  // own tempo as the droid resolves them when it splices the phrase in - or
-  // null for a read that failed. A reference not in it has not been read. It
+  // `read` is reference -> { url, seq, steps } - where the reference was read
+  // from, the sequence as the droid sent it, and its steps at the
+  // milliseconds they run at, resolved with the phrase's own tempo as the
+  // droid resolves them when it splices the phrase in - or { url, failed }
+  // for a read that failed. A reference not in it has not been read. It
   // lasts one edit: closing the editor starts a new one (forgetPhrases()), and
   // an answer that lands after that is for a session that is gone.
+  //
+  // A reference is read from where it resolves (phraseSource()), and that can
+  // change while the editor is open: a Factory sequence read before the
+  // Learned list answered turns out to have a tuned copy, which is the one
+  // the droid runs. An entry read from somewhere else than its reference
+  // resolves to now is dropped when a list answers (phrasesListed()), and
+  // read again.
   //
   // ONE REQUEST AT A TIME. Each read is a JSON document the droid builds, and
   // a routine names up to eight phrases; `reading` is the one loop under way.
@@ -2888,7 +2900,10 @@
     return factory ? { name: factory.name, url: `/api/seq/builtins?name=${encodeURIComponent(factory.name)}` } : null;
   };
 
-  const phraseRead = (ref) => phrases.read.get(ref) || null;
+  const phraseRead = (ref) => {
+    const entry = phrases.read.get(ref);
+    return entry && !entry.failed ? entry : null;
+  };
   const phraseSteps = (ref) => phraseRead(ref)?.steps || null;
 
   // Read every phrase the routine names that has not been read, one after the
@@ -2910,11 +2925,11 @@
           .find((each) => each && !mine.read.has(each) && phraseSource(each));
         if (!ref) return;
         const source = phraseSource(ref);
-        let entry = null;
+        let entry = { url: source.url, failed: true };
         let refused = "";
         try {
           const seq = (await PAApi.get(source.url)).data;
-          if (seq && Array.isArray(seq.steps)) entry = { seq, steps: SeqProtocolCheck.resolveBeats(seq).steps };
+          if (seq && Array.isArray(seq.steps)) entry = { url: source.url, seq, steps: SeqProtocolCheck.resolveBeats(seq).steps };
           else refused = `The droid sent ${source.name} back with no steps.`;
         } catch (error) {
           console.error(`[seq] reading ${source.name}, a sequence inside this one:`, error);
@@ -2922,7 +2937,7 @@
         }
         if (mine !== phrases) return;
         mine.read.set(ref, entry);
-        if (entry) sessionTimeline?.refresh(rehearsalContext());
+        if (!entry.failed) sessionTimeline?.refresh(rehearsalContext());
         else sayOnStage(refused, "error");
       }
     } finally {
@@ -2933,7 +2948,7 @@
   // The builder dropped or picked this phrase: one whose read failed is asked
   // for again by the next loadPhrases().
   const phraseAgain = (ref) => {
-    if (phrases.read.get(ref) === null) phrases.read.delete(ref);
+    if (phrases.read.get(ref)?.failed) phrases.read.delete(ref);
   };
 
   // A stable id for a sequence being saved that has none: eight lowercase hex
