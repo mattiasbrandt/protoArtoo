@@ -42,8 +42,9 @@ void servoTask(void* pvParameters);
 bool servoTaskWiredAtStart(ServoOutputAddress output);
 
 // servoTaskDrivesOutput(): ServoTask puts servo pulses on this Output this
-// boot - wired at start, no light on its wire at start, and LEDC came up. An
-// Output this answers false for is one every servo command is dropped for.
+// boot - wired at start, no light on its wire at start, and its backend came
+// up: LEDC's timer, or the PCA9685 chosen and still answering. An Output this
+// answers false for is one every servo command is dropped for.
 bool servoTaskDrivesOutput(ServoOutputAddress output);
 
 // servoTaskMayTakeForRun(): a Find by Moving run may take this Output now - a
