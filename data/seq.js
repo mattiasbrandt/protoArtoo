@@ -1078,8 +1078,10 @@
   // edit that changes it.
   //
   // A dome panel pair and a body pair are read by the one path (moveOf(),
-  // moveRows()): a Body Step stores the same three things as fields that a
-  // panel command spells in its `cmd`.
+  // moveRows()). They differ in where the Move Shape is stored - a panel
+  // spells it in its `cmd`, a Body Step has a `shape` field - and in what a
+  // flutter says: a body flutter has a length and may say how far, a panel's
+  // has neither (`settles`). How far is the step's `howFar` on both.
   //
   // Kinds with no rows of their own yet show where they start and are edited
   // in the step list until theirs land: a Gesture and a sequence inside this
