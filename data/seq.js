@@ -1115,7 +1115,7 @@
 
   // What kind of step this is, as the step list names it.
   const stepKindName = (step) =>
-    (step.type === "dome" ? domeSubmodeName(step.cmd) : stepTypeName[step.type] || step.type || "Step");
+    (step.type === "dome" ? domeStepName(step) : stepTypeName[step.type] || step.type || "Step");
 
   // ---------------------------------------------------------------------------
   // The Picked block tab (#441): what the timeline says is picked, and for one
@@ -1128,10 +1128,12 @@
   // open: how long from its open to its close, how far (stored as howFar,
   // absent meaning the whole throw) and the Move Shape. None of them is a
   // speed, an acceleration or an easing: those are the Output's (ADR 0052).
+  // On a body light how far is said as BRIGHTNESS (operator, 2026-10-02).
   //
   // The dome's four light commands have rows of their own (lightRows()): each
   // is one `cmd`, read into its fields and written back whole, and only by an
-  // edit that changes it.
+  // edit that changes it. Any other dome command that is not a panel move
+  // has one row, SENDS: the command as it is stored, in a box to type in.
   //
   // A dome panel pair and a body pair are read by the one path (moveOf(),
   // moveRows()). They differ in where the Move Shape is stored - a panel
@@ -1316,7 +1318,8 @@
     return { shape, words: light ? SHAPE_WORDS.light : SHAPE_WORDS.servo, body: true, light, settles: shape !== "close" };
   };
 
-  // RUNS FOR, OPENS TO and MOTION, for a dome panel and a body Part alike.
+  // RUNS FOR, OPENS TO (BRIGHTNESS on a body light) and MOTION, for a dome
+  // panel and a body Part alike.
   // A close is one choice. A flutter owes a later close (Protocol Check), so
   // it is offered where one already follows - on a pair, which keeps that
   // close - and on the flutter itself.
@@ -1329,8 +1332,13 @@
       [["open", words.open], ...(pair || flutter ? [["flutter", words.flutter]] : [])], move.shape, "Motion"));
     if (!move.settles) return motion;
     const far = step.howFar ?? STEP_LIMITS.howFar[1];
+    // How far is the one stored `howFar`, said by Part Kind as the Move Shape
+    // is: a servo opens to it, a body light is that bright.
+    const howFar = move.light
+      ? settingRow("Brightness", faderOf("howFar", far, STEP_LIMITS.howFar, "Brightness, percent of full"), `${far}%`)
+      : settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`);
     return (pair ? settingRow("Runs for", numberCell("runs", Math.round(pair.ms), STEP_LIMITS.t, "Runs for, in milliseconds")) : "")
-      + settingRow("Opens to", faderOf("howFar", far, STEP_LIMITS.howFar, "Opens to, percent of its throw"), `${far}%`)
+      + howFar
       + motion;
   };
 
@@ -1460,8 +1468,11 @@
     if (move) return moveRows(step, at, move);
     switch (step.type) {
       case "dome": {
+        // A panel move was read above, and a light command has its rows.
+        // What is left is a Dome command: the command itself, typed.
         const light = lightFields(step.cmd);
-        return light ? lightRows(light) : "";
+        return light ? lightRows(light) : settingRow("Sends",
+          `<input class="number-cell text-cell" type="text" value="${esc(step.cmd ?? "")}" placeholder="@0T6, *HP0, :SE07" maxlength="${DOME_COMMAND_CHARS}" data-picked="cmd" aria-label="Dome command">`);
       }
       case "domeRotate": {
         const speed = Math.abs(fieldOf(step, "speedPct"));
@@ -1774,10 +1785,16 @@
 
   // ---------------------------------------------------------------------------
   // The library (#441): the Parts tab, and Drop a part beside the inspector.
-  // Every Part a routine can name is one flat list, dome and body together,
-  // the ones nothing on this droid can move dashed and counted; under it, in
-  // the Parts tab, the steps that are not a Part. The escape-hatch Output
-  // slots and the dome's buttons are not Parts a routine moves.
+  // One flat list of Parts, dome and body together; under it, in the Parts
+  // tab, the steps that are not a Part. Two things keep a Part from moving,
+  // and the list treats them differently:
+  //   - not wired: a step can name it, but this droid has nothing to move it
+  //     with - no Output claims it, or the dome link is off (notWired()). It
+  //     is listed, dashed and counted, and it drops.
+  //   - no step for it: no sequence step moves it on any droid (partDrop()
+  //     answers null). It is not listed at all.
+  // The escape-hatch Output slots and the dome's buttons are not Parts a
+  // routine moves, and are not listed either.
   //
   // A press on a pill does nothing to the routine and never moves the droid:
   // it says how to add it. A drag onto the timeline inserts it where the
@@ -1788,16 +1805,25 @@
   // The steps that are not a Part, in More steps' order: a kind of step by
   // its type, or one of the dome's light commands by its prefix (DOME_SUBMODES)
   // - a Visual Preset and a Holo Effect name no Part, so they are dropped from
-  // here and land on the Dome row.
+  // here and land on the Dome row. With them, as the third dome kind, the Dome
+  // command (DOME_COMMAND): a command the dome reads as written, which names
+  // no Part either and lands on the same row.
   //
   // Between the two, the Sets: the tokens a Gesture spreads across (the
   // catalog's `sets`). A set dropped is one Gesture over it.
   //
   // Last, the Sequences: every sequence this one can hold (phraseChoices()).
   // One dropped is one step that names it, drawn as one linked block.
-  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", "random", "loop", "end"];
+  //
+  // The Dome command's pill goes by an id of its own, which is neither a step
+  // type nor a light command's prefix.
+  const DOME_COMMAND_KIND = "domeCommand";
+  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", DOME_COMMAND_KIND, "random", "loop", "end"];
   const librarySets = () => window.DroidParts?.sets || [];
-  const libraryKindName = (id) => DOME_SUBMODES[id]?.name || stepTypeName[id];
+  // A kind that is a dome step, as its name and the command a dropped one
+  // holds; null for a kind that is a step type of its own.
+  const libraryDome = (id) => DOME_SUBMODES[id] || (id === DOME_COMMAND_KIND ? DOME_COMMAND : null);
+  const libraryKindName = (id) => libraryDome(id)?.name || stepTypeName[id];
   // The Sequence End pill: the one thing that may be dropped past the end.
   const END_PILL = "kind:end";
   // How far the pointer goes before a press on a pill is a drag.
@@ -1806,8 +1832,38 @@
   // long after.
   const DROPPED_OPEN_MS = 1000;
 
+  // What a Part dropped on the timeline makes, or null for a Part no step
+  // moves. The one rule, read by the library's two lists (libraryParts()) and
+  // by the drop (dropOnTimeline()), so a Part is listed exactly when a drop
+  // of it lands something.
+  //
+  //   panel   a dome panel the dome can be told to move: the command that
+  //           opens it.
+  //   lights  a dome light the dome answers for by name - a logic display or
+  //           a PSI, found by its catalog alias the way Lights finds it
+  //           (data/lights.js domeTarget()): that name.
+  //   body    a body Part, its lights among them. One no Output claims
+  //           counts all the same: that is legal to author, it is listed
+  //           dashed, and the note over the lanes says it is not wired.
+  //
+  // What is left has no step that moves it: a dome panel that is fixed, a
+  // dome light the dome has no word for (the Magic Panel, the small upper
+  // panel), a holoprojector's servos. Those are hidden, not refused
+  // (operator, 2026-10-02): the library does not offer what it would have to
+  // turn away.
+  const partDrop = (part) => {
+    if (!part) return null;
+    const panel = window.DomeCommandMap?.resolvePanelCommand(part.shorthand, "open");
+    if (panel) return { panel };
+    const lights = window.DroidPartKind?.isLight(part)
+      ? (part.aliases || []).find((alias) => domeLights.targets.includes(alias))
+      : null;
+    if (lights) return { lights };
+    return part.half === "body" ? { body: true } : null;
+  };
+
   const libraryParts = () =>
-    (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section));
+    (window.DroidParts?.parts || []).filter((part) => !UNLISTED_SECTIONS.includes(part.section) && partDrop(part));
 
   let partsFind = "";
 
@@ -1883,7 +1939,11 @@
 
   // Insert what was dragged from the library at `at` ms. Whatever lands is
   // one entry in the history, so one Undo takes the whole drop away; a drop
-  // that lands nothing records nothing and says why.
+  // that lands nothing records nothing. Where the routine is what turns it
+  // away - a loop with nothing to repeat, a step Protocol Check refuses -
+  // the stage says why. A pill for something the library does not list - a
+  // Part, a set or a sequence that is not there - lands nothing and says
+  // nothing: no such pill is drawn.
   const dropOnTimeline = (lib, at) => {
     const [group, id] = libraryKey(lib);
     const steps = editorState.current.steps;
@@ -1891,42 +1951,30 @@
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
 
     if (group === "part") {
-      // A dome panel the dome can be told to move lands as a Part standing
-      // open: its open here and its close a second on, never past the end.
+      // What the Part makes is partDrop()'s to say; every listed Part makes
+      // something, and one that is not listed has no pill to drop.
       //
-      // A dome light the dome answers for by name - a logic display or a PSI,
-      // found by its catalog alias the way Lights finds it (data/lights.js
-      // domeTarget()) - lands as a Logic / PSI Mode on its own lane: Normal,
+      // A dome panel lands as a Part standing open: its open here and its
+      // close a second on, never past the end.
+      //
+      // A dome light lands as a Logic / PSI Mode on its own lane: Normal,
       // with no color and no duration, so it holds until the next mode.
       //
-      // A body Part, its lights among them, lands as a dome panel does, in
-      // Body Steps: its open here - open is the Move Shape a step has when it
-      // says none, so none is written - and its close a second on. One no
-      // Output claims lands all the same: that is legal to author, and the
-      // note over the lanes says it is not wired.
-      //
-      // What is left has no step that moves it: a dome panel that is fixed,
-      // a dome light the dome has no word for, a holoprojector's servos.
+      // A body Part lands as a dome panel does, in Body Steps: its open here
+      // - open is the Move Shape a step has when it says none, so none is
+      // written - and its close a second on.
       const part = libraryParts().find((each) => each.id === id);
-      const commands = window.DomeCommandMap;
-      const open = part && commands?.resolvePanelCommand(part.shorthand, "open");
-      const lights = !open && window.DroidPartKind?.isLight(part)
-        ? (part.aliases || []).find((alias) => domeLights.targets.includes(alias))
-        : null;
-      const body = !open && !lights && part?.half === "body";
-      if (!open && !lights && !body) {
-        sayOnStage(`${libraryName(lib)} cannot go on the timeline yet.`, "error");
-        return;
-      }
+      const drop = partDrop(part);
+      if (!drop) return;
       const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
       const closes = Math.min(at + DROPPED_OPEN_MS, last);
-      const made = lights
-        ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: lights }) }]
-        : body
+      const made = drop.lights
+        ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: drop.lights }) }]
+        : drop.body
           ? [{ t: at, type: "body", part: part.id }, { t: closes, type: "body", part: part.id, shape: "close" }]
           : [
-            { t: at, type: "dome", cmd: open },
-            { t: closes, type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+            { t: at, type: "dome", cmd: drop.panel },
+            { t: closes, type: "dome", cmd: window.DomeCommandMap.resolvePanelCommand(part.shorthand, "close") },
           ];
       historyPush();
       steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
@@ -2025,8 +2073,9 @@
       return;
     }
 
-    const made = DOME_SUBMODES[id]
-      ? { t: at, type: "dome", cmd: DOME_SUBMODES[id].starts }
+    const dome = libraryDome(id);
+    const made = dome
+      ? { t: at, type: "dome", cmd: dome.starts }
       : { t: at, type: id, ...stepTypeDefaults[id] };
     historyPush();
     if (id === "end") {
@@ -2432,19 +2481,19 @@
             + (light.color !== "DEFAULT" ? `, ${lightWord("holoColors", light.color)}` : "")
             + (light.count ? `, ${light.count}` : "");
         }
-        // Panel intent mode: parse action and target
-        if (/^(:|)(OP|CL|OF)/.test(cmd)) {
-          const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
-          if (match) {
-            const action = match[1];
-            const target = match[2];
-            const actionLabel = action === "OP" ? "Open" : action === "CL" ? "Close" : "Flutter";
-            const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : target.startsWith("P") ? `pie ${target}` : `ring ${target}`;
-            return `${actionLabel} ${targetLabel} (:${action}${target})`;
-          }
+        // A panel move, by the one reading of what that is (panelIntent()):
+        // the inspector and the step's name read it the same way, so a
+        // command without its colon is a Dome command in all three.
+        const intent = panelIntent(step);
+        if (intent) {
+          const [, action, target] = intent;
+          const actionLabel = action === "OP" ? "Open" : action === "CL" ? "Close" : "Flutter";
+          const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : target.startsWith("P") ? `pie ${target}` : `ring ${target}`;
+          return `${actionLabel} ${targetLabel} (:${action}${target})`;
         }
-        // Advanced mode
-        return `Dome command ${cmd || "@0T6"}`;
+        // A Dome command, as it is stored. An empty one says no command: it
+        // sends none, and Protocol Check refuses it until one is typed.
+        return cmd ? `Dome command ${cmd}` : "Dome command";
       }
       case "domeRotate": {
         const speedPct = fieldOf(step, "speedPct");
@@ -2569,6 +2618,26 @@
     DT: { name: "Logic Text", starts: "DT:LOGIC:DEFAULT:5:0:" },
     DH: { name: "Holo Effect", starts: "DH:A:FLASH" },
   };
+
+  // A dome command as the dome itself reads it, sent as written: any dome
+  // step whose `cmd` is neither one of the four above nor a panel move
+  // (panelIntent()). It is a kind by what the command says and nothing else,
+  // so one typed into a light command or a panel move is that from the next
+  // draw on, with that kind's rows; nothing pins a step as raw.
+  //
+  // `starts` is what one dropped from More steps holds: @0T1, the logic
+  // displays' reset. Three reasons, and a new command there must keep all
+  // three. The droid's Protocol Check and the browser's both accept it
+  // (src/protocol_check.cpp classifyDome(), _validateDomeStep()), so the
+  // command never makes a routine the droid refuses. The droid counts it as
+  // starting no effect (FX_NONE there), so a step nobody has typed into yet
+  // does no more than put the logic displays back to normal. And neither
+  // lightKind() nor panelIntent() reads it, so the inspector shows the box to
+  // type in. Not stepTypeDefaults.dome, which is a panel move.
+  const DOME_COMMAND = { name: "Dome command", starts: "@0T1" };
+  // The longest command the droid takes: PC_CMD_MAX (include/protocol_check.h).
+  // The box holds no more, so a command is never typed past what Save accepts.
+  const DOME_COMMAND_CHARS = 63;
 
   // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
   const lightKind = (cmd) => {
@@ -2701,9 +2770,10 @@
     end: "Sequence End",
   };
 
-  // What kind of dome step a command makes it, by name: one of the four light
-  // commands, or a Panel Action.
-  const domeSubmodeName = (cmd) => DOME_SUBMODES[lightKind(cmd)]?.name || stepTypeName.dome;
+  // What kind of dome step its command makes it, by name: one of the four
+  // light commands, a Panel Action, or a Dome command.
+  const domeStepName = (step) =>
+    DOME_SUBMODES[lightKind(step.cmd)]?.name || (panelIntent(step) ? stepTypeName.dome : DOME_COMMAND.name);
 
   // Step type descriptions for reference panel
   const stepTypeDescriptions = {
@@ -2745,9 +2815,10 @@
   const renderStepRow = (step, idx) => {
     const isExpanded = editorState.expanded.has(idx);
     let typeName = stepTypeName[step.type] || step.type;
-    // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
+    // A dome step is named by what its command makes it, as the inspector
+    // names it (domeStepName()).
     if (step.type === "dome") {
-      typeName = domeSubmodeName(step.cmd);
+      typeName = domeStepName(step);
     }
     const preview = stepPreview(step);
 
