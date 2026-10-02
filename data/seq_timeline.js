@@ -357,13 +357,17 @@
                 closeAt(lane, t, step);
                 lane.changes.push({ t, at: 0 });
               } else {
-                // A dome flutter has no length the body knows. The dome ends
-                // it closed, and a close written after it is a block of its
-                // own. A panel an earlier open left standing stays drawn
-                // open, as the engine keeps it marked: its close after the
-                // end still goes (recordRingOpenState(),
-                // src/tasks/sequence_engine.cpp).
+                // A dome flutter has no length the body knows, and the dome
+                // ends it closed (ADR 0008, amended 2026-10-02). So a panel
+                // standing open stops standing open at its flutter, as a
+                // body Part does, and a close written after it is a block of
+                // its own: a close of a closed panel. The engine still
+                // counts a panel an earlier open marked as open, and closes
+                // it again after the end (recordRingOpenState(),
+                // src/tasks/sequence_engine.cpp), which is harmless.
+                closeAt(lane, t, null);
                 add(lane, { kind: "flutter", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
+                lane.changes.push({ t, at: 0 });
               }
             });
             return;

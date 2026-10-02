@@ -547,7 +547,7 @@
     _validateDomeStep(step) {
       const { cmd } = step;
       if (!cmd || typeof cmd !== "string") {
-        return { ok: false, field: "cmd", error: "Type a dome command." };
+        return { ok: false, field: "cmd", error: "Type a dome command" };
       }
       // Every dome command, whatever it starts with, is 1 to CMD_CHARS_MAX
       // printable ASCII characters (charsetOk(), src/protocol_check.cpp, which

@@ -1654,6 +1654,22 @@
     if (closesOnly(step, editorState.current.steps[pair.close])) removeSteps([pair.close], true);
   };
 
+  // Where `step` runs and how late what it starts may still be going: `t`,
+  // the millisecond it runs at, and `last`, the end step's - or, among the
+  // steps a loop repeats, the last millisecond of the loop's pass. `outer` is
+  // a step before the end step that no loop repeats.
+  const reachOf = (step) => {
+    const steps = editorState.current.steps;
+    const at = steps.indexOf(step);
+    const run = SeqProtocolCheck.resolveBeats(editorState.current).steps;
+    const loop = loopRepeating(steps, at);
+    const endAt = steps.findIndex((each) => each?.type === "end");
+    const outer = !loop && endAt !== -1 && at < endAt;
+    const last = loop ? Math.max(0, (Number(steps[loop.at].periodMs) || 0) - 1)
+      : outer ? Number(run[endAt].t) || 0 : STEP_LIMITS.t[1];
+    return { t: Number(run[at].t) || 0, last, loop, outer, endAt };
+  };
+
   // Turned back into an open, a flutter is a pair again: a close of the same
   // Part `ms` after the open, never past the end step - or, among the steps a
   // loop repeats, past the loop's pass. It lands before the end step, or
@@ -1669,13 +1685,8 @@
       ? other.type === "body" && other.part === step.part
       : panelIntent(other)?.[2] === panelIntent(step)[2]);
     if (closesOnly(step, steps.slice(at + 1).find(moves))) return;
-    const run = SeqProtocolCheck.resolveBeats(editorState.current).steps;
-    const loop = loopRepeating(steps, at);
-    const endAt = steps.findIndex((each) => each?.type === "end");
-    const outer = !loop && endAt !== -1 && at < endAt;
-    const last = loop ? Math.max(0, (Number(steps[loop.at].periodMs) || 0) - 1)
-      : outer ? Number(run[endAt].t) || 0 : STEP_LIMITS.t[1];
-    const close = { t: Math.min((Number(run[at].t) || 0) + ms, last), ...closeFor(step) };
+    const { t, last, loop, outer, endAt } = reachOf(step);
+    const close = { t: Math.min(t + ms, last), ...closeFor(step) };
     if (loop) steps[loop.at].body += 1;
     steps.splice(outer ? endAt : at + 1, 0, close);
   };
@@ -1716,16 +1727,19 @@
       step.name = choice.label;
     } else if (field === "motion" && step.type === "body") {
       // A body flutter has a length of its own: turned into one, the open
-      // lasts what its pair ran for, or as long as a dropped Part stands
-      // open, within a flutter's bounds. The pair's close goes in the same
-      // edit: a flutter ends closed. Turned back, it is an open again, stored
-      // as absence, with a close where the flutter ended, and an open has no
+      // lasts what its pair ran for, within a flutter's bounds. With no pair
+      // it lasts as long as a dropped Part stands open, or what is left
+      // before the end step where that is less, so one set near the end is
+      // not cut short at once. The pair's close goes in the same edit: a
+      // flutter ends closed. Turned back, it is an open again, stored as
+      // absence, with a close where the flutter ended, and an open has no
       // length to keep in ms or in beats.
       if (raw === "flutter" && step.shape !== "flutter") {
         const [least, most] = SeqProtocolCheck.BODY_FLUTTER_MS;
         const pair = pairOf(step);
+        const { t, last } = reachOf(step);
         step.shape = "flutter";
-        step.flutterMs = Math.max(least, Math.min(most, Math.round(pair ? pair.ms : DROPPED_OPEN_MS)));
+        step.flutterMs = Math.max(least, Math.min(most, Math.round(pair ? pair.ms : Math.min(DROPPED_OPEN_MS, last - t))));
         if (pair) dropPairClose(step, pair);
       } else if (raw === "open" && step.shape === "flutter") {
         const lasted = Number(SeqProtocolCheck.resolveBeats(editorState.current).steps[editorState.current.steps.indexOf(step)].flutterMs);

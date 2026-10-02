@@ -68,9 +68,11 @@ the patch releases, whose notes live on their own GitHub Release.
 - **Flutter on any block that opens.** Pick an open on the timeline and Motion
   offers Flutter, whether or not a close follows it. Turning an open and its
   close into a flutter takes the close with it, and turning it back into an
-  open puts a close back. Runs for sets how long a body flutter lasts. The
-  Rehearsal notes a flutter the end of the routine cuts short, and no longer
-  asks for a close after one.
+  open puts a close back. Runs for sets how long a body flutter lasts. Save
+  no longer asks for a close after a flutter, and the Rehearsal notes a
+  flutter the end of the routine cuts short.
+- **The editor refuses a dome command the droid would refuse at Save.** A
+  command such as `@0X1` used to look valid until you saved.
 - **Set the gap between servo starts.** The droid leaves 450 ms between servos
   it starts itself: back to centre, the power-up pass, a pose, a move across a
   set, a flutter. That number is now yours to set, 50 to 5000 ms, as
