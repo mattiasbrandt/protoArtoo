@@ -76,7 +76,11 @@ static struct {
     uint32_t atMs;     // when the belief was last moved
     bool     believed;
     float    deg;      // meaningful only while believed
-} s_bearing = {0, 0, false, 0.0f};
+    // The last tick an estop or Sleep Mode held, 0 for none since boot. A
+    // Front is here pressed at or before it is stale: the dome may have
+    // coasted since (bearingDeclareFront()).
+    uint32_t forgotAtMs;
+} s_bearing = {0, 0, false, 0.0f, 0};
 
 static DomeTurnCalibration domeCalibrationOf(const DomeConfig& cfg) {
     return {cfg.dome_neutral_us,   cfg.dome_min_pulse_us,  cfg.dome_max_pulse_us,
@@ -119,16 +123,29 @@ static void __attribute__((noinline)) bearingAdvance(const DomeConfig& cfg, uint
 static void __attribute__((noinline)) bearingTick(bool forget) {
     DomeConfig cfg = {};
     configCacheReadDome(&cfg);
-    bearingAdvance(cfg, millis());
-    if (forget && s_bearing.believed) {
+    const uint32_t nowMs = millis();
+    bearingAdvance(cfg, nowMs);
+    if (!forget) {
+        return;
+    }
+    s_bearing.forgotAtMs = nowMs;
+    if (s_bearing.believed) {
         s_bearing.believed = false;
         bearingPublish();
     }
 }
 
 // "Front is here": the builder turned the dome to front and says so. Refused -
-// false - without a calibration, which no belief could be integrated from.
-static bool __attribute__((noinline)) bearingDeclareFront() {
+// false - without a calibration, which no belief could be integrated from, and
+// when it was pressed at or before the last tick an estop or Sleep Mode held.
+// The estop leaves this task's queue undrained, so a press the route accepted
+// just before an estop latched waits there, and taken after the clear it would
+// call a coasted dome front: the bearing would silently become a number again.
+// Every sender stamps timestampMs when it sends; the comparison is wrap-safe.
+static bool __attribute__((noinline)) bearingDeclareFront(uint32_t pressedAtMs) {
+    if (s_bearing.forgotAtMs != 0 && (int32_t)(pressedAtMs - s_bearing.forgotAtMs) <= 0) {
+        return false;
+    }
     DomeConfig cfg = {};
     configCacheReadDome(&cfg);
     if (!domeTurnCalibrated(domeCalibrationOf(cfg))) {
@@ -317,10 +334,10 @@ void domeTask(void* pvParameters) {
         // Process any pending commands (non-blocking), skip if estop
         while (!estop && xQueueReceive(domeCmdQueue, &cmd, 0) == pdTRUE) {
             if (cmd.kind == DOME_CMD_FRONT_IS_HERE) {
-                if (bearingDeclareFront()) {
+                if (bearingDeclareFront(cmd.timestampMs)) {
                     PA_LOG_INFO(TAG, "[%s] front is here", commandSourceToString(cmd.source));
                 } else {
-                    PA_LOG_INFO(TAG, "[%s] front not taken - dome not calibrated",
+                    PA_LOG_INFO(TAG, "[%s] front not taken - pressed before a halt, or not calibrated",
                                 commandSourceToString(cmd.source));
                 }
                 continue;
