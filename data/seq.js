@@ -2274,19 +2274,15 @@
       // edit: one Undo takes the step away. A phrase whose read failed is
       // asked for again by a drop that lands.
       //
-      // Into Opens only. The rules for a sequence inside another - that it is
-      // on the droid, is no toggle, closes no cycle and fits once spliced in -
-      // are applied to the opening half alone, here and by the droid at Save
-      // (protocolCheckNesting(), src/protocol_check.cpp), while the droid
-      // splices both halves when it runs (seqStorePrepare(),
-      // src/seq_store.cpp). One dropped into Closes would save and then be
-      // left out of the run, or stop it.
+      // Into either half. The rules for a sequence inside another - that it
+      // is on the droid, is no toggle, closes no cycle and fits once spliced
+      // in - are applied to both halves, here and by the droid at Save
+      // (protocolCheckNesting(), src/protocol_check.cpp), as the droid
+      // splices both when it runs (seqStorePrepare(), src/seq_store.cpp). So
+      // what turns one away from Closes is what turns one away from Opens:
+      // Protocol Check, in its own words (land()).
       const choice = phraseChoices().find((each) => each.id === id);
       if (!choice) return;
-      if (editorState.half === "closes") {
-        sayOnStage("A sequence inside this one goes in Opens only.", "error");
-        return;
-      }
       land(beforeEnd(() => [{ t: at, type: "sequence", ref: choice.id, name: choice.label }]), () => phraseAgain(choice.id));
       return;
     }
@@ -3281,9 +3277,13 @@
   // (SeqProtocolCheck._validateNesting()). Nothing is said of whether a
   // phrase is on the droid until both lists have answered. A phrase is found
   // under any reference that resolves to where it was read from: its id and
-  // its name are the one sequence.
+  // its name are the one sequence. And with the Factory catalog, so a
+  // sequence under a Factory name is held to that Factory sequence's
+  // interrupt group; until the catalog has answered there is none to hold
+  // it to.
   const routineVerdict = (seq) => SeqProtocolCheck.validateSequence(seq, {
     self: { id: editorState.current?.id, name: editorState.current?.name },
+    factory: (name) => builtins.find((entry) => entry.name === name) || null,
     listed: (ref) => (listsAnswered() ? phraseSource(ref) || false : null),
     phrase: (ref) => {
       const url = phraseSource(ref)?.url;
@@ -4627,22 +4627,12 @@
 
   // Which half a refusal is in, for a sequence that has two: "Opens",
   // "Closes", or "" for one that is in neither - its name, its mute period,
-  // its group, its tempo. Protocol Check reads both halves and says the half
-  // only on some refusals (`closeSteps[2].beat`): one from a step's own rules
-  // names the step's field alone (`cmd`, `t`), and the step cap and a missing
-  // Sequence End name no field. For those the opening half is read again by
-  // itself, and without what it names: a refusal about a sequence inside it
-  // says `steps[n].ref` and is placed above. Accepted alone, the refusal is
-  // in the close half.
-  const SEQUENCE_FIELDS = ["name", "suppressMs", "toggleGroup"];
+  // its group, its tempo. Protocol Check names the half in the field of
+  // every refusal that is in one (`closeSteps[2].beat`, `steps`).
   const refusedHalf = (verdict) => {
-    const seq = editorState.current;
-    if (verdict.ok || !hasCloseHalf(seq)) return "";
+    if (verdict.ok || !hasCloseHalf(editorState.current)) return "";
     const field = verdict.field || "";
-    if (SEQUENCE_FIELDS.includes(field) || field.startsWith("tempo")) return "";
-    if (field.startsWith("closeSteps")) return "Closes";
-    if (field.startsWith("steps")) return "Opens";
-    return SeqProtocolCheck.validateSequence({ ...seq, toggleGroup: "none", closeSteps: [] }).ok ? "Closes" : "Opens";
+    return field.startsWith("closeSteps") ? "Closes" : field.startsWith("steps") ? "Opens" : "";
   };
 
   // The Rehearsal reads one run, and a toggle is two: each half is rehearsed
