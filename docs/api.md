@@ -1381,8 +1381,11 @@ it holds, up to ten on any board, which can be more than the board's save cap
     could hold sequences, until it is saved again
   - `toggleGroup`: toggle group assignment
   - `suppressMs`: suppression interval in milliseconds
-  - `source`: where the sequence came from (`"web"`, `"chirp"`, etc.)
-  - `modified`: ISO 8601 timestamp of last modification
+  - `source`: where the sequence came from, the saved file's `meta.source`:
+    `"user"` (also when the file names none), `"guild"`, or `"factory"` for one
+    tuned from a factory sequence
+  - `modified`: boolean; true for a shared (`"guild"`) sequence edited in place.
+    Not a time: the controller keeps no save time
   - `valid`: boolean indicating if the sequence is valid and runnable
   - `retrained`: boolean; true if this sequence shadows a factory sequence
 - Errors: `500` on response overflow
@@ -1397,8 +1400,8 @@ curl -s http://artoo.local/api/seq/list
 
 ```json
 [
-  {"name":"DM:ROCKMARCH","toggleGroup":"movement","suppressMs":1000,"source":"web","modified":"2026-01-15T10:30:00Z","valid":true,"retrained":false},
-  {"name":"DM:SPINNY","toggleGroup":"movement","suppressMs":500,"source":"web","modified":"2026-01-14T14:22:00Z","valid":true,"retrained":true}
+  {"name":"DM:ROCKMARCH","id":"7c1e09ab","toggleGroup":"none","suppressMs":49000,"source":"user","modified":false,"valid":true,"retrained":true},
+  {"name":"DM:SPINNY","toggleGroup":"none","suppressMs":8000,"source":"user","modified":false,"valid":true,"retrained":false}
 ]
 ```
 
