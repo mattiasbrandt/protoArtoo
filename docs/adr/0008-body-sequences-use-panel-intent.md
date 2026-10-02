@@ -130,3 +130,12 @@ for that behavior.
 The rewrite should land in three slices: first Protocol Check/model safety so no new
 unsafe Learned JSON can be saved, then runtime/catalog conversion to panel intent, then
 editor and documentation updates that make the safe model the normal authoring path.
+
+## Amended 2026-10-02: `:OF` owes no later cleanup (ADR 0049 amendment)
+
+The rule above that `:OF` "must have an explicit later cleanup in the same
+branch" is withdrawn. A flutter ends closed on the dome - the pinned Reeltwo
+`SeqPanelAllFlutter` finishes on each panel's closed end - so the cleanup it
+demanded closes a panel that is already closed. Protocol Check stops requiring
+it when #453 lands, together with the same rule for body and Gesture flutters.
+Terminal and abort cleanup are unchanged.
