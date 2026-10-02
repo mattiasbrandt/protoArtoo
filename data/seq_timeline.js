@@ -456,12 +456,12 @@
         }
         case "gesture": {
           // One block across the lanes of its Parts, from where it fires
-          // (#441). A body Gesture runs to the last move it makes; a dome
-          // Gesture is the dome's one command, with no length the body
-          // knows, as a dome flutter has none. It has no edges: its length
-          // comes of its pace and its repeat, which no drag owns, so a drag
-          // only moves when it fires. A member no Output claims gets its lane
-          // all the same, dimmed as any such lane is.
+          // (#441). A body Gesture runs to the end of the last move it
+          // makes; a dome Gesture is the dome's one command, with no length
+          // the body knows, as a dome flutter has none. It has no edges: its
+          // length comes of its pace and its repeat, which no drag owns, so a
+          // drag only moves when it fires. A member no Output claims gets its
+          // lane all the same, dimmed as any such lane is.
           //
           // The moves it becomes are drawn inside it on the same lanes, from
           // the expansion the Rehearsal reads (seq_rehearsal.js expand()),
@@ -473,7 +473,12 @@
             add(rowLane("other", "Other"), { kind: "tick", t0: t, t1: t, label, ghost, ...drawnFrom(step) });
             return;
           }
-          const until = G.bodyMoves(def, t).reduce((last, move) => Math.max(last, move.t), t);
+          // A member's flutter lasts past the moment it starts, to the end
+          // step at most, as a Body Step's does.
+          const flutterMs = rehearsal ? rehearsal.gestureFlutterMs(def) : 0;
+          const overAt = (move) => (move.shape !== "flutter" ? move.t
+            : endIndex !== -1 && move.t <= endMs ? Math.min(move.t + flutterMs, endMs) : move.t + flutterMs);
+          const until = G.bodyMoves(def, t).reduce((last, move) => Math.max(last, overAt(move)), t);
           ids.forEach((id) => {
             add(partLane(id), { kind: "gesture", t0: t, t1: until, label, ghost, ...drawnFrom(step) });
           });
