@@ -4599,8 +4599,9 @@
     }
 
     hideModal(els.modalImport);
-    // Restore sits beside the title, so it can be pressed with an edit open:
-    // that edit is asked about before the restored sequence takes its place.
+    // Through leaveSession(), like every way a sequence takes the editor.
+    // Restore is pressed from the list, which gives way to an open edit
+    // (renderListView()), so today there is no edit here to ask about.
     leaveSession(() => {
       editorState.isNew = true;
       currentEditingSeq = parsed;
