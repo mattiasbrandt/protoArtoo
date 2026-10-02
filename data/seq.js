@@ -12,11 +12,9 @@
 //   setGroup / startedCloseHalf                  the interrupt group and its close half
 //   list, stage, drawer                          the three surfaces
 //   pickedHtml                                   inspector rows
-//   stepPreview / stepTypeDefaults               card text, and a new step's values
+//   stepPreview / stepTypeDefaults               a step's words, and a new step's values
 //   lightKind / lightFields                      light grammar
-//   renderStepRow / renderStepFields             the card editor
 //   loadRehearsalFacts                           caches GET /api/servo/outputs
-//   validateAndUpdateStep                        commits one card field
 //   window.__seqEditorForTesting                 the test seam
 // =============================================================================
 
@@ -40,47 +38,42 @@
   let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
   let pickedBlocks = []; // the blocks picked on that timeline, as it last said them
   let pickedShown = null; // the inspector's markup as last written
-  let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
   // Editor state tracking. One object for the life of the page: it is reset in
-  // place, never replaced, so the set of expanded steps is always there and
-  // the test seam at the foot of this file holds the object the editor reads.
+  // place, never replaced, so the test seam at the foot of this file holds the
+  // object the editor reads.
   const editorState = {
     original: null,   // snapshot at open time (for Revert)
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
-    expanded: new Set(), // Set of step indices that are expanded (presentation-only)
-    view: "timeline", // which reading of the routine is on the stage: "timeline" or "steps"
     half: "opens",    // which half of it is on the stage: "opens" (steps) or "closes" (closeSteps)
     tab: "block",     // which drawer tab is forward: "block", "parts", "sequence" or "rehearsal"
     saved: false,     // whether this session has saved, for the strip's state word
   };
 
   // ---------------------------------------------------------------------------
-  // Undo and redo (ADR 0057): every edit to the routine, one at a time, from
-  // either view, on one stack.
+  // Undo and redo (ADR 0057): every edit to the routine, one at a time, on
+  // one stack.
   //
   // An entry is a copy of everything a builder authors - the steps, the close
   // half, the interrupt group and the tempo, which re-times every step on a
   // beat - so no edit needs an undo of its own kind. It is bracketed two ways
   // (the pattern is r2d2-astromech-simulator's blockHistPush / blockHistCommit):
   //   historyPush()          BEFORE an edit made in one act that always
-  //                          changes something: add, remove, reorder
-  //   historyCommit(before)  AFTER an edit made over time - a drag, a run of
-  //                          typing - or one that may turn out to change
-  //                          nothing, given the copy from historyBegin(). An
-  //                          edit that changed nothing records nothing, so a
-  //                          press that only selects costs no entry.
+  //                          changes something: a drop, a removal, a split
+  //   historyCommit(before)  AFTER an edit made over time - a drag, a fader -
+  //                          or one that may turn out to change nothing,
+  //                          given the copy from historyBegin(). An edit that
+  //                          changed nothing records nothing, so a press that
+  //                          only selects costs no entry.
+  // Both read the routine as it is when they are called, so each is called
+  // before its edit writes anything.
   // Revert is not on the stack: it discards the whole session, history and all.
   // ---------------------------------------------------------------------------
   const HISTORY_DEPTH = 100;
   const HISTORY_FIELDS = ["steps", "closeSteps", "toggleGroup", "tempo"];
-  // `base` is the routine as the last finished edit left it, which is what a
-  // typing run starts from: the dome fields write the step before they read
-  // the form back, so the run cannot take its own copy when it begins. `run`
-  // is that copy while a run is open, and `runStep` the step being typed in.
-  const history = { undo: [], redo: [], base: null, run: null, runStep: null };
+  const history = { undo: [], redo: [] };
 
   const historyCapture = () =>
     JSON.stringify(Object.fromEntries(HISTORY_FIELDS.map((key) => [key, editorState.current[key]])));
@@ -95,33 +88,15 @@
     if (historyCapture() !== before) historyRecord(before);
   };
 
-  // A run of typing ends: at the field's change, and before anything else
-  // reads or writes the stack.
-  const historySettle = () => {
-    if (history.run !== null) historyCommit(history.run);
-    history.run = null;
-    history.runStep = null;
-    history.base = historyCapture();
-  };
-
-  const historyPush = () => {
-    historySettle();
-    historyRecord(history.base);
-  };
+  const historyPush = () => historyRecord(historyCapture());
 
   // The copy an edit made over time hands back to historyCommit().
-  const historyBegin = () => {
-    historySettle();
-    return history.base;
-  };
+  const historyBegin = () => historyCapture();
 
   const historyReset = () => {
-    Object.assign(history, { undo: [], redo: [], run: null, runStep: null });
-    history.base = editorState.current ? historyCapture() : null;
+    history.undo = [];
+    history.redo = [];
   };
-
-  // A run still open is an edit not yet on the stack.
-  const runChanged = () => history.run !== null && historyCapture() !== history.run;
 
   // ---------------------------------------------------------------------------
   // The half on the stage (#441, ADR 0062). A sequence in an interrupt group
@@ -146,13 +121,7 @@
   //   - Protocol Check's verdict, Save, the history and the unsaved-edits
   //     check, which are of the sequence, both halves;
   //   - an edit tried on a copy (triedOnCopy()), which copies the whole
-  //     sequence and changes the half on the stage in it;
-  //   - the step list (the card editor), which knows the opening half only.
-  //     Its cards read editorState.current.steps themselves, and its Remove
-  //     and its beats go by a card's place there through removeSteps() and
-  //     setStepBeat(), which act on the stage. So the step list is shown only
-  //     with Opens on the stage (showSessionView(), edited()). It retires
-  //     (ADR 0057).
+  //     sequence and changes the half on the stage in it.
   //
   // `half` is the editor's and never the sequence's: nothing of it is saved,
   // so a toggle that is only looked at saves back as it was read.
@@ -401,13 +370,6 @@
   // vocabulary's groups.
   const domeLights = SeqProtocolCheck.domeLights;
   const lightWord = (group, token) => domeLights.label(group, token) || "Unknown";
-  // A group's tokens as the <option>s of a step card's picker, `current`
-  // chosen. A target is shown with its token after it, as the dome spells it.
-  const lightOptions = (group, tokens, current, withToken = false) =>
-    tokens
-      .map((token) =>
-        `<option value="${token}" ${token === current ? "selected" : ""}>${window.PAUtils.escapeHtml(lightWord(group, token))}${withToken ? ` (${token})` : ""}</option>`)
-      .join("");
 
   const els = {
     // List view
@@ -908,10 +870,9 @@
   // A Factory sequence opens read-only, from GET /api/seq/builtins: the builder
   // has not made it theirs, and Tune is the act that does.
   //
-  // The builder's own opens in the workspace: one sequence object,
-  // editorState.current, behind the timeline and the step list alike, so an
-  // edit in one is there in the other and Save sends it either way
-  // (showSessionView() below).
+  // The builder's own opens in the workspace, where the timeline is the one
+  // editor: an edit there is made to editorState.current, the sequence Save
+  // sends.
   //
   // Neither moves the droid except on the pose press, and that poses what the
   // droid has stored under the name - never the edits on screen.
@@ -1067,7 +1028,7 @@
   };
 
   // Protocol Check refuses a step timed before the one above it, so a block
-  // dragged past its neighbour changes places with it in the step list. The
+  // dragged past its neighbour changes places with it in the routine. The
   // end step, and anything written after it, stays where it is.
   //
   // stepOrder() is that order for any list of steps, as the index each place
@@ -1085,12 +1046,10 @@
     const order = stepOrder(steps);
     if (order.every((from, to) => from === to)) return;
     setStageSteps(order.map((from) => steps[from]));
-    // The step list's open cards are the opening half's.
-    if (editorState.half === "opens") editorState.expanded = new Set([...editorState.expanded].map((from) => order.indexOf(from)));
   };
 
-  // Remove steps by index: the one removal, for the step list and the timeline
-  // alike. A loop is one object: removing it takes the steps it repeats,
+  // Remove steps by their place in the half on the stage: the one removal. A
+  // loop is one object: removing it takes the steps it repeats,
   // removing one of those shortens it, and a loop left repeating nothing goes
   // too - otherwise it would reach for the step after it.
   //
@@ -1118,17 +1077,7 @@
       loop.body = left;
     });
     setStageSteps(steps.filter((_, index) => !gone.has(index)));
-    // A card still there stays open, at the place it has moved up to. The
-    // cards are the opening half's.
-    const removed = [...gone];
-    if (editorState.half === "opens") {
-      editorState.expanded = new Set(
-        [...editorState.expanded]
-          .filter((index) => !gone.has(index))
-          .map((index) => index - removed.filter((at) => at < index).length));
-    }
     if (within) return;
-    rerenderStepTable();
     edited();
   };
 
@@ -1143,9 +1092,7 @@
   // is handed a way to read the half of editorState.current that is on the
   // stage (halfRoutine()) - the sequence's own step objects, never a copy - and the
   // three things an edit there needs from the editor: the history's two
-  // brackets, and removal, which changes which steps there are. It stays
-  // mounted while the step list is shown in its place, because the droid
-  // beside it is its to draw.
+  // brackets, and removal, which changes which steps there are.
   const mountSessionTimeline = () => {
     closeSessionTimeline();
     if (!window.SeqTimeline) return;
@@ -1170,7 +1117,6 @@
         commit: (before) => {
           orderSteps();
           historyCommit(before);
-          rerenderStepTable();
           edited();
         },
         remove: removeSteps,
@@ -1179,36 +1125,9 @@
     });
   };
 
-  // Show the routine being edited as its timeline or as its step list, in the
-  // stage's one column. The droid beside it and the drawer under it stay.
-  const showSessionView = (view) => {
-    let shown = view === "steps" ? "steps" : "timeline";
-    if (shown === "timeline" && !sessionTimeline) {
-      showEditorFeedback("The timeline did not load. Reload the page to try again.", "error");
-      shown = "steps";
-    }
-    editorState.view = shown;
-    const onTimeline = shown === "timeline";
-    // The step list knows the opening half only, so Opens comes back with it
-    // and the switch is offered only over the timeline (paintHalf()).
-    if (!onTimeline) showHalf("opens");
-    else paintHalf();
-    document.getElementById("seq-editor-steps")?.classList.toggle("hidden", onTimeline);
-    document.getElementById("seq-editor-timeline")?.classList.toggle("hidden", !onTimeline);
-    ["steps", "timeline"].forEach((name) =>
-      document.getElementById(`seq-editor-show-${name}`)?.setAttribute("aria-pressed", String(name === shown)));
-    // The lanes go out of sight with the timeline still mounted, so a block
-    // held at that moment is let go where the press found it, and the bar
-    // stops offering how a loop is drawn.
-    document.getElementById("seq-editor-tlbar")?.classList.toggle("is-steps", !onTimeline);
-    if (!onTimeline) sessionTimeline?.cancel();
-  };
-
-  // The switch as the sequence and the stage now are: offered when there is a
-  // close half and the timeline is what is shown.
+  // The switch as the sequence now is: offered when there is a close half.
   const paintHalf = () =>
-    paintHalfSwitch(document.getElementById("seq-editor-half"), editorState.half,
-      hasCloseHalf(editorState.current) && editorState.view === "timeline");
+    paintHalfSwitch(document.getElementById("seq-editor-half"), editorState.half, hasCloseHalf(editorState.current));
 
   // Put a half on the stage. Closes only where there is a close half. A block
   // held at that moment is let go where the press found it; what was picked
@@ -1242,7 +1161,7 @@
     });
   };
 
-  // What kind of step this is, as the step list names it.
+  // What kind of step this is, by name.
   const stepKindName = (step) =>
     (step.type === "dome" ? domeStepName(step) : stepTypeName[step.type] || step.type || "Step");
 
@@ -1250,8 +1169,8 @@
   // The Picked block tab (#441): what the timeline says is picked, and for one
   // block the inspector - where it starts, then the rows of its kind. Every
   // row is a setting row, and every bound and choice in one is the kind
-  // table's (STEP_LIMITS and its neighbours), the same the step list's cards
-  // read. Several blocks can be moved together and removed.
+  // table's (STEP_LIMITS and its neighbours). Several blocks can be moved
+  // together and removed.
   //
   // RUNS FOR, OPENS TO and MOTION are the decided words for a Part standing
   // open: how long from its open to its close, how far (stored as howFar,
@@ -1521,15 +1440,14 @@
     return lights ? SHAPE_WORDS.light : SHAPE_WORDS.servo;
   };
 
-  // The Gesture's rows, in the step list card's words: Parts, Move, Travels,
-  // Order, How far.
+  // The Gesture's rows: Parts, Move, Travels, Order, How far.
   const gestureRows = (step) => {
     const G = window.SeqGesture;
     if (!G) return "";
     const esc = window.PAUtils.escapeHtml;
     const choices = (field) => gestureChoices(field).map((choice) => [choice.id, esc(choice.label)]);
-    // A Gesture over a listed set of Parts names them; the list itself is
-    // authored in the step list.
+    // A Gesture over a listed set of Parts names them. The list is not
+    // authored here: a Gesture written with one keeps it as it was read.
     const parts = Array.isArray(step.parts)
       ? `<span class="seq-row-ctl">${esc(step.parts.map((id) => catalogPart(id)?.name || id).join(", "))}</span>`
       : pillsOf("set", (window.DroidParts?.sets || []).map((set) => [set.id, esc(set.label)]), step.set, "Which parts");
@@ -1546,10 +1464,10 @@
       + settingRow("How far", faderOf("howFar", far, STEP_LIMITS.howFar, "How far, percent of each part's throw"), `${far}%`);
   };
 
-  // What is rarely set, folded under the card's own line: the pace, the
+  // What is rarely set, folded under the Gesture's rows: the pace, the
   // repeat, and the full-throw time and easing only a Gesture overrides
   // (CONTEXT.md "Body Step"). Every and Again are in beats where the routine
-  // has a tempo and in milliseconds where it has none, as on the card. An
+  // has a tempo and in milliseconds where it has none. An
   // empty field shows what the Gesture does when it says nothing.
   const gestureMore = (step) => {
     const G = window.SeqGesture;
@@ -1691,14 +1609,14 @@
       + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
     // Picking a beat (ADR 0060): the bars and their beats, under where the
     // block starts, for a routine with a tempo. A step a loop repeats is
-    // timed from its pass and gets none, as on its card.
+    // timed from its pass and gets none.
     // Only the beats the block can be moved to are offered: those inside
     // the limits a move of it keeps (the timeline's pickedRange()).
     const range = sessionTimeline?.pickedRange();
     const reachable = (index) => Boolean(range)
       && range.from <= SeqProtocolCheck.tempoBeatMs(tempoOf(), index) && SeqProtocolCheck.tempoBeatMs(tempoOf(), index) <= range.to;
     const beatRow = tempoOf() && window.SeqTempo && !SeqProtocolCheck.loopBodySteps(stageSteps()).has(at)
-      ? settingRow("Beat", beatBarsHtml(step, stageReachMs(), "", (index) => `data-picked="beat" data-value="${index}"`, reachable))
+      ? settingRow("Beat", beatBarsHtml(step, stageReachMs(), (index) => `data-picked="beat" data-value="${index}"`, reachable))
       : "";
     const move = moveOf(step);
     const jumps = move?.settles && firstMoveJumps(step, move)
@@ -1871,7 +1789,7 @@
       writeGesture(step, field, raw);
     } else if (field === "ref") {
       // Which sequence it is, and the label a reader of the file sees: its
-      // name now, as the step list's card writes it.
+      // name now.
       const choice = phraseChoices().find((each) => each.id === raw);
       if (!choice) return;
       // Pressed again on the one it is, it changes nothing - and asks again
@@ -1948,7 +1866,7 @@
     } else if (PICKED_NUMBERS.includes(field)) {
       if (!Number.isInteger(number)) return;
       // A duration typed over a span of beats is a millisecond instead
-      // (ADR 0058), as it is in the step list.
+      // (ADR 0058).
       if (field === "durationMs" && number !== step.durationMs) delete step.spanBeats;
       step[field] = number;
     } else {
@@ -1999,7 +1917,6 @@
       // it adds goes in time order with the rest.
       if (field === "motion") orderSteps();
       historyCommit(before);
-      rerenderStepTable();
       edited();
       // The blocks a step draws change with its Move Shape: a flutter is its
       // own block, and an open is one block with the close after it.
@@ -2032,7 +1949,6 @@
     writePicked(picked.step, input.dataset.picked, input.value, faderRun.way);
     const valueEl = input.closest(".setting-row")?.querySelector(".setting-value");
     if (valueEl) valueEl.textContent = `${input.value}%`;
-    rerenderStepTable();
     edited();
   };
 
@@ -2193,7 +2109,6 @@
   // the routine again, and pick them, so the inspector is on the new block.
   const landed = (made) => {
     orderSteps();
-    rerenderStepTable();
     edited();
     const steps = stageSteps();
     sessionTimeline.pick(made.map((step) => steps.indexOf(step)));
@@ -2664,8 +2579,8 @@
     gestureMoreOpen = false;
     forgetPhrases();
     Object.assign(editorState, {
-      original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(),
-      view: "timeline", half: "opens", tab: "block", saved: false,
+      original: null, current: null, isNew: false, tuningFactory: null,
+      half: "opens", tab: "block", saved: false,
     });
     historyReset();
     renderListView();
@@ -2730,11 +2645,6 @@
   // =========================================================================
   // Full Editor View
   // =========================================================================
-
-  // Validate a step and return validation result
-  const validateStepForCard = (step, stepIdx) => {
-    return SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
-  };
 
   // "an alert", "a happy": a sound category behind its article.
   const aOrAn = (word) => `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
@@ -2837,8 +2747,8 @@
   // ---------------------------------------------------------------------------
   // The kinds of step, as their fields: what a new step of each kind starts
   // as, the bounds its numbers are offered within, and the choices its pickers
-  // hold. One set, read by the step list's cards and by the Picked block tab,
-  // so a kind never has two sets of bounds. Protocol Check has the rules
+  // hold. One set, read by the Picked block tab and by a drop, so a kind
+  // never has two sets of bounds. Protocol Check has the rules
   // (data/seq_protocol_check.js); these are what the controls offer.
   // ---------------------------------------------------------------------------
   const stepTypeDefaults = {
@@ -2878,8 +2788,8 @@
   // a speed and no time is refused, and a new Spin Dome is the neutral stop.
   const TURN_STARTS_MS = 1000;
 
-  // A field of a step as anything here reads it - an inspector row, a card,
-  // the words on a block: the step's own value, or what a step of its kind
+  // A field of a step as anything here reads it - an inspector row, the words
+  // on a block: the step's own value, or what a step of its kind
   // starts as. The one fallback, so no reader has a default of its own.
   const fieldOf = (step, field) => step[field] ?? stepTypeDefaults[step.type]?.[field];
 
@@ -2891,8 +2801,8 @@
 
   // ---------------------------------------------------------------------------
   // The dome's four light commands. A dome step holds one as its `cmd`; the
-  // step list's cards and the Picked block tab both read it with lightFields()
-  // and write it with lightCmd(), so the grammar is spelled once (Protocol
+  // Picked block tab reads it with lightFields() and writes it with
+  // lightCmd(), so the grammar is spelled once (Protocol
   // Check has the rules, data/seq_protocol_check.js):
   //   DV:<preset>
   //   DL:<target>:<mode>[:<color>[:<seconds>]]
@@ -3041,10 +2951,8 @@
     return { speedPct: direction === "left" ? -abs : abs, durationMs };
   };
 
-  // Plain-English type names. There was a parallel map of emoji beside this
-  // one, drawn in the step card and in the picker immediately next to the name
-  // it stood for, and it is gone: an operator surface carries no pictograph
-  // (ADR 0066) and the word was already doing the whole job.
+  // Plain-English type names. An operator surface carries no pictograph
+  // beside them (ADR 0066): the word does the whole job.
   const stepTypeName = {
     audio: "Sound",
     dome: "Panel Action",
@@ -3063,154 +2971,18 @@
   const domeStepName = (step) =>
     DOME_SUBMODES[lightKind(step.cmd)]?.name || (panelIntent(step) ? stepTypeName.dome : DOME_COMMAND.name);
 
-  // Step type descriptions for reference panel
-  const stepTypeDescriptions = {
-    audio: "Play a sound or cue",
-    dome: "Open, close, apply visual presets, or control logic/PSI mood on dome panels",
-    domeRotate: "Rotate the dome left or right",
-    loop: "Repeat a group of steps at an interval",
-    random: "Randomized panel motion",
-    audioCat: "Play a random sound from a category",
-    gesture: "One move across a set of parts, in order round the droid",
-    sequence: "Another sequence, as one step, kept linked",
-    end: "Mark the end of the sequence",
-  };
-
-  // Render the reference panel (What Each Step Type Does)
-  const renderStepTypeReference = () => {
-    return `
-      <div class="step-type-reference">
-        <button class="step-type-reference-toggle" type="button" aria-expanded="false" aria-controls="step-type-reference-panel">
-          <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>What does each step type do?
-        </button>
-        <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
-          <div class="step-type-reference-list">
-            ${["audio", "dome", "domeRotate", "gesture", "sequence", "loop", "random", "audioCat", "end"]
-              .map(
-                (type) =>
-                  `<div class="step-type-reference-item">
-                    <span class="step-type-reference-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
-                    <span class="step-type-reference-desc">${window.PAUtils.escapeHtml(stepTypeDescriptions[type])}</span>
-                  </div>`
-              )
-              .join("")}
-          </div>
-        </div>
-      </div>
-    `;
-  };
-
-  const renderStepRow = (step, idx) => {
-    const isExpanded = editorState.expanded.has(idx);
-    let typeName = stepTypeName[step.type] || step.type;
-    // A dome step is named by what its command makes it, as the inspector
-    // names it (domeStepName()).
-    if (step.type === "dome") {
-      typeName = domeStepName(step);
-    }
-    const preview = stepPreview(step);
-
-    // Get validation state for this step
-    const validation = validateStepForCard(step, idx);
-    const isInvalid = !validation.ok;
-    const errorId = `step-card-error-${idx}`;
-
-    // Collapsed header (always visible)
-    const headerHtml = `
-      <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0" ${isInvalid ? `aria-invalid="true" aria-describedby="${errorId}"` : ""}>
-        <span class="step-handle" title="Drag to reorder steps">⋯</span>
-        <span class="step-number-label">Step ${idx + 1}</span>
-        <span class="step-time-label">t=${step.t || 0}ms${beatLabel(step)}</span>
-        <span class="step-card-type">${window.PAUtils.escapeHtml(typeName)}</span>
-        <span class="step-card-preview">${window.PAUtils.escapeHtml(preview)}</span>
-        ${isInvalid ? `<span class="step-card-error-badge" aria-hidden="true">!</span>` : ""}
-        <button class="step-card-toggle" aria-label="${isExpanded ? "Collapse" : "Expand"} step" type="button" tabindex="-1">
-          <svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
-        </button>
-        <button class="step-remove" type="button" tabindex="-1">Remove</button>
-      </div>
-    `;
-
-    // Expanded content (shown only when expanded)
-    const expandedHtml = isExpanded ? `
-      <div class="step-card-expanded">
-        ${isInvalid ? `<div class="step-card-error-message" id="${errorId}" role="alert" aria-live="polite">
-          <span class="step-card-error-icon">!</span>
-          <span class="step-card-error-text">${window.PAUtils.escapeHtml(validation.error || "Invalid step")}</span>
-        </div>` : ""}
-        <div class="step-card-expanded-content">
-          <div class="setting-rows step-rows">
-            <div class="setting-row">
-              <span class="setting-name">Starts at</span>
-              <span class="setting-number">
-                <input class="step-t" type="number" value="${step.t || 0}" ${limits(STEP_LIMITS.t)} aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
-                <span class="setting-unit">ms</span>
-              </span>
-              <span class="setting-value"></span>
-            </div>
-          </div>
-          ${renderBeatPicker(step, idx)}
-
-          <!-- What kind of step it is: one row of pills, the dome's four kinds
-               of command among them. -->
-          <div class="setting-rows step-rows">
-            <div class="setting-row">
-              <span class="setting-name">Kind</span>
-              <span class="step-type-picker seq-pills" role="radiogroup" aria-label="Kind of step">
-                ${["audio", "domeRotate", "dome"]
-                  .map(
-                    (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type && !(type === "dome" && /^(DL|DT|DH):/.test(step.cmd || "")) ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}"><span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span></button>`
-                  )
-                  .join("")}
-                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}"><span class="step-type-card-name">Logic / PSI Mode</span></button>
-                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}"><span class="step-type-card-name">Logic Text</span></button>
-                <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}"><span class="step-type-card-name">Holo Effect</span></button>
-                ${["gesture", "sequence", "loop", "random", "audioCat", "end"]
-                  .map(
-                    (type) =>
-                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}"><span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span></button>`
-                  )
-                  .join("")}
-              </span>
-              <span class="setting-value"></span>
-            </div>
-          </div>
-
-          ${renderStepTypeReference()}
-
-          <div class="step-fields" data-fields-for-type="${step.type}">
-            <!-- Conditional fields populated by renderStepFields -->
-          </div>
-        </div>
-      </div>
-    ` : "";
-
-    return `
-      <div class="step-card ${isInvalid ? "step-card-invalid" : ""}" data-step-index="${idx}" data-step-type="${step.type}" draggable="true" ${isInvalid ? `aria-invalid="true"` : ""}>
-        ${headerHtml}
-        ${expandedHtml}
-      </div>
-    `;
-  };
-
   // ---------------------------------------------------------------------------
   // Putting a step on a beat (ADR 0060): the builder picks the beat, from a
   // list of every beat with its bar number, rather than dragging a time until
-  // it lands near one. The list and the span sit outside .step-fields, because
-  // the form rebuilds a step from its [data-field] inputs and a beat is not a
-  // form value: it is set on the step directly and the time resolved from it.
+  // it lands near one. A beat is set on the step directly and the time
+  // resolved from it (setStepBeat()).
   // ---------------------------------------------------------------------------
   const tempoOf = () => {
     const tempo = editorState.current?.tempo;
     return tempo && SeqProtocolCheck.validateTempo(tempo).ok ? tempo : null;
   };
 
-  // How far a routine reaches, for how long the beat list runs: the opening
-  // half for the step list's card, and the half on the stage for the
-  // inspector.
-  const routineReachMs = () =>
-    Math.max(...(editorState.current?.steps || []).map((step) => Number(step?.t) || 0), 0);
+  // How far the half on the stage reaches, for how long the beat list runs.
   const stageReachMs = () => Math.max(...stageRun().map((step) => Number(step?.t) || 0), 0);
 
   // The beat a step is placed on, in words, or "" when it is on none.
@@ -3218,11 +2990,6 @@
     const tempo = tempoOf();
     if (!tempo || !Number.isInteger(step.beat) || !window.SeqTempo) return "";
     return window.SeqTempo.beatWords(tempo, step.beat);
-  };
-
-  const beatLabel = (step) => {
-    const words = beatWords(step);
-    return words ? ` &middot; ${words}` : "";
   };
 
   // Steps whose duration can be a span of beats: Protocol Check's rule.
@@ -3400,60 +3167,31 @@
     return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   };
 
-  // The Gesture's form values: numbers that are optional, and words that are
-  // optional (an unset word is its default).
-  const GESTURE_NUMBER_FIELDS = ["howFar", ...GESTURE_TIMES];
-  const GESTURE_WORD_FIELDS = ["set", ...GESTURE_DEFAULTED, "easing"];
-
   // The beats a step can be put on, to pick from: each bar is its number and
   // its beats as one joined bar, the first beat weighted; the bars sit side
-  // by side and wrap. The one markup, for the inspector and the step list's
-  // card. `reachMs` is how far the routine it is in reaches, `cls` the class
-  // a beat's button takes, `attrs(index)` what makes it the caller's to
-  // hear, and `offered(index)` whether the step can be put there at all - a
-  // beat it cannot reach is drawn and cannot be pressed.
-  const beatBarsHtml = (step, reachMs, cls, attrs, offered = () => true) =>
+  // by side and wrap. `reachMs` is how far the routine it is in reaches,
+  // `attrs(index)` what makes it the inspector's to hear, and `offered(index)`
+  // whether the step can be put there at all - a beat it cannot reach is
+  // drawn and cannot be pressed.
+  const beatBarsHtml = (step, reachMs, attrs, offered = () => true) =>
     `<div class="seq-bars">${window.SeqTempo.bars(tempoOf(), Math.max(reachMs, Number(step.t) || 0))
       .map((bar) => {
         const name = bar.bar === 0 ? "Pickup" : `Bar ${bar.bar}`;
         const beats = bar.beats
           .map(
             (b) =>
-              `<button type="button" class="${cls}${b.strong ? " strong" : ""}" ${attrs(b.index)} aria-pressed="${step.beat === b.index ? "true" : "false"}"${offered(b.index) ? "" : " disabled"} aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
+              `<button type="button" ${b.strong ? 'class="strong" ' : ""}${attrs(b.index)} aria-pressed="${step.beat === b.index ? "true" : "false"}"${offered(b.index) ? "" : " disabled"} aria-label="${name}, beat ${b.beat}">${b.beat}</button>`,
           )
           .join("");
         return `<span class="seq-bar"><span class="seq-bar-num" aria-hidden="true">${bar.bar === 0 ? "-" : bar.bar}</span><span class="seg seg-sm seq-beats" role="group" aria-label="${name}">${beats}</span></span>`;
       })
       .join("")}</div>`;
 
-  const renderBeatPicker = (step, idx) => {
-    const tempo = tempoOf();
-    if (!tempo || !window.SeqTempo) return "";
-    if (SeqProtocolCheck.loopBodySteps(editorState.current.steps).has(idx)) return "";
-    const bars = beatBarsHtml(step, routineReachMs(), "step-beat-pick", (index) => `data-beat="${index}"`);
-    const clear = Number.isInteger(step.beat)
-      ? `<button type="button" class="seq-act step-beat-clear">Off the beat</button>`
-      : "";
-    const span = spansBeats(step)
-      ? `<span class="seq-row-label">Lasts</span>
-         <div class="seq-row-ctl">
-           <input class="seq-num step-beat-span" type="number" ${limits(SeqProtocolCheck.SPAN_BEATS)} step="1" value="${Number.isInteger(step.spanBeats) ? step.spanBeats : ""}" placeholder="-" aria-label="How many beats it lasts">
-           <span class="seq-unit">beats</span>
-         </div>`
-      : "";
-    return `
-      <div class="seq-rows">
-        <span class="seq-row-label">Beat</span>
-        <div class="seq-row-ctl">${bars}${clear}</div>
-        ${span}
-      </div>`;
-  };
-
-  // Put the step at `stepIdx` on beat `beat` (null takes it off), or give its
-  // duration a span of `spanBeats` beats (null clears it). The time and the
-  // duration are resolved from the tempo, as the droid will.
-  const setStepBeat = (stepIdx, patch) => {
-    const step = { ...stageSteps()[stepIdx] };
+  // Put the step at `at` on the stage on beat `beat` (null takes it off), or
+  // give its duration a span of `spanBeats` beats (null clears it). The time
+  // and the duration are resolved from the tempo, as the droid will.
+  const setStepBeat = (at, patch) => {
+    const step = { ...stageSteps()[at] };
     if ("beat" in patch) {
       if (patch.beat === null) delete step.beat;
       else step.beat = patch.beat;
@@ -3476,10 +3214,9 @@
     // indices are picked again once it is drawn.
     const pickedSteps = [...new Set(pickedBlocks.flatMap((block) => block.steps))];
     const before = historyBegin();
-    stageSteps()[stepIdx] = step;
+    stageSteps()[at] = step;
     editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
     historyCommit(before);
-    rerenderStepTable();
     edited();
     if (pickedSteps.length > 0) sessionTimeline?.pick(pickedSteps);
   };
@@ -3500,582 +3237,7 @@
     const before = historyBegin();
     editorState.current = result.seq;
     historyCommit(before);
-    rerenderStepTable();
     edited(`${result.landed} of ${result.total} steps landed on a beat.`);
-  };
-
-  // Helper to render a grouped field section with optional label
-  const renderFieldGroup = (label, fieldsHtml) => {
-    if (!fieldsHtml || fieldsHtml.trim() === "") return "";
-    return `
-      <div class="step-field-group">
-        <div class="step-field-group-label">${window.PAUtils.escapeHtml(label)}</div>
-        <div class="step-field-group-content">
-          ${fieldsHtml}
-        </div>
-      </div>
-    `;
-  };
-
-  // Helper to generate a contextual help line for a step
-  const stepHelpLine = (step) => {
-    switch (step.type) {
-      case "audio":
-        return "Plays a sound";
-      case "dome": {
-        const cmd = step.cmd || "";
-        const light = lightFields(cmd);
-        if (light?.kind === "DL") {
-          // One too short to name its lights and its mode says no more than
-          // what kind it is.
-          if (cmd.split(":").length < 3) return "Sets logic/PSI mood";
-          return `Sets ${lightWord("targets", light.target)} to ${lightWord("modes", light.mode)}`;
-        }
-        if (/^(:|)(OP|CL|OF)/.test(cmd)) {
-          return "Operates dome panels";
-        }
-        return "Dome command";
-      }
-      case "visualPreset":
-        return "Applies a dome visual preset";
-      case "domeRotate": {
-        const speedPct = fieldOf(step, "speedPct");
-        const durationMs = fieldOf(step, "durationMs");
-        if (speedPct === 0) {
-          return "Stops dome rotation";
-        }
-        const direction = speedPct < 0 ? "left" : "right";
-        const speed = Math.abs(speedPct);
-        return `Rotates ${direction} at ${speed}% speed for ${durationMs}ms total`;
-      }
-      case "loop": {
-        return `Repeats ${fieldOf(step, "body")} step(s) every ${fieldOf(step, "periodMs")}ms for ~${fieldOf(step, "durationMs")}ms total`;
-      }
-      case "random": {
-        const set = fieldOf(step, "set");
-        const moveMs = fieldOf(step, "moveMs");
-        return `Randomly moves ${set} panels with ${moveMs}ms move time`;
-      }
-      case "audioCat": {
-        return `Plays ${aOrAn(fieldOf(step, "category"))} sound`;
-      }
-      case "end":
-        return "Marks the end of the sequence";
-      default:
-        return "";
-    }
-  };
-
-  const renderStepFields = (step, fieldsContainer) => {
-    let behaviorHtml = "";
-    let targetHtml = "";
-    let timingHtml = "";
-
-    switch (step.type) {
-      case "audio":
-        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd ?? "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
-        break;
-
-      case "dome": {
-        // Detect mode from step.cmd:
-        // - Visual preset if starts with DV: → preset picker
-        // - Logic/PSI if starts with DL: → structured DL: controls
-        // - Panel intent if starts with :OP, :CL, :OF → panel action UI
-        // - Otherwise advanced mode → raw text input
-        const domeCmd = step.cmd || "";
-        // Check for forced mode attribute (used during toggle)
-        const forcedMode = fieldsContainer.dataset.domeMode;
-        let domeMode; // "panel", "preset", "logic", or "advanced"
-        if (forcedMode) {
-          domeMode = forcedMode; // panel, preset, logic, or advanced
-          // Clear the forced mode after use
-          delete fieldsContainer.dataset.domeMode;
-        } else {
-          if (domeCmd.startsWith("DV:")) {
-            domeMode = "preset";
-          } else if (domeCmd.startsWith("DL:")) {
-            domeMode = "logic";
-          } else if (/^(:|)(OP|CL|OF)/.test(domeCmd)) {
-            domeMode = "panel";
-          } else {
-            domeMode = "advanced";
-          }
-        }
-
-        if (domeMode === "preset") {
-          // Visual preset mode: dropdown of DV_PRESETS names
-          const presetName = lightFields(step.cmd)?.preset ?? "";
-          behaviorHtml = `
-            <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
-              ${lightOptions("presets", domeLights.presets, presetName)}
-            </select>
-            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || DOME_SUBMODES.DV.starts)}">
-            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to advanced mode">Advanced</button>
-          `;
-        } else if (domeMode === "logic") {
-          // Logic/PSI Mode (DL:) structured step
-          // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
-          const cmd = step.cmd || DOME_SUBMODES.DL.starts;
-          const { target, mode, color, seconds: duration } = lightFields(cmd);
-
-          targetHtml = `
-            <select class="step-field dl-target-select" data-field="target" aria-label="Target">
-              ${lightOptions("targets", domeLights.targets, target, true)}
-            </select>
-          `;
-
-          behaviorHtml = `
-            <select class="step-field dl-mode-select" data-field="mode" aria-label="Mode">
-              ${lightOptions("modes", domeLights.modes, mode)}
-            </select>
-            <select class="step-field dl-color-select" data-field="color" aria-label="Color">
-              ${lightOptions("colors", domeLights.colors, color)}
-            </select>
-          `;
-
-          timingHtml = `
-            <input class="step-field dl-duration-input" type="number" data-field="duration" value="${duration}" ${limits(STEP_LIMITS.lightCount)} aria-label="Duration (seconds)" placeholder="duration (0-99s)">
-            <span class="dome-rotate-label">s</span>
-          `;
-
-          // Store hidden cmd field for serialization
-          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
-        } else if (domeMode === "text") {
-          // Logic Text Mode (DT:) structured step
-          // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
-          const cmd = step.cmd || DOME_SUBMODES.DT.starts;
-          const { target, color, seconds: duration, speed, text: decodedText } = lightFields(cmd);
-
-          targetHtml = `
-            <select class="step-field dt-target-select" data-field="target" aria-label="Target">
-              ${lightOptions("textTargets", domeLights.textTargets, target, true)}
-            </select>
-          `;
-
-          behaviorHtml = `
-            <select class="step-field dt-color-select" data-field="color" aria-label="Color">
-              ${lightOptions("textColors", domeLights.textColors, color)}
-            </select>
-            <textarea class="step-field dt-text-input" data-field="text" placeholder="Enter text (max 32 chars, one line break allowed)" aria-label="Display text">${window.PAUtils.escapeHtml(decodedText)}</textarea>
-          `;
-
-          timingHtml = `
-            <input class="step-field dt-duration-input" type="number" data-field="duration" value="${duration}" ${limits(STEP_LIMITS.lightCount)} aria-label="Duration (seconds)" placeholder="0-99s">
-            <span class="dome-rotate-label">s</span>
-            <input class="step-field dt-speed-input" type="number" data-field="speed" value="${speed}" ${limits(STEP_LIMITS.scroll)} aria-label="Scroll speed (0-9)" placeholder="0-9">
-            <span class="dome-rotate-label">speed</span>
-          `;
-
-          // Store hidden cmd field for serialization
-          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
-        } else if (domeMode === "holo") {
-          // Holo Effect Mode (DH:) structured step
-          // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
-          const cmd = step.cmd || DOME_SUBMODES.DH.starts;
-          const { target, effect, color, count: durationOrCount } = lightFields(cmd);
-
-          targetHtml = `
-            <select class="step-field dh-target-select" data-field="target" aria-label="Target">
-              ${lightOptions("holoTargets", domeLights.holoTargets, target, true)}
-            </select>
-          `;
-
-          behaviorHtml = `
-            <select class="step-field dh-effect-select" data-field="effect" aria-label="Effect">
-              ${lightOptions("holoEffects", domeLights.holoEffects, effect)}
-            </select>
-            <select class="step-field dh-color-select" data-field="color" aria-label="Color">
-              ${lightOptions("holoColors", domeLights.holoColors, color)}
-            </select>
-          `;
-
-          timingHtml = `
-            <input class="step-field dh-duration-input" type="number" data-field="durationOrCount" value="${durationOrCount}" ${limits(STEP_LIMITS.lightCount)} aria-label="Duration / count (0-99)" placeholder="duration/count (0-99)">
-          `;
-
-          // Store hidden cmd field for serialization
-          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
-        } else if (domeMode === "panel") {
-          // Render the live picker from DomeLayout when the dome is answering; the
-          // offline tiers fall back to the built-in drawing, and only where that
-          // drawing is the dome this builder stated (see the else branch below).
-          // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
-          let action = "";
-          let target = "";
-          const match = domeCmd.match(/^:?(OP|CL|OF)(.+)$/);
-          if (match) {
-            action = match[1];
-            target = match[2];
-          }
-
-          // Get the layout model to determine picker source (live, cached, vendored, unsupported)
-          const domeLayout = window.DomeLayout?.getModel?.();
-          const layoutSource = domeLayout?.source || 'vendored';
-          const hasLiveElements = domeLayout?.elements?.length > 0;
-
-          // Build the SVG picker: use live layout if available, otherwise fallback to vendored
-          let svgPickerHtml = "";
-          let sourceNotice = "";
-
-          if (hasLiveElements && window.DomeLayoutRender?.renderPicker) {
-            // Render the live picker from dome-served layout
-            const pickerSvg = window.DomeLayoutRender.renderPicker(domeLayout);
-            svgPickerHtml = `
-              <div class="dome-svg-picker-container">
-                ${pickerSvg}
-              </div>
-            `;
-
-            // Add source banner above the picker.
-            // 'live' shows no banner (implicit success).
-            if (layoutSource === 'cached') {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-cached">Showing the last dome layout seen. The dome has not confirmed it.</div>`;
-            }
-          } else {
-            // No live or cached elements: either the dome is unreachable, or it is
-            // reachable but on an unsupported schema (whose geometry we deliberately
-            // do not trust, so elements is empty). Both land on the same question.
-            //
-            // The built-in drawing is a drawing of ONE design and declares which
-            // (data/dome_panel_model.js). Tier 3 of the Layout Fallback Hierarchy has
-            // already asked the Droid Build seam whether that design is the one this
-            // builder stated (ADR 0047, #343) - DomeLayout.load() above awaits
-            // DroidBuild.load() before it resolves - and `usesVendoredDrawing` is its
-            // answer. This reads that answer rather than working out a second one. A
-            // model from before tier 3 consulted the design does not carry the field,
-            // and keeps the behaviour it had.
-            //
-            // A null model is the hierarchy not having answered YET: the first editor
-            // open of a page session, while /api/dome/layout is still outstanding.
-            // That is not a statement that the drawing is theirs, so it is not drawn
-            // as one - a builder on their own design would otherwise spend the whole
-            // fetch timeout looking at somebody else's dome. DomeLayout.onChange()
-            // re-renders this picker through rerenderPanelIntentPickers() as soon as
-            // tier 3 does answer.
-            const layoutAnswered = Boolean(domeLayout);
-            const showsBuiltIn = layoutAnswered && domeLayout.usesVendoredDrawing !== false;
-
-            // The container ships even when it holds no drawing: it is the hook
-            // rerenderPanelIntentPickers() finds this picker by, and a step rendered
-            // without one would never pick up the live layout on a dome reconnect.
-            svgPickerHtml = `
-              <div class="dome-picker-container">
-                ${showsBuiltIn ? window.DOME_PANEL_MAP_SVG : ""}
-              </div>
-            `;
-
-            // Distinguish the cases: an unsupported-schema dome IS reachable (wrong
-            // version), so "not reachable" would send the operator chasing the wrong
-            // problem. Show the schema warning for that case.
-            if (!layoutAnswered) {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-pending">Checking which dome you built. The panel map follows.</div>`;
-            } else if (layoutSource === 'unsupported') {
-              const schemaWarning = window.PAUtils.escapeHtml(domeLayout.warning || "Dome layout schema not supported");
-              sourceNotice = showsBuiltIn
-                ? `<div class="dome-layout-notice dome-layout-error">${schemaWarning}. Showing the built-in MK4 map.</div>`
-                : `<div class="dome-layout-notice dome-layout-error">${schemaWarning}. No built-in map for your dome design.</div>`;
-            } else if (!showsBuiltIn) {
-              // Two different jobs for the builder, so two different sentences - the
-              // same two the dashboard's dome card gives (data/dome_control.js): one
-              // is "we have no picture of your dome", the other "we do not know what
-              // your dome carries at all", and only the second sends somebody to the
-              // design files.
-              sourceNotice = domeLayout.complementKnown === false
-                ? `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable. This build does not know which panels your dome carries.</div>`
-                : `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable. No built-in map for your dome design.</div>`;
-            } else {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable. Showing the built-in MK4 map.</div>`;
-            }
-          }
-
-          // Build the target dropdown, populating from live layout if available
-          let targetOptions = "";
-          if (hasLiveElements) {
-            // Populate from live layout: groups first, then commandable panels
-            targetOptions = `
-              <optgroup label="Groups">
-                <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
-                <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
-                <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
-              </optgroup>
-            `;
-
-            // Extract commandable panels from layout, grouped by panel_kind
-            const commandableRings = domeLayout.elements.filter(
-              (e) => e.element_type === "panel" && e.panel_kind === "ring" && e.in_layout && e.commandable && e.mapped
-            );
-            const commandablePies = domeLayout.elements.filter(
-              (e) => e.element_type === "panel" && e.panel_kind === "pie" && e.in_layout && e.commandable && e.mapped
-            );
-
-            if (commandableRings.length > 0) {
-              targetOptions += "<optgroup label='Ring panels'>";
-              commandableRings.forEach((e) => {
-                const ringTarget = window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.ring?.[e.id] || e.id;
-                targetOptions += `<option value="${ringTarget}" ${target === ringTarget ? "selected" : ""}>${window.PAUtils.escapeHtml(e.label)} → ${ringTarget}</option>`;
-              });
-              targetOptions += "</optgroup>";
-            }
-
-            if (commandablePies.length > 0) {
-              targetOptions += "<optgroup label='Pie / top panels'>";
-              commandablePies.forEach((e) => {
-                const pieTarget = window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.pie?.[e.id] || e.id;
-                targetOptions += `<option value="${pieTarget}" ${target === pieTarget ? "selected" : ""}>${window.PAUtils.escapeHtml(e.label)} → ${pieTarget}</option>`;
-              });
-              targetOptions += "</optgroup>";
-            }
-          } else {
-            // Fallback: use legacy static list
-            targetOptions = `
-              <optgroup label="Groups">
-                <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
-                <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
-                <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
-              </optgroup>
-              <optgroup label="Ring panels">
-                <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
-                <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
-                <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
-                <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
-                <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
-                <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
-                <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
-              </optgroup>
-              <optgroup label="Pie / top panels">
-                <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
-                <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
-                <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
-                <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
-                <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
-                <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
-              </optgroup>
-            `;
-          }
-
-          targetHtml = `
-            <div class="dome-target-wrapper">
-              ${sourceNotice}
-              ${svgPickerHtml}
-              <select class="step-field dome-target-select" aria-label="Target dropdown (alternative to SVG picker)">
-                ${targetOptions}
-              </select>
-            </div>
-          `;
-
-          behaviorHtml = `
-            <select class="step-field dome-action-select" aria-label="Action">
-              <option value="OP" ${action === "OP" ? "selected" : ""}>Open (:OP)</option>
-              <option value="CL" ${action === "CL" ? "selected" : ""}>Close (:CL)</option>
-              <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
-            </select>
-            <span class="dome-cmd-preview">:${action}${target}</span>
-            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to visual presets">Presets</button>
-            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
-            ${action === "OF" ? "" : `<span class="seq-row-ctl"><span class="seq-unit">How far</span><input class="seq-num" type="number" data-field="howFar" value="${step.howFar ?? ""}" ${limits(STEP_LIMITS.howFar)} placeholder="100" aria-label="How far, percent of the panel's throw"><span class="seq-unit">%</span></span>`}
-            <div class="dome-panel-advisory hidden"></div>
-          `;
-        } else {
-          // Advanced mode: raw text input
-          behaviorHtml = `
-            <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
-            <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to panel mode">Panel</button>
-          `;
-        }
-        break;
-      }
-
-      case "domeRotate": {
-        // Ergonomic operator UI for dome rotation: direction (Left/Right/Stop) + speed + duration
-        // Internal storage: speedPct (signed -100..100), durationMs
-        // Direction is derived from speedPct sign: negative=left, positive=right, 0=stop
-        const rotateSpeedPct = fieldOf(step, "speedPct");
-        const rotateDurationMs = fieldOf(step, "durationMs");
-
-        // Determine direction from speedPct
-        let direction = "stop";
-        if (rotateSpeedPct < 0) direction = "left";
-        else if (rotateSpeedPct > 0) direction = "right";
-
-        behaviorHtml = `
-          <select class="step-field step-field-direction" data-field="direction" aria-label="Direction">
-            <option value="stop" ${direction === "stop" ? "selected" : ""}>Stop (neutral)</option>
-            <option value="left" ${direction === "left" ? "selected" : ""}>Left (reverse)</option>
-            <option value="right" ${direction === "right" ? "selected" : ""}>Right (forward)</option>
-          </select>
-          <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" ${limits(STEP_LIMITS.speed)} step="1" aria-label="Speed (0-100%)" placeholder="0-100">
-          <span class="dome-rotate-label">%</span>
-        `;
-
-        timingHtml = `
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" ${limits(STEP_LIMITS.turnMs)} step="1" aria-label="Run for (ms)" placeholder="duration ms">
-          <span class="dome-rotate-label">ms</span>
-        `;
-        break;
-      }
-
-      case "loop": {
-        const body = fieldOf(step, "body");
-        behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" ${limits(STEP_LIMITS.body)} aria-label="Steps to repeat" placeholder="body">`;
-
-        timingHtml = `
-          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${fieldOf(step, "periodMs")}" ${limits(STEP_LIMITS.periodMs)} aria-label="Every (ms)" placeholder="periodMs">
-          <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${fieldOf(step, "durationMs")}" ${limits(STEP_LIMITS.loopMs)} aria-label="For (ms)" placeholder="durationMs">
-          <span class="dome-rotate-label">ms total</span>
-        `;
-        break;
-      }
-
-      case "random": {
-        targetHtml = `<select class="step-field step-field-set" data-field="set" aria-label="Target">
-          ${RANDOM_SETS.map((set) => `<option value="${set}" ${fieldOf(step, "set") === set ? "selected" : ""}>${set}</option>`).join("")}
-        </select>`;
-
-        behaviorHtml = `
-          <select class="step-field step-field-mode" data-field="mode" aria-label="Action">
-            ${RANDOM_MODES.map((mode) => `<option value="${mode}" ${fieldOf(step, "mode") === mode ? "selected" : ""}>${mode}</option>`).join("")}
-          </select>
-          <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${fieldOf(step, "distinct") ? "checked" : ""} aria-label="Distinct"> Distinct</label>
-        `;
-
-        timingHtml = `
-          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${fieldOf(step, "moveMs")}" ${limits(STEP_LIMITS.moveMs)} aria-label="Move time (ms)" placeholder="moveMs">
-          <span class="dome-rotate-label">ms</span>
-          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${fieldOf(step, "jitterMs")}" ${limits(STEP_LIMITS.jitterMs)} aria-label="Jitter (ms)" placeholder="jitterMs">
-          <span class="dome-rotate-label">ms</span>
-        `;
-        break;
-      }
-
-      case "audioCat":
-        behaviorHtml = `
-          <select class="step-field step-field-category" data-field="category" aria-label="Category">
-            ${AUDIO_CATEGORIES.map((cat) => `<option value="${cat}" ${fieldOf(step, "category") === cat ? "selected" : ""}>${cat}</option>`).join("")}
-          </select>
-          <select class="step-field step-field-fallback" data-field="fallback" aria-label="Fallback sound">
-            ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${fieldOf(step, "fallback") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
-          </select>
-        `;
-        break;
-
-      case "gesture": {
-        // One grid of rows, each choice drawn as what it is: a joined bar for
-        // a few peers, wrapping pills for a longer set. Each writes a hidden
-        // form value, so the step still reads back through its [data-field]
-        // inputs like every other type. Pace and repeat are rarely set and
-        // fold away.
-        //
-        // The hidden value is what the step stores, not what is shown as
-        // picked: a word the Gesture does not say is shown as its default and
-        // held empty, so reading the form back does not write the default
-        // into a step that never said it.
-        const G = window.SeqGesture;
-        if (!G) break;
-        const esc = window.PAUtils.escapeHtml;
-        const hidden = (field) => `<input type="hidden" data-field="${field}" value="${esc(step[field] || "")}">`;
-        const shown = (field) => (GESTURE_DEFAULTED.includes(field) ? gestureWord(step, field) : step[field] || "");
-        const bar = (field, options) => `
-          <span class="seg seg-sm" role="group" aria-label="${field}">
-            ${options
-              .map(
-                (o) =>
-                  `<button type="button" class="gesture-pick" data-pick="${field}" data-value="${esc(o.id)}" aria-pressed="${o.id === shown(field) ? "true" : "false"}">${esc(o.label)}</button>`,
-              )
-              .join("")}
-          </span>${hidden(field)}`;
-        const pills = (field, options) => `
-          <span class="seq-pills" role="radiogroup" aria-label="${field}">
-            ${options
-              .map(
-                (o) =>
-                  `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="${field}" data-value="${esc(o.id)}" aria-checked="${o.id === shown(field) ? "true" : "false"}">${esc(o.label)}</button>`,
-              )
-              .join("")}
-          </span>${hidden(field)}`;
-        const num = (field, value, placeholder, label, extra = "") =>
-          `<input class="seq-num" type="number" ${extra} value="${value ?? ""}" placeholder="${placeholder}" aria-label="${label}">`;
-        const sets = (window.DroidParts?.sets || []).map((x) => ({ id: x.id, label: x.label }));
-        const beats = limits(SeqProtocolCheck.SPAN_BEATS);
-        const tempo = tempoOf();
-        const every = tempo
-          ? `${num("stepBeats", step.stepBeats, "1", "Beats between parts", `${beats} data-beats="stepBeats"`).replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
-          : `${num("stepMs", step.stepMs, G.STEP_DEFAULT_MS, "Milliseconds between parts", `${limits(G.STEP_MS)} data-field="stepMs"`)}<span class="seq-unit">ms</span>`;
-        const again = tempo
-          ? `${num("repeatBeats", step.repeatBeats, "-", "Repeat every beats", `${beats} data-beats="repeatBeats"`).replace('class="seq-num"', 'class="seq-num gesture-beats"')}<span class="seq-unit">beats</span>`
-          : `${num("repeatMs", step.repeatMs, "-", "Repeat every milliseconds", `${limits(G.REPEAT_MS)} data-field="repeatMs"`)}<span class="seq-unit">ms</span>`;
-        fieldsContainer.innerHTML = `
-          <div class="seq-rows">
-            <span class="seq-row-label">Parts</span>
-            <div class="seq-row-ctl">${pills("set", sets)}</div>
-            <span class="seq-row-label">Move</span>
-            <div class="seq-row-ctl">${bar("shape", G.SHAPES.map((id) => ({ id, label: gestureShapeWords(step)[id] })))}</div>
-            <span class="seq-row-label">Travels</span>
-            <div class="seq-row-ctl">${pills("spread", gestureChoices("spread"))}</div>
-            <span class="seq-row-label">Order</span>
-            <div class="seq-row-ctl">${bar("direction", gestureChoices("direction"))}${bar("start", gestureChoices("start"))}</div>
-            <span class="seq-row-label">How far</span>
-            <div class="seq-row-ctl">${num("howFar", step.howFar, STEP_LIMITS.howFar[1], "How far, percent of each part's throw", `${limits(STEP_LIMITS.howFar)} data-field="howFar"`)}<span class="seq-unit">%</span></div>
-          </div>
-          <details class="seq-more"${step.stepBeats || step.repeatBeats || step.stepMs || step.repeatMs || step.extentMs || step.speedMs || step.easing ? " open" : ""}>
-            <summary><svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>Pace, repeat and feel</summary>
-            <div class="seq-rows">
-              <span class="seq-row-label">Every</span>
-              <div class="seq-row-ctl">${every}</div>
-              <span class="seq-row-label">Again</span>
-              <div class="seq-row-ctl">${again}</div>
-              <span class="seq-row-label">For</span>
-              <div class="seq-row-ctl">${num("extentMs", step.extentMs, "end", "Repeat for milliseconds, to the end when empty", `${limits([0, G.EXTENT_MS_MAX])} data-field="extentMs"`)}<span class="seq-unit">ms</span></div>
-              <span class="seq-row-label">Full throw</span>
-              <div class="seq-row-ctl">${num("speedMs", step.speedMs, "own", "Full throw time for each part, the part's own when empty", `${limits(G.SPEED_MS)} data-field="speedMs"`)}<span class="seq-unit">ms</span></div>
-              <span class="seq-row-label">Easing</span>
-              <div class="seq-row-ctl">${bar("easing", [{ id: "", label: "Own" }, ...G.EASINGS.map((x) => ({ id: x, label: capital(x) }))])}</div>
-            </div>
-          </details>`;
-        return;
-      }
-
-      case "sequence": {
-        // The phrase as wrapping pills of names over a hidden reference; the
-        // step's `name` is the label a reader of the file sees.
-        const esc = window.PAUtils.escapeHtml;
-        const choices = phraseChoices();
-        fieldsContainer.innerHTML = `
-          <div class="seq-rows">
-            <span class="seq-row-label">Sequence</span>
-            <div class="seq-row-ctl">
-              <span class="seq-pills" role="radiogroup" aria-label="sequence">
-                ${choices
-                  .map(
-                    (o) =>
-                      `<button type="button" class="seq-pill gesture-pick" role="radio" data-pick="ref" data-value="${esc(o.id)}" aria-checked="${o.id === step.ref ? "true" : "false"}">${esc(o.label)}</button>`,
-                  )
-                  .join("")}
-              </span>
-              ${choices.length ? "" : `<span class="seq-unit">Save a sequence first.</span>`}
-              <input type="hidden" data-field="ref" value="${esc(step.ref || "")}">
-            </div>
-          </div>`;
-        return;
-      }
-
-      case "end":
-        html = `<span class="step-field-empty">(terminal step)</span>`;
-        fieldsContainer.innerHTML = html;
-        return; // No groups for end step
-    }
-
-    // Assemble the grouped HTML structure
-    let groupedHtml = "";
-    if (targetHtml) groupedHtml += renderFieldGroup("Target", targetHtml);
-    if (behaviorHtml) groupedHtml += renderFieldGroup("Behavior", behaviorHtml);
-    if (timingHtml) groupedHtml += renderFieldGroup("Timing", timingHtml);
-
-    // Add the help line
-    const helpLine = stepHelpLine(step);
-    const helpHtml = helpLine ? `<div class="step-help-line">${window.PAUtils.escapeHtml(helpLine)}</div>` : "";
-
-    fieldsContainer.innerHTML = groupedHtml + helpHtml;
   };
 
   // Where the tempo came from, as the field beside it says it (ADR 0058).
@@ -4130,7 +3292,6 @@
     editorState.current = SeqProtocolCheck.resolveBeats(next, { written: true });
     historyCommit(before);
     paintAuthoredHeader();
-    rerenderStepTable();
     edited();
   };
 
@@ -4209,8 +3370,8 @@
   //     at all - so None pressed straight after a group leaves no edit.
   // The stage says what became of Closes, because the control is in the
   // drawer and the half is on the stage. Its line is the timeline's, in the
-  // bar over the routine, which is there under the step list too; where the
-  // timeline did not load there is no such line, and the strip says it.
+  // bar over the routine; where the timeline did not load there is no such
+  // line, and the strip says it.
   //
   // A started close half is refused where it would take the file past what
   // this droid stores for one sequence (SEQ_FILE_MAX_BYTES, which the droid
@@ -4284,34 +3445,29 @@
   const paintHistory = () => {
     const undoBtn = document.getElementById("seq-editor-undo");
     const redoBtn = document.getElementById("seq-editor-redo");
-    if (undoBtn) undoBtn.disabled = history.undo.length === 0 && !runChanged();
-    if (redoBtn) redoBtn.disabled = history.redo.length === 0 || runChanged();
+    if (undoBtn) undoBtn.disabled = history.undo.length === 0;
+    if (redoBtn) redoBtn.disabled = history.redo.length === 0;
   };
 
   const edited = (receipt = "") => {
-    if (history.run === null) history.base = historyCapture();
-    // Closes is on the stage only where there is a close half and the
-    // timeline is what is shown. The close half can go in an edit - the group
-    // set to None, or an undo of the edit that started it - and an undo made
-    // from the step list can be of an edit to Closes: the step list's own
-    // acts go by a card's place in the opening half, so the stage is on Opens
-    // under it, whatever was undone.
-    if (!hasCloseHalf(editorState.current) || editorState.view !== "timeline") editorState.half = "opens";
+    // Closes is on the stage only where there is a close half, and the close
+    // half can go in an edit - the group set to None, or an undo of the edit
+    // that started it.
+    if (!hasCloseHalf(editorState.current)) editorState.half = "opens";
     paintHalf();
     showRetime(receipt);
     updateValidationSummary();
     paintHistory();
     if (sessionTimeline) sessionTimeline.refresh(stageContext());
-    // An edit can name a phrase not read yet - a drop, a pick in either view,
-    // an undo - so every edit asks; with nothing unread it sends nothing.
+    // An edit can name a phrase not read yet - a drop, a pick, an undo - so
+    // every edit asks; with nothing unread it sends nothing.
     loadPhrases();
   };
 
   // UNDO ACROSS THE SWITCH: an undo or a redo that changes one half's list
   // and not the other's puts that half on the stage, so what it took back is
   // in sight. One that changes neither list or both leaves the stage where it
-  // is. Where it leaves no close half, or the step list is what is shown,
-  // edited() puts Opens there.
+  // is. Where it leaves no close half, edited() puts Opens there.
   const historyRestore = (snapshot) => {
     const kept = JSON.parse(snapshot);
     const moved = (key) => JSON.stringify(kept[key]) !== JSON.stringify(editorState.current[key]);
@@ -4323,7 +3479,6 @@
       else editorState.current[key] = kept[key];
     });
     paintAuthoredHeader();
-    rerenderStepTable();
     edited();
   };
 
@@ -4335,62 +3490,16 @@
 
   const undo = () => {
     if (historyBusy()) return;
-    historySettle();
     if (history.undo.length === 0) return;
-    history.redo.push(history.base);
+    history.redo.push(historyCapture());
     historyRestore(history.undo.pop());
   };
 
   const redo = () => {
     if (historyBusy()) return;
-    historySettle();
     if (history.redo.length === 0) return;
-    history.undo.push(history.base);
+    history.undo.push(historyCapture());
     historyRestore(history.redo.pop());
-  };
-
-  // A run of typing in one step is one edit. It starts at the first keystroke
-  // and ends at the field's change, or when the builder moves to another step.
-  const openRun = (stepIdx) => {
-    if (history.run !== null && history.runStep !== stepIdx) historySettle();
-    if (history.run === null) {
-      history.run = history.base;
-      history.runStep = stepIdx;
-    }
-  };
-
-  const typed = (stepIdx) => {
-    openRun(stepIdx);
-    validateAndUpdateStep(stepIdx);
-  };
-
-  // A picker writes its step itself and then reads the form back. The run has
-  // to be this step's BEFORE that write: a run still open on another step is
-  // settled against the routine as it stands, and after the write that would
-  // file this step's change under the other step's entry, for one Undo to
-  // take back both.
-  const picked = (stepIdx, write) => {
-    openRun(stepIdx);
-    write();
-    validateAndUpdateStep(stepIdx);
-  };
-
-  // The same, for a picker that is one act and has no field whose `change`
-  // would end the run: a panel pressed on the dome map, a panel or an action
-  // chosen from the list. Each press is its own entry.
-  const pickedOnce = (stepIdx, write) => {
-    picked(stepIdx, write);
-    historySettle();
-    paintHistory();
-  };
-
-  const bindStepField = (input, stepIdx) => {
-    input.addEventListener("input", () => typed(stepIdx));
-    input.addEventListener("change", () => {
-      typed(stepIdx);
-      historySettle();
-      paintHistory();
-    });
   };
 
   const tapCountText = () => {
@@ -4412,25 +3521,13 @@
     historyReset();
     droppedTrack = null;
 
-    // Load DomeLayout if available so the live picker in panel-intent steps can
-    // render from the connected dome's layout, with automatic refresh on dome
-    // reconnect. Subscribe once per page load (renderEditorView runs on every
-    // editor open) so repeated opens don't stack duplicate onChange listeners.
+    // The dome's layout, for the Rehearsal's panel rules (rehearsalContext()).
+    // A read that fails leaves those rules what they can say without it.
     if (window.DomeLayout) {
-      window.DomeLayout.load().catch(() => {
-        // Silent fallback: if layout fetch fails, the picker will use vendored/cached
+      window.DomeLayout.load().catch((error) => {
+        console.warn("[seq] the Rehearsal could not read the dome's layout:", error);
       });
-      if (!domeLayoutChangeSubscribed) {
-        window.DomeLayout.onChange(() => {
-          rerenderPanelIntentPickers();
-        });
-        domeLayoutChangeSubscribed = true;
-      }
     }
-
-    const stepRows = (seq.steps || [])
-      .map((step, idx) => renderStepRow(step, idx))
-      .join("");
 
     const esc = window.PAUtils.escapeHtml;
     const tuneNotice = editorState.tuningFactory
@@ -4500,24 +3597,6 @@
             <div class="seq-editor-error-text" id="seq-editor-tempo-feedback" aria-live="polite"></div>
           </div>`;
 
-    // The routine, read two ways over the one sequence. The step list stays
-    // reachable until the timeline can author every kind of step (ADR 0057).
-    const views = `
-            <span class="seg seg-sm" role="group" aria-label="How the routine is shown">
-              <button id="seq-editor-show-steps" type="button" aria-pressed="false">Steps</button>
-              <button id="seq-editor-show-timeline" type="button" aria-pressed="true">Timeline</button>
-            </span>
-            ${halfSwitchHtml(' id="seq-editor-half"')}`;
-    const stepList = `
-          <div class="seq-editor-steps hidden" id="seq-editor-steps">
-            <p class="hint">Every step starts collapsed. Press one to open it.</p>
-            <div class="seq-editor-step-table" id="seq-editor-step-table">
-              ${stepRows}
-            </div>
-            <div class="seq-row-ctl">
-              <button id="seq-editor-add-step" class="seq-act" type="button">Add a step</button>
-            </div>
-          </div>`;
 
     // The drawer's panes. The sequence's own settings are setting rows, the
     // family Foot Drive's settings are drawn in: a name, the control, what it
@@ -4607,20 +3686,10 @@
       <div class="seq-work">
         ${strip}
         ${tuneNotice}
-        ${stageHtml({ ids: true, above: tempoRows, views, below: stepList })}
+        ${stageHtml({ ids: true, above: tempoRows, views: halfSwitchHtml(' id="seq-editor-half"') })}
         ${drawer}
       </div>
     `;
-
-    // Populate conditional fields for each step. Only expanded cards have a
-    // .step-fields container, so derive the real step index from the card's
-    // data-step-index instead of the enumeration order (which is expanded-rank).
-    document.querySelectorAll(".step-fields").forEach((container) => {
-      const card = container.closest(".step-card");
-      if (!card) return;
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      renderStepFields(editorState.current.steps[stepIdx], container);
-    });
 
     // The inspector is the timeline's to fill, as it mounts. A library pill
     // still held from the sequence that was open lands nowhere.
@@ -4636,12 +3705,13 @@
     paintParts();
     loadPhrases();
 
-    // Attach event listeners (the strip, the tempo and the drawer once; step rows on every rerender)
     attachMetadataListeners();
-    attachStepListeners();
     updateValidationSummary();
     paintHistory();
-    showSessionView(editorState.view);
+    paintHalf();
+    // The timeline is the one editor: without it there is nothing to edit
+    // with, and the strip says so.
+    if (!sessionTimeline) showEditorFeedback("The timeline did not load. Reload the page to try again.", "error");
     els.editorView.classList.remove("hidden");
     renderListView();
     showFromTheTop();
@@ -4795,123 +3865,8 @@
     if (sessionTimeline) sessionTimeline.refresh(stageContext());
   };
 
-  const validateAndUpdateStep = (stepIdx) => {
-    const row = document.querySelector(`[data-step-index="${stepIdx}"]`);
-    if (!row) return;
-
-    // Read DOM values
-    const tInput = row.querySelector(".step-t");
-    const typeButtons = row.querySelectorAll(".step-type-chip");
-    const fieldsContainer = row.querySelector(".step-fields");
-
-    // A kind the card has no chip for - a Body Step - has no active chip, and
-    // stays the kind it is.
-    const prev = editorState.current.steps[stepIdx] || {};
-    const step = {
-      t: parseInt(tInput.value || 0, 10),
-      type: Array.from(typeButtons).find((btn) => btn.classList.contains("active"))?.dataset.type || prev.type || "audio",
-    };
-
-    // Collect conditional fields
-    const fieldInputs = fieldsContainer.querySelectorAll("[data-field]");
-    fieldInputs.forEach((input) => {
-      const field = input.dataset.field;
-      let value = input.value;
-      if (input.type === "checkbox") {
-        value = input.checked;
-      } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "moveMs" || field === "jitterMs" || field === "speed") {
-        value = parseInt(value, 10);
-      } else if (GESTURE_NUMBER_FIELDS.includes(field)) {
-        // A Gesture's optional numbers: an empty field is the default, which
-        // is stored as absence.
-        if (value === "") return;
-        value = parseInt(value, 10);
-      } else if (GESTURE_WORD_FIELDS.includes(field) && value === "") {
-        return;
-      }
-      step[field] = value;
-    });
-
-    // The card's direction and speed are one signed speed on the step.
-    if (step.type === "domeRotate") {
-      Object.assign(step, turnOf(step.direction || "stop", step.speed ?? 0, step.durationMs));
-      delete step.direction;
-      delete step.speed;
-    }
-
-    // The step is rebuilt from the form, which has no field for a beat, so a
-    // beat-placed step keeps its beat through an edit of anything else. Typing
-    // a new time is choosing a millisecond instead, and the beat goes; a span
-    // in beats goes the same way when its duration is typed over (ADR 0058).
-    if (prev.beat !== undefined && step.t === prev.t) step.beat = prev.beat;
-    // A Gesture's times in beats have no form field either, so they ride
-    // along the same way (their inputs set them directly, setStepBeat()); and
-    // a Gesture over a listed set of parts, which the pickers do not offer,
-    // keeps its list.
-    // A phrase step keeps a label for a reader of the file: its current name.
-    if (step.type === "sequence") {
-      if (step.ref === "") delete step.ref;
-      // Picked here, a phrase whose read failed is asked for again.
-      if (step.ref && step.ref !== prev.ref) phraseAgain(step.ref);
-      const label = step.ref ? phraseName(step) : "";
-      if (label && !label.endsWith("(not on this droid)")) step.name = label;
-      else if (prev.name && prev.ref === step.ref) step.name = prev.name;
-    }
-    if (step.type === "gesture" && prev.type === "gesture") {
-      GESTURE_BEATS.forEach((key) => {
-        if (prev[key] !== undefined) step[key] = prev[key];
-      });
-      if (step.set === undefined && Array.isArray(prev.parts)) step.parts = prev.parts;
-      // A time the card shows no field for rides along too: a flutter's
-      // length, which is set in the inspector, and the pace and the repeat in
-      // milliseconds while a tempo has the card showing them in beats. A
-      // flutter's length goes with the flutter (Protocol Check).
-      GESTURE_TIMES.forEach((key) => {
-        const shownOnCard = fieldsContainer.querySelector(`[data-field="${key}"]`) !== null;
-        const kept = key !== "flutterMs" || step.shape === "flutter";
-        if (!shownOnCard && kept && prev[key] !== undefined) step[key] = prev[key];
-      });
-    }
-    // A Body Step has no form fields at all - it is authored on the timeline -
-    // so everything it says but its time rides along; its span in beats goes
-    // by the rule below, as any step's does.
-    if (step.type === "body" && prev.type === "body") {
-      ["part", "shape", "howFar", "flutterMs"].forEach((key) => {
-        if (prev[key] !== undefined) step[key] = prev[key];
-      });
-    }
-    if (prev.spanBeats !== undefined && step.type === prev.type && step.durationMs === prev.durationMs) {
-      step.spanBeats = prev.spanBeats;
-    }
-
-    // Validate
-    const validation = SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
-    const errorDiv = row.querySelector(".step-row-error") || document.createElement("div");
-    if (!row.querySelector(".step-row-error")) {
-      errorDiv.className = "step-row-error";
-      row.appendChild(errorDiv);
-    }
-
-    if (!validation.ok) {
-      row.classList.add("step-row-error-state");
-      errorDiv.textContent = validation.error || "Validation error";
-      if (validation.field) {
-        const fieldEl = row.querySelector(`[data-field="${validation.field}"]`);
-        if (fieldEl) fieldEl.classList.add("field-error");
-      }
-    } else {
-      row.classList.remove("step-row-error-state");
-      errorDiv.textContent = "";
-      row.querySelectorAll(".field-error").forEach((el) => el.classList.remove("field-error"));
-    }
-
-    // Update editor state
-    editorState.current.steps[stepIdx] = step;
-    edited();
-  };
-
-  // Called once from renderEditorView — the strip, the tempo row and the drawer only.
-  // These elements are NOT re-created on rerenderStepTable, so listeners must not accumulate.
+  // Called once from renderEditorView: the strip, the tempo row and the
+  // drawer, which are drawn once per open, so their listeners never stack.
   const attachMetadataListeners = () => {
     const nameInput = document.getElementById("seq-editor-name");
     const purposeInput = document.getElementById("seq-editor-purpose");
@@ -5067,8 +4022,6 @@
     document.getElementById("seq-editor-retime")?.addEventListener("click", retimeToGrid);
     document.getElementById("seq-editor-undo")?.addEventListener("click", undo);
     document.getElementById("seq-editor-redo")?.addEventListener("click", redo);
-    ["steps", "timeline"].forEach((view) =>
-      document.getElementById(`seq-editor-show-${view}`)?.addEventListener("click", () => showSessionView(view)));
     DRAWER_TABS.forEach((tab) =>
       document.getElementById(`seq-editor-tab-${tab}`)?.addEventListener("click", () => showTab(tab)));
     document.getElementById("seq-editor-half")?.addEventListener("click", (event) => {
@@ -5147,25 +4100,6 @@
       });
     }
 
-    const addStepBtn = document.getElementById("seq-editor-add-step");
-    if (addStepBtn) {
-      addStepBtn.addEventListener("click", () => {
-        const newStep = { t: 0, type: "audio", ...stepTypeDefaults.audio };
-        const steps = editorState.current.steps;
-        const terminalIdx = steps.findIndex((step) => step.type === "end");
-        historyPush();
-        if (terminalIdx >= 0) {
-          const terminalT = steps[terminalIdx].t || 0;
-          newStep.t = terminalT;
-          steps.splice(terminalIdx, 0, newStep);
-        } else {
-          steps.push(newStep);
-        }
-        rerenderStepTable();
-        edited();
-      });
-    }
-
     const testBtn = document.getElementById("seq-editor-test");
     const saveBtn = document.getElementById("seq-editor-save");
     const revertBtn = document.getElementById("seq-editor-revert");
@@ -5185,782 +4119,6 @@
     if (cancelBtn) {
       cancelBtn.addEventListener("click", () => leaveSession(() => {}));
     }
-  };
-
-  // =========================================================================
-  // Panel-Intent Availability Advisory System
-  // =========================================================================
-  // Passive inline advisory for dome panel-intent steps: shown when a saved step
-  // targets an unavailable panel (disabled, inactive, excluded, unmapped, unverified).
-  // Reusable for both passive (on expand) and click-time advisory updates.
-
-  // Helper: Build an advisory message for an element, or null if available
-  // The words are the Rehearsal's (data/seq_rehearsal.js unavailableMessage()),
-  // so the message beside a step and the finding in the Rehearsal's list are
-  // one sentence from one place; this is only where it is shown (#287, #439).
-  const buildAdvisoryMessage = (elementId) =>
-    window.SeqRehearsal?.unavailableMessage?.(elementId, window.DomeLayout?.getModel?.()) || null;
-
-  // Helper: Update the advisory element in a fields container
-  // Call this after rendering (passive) or after click/keyboard on non-selectable panel
-  const updatePanelAdvisory = (fieldsContainer, elementId) => {
-    const advisoryEl = fieldsContainer?.querySelector?.(".dome-panel-advisory");
-    if (!advisoryEl) return; // Advisory element not present; skip
-
-    const message = buildAdvisoryMessage(elementId);
-    if (message) {
-      advisoryEl.textContent = message;
-      advisoryEl.classList.remove("hidden");
-    } else {
-      advisoryEl.textContent = "";
-      advisoryEl.classList.add("hidden");
-    }
-  };
-
-  // Called from renderEditorView (initial) and rerenderStepTable (after any step change).
-  // Step rows are re-created on every rerender, so fresh listeners are needed each time.
-  // Helper: Attach dome-related listeners (panel, preset, advanced) to a specific fields container
-  const attachDomePanelIntentListeners = (fieldsContainer, stepIdx) => {
-    // Helper: Update the command, target select, and preview from a new target value
-    const setTarget = (newTarget) => {
-      const actionSelect = fieldsContainer.querySelector(".dome-action-select");
-      const targetSelect = fieldsContainer.querySelector(".dome-target-select");
-      const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-      const preview = fieldsContainer.querySelector(".dome-cmd-preview");
-
-      if (actionSelect && hiddenInput) {
-        const action = actionSelect.value;
-        const cmd = `:${action}${newTarget}`;
-        hiddenInput.value = cmd;
-        if (targetSelect) targetSelect.value = newTarget;
-        if (preview) preview.textContent = cmd;
-        pickedOnce(stepIdx, () => {
-          editorState.current.steps[stepIdx].cmd = cmd;
-        });
-      }
-    };
-
-    // Live picker: DomeCommandMap.resolvePanelCommand() returns a COMPLETE command
-    // string (e.g. ":OP07"), so assign it directly. Do NOT route it through
-    // setTarget(), which prepends ":<action>" and would double the prefix
-    // (":OP:OP07"). The legacy picker path keeps setTarget() (bare target + prefix).
-    const setCommand = (fullCmd) => {
-      const targetSelect = fieldsContainer.querySelector(".dome-target-select");
-      const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-      const preview = fieldsContainer.querySelector(".dome-cmd-preview");
-      if (!hiddenInput) return;
-      hiddenInput.value = fullCmd;
-      if (preview) preview.textContent = fullCmd;
-      // Keep the target dropdown in sync by recovering the bare command target
-      // from the full command (":OP07" -> "07", ":OPP1" -> "P1").
-      if (targetSelect) targetSelect.value = fullCmd.replace(/^:(OP|CL|OF)/, "");
-      pickedOnce(stepIdx, () => {
-        editorState.current.steps[stepIdx].cmd = fullCmd;
-      });
-    };
-
-    // Handle both live (data-element-id) and legacy (data-target) pickers
-    // SVG panel clicks — use event delegation on the SVG
-    const svg = fieldsContainer.querySelector(".dome-svg-picker");
-    const hasLiveLayout = svg && svg.closest(".dome-svg-picker-container");
-
-    if (svg) {
-      svg.addEventListener("click", (e) => {
-        // Try to find element in live picker (data-element-id)
-        let element = e.target.closest("[data-element-id]");
-        let target = null;
-        let elementId = null;
-
-        if (element && hasLiveLayout) {
-          // Live picker: check selectability and show advisory if needed
-          elementId = element.dataset.elementId;
-          const isSelectable = element.dataset.selectable === "true";
-
-          if (!isSelectable) {
-            // Non-actionable: show advisory inline instead of alert modal
-            updatePanelAdvisory(fieldsContainer, elementId);
-            return;
-          }
-
-          // Selectable: resolve to command via DomeCommandMap
-          const actionSelect = fieldsContainer.querySelector(".dome-action-select");
-          if (actionSelect && window.DomeCommandMap?.resolvePanelCommand) {
-            const action = actionSelect.value;
-            const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
-            const capability = capabilityMap[action] || "open";
-            const fullCmd = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
-
-            if (fullCmd) {
-              setCommand(fullCmd);
-              highlightSelectedPanel(elementId, "live");
-              // Clear advisory since this panel is selectable (no issues)
-              updatePanelAdvisory(fieldsContainer, elementId);
-            }
-          }
-          return;
-        }
-
-        // Legacy picker: try data-target
-        element = e.target.closest("[data-target]");
-        if (!element) return;
-
-        e.preventDefault();
-        target = element.dataset.target;
-        if (!target) return;
-
-        // Update target and highlight (ring and pie both directly selectable)
-        setTarget(target);
-        highlightSelectedPanel(target, "legacy");
-      });
-
-      svg.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-
-        // Try live picker (data-element-id)
-        let element = e.target.closest("[data-element-id]");
-        if (element && hasLiveLayout) {
-          const elementId = element.dataset.elementId;
-          const isSelectable = element.dataset.selectable === "true";
-
-          if (!isSelectable) {
-            e.preventDefault();
-            // Non-actionable: show advisory inline instead of alert modal
-            updatePanelAdvisory(fieldsContainer, elementId);
-            return;
-          }
-
-          const actionSelect = fieldsContainer.querySelector(".dome-action-select");
-          if (actionSelect && window.DomeCommandMap?.resolvePanelCommand) {
-            const action = actionSelect.value;
-            const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
-            const capability = capabilityMap[action] || "open";
-            const fullCmd = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
-
-            if (fullCmd) {
-              e.preventDefault();
-              setCommand(fullCmd);
-              highlightSelectedPanel(elementId, "live");
-              // Clear advisory since this panel is selectable (no issues)
-              updatePanelAdvisory(fieldsContainer, elementId);
-            }
-          }
-          return;
-        }
-
-        // Legacy picker (data-target)
-        element = e.target.closest("[data-target]");
-        if (!element) return;
-
-        e.preventDefault();
-        const target = element.dataset.target;
-        if (!target) return;
-
-        setTarget(target);
-        highlightSelectedPanel(target, "legacy");
-      });
-    }
-
-    // Helper: Highlight the selected panel in the SVG (both live and legacy)
-    // mode = "live" (data-element-id) or "legacy" (data-target)
-    const highlightSelectedPanel = (target, mode = "legacy") => {
-      const svg = fieldsContainer.querySelector(".dome-svg-picker");
-      if (!svg) return;
-
-      if (mode === "live") {
-        // Live picker: highlight by data-element-id
-        svg.querySelectorAll("[data-element-id]").forEach((p) => {
-          p.classList.remove("selected");
-        });
-        const selectedElement = svg.querySelector(`[data-element-id="${target}"]`);
-        if (selectedElement) {
-          selectedElement.classList.add("selected");
-        }
-      } else {
-        // Legacy picker: highlight by data-target
-        svg.querySelectorAll("[data-target]").forEach((p) => {
-          p.classList.remove("selected");
-        });
-        const selectedElement = svg.querySelector(`[data-target="${target}"]`);
-        if (selectedElement) {
-          selectedElement.classList.add("selected");
-        }
-      }
-    };
-
-    // Highlight the initial target on render: decode existing cmd and highlight
-    const targetSelect = fieldsContainer.querySelector(".dome-target-select");
-    if (targetSelect && editorState.current.steps[stepIdx]) {
-      const step = editorState.current.steps[stepIdx];
-      const cmd = step.cmd || "";
-
-      if (hasLiveLayout && window.DomeCommandMap?.decodeCommandToElement) {
-        // Try to decode as a panel command
-        const decoded = window.DomeCommandMap.decodeCommandToElement(cmd);
-        // decoded is null for group steps (:OP14/:OP15/:OP00) or non-panel commands (advanced mode).
-        // Only highlight if decoded is a real panel (ring or pie).
-        if (decoded && (decoded.kind === "ring" || decoded.kind === "pie")) {
-          highlightSelectedPanel(decoded.id, "live");
-          // Show passive advisory if this panel has availability issues
-          updatePanelAdvisory(fieldsContainer, decoded.id);
-        } else {
-          // Not a panel command or decode failed; no highlight (groups, advanced, non-panel)
-          // Clear advisory for non-panel commands
-          updatePanelAdvisory(fieldsContainer, null);
-        }
-      } else {
-        // Legacy picker: extract target from cmd
-        const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
-        if (match) {
-          const targetValue = match[2];
-          highlightSelectedPanel(targetValue, "legacy");
-        }
-        // Clear advisory for legacy picker (no live availability data)
-        updatePanelAdvisory(fieldsContainer, null);
-      }
-    }
-
-    // Dome panel intent action/target selects update the hidden cmd field
-    fieldsContainer.querySelectorAll(".dome-action-select, .dome-target-select").forEach((select) => {
-      select.addEventListener("change", () => {
-        const newTarget = fieldsContainer.querySelector(".dome-target-select").value;
-        setTarget(newTarget);
-        // Update advisory and highlight for the newly selected target
-        if (hasLiveLayout && window.DomeCommandMap?.decodeCommandToElement) {
-          // Decode the command that was just built by setTarget to get the element ID
-          const cmd = editorState.current.steps[stepIdx].cmd;
-          const decoded = window.DomeCommandMap.decodeCommandToElement(cmd);
-          // Only highlight and advise if decoded is a real panel (ring or pie)
-          if (decoded && (decoded.kind === "ring" || decoded.kind === "pie")) {
-            highlightSelectedPanel(decoded.id, "live");
-            updatePanelAdvisory(fieldsContainer, decoded.id);
-          } else {
-            // Not a panel command or decode failed; clear advisory (groups, advanced, non-panel)
-            updatePanelAdvisory(fieldsContainer, null);
-          }
-        } else {
-          // Legacy picker: use the bare target value
-          highlightSelectedPanel(newTarget, "legacy");
-          updatePanelAdvisory(fieldsContainer, null);
-        }
-      });
-    });
-
-
-    // Dome visual preset selector updates the hidden cmd field
-    const presetSelect = fieldsContainer.querySelector(".step-field-preset");
-    if (presetSelect) {
-      // On input as well as change: the select is a form field too, and its
-      // run ends at its change, so the command has to be written before that
-      // or one choice would leave two entries behind.
-      const choosePreset = () => {
-        const cmd = lightCmd({ kind: "DV", preset: presetSelect.value });
-        const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-        if (hiddenInput) {
-          hiddenInput.value = cmd;
-        }
-        picked(stepIdx, () => {
-          editorState.current.steps[stepIdx].cmd = cmd;
-        });
-      };
-      presetSelect.addEventListener("input", choosePreset);
-      presetSelect.addEventListener("change", choosePreset);
-    }
-
-    // Dome mode toggle, one cycle: panel -> preset -> advanced -> panel. Each
-    // mode's button is labelled with the mode it goes to next.
-    const toggleBtn = fieldsContainer.querySelector(".dome-mode-toggle");
-    if (toggleBtn) {
-      toggleBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-
-        // Determine current mode by checking what UI is visible
-        let currentMode = "advanced";
-        if (fieldsContainer.querySelector(".dome-action-select")) {
-          currentMode = "panel";
-        } else if (fieldsContainer.querySelector(".step-field-preset")) {
-          currentMode = "preset";
-        }
-
-        // Toggle to the next mode in the cycle: panel → preset → advanced → panel
-        let nextMode = "panel";
-        if (currentMode === "panel") {
-          nextMode = "preset";
-        } else if (currentMode === "preset") {
-          nextMode = "advanced";
-        } else {
-          nextMode = "panel";
-        }
-
-        const before = historyBegin();
-        // If toggling to panel from preset/advanced, ensure a valid panel cmd
-        if (nextMode === "panel") {
-          const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-          const currentCmd = hiddenInput ? hiddenInput.value : "";
-          const match = currentCmd.match(/^:?(OP|CL|OF)(.+)$/);
-          if (!match) {
-            // Not a panel intent; default to :OP00
-            editorState.current.steps[stepIdx].cmd = ":OP00";
-          }
-        }
-        // If toggling to preset from panel/advanced, ensure a valid DV: cmd
-        else if (nextMode === "preset") {
-          const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-          const currentCmd = hiddenInput ? hiddenInput.value : "";
-          if (!currentCmd.startsWith("DV:")) {
-            // Not a preset; default to ROCKMARCH
-            editorState.current.steps[stepIdx].cmd = DOME_SUBMODES.DV.starts;
-          }
-        }
-
-        fieldsContainer.dataset.domeMode = nextMode;
-        renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
-
-        // Re-attach listeners for the newly rendered fields
-        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => bindStepField(input, stepIdx));
-
-        attachDomePanelIntentListeners(fieldsContainer, stepIdx);
-        validateAndUpdateStep(stepIdx);
-        historyCommit(before);
-        paintHistory();
-      });
-    }
-  };
-
-  // Helper: Attach Logic/PSI mode listeners to a specific fields container
-  const attachDomeLogicListeners = (fieldsContainer, stepIdx) => {
-    const targetSelect = fieldsContainer.querySelector(".dl-target-select");
-    const modeSelect = fieldsContainer.querySelector(".dl-mode-select");
-    const colorSelect = fieldsContainer.querySelector(".dl-color-select");
-    const durationInput = fieldsContainer.querySelector(".dl-duration-input");
-    const hiddenCmd = fieldsContainer.querySelector('input[data-field="cmd"]');
-
-    const updateCmd = () => {
-      if (!targetSelect || !modeSelect || !hiddenCmd) return;
-      const cmd = lightCmd({
-        kind: "DL",
-        target: targetSelect.value,
-        mode: modeSelect.value,
-        color: colorSelect ? colorSelect.value : "DEFAULT",
-        seconds: durationInput ? durationInput.value : "",
-      });
-      hiddenCmd.value = cmd;
-      picked(stepIdx, () => {
-        editorState.current.steps[stepIdx].cmd = cmd;
-      });
-    };
-
-    [targetSelect, modeSelect, colorSelect, durationInput].forEach((el) => {
-      if (el) {
-        el.addEventListener("change", updateCmd);
-        el.addEventListener("input", updateCmd);
-      }
-    });
-  };
-
-  // Helper: Attach Logic Text listeners to a specific fields container
-  const attachDomeTextListeners = (fieldsContainer, stepIdx) => {
-    const targetSelect = fieldsContainer.querySelector(".dt-target-select");
-    const colorSelect = fieldsContainer.querySelector(".dt-color-select");
-    const textInput = fieldsContainer.querySelector(".dt-text-input");
-    const durationInput = fieldsContainer.querySelector(".dt-duration-input");
-    const speedInput = fieldsContainer.querySelector(".dt-speed-input");
-    const hiddenCmd = fieldsContainer.querySelector('input[data-field="cmd"]');
-
-    const updateCmd = () => {
-      if (!targetSelect || !colorSelect || !hiddenCmd) return;
-      const cmd = lightCmd({
-        kind: "DT",
-        target: targetSelect.value,
-        color: colorSelect.value,
-        seconds: durationInput ? durationInput.value : "5",
-        speed: speedInput ? speedInput.value : "0",
-        text: textInput ? textInput.value : "",
-      });
-      if (cmd === null) {
-        // The step keeps the text it had.
-        showEditorFeedback(LIGHT_TEXT_REFUSED, "error");
-        return;
-      }
-      hiddenCmd.value = cmd;
-      picked(stepIdx, () => {
-        editorState.current.steps[stepIdx].cmd = cmd;
-      });
-    };
-
-    [targetSelect, colorSelect, textInput, durationInput, speedInput].forEach((el) => {
-      if (el) {
-        el.addEventListener("change", updateCmd);
-        el.addEventListener("input", updateCmd);
-      }
-    });
-  };
-
-  // Helper: Attach Holo Effect listeners to a specific fields container
-  const attachDomeHoloListeners = (fieldsContainer, stepIdx) => {
-    const targetSelect = fieldsContainer.querySelector(".dh-target-select");
-    const effectSelect = fieldsContainer.querySelector(".dh-effect-select");
-    const colorSelect = fieldsContainer.querySelector(".dh-color-select");
-    const durationInput = fieldsContainer.querySelector(".dh-duration-input");
-    const hiddenCmd = fieldsContainer.querySelector('input[data-field="cmd"]');
-
-    const updateCmd = () => {
-      if (!targetSelect || !effectSelect || !hiddenCmd) return;
-      const cmd = lightCmd({
-        kind: "DH",
-        target: targetSelect.value,
-        effect: effectSelect.value,
-        color: colorSelect ? colorSelect.value : "DEFAULT",
-        count: durationInput ? durationInput.value : "",
-      });
-      hiddenCmd.value = cmd;
-      picked(stepIdx, () => {
-        editorState.current.steps[stepIdx].cmd = cmd;
-      });
-    };
-
-    [targetSelect, effectSelect, colorSelect, durationInput].forEach((el) => {
-      if (el) {
-        el.addEventListener("change", updateCmd);
-        el.addEventListener("input", updateCmd);
-      }
-    });
-  };
-
-  const attachStepListeners = () => {
-    // The beat list and a span in beats (renderBeatPicker()).
-    const stepIndexOf = (el) => parseInt(el.closest(".step-card")?.dataset.stepIndex, 10);
-    document.querySelectorAll(".step-beat-pick").forEach((pill) => {
-      pill.addEventListener("click", () => {
-        const stepIdx = stepIndexOf(pill);
-        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: parseInt(pill.dataset.beat, 10) });
-      });
-    });
-    document.querySelectorAll(".step-beat-clear").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const stepIdx = stepIndexOf(btn);
-        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { beat: null });
-      });
-    });
-    // A Gesture's pickers write their hidden form value and read the step back.
-    document.querySelectorAll(".gesture-pick").forEach((pill) => {
-      pill.addEventListener("click", () => {
-        const stepIdx = stepIndexOf(pill);
-        const fields = pill.closest(".step-fields");
-        const hidden = fields?.querySelector(`input[data-field="${pill.dataset.pick}"]`);
-        if (!hidden || !Number.isInteger(stepIdx)) return;
-        // The choice it already shows changes nothing, and the choice a
-        // Gesture means without saying is held empty, so it is stored only
-        // where it differs (gestureWord()).
-        if ((pill.getAttribute("aria-pressed") || pill.getAttribute("aria-checked")) === "true") return;
-        const field = pill.dataset.pick;
-        const unsaid = GESTURE_DEFAULTED.includes(field) && pill.dataset.value === gestureChoices(field)[0].id;
-        const before = historyBegin();
-        hidden.value = unsaid ? "" : pill.dataset.value;
-        validateAndUpdateStep(stepIdx);
-        historyCommit(before);
-        rerenderStepTable();
-        paintHistory();
-      });
-    });
-    document.querySelectorAll(".gesture-beats").forEach((input) => {
-      input.addEventListener("change", () => {
-        const stepIdx = stepIndexOf(input);
-        const beats = parseInt(input.value, 10);
-        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { [input.dataset.beats]: Number.isInteger(beats) ? beats : null });
-      });
-    });
-    document.querySelectorAll(".step-beat-span").forEach((input) => {
-      input.addEventListener("change", () => {
-        const stepIdx = stepIndexOf(input);
-        const beats = parseInt(input.value, 10);
-        if (Number.isInteger(stepIdx)) setStepBeat(stepIdx, { spanBeats: Number.isInteger(beats) ? beats : null });
-      });
-    });
-
-    // Card expand/collapse listeners
-    document.querySelectorAll(".step-card").forEach((card) => {
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      const header = card.querySelector(".step-card-header");
-      const removeBtn = card.querySelector(".step-remove");
-
-      // Handle header click/keyboard to toggle expand
-      const toggleExpanded = () => {
-        if (editorState.expanded.has(stepIdx)) {
-          editorState.expanded.delete(stepIdx);
-        } else {
-          editorState.expanded.add(stepIdx);
-        }
-        rerenderStepTable();
-      };
-
-      if (header) {
-        header.addEventListener("click", toggleExpanded);
-        header.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggleExpanded();
-          }
-        });
-      }
-
-      // Remove button listener
-      if (removeBtn) {
-        removeBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          // The same removal the timeline makes, so a loop is kept whole
-          // from either view.
-          if (confirm("Remove this step?")) removeSteps([stepIdx]);
-        });
-      }
-    });
-
-    // Step type chip selection
-    document.querySelectorAll(".step-type-chip").forEach((chip) => {
-      chip.addEventListener("click", (e) => {
-        e.preventDefault();
-        const card = chip.closest(".step-card");
-        if (!card) return;
-        const stepIdx = parseInt(card.dataset.stepIndex, 10);
-
-        // Logic / PSI, Logic Text and Holo Effect are dome sub-modes: a step in
-        // one is a dome step, so it lights the main dome chip beside its own,
-        // exactly as the step renders. Every other chip in the card goes dark -
-        // the step's type is read back from the first lit chip
-        // (validateAndUpdateStep), so a chip left lit from the previous type
-        // would turn the step back into that type.
-        const domeMode = chip.dataset.domeMode || null;
-        const isMainDomeChip = (c) => c.dataset.type === "dome" && !c.dataset.domeMode;
-        card.querySelectorAll(".step-type-chip").forEach((c) => {
-          const lit = c === chip || (domeMode !== null && isMainDomeChip(c));
-          c.classList.toggle("active", lit);
-          c.setAttribute("aria-pressed", lit ? "true" : "false");
-        });
-
-        const newType = chip.dataset.type;
-        const before = historyBegin();
-        // Clear all old type-specific fields; keep only t, assign new type + defaults
-        const { t } = editorState.current.steps[stepIdx];
-        let newDefaults = stepTypeDefaults[newType] || {};
-
-        // A dome sub-mode starts from its own command, which is what tells the
-        // step's fields which mode to draw.
-        const submode = { logic: "DL", text: "DT", holo: "DH" }[domeMode];
-        if (submode) newDefaults = { cmd: DOME_SUBMODES[submode].starts };
-
-        editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
-
-        const fieldsContainer = card.querySelector(".step-fields");
-        renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
-
-        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => bindStepField(input, stepIdx));
-
-        // If switching to dome type, attach appropriate listeners
-        if (newType === "dome") {
-          if (domeMode === "text") {
-            attachDomeTextListeners(fieldsContainer, stepIdx);
-          } else if (domeMode === "holo") {
-            attachDomeHoloListeners(fieldsContainer, stepIdx);
-          } else if (domeMode === "logic") {
-            attachDomeLogicListeners(fieldsContainer, stepIdx);
-          } else {
-            attachDomePanelIntentListeners(fieldsContainer, stepIdx);
-          }
-        }
-
-        // If switching to domeRotate type, attach domeRotate-specific listeners
-        if (newType === "domeRotate") {
-          const directionSelect = fieldsContainer.querySelector(".step-field-direction");
-          if (directionSelect) {
-            directionSelect.addEventListener("change", () => {
-              const direction = directionSelect.value;
-              const durationInput = fieldsContainer.querySelector(".step-field-durationMs");
-              // If direction is "stop", force duration to 0
-              if (direction === "stop" && durationInput) {
-                durationInput.value = "0";
-              }
-              typed(stepIdx);
-            });
-          }
-        }
-
-        validateAndUpdateStep(stepIdx);
-        historyCommit(before);
-        paintHistory();
-      });
-    });
-
-    // Step field inputs, and each step's time offset: .step-t sits beside the
-    // fields rather than among them, and validateAndUpdateStep() reads it back
-    // into the step like any field. Without a listener of its own, a changed
-    // time never reached the step, and Save sent the old one.
-    document.querySelectorAll(".step-fields [data-field], .step-card .step-t").forEach((input) => {
-      const card = input.closest(".step-card");
-      bindStepField(input, parseInt(card.dataset.stepIndex, 10));
-    });
-
-    // Reference panel toggle (What Each Step Type Does)
-    document.querySelectorAll(".step-type-reference-toggle").forEach((toggle) => {
-      toggle.addEventListener("click", (e) => {
-        e.preventDefault();
-        const panel = toggle.nextElementSibling;
-        if (!panel) return;
-        const isExpanded = toggle.getAttribute("aria-expanded") === "true";
-        toggle.setAttribute("aria-expanded", !isExpanded);
-        panel.classList.toggle("hidden");
-      });
-    });
-
-    // Attach dome-specific listeners for each dome step
-    document.querySelectorAll(".step-card").forEach((card) => {
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      const fieldsContainer = card.querySelector(".step-fields");
-      const step = editorState.current.steps[stepIdx];
-      const typeChip = card.querySelector(".step-type-chip.active");
-      if (typeChip && typeChip.dataset.type === "dome" && fieldsContainer) {
-        // Check if this is a Logic Text step (DT: command)
-        if (step && (step.cmd || "").startsWith("DT:")) {
-          attachDomeTextListeners(fieldsContainer, stepIdx);
-        } else if (step && (step.cmd || "").startsWith("DL:")) {
-          // Check if this is a Logic/PSI step (DL: command)
-          attachDomeLogicListeners(fieldsContainer, stepIdx);
-        } else if (step && (step.cmd || "").startsWith("DH:")) {
-          // Check if this is a Holo Effect step (DH: command)
-          attachDomeHoloListeners(fieldsContainer, stepIdx);
-        } else {
-          attachDomePanelIntentListeners(fieldsContainer, stepIdx);
-        }
-      }
-    });
-
-    // Attach domeRotate-specific listeners for direction changes
-    document.querySelectorAll(".step-card").forEach((card) => {
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      const fieldsContainer = card.querySelector(".step-fields");
-      const typeChip = card.querySelector(".step-type-chip.active");
-      if (typeChip && typeChip.dataset.type === "domeRotate" && fieldsContainer) {
-        const directionSelect = fieldsContainer.querySelector(".step-field-direction");
-        if (directionSelect) {
-          directionSelect.addEventListener("change", () => {
-            const direction = directionSelect.value;
-            const durationInput = fieldsContainer.querySelector(".step-field-durationMs");
-            // If direction is "stop", force duration to 0 and trigger validation
-            if (direction === "stop" && durationInput) {
-              durationInput.value = "0";
-            }
-            typed(stepIdx);
-          });
-        }
-      }
-    });
-
-
-    // Drag-and-drop reordering (local draggedIndex; fresh per rerender)
-    let draggedIndex = null;
-    document.querySelectorAll(".step-card").forEach((card, idx) => {
-      card.addEventListener("dragstart", (e) => {
-        draggedIndex = idx;
-        card.classList.add("dragging");
-        e.dataTransfer.effectAllowed = "move";
-      });
-
-      card.addEventListener("dragend", () => {
-        card.classList.remove("dragging");
-        draggedIndex = null;
-      });
-
-      card.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        const rect = card.getBoundingClientRect();
-        const midpoint = rect.top + rect.height / 2;
-        if (e.clientY < midpoint) {
-          card.classList.add("drop-above");
-          card.classList.remove("drop-below");
-        } else {
-          card.classList.add("drop-below");
-          card.classList.remove("drop-above");
-        }
-      });
-
-      card.addEventListener("dragleave", () => {
-        card.classList.remove("drop-above", "drop-below");
-      });
-
-      card.addEventListener("drop", (e) => {
-        e.preventDefault();
-        if (draggedIndex !== null && draggedIndex !== idx) {
-          historyPush();
-          const [movedStep] = editorState.current.steps.splice(draggedIndex, 1);
-          const insertIdx = draggedIndex < idx ? idx - 1 : idx;
-          editorState.current.steps.splice(insertIdx, 0, movedStep);
-          rerenderStepTable();
-          edited();
-        }
-        card.classList.remove("drop-above", "drop-below");
-      });
-    });
-  };
-
-  const rerenderStepTable = () => {
-    const table = document.getElementById("seq-editor-step-table");
-    if (!table) return;
-    const stepRows = editorState.current.steps
-      .map((step, idx) => renderStepRow(step, idx))
-      .join("");
-    table.innerHTML = stepRows;
-
-    // Populate conditional fields. Only expanded cards have a .step-fields
-    // container, so derive the real step index from the card's data-step-index
-    // instead of the enumeration order (which is expanded-rank, not step index).
-    document.querySelectorAll(".step-fields").forEach((container) => {
-      const card = container.closest(".step-card");
-      if (!card) return;
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      renderStepFields(editorState.current.steps[stepIdx], container);
-    });
-
-    // Re-attach only step-row listeners (the strip's, the tempo's and the drawer's persist)
-    attachStepListeners();
-  };
-
-  // Re-render only the panel-intent pickers when the dome layout changes.
-  // This refreshes the live picker SVG without re-rendering the entire step table.
-  // Called via DomeLayout.onChange() when the dome reconnects.
-  const rerenderPanelIntentPickers = () => {
-    document.querySelectorAll(".dome-svg-picker-container, .dome-picker-container").forEach((container) => {
-      const card = container.closest(".step-card");
-      if (!card) return;
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      const step = editorState.current.steps[stepIdx];
-      if (!step || step.type !== "dome") return;
-
-      // Detect the current dome mode
-      const domeCmd = step.cmd || "";
-      let domeMode;
-      if (domeCmd.startsWith("DV:")) {
-        domeMode = "preset";
-      } else if (domeCmd.startsWith("DL:")) {
-        domeMode = "logic";
-      } else if (domeCmd.startsWith("DH:")) {
-        domeMode = "holo";
-      } else if (domeCmd.startsWith("DT:")) {
-        domeMode = "text";
-      } else if (/^(:|)(OP|CL|OF)/.test(domeCmd)) {
-        domeMode = "panel";
-      } else {
-        domeMode = "advanced";
-      }
-
-      // Only re-render if currently in panel mode (live picker mode)
-      if (domeMode === "panel") {
-        const fieldsContainer = card.querySelector(".step-fields");
-        if (fieldsContainer) {
-          renderStepFields(step, fieldsContainer);
-          // Re-attach panel-intent listeners
-          attachDomePanelIntentListeners(fieldsContainer, stepIdx);
-        }
-      }
-    });
   };
 
   // The strip's feedback line: what just happened to the sequence.

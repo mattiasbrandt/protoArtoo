@@ -788,14 +788,10 @@ nav > a {
   font-weight: 600;
 }
 
-/* The Sequences dome step's notice about which panel map it is drawing
-   (data/seq.js) is a note, and is drawn as one: amber where the builder has
-   something to do about the dome -- it is not answering, or answers in a
-   layout this build cannot read -- blue while it is still being asked, or
-   when the map shown is the last one it sent. It had no rule at all, and read
-   as loose body text above the map (#355). */
-.note,
-.dome-layout-notice {
+/* A note: a line set apart from body text. Amber (.note-act) where the
+   builder has something to do, blue (.note-info) for what is still being
+   asked or only remembered. */
+.note {
   padding: var(--space-sm) var(--space-md);
   background: var(--well);
   border-left: 2px solid var(--border-strong);
@@ -810,15 +806,11 @@ nav > a {
   font-weight: 600;
 }
 
-.note-act,
-.dome-layout-vendored,
-.dome-layout-error {
+.note-act {
   border-left-color: var(--warning);
 }
 
-.note-info,
-.dome-layout-pending,
-.dome-layout-cached {
+.note-info {
   border-left-color: var(--accent);
 }
 
@@ -5619,20 +5611,6 @@ body[data-page="maintenance"] .status-item .hint {
   border-bottom: 1px solid var(--border);
 }
 
-.step-type-reference-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.step-type-reference-toggle svg.i.chev {
-  transition: transform 0.15s ease;
-}
-
-.step-type-reference-toggle[aria-expanded="true"] svg.i.chev {
-  transform: rotate(90deg);
-}
-
 .seq-modal-header h4 {
   margin: 0;
   font-size: var(--fs-h2);
@@ -5809,488 +5787,6 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--danger);
 }
 
-.seq-editor-steps h4 {
-  margin-bottom: var(--space-sm);
-  color: var(--text);
-  font-size: var(--fs-h2);
-}
-
-.seq-editor-step-table {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-/* Collapsed step cards */
-.step-card {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--border);
-  position: relative;
-}
-
-.step-card.dragging {
-  opacity: 0.5;
-}
-
-.step-card.drop-above {
-  border-top: 3px solid var(--accent);
-}
-
-.step-card.drop-below {
-  border-bottom: 3px solid var(--accent);
-}
-
-.step-card.step-row-error-state {
-  box-shadow: inset 2px 0 0 var(--danger);
-}
-
-/* Per-card validation surfacing */
-.step-card.step-card-invalid {
-  box-shadow: inset 2px 0 0 var(--danger);
-}
-
-.step-card-error-badge {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--danger);
-  color: var(--white);
-  font-size: 0.85rem;
-  font-weight: 700;
-  margin-left: 4px;
-}
-
-.step-card-error-message {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  border: 1px solid var(--danger);
-  font-size: 0.9rem;
-  color: var(--danger);
-}
-
-.step-card-error-icon {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--danger);
-  color: var(--white);
-  font-weight: 700;
-  font-size: 0.8rem;
-}
-
-.step-card-error-text {
-  flex: 1;
-  line-height: 1.4;
-}
-
-.step-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  min-height: var(--row);
-  padding: 0 var(--space-sm);
-  cursor: pointer;
-  user-select: none;
-}
-
-.step-card-header:hover {
-  background-color: var(--surface-alt);
-}
-
-.step-card-header:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.step-number-label {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  font-weight: 600;
-}
-
-.step-time-label {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
-}
-
-/* What kind of step this is, in ink. It was the interaction blue on every row
-   of the table, which makes a value look like a link (CONTEXT.md "Status
-   Color"); what the anatomy lights blue here is the row you are on. */
-.step-card-type {
-  flex-shrink: 0;
-  color: var(--text);
-  font-weight: 600;
-  font-size: var(--fs-cell);
-}
-
-.step-card-preview {
-  flex: 1;
-  color: var(--text-dim);
-  font-size: var(--fs-cell);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The open/closed marker, drawn from the sprite the way every other disclosure
-   in this product draws it. It was a geometric character swapped in the markup
-   on every expand. */
-.step-card-toggle {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  padding: var(--space-2xs) var(--space-sm);
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  transition: color 0.2s;
-}
-
-.step-card-toggle:hover {
-  color: var(--text);
-}
-
-.step-card-toggle svg.i.chev {
-  transition: transform 0.15s ease;
-}
-
-.step-card-header[aria-expanded="true"] .step-card-toggle svg.i.chev {
-  transform: rotate(90deg);
-}
-
-.step-card-expanded {
-  padding: 0 var(--space-sm) var(--space-md) var(--space-2xl);
-}
-
-.step-card-expanded-content {
-  display: flex;
-  flex-direction: column;
-}
-
-/* Keep old .step-row styles for backward compatibility during transition */
-.step-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  position: relative;
-}
-
-.step-row.dragging {
-  opacity: 0.5;
-}
-
-.step-row.drop-above {
-  border-top: 3px solid var(--accent);
-}
-
-.step-row.drop-below {
-  border-bottom: 3px solid var(--accent);
-}
-
-.step-row.step-row-error-state {
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 5%, transparent);
-}
-
-.step-handle {
-  flex-shrink: 0;
-  cursor: grab;
-  color: var(--text-dim);
-  font-weight: bold;
-  user-select: none;
-  padding: 4px 8px;
-}
-
-.step-handle:hover {
-  color: var(--text);
-}
-
-/* A step's start, in the house number cell's look (.number-cell). */
-.step-t {
-  flex-shrink: 0;
-  width: 88px;
-  min-height: 28px;
-  padding: 0 var(--space-sm);
-  background: var(--well);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xs);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-cell);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.step-t:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.step-type-chips {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  flex: 1;
-  align-items: flex-start;
-}
-
-.step-type-chip {
-  padding: 6px 12px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.step-type-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.step-type-chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--white);
-}
-
-/* Grouped icon card picker (Common + Advanced sections) */
-.step-type-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2xs);
-}
-
-/* Icon card styling (richer than flat buttons) */
-.step-type-card {
-  padding: 2px var(--space-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-dim);
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.step-type-card:hover {
-  color: var(--text);
-}
-
-.step-type-card.active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.step-type-card-name {
-  display: block;
-  line-height: 1.2;
-}
-
-/* Reference panel (What Each Step Type Does) */
-.step-type-reference {
-  padding: var(--space-xs) 0;
-}
-
-.step-type-reference-toggle {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 4px 0;
-  text-align: left;
-  transition: color 0.2s;
-}
-
-.step-type-reference-toggle:hover {
-  color: var(--accent);
-}
-
-.step-type-reference-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  background: color-mix(in srgb, var(--surface) 50%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
-.step-type-reference-panel.hidden {
-  display: none;
-}
-
-.step-type-reference-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.step-type-reference-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 0.75rem;
-}
-
-.step-type-reference-name {
-  display: block;
-  flex-shrink: 0;
-  font-weight: 600;
-  color: var(--text);
-  min-width: 80px;
-}
-
-.step-type-reference-desc {
-  display: block;
-  color: var(--text-dim);
-  line-height: 1.2;
-}
-
-.step-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-  padding-left: 8px;
-}
-
-/* Grouped field containers (Target / Behavior / Timing) */
-.step-field-group {
-  display: grid;
-  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
-  column-gap: var(--space-xl);
-  align-items: center;
-  min-height: var(--row);
-  padding: var(--space-2xs) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.step-field-group-label {
-  color: var(--text);
-  font-size: var(--fs-cell);
-}
-
-.step-field-group-content {
-  display: flex;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-/* Per-card contextual help line */
-.step-help-line {
-  padding-top: var(--space-xs);
-  color: var(--text-faint);
-  font-size: var(--fs-cell);
-}
-
-.step-field {
-  min-height: 28px;
-  padding: 0 var(--space-sm);
-  background: var(--well);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xs);
-  color: var(--text);
-  font-family: inherit;
-  font-size: var(--fs-cell);
-}
-
-.step-field:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.step-field.field-error {
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-}
-
-.step-field-empty {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  font-style: italic;
-}
-
-.step-field-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: var(--text-dim);
-  font-size: 0.8rem;
-}
-
-.step-field-checkbox input {
-  cursor: pointer;
-}
-
-/* "Remove", not a multiplication sign. A glyph on its own carries a control
-   with no label at all, which is the one thing ADR 0066 does not let it do. */
-/* A step's Remove is a quiet act, as it is in the Picked block tab: one Undo
-   brings the step back, so it is not the red of what cannot be taken back. */
-.step-remove {
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: var(--fs-cell);
-}
-
-.step-remove:hover,
-.step-remove:focus-visible {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.step-row-error {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -20px;
-  font-size: 0.75rem;
-  color: var(--danger);
-}
-
 /* The uncalibrated Outputs this routine moves, read under Test on the droid
    before the press (#439). A line, never a gate: the button beside it stays
    live. */
@@ -6319,23 +5815,7 @@ body[data-page="maintenance"] .status-item .hint {
   margin: 0;
 }
 
-/* Dome SVG Panel Picker */
-.dome-target-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dome-picker-container {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: color-mix(in srgb, var(--border) 15%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
+/* The dome drawing (data/dome_layout_render.js, data/dome_panel_model.js). */
 .dome-svg-picker {
   width: 100%;
   max-width: 640px;
@@ -6346,49 +5826,6 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* The dome drawing's own look - its lines, open and picked panels - is the
    "dome picker, redrawn" block beside the droid picture's, further down. */
-
-.dome-picker-legend {
-  display: flex;
-  gap: 12px;
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.dome-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dome-legend-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  border: 1px solid var(--border);
-}
-
-.dome-legend-swatch.ring {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-}
-
-.dome-legend-swatch.pie {
-  background: var(--danger-bg);
-  border-color: var(--danger);
-}
-
-.dome-legend-swatch.unserved {
-  background: var(--text-dim);
-  border-color: var(--text-dim);
-}
-
-/* Dome target wrapper layout */
-.dome-target-select {
-  flex: 1;
-  min-width: 200px;
-}
 
 /* Moving parts (Dashboard, in Controls) */
 .dome-control-feedback {
@@ -6455,17 +5892,6 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: 8px;
 }
 
-.dome-panel-advisory {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
-  border-left: 3px solid var(--warning);
-  border-radius: 4px;
-  color: var(--text);
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
 /* ========================================================================
    Sequence editor: the Rehearsal (#354)
    Its counts under Protocol Check's verdict, the full list at save and at a
@@ -6473,7 +5899,6 @@ body[data-page="maintenance"] .status-item .hint {
    note stays uncolored; nothing here is red, because nothing here refuses
    (ADR 0044, #327).
    ======================================================================== */
-
 
 .seq-rehearsal-counts {
   display: flex;
@@ -6602,8 +6027,7 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* It is offered only where the routine has a loop and its lanes are in
    sight. Spelled with .seg so it outranks the bar's own display. */
-.seg.tl-loop-mode[hidden],
-.tl-bar.is-steps .seg.tl-loop-mode {
+.seg.tl-loop-mode[hidden] {
   display: none;
 }
 
@@ -7152,7 +6576,7 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* The stage's one column, top to bottom: the tempo, what this droid cannot
-   move, the bar, then the routine as its timeline or as its step list. The
+   move, the bar, then the routine as its timeline. The
    note and the lanes are both the timeline's (data/seq_timeline.js draws them
    into .seq-lanes), and the bar sits between them, so the lanes' box is
    dissolved and each of the two takes its own place in the column. */
@@ -7184,8 +6608,7 @@ body[data-page="maintenance"] .status-item .hint {
   margin-bottom: var(--space-sm);
 }
 
-.seq-stage-main .tl-scroll,
-.seq-editor-steps {
+.seq-stage-main .tl-scroll {
   order: 3;
 }
 
@@ -10868,35 +10291,12 @@ button.droid-build-card:disabled {
 /* ---------------------------------------------------------------------------
    Sequence editor: tempo, beats, Gestures and how far (#438).
 
-   One grid for every control these add to a step card: a quiet mono label
-   column and a control column, one baseline per row, so nothing floats at
-   its own width (operator's look, 2026-10-01). A small set of peers is a
-   joined .seg bar at card scale; a longer set is wrapping pills; a secondary
-   act is text, not a box; a number is as wide as its digits; what is rarely
-   set sits behind a disclosure.
+   The pieces the inspector's setting rows are built from: a control column
+   that wraps, so nothing floats at its own width (operator's look,
+   2026-10-01). A small set of peers is a joined .seg bar; a longer set is
+   wrapping pills; a secondary act is text, not a box; what is rarely set
+   sits behind a disclosure.
    --------------------------------------------------------------------------- */
-.seq-rows {
-  display: grid;
-  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
-  column-gap: var(--space-xl);
-  align-items: stretch;
-  font-size: var(--fs-cell);
-}
-
-/* Each row a seam below it, as .setting-row draws them. */
-.seq-rows > .seq-row-label,
-.seq-rows > .seq-row-ctl {
-  min-height: 36px;
-  padding: var(--space-2xs) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.seq-row-label {
-  display: flex;
-  align-items: center;
-  color: var(--text);
-  font-size: var(--fs-cell);
-}
 
 .seq-row-ctl {
   display: flex;
@@ -10913,27 +10313,6 @@ button.droid-build-card:disabled {
   color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--fs-hint);
-}
-
-/* A number the width of its digits, in .number-cell's look. */
-.seq-num {
-  width: 72px;
-  min-height: 28px;
-  padding: 0 var(--space-sm);
-  background: var(--well);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xs);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-cell);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.seq-num:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* The editor's header, as setting rows. A text field is the house number
@@ -11120,6 +10499,3 @@ label.seq-act {
   transform: rotate(90deg);
 }
 
-.seq-more > .seq-rows {
-  margin-top: var(--space-xs);
-}
