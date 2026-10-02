@@ -59,6 +59,12 @@
   };
   const tempoBeatMs = (tempo, beat) => (Number(tempo?.phase) || 0) + tempoSpanMs(tempo, beat);
 
+  // How many steps the loop at `at` takes as its body, in a list that may not
+  // have that many after it. validateStep() refuses a loop that reaches past
+  // the last step; this reading is for everything that walks a sequence
+  // whether it is valid or not, so it never reaches past the list itself.
+  const loopBodyCount = (steps, at) => Math.min(steps[at].body, steps.length - at - 1);
+
   // The indices of steps inside a loop body: timed from the loop pass, so a
   // beat there counts from nothing the grid knows.
   const loopBodyIndices = (steps) => {
@@ -67,7 +73,7 @@
     while (j < steps.length) {
       const s = steps[j];
       if (s && s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-        const count = Math.min(s.body, steps.length - j - 1);
+        const count = loopBodyCount(steps, j);
         for (let k = 1; k <= count; k++) body.add(j + k);
         j += count + 1;
       } else {
@@ -373,7 +379,7 @@
       switch (type) {
         case "audio":    return this._validateAudioStep(step);
         case "dome":     return this._validateDomeStep(step);
-        case "loop":     return this._validateLoopStep(step, allSteps);
+        case "loop":     return this._validateLoopStep(step, stepIndex, allSteps);
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
@@ -603,7 +609,7 @@
       };
     },
 
-    _validateLoopStep(step, _allSteps) {
+    _validateLoopStep(step, stepIndex, allSteps) {
       const { body, periodMs, durationMs } = step;
 
       if (typeof body !== "number" || body < 1 || body > 96) {
@@ -611,6 +617,17 @@
           ok: false,
           field: "body",
           error: "A loop must repeat between 1 and 96 steps",
+        };
+      }
+
+      // The steps it repeats are the ones after it, and it may not reach past
+      // the last step of its branch ("loop body overruns the branch",
+      // protocolCheckBranch(), src/protocol_check.cpp).
+      if (stepIndex + body >= allSteps.length) {
+        return {
+          ok: false,
+          field: "body",
+          error: "A loop can't repeat more steps than come after it",
         };
       }
 
@@ -1371,20 +1388,7 @@
 
       // Identify loop body step indices so we can skip outer non-decreasing time
       // check for them — body step times are relative to the loop iteration.
-      const bodyStepIndices = new Set();
-      {
-        let j = 0;
-        while (j < steps.length) {
-          const s = steps[j];
-          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = Math.min(s.body, steps.length - j - 1);
-            for (let k = 1; k <= count; k++) bodyStepIndices.add(j + k);
-            j += count + 1;
-          } else {
-            j++;
-          }
-        }
-      }
+      const bodyStepIndices = loopBodyIndices(steps);
 
       // Validate each step individually
       let lastOuterT = -1;
@@ -1423,7 +1427,7 @@
         while (j < steps.length) {
           const s = steps[j];
           if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
-            const count = Math.min(s.body, steps.length - j - 1);
+            const count = loopBodyCount(steps, j);
             const bodySteps = steps.slice(j + 1, j + 1 + count);
             const bodyCleanup = this._checkBranchOfCleanup(bodySteps);
             if (!bodyCleanup.ok) return bodyCleanup;
