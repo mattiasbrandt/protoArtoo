@@ -193,7 +193,11 @@ static bool __attribute__((noinline)) domeCalibratedNow() {
     return domeTurnCalibrated(cal);
 }
 
-static bool dispatchDomeBearing(const SeqAction& act) {
+// Out of line on purpose: dispatchAction() sits on this task's deepest route
+// (drainBestEffort -> dispatchAction -> a queue-drop log line), and inlined
+// there this plan and its log call grew dispatchAction's frame to 352 B and the
+// measured chain by 336 B, past the stack's rule.
+static bool __attribute__((noinline)) dispatchDomeBearing(const SeqAction& act) {
     const DomeBearingStepPlan plan =
         domeBearingStepPlan(act.payload, configCacheReadActiveDomeEnabled(), domeCalibratedNow(),
                             domeBearingRead().believed);
