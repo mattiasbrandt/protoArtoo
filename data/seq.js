@@ -2129,9 +2129,13 @@
   //     it keeps its time and its loop keeps it (stepUnits());
   //   - at the milliseconds the droid runs them at, by the phrase's own
   //     tempo, and with no beat of their own: this routine's grid is not the
-  //     phrase's. That reading (loadPhrases()) also states the pace and the
-  //     extent a Gesture took from the phrase's tempo and its end, which this
-  //     routine's would not give it;
+  //     phrase's. That reading (loadPhrases()) also states the extent a
+  //     repeating Gesture took from the phrase's end, and the pace one took
+  //     from the phrase's tempo;
+  //   - a Gesture's pace where the phrase has no tempo, which that reading
+  //     leaves unsaid: there it is a Gesture's own default, and here, unsaid,
+  //     it would become one beat of this routine's tempo (parseStepBeats(),
+  //     src/seq_json.cpp);
   //   - a sequence inside the phrase as it is: one step, still linked.
   //
   // The phrase is already read - an unread one offers no split - so nothing
@@ -2156,9 +2160,11 @@
       return;
     }
     const outer = new Set(stepUnits(runs).map((unit) => unit.at));
+    const timed = phrase.seq.tempo !== undefined && SeqProtocolCheck.validateTempo(phrase.seq.tempo).ok;
     const write = () => runs.map((each, index) => {
       const made = JSON.parse(JSON.stringify(each));
       BEAT_KEYS.forEach((key) => delete made[key]);
+      if (made.type === "gesture" && !made.stepMs && !timed) made.stepMs = window.SeqGesture.STEP_DEFAULT_MS;
       if (outer.has(index)) made.t = (Number(made.t) || 0) + startsAt;
       return made;
     });
