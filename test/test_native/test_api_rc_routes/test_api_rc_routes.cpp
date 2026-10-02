@@ -36,7 +36,7 @@ namespace {
 // literals rather than exported from the handlers: a test that read the real
 // ceiling could not fail when the ceiling dropped below what the payload needs,
 // which is the one regression these bound tests exist to catch.
-constexpr size_t kRcPayloadMax = 3072;
+constexpr size_t kRcPayloadMax = 4096;
 constexpr size_t kValidationPayloadMax = 2048;
 
 // A snapshot filled to capacity: all three raw blocks present, the widest

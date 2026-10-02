@@ -508,7 +508,8 @@ void setup() {
 
     // Real-time / core pinning contract: see docs/failsafe.md "Real-Time / Core Pinning Contract".
     // Core 1 real-time (heap-allocation-free): DriveTask, RCInputTask, ServoTask, DomeTask, DomeLinkTask.
-    // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, WebEvents, ArduinoOTA.
+    // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, ReactionTask,
+    // WebEvents, ArduinoOTA.
 
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz drive backend frames, feeds TWDT, Layer 3 web timeout
