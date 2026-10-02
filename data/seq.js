@@ -2623,9 +2623,9 @@
   // (src/protocol_check.cpp classifyDome(), _validateDomeStep()), so the
   // command never makes a routine the droid refuses. The droid counts it as
   // starting no effect (FX_NONE there), so a step nobody has typed into yet
-  // does no more than put the logic displays back to normal. And neither lightKind() nor panelIntent()
-  // reads it, so the inspector shows the box to type in. Not
-  // stepTypeDefaults.dome, which is a panel move.
+  // does no more than put the logic displays back to normal. And neither
+  // lightKind() nor panelIntent() reads it, so the inspector shows the box to
+  // type in. Not stepTypeDefaults.dome, which is a panel move.
   const DOME_COMMAND = { name: "Dome command", starts: "@0T1" };
 
   // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
