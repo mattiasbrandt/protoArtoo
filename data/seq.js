@@ -18,6 +18,9 @@
   // list with nothing on it. A later re-read keeps the last answer on screen.
   let learnedAnswered = false;
   let factoryAnswered = false;
+  // Both have: only then is a sequence in neither list one that is not on
+  // this droid, and a page with nothing to choose one with nothing saved.
+  const listsAnswered = () => learnedAnswered && factoryAnswered;
   let currentEditingSeq = null; // The sequence being edited (or null)
   let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
   let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
@@ -1468,7 +1471,7 @@
         const choices = phraseChoices();
         return settingRow("Sequence", choices.length
           ? pillsOf("ref", choices.map((choice) => [esc(choice.id), esc(choice.label)]), step.ref, "Sequence")
-          : '<span class="seq-unit">Save a sequence first.</span>');
+          : listsAnswered() ? '<span class="seq-unit">Save a sequence first.</span>' : "");
       }
       default:
         return "";
@@ -1476,10 +1479,14 @@
   };
 
   // Why a sequence inside this one is not drawn as its block and offers no
-  // split, or "" when it is read or still being read.
+  // split, or "" when it is read or still being read. Nothing is said of one
+  // in neither list until both lists have answered, nor where the heading
+  // over the rows already says it (phraseName()).
   const phraseUnread = (step) => {
     if (!step.ref || phraseRead(step.ref)) return "";
-    if (!phraseSource(step.ref)) return "Not on this droid.";
+    if (!phraseSource(step.ref)) {
+      return listsAnswered() && !phraseName(step).endsWith("(not on this droid)") ? "Not on this droid." : "";
+    }
     return phrases.read.get(step.ref)?.failed ? "Not read from the droid." : "";
   };
 
@@ -1806,7 +1813,7 @@
     write("seq-lib-sets", librarySets().map((set) => pill(`set:${set.id}`, "", set.label, setOff(set))).join(""), true);
     write("seq-lib-kinds", LIBRARY_KINDS.map((id) => pill(`kind:${id}`, "", libraryKindName(id))).join(""), true);
     write("seq-lib-phrases", phraseChoices().map((choice) => pill(`seq:${esc(choice.id)}`, "", choice.label)).join("")
-      || '<span class="hint">Save a sequence first.</span>', true);
+      || (listsAnswered() ? '<span class="hint">Save a sequence first.</span>' : ""), true);
     write("seq-drop-parts", pills(parts), true);
   };
 
@@ -2922,7 +2929,7 @@
   // its name are the one sequence.
   const routineVerdict = (seq) => SeqProtocolCheck.validateSequence(seq, {
     self: { id: editorState.current?.id, name: editorState.current?.name },
-    listed: (ref) => (learnedAnswered && factoryAnswered ? phraseSource(ref) || false : null),
+    listed: (ref) => (listsAnswered() ? phraseSource(ref) || false : null),
     phrase: (ref) => {
       const url = phraseSource(ref)?.url;
       const read = phraseRead(ref) || [...phrases.read.values()].find((entry) => !entry.failed && entry.url === url);
