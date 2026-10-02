@@ -7302,13 +7302,9 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 /* A Gesture's fold - its pace, its repeat and its feel - under its rows, in
-   the same rows; and a Gesture's row that names its Parts in words. */
+   the same rows. */
 .seq-picked-more {
   margin-top: var(--space-sm);
-}
-
-.seq-picked-rows .setting-row > .seq-row-ctl {
-  justify-self: start;
 }
 
 .seq-picked-acts {
