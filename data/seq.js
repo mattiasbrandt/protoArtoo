@@ -392,7 +392,6 @@
     importFeedback: document.getElementById("seq-import-feedback"),
     modalImportCancel: document.getElementById("seq-modal-import-cancel"),
     modalImportConfirm: document.getElementById("seq-modal-import-confirm"),
-    modalImportClose: document.getElementById("seq-modal-import-close"),
 
     // Editor view
     editorView: document.getElementById("seq-editor-view"),
@@ -402,6 +401,9 @@
 
     // Memory wipe modal
     modalWipe: document.getElementById("seq-modal-memory-wipe"),
+    wipeTitle: document.getElementById("seq-modal-wipe-title"),
+    wipeWarning: document.getElementById("seq-wipe-warning"),
+    wipeFeedback: document.getElementById("seq-wipe-feedback"),
     wipeSeqName: document.getElementById("seq-wipe-seq-name"),
     wipeConfirmInput: document.getElementById("seq-wipe-confirm-input"),
     wipeDanglingInfo: document.getElementById("seq-wipe-dangling-info"),
@@ -447,22 +449,40 @@
         !node.classList.contains("hidden")
     );
 
-  const showModal = (modal) => {
-    if (modal) {
-      modal.classList.remove("hidden");
-      surfaceBehind(modal).forEach((node) => {
-        node.inert = true;
-      });
-      // Focus the first control in the dialog. Not a trap: Tab leaves it for
-      // the chrome, which is where STOP is.
-      const focusable = modal.querySelector("button, input, [tabindex]");
-      if (focusable) focusable.focus();
+  // Each open dialog's Escape, through the one shared guard (data/overlay.js
+  // escGuard()): bound when it opens and unbound when it closes, so one press
+  // closes the dialog on top and nothing under it hears the key. Escape is an
+  // answer like the overlay click (dismissModal()). A dialog of a surface that
+  // was navigated away from is not on top of anything.
+  //
+  // The climb above stays this surface's own rather than the shared
+  // holdSurface(): that one makes every sibling of the dialog inert, the other
+  // dialogs included, so a second dialog opened over the first could not be
+  // answered. This one leaves the dialogs out of what it holds.
+  const dialogGuards = new Map();
+
+  const showModal = (modal, focusOn = null) => {
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    surfaceBehind(modal).forEach((node) => {
+      node.inert = true;
+    });
+    if (!dialogGuards.has(modal)) {
+      dialogGuards.set(modal, window.PAOverlay.escGuard(
+        () => !modal.classList.contains("hidden") && modal.isConnected,
+        () => dismissModal(modal)
+      ));
     }
+    dialogGuards.get(modal).bind();
+    // Focus where the builder starts, else the first control. Not a trap: Tab
+    // leaves the dialog for the chrome, which is where STOP is.
+    (focusOn || modal.querySelector("button, input, [tabindex]"))?.focus();
   };
 
   const hideModal = (modal) => {
     if (!modal) return;
     modal.classList.add("hidden");
+    dialogGuards.get(modal)?.unbind();
     // Another dialog may still be up; the surface comes back only when the
     // last one closes.
     if (anotherDialogIsOpen(modal)) return;
@@ -2603,7 +2623,7 @@
     } else {
       els.discardWhat.textContent = `${editorState.original.name || typedName} goes back to how it was last saved.`;
     }
-    showModal(els.modalDiscard);
+    showModal(els.modalDiscard, els.modalDiscardKeep);
   };
 
   const answerDiscard = (discard) => {
@@ -4361,15 +4381,24 @@
     renderEditorView(currentEditingSeq);
   };
 
+  // The question as the markup asks it; a wipe that leaves bindings dangling
+  // retitles the dialog as a message, and the next prompt puts this back.
+  const WIPE_TITLE = els.wipeTitle.textContent;
+
   const handleMemoryWipePrompt = (seqName) => {
     _pendingWipeSeqName = seqName;
+    els.wipeTitle.textContent = WIPE_TITLE;
     els.wipeSeqName.textContent = `Delete sequence: ${seqName}`;
+    els.wipeSeqName.classList.remove("hidden");
+    els.wipeWarning.classList.remove("hidden");
     els.wipeConfirmInput.value = "";
     els.wipeConfirmInput.placeholder = seqName;
     els.wipeConfirmInput.disabled = false;
     els.wipeDanglingInfo.classList.add("hidden");
+    els.wipeFeedback.classList.add("hidden");
+    els.modalWipeConfirm.classList.remove("hidden");
     els.modalWipeConfirm.disabled = true;
-    els.modalWipeCancel.textContent = "Cancel";
+    els.modalWipeCancel.textContent = "Keep it";
 
     const updateWipeButton = () => {
       els.modalWipeConfirm.disabled = els.wipeConfirmInput.value !== _pendingWipeSeqName;
@@ -4382,12 +4411,13 @@
     _wipeInputListener = updateWipeButton;
     els.wipeConfirmInput.addEventListener("input", updateWipeButton);
 
-    showModal(els.modalWipe);
+    showModal(els.modalWipe, els.wipeConfirmInput);
   };
 
   const handleMemoryWipeConfirm = async () => {
     const seqName = _pendingWipeSeqName;
     els.modalWipeConfirm.disabled = true;
+    els.wipeFeedback.classList.add("hidden");
     try {
       const result = await PAApi.request(`/api/seq?name=${encodeURIComponent(seqName)}`, {
         method: "DELETE",
@@ -4395,23 +4425,45 @@
 
       const dangling = (result.data && result.data.danglingBindings) || [];
       if (dangling.length > 0) {
-        // Keep modal open so the operator reads which bindings are now inert
-        let html = "<p><strong>Deleted. These RC bindings are now inert:</strong></p><ul>";
+        // The dialog stays open, as a message with nothing left to decide: the
+        // builder reads which bindings now do nothing, and it has one button
+        // (the rule PAOverlay.ask() keeps with `no: null`).
+        let html = "<p><strong>These RC bindings now do nothing:</strong></p><ul>";
         dangling.forEach((b) => {
           html += `<li>${window.PAUtils.escapeHtml(b.source)} CH${b.channel}</li>`;
         });
         html += "</ul>";
+        els.wipeTitle.textContent = `Wiped ${seqName}`;
+        els.wipeSeqName.classList.add("hidden");
+        els.wipeWarning.classList.add("hidden");
         els.wipeDanglingInfo.innerHTML = html;
         els.wipeDanglingInfo.classList.remove("hidden");
         els.wipeConfirmInput.disabled = true;
+        els.modalWipeConfirm.classList.add("hidden");
         els.modalWipeCancel.textContent = "Close";
+        els.modalWipeCancel.focus();
       } else {
         hideModal(els.modalWipe);
+        // Its dialog has closed, so the answer is a receipt (CONTEXT.md
+        // "Receipt"). With nothing left dangling, either a factory sequence
+        // of the same name took its place or no RC binding played it
+        // (src/web/api_seq.cpp).
+        const factory = builtins.some((b) => b.name === seqName);
+        window.PAOverlay.receipt(factory
+          ? `Wiped ${seqName} - the factory ${seqName} plays in its place.`
+          : `Wiped ${seqName} - no RC binding played it.`);
       }
       refreshLearned();
     } catch (error) {
+      // The dialog is still open, so the refusal is a line inside it
+      // (docs/ui-copy-voice.md rule 18), and the builder can press again.
+      // Focus goes back to the button: it was disabled while it held focus,
+      // which drops focus to <body> behind the open dialog.
       els.modalWipeConfirm.disabled = false;
-      alert("Error deleting sequence: " + PAApi.messageFor(error));
+      els.modalWipeConfirm.focus();
+      PAUtils.showFeedback(els.wipeFeedback,
+        `Could not wipe ${seqName}: ${PAApi.messageFor(error)} - it is still on the droid.`, "error");
+      els.wipeFeedback.classList.remove("hidden");
     }
   };
 
@@ -4424,12 +4476,18 @@
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
+      const fileName = `${seqJson.name.replace(/:/g, "_")}.json`;
       a.href = url;
-      a.download = `${seqJson.name.replace(/:/g, "_")}.json`;
+      a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
+      // A download has no line of its own to answer on, so it gets a receipt.
+      window.PAOverlay.receipt(`Exported ${seqName} as ${fileName} - the droid keeps its copy.`);
     } catch (error) {
-      alert("Error exporting sequence: " + PAApi.messageFor(error));
+      window.PAOverlay.receipt(
+        `Could not export ${seqName}: ${PAApi.messageFor(error)} - nothing on the droid changed.`,
+        "refused"
+      );
     }
   };
 
@@ -4546,12 +4604,16 @@
     }
 
     hideModal(els.modalImport);
-    // Restore sits beside the title, so it can be pressed with an edit open:
-    // that edit is asked about before the restored sequence takes its place.
+    // Through leaveSession(), like every way a sequence takes the editor.
+    // Restore is pressed from the list, which gives way to an open edit
+    // (renderListView()), so today there is no edit here to ask about.
     leaveSession(() => {
       editorState.isNew = true;
       currentEditingSeq = parsed;
       renderEditorView(parsed);
+      // Its dialog has closed, so the answer is a receipt (CONTEXT.md
+      // "Receipt"), given where the restore has happened.
+      window.PAOverlay.receipt(`Restored ${parsed.name || "the sequence"} - nothing reaches the droid until you save it.`);
     });
   };
 
@@ -4560,7 +4622,7 @@
     els.importTextarea.value = "";
     els.importFeedback.classList.add("hidden");
     els.modalImportConfirm.disabled = true;
-    showModal(els.modalImport);
+    showModal(els.modalImport, els.modalImportCancel);
   };
 
   // =========================================================================
@@ -4585,7 +4647,6 @@
 
     // Import modal
     els.modalImportCancel.addEventListener("click", () => hideModal(els.modalImport));
-    els.modalImportClose.addEventListener("click", () => hideModal(els.modalImport));
     els.modalImportConfirm.addEventListener("click", handleImportConfirm);
 
     // Enable/disable import confirm button reactively
@@ -4628,17 +4689,6 @@
           dismissModal(modal);
         }
       });
-    });
-
-    // Escape key closes modals
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        [els.modalImport, els.modalWipe, els.modalDiscard].forEach((modal) => {
-          if (modal && !modal.classList.contains("hidden")) {
-            dismissModal(modal);
-          }
-        });
-      }
     });
 
     // Undo and redo from the keyboard, anywhere in the editor. A text field

@@ -1149,9 +1149,34 @@
     </div>`;
   };
 
+  const collapseExpandedActionGroups = () => {
+    rcEditorContent.querySelectorAll('[data-action-group]').forEach((groupNode) => {
+      if (groupNode.open) groupNode.open = false;
+      actionPickerGroupOpen[groupNode.dataset.actionGroup] = false;
+    });
+  };
+
+  // The action picker's Escape folds its open groups away, through the one
+  // shared guard (data/overlay.js escGuard()), so a question asked over RC
+  // takes the key first and the picker never hears it. The key is the
+  // picker's only while focus is in it, as when it was read on the picker
+  // itself, and only while a group is open to fold; otherwise it passes on.
+  // One guard for the surface, bound while an editor is drawn: every
+  // renderEditor() replaces the picker node, so its isOpen() looks it up.
+  const actionPickerEscape = window.PAOverlay.escGuard(
+    () => {
+      const picker = rcEditorContent?.querySelector('.rc-action-picker');
+      return Boolean(picker?.isConnected
+        && picker.contains(document.activeElement)
+        && picker.querySelector('[data-action-group][open]'));
+    },
+    collapseExpandedActionGroups
+  );
+
   const renderEditor = () => {
     if (!rcEditorContent) return;
     if (!selectedChannel) {
+      actionPickerEscape.unbind();
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
       actionPickerLastChannel = null;
@@ -1281,13 +1306,6 @@
       });
     };
 
-    const collapseExpandedActionGroups = () => {
-      rcEditorContent.querySelectorAll('[data-action-group]').forEach((groupNode) => {
-        if (groupNode.open) groupNode.open = false;
-        actionPickerGroupOpen[groupNode.dataset.actionGroup] = false;
-      });
-    };
-
     const setActionToken = (token, keepFocus = false) => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
       if (!targetEl || targetEl.value === token) return;
@@ -1377,12 +1395,6 @@
       });
 
       picker.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          collapseExpandedActionGroups();
-          return;
-        }
-
         if (event.target instanceof Element && event.target.closest('.rc-action-test-btn')) return;
         if (event.target instanceof Element && event.target.closest('.rc-action-search-input')) return;
         if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
@@ -1417,6 +1429,7 @@
     updateConditionalFields();
     refreshActionPickerSelectionUi();
     syncActionTestUi();
+    actionPickerEscape.bind();
   };
 
   const updateSummaryMiniBar = () => {
@@ -1825,7 +1838,15 @@
   };
 
   const resetToDefaults = async () => {
-    if (!confirm('Clear every mapping? The droid\'s own conditions go too.')) return;
+    const clear = await window.PAOverlay.ask({
+      title: 'Clear every mapping?',
+      body: 'Every switch loses its action, and the droid\'s own conditions go too. This cannot be taken back.',
+      yes: 'Clear them',
+      no: 'Keep them',
+      danger: true,
+      near: rcResetDefaults,
+    });
+    if (!clear) return;
     setEditorFeedback('Clearing mappings...');
     try {
       await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
