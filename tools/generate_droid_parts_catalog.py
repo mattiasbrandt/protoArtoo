@@ -8,7 +8,8 @@ apart, and what keeps either from depending on a filesystem that can go missing
 (#301, #356).
 
     docs/droid-parts.yaml
-       |-> include/droid_parts.h   the id vocabulary firmware resolves against
+       |-> include/droid_parts.h   the id vocabulary firmware resolves against,
+       |                           and the bearing each Part sits at
        '-> data/droid_parts.js     names, shorthand, aliases, position
 
 Every Part the catalog declares reaches both outputs. A Part is identity, so the
@@ -28,8 +29,8 @@ tools/check_action_registry_drift.py - a purely derived list generates, and then
 has nothing left to check (#301). What can still go stale is the committed
 artefact, and guarding that is #358's.
 
-Five things this generator refuses, each because the alternative is an entry
-nothing can resolve:
+Six things this generator refuses, the first five because the alternative is an
+entry nothing can resolve:
 
   - a `control:` token include/droid_part_control.inc does not declare. The
     firmware declares the control paths; the catalog does not get to invent one.
@@ -49,6 +50,10 @@ nothing can resolve:
   - a `sits_on:` naming no declared part, or one that sits on something itself.
     A light sits where its panel sits and inherits the geometry from it, so an
     unresolvable host would place the light nowhere at all.
+  - a bearing on `panel14` or `panel8` that CHECK_VALUE_BEARINGS does not
+    carry. The firmware header spells those two out as the values a reader
+    checks its bearing table against (#445), so a corrected bearing corrects
+    that sentence in the same edit rather than leaving it the one wrong line.
 
 The first two refusals keep no copy of the firmware's lists: both are read out
 of the firmware headers at generation time, because a list written down twice is
@@ -105,7 +110,8 @@ REGENERATION_NOTE = f"""\
 After editing {CATALOG_NAME}, run this generator. It rewrites two
 committed outputs:
 
-  {FIRMWARE_NAME:<24} the id vocabulary firmware resolves a Part against
+  {FIRMWARE_NAME:<24} the id vocabulary firmware resolves a Part against,
+  {'':<24} and the bearing each Part sits at
   {BROWSER_NAME:<24} the names, shorthand, aliases and position every
   {'':<24} operator surface labels a Part with
 

@@ -9,8 +9,9 @@
 #     python3 tools/generate_droid_parts_catalog.py
 #
 # It rewrites two committed outputs: include/droid_parts.h, the id vocabulary
-# firmware resolves a Part against, and data/droid_parts.js, the names,
-# shorthand, aliases and position every operator surface labels a Part with.
+# firmware resolves a Part against and the bearing each Part sits at, and
+# data/droid_parts.js, the names, shorthand, aliases and position every
+# operator surface labels a Part with.
 # Editing this file without regenerating them leaves the firmware's vocabulary
 # gate and every Part name on screen stale against the catalog they came from
 # — a Part a builder can see and not wire, or wire and not see (#301, #356).
