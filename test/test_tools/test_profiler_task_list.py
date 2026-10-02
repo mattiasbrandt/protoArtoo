@@ -127,7 +127,7 @@ class ProfilerTaskListTest(unittest.TestCase):
         outside = {name: path for name, path in sites.items() if path != "src/main.cpp"}
         self.assertEqual(
             sorted(outside),
-            ["ArduinoOTA", "HostedRecovery", "WebEvents"],
+            ["ArduinoOTA", "HostedRecovery", "Pca9685Task", "WebEvents"],
             f"the xTaskCreate scan found {sorted(outside)} outside src/main.cpp; "
             "if a task moved or was added, update this expectation deliberately",
         )
