@@ -3,8 +3,9 @@
 //
 // The three things every surface asks with, answered once for the whole
 // browser (#456): a question, the Escape key, and a receipt. Loaded by the
-// Operator Shell's own chain (data/index.html), so every surface finds it on
-// window.PAOverlay and none of them carries a copy.
+// Operator Shell's own chain (data/index.html), and named after /web_api.js
+// in the data-scripts of every surface that calls it, as a surface names each
+// module it uses; the loader runs it once. window.PAOverlay.
 //
 //   ask({ title, body, yes, no, danger, near })  -> Promise<boolean>
 //     A styled question in place of the browser's confirm(): a call site goes
@@ -57,11 +58,16 @@
   // ---------------------------------------------------------------------------
   const holdSurface = (dialog) => {
     const held = [];
-    // Never above the surface: with no .surface around it, only the dialog's
-    // own siblings go inert, so the climb can never reach the chrome.
-    const surface = dialog.closest?.(".surface") || dialog.parentElement;
+    // Never above the surface, and never outside the work area: with no
+    // .surface around it the climb stops at #shell-content, and with neither
+    // nothing is held. A dialog in <body> would otherwise make #shell-top and
+    // #shell-status inert, and STOP with them.
+    const bound = dialog.closest?.(".surface") || dialog.closest?.("#shell-content");
+    if (!bound) {
+      console.error("[overlay] a dialog outside the work area holds nothing inert:", dialog);
+    }
     let node = dialog;
-    while (node && node !== surface && node.parentElement) {
+    while (bound && node && node !== bound && node.parentElement) {
       const parent = node.parentElement;
       [...parent.children].forEach((sibling) => {
         if (sibling !== node && !sibling.inert) {
@@ -91,7 +97,8 @@
   document.addEventListener(
     "keydown",
     (event) => {
-      if (event.key !== "Escape" || event.isComposing) return;
+      // A held key repeats: one press closes one layer, not one per repeat.
+      if (event.key !== "Escape" || event.isComposing || event.repeat) return;
       for (let i = guards.length - 1; i >= 0; i -= 1) {
         const guard = guards[i];
         if (!guard.isOpen()) continue;
@@ -190,12 +197,10 @@
 
   // The surface the question belongs to: the one the press came from, else the
   // one on screen. Exactly one .surface is in the document at a time
-  // (data/shell.js mount()).
+  // (data/shell.js mount()). There is no further fallback: a question
+  // anywhere else would cover the chrome, or hold it inert (ADR 0048).
   const surfaceFor = (near) =>
-    near?.closest?.(".surface") ||
-    document.querySelector("#shell-content > .surface") ||
-    document.getElementById("shell-content") ||
-    document.body;
+    near?.closest?.(".surface") || document.querySelector("#shell-content > .surface");
 
   /**
    * @param {object} q
@@ -212,6 +217,12 @@
     if (!title || !yes || (no !== null && !no)) {
       throw new Error("PAOverlay.ask needs a title and both answers named as verbs (no: null for a message)");
     }
+    const surface = surfaceFor(near);
+    if (!surface) {
+      // Answered as kept, so the act it guards does not happen.
+      console.error("[overlay] no surface on screen to ask over; answered as kept:", title);
+      return Promise.resolve(false);
+    }
     // A second question replaces the first, which is answered as kept: the
     // surface is inert while one is open, so only code can get here.
     settle(false);
@@ -224,7 +235,7 @@
     nodes.yes.classList.toggle("danger", Boolean(danger));
     nodes.no.hidden = no === null;
     nodes.no.textContent = no === null ? "" : no;
-    surfaceFor(near).appendChild(nodes.dialog);
+    surface.appendChild(nodes.dialog);
     return new Promise((resolve) => {
       const returnFocus = near || document.activeElement;
       nodes.dialog.show();
