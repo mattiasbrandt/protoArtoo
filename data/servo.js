@@ -3,11 +3,12 @@
 //
 // Servos (CONTEXT.md "Servos"): the body's Outputs as servos. One section of
 // Outputs, one row each, named by what the board prints beside the pin and by
-// the Part(s) on it. On each row a builder picks which servo it carries, drives
-// it (open, close, stop, or a typed width sent once), records its ends with the
-// calibration dial, and takes the pulse off; how it lets go, moves and powers
-// up, and which Parts are on it, open under the row on demand. Find by Moving
-// and back to centre sit over the rows. It
+// the Part(s) on it. On each row a builder drives it (open, close, stop, or a
+// typed width sent once), records its ends with the calibration dial, and
+// takes the pulse off; how it lets go, moves and powers up, and which Parts are
+// on it, open under the row on demand. Which servo it carries is picked on
+// Wiring, on the Part's row, and Find by Moving starts there too (#411). Back
+// to centre sits over the rows. It
 // is the output-first side of the mapping Parts reads from the part's end, and
 // everything here moved from Parts on the operator's word (2026-09-19 on #412:
 // "move bascially all of the "Outputs" section pieces to the "Servos" page.
