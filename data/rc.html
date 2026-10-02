@@ -64,18 +64,18 @@
         The SBUS input saves at once and takes effect after a restart. Mappings take effect when saved.
       </div>
       <div class="button-row button-row-compact">
-        <a class="btn" href="#configuration">Change the receiver in Configuration</a>
+        <a class="btn btn-sm link-btn" href="#configuration">Change the receiver in Configuration</a>
       </div>
 
       <input type="hidden" id="rc-input-mode" value="standard_pwm">
       <div id="single-sbus-recv-section" class="hidden" aria-hidden="true">
-        <label class="field" for="sbus-recv-sel">
-          <span>Which input the receiver is on</span>
-          <select id="sbus-recv-sel" class="compact-number" aria-describedby="sbus-recv-feedback">
-            <option value="false">SBUS1 / CH1</option>
-            <option value="true">SBUS2 / CH2</option>
-          </select>
-        </label>
+        <div class="rc-recv-row">
+          <span id="sbus-recv-label">Receiver input</span>
+          <div class="seg" id="sbus-recv-seg" role="radiogroup" aria-labelledby="sbus-recv-label" aria-describedby="sbus-recv-feedback">
+            <button type="button" role="radio" aria-checked="false" data-value="false">SBUS1 / CH1</button>
+            <button type="button" role="radio" aria-checked="false" data-value="true">SBUS2 / CH2</button>
+          </div>
+        </div>
         <div id="sbus-recv-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
 
@@ -89,7 +89,7 @@
         <thead>
           <tr>
             <th scope="col">Action</th>
-            <th scope="col">Channel</th>
+            <th scope="col">Source</th>
             <th scope="col">Live</th>
           </tr>
         </thead>
@@ -98,9 +98,8 @@
         </tbody>
       </table>
       <div class="button-row button-row-compact">
-        <button id="rc-reset-defaults" class="btn" type="button">Clear all mappings</button>
+        <button id="rc-reset-defaults" class="btn btn-sm danger" type="button">Clear all mappings</button>
       </div>
-      <p class="hint">Clears every binding at once, after asking.</p>
     </div>
 
     <!-- The live column: what the transmitter is sending right now, and whether
@@ -108,7 +107,7 @@
     <div class="card">
       <div class="rc-live-monitor-layout">
         <div>
-          <div class="sect"><h3>Live monitor</h3><span class="sub">selected channel</span></div>
+          <div class="sect"><h3>Live monitor</h3><span class="sub">selected source</span></div>
           <div id="rc-live-preview-content">
           </div>
         </div>
@@ -119,14 +118,15 @@
       </div>
     </div>
 
-    <!-- Pick a channel on the left, say what it does on the right -->
+    <!-- Pick a source on the left - a radio channel, or one of the droid's own
+         conditions (a Reaction, #450) - and say what it does on the right -->
     <div class="card">
       <div class="rc-mapper-grid">
-        <!-- Channel list (left) -->
+        <!-- Source list (left) -->
         <div class="rc-channel-list">
-          <div class="sect"><h3>Channels</h3><span class="sub">pick one to map it</span></div>
+          <div class="sect"><h3>Sources</h3><span class="sub">pick one to map it</span></div>
           <div class="rc-learn-bar">
-            <button id="rc-learn-btn" class="btn" type="button">Detect channel</button>
+            <button id="rc-learn-btn" class="btn btn-sm" type="button">Detect channel</button>
           </div>
           <div id="rc-learn-banner" class="rc-learn-banner" hidden>
             <div>
@@ -151,8 +151,8 @@
           </div>
 
           <div class="button-row button-row-compact rc-editor-actions">
-            <button id="rc-editor-apply" class="btn accent" type="button" disabled>Apply and save</button>
-            <button id="rc-editor-revert" class="btn" type="button" disabled>Revert draft</button>
+            <button id="rc-editor-apply" class="btn btn-sm accent" type="button" disabled>Apply and save</button>
+            <button id="rc-editor-revert" class="btn btn-sm btn-quiet" type="button" disabled>Revert draft</button>
           </div>
 
           <div id="rc-editor-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>

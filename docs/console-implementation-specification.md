@@ -152,6 +152,8 @@ enum CommandSource {
     SRC_WEB_API = 1,
     SRC_SERIAL_CONSOLE = 2,  // New (ADR 0036)
     SRC_WEB_CONSOLE = 3,      // New (ADR 0036)
+    SRC_REACTION,             // A Reaction: the droid fired a binding itself
+                              // (ADR 0053). Never a Console command's source.
 };
 ```
 

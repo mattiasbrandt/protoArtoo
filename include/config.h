@@ -599,6 +599,9 @@ static_assert(SEQ_DISPATCHER_TASK_STACK_BYTES >= SEQ_DISPATCHER_TASK_MEASURED_CH
 static_assert(CONSOLE_TASK_STACK_BYTES >= CONSOLE_TASK_MEASURED_CHAIN_BYTES,
               "CONSOLE_TASK_STACK_BYTES is below the Console task's measured "
               "worst-case static chain");
+static_assert(REACTION_TASK_STACK_BYTES >= REACTION_TASK_MEASURED_CHAIN_BYTES,
+              "REACTION_TASK_STACK_BYTES is below ReactionTask's measured worst-case static "
+              "chain");
 static_assert(WEB_EVENTS_TASK_STACK_BYTES >= WEB_EVENTS_TASK_MEASURED_CHAIN_BYTES,
               "WEB_EVENTS_TASK_STACK_BYTES is below the WebEvents task's measured worst-case "
               "static chain");

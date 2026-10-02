@@ -20,6 +20,7 @@
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
+#include "reaction_status.h"  // ReactionStatus - one per trigger slot, for the RC page
 #include "servo_backend.h"  // ServoOutputAddress, SERVO_OUTPUT_SLOT_COUNT - one mirror entry per Output
 
 // -----------------------------------------------------------------------------
@@ -49,6 +50,9 @@ enum CommandSource : uint8_t {
     // over HTTP.
     SRC_SERIAL_CONSOLE,  // Physical serial terminal (embedded-cli adapter)
     SRC_WEB_CONSOLE,     // Browser Live Logs command box (POST /api/console)
+    // A Reaction (ADR 0053, #450): the droid fired the binding itself, on a
+    // condition of its own. Appended, for the reason the two above were.
+    SRC_REACTION,
 };
 
 inline const char* commandSourceToString(CommandSource src) {
@@ -65,6 +69,8 @@ inline const char* commandSourceToString(CommandSource src) {
             return "SERIAL_CONSOLE";
         case SRC_WEB_CONSOLE:
             return "WEB_CONSOLE";
+        case SRC_REACTION:
+            return "REACTION";
         default:
             return "?";
     }
@@ -455,6 +461,9 @@ struct RobotState {
     bool flutterRequest;
     ServoOutputAddress flutterRequestOutput;
     uint16_t flutterRequestMs;
+
+    // --- Zone 10: Reactions (ReactionTask writes; the RC diagnostics read) ---
+    ReactionStatus reactions[REACTION_STATUS_SLOTS];
 };
 
 // -----------------------------------------------------------------------------

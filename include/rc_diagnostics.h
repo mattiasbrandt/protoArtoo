@@ -2,18 +2,10 @@
 
 #include "rc_diagnostics_snapshot.h"
 
+// The wire string of a source, which is the stored one: one table
+// (include/rc_binding_types.h), so a source added there is named here too.
 inline const char* rcDiagnosticsSourceName(RcBindingSource source) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return "pwm";
-        case RC_BINDING_SBUS1:
-            return "sbus1";
-        case RC_BINDING_SBUS2:
-            return "sbus2";
-        case RC_BINDING_NONE:
-        default:
-            return "none";
-    }
+    return rcBindingSourceToString(source);
 }
 
 inline float rcDiagnosticsNormalizeRaw(int raw, const RcBindingConfig& binding) {

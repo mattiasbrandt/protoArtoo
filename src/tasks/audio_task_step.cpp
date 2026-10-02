@@ -320,7 +320,8 @@ AudioStepIdleActions audioStepIdle(AudioStepState& state, const AudioStepIdleInp
         AudioPlaybackRandomContext context{in.playback,     in.bindings, in.catalogCapable,
                                            state.randomMode, in.domeSeqActive,
                                            in.nowMs,        state.lastRandMs,
-                                           in.activeMood,   in.randomValue};
+                                           in.activeMood,   in.randomValue,
+                                           in.driving};
         actions.intent = audioPlaybackResolveRandomTick(context);
         actions.hasIntent = true;
         applyIntentToState(state, actions.intent, in.nowMs);

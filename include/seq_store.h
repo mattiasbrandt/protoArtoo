@@ -80,6 +80,18 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 // filesystem cannot diverge.
 bool seqStoreDelete(const char* name);
 
+// Whether running the sequence `name` can open a body Part, answered without
+// loading it: a Learned Sequence from the flag its index row was given when it
+// was saved, a Factory Sequence from its steps, and a name the dome runs - an
+// alias, or one this controller does not know - never, because nothing the
+// dome does moves a body Part. Same precedence as sequenceLookup().
+//
+// From any task, and it never waits: the index is read under the store's
+// lock, taken only if it is free. The answer decides whether a body Part may
+// open while the droid drives (#450), so a store that is busy - a save, a
+// delete, a load - answers yes, the side that keeps the Part shut.
+bool seqStoreMayOpenBodyPart(const char* name);
+
 // Copy up to `capacity` bytes of a Learned Sequence file's raw JSON, starting
 // at byte `offset`, into `out` (GET /api/seq?name=). Returns the number of
 // bytes copied; 0 means end of file, an unindexed name, or a read failure --

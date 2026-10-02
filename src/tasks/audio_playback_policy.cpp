@@ -260,6 +260,17 @@ AudioPlaybackIntent audioPlaybackResolveRandomTick(const AudioPlaybackRandomCont
         return makeNone(AUDIO_PLAYBACK_REQ_RANDOM_TICK, AUDIO_PLAYBACK_NONE_CATEGORY_EMPTY);
     }
 
+    // Idle chatter is Resting Behaviour, and that is held while the droid is
+    // driving (CONTEXT.md, #450). Asked before the interval, and restarting it
+    // on every tick, so the chatter comes back a whole pause after the droid
+    // stops rather than on the tick it does.
+    if (context.driving) {
+        AudioPlaybackIntent intent =
+            makeNone(AUDIO_PLAYBACK_REQ_RANDOM_TICK, AUDIO_PLAYBACK_NONE_DRIVING);
+        intent.updateLastRandMs = true;
+        return intent;
+    }
+
     const uint16_t intSec = audioPlaybackIntervalForMood(*context.config, context.activeMood);
     if (intSec == 0) {
         AudioPlaybackIntent intent =

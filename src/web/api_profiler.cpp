@@ -129,7 +129,8 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 static const char* const s_taskNames[PROF_TASK_MAX] = {
     "DriveTask", "RCInputTask", "ServoTask", "DomeTask",
     "AudioTask", "AuxLedTask", "DomeLinkTask", "SafetyMonitor", "loopTask",
-    "SeqDisp", "Console", "WebEvents", "ArduinoOTA", "HostedRecovery"
+    "SeqDisp", "Console", "WebEvents", "ArduinoOTA", "HostedRecovery",
+    "ReactionTask"
 };
 
 static ProfilerTaskStack s_taskHwm[PROF_TASK_MAX];

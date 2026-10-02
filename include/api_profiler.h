@@ -38,9 +38,10 @@
 
 #define PROF_LABEL_MAX 20
 #define PROF_SNAPSHOT_MAX 8
-// Thirteen project-created tasks plus loopTask. Raised from 11 at #271, when
-// the three created outside src/main.cpp joined the list (api_profiler.cpp).
-#define PROF_TASK_MAX 14
+// Fourteen project-created tasks plus loopTask. Raised from 11 at #271, when
+// the three created outside src/main.cpp joined the list (api_profiler.cpp),
+// and from 14 at #450, for ReactionTask.
+#define PROF_TASK_MAX 15
 #define PROF_REQUEST_PATH_MAX 28
 #define PROF_REQUEST_TRACE_MAX 32
 

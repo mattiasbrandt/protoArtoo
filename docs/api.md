@@ -2000,6 +2000,22 @@ Returns channel-centric map.
 }
 ```
 
+- `source` is a radio source (`pwm`, `sbus1`, `sbus2`) or a droid condition,
+  which makes the entry a Reaction (ADR 0053): the droid fires the action
+  itself when the condition happens, with or without a radio.
+
+| `source` | Condition | `channel` | `threshold` |
+|---|---|---|---|
+| `speed` | drive speed at or over the threshold | `1` | drive units, `1..1000` |
+| `hstop` | a hard stop: the drive drops to zero from at least the threshold | `1` | drive units, `1..1000` |
+| `rest` | the drive has been at rest this long | `1` | tenths of a second, `1..600` |
+| `track` | the sound module starts a track | `1` | none (`0`) |
+| `wspeed` | one wheel's reported speed at or over the threshold | `1` left, `2` right | RPM, `1..1000` |
+| `wamps` | one wheel's reported current at or over the threshold | `1` left, `2` right | A x 100, `1..5000` |
+
+- A Reaction entry also carries `threshold` and `quietS`, the seconds it stays
+  quiet after firing (`1..3600`).
+
 #### Example request
 
 ```bash
@@ -2035,6 +2051,11 @@ Replaces entire RC map.
 - no duplicate backbone action: `drive_speed`, `drive_steer`, `dome_speed`
 - source/channel must match allowed ranges by source
 - `dome.action.sequence` payload must be valid `DM:NAME` format
+- a droid-condition `source` (a Reaction) takes any trigger action except
+  `estop`, `op_mode` and `speed_preset_cycle`, and never an axis action
+  (`drive_speed`, `drive_steer`, `dome_speed`)
+- a Reaction's `threshold` and `quietS` are optional: one left out keeps what
+  the stored Reaction on that condition holds, or takes its default
 - Success: `200` `{"ok":true}`
 - Errors:
 - `400` with `{"ok":false,"error":"..."}` and optional `entry` object
@@ -2068,6 +2089,16 @@ Returns live RC diagnostics snapshot.
 - `digital` action map (`activeSource`, `bindingChannel`, `pressed`)
 - `mappingProfile.channels` calibration values (`min`, `center`, `max`, `deadband`, `reverse`)
 - `raw` arrays (`sbus1`, `sbus2`, `pwm`) when available
+- `reactions` array, one entry per Reaction (a map entry whose `source` is a
+  droid condition): `source`, `channel`, `state` (`ready`, `held`, `waiting`
+  or `not-in-this-build`), `reason` when it is not ready (`estop`, `sleep`,
+  `radio-lost`; `feedback-stale`, `no-play-state`; `no-feedback`,
+  `no-current`), `fires` - the firings the droid carried out, not the ones it
+  refused or could not queue - and `refusedWhileDriving`, the times it was held
+  back because firing would have opened a body Part while the droid was
+  driving. The droid is driving while the drive output is not zero, while a
+  wheel reports turning, and for 1.5 s after the output reaches zero. Counts
+  restart when the Reaction is edited and at boot.
 - Errors: `500` json build/stream alloc failures
 
 #### Example request

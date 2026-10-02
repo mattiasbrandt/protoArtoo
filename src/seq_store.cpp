@@ -21,6 +21,7 @@
 #include "seq_json.h"
 #include "seq_store_index.h"
 #include "sequence_dispatcher.h"  // sequenceCatalogFind() - a Factory phrase
+#include "sequence_gesture.h"     // seqStepsMayOpenBodyPart() - the index row's flag
 
 static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
@@ -220,6 +221,30 @@ static void fillIndexEntry(SeqIndexEntry& e, const SeqDraft& d, JsonVariantConst
     e.lengthMs = seqStoreRunLengthMs(d.steps, d.stepCount);
     e.purposeCut = seqStoreCutPurpose(root["meta"]["purpose"] | (const char*)nullptr,
                                       e.purpose, sizeof(e.purpose));
+    e.mayOpenBody = seqStepsMayOpenBodyPart(d.steps, d.stepCount) ||
+                    seqStepsMayOpenBodyPart(d.closeSteps, d.closeStepCount);
+}
+
+bool seqStoreMayOpenBodyPart(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+    if (s_mutex == nullptr || xSemaphoreTake(s_mutex, 0) != pdTRUE) {
+        return true;  // not ready or busy: fail closed
+    }
+    const SeqIndexEntry* learned = seqStoreIndexFind(name);
+    const bool isLearned = learned != nullptr;
+    const bool learnedMay = isLearned && learned->mayOpenBody;
+    xSemaphoreGive(s_mutex);
+    if (isLearned) {
+        return learnedMay;
+    }
+    // The Factory catalog is constant data: no lock.
+    if (const SequenceEntry* factory = sequenceCatalogFind(name)) {
+        return seqStepsMayOpenBodyPart(factory->steps, factory->stepCount) ||
+               seqStepsMayOpenBodyPart(factory->closeSteps, factory->closeStepCount);
+    }
+    return false;
 }
 
 // -----------------------------------------------------------------------------

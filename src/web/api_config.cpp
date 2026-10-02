@@ -65,20 +65,6 @@ bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     return true;
 }
 
-const char* rcMapSourceToString(RcBindingSource source) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return "pwm";
-        case RC_BINDING_SBUS1:
-            return "sbus1";
-        case RC_BINDING_SBUS2:
-            return "sbus2";
-        case RC_BINDING_NONE:
-        default:
-            return "none";
-    }
-}
-
 const char* wifiModeToString(WifiMode mode) {
     switch (mode) {
         case WifiMode::STANDALONE_AP:
@@ -153,6 +139,12 @@ bool rcMapBuildBackboneBinding(RcBindingSource source, uint8_t channel,
         return false;
     }
 
+    // An axis is a radio channel's and nothing else's. A droid condition has a
+    // legal channel of its own, so it is refused here by what it is.
+    if (rcBindingSourceIsDroidCondition(source)) {
+        return false;
+    }
+
     RcBindingConfig binding =
         (source == RC_BINDING_PWM) ? defaultPwmBinding(channel) : defaultSbusBinding(source, channel);
 
@@ -178,6 +170,34 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
                               RcTriggerBinding* out) {
     if (out == nullptr || !rcBindingChannelIsValid(entry.source, entry.channel)) {
         return false;
+    }
+
+    // A Reaction: its threshold and quiet period as the request gave them,
+    // else as the stored Reaction on this condition holds them, else the
+    // defaults. No calibration to reuse - a droid condition has none.
+    if (rcBindingSourceIsDroidCondition(entry.source)) {
+        uint16_t threshold = rcReactionThresholdDefault(entry.source);
+        uint16_t quietS = RC_REACTION_QUIET_DEFAULT_S;
+        // By pointer, never a copy of the slots: this runs on the HTTP server
+        // task under two ConfigSnapshots already.
+        const SystemConfig& sys = existing.system;
+        const RcTriggerBinding* stored[RC_TRIGGER_SLOT_COUNT] = {
+            &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
+            &sys.rc_aux3,  &sys.rc_audio, &sys.rc_opmode, &sys.rc_free0,
+            &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
+        };
+        for (const RcTriggerBinding* slot : stored) {
+            if (slot->source == entry.source && slot->channel == entry.channel) {
+                threshold = rcReactionThreshold(*slot);
+                quietS = rcReactionQuietS(*slot);
+                break;
+            }
+        }
+        if (entry.threshold != kRcMapEntryKeep) threshold = entry.threshold;
+        if (entry.quietS != kRcMapEntryKeep) quietS = entry.quietS;
+        *out = makeRcReactionBinding(entry.source, entry.channel, entry.action, entry.payload,
+                                     threshold, quietS);
+        return rcTriggerBindingIsValid(*out);
     }
 
     uint16_t min = 1000;
@@ -209,15 +229,16 @@ RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcB
     return rcMapBindingIsMapped(sbus) ? sbus : pwm;
 }
 
-void rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel, RobotActionId action,
-                      const char* payload) {
+JsonObject rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel,
+                            RobotActionId action, const char* payload) {
     JsonObject item = map.add<JsonObject>();
-    item["source"] = rcMapSourceToString(source);
+    item["source"] = rcBindingSourceToString(source);
     item["channel"] = channel;
     item["action"] = robotActionIdToString(action);
     if (payload != nullptr && payload[0] != '\0') {
         item["payload"] = payload;
     }
+    return item;
 }
 
 }  // namespace
@@ -253,7 +274,12 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         if (!rcMapTriggerIsMapped(binding)) {
             continue;
         }
-        rcMapAppendEntry(map, binding.source, binding.channel, binding.target, binding.marcduinoPayload);
+        JsonObject item = rcMapAppendEntry(map, binding.source, binding.channel, binding.target,
+                                           binding.marcduinoPayload);
+        if (rcBindingSourceIsDroidCondition(binding.source)) {
+            item["threshold"] = rcReactionThreshold(binding);
+            item["quietS"] = rcReactionQuietS(binding);
+        }
     }
 
     JsonObject capacity = doc["capacity"].to<JsonObject>();
@@ -316,6 +342,11 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     //
     // All remaining trigger actions fill first-free in this order:
     // rcSound, rcFree0, rcFree1, rcFree2, rcFree3.
+    //
+    // A Reaction (a droid-condition source, #450) always fills first-free in
+    // that same order, whatever its action: a named slot is one action's radio
+    // binding, and a Reaction on arm1_toggle must not take rcArm1 from the
+    // switch that also toggles it.
     RcBindingConfig backbone = disabledRcBinding();
     RcTriggerBinding trigger = disabledRcTriggerBinding();
 
@@ -343,7 +374,9 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         return false;
     }
 
-    if (entry.action == SERVO_ACTION_ARM1_TOGGLE) {
+    const bool reaction = rcBindingSourceIsDroidCondition(entry.source);
+
+    if (!reaction && entry.action == SERVO_ACTION_ARM1_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_arm1)) {
             snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
             return false;
@@ -351,7 +384,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_arm1 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_ARM2_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_ARM2_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_arm2)) {
             snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
             return false;
@@ -359,7 +392,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_arm2 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_AUX1_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_AUX1_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux1)) {
             snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
             return false;
@@ -367,7 +400,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_aux1 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_AUX2_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_AUX2_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux2)) {
             snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
             return false;
@@ -375,7 +408,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         working->system.rc_aux2 = trigger;
         return true;
     }
-    if (entry.action == SERVO_ACTION_AUX3_TOGGLE) {
+    if (!reaction && entry.action == SERVO_ACTION_AUX3_TOGGLE) {
         if (!triggerSlotIsFree(working->system.rc_aux3)) {
             snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
             return false;

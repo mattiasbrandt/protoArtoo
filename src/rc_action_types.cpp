@@ -390,6 +390,63 @@ bool robotActionIsOneShotButton(RobotActionId target) {
            target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
 }
 
+uint16_t rcReactionThresholdMax(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_DROID_SPEED:
+        case RC_BINDING_DROID_HARD_STOP:
+            return 1000;
+        case RC_BINDING_DROID_REST:
+            return 600;  // a minute
+        case RC_BINDING_DROID_WHEEL_SPEED:
+            return 1000;
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return 5000;  // 50 A
+        default:
+            return 0;
+    }
+}
+
+uint16_t rcReactionThresholdDefault(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_DROID_SPEED:
+            return 300;  // about a third of full output
+        case RC_BINDING_DROID_HARD_STOP:
+            return 400;  // dropped to zero from at least this much
+        case RC_BINDING_DROID_REST:
+            return 20;   // two seconds at rest
+        case RC_BINDING_DROID_WHEEL_SPEED:
+            return 30;   // RPM: a wheel turning, not a wheel twitching
+        case RC_BINDING_DROID_WHEEL_AMPS:
+            return 300;  // 3 A
+        default:
+            return 0;
+    }
+}
+
+bool robotActionValidForReaction(RobotActionId target) {
+    return target != ROBOT_ACTION_NONE && robotActionValidForTier2(target) &&
+           target != SYSTEM_ACTION_ESTOP && target != SYSTEM_ACTION_OP_MODE &&
+           target != DRIVE_ACTION_SPEED_PRESET_CYCLE;
+}
+
+// A Reaction's own legality: its fields mean something else than a radio
+// trigger's (include/rc_action_types.h), so they are checked as what they are.
+static bool rcReactionBindingIsValid(const RcTriggerBinding& binding) {
+    if (!robotActionValidForReaction(binding.target)) {
+        return false;
+    }
+    const uint16_t thresholdMax = rcReactionThresholdMax(binding.source);
+    const uint16_t threshold = rcReactionThreshold(binding);
+    if (thresholdMax == 0 ? threshold != 0 : (threshold < 1 || threshold > thresholdMax)) {
+        return false;
+    }
+    if (rcReactionQuietS(binding) < RC_REACTION_QUIET_MIN_S ||
+        rcReactionQuietS(binding) > RC_REACTION_QUIET_MAX_S) {
+        return false;
+    }
+    return binding.center == 0 && binding.deadband == 0 && !binding.reverse;
+}
+
 // Validate a complete RcTriggerBinding for consistency and legality.
 bool rcTriggerBindingIsValid(const RcTriggerBinding& binding) {
     if (!rcBindingChannelIsValid(binding.source, binding.channel)) {
@@ -397,6 +454,9 @@ bool rcTriggerBindingIsValid(const RcTriggerBinding& binding) {
     }
     if (binding.source == RC_BINDING_NONE) {
         return binding.target == ROBOT_ACTION_NONE;
+    }
+    if (rcBindingSourceIsDroidCondition(binding.source)) {
+        return rcReactionBindingIsValid(binding);
     }
     // Tier 2 bindings cannot use analog action targets (those are backbone-only)
     if (!robotActionValidForTier2(binding.target)) {
