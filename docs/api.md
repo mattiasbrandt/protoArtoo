@@ -700,10 +700,11 @@ Puts every Servo Output back to the centre position recorded on its own row —
 one press, and the controller paces the sweep itself.
 
 - Body fields: **none**. The sweep covers every output there is, so there is no
-  target to name, and how it is paced is not a caller's to set: the controller
-  expands the one request into one output at a time and holds at least **450 ms**
-  between them, so a whole body going back at once cannot brown out the shared
-  servo rail. An output whose row takes longer than that to travel holds the
+  target to name, and how it is paced is not a request's to say: the controller
+  expands the one request into one output at a time and holds at least the
+  Cadence Floor between them (the stored `servo.cadenceFloorMs` in
+  `GET /api/config`, **450 ms** unless a builder has set another), so a whole
+  body going back at once cannot brown out the shared servo rail. An output whose row takes longer than that to travel holds the
   next one off until it has finished.
 - Each output goes to **its own recorded centre** (`centreUs` in
   `GET /api/servo/outputs`), which is a position a builder sets with Set CENTER
@@ -1533,7 +1534,7 @@ Sends the droid to one instant of a sequence (Learned or factory): the pose pres
 The request names the sequence and the instant, and nothing else. The firmware works out the pose from the sequence it stores, and the Sequence Coordinator sends it one command at a time:
 - Sound and lights go first: each light in the mode it is in at that instant, and the sound that was playing, started from its beginning.
 - Then each dome panel and body Part goes to where the last step before that instant left it, one at a time. Consecutive motions are at least the Cadence Floor apart, a body Output also holds the next one off for its own throw, and nothing is ever sent as a group command.
-- A Part the routine has not yet moved is not commanded, and neither is a flutter's end position, a random step's pick, a dome turn or a raw light code.
+- A Part the routine has not yet moved is not commanded, and neither is a dome panel's flutter, a random step's pick, a dome turn or a raw light code. A body Part whose last word is a flutter goes to its closed end, where a flutter leaves it; a pose swings nothing.
 - Past the end, the pose is what the routine's own ending leaves: ring panels closed, pies and body Parts where they were.
 - The later word wins. A sequence started, or `POST /api/seq/stop`, after the press cancels a pose the controller has not taken yet. A second press replaces the first, and its first motion still waits out the first one's spacing. A dome resync (after an estop clears, or when the dome link comes up) ends a pose being reached, and a pose that starts ends a resync's panel-by-panel close.
 
@@ -1744,7 +1745,7 @@ curl -s http://artoo.local/api/config
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"system":{"logLevel":2}}
+{"drive":{"speedLimitMax":600,"speedPreset":"normal","webDriveTimeoutMs":500,"stationary":false},"rc":{"inputMode":"dual_sbus","sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"components":{"domeEsc":{"enabled":true,"label":"DOME"},"drive":{"enabled":true,"label":"S1"}},"domeEsc":{"neutralUs":1500,"minPulseUs":1000,"maxPulseUs":2000,"speedLimitPct":100},"protoR2link":{"wifiPeerIp":""},"servo":{"cadenceFloorMs":450,"cadenceFloorSource":"dome"},"system":{"logLevel":2}}
 ```
 
 ### POST /api/config
@@ -1753,6 +1754,7 @@ Updates supported config fields and persists to NVS.
 
 - Supported form fields include:
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
+- servo: `cadenceFloorMs(50..5000)` — the Cadence Floor: the least time, in ms, between two body Outputs the droid starts itself (back to centre, the power-up pass, a pose, a Gesture, a flutter's legs). Steps an author wrote keep their own timing. The default, 450, is the dome's measured figure; nobody has measured the body's. Takes effect from the next move. The Console's `servo.config.cadence-floor` sets the same value. GET also reads `servo.cadenceFloorSource`: `dome` while the value is the dome's figure, `builder` once another has been set. It is a reading, ignored on POST.
 - system: `logLevel(1..4|error|warning|info|debug)` — 1 Error, 2 Warning, 3 Info, 4 Debug; the words are taken as well as the numbers, at every door (the Console's `system.config.log-level` takes the same), and GET always reads the number. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus|elrs|not_fitted)` (`elrs`: an ELRS receiver is fitted and the controller reads no input from it yet; the RC path behaves as with no receiver. `not_fitted`: no Radio Controller at all, a droid driven from the web alone; storing it also clears `rcMember` and sets `enableRcCh1`..`enableRcCh6` false, each unless the same request states it, and the RC path starts nothing, so the SBUS boot lock and the two radio failsafe layers stand down), `rcMember` (the RC Radio: a Radio Controller registry id), `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
 - components (bool): `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`.
@@ -1910,8 +1912,8 @@ Updates supported config fields and persists to NVS.
   value is refused in the same words and names the form field
   (`"field":"sbusTimeoutMs"`) whichever door it came in by. A key GET carries
   that is a reading rather than a setting - `wifi`, `activeToggles`,
-  `drive.speedPreset`, `rc.activeInputMode`, a `label`, `activeMember`,
-  `guidedSetup.recorded` - is ignored, so a whole GET answer can be posted back
+  `drive.speedPreset`, `rc.activeInputMode`, `servo.cadenceFloorSource`, a
+  `label`, `activeMember`, `guidedSetup.recorded` - is ignored, so a whole GET answer can be posted back
   as it stands. A number or a boolean may arrive as JSON or as the text a form
   would carry; an object or list where one value belongs is refused. When a
   field arrives both on the form and in the body, the form's value wins.

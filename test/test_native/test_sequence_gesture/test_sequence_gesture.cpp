@@ -127,19 +127,13 @@ static void test_a_pair_the_dome_cannot_perform_still_saves() {
     TEST_ASSERT_EQUAL_UINT8(FX_PANEL, d.steps[0].effectClass);
 }
 
-static void test_a_flutter_gesture_still_owes_a_close() {
+// A flutter ends closed, so a flutter Gesture owes no close Gesture after it
+// (ADR 0049, amended 2026-10-02).
+static void test_a_flutter_gesture_owes_no_close() {
     SeqDraft d;
     ProtocolCheckResult r = parseAndCheck(
         "{\"format\":1,\"name\":\"DM:GFLUT\",\"suppressMs\":5000,\"steps\":["
         "{\"t\":0,\"type\":\"gesture\",\"set\":\"breadpan\",\"shape\":\"flutter\"},"
-        "{\"t\":3000,\"type\":\"end\"}]}",
-        d);
-    TEST_ASSERT_FALSE(r.ok);
-    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
-    r = parseAndCheck(
-        "{\"format\":1,\"name\":\"DM:GFLUT\",\"suppressMs\":5000,\"steps\":["
-        "{\"t\":0,\"type\":\"gesture\",\"set\":\"breadpan\",\"shape\":\"flutter\"},"
-        "{\"t\":2000,\"type\":\"gesture\",\"set\":\"breadpan\",\"shape\":\"close\"},"
         "{\"t\":3000,\"type\":\"end\"}]}",
         d);
     TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
@@ -228,7 +222,8 @@ static void test_a_body_gesture_is_paced_by_the_floor_and_never_holds_the_engine
         TEST_ASSERT_FALSE(next.dome);
         starts[n++] = now;
         // A driven Output with a short throw: the Floor is what spaces them.
-        sequenceGestureDone(&run, next, now, /*started=*/true, 100, boardOutputAddress(0));
+        sequenceGestureDone(&run, next, now, /*started=*/true, 100, boardOutputAddress(0),
+                            SEQ_CADENCE_FLOOR_MS);
     }
     TEST_ASSERT_EQUAL_UINT8(4, n);
     for (uint8_t i = 1; i < n; ++i) {
@@ -309,7 +304,8 @@ static uint32_t latestGestureStart(SeqStep* steps, uint8_t count, uint32_t* gest
             // Paced: every move reaches ServoTask and holds the next one off by
             // the Cadence Floor, as on a droid.
             sequenceGestureDone(&run, next, now, /*started=*/paced, 0,
-                                paced ? boardOutputAddress(0) : SERVO_OUTPUT_NONE);
+                                paced ? boardOutputAddress(0) : SERVO_OUTPUT_NONE,
+                                SEQ_CADENCE_FLOOR_MS);
         }
     }
     return latest;
@@ -414,7 +410,7 @@ int main(int, char**) {
     RUN_TEST(test_chase_moves_one_member_per_step_and_returns_the_one_before);
     RUN_TEST(test_dome_gesture_is_one_command_over_the_members_mask);
     RUN_TEST(test_a_pair_the_dome_cannot_perform_still_saves);
-    RUN_TEST(test_a_flutter_gesture_still_owes_a_close);
+    RUN_TEST(test_a_flutter_gesture_owes_no_close);
     RUN_TEST(test_a_list_across_both_halves_is_refused);
     RUN_TEST(test_a_gesture_on_a_tempo_paces_by_the_beat_and_repeats_to_the_end);
     RUN_TEST(test_a_dome_gesture_that_leaves_the_ring_open_is_closed_one_panel_at_a_time);

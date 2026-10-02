@@ -56,7 +56,7 @@ the motion as a panel intent command:
 |---|---|
 | Full open | `:OP<target>` |
 | Full close | `:CL<target>` |
-| Flutter / wiggle / nervous | `:OF<target>` (requires explicit close in same branch) |
+| Flutter / wiggle / nervous | `:OF<target>` (ends closed; needs no close after it) |
 | Partial open / easing | approximate with `:OP`/`:CL` pairs or `:OF`; note deviation |
 
 **Allowed targets** (see `sequence-authoring.md` for the full reference):
@@ -106,7 +106,7 @@ effects. Drop anything outside the allowed set.
 
 - Full open -> `:OP<target>`
 - Full close -> `:CL<target>`
-- Flutter / wiggle -> `:OF<target>` (add explicit close in same branch)
+- Flutter / wiggle -> `:OF<target>` (ends closed)
 - Partial open / easing -> approximate (see step 1); `:SM` is **not allowed**
 
 **Non-panel dome effects** -- keep the trigger, not per-frame content:
@@ -135,8 +135,7 @@ a Factory table **tags** the first step that activates each persistent effect (`
 static const SeqStep kExampleSteps[] = {
     SEQ_AUDIO(0, "$H"),
     SEQ_DOME(0, FX_PANEL, ":OP14"),     // open all pies
-    SEQ_DOME(500, FX_NONE, ":OFP3"),    // PP3 flutter accent
-    SEQ_DOME(800, FX_NONE, ":CLP3"),    // close PP3 (explicit :OF cleanup)
+    SEQ_DOME(500, FX_NONE, ":OFP3"),    // PP3 flutter accent; it ends closed
     SEQ_DOME(1200, FX_NONE, ":CL14"),   // close all pies
     SEQ_TERM(1500),
 };
@@ -189,7 +188,6 @@ source. Hardware fidelity joins the existing v1.0.0 hardware gate.
 - [ ] Additive `DM:` name (no Factory/alias collision)
 - [ ] License permits redistribution; provenance in catalog comment + `sequence-credits.md`
 - [ ] `SeqStep[]` table + catalog row with explicit `FX_*` tags; `suppressMs >= STEP_END`
-- [ ] `:OF` steps have matching explicit close in the same branch
 - [ ] `action-registry.yaml` entry; `make check-action-drift` clean
 - [ ] Native engine-timeline test added; `software-verified`
 - [ ] Hardware fidelity added to the v1.0.0 hardware gate

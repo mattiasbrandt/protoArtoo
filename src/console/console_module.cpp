@@ -2086,6 +2086,7 @@ struct ConsoleSettingOp {
 static const ConsoleSettingOp g_settingOps[] = {
     {"drive.config.speed-limit", "speedLimitMax"},
     {"rc.config.mode", "rcInputMode"},
+    {"servo.config.cadence-floor", "cadenceFloorMs"},
     {"system.config.log-level", "logLevel"},
 };
 

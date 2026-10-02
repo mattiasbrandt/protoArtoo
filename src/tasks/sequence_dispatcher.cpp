@@ -37,9 +37,11 @@
 #include "sequence_dispatcher.h"
 #include "sequence_dispatcher_step.h"
 #include "sequence_engine.h"
+#include "sequence_flutter.h"
 #include "sequence_gesture.h"
 #include "sequence_pose.h"
 #include "sequence_run_evidence.h"
+#include "servo_motion_ramp.h"  // servoMotionArrivalMs() - how long a flutter's leg takes
 #include "servo_task.h"  // servoTaskDrivesOutput() - an undriven Output is passed over (#364)
 
 // Platform definition seam  --  hardware vs native test builds.
@@ -91,16 +93,15 @@ bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
 // rest of the choreography is untouched (#301). Returning true is therefore
 // correct -- the action was handled, and only a full queue is a retry.
 //
-// A flutter resolves to its how-far target, because a flutter ends open
-// (ADR 0049). The oscillation on the way there is NOT performed yet: it is
-// generated motion, and generated motion is what the Cadence Floor paces. The
-// Floor now exists (include/sequence_bulk_centre.h, #365), on the dome's figure
-// as an explicitly-labelled stand-in, but it bounds the bulk centre it was
-// built for and nothing else - a flutter is a second expansion, with its own
-// question about what the oscillation should look like, and nobody has decided
-// that yet. Until it is performed, a routine fluttering several Parts at once
-// would be emitting exactly the many-at-once shape the Floor is there to hold
-// apart.
+// A FLUTTER IS NOT SENT FROM HERE. It is not one move: the Part swings between
+// its closed end and the step's how-far point for the flutter's length and
+// ends closed (ADR 0049, amended 2026-10-02; #453). The engine hands the step
+// over when it is due and moves on, and the flutter run below performs the
+// swing on this task's own tick (flutterStartPart(), flutterOneLeg(),
+// include/sequence_flutter.h): each leg is a move through sendBodyPosition(),
+// at the Output's own Motion Profile, and legs on different Outputs are held
+// apart by the Cadence Floor, because a leg is generated motion. So a routine
+// fluttering several Parts at once starts their legs one at a time.
 // -----------------------------------------------------------------------------
 // The live Servo Output row that claims `part`, read into `row`, or nullptr
 // when none does. Shared by a Body Step and a pose's body move, so both find a
@@ -124,6 +125,21 @@ struct BodyMoveOutcome {
     uint16_t throwMs;
 };
 
+// The one ServoCommand a planned body move becomes: a Body Step's, a pose's, a
+// Gesture's and each leg of a flutter alike. SRC_SEQ, which ServoTask refuses
+// in Sleep Mode. False when servoCmdQueue is full: the caller tries again on
+// the next tick.
+static bool sendBodyPosition(const SeqBodyStepPlan& plan, uint16_t throwMs, uint8_t easing) {
+    ServoCommand cmd = {};
+    cmd.output = plan.output;
+    cmd.type = SERVO_CMD_POSITION;
+    cmd.positionUs = plan.targetUs;
+    cmd.source = SRC_SEQ;
+    cmd.motionThrowMs = throwMs;
+    cmd.motionEasing = easing;
+    return xQueueSend(servoCmdQueue, &cmd, 0) == pdTRUE;
+}
+
 // `throwMs` and `easing` are a Gesture's own words for this move (0 for each:
 // the Output's own Motion Profile); only a Gesture's move passes them (ADR 0049).
 static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nullptr,
@@ -138,14 +154,7 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
         return true;  // inert step; the sequence carries on
     }
 
-    ServoCommand cmd = {};
-    cmd.output = plan.output;
-    cmd.type = SERVO_CMD_POSITION;
-    cmd.positionUs = plan.targetUs;
-    cmd.source = SRC_SEQ;
-    cmd.motionThrowMs = throwMs;
-    cmd.motionEasing = easing;
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
+    if (!sendBodyPosition(plan, throwMs, easing)) {
         return false;
     }
     if (outcome != nullptr) {
@@ -200,6 +209,7 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
 // -----------------------------------------------------------------------------
 static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     const uint8_t rowCount = configCacheServoOutputCount();
+    const uint32_t floorMs = configCacheCadenceFloorMs();
 
     if (run.awaitOutput != SERVO_OUTPUT_NONE) {
         const ServoCommandedPosition at = servoCommandedOf(run.awaitOutput);
@@ -236,7 +246,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
 
     const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
     if (!step.centre) {
-        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0, floorMs);
         return;
     }
 
@@ -244,7 +254,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     if (!plan.drive) {
         PA_LOG_INFO(TAG, "output %u not centred - %s", (unsigned)run.nextRow,
                     consoleReasonString(plan.reason));
-        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0, floorMs);
         return;
     }
     // An Output ServoTask does not drive since boot - a wired tick saved
@@ -255,7 +265,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
     if (!servoTaskDrivesOutput(plan.output)) {
         PA_LOG_INFO(TAG, "%s:%u not centred - restart the droid to use it",
                     servoOutputDriverToString(plan.output.driver), (unsigned)plan.output.channel);
-        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0);
+        sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/false, 0, floorMs);
         return;
     }
 
@@ -271,7 +281,7 @@ static void centreOneOutput(SeqBulkCentreRun& run, uint32_t now) {
         return;  // the cursor stays put: this row's turn comes round again
     }
     sequenceBulkCentreAwait(&run, plan.output, step.releaseAfter);
-    sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms);
+    sequenceBulkCentreAdvance(&run, rowCount, now, /*started=*/true, row.throw_ms, floorMs);
 }
 
 // -----------------------------------------------------------------------------
@@ -306,14 +316,254 @@ static bool dispatchAction(const SeqAction& act);  // defined with the task adap
 static SeqGestureRun gestureRun;
 static SeqAction gestureMove;
 
-// Every path that ends what the Coordinator is doing ends the Gestures too:
-// a halt, a stop, a later run, a pose and back to centre alike.
-static void gestureEnd(const char* why) {
+// -----------------------------------------------------------------------------
+// The flutters a sequence has fired (#453, include/sequence_flutter.h): a Body
+// Step's, and each member's of a body Gesture. On the Coordinator's own cursor,
+// like the Gestures, so a two-second shake never holds the engine's. Static,
+// off this task's measured stack (ADR 0040), and so are the row a leg is
+// resolved against and the move it is planned as.
+//
+// A leg keeps the pace a sequence's generated motion keeps, and that pace is
+// ONE: the Gesture run's `dueMs` and `awaitOutput`. A Gesture's move and a
+// flutter's leg are both this task starting a body Output on its own account,
+// so each holds the other off; two paces side by side would let two Outputs
+// start together, which is what the Cadence Floor is there to prevent.
+// -----------------------------------------------------------------------------
+static SeqFlutterRun flutterRun;
+static ServoOutputRow flutterRow;
+static SeqAction flutterMove;
+
+static_assert(SEQ_FLUTTER_PARTS_MAX >= SEQ_GESTURE_MEMBERS_MAX,
+              "every member of one Gesture can flutter at once");
+
+// Every path that ends what the Coordinator is doing ends the Gestures and the
+// flutters too, where they have got to: a halt, a stop, a later run, a pose,
+// back to centre and the run's own end step alike. Nothing is commanded on the
+// way out (ADR 0043) -- a Part a flutter left out stays out.
+static void generatedEnd(const char* why) {
     if (sequenceGestureActive(gestureRun)) {
         PA_LOG_INFO(TAG, "gesture ended (%s) after %u sent, %u skipped", why,
                     (unsigned)gestureRun.sent, (unsigned)gestureRun.skipped);
     }
     sequenceGestureEnd(&gestureRun);
+    if (sequenceFlutterActive(flutterRun)) {
+        PA_LOG_INFO(TAG, "flutter ended (%s) after %u legs", why, (unsigned)flutterRun.legs);
+    }
+    sequenceFlutterEnd(&flutterRun);
+}
+
+// The move a flutter's Part is planned with: the Part, by its catalog id, and
+// the swing's far end as an open that far. Built in the static scratch action.
+static void flutterPlanMove(const char* partId, uint8_t howFar) {
+    memset(&flutterMove, 0, sizeof(flutterMove));
+    flutterMove.kind = SEQ_ACT_BODY_MOVE;
+    strncpy(flutterMove.payload, partId, sizeof(flutterMove.payload) - 1);
+    flutterMove.bodyShape = (uint8_t)BODY_SHAPE_OPEN;
+    flutterMove.bodyHowFar = howFar;
+}
+
+// A later move of a Part ends that Part's flutter; the later move is the one
+// performed (#453). A Body Step's move and a Gesture's each call this once the
+// move has been sent, so no leg can follow it.
+static void flutterEndPart(const char* partId) {
+    const size_t part = droidPartIndexOf(partId);
+    if (part < DROID_PART_COUNT && sequenceFlutterEndPart(&flutterRun, (uint8_t)part)) {
+        PA_LOG_INFO(TAG, "flutter of %s ended - a later move of it", partId);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// flutterStartPart  --  a flutter handed to the run: a Body Step's, or one
+// member's of a body Gesture.
+//
+// Whether anything can move the Part is asked here, the way a Body Step's move
+// asks it: a Part no Output claims is reported and starts no flutter, and the
+// sequence carries on (#301). So is an Output ServoTask does not drive since
+// boot (#364) -- its legs would be dropped without a word while each one still
+// held every other Output off.
+//
+// `speedMs` and `easing` are a Gesture's own words for its legs, 0 for a Body
+// Step's: a flutter step carries no speed (ADR 0049). `runEndAtMs` is when the
+// run that fired it reaches its end step, 0 where no run bounds it: the flutter
+// is closed again by then, because the end step cuts it and commands nothing
+// (sequenceFlutterStart()). No leg goes from here; the first waits its turn and
+// the pace in flutterOneLeg().
+//
+// Out of line, like the Gesture's two functions: neither this frame nor the
+// log lines' sit on the root frame or on dispatchAction()'s.
+// -----------------------------------------------------------------------------
+static __attribute__((noinline)) bool flutterStartPart(const char* partId, uint8_t howFar,
+                                                       uint16_t flutterMs, uint16_t speedMs,
+                                                       uint8_t easing, uint32_t now,
+                                                       uint32_t runEndAtMs) {
+    flutterPlanMove(partId, howFar);
+    const SeqBodyStepPlan plan = sequenceBodyStepPlan(flutterMove, rowForPart(partId, &flutterRow));
+    // A Part the catalog does not hold is never driven, so past this the index
+    // is one; the test is what makes the narrowing below safe to a reader.
+    const size_t part = droidPartIndexOf(partId);
+    if (!plan.drive || part >= DROID_PART_COUNT) {
+        PA_LOG_INFO(TAG, "body %s not moved - %s", partId, consoleReasonString(plan.reason));
+        return false;
+    }
+    if (!servoTaskDrivesOutput(plan.output)) {
+        PA_LOG_INFO(TAG, "body %s not fluttered - restart the droid to use %s:%u", partId,
+                    servoOutputDriverToString(plan.output.driver), (unsigned)plan.output.channel);
+        return false;
+    }
+    if (!sequenceFlutterStart(&flutterRun, (uint8_t)part, howFar, flutterMs, speedMs, easing, now,
+                              runEndAtMs)) {
+        PA_LOG_WARN(TAG, "body %s not fluttered - %u Parts are fluttering already", partId,
+                    (unsigned)SEQ_FLUTTER_PARTS_MAX);
+        return false;
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// flutterOneLeg  --  one leg of one flutter per tick, when it may go.
+//
+// The entry whose turn it is waits for its own last leg to be over, and for
+// the pace (sequenceFlutterMayGo()). Then its Part is resolved against the
+// LIVE Output rows, as every body move is, so a table saved mid-flutter is
+// read as it now stands; a Part nothing can move any more ends its flutter.
+//
+// The two ends of the swing come off that row: the closed end, and how far
+// along the Part's own throw (seqBodyTargetUs()). How long each leg takes is
+// the row's Motion Profile's answer for that distance, with the Gesture's
+// speed and easing where the flutter is a Gesture's -- the very plan ServoTask
+// makes for the move (servoMotionArrivalMs()). Nothing here sets a speed.
+//
+// A full servoCmdQueue leaves the entry as it is: the same leg comes round on
+// the next tick.
+// -----------------------------------------------------------------------------
+static __attribute__((noinline)) void flutterOneLeg(uint32_t now) {
+    const int8_t turn = sequenceFlutterTurn(flutterRun);
+    if (turn < 0) {
+        return;
+    }
+    const uint8_t idx = (uint8_t)turn;
+    const SeqFlutterEntry& e = flutterRun.f[idx];
+    const bool paceOpen = sequencePaceOpen(gestureRun.dueMs, &gestureRun.awaitOutput,
+                                           servoCommandedOf(gestureRun.awaitOutput).moving, now);
+    if (!sequenceFlutterMayGo(flutterRun, idx, now, servoCommandedOf(e.output).moving, paceOpen,
+                              sequenceGestureBodyDue(gestureRun, now))) {
+        return;
+    }
+
+    flutterPlanMove(droidPartIdAt(e.part), e.howFar);
+    const ServoOutputRow* driving = rowForPart(flutterMove.payload, &flutterRow);
+    SeqBodyStepPlan plan = sequenceBodyStepPlan(flutterMove, driving);
+    if (!plan.drive || driving == nullptr) {
+        PA_LOG_INFO(TAG, "flutter of %s ended - %s", flutterMove.payload,
+                    consoleReasonString(plan.reason));
+        sequenceFlutterDrop(&flutterRun, idx);
+        return;
+    }
+    const uint16_t farUs = plan.targetUs;
+    const uint16_t closedUs = seqBodyTargetUs(*driving, BODY_SHAPE_FLUTTER, e.howFar);
+    ServoMotionProfile profile = servoMotionProfileOf(*driving);
+    servoMotionOverride(&profile, e.speedMs, e.easing);
+    const uint32_t floorMs = configCacheCadenceFloorMs();
+    const uint16_t outMs =
+        sequenceFlutterLegTimeMs(servoMotionArrivalMs(closedUs, farUs, profile), floorMs);
+    const uint16_t backMs =
+        sequenceFlutterLegTimeMs(servoMotionArrivalMs(farUs, closedUs, profile), floorMs);
+
+    const SeqFlutterLeg leg = sequenceFlutterLeg(e, now, outMs, backMs);
+    if (leg == SEQ_FLUTTER_OVER) {
+        sequenceFlutterDrop(&flutterRun, idx);  // closed already, and no swing left to fit
+        return;
+    }
+    plan.targetUs = (leg == SEQ_FLUTTER_LEG_OUT) ? farUs : closedUs;
+    if (!sendBodyPosition(plan, e.speedMs, e.easing)) {
+        return;
+    }
+    sequenceFlutterSent(&flutterRun, idx, now, leg, outMs, backMs, plan.output, &gestureRun.dueMs,
+                        &gestureRun.awaitOutput, floorMs);
+}
+
+// -----------------------------------------------------------------------------
+// flutterTakeRequest  --  a flutter asked for by Output
+// (sequenceFlutterRequest(), a body-owned Marcduino `:OFnn`).
+//
+// The request names an Output, as the line does, and a flutter is of a Part:
+// the Part is the first one the live row at that address carries, which moves
+// every Part on that Output, since they share its servo. An Output with no
+// Part on it has nothing to flutter and is reported. From there it is a Body
+// Step's flutter at full throw: flutterStartPart(), the same run, the same
+// pace, ending closed. No run fired it, so only its own length bounds it.
+//
+// Refused under either halt, like a pose press, and while a back to centre or
+// a pose is still putting Outputs out one at a time on a pace of its own: two
+// paces side by side is what the Cadence Floor is there to prevent.
+//
+// Each step is its own out-of-line function and none calls the next: the
+// request is taken, the Part found, the flutter started, one after another
+// from flutterTakeRequest(), and each log line sits in a function that only
+// logs. A log line's frame under another's is what puts a route on this task's
+// measured chain (ADR 0040); nested, this path walked 192 B past it. The
+// Part's id is in a static because flutterStartPart() reads rows into
+// flutterRow, so the id cannot be left pointing into it.
+// -----------------------------------------------------------------------------
+static char flutterAskPart[DROID_PART_ID_MAX_LEN + 1];
+
+// The first Part the live row at `output` carries, into flutterAskPart. False
+// when no row has that address, or no Part is on it.
+static __attribute__((noinline)) bool flutterFindPartOn(ServoOutputAddress output) {
+    flutterAskPart[0] = '\0';
+    const uint8_t rowCount = configCacheServoOutputCount();
+    for (uint8_t i = 0; i < rowCount; ++i) {
+        if (configCacheReadServoOutput(i, &flutterRow) &&
+            ServoOutputAddress{flutterRow.driver, flutterRow.channel} == output &&
+            servoOutputPartCount(flutterRow) > 0) {
+            strncpy(flutterAskPart, servoOutputPartAt(flutterRow, 0), sizeof(flutterAskPart) - 1);
+            flutterAskPart[sizeof(flutterAskPart) - 1] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+static __attribute__((noinline)) void flutterLogNoPart(ServoOutputAddress output) {
+    PA_LOG_INFO(TAG, "%s:%u not fluttered - no Part is on it",
+                servoOutputDriverToString(output.driver), (unsigned)output.channel);
+}
+
+static __attribute__((noinline)) void flutterLogRefused(const char* refusal) {
+    PA_LOG_WARN(TAG, "flutter request refused - %s", refusal);
+}
+
+static __attribute__((noinline)) void flutterTakeRequest(uint32_t now, const char* refusal) {
+    bool asked = false;
+    ServoOutputAddress output = SERVO_OUTPUT_NONE;
+    uint16_t flutterMs = 0;
+    taskENTER_CRITICAL(&robotStateMux);
+    if (robotState.flutterRequest) {
+        asked = true;
+        output = robotState.flutterRequestOutput;
+        flutterMs = robotState.flutterRequestMs;
+        robotState.flutterRequest = false;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (!asked) {
+        return;
+    }
+    if (refusal != nullptr) {
+        flutterLogRefused(refusal);
+        return;
+    }
+    // The 0/99 broadcast is the board's first two Outputs, each its own
+    // flutter, so they take turns like any two.
+    const bool both = (output == SERVO_OUTPUT_BOTH_ARMS);
+    for (uint8_t n = 0; n < (both ? 2 : 1); ++n) {
+        const ServoOutputAddress one = both ? boardOutputAddress(n) : output;
+        if (!flutterFindPartOn(one)) {
+            flutterLogNoPart(one);
+            continue;
+        }
+        flutterStartPart(flutterAskPart, SEQ_BODY_HOWFAR_MAX, flutterMs, 0, 0, now,
+                         /*runEndAtMs=*/0);
+    }
 }
 
 // A Gesture the engine has just handed over, copied into the run NOW, while
@@ -334,20 +584,34 @@ static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& ac
 // command to the dome; a body Gesture's move goes down the very path a Body
 // Step takes (dispatchBodyMove()), resolved against the live Output rows, and
 // the run holds the next body move off by the pace every generated motion
-// keeps. A full queue leaves the item where it is, to come round next tick.
+// keeps. A member's flutter is handed to the flutter run instead. A full queue
+// leaves the item where it is, to come round next tick.
 // Out of line, as gestureStartFromAction() below is, so neither's locals sit
 // on the root frame or on dispatchAction()'s: both are on the measured chain.
 static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     const bool moving = servoCommandedOf(gestureRun.awaitOutput).moving;
     SeqGestureNext next = {};
-    if (!sequenceGestureNext(&gestureRun, now, moving, &next)) {
+    // A flutter's Part that is out holds a Gesture's body move back: its back
+    // leg goes next, so a swing is never split and is back by the time it was
+    // fitted to (include/sequence_flutter.h).
+    if (!sequenceGestureNext(&gestureRun, now, moving, &next,
+                             /*bodyHeld=*/sequenceFlutterPartOut(flutterRun))) {
         return;
     }
     if (next.dome) {
         if (!domeQueueTx(gestureRun.g[next.entry].domeCmd)) {
             return;
         }
-        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+        sequenceGestureDone(&gestureRun, next, now, /*started=*/true, 0, SERVO_OUTPUT_NONE,
+                            configCacheCadenceFloorMs());
+        return;
+    }
+    // A member's flutter is the flutter run's to perform, with the Gesture's
+    // own length, speed and easing (#453). Handing it over starts no motion.
+    if (next.shape == BODY_SHAPE_FLUTTER) {
+        const bool taken = flutterStartPart(droidPartIdAt(next.part), next.howFar, next.flutterMs,
+                                            next.speedMs, next.easing, now, next.endAtMs);
+        sequenceGestureFlutterHandedOver(&gestureRun, next, taken);
         return;
     }
     memset(&gestureMove, 0, sizeof(gestureMove));
@@ -361,10 +625,19 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     if (!dispatchBodyMove(gestureMove, &moved, next.speedMs, next.easing)) {
         return;
     }
-    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.output);
+    // The move is the later word over a flutter of the same Part still going --
+    // a chase's "the one before goes back" is exactly that -- and it is another
+    // Output's motion to every flutter still running.
+    flutterEndPart(gestureMove.payload);
+    if (moved.sent) {
+        sequenceFlutterOtherMotion(&flutterRun);
+    }
+    sequenceGestureDone(&gestureRun, next, now, moved.sent, moved.throwMs, moved.output,
+                        configCacheCadenceFloorMs());
 }
 
 static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
+    const uint32_t floorMs = configCacheCadenceFloorMs();
     if (run.awaitOutput != SERVO_OUTPUT_NONE) {
         const bool moving = servoCommandedOf(run.awaitOutput).moving;
         if (!sequencePoseAwaitDone(&run, moving)) {
@@ -382,7 +655,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!domeQueueTx(cmd.act.payload)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE, floorMs);
             return;
 
         case SEQ_POSE_BODY: {
@@ -392,7 +665,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!dispatchBodyMove(cmd.act, &moved)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.output);
+            sequencePoseAdvance(&run, now, cmd.cls, moved.sent, moved.throwMs, moved.output, floorMs);
             return;
         }
 
@@ -401,7 +674,7 @@ static void poseOneCommand(SeqPoseRun& run, uint32_t now) {
             if (!dispatchAction(cmd.act)) {
                 return;
             }
-            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE);
+            sequencePoseAdvance(&run, now, cmd.cls, /*started=*/true, 0, SERVO_OUTPUT_NONE, floorMs);
             return;
     }
 }
@@ -507,7 +780,25 @@ bool sequencePoseRequest(const char* name, uint32_t atMs, CommandSource src) {
 void sequenceStopRequest() {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.poseRequest = SRC_NONE;
+    robotState.flutterRequest = false;
     robotState.seqStopRequested = true;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// =============================================================================
+// sequenceFlutterRequest  --  a body-owned `:OFnn`'s way in (#453).
+//
+// The line's handler runs on whichever task read the line, so it touches none
+// of the flutter run's state: it leaves the Output and the length here, the
+// shape a pose press uses, and the Coordinator takes them on its next tick
+// (flutterTakeRequest()).
+// =============================================================================
+
+void sequenceFlutterRequest(ServoOutputAddress output, uint16_t flutterMs) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.flutterRequestOutput = output;
+    robotState.flutterRequestMs = flutterMs;
+    robotState.flutterRequest = true;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -556,7 +847,21 @@ static bool dispatchAction(const SeqAction& act) {
             return audioQueueTrackStop(SRC_SEQ);
 
         case SEQ_DISPATCH_BODY_MOVE:
-            return dispatchBodyMove(act);
+            // A flutter is handed to the flutter run, which performs it beside
+            // the engine's cursor; the step itself is dealt with either way.
+            // Any other move of a Part ends a flutter of that Part still
+            // going, once the move itself has been sent.
+            if (act.bodyShape == (uint8_t)BODY_SHAPE_FLUTTER) {
+                // act.domeDurationMs is where the firing run ends (resolveStep()).
+                flutterStartPart(act.payload, act.bodyHowFar, act.bodyFlutterMs, 0, 0, millis(),
+                                 act.domeDurationMs);
+                return true;
+            }
+            if (!dispatchBodyMove(act)) {
+                return false;
+            }
+            flutterEndPart(act.payload);
+            return true;
 
         case SEQ_DISPATCH_GESTURE:
             gestureStartFromAction(act);
@@ -593,6 +898,18 @@ static void drainBestEffort(SeqEngineState& engine, uint32_t now) {
         }
         seqEvidenceRecordTx(act, /*cleanup=*/true);
         seqEngineCommit(engine);
+    }
+}
+
+// The dome's visuals put back to their resting state after an estop clears or
+// the dome (re)connects: every family in SEQ_DOME_VISUAL_RESETS, the list
+// terminal cleanup uses for a run whose visuals it cannot name. Both resyncs
+// send it from here, so a family added to the list reaches both; the holos
+// were once missing from the two of them (#320, #453). None of these moves a
+// servo, so they go at once and are not staged like the ring close.
+static void resyncDomeVisuals() {
+    for (const char* reset : SEQ_DOME_VISUAL_RESETS) {
+        domeQueueTx(reset);
     }
 }
 
@@ -647,6 +964,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     poseRun.awaitOutput = SERVO_OUTPUT_NONE;
     gestureRun = SeqGestureRun{};
     gestureRun.awaitOutput = SERVO_OUTPUT_NONE;
+    flutterRun = SeqFlutterRun{};
+    flutterRun.lastLeg = SEQ_FLUTTER_NONE;
     // The pose request as taken from RobotState, static like the run: its name
     // and instant live across the whole intake below, and on this task's stack
     // they pushed the measured chain past its figure.
@@ -669,7 +988,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         taskEXIT_CRITICAL(&robotStateMux);
         if (sequenceBootPassStart(&centreRun, millis(), bootEstop, bootSleep)) {
             PA_LOG_INFO(TAG, "boot pass - %u rows, at least %u ms apart",
-                        (unsigned)configCacheServoOutputCount(), (unsigned)SEQ_CADENCE_FLOOR_MS);
+                        (unsigned)configCacheServoOutputCount(), (unsigned)configCacheCadenceFloorMs());
         } else {
             PA_LOG_WARN(TAG, "boot pass skipped - %s, every Output stays limp",
                         bootEstop ? "estop latched" : "sleep mode active");
@@ -751,7 +1070,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     PA_LOG_INFO(TAG, "%s ended - a pose took over", bulkCentreName(centreRun));
                     sequenceBulkCentreEnd(&centreRun);
                 }
-                gestureEnd("a pose took over");
+                generatedEnd("a pose took over");
                 const SequenceEntry* entry = catalogEntry;
                 if (isRuntime) {
                     if (seqStoreCommit(runtimeEntry)) {
@@ -777,7 +1096,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                                       (uint8_t)poseAsk.src, &resyncCloseIdx);
                     PA_LOG_INFO(TAG, "[%s] pose %s at %u ms - %u commands, motions at least %u ms apart",
                                 commandSourceToString(poseAsk.src), poseAsk.name, (unsigned)poseAsk.atMs,
-                                (unsigned)posePlan.count, (unsigned)SEQ_CADENCE_FLOOR_MS);
+                                (unsigned)posePlan.count, (unsigned)configCacheCadenceFloorMs());
                     if (posePlan.truncated) {
                         PA_LOG_WARN(TAG, "pose %s names more than %u targets; the latest are left out",
                                     poseAsk.name, (unsigned)SEQ_POSE_MAX);
@@ -805,8 +1124,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
             if (willStart) {
                 // A later run is the later word over Gestures still repeating
-                // from the one before, whether or not that one is still running.
-                gestureEnd("a later run");
+                // and flutters still swinging from the one before, whether or
+                // not that one is still running.
+                generatedEnd("a later run");
                 if (seqEngineActive(engine)) {
                     PA_LOG_INFO(TAG, "preempt %s -> %s", activeName, req.name);
                     seqEngineAbort(engine);
@@ -880,10 +1200,11 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                         (unsigned)centreRun.centred, (unsigned)centreRun.skipped);
             sequenceBulkCentreEnd(&centreRun);
         }
-        // Gestures end on either halt the same way: ServoTask has let every
-        // Output go, and a Gesture still expanding would drive them again.
+        // Gestures and flutters end on either halt the same way: ServoTask has
+        // let every Output go, and a Gesture still expanding, or a flutter
+        // still swinging, would drive them again.
         if (estopActive || sleepActive) {
-            gestureEnd(estopActive ? "estop" : "sleep mode");
+            generatedEnd(estopActive ? "estop" : "sleep mode");
         }
         // A pose ends on either halt the same way, where it has got to.
         if ((estopActive || sleepActive) && poseRun.active) {
@@ -907,14 +1228,14 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             // Stage an individual ring-only close (drained below), never a group
             // :CL15/:CL00: a group close drives every ring servo simultaneously
             // and browns out the dome from a loaded ring (issue #2 hardware
-            // finding). Pies are never auto-closed on resync. Logic/PSI reset is
-            // a single non-servo command, so it stays immediate. A pose taken
-            // on this same tick, before the edge was seen, ends here.
+            // finding). Pies are never auto-closed on resync. The logic, PSI
+            // and holo resets are non-servo commands, so they stay immediate.
+            // A pose taken on this same tick, before the edge was seen, ends
+            // here.
             if (sequenceResyncCloseStage(&poseRun, &resyncCloseIdx, &resyncCloseDueMs, now)) {
                 PA_LOG_INFO(TAG, "pose ended - dome resync");
             }
-            domeQueueTx("@0T1");
-            domeQueueTx("@0P1");
+            resyncDomeVisuals();
             seqEngineClearLatches(engine);
         }
         prevEstop = estopActive;
@@ -940,7 +1261,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             sequenceBulkCentreEnd(&centreRun);
         }
         if (stopRequested) {
-            gestureEnd("web stop");
+            generatedEnd("web stop");
         }
         if (stopRequested && poseRun.active) {
             PA_LOG_INFO(TAG, "pose ended (web stop) after %u sent", (unsigned)poseRun.sent);
@@ -980,9 +1301,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 PA_LOG_INFO(TAG, "pose ended - dome resync");
             }
             // The resync owns the dome's panels now, one motion owner at a time.
-            gestureEnd("dome resync");
-            domeQueueTx("@0T1");
-            domeQueueTx("@0P1");
+            generatedEnd("dome resync");
+            resyncDomeVisuals();
             seqEngineClearLatches(engine);
         }
         prevDomeConn = domeConn;
@@ -1031,7 +1351,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     PA_LOG_INFO(TAG, "pose ended - back to centre took over");
                     sequencePoseEnd(&poseRun);
                 }
-                gestureEnd("back to centre took over");
+                generatedEnd("back to centre took over");
                 // A running sequence ends here, the way a web stop ends one: a
                 // sequence starting ends a sweep for the same reason (above),
                 // and whichever came later is the operator's word. Left
@@ -1054,9 +1374,17 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 PA_LOG_INFO(TAG, "[%s] back to centre - %u rows, at least %u ms apart",
                             commandSourceToString(centreSrc),
                             (unsigned)configCacheServoOutputCount(),
-                            (unsigned)SEQ_CADENCE_FLOOR_MS);
+                            (unsigned)configCacheCadenceFloorMs());
             }
         }
+
+        // A flutter asked for by Output (a body-owned `:OFnn`), taken after the
+        // halts, the Stop and a back to centre press above have had their say.
+        flutterTakeRequest(now, estopActive    ? "estop active"
+                                : sleepActive  ? "sleep mode active"
+                                : centreRun.active ? "back to centre is running"
+                                : poseRun.active   ? "a pose is being reached"
+                                                   : nullptr);
 
         // One row per tick, and only when its turn is due. One servo actuating
         // at a time is the rail rule the Cadence Floor holds; a row the sweep
@@ -1082,9 +1410,20 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
+        // The pace the Gestures and the flutters share lives on between runs,
+        // so its due time is kept recent (sequencePaceKeepRecent()).
+        sequencePaceKeepRecent(&gestureRun.dueMs, now);
+
         // The Gestures a sequence fired, one item per tick when it is due.
         if (sequenceGestureActive(gestureRun)) {
             gestureOneItem(now);
+        }
+
+        // The flutters it fired, one leg per tick when one may go. After the
+        // Gestures on purpose: when the pace opens with both waiting, the
+        // Gesture's move, which its spread placed in time, goes first.
+        if (sequenceFlutterActive(flutterRun)) {
+            flutterOneLeg(now);
         }
 
         // SAFETY INVARIANT: Suppression window behavior.
@@ -1094,12 +1433,13 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         if (seqEngineActive(engine)) {
             SeqAction act;
             while (seqEnginePeek(engine, now, esp_random, act)) {
-                // The run has reached its end step: the Gestures it fired end
-                // here, before terminal cleanup, so cleanup is the last thing
-                // the run moves (#438; sequenceGestureNext() holds the same
-                // line by time).
-                if (seqEngineFinishing(engine) && sequenceGestureActive(gestureRun)) {
-                    gestureEnd("end step");
+                // The run has reached its end step: the Gestures and the
+                // flutters it fired end here, before terminal cleanup, so
+                // cleanup is the last thing the run moves (#438, #453;
+                // sequenceGestureNext() holds the same line by time).
+                if (seqEngineFinishing(engine) &&
+                    (sequenceGestureActive(gestureRun) || sequenceFlutterActive(flutterRun))) {
+                    generatedEnd("end step");
                 }
                 if (!dispatchAction(act)) {
                     if (!retryLogged) {
@@ -1117,8 +1457,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
             if (!seqEngineActive(engine)) {
                 // An end with no cleanup to send finishes inside one peek;
-                // its Gestures end here all the same.
-                gestureEnd("end step");
+                // its Gestures and flutters end here all the same.
+                generatedEnd("end step");
                 PA_LOG_INFO(TAG, "end %s", activeName);
                 // No-op if an abort path already finalized this run (guarded on
                 // RUNNING); otherwise records the normal completion.
@@ -1143,11 +1483,12 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         }
 
         // Compute wait timeout for next iteration: 10 ms if a sequence is
-        // active, a resync close is pending, a bulk centre is sweeping or a
-        // pose is being reached;
+        // active, a resync close is pending, a bulk centre is sweeping, a
+        // pose is being reached, or a Gesture or a flutter is being performed;
         // 250 ms otherwise (task blocks on request queue, wakes on TWDT and edges).
         waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != SEQ_RESYNC_CLOSE_NONE,
                                              centreRun.active || poseRun.active ||
-                                                 sequenceGestureActive(gestureRun));
+                                                 sequenceGestureActive(gestureRun) ||
+                                                 sequenceFlutterActive(flutterRun));
     }
 }

@@ -41,7 +41,7 @@ calibrated servo execution; the body commands the intent.
 |---|---|
 | `:OP<target>` | open a panel or group |
 | `:CL<target>` | close a panel or group |
-| `:OF<target>` | one-shot flutter effect (panel state after is undefined -- requires explicit close) |
+| `:OF<target>` | one-shot flutter effect; the dome ends it with the panel closed |
 
 **Allowed targets:**
 
@@ -56,18 +56,11 @@ calibrated servo execution; the body commands the intent.
 Do not use numeric IDs 08-10 or 12 as pie panel references. AstroPixelsPlus maps those
 compatibility IDs to a mixed set; use the explicit `P1`-`P6` aliases instead.
 
-### `:OF` cleanup rule
+### A flutter needs no close
 
-`:OF` flutter does not leave a defined final panel state. Any branch that issues
-`:OF<target>` must later issue a matching close in the same branch:
-
-| Flutter | Valid close |
-|---|---|
-| `:OF01`-`:OF04`, `:OF07`, `:OF11`, `:OF13` (ring) | `:CL<same>`, `:CL15`, or `:CL00` |
-| `:OFP1`-`:OFP6` (pie) | `:CLP<same>`, `:CL14`, or `:CL00` |
-| `:OF14` (pie group) | `:CL14` or `:CL00` |
-| `:OF15` (ring group) | `:CL15` or `:CL00` |
-| `:OF00` (all) | `:CL00` |
+`:OF` ends with the panel closed: the dome's own flutter finishes on the closed
+end. A branch that issues `:OF<target>` owes no `:CL` after it, and Protocol
+Check asks for none (ADR 0008 and ADR 0049, amended 2026-10-02).
 
 `:OP` needs no same-branch close on a ring panel: terminal and abort cleanup close those one
 at a time. A pie opened with `:OP` stays open unless the branch closes it.
@@ -128,6 +121,13 @@ what it does in the same three words a dome panel already uses:
   routine. A value below 5% is *floored* to 5% rather than refused, because the
   model has no way to mean "does not move".
 - `flutterMs`: how long a flutter goes on, 50..60000. Only a flutter carries it.
+  The part swings between its closed end and `howFar`, each swing at the
+  Servo Output's own speed, and is back on its closed end when the time is up.
+  The rest of the sequence keeps its timing while it swings. A later step that
+  moves the same part ends the flutter. Two parts fluttering together take
+  turns, one whole swing each, at least the Cadence Floor apart. A flutter is
+  over by the end step, however long it says it lasts: a swing that would not
+  be back by then does not start.
 
 Speed, acceleration and easing are **not** on the step. They live on the Servo
 Output and apply to every use of that part, so your choreography travels between
@@ -140,8 +140,8 @@ re-authored.
 
 **The body undoes nothing.** A part left open when the sequence ends stays open:
 write the close as a step, exactly as you already do for pie panels. A flutter
-ends *open* and requires a later `close` of the same part in the same branch --
-the same rule `:OF` carries on the dome.
+is the exception that needs none: it ends *closed*, the same as `:OF` on the
+dome.
 
 In Factory Sequences, use the
 `SEQ_BODY(t, part, shape, howFar, flutterMs)` macro.
@@ -223,8 +223,10 @@ A `gesture` step spreads one shape across a **set** of Parts (ADR 0046):
   `alternate` or `pulse`. The dome orders its own panels and keeps its own
   speed. Any other pair still saves, and the Rehearsal says the dome does
   nothing with it.
-- A flutter with `together` or `wave` owes a later close Gesture over the same
-  set.
+- A flutter Gesture flutters each member for `flutterMs`, or for one step when
+  it states none, and owes no close after it: every member ends closed. Where
+  the spread sends a member back (`chase`, `alternate`, `pulse`), that close
+  ends its flutter.
 - A Gesture stops at the end step, mid-pass if it has to: nothing it would
   move at or after the end is sent, and the Rehearsal says when a pass is cut
   short.
@@ -290,14 +292,11 @@ Sequences the effect class is *inferred* by Protocol Check from each command, so
 correct-by-construction; in Factory tables you tag the first activating step explicitly
 (`FX_PANEL`, `FX_LOGIC_PSI`, `FX_HOLO`, `FX_AUDIO`).
 
-The `:OF` cleanup rule is the one exception where Protocol Check requires explicit same-branch
-close authorship. Auto-reset is a safety net, not a substitute for authored flutter cleanup.
-
 **Body parts are outside all of this.** The engine stamps no effect class on a
 `body` step and schedules nothing for it at the end of a run: a door left open
 stays open, because the Servo Output's own release schedule already stops it
 being held and the body knows exactly where the part arrived. The close is a step
-you write. A body flutter owes one in the same branch, same as `:OF`.
+you write. A body flutter needs none: it ends closed, same as `:OF`.
 
 ## Authoring a Factory Sequence (C++)
 
@@ -373,11 +372,10 @@ the format cannot express a bypass for.
 | branch | `<=96` steps; ends with explicit `end`; `t` non-decreasing outside loop bodies |
 | `:OP`/`:CL`/`:OF` | target must be in the allowed set (see Panel intent vocabulary) |
 | `:SM` | **rejected** -- diagnostic only, not allowed in sequences |
-| `:OF` | same-branch explicit close required for every flutter target |
 | `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
 | `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |
-| `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape; every flutter needs a later `close` of the same part in the same branch |
+| `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |
 | capacity | 16 files max. Per-file size and free-space floor depend on the controller board: **12 KB / 24 KB** on artoo-esp32, **24 KB / 48 KB** on the FireBeetle 2 (ESP32-P4). Only the larger board can hold a sequence that uses all 96+96 steps |

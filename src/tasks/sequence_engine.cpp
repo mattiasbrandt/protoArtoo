@@ -131,8 +131,10 @@ static void setAllRingOpen(SeqEngineState& st, bool open) {
 }
 
 // Update the per-run net-open RING mask from a dispatched dome command. Only
-// :OP/:CL change logical open state; :OF leaves it uncertain (no mark  --  the
-// authored branch must clean up its own flutters). Pie targets (14 group, P*
+// :OP/:CL change logical open state. :OF changes nothing here: the dome ends a
+// flutter closed (ADR 0049, amended 2026-10-02), and a panel an earlier :OP
+// marked open stays marked, so terminal cleanup still closes it -- a close too
+// many is harmless, a close missed is not. Pie targets (14 group, P*
 // individual) do not affect the ring mask.
 static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
     if (cmd == nullptr || cmd[0] != ':') {
@@ -286,9 +288,9 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         addFinal(st, SEQ_ACT_DOME_CMD, "DV:RESET_VISUALS");
     }
     if (st.activeFx & FX_DOME_SEQUENCE) {
-        addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
-        addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
-        addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
+        for (const char* reset : SEQ_DOME_VISUAL_RESETS) {
+            addFinal(st, SEQ_ACT_DOME_CMD, reset);
+        }
         // A :SE## dome-native sequence manages its own panels; ring cleanup
         // closes only the ring panels the body itself left open (none for a pure
         // :SE## step). Never a group close.
@@ -399,6 +401,15 @@ static const char* targetName(uint8_t target) {
     return "00";
 }
 
+// The absolute ms this run's end step falls at, or 0 when its branch has none.
+// What a step hands on when the Coordinator performs it on its own cursor, past
+// the step that fired it: a Gesture and a flutter both stop there.
+static uint32_t runEndAtMs(const SeqEngineState& st) {
+    return (st.stepCount > 0 && st.steps[st.stepCount - 1].type == STEP_END)
+               ? st.startMs + st.steps[st.stepCount - 1].tMs
+               : 0;
+}
+
 // Resolve the step under the cursor into a pending action with an absolute
 // fire time. Returns false for step types that emit nothing (skipped).
 static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
@@ -454,6 +465,13 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.bodyShape = (uint8_t)seqBodyShape(step.params);
             a.bodyHowFar = seqBodyHowFar(step.params);
             a.bodyFlutterMs = step.params.flutterMs;
+            // A flutter is performed on the Coordinator's cursor and must be
+            // closed again before this run's end step, where it is cut and
+            // nothing is commanded: so it is told where the run ends, as a
+            // Gesture is (#453).
+            if (a.bodyShape == (uint8_t)BODY_SHAPE_FLUTTER) {
+                a.domeDurationMs = runEndAtMs(st);
+            }
             break;
         case STEP_GESTURE:
             // Handed on whole. The payload rides along so a log line and the
@@ -466,9 +484,7 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             // end and past terminal cleanup.
             a.kind = SEQ_ACT_GESTURE;
             a.gesture = &step;
-            a.domeDurationMs = (st.stepCount > 0 && st.steps[st.stepCount - 1].type == STEP_END)
-                                   ? st.startMs + st.steps[st.stepCount - 1].tMs
-                                   : 0;
+            a.domeDurationMs = runEndAtMs(st);
             setPayload(a, step.payload);
             break;
         case STEP_SEQUENCE:

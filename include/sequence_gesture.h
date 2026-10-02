@@ -76,7 +76,8 @@
 //   pulse      every member on the step, and back on the half step
 //
 // "Goes back" is the shape's undo: an open closes, a close opens, and a
-// flutter closes, because a flutter ends open and owes a close.
+// flutter closes -- the close ends a flutter still going, and one already over
+// ended closed anyway (ADR 0049, amended 2026-10-02).
 // -----------------------------------------------------------------------------
 enum SeqGestureSpread : uint8_t {
     GESTURE_SPREAD_TOGETHER  = 0,
@@ -191,6 +192,12 @@ inline uint8_t  seqGestureStart(const SeqStepParams& p)     { return p.audioCate
 inline uint8_t  seqGestureEasing(const SeqStepParams& p)    { return p.audioFallbackSlot; }
 inline uint16_t seqGestureStepMs(const SeqStepParams& p) {
     return p.moveMs != 0 ? p.moveMs : SEQ_GESTURE_STEP_DEFAULT_MS;
+}
+// How long each member of a flutter Gesture flutters: what the Gesture states,
+// or one step of its own pace when it states none -- the step is the Gesture's
+// unit of time, and on it a member's move is over before the next step's.
+inline uint16_t seqGestureFlutterMs(const SeqStepParams& p) {
+    return p.flutterMs != 0 ? p.flutterMs : seqGestureStepMs(p);
 }
 inline uint16_t seqGestureSpeedMs(const SeqStepParams& p)   { return p.jitterMs; }
 inline uint16_t seqGestureRepeatMs(const SeqStepParams& p)  { return p.periodMs; }
@@ -369,13 +376,6 @@ inline SeqBodyShape seqGestureMoveShape(SeqBodyShape shape, bool undo) {
     return (shape == BODY_SHAPE_CLOSE) ? BODY_SHAPE_OPEN : BODY_SHAPE_CLOSE;
 }
 
-// Whether a pass leaves the members as the shape left them. A flutter that
-// does is a flutter that owes a close; the spreads that undo their own move
-// end every member back where it started.
-inline bool seqGestureSpreadLeavesShape(uint8_t spread) {
-    return spread == GESTURE_SPREAD_TOGETHER || spread == GESTURE_SPREAD_WAVE;
-}
-
 // How many passes the Gesture makes: one, or one per repeat while the pass
 // start is inside the extent -- the loop's own arithmetic (seqEnginePeek()).
 inline uint32_t seqGesturePasses(const SeqStepParams& p) {
@@ -527,6 +527,11 @@ inline bool seqGestureDomeCommand(const SeqStep& step, char* out, size_t outLen)
 // member nothing drives is reported at dispatch and passed over, costing no
 // time; the rest performs.
 //
+// A member's FLUTTER is not one move, so it is not sent from here: when the
+// spread puts it, it is handed to the flutter run with the Gesture's flutter
+// length, speed and easing (include/sequence_flutter.h, #453), which performs
+// the legs on this same pace and ends the member closed.
+//
 // A DOME Gesture is its one `$` command, sent when each pass is due; the dome
 // performs it. Nothing about the dome's motion is paced here, because it is
 // the dome's (Catalog Authority).
@@ -549,6 +554,7 @@ struct SeqGestureRunEntry {
     uint8_t  howFar;      // already resolved through seqBodyHowFar()
     uint16_t speedMs;     // a full throw's time for its moves; 0 = each Output's own
     uint8_t  easing;      // SeqGestureEasing (ServoEasing + 1); 0 = each Output's own
+    uint16_t flutterMs;   // how long each member flutters, already resolved (seqGestureFlutterMs())
     uint16_t stepMs;
     uint16_t repeatMs;
     uint32_t passes;
@@ -605,6 +611,7 @@ inline bool sequenceGestureStart(SeqGestureRun* run, const SeqStep& step, uint32
     e.howFar = seqBodyHowFar(step.params);
     e.speedMs = seqGestureSpeedMs(step.params);
     e.easing = seqGestureEasing(step.params);
+    e.flutterMs = seqGestureFlutterMs(step.params);
     e.stepMs = seqGestureStepMs(step.params);
     e.repeatMs = seqGestureRepeatMs(step.params);
     e.passes = seqGesturePassesBefore(step.params, nowMs, runEndAtMs);
@@ -625,6 +632,8 @@ struct SeqGestureNext {
     uint8_t      howFar;
     uint16_t     speedMs;  // the Gesture's override of the Output's throw time, or 0
     uint8_t      easing;   // the Gesture's override of the Output's easing, or 0
+    uint16_t     flutterMs;  // a flutter move's length
+    uint32_t     endAtMs;    // when the run that fired the Gesture ends; 0 = none
 };
 
 inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
@@ -639,6 +648,11 @@ inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
 // the Output the last body move started (run->awaitOutput) as moving, and the
 // spacing after it must have run. The earliest-due item goes first.
 //
+// `bodyHeld` holds every body move back whatever the pace says: the
+// Coordinator sets it while a flutter's Part is out, so the back leg that
+// closes it goes before anything else moves (include/sequence_flutter.h). A
+// dome pass is not held; the dome's motion is the dome's.
+//
 // NOTHING GOES OUT AT OR AFTER THE FIRING RUN'S END STEP (#438). A Gesture
 // whose run has reached its end is over, mid-pass or not: terminal cleanup is
 // the last thing the run moves, and the Coordinator clears suppression right
@@ -646,13 +660,13 @@ inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
 // and a move the pace pushed past the end is never sent. The Rehearsal says
 // when a pass cannot fit before the end (gesture-cut).
 inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaitedMoving,
-                                SeqGestureNext* out) {
+                                SeqGestureNext* out, bool bodyHeld = false) {
     if (run == nullptr || out == nullptr) return false;
     for (SeqGestureRunEntry& e : run->g) {
         if (e.active && e.endAtMs != 0 && (int32_t)(nowMs - e.endAtMs) >= 0) e.active = false;
     }
-    const bool bodyMayGo = sequencePaceAwaitDone(&run->awaitOutput, awaitedMoving) &&
-                           (int32_t)(nowMs - run->dueMs) >= 0;
+    const bool bodyMayGo =
+        !bodyHeld && sequencePaceOpen(run->dueMs, &run->awaitOutput, awaitedMoving, nowMs);
     int8_t best = -1;
     uint32_t bestAt = 0;
     for (uint8_t i = 0; i < SEQ_GESTURE_RUNS_MAX; ++i) {
@@ -672,6 +686,8 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
     out->howFar = e.howFar;
     out->speedMs = e.speedMs;
     out->easing = e.easing;
+    out->flutterMs = e.flutterMs;
+    out->endAtMs = e.endAtMs;
     if (!e.dome) {
         const SeqGestureMove m = seqGesturePassMove(e.spread, e.n, e.stepMs, e.k);
         out->part = e.members[m.member];
@@ -683,12 +699,36 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
     return true;
 }
 
+// Whether a body Gesture has a move whose moment has come and that the pace is
+// still holding back. A flutter asks, and stands aside for it
+// (sequenceFlutterMayGo(), include/sequence_flutter.h).
+inline bool sequenceGestureBodyDue(const SeqGestureRun& run, uint32_t nowMs) {
+    for (const SeqGestureRunEntry& e : run.g) {
+        if (e.active && !e.dome && (int32_t)(nowMs - sequenceGestureDueAt(e)) >= 0) return true;
+    }
+    return false;
+}
+
+// The cursor moves past the item just dealt with: the next move of the pass,
+// or the next pass, or the Gesture is over.
+inline void sequenceGestureAdvance(SeqGestureRunEntry& e) {
+    if (!e.dome) {
+        e.k++;
+        if (e.k < seqGesturePassMoves(e.spread, e.n)) return;
+        e.k = 0;
+    }
+    e.pass++;
+    if (e.pass >= e.passes) e.active = false;
+}
+
 // The item sequenceGestureNext() handed out has been dealt with at nowMs.
 // `started` is whether a body move reached ServoTask; a member nothing drives
 // was reported and passed over and holds nothing off. A dome pass holds no
-// body move off: the dome's motion is the dome's.
+// body move off: the dome's motion is the dome's. `floorMs` is the Cadence
+// Floor in use.
 inline void sequenceGestureDone(SeqGestureRun* run, const SeqGestureNext& next, uint32_t nowMs,
-                                bool started, uint16_t throwMs, ServoOutputAddress output) {
+                                bool started, uint16_t throwMs, ServoOutputAddress output,
+                                uint32_t floorMs) {
     if (run == nullptr || next.entry >= SEQ_GESTURE_RUNS_MAX) return;
     SeqGestureRunEntry& e = run->g[next.entry];
     if (!e.active) return;
@@ -696,11 +736,20 @@ inline void sequenceGestureDone(SeqGestureRun* run, const SeqGestureNext& next, 
     else run->skipped++;
     if (!e.dome) {
         sequencePaceMotion(&run->dueMs, &run->awaitOutput, nowMs, started, true, true, throwMs,
-                           output);
-        e.k++;
-        if (e.k < seqGesturePassMoves(e.spread, e.n)) return;
-        e.k = 0;
+                           output, floorMs);
     }
-    e.pass++;
-    if (e.pass >= e.passes) e.active = false;
+    sequenceGestureAdvance(e);
+}
+
+// A member's flutter was handed to the flutter run (include/sequence_flutter.h),
+// or reported as one nothing can move. Handing it over starts no motion, so
+// the pace is left as it stands: the flutter's legs keep it themselves.
+inline void sequenceGestureFlutterHandedOver(SeqGestureRun* run, const SeqGestureNext& next,
+                                             bool taken) {
+    if (run == nullptr || next.entry >= SEQ_GESTURE_RUNS_MAX) return;
+    SeqGestureRunEntry& e = run->g[next.entry];
+    if (!e.active) return;
+    if (taken) run->sent++;
+    else run->skipped++;
+    sequenceGestureAdvance(e);
 }

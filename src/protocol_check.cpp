@@ -142,18 +142,9 @@ static bool charsetOk(const char* s) {
     return true;
 }
 
-enum PanelTargetGroup : uint8_t {
-    PANEL_TARGET_NONE = 0,
-    PANEL_TARGET_RING,
-    PANEL_TARGET_PIE,
-    PANEL_TARGET_ALL,
-};
-
 struct PanelIntent {
     bool valid;
-    char action;  // O=open, C=close, F=flutter
-    PanelTargetGroup group;
-    char target[3];
+    char action;  // P=open, L=close, F=flutter: the command's third character
 };
 
 static bool isAllowedRingTarget(const char* t) {
@@ -168,7 +159,7 @@ static bool isAllowedPieTarget(const char* t) {
 }
 
 static PanelIntent parsePanelIntent(const char* cmd) {
-    PanelIntent pi = { false, 0, PANEL_TARGET_NONE, "" };
+    PanelIntent pi = { false, 0 };
     if (cmd == nullptr || cmd[0] != ':' ||
         (strncmp(cmd + 1, "OP", 2) != 0 &&
          strncmp(cmd + 1, "CL", 2) != 0 &&
@@ -182,46 +173,10 @@ static PanelIntent parsePanelIntent(const char* cmd) {
     if (len != 2) {
         return pi;
     }
-    strncpy(pi.target, t, sizeof(pi.target) - 1);
-    pi.target[sizeof(pi.target) - 1] = '\0';
-
-    if (strcmp(t, "00") == 0) {
-        pi.group = PANEL_TARGET_ALL;
-        pi.valid = true;
-    } else if (strcmp(t, "14") == 0) {
-        pi.group = PANEL_TARGET_PIE;
-        pi.valid = true;
-    } else if (strcmp(t, "15") == 0) {
-        pi.group = PANEL_TARGET_RING;
-        pi.valid = true;
-    } else if (isAllowedRingTarget(t)) {
-        pi.group = PANEL_TARGET_RING;
-        pi.valid = true;
-    } else if (isAllowedPieTarget(t)) {
-        pi.group = PANEL_TARGET_PIE;
-        pi.valid = true;
-    }
+    // The three group targets (all, pies, ring), or one panel of either kind.
+    pi.valid = strcmp(t, "00") == 0 || strcmp(t, "14") == 0 || strcmp(t, "15") == 0 ||
+               isAllowedRingTarget(t) || isAllowedPieTarget(t);
     return pi;
-}
-
-static bool panelCloseCleansFlutter(const PanelIntent& flutter,
-                                    const PanelIntent& close) {
-    if (!flutter.valid || !close.valid || close.action != 'L') {
-        return false;
-    }
-    if (strcmp(close.target, "00") == 0) {
-        return true;
-    }
-    if (strcmp(flutter.target, close.target) == 0) {
-        return true;
-    }
-    if (flutter.group == PANEL_TARGET_PIE && strcmp(close.target, "14") == 0) {
-        return true;
-    }
-    if (flutter.group == PANEL_TARGET_RING && strcmp(close.target, "15") == 0) {
-        return true;
-    }
-    return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -953,8 +908,9 @@ ProtocolCheckResult protocolCheckTempo(const SeqTempo& tempo) {
 // -----------------------------------------------------------------------------
 // Gesture grammar (ADR 0046) -- form only
 //
-// Known words, known Parts on one half, numbers inside their bounds, and a
-// flutter that still owes its close. Whether the connected dome has a command
+// Known words, known Parts on one half, and numbers inside their bounds. A
+// flutter owes no close after it: it ends closed, on the dome and on the body
+// (ADR 0049, amended 2026-10-02; #453). Whether the connected dome has a command
 // for the (shape, spread) pair, whether a Part is wired, and whether the pace
 // keeps up with the Cadence Floor are the Rehearsal's and never refuse a save
 // (ADR 0044) -- a pair the dome cannot perform SAVES.
@@ -970,8 +926,7 @@ struct GestureFault {
 // protocolCheckBranch() into the formatter pcFailAt() calls, and a check that
 // formatted its own error would put its frame under that formatter too. So
 // the caller formats, from the same frame it always has.
-static __attribute__((noinline)) GestureFault checkGesture(uint8_t i, const SeqStep* steps, uint8_t count) {
-    const SeqStep& s = steps[i];
+static __attribute__((noinline)) GestureFault checkGesture(const SeqStep& s) {
     const SeqStepParams& p = s.params;
     if (droidPartSetFind(s.payload) == nullptr) {
         // An explicit list: every entry a known Part, none twice, all on one
@@ -1031,22 +986,6 @@ static __attribute__((noinline)) GestureFault checkGesture(uint8_t i, const SeqS
         if (p.flutterMs != 0 && (p.flutterMs < PC_BODY_FLUTTER_MS_MIN || p.flutterMs > PC_BODY_FLUTTER_MS_MAX)) {
             return {"flutterMs", "flutter duration out of range (50..60000)"};
         }
-        // A flutter ends open and owes a close (ADR 0049), unless the spread
-        // brings every member back itself. The close it owes is a later close
-        // Gesture over the same Parts, said the same way.
-        if (seqGestureSpreadLeavesShape(seqGestureSpread(p))) {
-            bool closedLater = false;
-            for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
-                if (steps[j].type == STEP_GESTURE && seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
-                    strcmp(steps[j].payload, s.payload) == 0) {
-                    closedLater = true;
-                    break;
-                }
-            }
-            if (!closedLater) {
-                return {"shape", "flutter needs a later close of the same parts"};
-            }
-        }
     } else if (p.flutterMs != 0) {
         return {"flutterMs", "only a flutter carries a duration"};
     }
@@ -1103,8 +1042,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 
     // Per-step validation + effect-class stamping + monotonic t (top level only).
     uint32_t prevT = 0;
-    PanelIntent pendingFlutter[PC_MAX_STEPS];
-    uint8_t pendingFlutterCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         SeqStep& s = steps[i];
 
@@ -1131,23 +1068,9 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 if (strncmp(s.payload, ":SE", 3) == 0 && inBody[i]) {
                     return pcFailAt(label, i, "cmd", ":SE not allowed inside loops");
                 }
-                const PanelIntent panel = parsePanelIntent(s.payload);
-                if (panel.valid) {
-                    if (panel.action == 'F') {
-                        if (pendingFlutterCount >= PC_MAX_STEPS) {
-                            return pcFailAt(label, i, "cmd", "too many panel flutter steps");
-                        }
-                        pendingFlutter[pendingFlutterCount++] = panel;
-                    } else if (panel.action == 'L') {
-                        uint8_t write = 0;
-                        for (uint8_t p = 0; p < pendingFlutterCount; ++p) {
-                            if (!panelCloseCleansFlutter(pendingFlutter[p], panel)) {
-                                pendingFlutter[write++] = pendingFlutter[p];
-                            }
-                        }
-                        pendingFlutterCount = write;
-                    }
-                }
+                // A panel flutter (:OF) owes nothing after it: the dome ends a
+                // flutter closed, so there is no later close to look for
+                // (ADR 0008 and ADR 0049, both amended 2026-10-02; #453).
                 s.effectClass = fx;
                 break;
             }
@@ -1234,42 +1157,25 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                         return pcFailAt(label, i, "flutterMs",
                                       "flutter duration out of range (50..60000)");
                     }
-                    // A body flutter ends OPEN and owes a later close in the same
-                    // branch -- the same rule the dome flutter above carries,
-                    // because one word means one thing across the droid
-                    // (ADR 0049). Answered by looking forward from here rather
-                    // than by carrying a pending list: there is no body
-                    // counterpart to the dome's group close, so the only question
-                    // is whether a later step closes THIS Part, and a list of
-                    // ninety-six owed flutters would put 96 B on a frame that
-                    // already carries the deepest chain on the Sequence
-                    // Coordinator's task (ADR 0040).
-                    bool closedLater = false;
-                    for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
-                        if (steps[j].type == STEP_BODY &&
-                            seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
-                            strcmp(steps[j].payload, s.payload) == 0) {
-                            closedLater = true;
-                            break;
-                        }
-                    }
-                    if (!closedLater) {
-                        return pcFailAt(label, i, "shape",
-                                      "flutter needs a later close of the same Part");
-                    }
+                    // Its length is all a flutter is checked for. It ends
+                    // CLOSED, the Sequence Coordinator sees to that, so no
+                    // later step has to close the Part -- the same as the
+                    // dome flutter above, because one word means one thing
+                    // across the droid (ADR 0049, amended 2026-10-02; #453).
                 } else if (p.flutterMs != 0) {
                     return pcFailAt(label, i, "flutterMs",
                                   "only a flutter carries a duration");
                 }
                 // FX_NONE is the decision (ADR 0049): the engine undoes nothing a
                 // body step did, so there is no persistent state for terminal
-                // cleanup to reset. A Part left open stays open, and saying so is
-                // a Rehearsal Note rather than anything this gate acts on.
+                // cleanup to reset. A Part an OPEN left open stays open, and
+                // saying so is a Rehearsal Note rather than anything this gate
+                // acts on.
                 s.effectClass = FX_NONE;
                 break;
             }
             case STEP_GESTURE: {
-                const GestureFault fault = checkGesture(i, steps, count);
+                const GestureFault fault = checkGesture(s);
                 if (fault.field != nullptr) return pcFailAt(label, i, fault.field, fault.message);
                 // A dome Gesture moves dome panels, so terminal cleanup owes the
                 // ring the same staggered close any panel step earns; a body
@@ -1305,9 +1211,6 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             default:
                 return pcFailAt(label, i, "type", "unknown step type");
         }
-    }
-    if (pendingFlutterCount > 0) {
-        return pcFail(label, ":OF requires a later matching :CL in the same branch");
     }
     return pcOk();
 }

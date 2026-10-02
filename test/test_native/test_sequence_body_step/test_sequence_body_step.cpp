@@ -110,17 +110,18 @@ void test_reversed_pair_travels_the_other_way() {
     TEST_ASSERT_EQUAL_UINT16(1900, closing.targetUs);
 }
 
-// A flutter ends open, so it resolves where an open of the same how-far does.
-void test_flutter_resolves_where_an_open_does() {
+// A flutter ends closed, so it resolves where a whole close does, whatever its
+// how-far (ADR 0049, amended 2026-10-02).
+void test_flutter_resolves_where_a_close_does() {
     const ServoOutputRow row = drivingRow("doorRR", 1900, 1100);
 
     const SeqBodyStepPlan flutter =
         sequenceBodyStepPlan(bodyAction("doorRR", BODY_SHAPE_FLUTTER, 70, 1200), &row);
-    const SeqBodyStepPlan opened =
-        sequenceBodyStepPlan(bodyAction("doorRR", BODY_SHAPE_OPEN, 70, 0), &row);
+    const SeqBodyStepPlan closed =
+        sequenceBodyStepPlan(bodyAction("doorRR", BODY_SHAPE_CLOSE, 100, 0), &row);
 
     TEST_ASSERT_TRUE(flutter.drive);
-    TEST_ASSERT_EQUAL_UINT16(opened.targetUs, flutter.targetUs);
+    TEST_ASSERT_EQUAL_UINT16(closed.targetUs, flutter.targetUs);
 }
 
 // Every door onto a row goes through the component clamp, this one included: an
@@ -211,7 +212,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_half_throw_is_the_same_place_for_either_shape);
     RUN_TEST(test_partial_travel_is_measured_against_this_parts_own_throw);
     RUN_TEST(test_reversed_pair_travels_the_other_way);
-    RUN_TEST(test_flutter_resolves_where_an_open_does);
+    RUN_TEST(test_flutter_resolves_where_a_close_does);
     RUN_TEST(test_the_rows_component_band_bounds_the_target);
 
     RUN_TEST(test_part_no_output_claims_reports_part_not_assigned);

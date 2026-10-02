@@ -103,6 +103,14 @@ enum SeqEffectClass : uint8_t {
                                // so short category vocalizations always ring out.
 };
 
+// The dome's whole visual reset: logics, PSIs and holos, one command each
+// (docs/dome-visual-presets.md names the three together as the body-owned
+// visual teardown). Sent where the body cannot say which visual families are
+// running: terminal cleanup of a dome-native :SE## sequence, and the dome
+// resync after an estop clears or the dome (re)connects. A family added here
+// reaches all of them.
+inline constexpr const char* const SEQ_DOME_VISUAL_RESETS[] = {"@0T1", "@0P1", "*ST00"};
+
 // -----------------------------------------------------------------------------
 // Random logical target sets.
 //   RING = P1,P2,P3,P4,P7,P11,P13
@@ -374,10 +382,12 @@ struct SeqAction {
     uint8_t       audioFallbackSlot;
     int8_t        domeSpeedPct;
     uint32_t      domeDurationMs;  // DOME_ROTATE: how long the turn runs.
-                                   // GESTURE: the absolute ms the end step of
+                                   // GESTURE, and a BODY_MOVE that is a
+                                   // flutter: the absolute ms the end step of
                                    // the run that fired it falls at, 0 when the
                                    // branch has none -- no move of the Gesture
-                                   // goes out at or after it (#438).
+                                   // goes out at or after it (#438), and a
+                                   // flutter is over by it (#453).
     // BODY_MOVE. Already resolved through seqBodyShape()/seqBodyHowFar(), so a
     // consumer reads a shape and a percentage rather than the two defaults.
     uint8_t       bodyShape;

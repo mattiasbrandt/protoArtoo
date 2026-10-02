@@ -59,6 +59,19 @@ the patch releases, whose notes live on their own GitHub Release.
   light block and the drawer has its lights, its mode, its color as swatches
   and how long it runs. A logic display can show a text instead, and a holo
   offers only the colors its effect takes.
+- **A body flutter shakes.** A flutter step swings its part between closed and
+  how far you set, for as long as the step says, and ends closed. It needs no
+  close after it, on the dome or on the body. The rest of the routine keeps
+  its timing while the part swings, and two parts fluttering together take
+  turns, one swing each. A flutter is over by the end of the routine. A flutter
+  across a set of body parts does the same for each part.
+- **Set the gap between servo starts.** The droid leaves 450 ms between servos
+  it starts itself: back to centre, the power-up pass, a pose, a move across a
+  set, a flutter. That number is now yours to set, 50 to 5000 ms, as
+  `cadenceFloorMs` on `POST /api/config` or `servo.config.cadence-floor` on
+  the Controller Console. Wiring shows the number the droid holds. 450 is the
+  dome's figure; nobody has measured the body's yet. Steps you wrote keep
+  their own timing.
 - **Put a body part in a sequence on its timeline.** Drag a door, an arm or a
   body light onto the timeline and it lands on its own lane, open for a
   second. Pick it and the drawer has how long it runs, how far it opens, and
@@ -135,7 +148,7 @@ the patch releases, whose notes live on their own GitHub Release.
   vanishing, so 23 commands the dome firmware already runs - `:SE50` to
   `:SE58`, `:OP06` to `:OP12` and more - work again. `:SE01` to `:SE09` fire
   the dome's panels, lights and holos as well as the body's half, and `:OF`
-  on a body arm opens it. Every command now answers what happened: done
+  on a body arm shakes it for two seconds and leaves it closed. Every command now answers what happened: done
   here, sent to the dome, or no and why. `docs/marcduino_commands.md` lists
   which commands the body answers.
 - **A servo lets go once it has got there.** On Servos, set how long a
@@ -516,6 +529,9 @@ the patch releases, whose notes live on their own GitHub Release.
   load a little slower, about a tenth of a second each.
 
 ### Fixed
+- **Clearing the estop resets the holos.** Clearing an estop, or the dome
+  coming back on the link, brought the logics and PSIs back and left the holos
+  running. They reset too now.
 - **Sequences no longer says "Nothing learned yet" while it is still loading.**
   Right after the droid starts, the page shows the waiting dots until your
   sequences arrive.

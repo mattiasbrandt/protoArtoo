@@ -168,9 +168,11 @@ void tearDown() {}
 // The regression: "operations type=<t>" typed as one line, through the real
 // parser and the real reconstruction function, must actually filter.
 // Catalog totals (docs/action-registry.yaml, confirmed against
-// test_console_catalog.cpp's exact-201 count): action 124, config 36,
-// event 15, status 25. Config was 35 before #225 added
-// system.config.log-level, and 34 before #227 added wifi.config.settings.
+// test_console_catalog.cpp's exact-202 count): action 126, config 36,
+// event 15, status 25. Config was 35 before #453 added
+// servo.config.cadence-floor: #225 (system.config.log-level) and #227
+// (wifi.config.settings) had taken it to 36, and #413 retired
+// aux.config.led-pin.
 // Action was 128 and status 14 before #221's remainder reclassified
 // dome.api.get-sequence-last-run/-list-sequences/-list-builtin-sequences
 // from type: action to type: status (the only way to route them through
@@ -235,7 +237,7 @@ void test_bare_operations_still_lists_everything_through_the_real_adapter_path()
     TEST_ASSERT_EQUAL_INT(1, g_beginCount);
     TEST_ASSERT_EQUAL_INT(1, g_endCount);
     TEST_ASSERT_EQUAL_INT(0, g_resultCount);
-    TEST_ASSERT_EQUAL_INT(201, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence; #413 retired aux.config.led-pin
+    TEST_ASSERT_EQUAL_INT(202, g_itemCount);  // #347 added servo.api.get-outputs, #363 servo.action.nudge, #364 servo.action.hold and servo.action.release, #365 servo.action.centre-all, #352 servo.action.travel, #440 dome.action.pose-sequence, #453 servo.config.cadence-floor; #413 retired aux.config.led-pin
 }
 
 // help <op> must still work through the same real path (the reconstruction

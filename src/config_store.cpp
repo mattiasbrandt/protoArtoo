@@ -21,6 +21,7 @@
 #include "output_wire.h"  // outputWireReleaseAfterMs() - the release a light never has
 #include "rc_action_dispatcher.h"  // RcAudioCategorySnapshot - configCacheReadRcActionContext()
 #include "rc_mapping.h"
+#include "sequence_bulk_centre.h"  // sequenceCadenceFloorInUse() - configCacheCadenceFloorMs()
 #include "servo_legacy_field_sets.h"  // the NVS keys the fixed sets left behind
 
 #include <cstring>
@@ -578,6 +579,13 @@ uint32_t configCacheSbusTimeoutMs() {
     const uint32_t timeoutMs = configCache.drive.sbusTimeoutMs;
     taskEXIT_CRITICAL(&configCacheMux);
     return timeoutMs;
+}
+
+uint32_t configCacheCadenceFloorMs() {
+    taskENTER_CRITICAL(&configCacheMux);
+    const uint32_t storedMs = configCache.system.cadence_floor_ms;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return sequenceCadenceFloorInUse(storedMs);
 }
 
 void configCacheReadWifi(WifiConfig* out) {

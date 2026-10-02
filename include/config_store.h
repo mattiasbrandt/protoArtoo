@@ -231,6 +231,13 @@ struct SystemConfig {
     // builder's statement of their product, kept on the droid so every browser
     // shows the same one.
     uint8_t rc_member;
+    // The Cadence Floor (CONTEXT.md): the least time, in ms, the Sequence
+    // Coordinator leaves between two body Outputs it starts itself. Its
+    // default is the dome's measured figure, standing in for the body's, which
+    // nobody has measured; include/sequence_bulk_centre.h says so at length.
+    // Read from the cache each time something is paced, so a saved value is
+    // the pace from the next move on.
+    uint16_t cadence_floor_ms;
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;
@@ -317,6 +324,9 @@ struct ConfigSnapshot {
 // after, because those two bytes sat in padding the members either side of
 // them already carried. A deletion is not automatically a shrink, and the
 // figure here is the compiler's rather than the arithmetic's.
+//
+// #453 added SystemConfig.cadence_floor_ms, the Cadence Floor, and the number
+// did NOT move either: two bytes, in the padding after rc_member. Still 916 B.
 //
 // A field addition that moves the number is a decision, not an accident: it
 // changes what every seam that crosses this struct costs, so re-measure the

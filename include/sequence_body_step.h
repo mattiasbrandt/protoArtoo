@@ -62,7 +62,11 @@ struct SeqBodyStepPlan {
 // own end, and a half throw puts both on the middle - which is the same
 // position, correctly, because half-open and half-closed are one place.
 //
-// A flutter resolves where an open does, because a flutter ENDS OPEN (ADR 0049).
+// A flutter resolves to the closed end, whatever its how-far, because a
+// flutter ENDS CLOSED (ADR 0049, amended 2026-10-02). This is where the flutter
+// leaves the Part, which is what a pose asks; the swing on the way there is
+// the flutter run's, as an open leg and a close leg
+// (include/sequence_flutter.h).
 //
 // The pair is directional and stays that way: a reversed linkage is
 // `open < close` and nothing else records it, so this reads the two fields as
@@ -73,6 +77,9 @@ struct SeqBodyStepPlan {
 // -----------------------------------------------------------------------------
 inline uint16_t seqBodyTargetUs(const ServoOutputRow& row, SeqBodyShape shape,
                                 uint8_t howFarPct) {
+    if (shape == BODY_SHAPE_FLUTTER) {
+        return servoOutputClampPulse(row, row.close_us);
+    }
     const int32_t span = (int32_t)row.open_us - (int32_t)row.close_us;
     // Round half away from zero, so a percentage of a reversed span rounds the
     // same distance as it would on a forward one.

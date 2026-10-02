@@ -445,6 +445,16 @@ struct RobotState {
     CommandSource poseRequest;
     uint32_t poseRequestAtMs;
     char poseRequestName[24];
+    // A flutter asked for by Output rather than by a sequence: a body-owned
+    // Marcduino `:OFnn` (#453). The same transient shape as poseRequest: the
+    // handler writes it under robotStateMux on whatever task it runs on, and
+    // SequenceDispatcherTask takes and clears it and performs the flutter. The
+    // Output is as the line names it, SERVO_OUTPUT_BOTH_ARMS for the 0/99
+    // broadcast, and the length is the line's handler's to say. A flag rather
+    // than a none-address, because a zeroed RobotState holds a real address.
+    bool flutterRequest;
+    ServoOutputAddress flutterRequestOutput;
+    uint16_t flutterRequestMs;
 };
 
 // -----------------------------------------------------------------------------

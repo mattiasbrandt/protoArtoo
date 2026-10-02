@@ -126,17 +126,17 @@ void test_the_cadence_floor_is_the_dome_figure_standing_in() {
 // Floored, never refused: a throw faster than the rail allows gets the rail's
 // pace and the sweep carries on, with no error anywhere.
 void test_a_throw_faster_than_the_floor_is_floored() {
-    TEST_ASSERT_EQUAL_UINT32(SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs(200));
-    TEST_ASSERT_EQUAL_UINT32(SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs(0));
-    TEST_ASSERT_EQUAL_UINT32(SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs(450));
+    TEST_ASSERT_EQUAL_UINT32(SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs(200, SEQ_CADENCE_FLOOR_MS));
+    TEST_ASSERT_EQUAL_UINT32(SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs(0, SEQ_CADENCE_FLOOR_MS));
+    TEST_ASSERT_EQUAL_UINT32(SEQ_CADENCE_FLOOR_MS, sequenceCadenceSpacingMs(450, SEQ_CADENCE_FLOOR_MS));
 }
 
 // An Output slower than the floor keeps its own pace: one servo actuating at a
 // time is the rail rule, so a two-second door holds the next Output off for two
 // seconds rather than for the floor.
 void test_a_throw_slower_than_the_floor_keeps_its_own_pace() {
-    TEST_ASSERT_EQUAL_UINT32(451, sequenceCadenceSpacingMs(451));
-    TEST_ASSERT_EQUAL_UINT32(2000, sequenceCadenceSpacingMs(2000));
+    TEST_ASSERT_EQUAL_UINT32(451, sequenceCadenceSpacingMs(451, SEQ_CADENCE_FLOOR_MS));
+    TEST_ASSERT_EQUAL_UINT32(2000, sequenceCadenceSpacingMs(2000, SEQ_CADENCE_FLOOR_MS));
 }
 
 // -----------------------------------------------------------------------------
@@ -164,7 +164,7 @@ void test_the_first_output_is_due_at_once() {
 void test_a_started_output_spaces_the_next_one() {
     SeqBulkCentreRun run = {};
     sequenceBulkCentreStart(&run, 5000, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 5, 5000, true, 300);
+    sequenceBulkCentreAdvance(&run, 5, 5000, true, 300, SEQ_CADENCE_FLOOR_MS);
 
     TEST_ASSERT_EQUAL_UINT8(1, run.centred);
     TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 5000 + SEQ_CADENCE_FLOOR_MS - 1));
@@ -176,7 +176,7 @@ void test_a_started_output_spaces_the_next_one() {
 void test_a_skipped_row_costs_the_sweep_no_time() {
     SeqBulkCentreRun run = {};
     sequenceBulkCentreStart(&run, 5000, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 5, 5000, false, 0);
+    sequenceBulkCentreAdvance(&run, 5, 5000, false, 0, SEQ_CADENCE_FLOOR_MS);
 
     TEST_ASSERT_EQUAL_UINT8(1, run.skipped);
     TEST_ASSERT_EQUAL_UINT8(0, run.centred);
@@ -188,10 +188,10 @@ void test_a_skipped_row_costs_the_sweep_no_time() {
 void test_the_run_ends_after_the_last_row() {
     SeqBulkCentreRun run = {};
     sequenceBulkCentreStart(&run, 0, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 3, 0, true, 100);
-    sequenceBulkCentreAdvance(&run, 3, 450, false, 0);
+    sequenceBulkCentreAdvance(&run, 3, 0, true, 100, SEQ_CADENCE_FLOOR_MS);
+    sequenceBulkCentreAdvance(&run, 3, 450, false, 0, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_TRUE(run.active);
-    sequenceBulkCentreAdvance(&run, 3, 450, true, 100);
+    sequenceBulkCentreAdvance(&run, 3, 450, true, 100, SEQ_CADENCE_FLOOR_MS);
 
     TEST_ASSERT_FALSE(run.active);
     TEST_ASSERT_EQUAL_UINT8(2, run.centred);
@@ -203,10 +203,10 @@ void test_the_run_ends_after_the_last_row() {
 void test_a_table_that_shrank_ends_the_run() {
     SeqBulkCentreRun run = {};
     sequenceBulkCentreStart(&run, 0, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 5, 0, true, 100);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 100, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_TRUE(run.active);
 
-    sequenceBulkCentreAdvance(&run, 1, 450, true, 100);
+    sequenceBulkCentreAdvance(&run, 1, 450, true, 100, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_FALSE(run.active);
 }
 
@@ -215,8 +215,8 @@ void test_a_table_that_shrank_ends_the_run() {
 void test_a_halt_ends_the_run_where_it_got_to() {
     SeqBulkCentreRun run = {};
     sequenceBulkCentreStart(&run, 0, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 9, 0, true, 100);
-    sequenceBulkCentreAdvance(&run, 9, 450, true, 100);
+    sequenceBulkCentreAdvance(&run, 9, 0, true, 100, SEQ_CADENCE_FLOOR_MS);
+    sequenceBulkCentreAdvance(&run, 9, 450, true, 100, SEQ_CADENCE_FLOOR_MS);
 
     sequenceBulkCentreEnd(&run);
 
@@ -226,7 +226,7 @@ void test_a_halt_ends_the_run_where_it_got_to() {
     TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 900));
     TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 90000));
     // And nothing advances a run that is over.
-    sequenceBulkCentreAdvance(&run, 9, 900, true, 100);
+    sequenceBulkCentreAdvance(&run, 9, 900, true, 100, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_EQUAL_UINT8(2, run.centred);
 }
 
@@ -235,7 +235,7 @@ void test_a_halt_ends_the_run_where_it_got_to() {
 void test_pressing_again_starts_over_rather_than_queueing() {
     SeqBulkCentreRun run = {};
     sequenceBulkCentreStart(&run, 0, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 9, 0, true, 2000);
+    sequenceBulkCentreAdvance(&run, 9, 0, true, 2000, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 100));
 
     sequenceBulkCentreStart(&run, 100, SRC_WEB_CONSOLE);
@@ -252,7 +252,7 @@ void test_a_run_across_a_millis_wrap_is_judged_on_elapsed_time() {
     SeqBulkCentreRun run = {};
     const uint32_t nearWrap = 0xFFFFFF00u;
     sequenceBulkCentreStart(&run, nearWrap, SRC_WEB_API);
-    sequenceBulkCentreAdvance(&run, 5, nearWrap, true, 100);
+    sequenceBulkCentreAdvance(&run, 5, nearWrap, true, 100, SEQ_CADENCE_FLOOR_MS);
 
     TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, (uint32_t)(nearWrap + 449)));
     TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, (uint32_t)(nearWrap + 450)));
@@ -287,7 +287,7 @@ void test_limp_commands_nothing_at_boot() {
     servoOutputRowDefaults(&fresh, SERVO_DRIVER_LEDC, LEDC_CH_ARM2, SERVO_COMP_MG996R);
     TEST_ASSERT_FALSE(sequenceBulkCentreRowStep(run, fresh).centre);
 
-    sequenceBulkCentreAdvance(&run, 5, 1000, step.centre, 800);
+    sequenceBulkCentreAdvance(&run, 5, 1000, step.centre, 800, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_EQUAL_UINT8(0, run.centred);
     TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, 1000));
 }
@@ -325,7 +325,7 @@ void test_a_press_centres_a_limp_row_the_boot_pass_leaves_alone() {
 // Cadence Floor, exactly as a press does.
 void test_the_boot_pass_is_spaced_by_the_cadence_floor() {
     SeqBulkCentreRun run = bootPass(2000);
-    sequenceBulkCentreAdvance(&run, 5, 2000, true, 200);
+    sequenceBulkCentreAdvance(&run, 5, 2000, true, 200, SEQ_CADENCE_FLOOR_MS);
 
     TEST_ASSERT_FALSE(sequenceBulkCentreRowDue(run, 2000 + SEQ_CADENCE_FLOOR_MS - 1));
     TEST_ASSERT_TRUE(sequenceBulkCentreRowDue(run, 2000 + SEQ_CADENCE_FLOOR_MS));
@@ -350,7 +350,7 @@ void test_nothing_moves_at_boot_when_estop_is_latched() {
 void test_an_estop_during_the_boot_pass_ends_it_and_owes_nothing() {
     SeqBulkCentreRun run = bootPass(0);
     sequenceBulkCentreAwait(&run, boardOutputAddress(2), /*release=*/true);
-    sequenceBulkCentreAdvance(&run, 5, 0, true, 800);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 800, SEQ_CADENCE_FLOOR_MS);
 
     sequenceBulkCentreEnd(&run);
 
@@ -370,7 +370,7 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
     const SeqBulkCentreRowStep step = sequenceBulkCentreRowStep(run, row);
     TEST_ASSERT_TRUE(step.releaseAfter);
     sequenceBulkCentreAwait(&run, boardOutputAddress(2), /*release=*/true);
-    sequenceBulkCentreAdvance(&run, 1, 0, true, row.throw_ms);
+    sequenceBulkCentreAdvance(&run, 1, 0, true, row.throw_ms, SEQ_CADENCE_FLOOR_MS);
     TEST_ASSERT_TRUE(run.active);  // the last row, but a release is still owed
 
     ServoCommandedPosition at = {};
@@ -393,7 +393,7 @@ void test_a_release_waits_for_an_overshoot_to_settle() {
 void test_a_release_is_never_earlier_than_the_floored_throw() {
     SeqBulkCentreRun run = bootPass(0);
     sequenceBulkCentreAwait(&run, boardOutputAddress(0), /*release=*/true);
-    sequenceBulkCentreAdvance(&run, 5, 0, true, 200);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 200, SEQ_CADENCE_FLOOR_MS);
 
     ServoCommandedPosition settled = {};
     settled.pulsing = true;
@@ -406,7 +406,7 @@ void test_a_release_is_never_earlier_than_the_floored_throw() {
 void test_a_release_on_an_output_with_no_pulse_is_dropped() {
     SeqBulkCentreRun run = bootPass(0);
     sequenceBulkCentreAwait(&run, boardOutputAddress(3), /*release=*/true);
-    sequenceBulkCentreAdvance(&run, 5, 0, true, 500);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, 500, SEQ_CADENCE_FLOOR_MS);
 
     const ServoCommandedPosition limp = {};
     TEST_ASSERT_EQUAL_UINT8(SEQ_AWAIT_DROP, sequenceBulkCentreAwaitCheck(run, 500, limp));
@@ -428,7 +428,7 @@ void test_the_next_row_waits_for_an_output_still_moving() {
     TEST_ASSERT_TRUE(step.centre);
     TEST_ASSERT_FALSE(step.releaseAfter);
     sequenceBulkCentreAwait(&run, sequenceBodyCentrePlan(row).output, step.releaseAfter);
-    sequenceBulkCentreAdvance(&run, 5, 0, true, row.throw_ms);
+    sequenceBulkCentreAdvance(&run, 5, 0, true, row.throw_ms, SEQ_CADENCE_FLOOR_MS);
 
     ServoCommandedPosition at = {};
     at.pulsing = true;
