@@ -249,7 +249,6 @@ test("non-RC component auto-save retains ordinary saved feedback", async () => {
 
   assert.match(env.element("feature-feedback").textContent, /^Saved at /);
   assert.doesNotMatch(env.element("feature-feedback").textContent, /restart/i);
-  assert.doesNotMatch(env.element("setup-save-summary").textContent, /restart/i);
 });
 
 test("RC component auto-save reports that controller restart is required", async () => {
@@ -277,7 +276,6 @@ test("RC component auto-save reports that controller restart is required", async
   await env.fireTimer(300);
 
   assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
 test("restart remains pending after a later non-RC component save", async () => {
@@ -310,7 +308,6 @@ test("restart remains pending after a later non-RC component save", async () => 
   await env.fireTimer(300);
 
   assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
 test("an RC change queued behind an in-flight save cannot lose the restart cue", async () => {
@@ -360,7 +357,6 @@ test("an RC change queued behind an in-flight save cannot lose the restart cue",
     "the first response must not overwrite the newer RC toggle before the queued request is built"
   );
   assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
 test("boot-active RC diagnostics override staged disabled component settings", async () => {
@@ -408,7 +404,7 @@ test("WARNING #1: restart cue must survive a later save failure", async () => {
   await env.fireTimer(300);
 
   // First save succeeds and sets restart pending
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
+  assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
 
   // Trigger a failed save attempt
   firstSaveSucceeds = false;
@@ -420,10 +416,11 @@ test("WARNING #1: restart cue must survive a later save failure", async () => {
   // Error feedback shown
   assert.match(env.element("feature-feedback").textContent, /Save failed/i);
 
-  // The restart cue MUST still be pending, not wiped by the failure
+  // The restart cue MUST still be pending, not wiped by the failure: the one
+  // line says both.
   assert.match(
-    env.element("setup-save-summary").textContent,
-    /restart still required|restart required/,
+    env.element("feature-feedback").textContent,
+    /restart/i,
     "restart requirement must survive a later save failure"
   );
 });
@@ -491,7 +488,6 @@ test("WARNING #2: stale response must not overwrite newer RC pending state", asy
     /Restart the droid to use it\./,
     "pending state must not be overwritten by stale response"
   );
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
 test("generation guard prevents corrupted savedGeneration affecting future saves", async () => {
@@ -577,7 +573,6 @@ test("generation guard prevents corrupted savedGeneration affecting future saves
     /Restart the droid to use it\./,
     "guard protects savedGeneration even when final rcRestartPending is the same"
   );
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
 test("WARNING #3: reverting to boot-active value must clear restart cue", async () => {
@@ -602,7 +597,7 @@ test("WARNING #3: reverting to boot-active value must clear restart cue", async 
   await env.fireTimer(300);
 
   // Restart is required (differs from boot-active)
-  assert.match(env.element("setup-save-summary").textContent, /restart required/);
+  assert.match(env.element("feature-feedback").textContent, /Restart the droid to use it\./);
 
   // Revert back to boot-active value (true -> false)
   rcToggle.checked = false;
@@ -611,11 +606,11 @@ test("WARNING #3: reverting to boot-active value must clear restart cue", async 
 
   // Restart cue must clear because saved state now matches boot-active
   assert.doesNotMatch(
-    env.element("setup-save-summary").textContent,
-    /restart required/,
+    env.element("feature-feedback").textContent,
+    /restart/i,
     "restart requirement must clear when reverted to boot-active value"
   );
-  assert.match(env.element("setup-save-summary").textContent, /Auto-save ready|Saved/);
+  assert.match(env.element("feature-feedback").textContent, /^Saved at /);
 });
 
 // A change that has not reached the controller yet is lost if the controller

@@ -4086,37 +4086,8 @@ label.sound-search-field {
   color: var(--text-dim);
 }
 
-/* The save state and the line that says what just happened, on one row: they
-   report the same act and reading them apart was reading it twice. */
-.setup-toolbar {
-  display: flex;
-  gap: var(--space-md);
-  align-items: center;
-  flex-wrap: wrap;
-}
-
 .identity-feedback {
   min-height: 20px;
-}
-
-.identity-grid {
-  display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(270px, 1fr) minmax(96px, 112px);
-  gap: var(--space-md);
-  align-items: center;
-}
-
-.identity-checkbox {
-  align-self: end;
-  min-height: 44px;
-  color: var(--text-dim);
-}
-
-.identity-save-button {
-  align-self: end;
-  min-height: 44px;
-  padding-inline: var(--space-lg);
-  white-space: nowrap;
 }
 
 /* Configuration and Maintenance, the two surfaces #404 split the Setup page
@@ -10512,14 +10483,6 @@ button.droid-build-card:disabled {
 @media (max-width: 520px) {
   .component-cards > .component-plate:has(.component-sub-channels, .component-receivers) {
     grid-column: 1 / -1;
-  }
-}
-
-/* The droid's name, its hostname tick and Save stack on a phone: the three
-   fixed columns above need 546 px and ran off a 390 px screen. */
-@media (max-width: 600px) {
-  .identity-grid {
-    grid-template-columns: 1fr;
   }
 }
 

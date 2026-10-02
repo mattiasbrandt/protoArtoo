@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-servo-motion-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
         flash-monitor \
         setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
@@ -210,6 +210,12 @@ check-board-label-drift: ## Check that no operator copy carries one board's own 
 # the stylesheet itself through the real cascade (#353, #327).
 check-color-drift: ## Check that no surface paints with a color :root has not
 	python3 tools/check_color_drift.py
+
+# docs/servo-motion.yaml against the two planners it generates,
+# include/servo_motion_model.h and data/servo_motion.js, in the same
+# report-never-rewrite shape (#439). To regenerate: python3 tools/generate_servo_motion.py
+check-servo-motion-drift: ## Check the generated servo motion planners against docs/servo-motion.yaml
+	python3 tools/check_servo_motion_drift.py
 
 check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
 	$(FLOCK) python3 tools/check_build_budgets.py

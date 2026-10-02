@@ -24,7 +24,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 import { MiniDocument } from "./helpers/mini_dom.js";
-import { servoRow as output, withParts, describe } from "./helpers/fake_droid.js";
+import { servoRow as output, withParts, describe, asStarted } from "./helpers/fake_droid.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../data");
@@ -39,7 +39,7 @@ const settle = async () => {
 // ARM1 and ARM2 carry the utility arms; ARM3, ARM4 and ARM5 are free and limp,
 // as a droid with two Parts wired comes up.
 const twoArmsOn = () => withParts({ "ledc:0": ["utilUp"], "ledc:1": ["utilLo"] }).map((row) =>
-  row.parts.length ? { ...row } : { ...row, wired: false, commandedUs: null, targetUs: null });
+  row.parts.length ? { ...row } : asStarted({ ...row, wired: false, commandedUs: null, targetUs: null }));
 
 const boot = async ({ outputs = twoArmsOn(), estop = "clear" } = {}) => {
   const document = new MiniDocument();

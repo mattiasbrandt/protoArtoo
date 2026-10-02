@@ -279,8 +279,11 @@
    * @returns {object|null} null with no connected dome;
    *   {comparable: false} when the stated design declares no dome complement
    *   to compare (unknown, or my own build);
-   *   otherwise {comparable: true, designLabel, domeOnly, designOnly}, each a
-   *   list of panel shorthands.
+   *   otherwise {comparable: true, designLabel, domeOnly, designOnly, differs,
+   *   sentence}: the two lists are panel shorthands, and the last two are the
+   *   words every surface says the difference in - `differs` the clause after
+   *   "it" ("has PP1 and lacks P7"), `sentence` the whole note - both "" when
+   *   the panels are the same.
    */
   function statedDesignDifference() {
     if (currentSource !== 'live' || !currentModel) {
@@ -310,15 +313,28 @@
     );
 
     const variant = (design.variants || []).find((row) => row.id === build.dome.variant);
+    const designLabel = variant ? `${design.short} ${variant.label}` : design.short;
+    const domeOnly = panels
+      .filter((part) => reported.has(part.shorthand) && !stated.has(part.id))
+      .map((part) => part.shorthand);
+    const designOnly = panels
+      .filter((part) => stated.has(part.id) && !reported.has(part.shorthand))
+      .map((part) => part.shorthand);
+    // The words live beside the comparison, so Configuration's note and
+    // Wiring's row cannot come to say it two ways.
+    const clauses = [];
+    if (domeOnly.length > 0) clauses.push(`has ${domeOnly.join(', ')}`);
+    if (designOnly.length > 0) clauses.push(`lacks ${designOnly.join(', ')}`);
+    const differs = clauses.join(' and ');
     return {
       comparable: true,
-      designLabel: variant ? `${design.short} ${variant.label}` : design.short,
-      domeOnly: panels
-        .filter((part) => reported.has(part.shorthand) && !stated.has(part.id))
-        .map((part) => part.shorthand),
-      designOnly: panels
-        .filter((part) => stated.has(part.id) && !reported.has(part.shorthand))
-        .map((part) => part.shorthand),
+      designLabel,
+      domeOnly,
+      designOnly,
+      differs,
+      sentence: differs
+        ? `The connected dome differs from ${designLabel}: it ${differs}. Your answer stands until you change it.`
+        : '',
     };
   }
 

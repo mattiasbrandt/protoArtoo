@@ -29,6 +29,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 import { boot, droid, droidWithTwoLitWires } from "./helpers/lights_surface.js";
+import { describe } from "./helpers/fake_droid.js";
 
 const ready = async (options) => {
   const env = boot(options);
@@ -197,8 +198,7 @@ test("an LED count saved before the page opened still waits for a restart", asyn
 test("a lit wire with no Part on it sends the builder to Wiring to put one on", async () => {
   const answer = droid();
   const spare = answer.outputs[2];
-  spare.wired = true;
-  spare.component = "rgb";
+  describe([spare], { [spare.address]: { wired: true, type: "rgb" } });
   const env = await ready({ answer });
 
   const note = env.parsed.getElementById("lights-body-spare");

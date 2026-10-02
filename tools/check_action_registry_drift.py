@@ -861,6 +861,29 @@ def check_no_bool_enum_values(doc: dict, errors: list[str]) -> None:
                         )
 
 
+def check_param_explanations(doc: dict, errors: list[str]) -> None:
+    """Every param says what it does to the droid (ADR 0059, #459).
+
+    A param used to carry a name, a type and a bound and nothing a person
+    reads, so a builder met a number that moves something with no word on what.
+    ADR 0059 makes the explanation a required field, asserted here rather than
+    populated by convention: a param with no `explanation`, or an empty one, is
+    drift.
+
+    Presence is all this can hold. What the sentence has to be is the copy rule
+    (docs/ui-copy-voice.md rule 1): end in the physical consequence, in one or
+    two sentences - "The number alone is not an explanation; say what it does
+    to the droid. Then stop." That half is read, not checked.
+    """
+    for entry in doc.get('entries', []):
+        name = entry.get('name', '<unnamed>')
+        for param in entry.get('params', []) or []:
+            pname = param.get('name', '<unnamed>')
+            explanation = param.get('explanation')
+            if not isinstance(explanation, str) or not explanation.strip():
+                errors.append(f"{name} param {pname!r}: no explanation")
+
+
 def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     """Validate one-to-one mapping: registry entries <-> inventory rows.
 
@@ -904,6 +927,116 @@ def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     for name in registry_entries:
         if name not in inventory_rows:
             errors.append(f"{name} in registry but missing from inventory")
+
+
+# One inventory citation: the file, " - ", then what it shows.
+INVENTORY_CITATION_RE = re.compile(r"^(?P<path>\S+) - (?P<text>.+)$", re.DOTALL)
+# A citation's anchors: the spans its text puts in backticks.
+INVENTORY_ANCHOR_RE = re.compile(r"`([^`]+)`")
+# A line number, or a range of them, on the end of a cited path.
+INVENTORY_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
+# An anchor that is one identifier, bare or written as a call (`name()`).
+INVENTORY_IDENT_ANCHOR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\(\))?$")
+
+
+def inventory_anchor_in(anchor: str, text: str) -> bool:
+    """Whether a cited file's text carries an anchor.
+
+    An identifier is matched as an identifier, never as a run of letters:
+    `configSave` is not found inside `configSaveWifi`, and `auxLedQueue` is
+    not found inside `auxLedQueueSetColor`. Written as a call, `name()`, it
+    must be followed by an opening parenthesis in the file - the call or the
+    declaration, whatever its arguments, so `processCommand()` holds against
+    `processCommand(cmd)`. Any other anchor - a statement, a quoted string, a
+    table row - is a literal substring.
+    """
+    ident = INVENTORY_IDENT_ANCHOR_RE.match(anchor)
+    if ident is None:
+        return anchor in text
+    name = re.escape(ident.group(1))
+    tail = r"\(" if ident.group(2) else r"(?![A-Za-z0-9_])"
+    return re.search(rf"(?<![A-Za-z0-9_]){name}{tail}", text) is not None
+
+
+def check_inventory_citations(errors: list[str],
+                              inventory_dir: Path = ROOT / "tools" / "console_inventory",
+                              root: Path = ROOT) -> None:
+    """Hold every inventory citation to the file it names (#459).
+
+    A row's `evidence` used to cite `file:line - what it shows`, and nothing
+    read the line: two thirds of the numbers had drifted off their symbols
+    within a few months, silently. Re-deriving the numbers would only start
+    that again, and a check on line numbers would fail every slice that adds a
+    line above one. So a citation names a SYMBOL and not a line:
+
+        src/web/api_seq.cpp - `handleSeqStopPost()` calls `sequenceStopRequest()`
+
+    Each span in backticks is an anchor: text the cited file must carry
+    (inventory_anchor_in(): an identifier whole, a `name()` wherever the file
+    opens its parenthesis, anything else as written). This check fails when
+    the file is gone, when the citation carries no anchor, when an anchor is
+    no longer in the file, or when the path still ends in a line number. An
+    anchor survives the code moving up or down; a rename or a move to another
+    file is the drift it is here to catch.
+
+    The file is read whole, comments included, and that is deliberate: some
+    citations rightly point at a comment (the `$` command table in
+    include/audio_dollar_parser.h's header). So a mention in a comment still
+    satisfies an anchor. Anchor the call or the declaration as the file
+    writes it when the claim is that the code does something.
+
+    What it does not prove is the sentence around the anchors: that a symbol
+    is "the definition", or that one calls another, is still the author's
+    claim. Words outside the backticks - a symbol from another file, a
+    sequence name - are prose, and are not checked.
+
+    Report, never rewrite: a failure names the row and the anchor, and the
+    citation is repaired by reading the code.
+    """
+    sources: dict[str, str | None] = {}
+
+    def source(path: str) -> str | None:
+        if path not in sources:
+            file = root / path
+            sources[path] = file.read_text(encoding="utf-8", errors="replace") if file.is_file() else None
+        return sources[path]
+
+    for inv_file in sorted(inventory_dir.glob("*.yaml")):
+        with open(inv_file, encoding="utf-8") as f:
+            inv_data = yaml.safe_load(f)
+        for row in inv_data.get("rows", []):
+            name = row.get("name")
+            for index, citation in enumerate(row.get("evidence") or [], start=1):
+                where = f"{inv_file.name} {name} evidence {index}"
+                # A `: ` in an unquoted citation makes YAML read it as a
+                # mapping, and the half after the colon is then never seen.
+                if not isinstance(citation, str):
+                    errors.append(f"{where}: not a string ({citation!r}) - quote it in the YAML")
+                    continue
+                match = INVENTORY_CITATION_RE.match(citation)
+                if match is None:
+                    errors.append(f"{where}: not in the form 'file - what it shows': {citation!r}")
+                    continue
+                path = match.group("path")
+                if INVENTORY_LINE_SUFFIX_RE.search(path):
+                    errors.append(
+                        f"{where}: cites a line ({path}) - cite the file and put the symbol in "
+                        f"backticks; a line number drifts and nothing can check it"
+                    )
+                    continue
+                text = source(path)
+                if text is None:
+                    errors.append(f"{where}: cites {path}, which is not a file in this tree")
+                    continue
+                anchors = INVENTORY_ANCHOR_RE.findall(match.group("text"))
+                if not anchors:
+                    errors.append(
+                        f"{where}: names no symbol - put what {path} must contain in backticks"
+                    )
+                    continue
+                for anchor in anchors:
+                    if not inventory_anchor_in(anchor, text):
+                        errors.append(f"{where}: `{anchor}` is not in {path}")
 
 
 def main() -> int:
@@ -973,8 +1106,10 @@ def main() -> int:
     check_component_toggle_entries(doc, errors)
     check_html_data_attributes(errors)
     check_inventory_registry_alignment(doc, errors)
+    check_inventory_citations(errors)
     check_status_query_classification(doc, errors)
     check_no_bool_enum_values(doc, errors)
+    check_param_explanations(doc, errors)
     check_executor_symbols(doc, errors)
     check_none_executor_evidence(doc, errors)
     check_executor_marker_contradiction(doc, errors)

@@ -71,8 +71,9 @@ them for you.
 Four files (`dome.yaml`, `sound.yaml`, `system.yaml`,
 `drive-servo-aux-rc.yaml`), one row per registry entry in that domain group,
 each citing `anchor_kind` (`api` | `rc_internal` | `event` | `config` |
-`aggregate-field` | `none`), `executor_or_core`, and file:line `evidence` for
-that citation. They were written by hand during the epic's inventory pass
+`aggregate-field` | `none`), `executor_or_core`, and `evidence` for that
+citation: the file, then what it shows, with what the file must contain in
+backticks. They were written by hand during the epic's inventory pass
 (#208–#212) as a one-time cross-check that every registry entry really does
 reach a real executor and not just an HTTP adapter — they do not regenerate
 themselves when you edit the registry, so **adding a registry entry means
@@ -80,7 +81,7 @@ adding its inventory row by hand in the same change**, in whichever of the
 four files matches its domain.
 
 `make check-action-drift` (`tools/check_action_registry_drift.py`) enforces
-this both ways, by two separate checks:
+this both ways, by three separate checks:
 
 - `check_inventory_registry_alignment()` requires a strict one-to-one
   match: every registry entry needs a same-named inventory row citing the
@@ -91,6 +92,19 @@ this both ways, by two separate checks:
   of the four files, are all reported as drift — this is not an optional
   cross-check, it is the gate that keeps the inventory from going stale the
   moment you add or rename an entry.
+- `check_inventory_citations()` holds each `evidence` line to the file it
+  names (#459). A citation reads
+  ``src/web/api_seq.cpp - `handleSeqStopPost` calls `sequenceStopRequest()` ``:
+  every span in backticks must be in that file. An identifier is matched
+  whole (`configSave` is not found in `configSaveWifi`), a `name()` wherever
+  the file opens its parenthesis, anything else as written. The file is read
+  with its comments, so a mention in a comment satisfies an anchor: cite the
+  call or the declaration as the file writes it. A missing
+  file, a citation with nothing in backticks, an anchor the file no longer
+  contains, or a path that ends in a line number is reported as drift. Cite a
+  symbol and never a line: the rows used to cite `file:line`, nothing read the
+  line, and most had drifted off their symbol. The check does not prove the
+  sentence around the anchors, only that what it points at is still there.
 - `check_executor_marker_contradiction()` is narrower: it flags an
   inventory row whose `notes` still say `NO-CORE-BELOW-HANDLER` once the
   registry's own `executor` field names a real one — the two must agree

@@ -78,7 +78,6 @@ const BOARD_LABELS = {
 
   const featureFeedback = document.getElementById("feature-feedback");
   const setupEnabledSummary = document.getElementById("setup-enabled-summary");
-  const setupSaveSummary = document.getElementById("setup-save-summary");
   const identityNameInput = document.getElementById("droid-name-input");
   const identityMdnsCheckbox = document.getElementById("mdns-use-name");
   const identitySaveButton = document.getElementById("identity-save-button");
@@ -124,18 +123,6 @@ const BOARD_LABELS = {
   // on. Read off each toggle's timing, never listed.
   const rcToggleKeys = () => new Set(Object.keys(featureToggles).filter(
     (key) => window.PAApi.timingOf(featureToggles[key].form) === TIMING.RESTART_REQUIRED));
-
-  // The save state, as a pill beside the feedback line it belongs to. The four
-  // outcome classes are the anatomy's own: green it saved, amber there is
-  // something left to do about it, red it was refused, and no color at all
-  // while nothing has happened yet (ADR 0066).
-  const setSaveSummary = (message, state = "info") => {
-    if (!setupSaveSummary) return;
-    const classMap = { ok: "pill-ok", saving: "pill-warn", warn: "pill-warn", error: "pill-error", info: "" };
-    setupSaveSummary.dataset.state = state;
-    setupSaveSummary.className = `status-pill ${classMap[state] ?? ""}`.trim();
-    setupSaveSummary.textContent = message;
-  };
 
   // A "no" that names the builder's next move takes them to it (#348): the
   // route the Availability seam gives for this state, appended to the sentence
@@ -396,13 +383,11 @@ const BOARD_LABELS = {
   // been sent, so a pick is never held back for a later one (#369).
   let pendingPickParams = {};
 
+  // A save is said once, on the form's feedback line: "Saving..." from the
+  // change, through the debounce, until the answer replaces it.
   const setSavePending = (pending) => {
     savePending = pending;
-    if (pending) {
-      setSaveSummary("Saving...", "saving");
-    } else if (setupSaveSummary?.dataset.state === "saving") {
-      setSaveSummary("Auto-save ready", "info");
-    }
+    if (pending) setFeatureFeedback("Saving...");
   };
 
   const featureRow = (toggle) =>
@@ -569,7 +554,6 @@ const BOARD_LABELS = {
     });
 
     updateEnabledSummary();
-    setFeatureFeedback(`Components loaded at ${new Date().toLocaleTimeString()}`, "success");
     paintRowTimings();
     notifyTimingChange();
   };
@@ -655,8 +639,8 @@ const BOARD_LABELS = {
     ? TIMING.AT_REBOOT
     : TIMING.latest(...STEP_SETTINGS[stepKey].map(window.PAApi.timingOf)));
 
-  // The latest timing any waiting change on this page is held to: what a save
-  // line and the save pill say.
+  // The latest timing any waiting change on this page is held to: what the
+  // save line says, after a save that worked and after one that failed.
   const waitingTiming = () => TIMING.latest(TIMING.IMMEDIATE,
     ...Object.keys(WAITING).filter(isPending).map(stepTiming));
 
@@ -674,13 +658,17 @@ const BOARD_LABELS = {
     });
   };
 
-  const loadFeatures = async () => {
+  // `afterRefusal` is the read-back a refused save asks for: the feedback line
+  // is the form's one readout, so the refusal stays on it and a read that
+  // worked says nothing over it.
+  const loadFeatures = async ({ afterRefusal = false } = {}) => {
     if (!window.PAApi) return;
     paintSettingLabels();
-    setFeatureFeedback("Loading component settings...");
+    if (!afterRefusal) setFeatureFeedback("Loading component settings...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
       renderFeatures(result.data);
+      if (!afterRefusal) setFeatureFeedback(`Components loaded at ${new Date().toLocaleTimeString()}`, "success");
       window.ComponentPicker?.adopt(result.data);
       // The Droid Build rides on the same payload, so the step below draws the
       // droid's own answer without asking the controller a second time.
@@ -730,22 +718,18 @@ const BOARD_LABELS = {
       const savedAt = new Date().toLocaleTimeString();
       const timing = waitingTiming();
       setFeatureFeedback(TIMING.saved(timing, savedAt), "success");
-      const summary = TIMING.pill(timing, savedAt);
-      setSaveSummary(summary.text, summary.state);
       paintRowTimings();
       notifyTimingChange();
     } catch (error) {
       console.error("[configuration] saveFeatures failed:", error);
-      setFeatureFeedback(window.PAApi.messageFor(error), "error");
+      // What an earlier save left waiting on the droid still waits after
+      // this one failed, and the line says so beside the error - read the way
+      // the saved line reads it, so a next start is not lost any more than a
+      // restart is.
+      setFeatureFeedback(TIMING.failed(window.PAApi.messageFor(error), waitingTiming()), "error");
       // A refused pick is read back rather than left on screen: the cards
       // then show what the droid holds, not the answer it did not take.
-      if (carriedPick) loadFeatures();
-      // Preserve pending restart status: don't downgrade from warn to error state if restart was already pending
-      if (rcRestartPending) {
-        setSaveSummary("Save failed, but restart still required", "warn");
-      } else {
-        setSaveSummary("Save failed", "error");
-      }
+      if (carriedPick) loadFeatures({ afterRefusal: true });
     } finally {
       saveInFlight = false;
       if (saveQueued) {
@@ -856,7 +840,6 @@ const BOARD_LABELS = {
     updateEnabledSummary();
   });
   updateEnabledSummary();
-  setSaveSummary("Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
   setIdentityFeedback("Loading the Body Controller's identity…");
   if (window.PAIdentity) receiveIdentity(window.PAIdentity);

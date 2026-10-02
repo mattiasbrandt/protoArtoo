@@ -10,7 +10,9 @@
 #                       console_direct_action = added after the inventory pass (#243), for an
 #                       operation the Controller Console is the only caller of: no REST route, no RC
 #                       dispatcher, no SSE emitter, no config path
-#   evidence:           list of "file:line - what it shows" citations. Required per anchor_kind:
+#   evidence:           list of "file - what it shows" citations. What the file must contain goes
+#                       in `backticks`, and `make check-action-drift` fails when it no longer
+#                       does: a symbol, never a line number (#459). Required per anchor_kind:
 #                         api          -> route registration + handler declaration header + definition + domain core
 #                         rc_internal  -> dispatcher site + enum/token + owning queue or core
 #                         event        -> emitter + SSE registration
@@ -19,7 +21,7 @@
 #                         console_direct_action -> dispatch-table registration + executor definition
 #                                                  + the core it calls; a compile-time gate cites its
 #                                                  generated catalog row too
-#                         none         -> explicit file:line evidence that NO executor exists
+#                         none         -> explicit evidence, cited the same way, that NO executor exists
 #   executor_or_core:   the function/core the Console must call (or "none")
 #   missing_metadata:   registry fields the Console needs that are absent (argument schema, alias,
 #                       availability metadata, executor reference) - [] if none
@@ -43,10 +45,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:84 - webRegisterRoute route
-  - include/api_drive.h:31 - handleWebControlDisablePost declaration
-  - src/web/api_drive.cpp:300 - handleWebControlDisablePost definition
-  - src/web/api_drive.cpp:301 - commandedSetWebControl(false, SRC_WEB_API)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/web-control/disable", WebMethod::kPost, handleWebControlDisablePost)`
+  - include/api_drive.h - `handleWebControlDisablePost` declaration
+  - src/web/api_drive.cpp - `handleWebControlDisablePost` definition
+  - src/web/api_drive.cpp - `commandedSetWebControl(false, SRC_WEB_API)`
   executor_or_core: commandedSetWebControl
   missing_metadata: []
   notes: ''
@@ -63,10 +65,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:83 - webRegisterRoute route
-  - include/api_drive.h:30 - handleWebControlEnablePost declaration
-  - src/web/api_drive.cpp:294 - handleWebControlEnablePost definition
-  - src/web/api_drive.cpp:295 - commandedSetWebControl(true, SRC_WEB_API)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/web-control/enable", WebMethod::kPost, handleWebControlEnablePost)`
+  - include/api_drive.h - `handleWebControlEnablePost` declaration
+  - src/web/api_drive.cpp - `handleWebControlEnablePost` definition
+  - src/web/api_drive.cpp - `commandedSetWebControl(true, SRC_WEB_API)`
   executor_or_core: commandedSetWebControl
   missing_metadata: []
   notes: 'All actions/configs missing: executor field, console_alias'
@@ -83,10 +85,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:72 - webRegisterRoute route
-  - include/api_system.h:26 - handleCoredumpErasePost declaration
-  - src/web/api_system.cpp:186 - handleCoredumpErasePost definition
-  - src/web/api_system.cpp:188 - esp_core_dump_image_erase()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/coredump/erase", WebMethod::kPost, handleCoredumpErasePost)`
+  - include/api_system.h - `handleCoredumpErasePost` declaration
+  - src/web/api_system.cpp - `handleCoredumpErasePost` definition
+  - src/web/api_system.cpp - `esp_core_dump_image_erase()`
   executor_or_core: esp_core_dump_image_erase
   missing_metadata: []
   notes: ''
@@ -105,10 +107,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:77 - webRegisterRoute route
-  - include/api_estop.h:16 - handleEstopPost declaration
-  - src/web/api_estop.cpp:29 - handleEstopPost definition
-  - src/web/api_estop.cpp:30 - failsafeTrigger(FailsafeLayer::ESTOP)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/estop", WebMethod::kPost, handleEstopPost)`
+  - include/api_estop.h - `handleEstopPost` declaration
+  - src/web/api_estop.cpp - `handleEstopPost` definition
+  - src/web/api_estop.cpp - `failsafeTrigger(FailsafeLayer::ESTOP)`
   executor_or_core: failsafeTrigger
   missing_metadata: []
   notes: ''
@@ -125,10 +127,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:78 - webRegisterRoute route
-  - include/api_estop.h:17 - handleEstopClearPost declaration
-  - src/web/api_estop.cpp:22 - handleEstopClearPost definition
-  - src/web/api_estop.cpp:23 - failsafeClearEstop()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/estop/clear", WebMethod::kPost, handleEstopClearPost)`
+  - include/api_estop.h - `handleEstopClearPost` declaration
+  - src/web/api_estop.cpp - `handleEstopClearPost` definition
+  - src/web/api_estop.cpp - `failsafeClearEstop()`
   executor_or_core: failsafeClearEstop
   missing_metadata: []
   notes: ''
@@ -146,11 +148,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:158 - webRegisterRoute route
-  - include/api_profiler.h:185 - ProfilerTraceOutcome profilerTraceStart(void)
-  - src/web/api_profiler.cpp:678 - profilerTraceStart definition, owns s_traceRunning
-  - src/web/api_profiler.cpp:703 - handleProfilerTraceStartPost adapts it to 200/409/500
-  - include/console_direct_action_system.h:358 - consoleExecuteDirectProfilerTraceStart calls the same core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/profiler/trace/start", WebMethod::kPost,` `handleProfilerTraceStartPost`
+  - include/api_profiler.h - `ProfilerTraceOutcome profilerTraceStart(void)`
+  - src/web/api_profiler.cpp - `profilerTraceStart` definition, owns `s_traceRunning`
+  - src/web/api_profiler.cpp - `handleProfilerTraceStartPost` adapts it to 200/409/500
+  - include/console_direct_action_system.h - `consoleExecuteDirectProfilerTraceStart` calls the same core
   executor_or_core: profilerTraceStart
   missing_metadata: []
   notes: >-
@@ -171,11 +173,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:160 - webRegisterRoute route
-  - include/api_profiler.h:186 - ProfilerTraceOutcome profilerTraceStop(void)
-  - src/web/api_profiler.cpp:692 - profilerTraceStop definition, stops and dumps to serial
-  - src/web/api_profiler.cpp:717 - handleProfilerTraceStopPost adapts it to 200/409/500
-  - include/console_direct_action_system.h:369 - consoleExecuteDirectProfilerTraceStop calls the same core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/profiler/trace/stop", WebMethod::kPost, handleProfilerTraceStopPost)`
+  - include/api_profiler.h - `ProfilerTraceOutcome profilerTraceStop(void)`
+  - src/web/api_profiler.cpp - `profilerTraceStop` definition, stops and dumps to serial
+  - src/web/api_profiler.cpp - `handleProfilerTraceStopPost` adapts it to 200/409/500
+  - include/console_direct_action_system.h - `consoleExecuteDirectProfilerTraceStop` calls the same core
   executor_or_core: profilerTraceStop
   missing_metadata: []
   notes: >-
@@ -195,10 +197,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:69 - webRegisterRoute route
-  - include/api_system.h:23 - handleRebootPost declaration
-  - src/web/api_system.cpp:142 - handleRebootPost definition
-  - src/web/api_system.cpp:145 - requestSystemRestart()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/reboot", WebMethod::kPost, handleRebootPost)`
+  - include/api_system.h - `handleRebootPost` declaration
+  - src/web/api_system.cpp - `handleRebootPost` definition
+  - src/web/api_system.cpp - `requestSystemRestart()`
   executor_or_core: requestSystemRestart
   missing_metadata: []
   notes: ''
@@ -215,16 +217,13 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: console_direct_action
   evidence:
-  - include/console_direct_action_system.h:504 - g_systemDirectActionExecutors[] registration, inside
-    the #if PA_CAP_HOSTED_WIFI gate at :503
-  - include/console_direct_action_system.h:466 - consoleExecuteDirectRebootWifiModule definition
-  - src/console/console_module.cpp:3243 - consoleFindDirectActionExecutor() lookup, the one call site
-  - src/console/console_catalog.cpp:2189 - available_on_board = PA_CAP_HOSTED_WIFI, the generated
-    board gate consoleExecuteCommand() reads at src/console/console_module.cpp:3138 before any
-    executor lookup
-  - include/hosted_link_c6_reset.h:61 - hostedLinkResetCoprocessor() declaration header
-  - src/web/web_network_manager_hosted.cpp:457 - hostedLinkResetCoprocessor() definition, the
-    enable-line pulse itself
+  - include/console_direct_action_system.h - `g_systemDirectActionExecutors`[] registration, inside the
+  - include/console_direct_action_system.h - `consoleExecuteDirectRebootWifiModule` definition
+  - src/console/console_module.cpp - `consoleFindDirectActionExecutor()` lookup, the one call site
+  - "src/console/console_catalog.cpp - `PA_CAP_HOSTED_WIFI`, this row's available_on_board in the generated table: the board gate"
+  - src/console/console_module.cpp - `entry->available_on_board`, read before any executor lookup
+  - include/hosted_link_c6_reset.h - `hostedLinkResetCoprocessor()` declaration header
+  - src/web/web_network_manager_hosted.cpp - `hostedLinkResetCoprocessor()` definition, the enable-line pulse itself
   executor_or_core: hostedLinkResetCoprocessor
   missing_metadata: []
   notes: 'Added by #243, after the inventory pass. anchor_kind console_direct_action is a kind the
@@ -254,10 +253,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:34 - webRegisterRoute route
-  - include/api_identity.h:27 - handleIdentityPost declaration
-  - src/web/api_identity.cpp:55 - handleIdentityPost definition
-  - include/config_cache.h:36 - configCacheApply core
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost)`
+  - include/api_identity.h - `handleIdentityPost` declaration
+  - src/web/api_identity.cpp - `handleIdentityPost` definition
+  - include/config_cache.h - `configCacheApply` core
   executor_or_core: configCacheApply
   missing_metadata: []
   notes: ''
@@ -276,10 +275,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:80 - webRegisterRoute route
-  - include/api_drive.h:27 - handleModePost declaration
-  - src/web/api_drive.cpp:239 - handleModePost definition
-  - src/web/api_drive.cpp:246 - commandedSetStationary()
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/mode", WebMethod::kPost, handleModePost)`
+  - include/api_drive.h - `handleModePost` declaration
+  - src/web/api_drive.cpp - `handleModePost` definition
+  - src/web/api_drive.cpp - `commandedSetStationary()`
   executor_or_core: commandedSetStationary
   missing_metadata:
   - parameter schema (mode values/type not in registry)
@@ -302,10 +301,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:122 - webRegisterRoute route
-  - include/api_audio.h:70 - handleMoodPost declaration
-  - src/web/api_audio.cpp:640 - handleMoodPost definition
-  - src/web/api_audio.cpp:667 - applyMood(mood)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/mood", WebMethod::kPost, handleMoodPost)`
+  - include/api_audio.h - `handleMoodPost` declaration
+  - src/web/api_audio.cpp - `handleMoodPost` definition
+  - src/web/api_audio.cpp - `applyMood((uint8_t)mood)`
   executor_or_core: applyMood
   missing_metadata: []
   notes: ''
@@ -323,10 +322,10 @@ rows:
   registry_marcduino_cmd: '#PASL (tx), #APSL (rx sync)'
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:66 - webRegisterRoute route
-  - include/api_system.h:20 - handleSleepPost declaration
-  - src/web/api_system.cpp:90 - handleSleepPost definition
-  - src/web/api_system.cpp:40 - commandedSetSleep(sleepMode, SRC_WEB_API)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/sleep", WebMethod::kPost, handleSleepPost)`
+  - include/api_system.h - `handleSleepPost` declaration
+  - src/web/api_system.cpp - `handleSleepPost` definition
+  - src/web/api_system.cpp - `commandedSetSleep(sleepMode, SRC_WEB_API)`
   executor_or_core: commandedSetSleep
   missing_metadata: []
   notes: ''
@@ -344,10 +343,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: rc_internal
   evidence:
-  - include/rc_action_types.h:48 - SYSTEM_ACTION_SLEEP_TOGGLE enum
-  - src/rc_action_dispatcher.cpp:157 - case SYSTEM_ACTION_SLEEP_TOGGLE
-  - src/rc_dispatcher_helpers.cpp:187 - if (res.setSleep) rc result handler
-  - src/rc_dispatcher_helpers.cpp:188 - commandedSetSleep(res.newSleepMode, SRC_SBUS)
+  - include/rc_action_types.h - `SYSTEM_ACTION_SLEEP_TOGGLE` enum
+  - src/rc_action_dispatcher.cpp - `case SYSTEM_ACTION_SLEEP_TOGGLE`
+  - src/rc_dispatcher_helpers.cpp - if (`res.setSleep`) rc result handler
+  - src/rc_dispatcher_helpers.cpp - `commandedSetSleep(res.newSleepMode, SRC_SBUS)`
   executor_or_core: commandedSetSleep
   missing_metadata: []
   notes: ''
@@ -364,10 +363,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_seam_routes.cpp:160 - webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk)
-  - src/web/api_upload.cpp:226 - void handleFilesystemUploadChunk streams chunks to partition
-  - src/web/api_upload.cpp:228 - handleUploadChunk() called to write directly via Update library
-  - 'src/web/api_upload.cpp:10 - comment about OTA upload being out-of-scope per epic #206'
+  - src/web/web_seam_routes.cpp - `webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk,`
+  - src/web/api_upload.cpp - void `handleFilesystemUploadChunk` streams chunks to partition
+  - src/web/api_upload.cpp - `handleUploadChunk()` called to write directly via Update library
+  - "src/web/api_upload.cpp - `Update.write(const_cast<uint8_t*>(data), len)`, each chunk written to flash as it arrives: a bulk stream with no executor queue"
   executor_or_core: none
   missing_metadata: []
   notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
@@ -384,10 +383,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_seam_routes.cpp:158 - webRegisterUploadRoute("/upload/firmware", handleFirmwareUploadChunk)
-  - src/web/api_upload.cpp:214 - void handleFirmwareUploadChunk streams chunks to flash
-  - src/web/api_upload.cpp:216 - handleUploadChunk() called to write directly via Update library
-  - 'src/web/api_upload.cpp:10 - comment about OTA upload being out-of-scope per epic #206'
+  - src/web/web_seam_routes.cpp - `webRegisterUploadRoute("/upload/firmware", handleFirmwareUploadChunk,`
+  - src/web/api_upload.cpp - void `handleFirmwareUploadChunk` streams chunks to flash
+  - src/web/api_upload.cpp - `handleUploadChunk()` called to write directly via Update library
+  - "src/web/api_upload.cpp - `Update.write(const_cast<uint8_t*>(data), len)`, each chunk written to flash as it arrives: a bulk stream with no executor queue"
   executor_or_core: none
   missing_metadata: []
   notes: 'Bulk streaming OTA upload (#206): chunks written directly to flash partition via Update library, no executor queue (out-of-scope)'
@@ -405,10 +404,10 @@ rows:
   registry_marcduino_cmd: '#PAWU (tx), #APWU (rx sync)'
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:67 - webRegisterRoute /api/wake
-  - include/api_system.h:21 - handleWakePost declaration
-  - src/web/api_system.cpp:96 - handleWakePost definition
-  - src/web/api_system.cpp:40 - commandedSetSleep(sleepMode, SRC_WEB_API)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/wake", WebMethod::kPost, handleWakePost)`
+  - include/api_system.h - `handleWakePost` declaration
+  - src/web/api_system.cpp - `handleWakePost` definition
+  - src/web/api_system.cpp - `commandedSetSleep(sleepMode, SRC_WEB_API)`
   executor_or_core: commandedSetSleep
   missing_metadata: []
   notes: ''
@@ -425,10 +424,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: event
   evidence:
-  - src/web/web_seam_routes.cpp:46 - webRegisterRoute("/api/events", WebMethod::kGet, handleEventsGet)
-  - src/web/api_events.cpp:24 - void handleEventsGet(WebRequest& req)
-  - src/web/api_events.cpp:38 - req.beginEventStream() establishes SSE stream without emitting events
-  - src/web/web_server.cpp:816 - events emitted from other sources; stream handler is pure adapter
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/events", WebMethod::kGet, handleEventsGet)`
+  - src/web/api_events.cpp - `void handleEventsGet(WebRequest& req)`
+  - src/web/api_events.cpp - `req.beginEventStream()` establishes SSE stream without emitting events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status", s_sseBody, nowMs)` and its rc and log siblings emit the events; the stream handler is a pure adapter
   executor_or_core: none
   missing_metadata: []
   notes: 'SSE stream adapter: no executor; events emitted from other sources and pushed to stream'
@@ -446,10 +445,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:141 - webRegisterRoute /api/admission-trace
-  - include/api_admission_trace.h:30 - handleAdmissionTraceGet
-  - src/web/api_admission_trace.cpp:36 - handleAdmissionTraceGet definition
-  - src/web/api_admission_trace.cpp:45 - req.sendChunked fillAdmissionTraceResponse
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/admission/trace", WebMethod::kGet, handleAdmissionTraceGet)`
+  - include/api_admission_trace.h - `handleAdmissionTraceGet`
+  - src/web/api_admission_trace.cpp - `handleAdmissionTraceGet` definition
+  - src/web/api_admission_trace.cpp - `req.sendChunked` `fillAdmissionTraceResponse`
   executor_or_core: fillAdmissionTraceResponse
   missing_metadata: []
   notes: Gated by PA_ADMISSION_TRACE
@@ -466,10 +465,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:71 - webRegisterRoute("/api/coredump", WebMethod::kGet, handleCoredumpGet)
-  - src/web/api_system.cpp:163 - void handleCoredumpGet(WebRequest& req)
-  - src/web/api_system.cpp:165 - esp_core_dump_image_get(&addr, &size) calls ESP-IDF external function
-  - src/web/api_system.cpp:181 - sendChunked streams coredump directly from partition; no project executor
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/coredump", WebMethod::kGet, handleCoredumpGet)`
+  - src/web/api_system.cpp - `void handleCoredumpGet(WebRequest& req)`
+  - src/web/api_system.cpp - `void handleCoredumpGet(WebRequest& req)` calls `esp_core_dump_image_get(&addr, &size)`, an ESP-IDF external function
+  - src/web/api_system.cpp - `sendChunked` streams coredump directly from partition; no project executor
   executor_or_core: none
   missing_metadata: []
   notes: Delegates to ESP-IDF esp_core_dump_image_get(); coredump is external persistent state, not a project executor
@@ -486,10 +485,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:70 - webRegisterRoute("/api/coredump/status", WebMethod::kGet, handleCoredumpStatusGet)
-  - src/web/api_system.cpp:154 - void handleCoredumpStatusGet(WebRequest& req)
-  - src/web/api_system.cpp:156 - esp_core_dump_image_get(&addr, &size) calls ESP-IDF external function
-  - src/web/api_system.cpp:160 - handler builds JSON response inline without calling project executor
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/coredump/status", WebMethod::kGet, handleCoredumpStatusGet)`
+  - src/web/api_system.cpp - `void handleCoredumpStatusGet(WebRequest& req)`
+  - src/web/api_system.cpp - `void handleCoredumpStatusGet(WebRequest& req)` calls `esp_core_dump_image_get(&addr, &size)`, an ESP-IDF external function
+  - src/web/api_system.cpp - `"{\"present\":%s,\"size\":%u}"`, the JSON the handler builds inline, calling no project executor
   executor_or_core: none
   missing_metadata: []
   notes: Delegates to ESP-IDF esp_core_dump_image_get(); no project executor
@@ -506,10 +505,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:42 - webRegisterRoute /api/identity/components
-  - include/api_identity.h:69 - void handleComponentsGet(WebRequest& req)
-  - src/web/api_identity.cpp:93 - void handleComponentsGet(WebRequest& req) definition
-  - src/web/api_identity_serializers.cpp:220 - fillComponentRegistryJson walks COMPONENT_CATEGORIES[] and COMPONENT_PARTS[]
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/identity/components", WebMethod::kGet, handleComponentsGet)`
+  - include/api_identity.h - `void handleComponentsGet(WebRequest& req)`
+  - src/web/api_identity.cpp - void `handleComponentsGet(WebRequest& req)` definition
+  - src/web/api_identity_serializers.cpp - `fillComponentRegistryJson` walks `COMPONENT_CATEGORIES`[] and `COMPONENT_PARTS`[]
   executor_or_core: fillComponentRegistryJson
   missing_metadata: []
   notes: Item-indexed over the two Component Registry tables (src/component_registry.cpp); the Console executor is consoleExecuteSystemApiGetComponents.
@@ -526,10 +525,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:33 - webRegisterRoute /api/identity
-  - include/api_identity.h:26 - handleIdentityGet
-  - src/web/api_identity.cpp:49 - handleIdentityGet definition
-  - src/web/api_identity.cpp:51 - sendIdentityResponse(req, snap.system)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/identity", WebMethod::kGet, handleIdentityGet)`
+  - include/api_identity.h - `handleIdentityGet`
+  - src/web/api_identity.cpp - `handleIdentityGet` definition
+  - src/web/api_identity.cpp - `sendIdentityResponse(req, snap.system)`
   executor_or_core: sendIdentityResponse
   missing_metadata: []
   notes: ''
@@ -547,11 +546,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:147 - webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet)
-  - include/api_profiler.h:148 - void profilerRead(ProfilerReading* out)
-  - src/web/api_profiler.cpp:464 - profilerRead definition, one consistent read of the muxed state
-  - src/web/api_profiler.cpp:529 - buildProfilerJson renders that reading as JSON
-  - src/console/console_module.cpp:796 - consoleExecuteSystemApiGetProfiler renders the same reading as records
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet)`
+  - include/api_profiler.h - `void profilerRead(ProfilerReading* out)`
+  - src/web/api_profiler.cpp - `profilerRead` definition, one consistent read of the muxed state
+  - src/web/api_profiler.cpp - `buildProfilerJson` renders that reading as JSON
+  - src/console/console_module.cpp - `consoleExecuteSystemApiGetProfiler` renders the same reading as records
   executor_or_core: profilerRead
   notes: >-
     Gated by PA_HEAP_PROFILE. Issue 224 extracted profilerRead() from the
@@ -571,10 +570,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:100 - webRegisterRoute /api/validation
-  - include/api_validation.h:12 - handleValidationGet
-  - src/web/api_validation.cpp:26 - handleValidationGet definition
-  - src/web/api_validation.cpp:31 - populateValidationJson(doc, snap)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/validation", WebMethod::kGet, handleValidationGet)`
+  - include/api_validation.h - `handleValidationGet`
+  - src/web/api_validation.cpp - `handleValidationGet` definition
+  - src/web/api_validation.cpp - `populateValidationJson(doc, snap)`
   executor_or_core: populateValidationJson
   missing_metadata: []
   notes: ''
@@ -591,10 +590,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -612,10 +611,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -633,10 +632,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -654,10 +653,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -675,10 +674,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -696,10 +695,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -717,10 +716,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -738,10 +737,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -759,10 +758,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -780,10 +779,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -801,10 +800,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -822,10 +821,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -843,10 +842,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -864,10 +863,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -885,10 +884,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/web/api_config.cpp - `ConfigCommitOutcome configCommitApplied(` is the Commit Step, and it persists with `configPersist(*working, extras)`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/default/range not in registry)
@@ -906,10 +905,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config read path
-  - include/api_config_apply.h:68 - configApply Apply Core
-  - src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step
-  - include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet)` read path
+  - include/api_config_apply.h - `configApply` Apply Core
+  - src/tasks/mood.cpp - `prefs.putUChar("last_mood", moodId)` persistence, inside `applyMood`
+  - include/config_store.h - `bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot)`
   executor_or_core: applyMood
   missing_metadata:
   - parameter schema (type/values/default not in registry)
@@ -928,11 +927,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - include/logging.h:25 - configCurrentLogLevel() declaration, the read path
-  - src/config_store.cpp:570 - configCurrentLogLevel() definition (reads s_liveLogLevel lock-free)
-  - include/api_config_apply.h:68 - configApply() Apply Core
-  - src/web/api_config_apply.cpp:303 - the logLevel branch (range 1..4)
-  - src/config_serializer.cpp:530 - writeU8("log_level", cfg.logLevel) persistence
+  - include/logging.h - `configCurrentLogLevel()` declaration, the read path
+  - src/config_store.cpp - `configCurrentLogLevel()` definition (reads `s_liveLogLevel` lock-free)
+  - include/api_config_apply.h - `configApply()` Apply Core
+  - src/config_settings.cpp - `{"logLevel", "system.logLevel", "log_level", ApplyTiming::Immediate,` declares the Setting, its range and its NVS key
+  - include/config_store.h - `bool configSaveSystem(Preferences& prefs, const SystemConfig& config)` persistence
   executor_or_core: configApply
   missing_metadata:
   - parameter schema (type/values/default not in registry)
@@ -957,10 +956,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
-  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
-  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; boot-complete not among them
-  - 'docs/action-registry.yaml:2624 - entry marked sources: [internal] and sse_event: null; not exposed'
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status",` ...) emits only status, rc, log
+  - src/web/web_server.cpp - `webEventStreamBroadcast("rc",` ...) second of three broadcast events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("log",` ...) third broadcast event; boot-complete not among them
+  - "docs/action-registry.yaml - `- name: system.event.boot-complete` entry, marked sources: [internal] and sse_event: null; not exposed"
   executor_or_core: none
   missing_metadata: []
   notes: Internal event not exposed via SSE; no web emitter exists
@@ -977,10 +976,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
-  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
-  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; dome-enabled not among them
-  - 'docs/action-registry.yaml:2608 - entry marked sources: [internal] and sse_event: null; not exposed'
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status",` ...) emits only status, rc, log
+  - src/web/web_server.cpp - `webEventStreamBroadcast("rc",` ...) second of three broadcast events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("log",` ...) third broadcast event; dome-enabled not among them
+  - "docs/action-registry.yaml - `- name: system.event.dome-enabled` entry, marked sources: [internal] and sse_event: null; not exposed"
   executor_or_core: none
   missing_metadata: []
   notes: Internal event not exposed via SSE; no web emitter exists
@@ -997,10 +996,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: none
   evidence:
-  - src/web/web_server.cpp:816 - webEventStreamBroadcast("status", ...) emits only status, rc, log
-  - src/web/web_server.cpp:840 - webEventStreamBroadcast("rc", ...) second of three broadcast events
-  - src/web/web_server.cpp:866 - webEventStreamBroadcast("log", ...) third broadcast event; drives-engaged not among them
-  - 'docs/action-registry.yaml:2592 - entry marked sources: [internal] and sse_event: null; not exposed'
+  - src/web/web_server.cpp - `webEventStreamBroadcast("status",` ...) emits only status, rc, log
+  - src/web/web_server.cpp - `webEventStreamBroadcast("rc",` ...) second of three broadcast events
+  - src/web/web_server.cpp - `webEventStreamBroadcast("log",` ...) third broadcast event; drives-engaged not among them
+  - "docs/action-registry.yaml - `- name: system.event.drives-engaged` entry, marked sources: [internal] and sse_event: null; not exposed"
   executor_or_core: none
   missing_metadata: []
   notes: Internal event not exposed via SSE; no web emitter exists
@@ -1017,10 +1016,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: aggregate-field
   evidence:
-  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
-  - include/api_status.h:93 - handleStatusGet declaration
-  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
-  - src/web/web_server.cpp:300 - dashboardHealth field in buildStatusJson
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
+  - include/api_status.h - `handleStatusGet` declaration
+  - src/web/api_status.cpp - `buildStatusJson(body, sizeof(scratch->text))`
+  - src/web/web_server.cpp - `bool buildStatusJson(char* buffer, size_t bufferSize)` builds the status document the browser works the health lights out from
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status; built by buildStatusJson
@@ -1037,11 +1036,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp - webRegisterRoute("/api/health", kGet, handleHealthGet)
-  - include/api_status.h - void handleHealthGet(WebRequest& req) declaration
-  - src/web/api_status.cpp - void handleHealthGet(WebRequest& req) definition; calls buildHealthJson()
-  - include/api_status.h - captureHealthSnapshot(HealthSnapshot* out) declaration
-  - src/web/api_status_serializers.cpp - captureHealthSnapshot() definition; formatHealthJson()'s JSON keys
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/health", WebMethod::kGet, handleHealthGet)`
+  - include/api_status.h - void `handleHealthGet(WebRequest& req)` declaration
+  - src/web/api_status.cpp - void `handleHealthGet(WebRequest& req)` definition; calls `buildHealthJson()`
+  - include/api_status.h - `captureHealthSnapshot(HealthSnapshot* out)` declaration
+  - src/web/api_status_serializers.cpp - `captureHealthSnapshot()` definition; `formatHealthJson()`'s JSON keys
   executor_or_core: captureHealthSnapshot
   missing_metadata: []
   notes: '#223: reclassified from aggregate-field to api. GET /api/health is its own standalone endpoint with its own JSON shape (buildHealthJson/formatHealthJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/health''s). Promoted to a real console query; captureHealthSnapshot() is the Zone Snapshot capture both handleHealthGet() and the Console module call (ADR 0036).'
@@ -1058,11 +1057,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:41 - webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet)
-  - include/api_logs.h:14 - void handleLogsGet(WebRequest& req) declaration
-  - src/web/api_logs.cpp - handleLogsGet() definition; calls recentLogsBodyBuffer()/copyRecentLogs()
-  - include/web_server.h - getLogBufferCount()/copyLogLineAt() declarations
-  - src/console/console_module.cpp - consoleExecuteSystemStatusLogs() calls getLogBufferCount()/copyLogLineAt() directly, not recentLogsBodyBuffer()/copyRecentLogs() (#239 - that buffer is sized and synchronised for exactly one caller, the REST handler above)
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet)`
+  - include/api_logs.h - void `handleLogsGet(WebRequest& req)` declaration
+  - src/web/api_logs.cpp - `handleLogsGet()` definition; calls `recentLogsBodyBuffer()`/`copyRecentLogs()`
+  - include/web_server.h - `getLogBufferCount()`/`copyLogLineAt()` declarations
+  - src/console/console_module.cpp - `consoleExecuteSystemStatusLogs()` calls `getLogBufferCount()`/`copyLogLineAt()` directly, not recentLogsBodyBuffer()/copyRecentLogs() (#239 - that buffer is sized and synchronised for exactly one caller, the REST handler above)
   executor_or_core: copyLogLineAt
   missing_metadata: []
   notes: '#239: reclassified from aggregate-field to api. The prior evidence (web_server.cpp:295, "logs array in buildStatusJson") does not exist in the source - buildStatusJson() never emits a logs field. GET /api/logs is its own standalone text/plain endpoint (src/web/api_logs.cpp), not a field inside /api/status. Promoted to a real console query answering item records (docs/console-protocol.md s.3.1) rather than the fields:/JSON-key model #223 established for scalar aggregate rows; the REST handler and the Console executor deliberately read the log ring through two different functions (see evidence) instead of sharing recentLogsBodyBuffer(), which stays scoped to its one existing caller.'
@@ -1079,10 +1078,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: aggregate-field
   evidence:
-  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
-  - include/api_status.h:93 - handleStatusGet declaration
-  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
-  - src/web/web_server.cpp:285 - mood field in buildStatusJson
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
+  - include/api_status.h - `handleStatusGet` declaration
+  - src/web/api_status.cpp - `buildStatusJson(body, sizeof(scratch->text))`
+  - src/web/web_server.cpp - mood field in `buildStatusJson`
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status; built by buildStatusJson
@@ -1099,10 +1098,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: aggregate-field
   evidence:
-  - src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status
-  - include/api_status.h:93 - handleStatusGet declaration
-  - src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))
-  - src/web/web_server.cpp:288 - sleepMode field in buildStatusJson
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet)`
+  - include/api_status.h - `handleStatusGet` declaration
+  - src/web/api_status.cpp - `buildStatusJson(body, sizeof(scratch->text))`
+  - src/web/web_server.cpp - `sleepMode` field in `buildStatusJson`
   executor_or_core: buildStatusJson
   missing_metadata: []
   notes: Aggregate-field in /api/status; built by buildStatusJson
@@ -1119,10 +1118,10 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp:47 - webRegisterRoute("/api/console", WebMethod::kPost, handleConsolePost)
-  - include/api_console.h:12 - void handleConsolePost(WebRequest& req) declaration
-  - src/web/api_console.cpp:108 - void handleConsolePost(WebRequest& req) definition
-  - src/web/api_console.cpp:158 - consoleExecuteCommand(&consoleReq, &sink) command processor invocation
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/console", WebMethod::kPost, handleConsolePost)`
+  - include/api_console.h - void `handleConsolePost(WebRequest& req)` declaration
+  - src/web/api_console.cpp - void `handleConsolePost(WebRequest& req)` definition
+  - src/web/api_console.cpp - `consoleExecuteCommand(&consoleReq, &sink)` command processor invocation
   executor_or_core: consoleExecuteCommand
   missing_metadata: []
   notes: Console browser adapter; PostForm request handler, same processor as serial task
@@ -1139,11 +1138,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: api
   evidence:
-  - src/web/web_seam_routes.cpp - webRegisterRoute("/api/wifi", kGet, handleWifiGet)
-  - include/api_status.h - void handleWifiGet(WebRequest& req) declaration
-  - src/web/api_status.cpp - void handleWifiGet(WebRequest& req) definition; calls buildWifiJson()
-  - include/api_status.h - captureWifiStatusSnapshot(WifiStatusSnapshot* out) declaration
-  - src/web/api_status_serializers.cpp - captureWifiStatusSnapshot() definition; formatWifiJson()'s JSON keys
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/wifi", WebMethod::kGet, handleWifiGet)`
+  - include/api_status.h - void `handleWifiGet(WebRequest& req)` declaration
+  - src/web/api_status.cpp - void `handleWifiGet(WebRequest& req)` definition; calls `buildWifiJson()`
+  - include/api_status.h - `captureWifiStatusSnapshot(WifiStatusSnapshot* out)` declaration
+  - src/web/api_status_serializers.cpp - `captureWifiStatusSnapshot()` definition; `formatWifiJson()`'s JSON keys
   executor_or_core: captureWifiStatusSnapshot
   missing_metadata: []
   notes: '#223: reclassified from aggregate-field to api. GET /api/wifi is its own standalone endpoint with its own JSON shape (buildWifiJson/formatWifiJson), not a field inside /api/status - the prior evidence citing api_status.cpp:104/handleStatusGet was wrong (that line is /api/status''s handler, not /api/wifi''s; /api/status carries overlapping but distinct scalar wifi* fields, not a nested "wifi" object). Promoted to a real console query; captureWifiStatusSnapshot() is the Zone Snapshot capture both handleWifiGet() and the Console module call (ADR 0036).'
@@ -1160,11 +1159,11 @@ rows:
   registry_marcduino_cmd: null
   anchor_kind: config
   evidence:
-  - src/web/web_seam_routes.cpp:70 - webRegisterRoute("/api/wifi", WebMethod::kPost, handleWifiPost)
-  - include/config_cache.h:35 - configCacheReadWifi(WifiConfig*) read path, the same one handleWifiPost() seeds its working copy from
-  - include/api_wifi_apply.h:30 - wifiApply(const ConfigParamSource&, WifiConfig*, WifiApplyResult*) apply core (ADR 0011)
-  - src/web/api_wifi_apply.cpp:152 - wifiCommitApplied() Commit Step (ADR 0036): configSaveWifi() to NVS, then config-cache staging (ADR 0015 Staged Network Switch) and the status broadcast
-  - src/config_serializer.cpp:628 - configSerializeWifi() writes wifi_prov/wifi_mode/wifi_sta_ssid/wifi_sta_pw/wifi_ap_ssid/wifi_ap_pw
+  - src/web/web_seam_routes.cpp - `webRegisterRoute("/api/wifi", WebMethod::kPost, handleWifiPost)`
+  - include/config_cache.h - `void configCacheReadWifi(WifiConfig* out)` read path, the same one the WiFi apply seeds its working copy from
+  - include/api_wifi_apply.h - `void wifiApply(const ConfigParamSource& params, WifiConfig* working, WifiApplyResult* result)` apply core (ADR 0011)
+  - "src/web/api_wifi_apply.cpp - `wifiCommitApplied` Commit Step (ADR 0036): `configSaveWifi(prefs, *working)` to NVS, then config-cache staging (ADR 0015 Staged Network Switch) and the status broadcast"
+  - src/config_serializer.cpp - `configSerializeWifi()` writes `wifi_prov`/`wifi_mode`/`wifi_sta_ssid`/`wifi_sta_pw`/`wifi_ap_ssid`/`wifi_ap_pw`
   executor_or_core: wifiApply
   missing_metadata: []
   notes: 'Grouped config write (#227). The registry names wifiApply as the executor because that

@@ -32,6 +32,7 @@
                                 // shared with test_console_module.cpp's #221 remainder
                                 // sound.action.* executors and #258's remainder, the same
                                 // stubs this file already drove
+#include "commanded_modes_test_hooks.h"  // g_test_applied_mood, g_test_status_broadcast_count
 #include "config_cache.h"
 #include "robot_state.h"
 #include "web_request_test_backend.h"
@@ -52,8 +53,6 @@ extern AudioCatalogBank g_test_audio_catalog_banks[8];
 extern uint8_t g_test_audio_catalog_bank_count;
 extern AudioCatalogEntry g_test_audio_catalog_entries[16];
 extern uint16_t g_test_audio_catalog_entry_count;
-extern unsigned g_test_applied_mood;
-extern unsigned g_test_status_broadcast_count;
 
 namespace {
 

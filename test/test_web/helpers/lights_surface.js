@@ -88,9 +88,7 @@ export const droid = () => {
 export const droidWithTwoLitWires = () => {
   const answer = droid();
   const second = answer.outputs[2];
-  second.wired = true;
-  second.component = "rgb";
-  second.ledCount = 4;
+  describe([second], { [second.address]: { wired: true, type: "rgb", ledCount: 4 } });
   second.parts = ["cbi"];
   answer.config.droidBuild.fitted.push("cbi");
   answer.status.lights[answer.idOf("ledc:4")] = { r: 255, g: 0, b: 0, effect: "blink", available: true };

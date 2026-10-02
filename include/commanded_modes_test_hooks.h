@@ -18,11 +18,8 @@
 // =============================================================================
 #pragma once
 
-// commandedSetStationary() - shared with the older, file-scope tests that
-// already declare this one inline; declaring it again here is harmless
-// (identical extern of the same symbol), and the Console's new tests
-// (test_console_module.cpp) get it through this header rather than a new
-// inline extern.
+// commandedSetStationary() - every suite that reads it takes it from this
+// header; none declares it inline any more (#459).
 extern bool g_test_commanded_stationary;
 
 // commandedSetSleep() - #226's first native stub for this setter.

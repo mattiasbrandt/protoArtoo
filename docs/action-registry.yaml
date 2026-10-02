@@ -20,6 +20,9 @@
 #   3. Add/update C++ runtime registry, token parse/format, dispatch, and JS fallback
 #      rows as needed.
 #   4. Run `make check-action-drift` to verify YAML, C++, and RC fallback metadata align.
+#      Every param carries an `explanation`: what it does to the droid, in one or
+#      two sentences that end in the physical consequence (ADR 0059,
+#      docs/ui-copy-voice.md rule 1). The drift check fails on a param without one.
 #   5. Add a native test if the new action involves parsing or transformation logic.
 #   6. If safety_critical: true — verify all 5 failsafe layers still hold.
 #
@@ -78,12 +81,14 @@ entries:
   requires_web_control: true
   params:
   - name: speed
+    explanation: How hard the feet drive, and which way by its sign. Capped at the speed limit.
     type: int16
     range:
     - -1000
     - 1000
     required: true
   - name: steer
+    explanation: How hard the droid turns, and which way by its sign. Capped at the speed limit.
     type: int16
     range:
     - -1000
@@ -107,6 +112,7 @@ entries:
   requires_web_control: false
   params:
   - name: value
+    explanation: Stick position, -1 to 1. Full stick drives the feet at the speed limit.
     type: float
     range:
     - -1
@@ -130,6 +136,7 @@ entries:
   requires_web_control: false
   params:
   - name: value
+    explanation: Stick position, -1 to 1. Full stick turns the droid as hard as the speed limit allows.
     type: float
     range:
     - -1
@@ -152,6 +159,7 @@ entries:
   requires_web_control: true
   params:
   - name: preset
+    explanation: The preset to cap the feet at. They go no faster than Slow until another preset is picked.
     type: string
     values:
     - slow
@@ -173,6 +181,7 @@ entries:
   requires_web_control: true
   params:
   - name: preset
+    explanation: The preset to cap the feet at. They go no faster than Normal until another preset is picked.
     type: string
     values:
     - normal
@@ -194,6 +203,7 @@ entries:
   requires_web_control: true
   params:
   - name: preset
+    explanation: The preset to cap the feet at. They go no faster than Turbo until another preset is picked.
     type: string
     values:
     - turbo
@@ -766,6 +776,7 @@ entries:
   requires_web_control: false
   params:
   - name: speed
+    explanation: How fast the dome turns, and which way by its sign. 0 stops it.
     type: float
     range:
     - -1.0
@@ -831,6 +842,7 @@ entries:
   requires_web_control: false
   params:
   - name: name
+    explanation: The Learned Sequence to read. Reading it moves nothing.
     type: string
     required: true
   # Out of scope for the Console (#221 remainder, coordinator decision
@@ -883,6 +895,7 @@ entries:
   requires_web_control: false
   params:
   - name: name
+    explanation: The Learned Sequence to wipe. An RC trigger bound to it then plays nothing.
     type: string
     required: true
   executor: seqStoreDelete
@@ -902,6 +915,7 @@ entries:
   requires_web_control: false
   params:
   - name: name
+    explanation: The sequence to play. The droid runs it from the start.
     type: string
     required: true
   executor: sequenceStart
@@ -926,9 +940,11 @@ entries:
   # what a normal run commands at that instant (ADR 0062, ADR 0064).
   params:
   - name: name
+    explanation: The sequence the moment is taken from. The droid goes to that moment and does not run it.
     type: string
     required: true
   - name: t
+    explanation: Milliseconds from the sequence's start. Each part goes where the routine had it then.
     type: int32
     range:
     - 0
@@ -987,6 +1003,7 @@ entries:
   requires_web_control: false
   params:
   - name: track
+    explanation: The track number on the card. The droid plays it now.
     type: uint16
     range:
     - 1
@@ -1185,12 +1202,14 @@ entries:
   requires_web_control: false
   params:
   - name: bank
+    explanation: The CHIRP bank, 1 to 6. The droid plays the clip from this bank.
     type: uint8
     range:
     - 1
     - 6
     required: true
   - name: page
+    explanation: The page within the bank, A to Z. The droid plays the clip from this page.
     type: string
     values:
     - A
@@ -1223,6 +1242,7 @@ entries:
     - Z
     required: true
   - name: index
+    explanation: The clip's number on the page. The droid plays that clip now.
     type: uint16
     range:
     - 1
@@ -1273,15 +1293,19 @@ entries:
   requires_web_control: false
   params:
   - name: quiet
+    explanation: Category mask for Quiet, one bit per category, 0 to 4095. Quiet chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: mid
+    explanation: Category mask for Mid-Awake, one bit per category, 0 to 4095. Mid-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: full
+    explanation: Category mask for Full-Awake, one bit per category, 0 to 4095. Full-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: awakeplus
+    explanation: Category mask for Awake+, one bit per category, 0 to 4095. Awake+ chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   executor: audioMoodMapApply
@@ -1301,15 +1325,19 @@ entries:
   requires_web_control: false
   params:
   - name: lo_key
+    explanation: Which category, named by its low-end Setting, such as snd_cat_hum_lo. That category's random picks start at the track you give.
     type: string
     required: true
   - name: hi_key
+    explanation: Which category, named by its high-end Setting, such as snd_cat_hum_hi. That category's random picks stop at the track you give.
     type: string
     required: true
   - name: lo
+    explanation: The lowest track the category plays. Random picks for it start here.
     type: uint16
     required: true
   - name: hi
+    explanation: The highest track the category plays. Random picks for it stop here.
     type: uint16
     required: true
   executor: audioCategoryRangeApply
@@ -1375,6 +1403,7 @@ entries:
   requires_web_control: false
   params:
   - name: volume
+    explanation: How loud, 0 to 30. The droid plays at this level from now.
     type: uint8
     required: true
   executor: audioQueueSetVolume
@@ -1735,6 +1764,7 @@ entries:
   requires_web_control: false
   params:
   - name: volume
+    explanation: How loud at power-on, 0 to 30. The droid starts at this level every time.
     type: uint8
     required: true
   executor: audioSetVolumeCommitApplied
@@ -1754,6 +1784,7 @@ entries:
   requires_web_control: false
   params:
   - name: track
+    explanation: The lowest track number in the random range. Random playback never picks below it.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1773,6 +1804,7 @@ entries:
   requires_web_control: false
   params:
   - name: track
+    explanation: The highest track number in the random range. Random playback never picks above it.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1856,6 +1888,7 @@ entries:
   requires_web_control: false
   params:
   - name: track
+    explanation: The track number on the card. $B plays it at startup.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1875,6 +1908,7 @@ entries:
   requires_web_control: false
   params:
   - name: track
+    explanation: The track number on the card. The droid plays it once it is up.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1894,6 +1928,7 @@ entries:
   requires_web_control: false
   params:
   - name: track
+    explanation: The track number on the card. The droid plays it once when the WiFi module's link is lost for good.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1913,6 +1948,7 @@ entries:
   requires_web_control: false
   params:
   - name: key
+    explanation: The Named Track to set, such as leia. Its command plays the track you give it.
     type: string
     values:
     - scream
@@ -1937,6 +1973,7 @@ entries:
     - pbjtime
     required: true
   - name: track
+    explanation: The track number on the card. The Named Track plays it from now.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1956,6 +1993,7 @@ entries:
   requires_web_control: false
   params:
   - name: key
+    explanation: The system event to set, such as sys_boot. That event plays the track you give it.
     type: string
     values:
     - sys_boot
@@ -1967,6 +2005,7 @@ entries:
     - sys_net_down
     required: true
   - name: track
+    explanation: The track number on the card. The event plays it from now.
     type: uint16
     required: true
   executor: audioTracksApply
@@ -1986,15 +2025,19 @@ entries:
   requires_web_control: false
   params:
   - name: lo_key
+    explanation: Which category, named by its low-end Setting, such as snd_cat_hum_lo. That category's random picks start at the track you give.
     type: string
     required: true
   - name: hi_key
+    explanation: Which category, named by its high-end Setting, such as snd_cat_hum_hi. That category's random picks stop at the track you give.
     type: string
     required: true
   - name: lo
+    explanation: The lowest track the category plays. Random picks for it start here.
     type: uint16
     required: true
   - name: hi
+    explanation: The highest track the category plays. Random picks for it stop here.
     type: uint16
     required: true
   executor: audioCategoryRangeApply
@@ -2014,15 +2057,19 @@ entries:
   requires_web_control: false
   params:
   - name: quiet
+    explanation: Category mask for Quiet, one bit per category, 0 to 4095. Quiet chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: mid
+    explanation: Category mask for Mid-Awake, one bit per category, 0 to 4095. Mid-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: full
+    explanation: Category mask for Full-Awake, one bit per category, 0 to 4095. Full-Awake chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   - name: awakeplus
+    explanation: Category mask for Awake+, one bit per category, 0 to 4095. Awake+ chatters from the categories set, or from the random range when none is.
     type: uint16
     required: true
   executor: audioMoodMapApply
@@ -2043,6 +2090,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to move, by the name the board prints, or both for the two arms. Its part swings to its open end.
     type: string
     board_output: true
     values:
@@ -2066,6 +2114,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to move, by the name the board prints, or both for the two arms. Its part swings to its closed end.
     type: string
     board_output: true
     values:
@@ -2088,10 +2137,12 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to move, by the name the board prints. Its servo goes to the width you give.
     type: string
     board_output: true
     required: true
   - name: position_us
+    explanation: Pulse width in microseconds, 500 to 2500. The servo goes there, kept inside the band its type allows.
     type: uint16
     range:
     - 500
@@ -2114,6 +2165,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to twitch, by the name the board prints. Whatever is wired to it moves a little and comes back.
     type: string
     board_output: true
     required: true
@@ -2134,6 +2186,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to run, by the name the board prints. Its part goes open, closed and back.
     type: string
     board_output: true
     required: true
@@ -2154,10 +2207,12 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to hold, by the name the board prints. Its servo stays powered at the width you give.
     type: string
     board_output: true
     required: true
   - name: position_us
+    explanation: Pulse width in microseconds, 500 to 2500. The servo goes there and keeps pushing until the hold ends.
     type: uint16
     range:
     - 500
@@ -2180,6 +2235,7 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output to let go, by the name the board prints, or both for the two arms. Its part goes limp where it is.
     type: string
     board_output: true
     values:
@@ -2241,6 +2297,7 @@ entries:
   # target enum/shape rather than inventing a second one.
   params:
   - name: target
+    explanation: The output to center, by the name the board prints, or both for the two arms. Its servo goes to center.
     type: string
     board_output: true
     values:
@@ -2391,18 +2448,21 @@ entries:
   requires_web_control: false
   params:
   - name: r
+    explanation: Red, 0 to 255. Every lit output shows this much red.
     type: uint8
     range:
     - 0
     - 255
     required: true
   - name: g
+    explanation: Green, 0 to 255. Every lit output shows this much green.
     type: uint8
     range:
     - 0
     - 255
     required: true
   - name: b
+    explanation: Blue, 0 to 255. Every lit output shows this much blue.
     type: uint8
     range:
     - 0
@@ -2425,6 +2485,7 @@ entries:
   requires_web_control: false
   params:
   - name: effect
+    explanation: How the lights behave, from solid, blink, pulse and off. Every lit output changes at once.
     type: string
     values:
     - solid
@@ -2468,10 +2529,12 @@ entries:
   requires_web_control: false
   params:
   - name: target
+    explanation: The output the strip is on, by the name the board prints. Only that strip's count is read or set.
     type: string
     board_output: true
     required: true
   - name: value
+    explanation: How many LEDs the strip has, 1 to 255. The strip lights that many from the droid's next start.
     type: uint8
     required: false
   # No NVS key of its own since #413: a light's settings live on the addressed
@@ -2622,6 +2685,7 @@ entries:
   requires_web_control: false
   params:
   - name: mood
+    explanation: 10 Quiet, 13 Mid-Awake, 11 Full-Awake or 14 Awake+. It sets how much the droid chatters and how the dome lights behave.
     type: uint8
     values:
     - 10
@@ -3134,22 +3198,27 @@ entries:
   requires_web_control: false
   params:
   - name: mode
+    explanation: client joins your network and standalone_ap hosts the droid's own. The droid switches at its next restart.
     type: string
     values:
     - client
     - standalone_ap
     required: false
   - name: sta-ssid
+    explanation: The name of the network to join. The droid looks for it at its next restart.
     type: string
     required: false
   - name: ap-ssid
+    explanation: The name of the network the droid hosts. It shows under that name from the next restart.
     type: string
     required: false
   - name: sta-password
+    explanation: The password of the network to join. With a wrong one the droid cannot join.
     type: string
     required: false
     write_excluded: true
   - name: ap-password
+    explanation: The password of the droid's own network. Anyone joining it has to type this.
     type: string
     required: false
     write_excluded: true
@@ -3243,9 +3312,11 @@ entries:
   requires_web_control: false
   params:
   - name: droidName
+    explanation: 1 to 32 lowercase letters, numbers or hyphens. The droid shows this name on every page.
     type: string
     required: true
   - name: mdnsUseName
+    explanation: true makes the droid answer to its name on the network. It takes effect at the next start.
     type: bool
     required: false
   executor: configCacheApply
@@ -3622,6 +3693,7 @@ entries:
   requires_web_control: true
   params:
   - name: token
+    explanation: The action's token, as GET /api/actions lists it. The droid does that action once.
     type: string
     required: true
   executor: dispatchRcTriggerActionTest

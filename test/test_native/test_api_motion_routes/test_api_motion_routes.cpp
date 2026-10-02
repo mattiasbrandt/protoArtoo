@@ -32,6 +32,7 @@
 #include "failsafe_gate.h"
 #include "audio_test_hooks.h"      // the sound module's catalog banks (#449)
 #include "audio_catalog_gate.h"     // the catalog reader gate a refresh closes
+#include "commanded_modes_test_hooks.h"  // g_test_commanded_stationary and the rest of the Commanded Mode stubs
 #include "log_buffer_test_hooks.h"  // the log sink ring, to count the router's warnings
 #include "marcduino_router.h"      // kMarcduinoRouteLogIntervalMs
 #include "marcduino_test_hooks.h"  // the dome link and body handler seams (#449)
@@ -41,20 +42,17 @@
 #include "web_admission.h"
 #include "web_request_test_backend.h"
 #include "web_server_test_hooks.h"  // g_test_restart_requests - #225 moved this one
-#include "config_write_window_check.h"  // the holder check this suite arms (#418)
-#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
-#include "../../../test/stubs/config/servo_output_table_writer.h"  // a table seeded with Parts and a light
                                      // raw declaration into a shared header, now that
                                      // test_console_module.cpp needs it too
                                      // (include/web_server_test_hooks.h's own comment)
+#include "config_write_window_check.h"  // the holder check this suite arms (#418)
+#include "config_write_window_test_hooks.h"  // ConfigWriteWindowForTest - seeding stands in for a window
+#include "../../../test/stubs/config/servo_output_table_writer.h"  // a table seeded with Parts and a light
 
-// Recorded side effects from src/native_test_stubs.cpp.
-extern bool g_test_commanded_stationary;
-extern bool g_test_commanded_web_control;
-extern unsigned g_test_web_control_calls;
-extern unsigned g_test_status_broadcast_count;
+// Recorded side effects from src/native_test_stubs.cpp. The Commanded Mode
+// ones (stationary, web control, mood, the status broadcast count) come from
+// commanded_modes_test_hooks.h above.
 extern unsigned g_test_marcduino_calls;
-extern unsigned g_test_applied_mood;
 extern bool g_test_speed_preset_persist_ok;
 extern bool g_test_aux_led_queue_ok;
 extern DomeLayoutCacheStatus g_test_dome_layout_status;

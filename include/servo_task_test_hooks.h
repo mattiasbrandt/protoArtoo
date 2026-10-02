@@ -21,6 +21,9 @@ extern uint8_t g_test_servo_driven_mask;
 // slot; none by default. servoTaskMayTakeForRun() reads it with the two masks
 // above and the live cache, through the one rule (include/servo_run.h).
 extern uint8_t g_test_servo_lit_at_start_mask;
-// Which Outputs a Find by Moving run holds now, one bit per slot; none by
-// default. servoTaskRunHolds() answers from it.
+// Which Output a Find by Moving run holds now, as a bit in the same per-slot
+// layout as the masks above; none by default. servoTaskRunHolds() answers from
+// it. Production holds one slot index, not a mask (s_runSlot,
+// src/tasks/servo_task.cpp): a run holds at most one Output, so a test that
+// sets more than one bit here describes a state the firmware cannot be in.
 extern uint8_t g_test_servo_run_held_mask;
