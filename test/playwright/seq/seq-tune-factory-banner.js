@@ -1,162 +1,131 @@
-#!/usr/bin/env node
 // bench-auto: fixture seq.html
-/**
- * test/playwright/seq/seq-tune-factory-banner.js
- *
- * Validates the tuning factory banner in the sequence editor.
- *
- * This test verifies:
- * - When editor is opened via Tune (Clone) a factory sequence, a contextual banner appears
- * - Banner displays the factory sequence name correctly
- * - Banner provides clear instructions about Retrained overrides
- * - Banner does NOT appear when editing a normal learned sequence
- * - Banner clears on cancel and after save
- */
+// Tune on a Factory sequence's row opens the workspace with the page's own
+// tuning notice, and the notice names the sequence being tuned. A builder's own
+// sequence, opened through Edit, carries no such notice: the notice is what
+// tells the two apart before a save replaces the factory one.
+//
+// The notice is the page's (data/seq.js renderEditorView(), the .seq-tuning
+// note). This script builds none of it and sets no editor state: it presses
+// the row's button and reads what the page drew. It asserts no copy words, so
+// a copy pass on the notice does not break it; the name it looks for is the
+// sequence's, which is data.
+//
+// PRECONDITION: FIXTURE=1. The droid is a stand-in (./_lib/sequences_droid.js)
+// holding one saved sequence, and this script adds one Factory sequence to it
+// in the two shapes GET /api/seq/builtins answers (src/web/api_seq.cpp
+// handleSeqBuiltinsGet(): the list row, and with ?name= the whole sequence as
+// src/seq_json.cpp seqJsonSerializeObject() writes it).
+//
+// WRITES IT ALLOWS: none. Nothing here saves.
+//
+// WHAT IT PROVES:
+//   1  Tune on the Factory row opens the workspace with the tuning notice on
+//      screen, and the notice carries the Factory sequence's name;
+//   2  Edit on the builder's own sequence opens the workspace with no tuning
+//      notice;
+//   3  the page sent nothing to the droid.
+//
+// WHY A REAL BROWSER. The notice has to be on screen, not only in the markup:
+// the workspace is drawn by the page's own render after a fetch the button
+// starts.
+//
+// RUN:
+//   PA_FIXTURE_PORT=<port> python3 tools/serve_editor_fixture.py &
+//   NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules \
+//     FIXTURE=1 HEADLESS=true BASE_URL=http://127.0.0.1:<port> \
+//     node test/playwright/seq/seq-tune-factory-banner.js
+// Self-test: SELFTEST=edit opens the builder's own sequence through Edit and
+// never presses Tune; row 1 must FAIL.
+const lib = require('../_lib/checks.js');
+const seq = require('./_lib/sequences_droid.js');
 
-const { chromium } = require("playwright");
-const assert = require("assert");
+const ARTIFACTS = 'output/playwright/seq';
+const FACTORY_NAME = 'DM:VADER';
+const OWN_NAME = 'DM:KEEP';
 
-const TARGET_URL = process.env.TARGET_URL || "http://127.0.0.1:4173/seq.html";
-const HEADLESS = process.env.HEADLESS === "true";
+const FACTORY = {
+  format: 1, name: FACTORY_NAME, suppressMs: 8000, toggleGroup: 'none',
+  meta: { source: 'factory', origin: '', license: '', notes: '', purpose: '', modified: false },
+  steps: [{ t: 0, type: 'audio', cmd: '$H' }, { t: 500, type: 'end' }],
+  closeSteps: [],
+};
 
-async function test() {
-  const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : 50 });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const OWN = {
+  format: 1, name: OWN_NAME, id: 'keep0001', suppressMs: 8000, toggleGroup: 'none',
+  meta: { source: 'user', notes: '', purpose: '' },
+  steps: [{ t: 0, type: 'audio', cmd: '$H' }, { t: 1500, type: 'end' }],
+  closeSteps: [],
+};
 
-  try {
-    // 1. Navigate to seq.html
-    console.log("Navigating to", TARGET_URL);
-    await page.goto(TARGET_URL, { waitUntil: "networkidle", timeout: 10000 });
-    await page.waitForTimeout(500);
+// The Factory sequence on the stand-in droid. Registered after seq.install(),
+// so it is asked before the stand-in's own empty builtins answer.
+const installFactory = (page) =>
+  page.context().route('**/api/seq/builtins**', (route) => {
+    const name = new URL(route.request().url()).searchParams.get('name');
+    const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (!name) {
+      return json([{
+        name: FACTORY.name, toggleGroup: FACTORY.toggleGroup, suppressMs: FACTORY.suppressMs,
+        stepCount: FACTORY.steps.length, lengthMs: 500, purpose: '',
+      }]);
+    }
+    return name === FACTORY.name ? json(FACTORY) : json({ error: 'not found' }, 404);
+  });
 
-    // 2. Test Case A: Banner appears when tuning a factory sequence
-    console.log("\n=== TEST CASE A: Banner appears when tuning factory sequence ===");
-    const factorySeq = {
-      format: 1,
-      name: "DM:VADER",
-      suppressMs: 8000,
-      toggleGroup: "none",
-      meta: { source: "factory", notes: "Factory sequence" },
-      steps: [
-        { t: 0, type: "audio", cmd: "$H" },
-        { t: 500, type: "end" },
-      ],
+// What is on screen: the workspace, and the tuning notice with what it says.
+const seen = (page) =>
+  page.evaluate(() => {
+    const shown = (node) => Boolean(node) && node.checkVisibility({ checkVisibilityCSS: true });
+    const notices = [...document.querySelectorAll('#seq-editor-view .seq-tuning')];
+    return {
+      workspace: shown(document.querySelector('#seq-editor-view .seq-strip')),
+      notices: notices.length,
+      noticeShown: notices.some(shown),
+      noticeText: notices.map((node) => node.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
     };
+  });
 
-    // Simulate tuning via handleCloneBuiltin: set the editor state it sets,
-    // then render, so the page draws its own tuning notice.
-    await page.evaluate((seq) => {
-      const hooks = window.__seqEditorForTesting;
-      hooks.editorState.isNew = true;
-      hooks.editorState.tuningFactory = seq.name; // This is what handleCloneBuiltin sets
-      hooks.renderEditorView(seq);
-    }, factorySeq);
+const workspaceOpen = (page) =>
+  page.waitForSelector('#seq-editor-view:not(.hidden) .seq-strip', { timeout: 10000 });
 
-    await page.waitForTimeout(300);
-
-    // 3. Verify banner is present and contains correct text
-    console.log("Verifying tuning factory banner");
-    const bannerState = await page.evaluate(() => {
-      const banner = document.querySelector("#seq-editor-view .seq-tuning");
-      return {
-        exists: !!banner,
-        text: banner?.textContent ?? "",
-        hasFactoryName: banner?.textContent?.includes("DM:VADER") ?? false,
-        hasRetrainedInfo: banner?.textContent?.includes("your version replaces the factory one") ?? false,
-        hasMemoryWipeInfo: banner?.textContent?.includes("Memory Wipe") ?? false,
-      };
-    });
-
-    assert.strictEqual(bannerState.exists, true, "Tuning banner should exist when tuningFactory is set");
-    assert.strictEqual(bannerState.hasFactoryName, true, "Banner should contain factory sequence name");
-    assert.strictEqual(bannerState.hasRetrainedInfo, true, "Banner should say the saved version replaces the factory one");
-    assert.strictEqual(bannerState.hasMemoryWipeInfo, true, "Banner should mention Memory Wipe");
-    console.log("✓ Tuning banner present with correct content");
-    console.log("  Banner text:", bannerState.text.trim().substring(0, 100) + "...");
-
-    // 4. Test Case B: Normal editor (non-tuning) has no banner
-    console.log("\n=== TEST CASE B: No banner for normal sequence editing ===");
-    const normalSeq = {
-      format: 1,
-      name: "DM:CUSTOM",
-      suppressMs: 5000,
-      toggleGroup: "pies",
-      meta: { source: "learned", notes: "Custom sequence" },
-      steps: [
-        { t: 0, type: "audio", cmd: "$T" },
-        { t: 200, type: "dome", cmd: ":OP00" },
-        { t: 400, type: "end" },
-      ],
+lib.runCheck({
+  rule: 'Sequences: Tune opens a Factory sequence with the tuning notice, naming it; Edit on your own shows none',
+  artifactDir: ARTIFACTS,
+  selftests: ['edit'],
+  precondition: seq.fixtureOnly,
+  run: async ({ page, writes, report, selftest, openPage }) => {
+    // Sequences on a page of its own, with both sequences in the list.
+    const onSequences = async (target) => {
+      await seq.install(target, { sequences: [OWN] });
+      await installFactory(target);
+      await seq.openSequences(target, OWN_NAME);
+      await target.waitForSelector(`.seq-item-factory[data-seq-name="${FACTORY_NAME}"]`, { timeout: 15000 });
     };
+    await onSequences(page);
 
-    await page.evaluate((seq) => {
-      if (window.__seqEditorForTesting && window.__seqEditorForTesting.renderEditorView) {
-        const editorView = document.querySelector("#seq-editor-view");
-        if (editorView) {
-          editorView.classList.remove("hidden");
-        }
-        // Note: tuningFactory is NOT set for normal editing (handleEditSequence
-        // opens from a closed session, which clears it)
-        window.__seqEditorForTesting.editorState.isNew = false;
-        window.__seqEditorForTesting.editorState.tuningFactory = null;
-        window.__seqEditorForTesting.renderEditorView(seq);
-      }
-    }, normalSeq);
+    if (selftest === 'edit') {
+      await seq.openInWorkspace(page, OWN_NAME);
+    } else {
+      await page.click(`.seq-item-factory[data-seq-name="${FACTORY_NAME}"] [data-action="tune"]`);
+      await workspaceOpen(page);
+    }
+    let now = await seen(page);
+    report.add('1', `Tune opens the workspace with the tuning notice on screen, carrying ${FACTORY_NAME}`,
+      lib.verdict(now.workspace && now.notices === 1 && now.noticeShown && now.noticeText.includes(FACTORY_NAME)),
+      JSON.stringify(now));
+    await page.screenshot({ path: `${ARTIFACTS}/tune-factory-notice.png` });
 
-    await page.waitForTimeout(300);
+    // A fresh page for the builder's own sequence, so no state rides over
+    // from the tune.
+    const own = await openPage();
+    await onSequences(own.page);
+    await seq.openInWorkspace(own.page, OWN_NAME);
+    now = await seen(own.page);
+    report.add('2', `Edit on ${OWN_NAME}, the builder's own, opens the workspace with no tuning notice`,
+      lib.verdict(now.workspace && now.notices === 0), JSON.stringify(now));
 
-    // 5. Verify no banner for normal sequence
-    console.log("Verifying no banner for normal sequence");
-    const noBannerState = await page.evaluate(() => {
-      const editorView = document.querySelector("#seq-editor-view");
-      const warnings = editorView?.querySelectorAll(".seq-tuning") ?? [];
-      return {
-        warningCount: warnings.length,
-        editorVisible: !editorView?.classList.contains("hidden"),
-        nameInEditor: document.querySelector("#seq-editor-name")?.value ?? "",
-      };
-    });
-
-    // After a fresh render without tuningFactory set, there should be no warning banner
-    // (Note: depending on implementation, may need adjustment if banner persists)
-    console.log(`✓ Normal sequence editor rendering complete`);
-    console.log(`  Sequence name in editor: ${noBannerState.nameInEditor}`);
-    console.log(`  Warning banners: ${noBannerState.warningCount}`);
-
-    // 6. Test Case C: Verify CSS classes exist
-    console.log("\n=== TEST CASE C: Verify CSS classes are defined ===");
-    await page.evaluate(() => {
-      // Check if CSS classes are defined by checking if we can query elements with them
-      // Create test elements to verify classes don't break rendering
-      const testDiv = document.createElement("div");
-      testDiv.className = "seq-badge-factory";
-      document.body.appendChild(testDiv);
-      const computed = window.getComputedStyle(testDiv);
-      testDiv.remove();
-
-      return {
-        badgeFactoryColor: computed.color !== "",
-        badgeRetainedColor: window.getComputedStyle(document.querySelector(".seq-badge-retrained") || document.createElement("div")).color !== "",
-      };
-    });
-
-    console.log("✓ CSS classes verified");
-
-    // 7. Take final screenshot showing editor with banner
-    console.log("\nTaking final screenshot");
-    await page.screenshot({ path: "/tmp/seq-tune-factory-banner-final.png", fullPage: true });
-
-    console.log("\n✅ All tuning factory banner tests passed!");
-  } catch (error) {
-    console.error("\n❌ Test failed:", error);
-    await page.screenshot({ path: "/tmp/seq-tune-factory-banner-error.png", fullPage: true });
-    process.exit(1);
-  } finally {
-    await browser.close();
-  }
-}
-
-test().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
+    const sent = [...writes, ...own.writes];
+    report.add('3', 'Nothing was sent to the droid',
+      lib.verdict(sent.length === 0), sent.map(lib.describeWrite).join('; ') || 'no write');
+  },
 });
