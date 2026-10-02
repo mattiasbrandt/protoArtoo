@@ -633,6 +633,7 @@ struct SeqGestureNext {
     uint16_t     speedMs;  // the Gesture's override of the Output's throw time, or 0
     uint8_t      easing;   // the Gesture's override of the Output's easing, or 0
     uint16_t     flutterMs;  // a flutter move's length
+    uint32_t     endAtMs;    // when the run that fired the Gesture ends; 0 = none
 };
 
 inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
@@ -647,6 +648,11 @@ inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
 // the Output the last body move started (run->awaitOutput) as moving, and the
 // spacing after it must have run. The earliest-due item goes first.
 //
+// `bodyHeld` holds every body move back whatever the pace says: the
+// Coordinator sets it while a flutter's Part is out, so the back leg that
+// closes it goes before anything else moves (include/sequence_flutter.h). A
+// dome pass is not held; the dome's motion is the dome's.
+//
 // NOTHING GOES OUT AT OR AFTER THE FIRING RUN'S END STEP (#438). A Gesture
 // whose run has reached its end is over, mid-pass or not: terminal cleanup is
 // the last thing the run moves, and the Coordinator clears suppression right
@@ -654,12 +660,13 @@ inline uint32_t sequenceGestureDueAt(const SeqGestureRunEntry& e) {
 // and a move the pace pushed past the end is never sent. The Rehearsal says
 // when a pass cannot fit before the end (gesture-cut).
 inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaitedMoving,
-                                SeqGestureNext* out) {
+                                SeqGestureNext* out, bool bodyHeld = false) {
     if (run == nullptr || out == nullptr) return false;
     for (SeqGestureRunEntry& e : run->g) {
         if (e.active && e.endAtMs != 0 && (int32_t)(nowMs - e.endAtMs) >= 0) e.active = false;
     }
-    const bool bodyMayGo = sequencePaceOpen(run->dueMs, &run->awaitOutput, awaitedMoving, nowMs);
+    const bool bodyMayGo =
+        !bodyHeld && sequencePaceOpen(run->dueMs, &run->awaitOutput, awaitedMoving, nowMs);
     int8_t best = -1;
     uint32_t bestAt = 0;
     for (uint8_t i = 0; i < SEQ_GESTURE_RUNS_MAX; ++i) {
@@ -680,6 +687,7 @@ inline bool sequenceGestureNext(SeqGestureRun* run, uint32_t nowMs, bool awaited
     out->speedMs = e.speedMs;
     out->easing = e.easing;
     out->flutterMs = e.flutterMs;
+    out->endAtMs = e.endAtMs;
     if (!e.dome) {
         const SeqGestureMove m = seqGesturePassMove(e.spread, e.n, e.stepMs, e.k);
         out->part = e.members[m.member];

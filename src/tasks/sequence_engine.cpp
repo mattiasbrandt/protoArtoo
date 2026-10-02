@@ -401,6 +401,15 @@ static const char* targetName(uint8_t target) {
     return "00";
 }
 
+// The absolute ms this run's end step falls at, or 0 when its branch has none.
+// What a step hands on when the Coordinator performs it on its own cursor, past
+// the step that fired it: a Gesture and a flutter both stop there.
+static uint32_t runEndAtMs(const SeqEngineState& st) {
+    return (st.stepCount > 0 && st.steps[st.stepCount - 1].type == STEP_END)
+               ? st.startMs + st.steps[st.stepCount - 1].tMs
+               : 0;
+}
+
 // Resolve the step under the cursor into a pending action with an absolute
 // fire time. Returns false for step types that emit nothing (skipped).
 static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
@@ -456,6 +465,13 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.bodyShape = (uint8_t)seqBodyShape(step.params);
             a.bodyHowFar = seqBodyHowFar(step.params);
             a.bodyFlutterMs = step.params.flutterMs;
+            // A flutter is performed on the Coordinator's cursor and must be
+            // closed again before this run's end step, where it is cut and
+            // nothing is commanded: so it is told where the run ends, as a
+            // Gesture is (#453).
+            if (a.bodyShape == (uint8_t)BODY_SHAPE_FLUTTER) {
+                a.domeDurationMs = runEndAtMs(st);
+            }
             break;
         case STEP_GESTURE:
             // Handed on whole. The payload rides along so a log line and the
@@ -468,9 +484,7 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             // end and past terminal cleanup.
             a.kind = SEQ_ACT_GESTURE;
             a.gesture = &step;
-            a.domeDurationMs = (st.stepCount > 0 && st.steps[st.stepCount - 1].type == STEP_END)
-                                   ? st.startMs + st.steps[st.stepCount - 1].tMs
-                                   : 0;
+            a.domeDurationMs = runEndAtMs(st);
             setPayload(a, step.payload);
             break;
         case STEP_SEQUENCE:

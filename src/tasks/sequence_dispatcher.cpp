@@ -383,15 +383,19 @@ static void flutterEndPart(const char* partId) {
 // held every other Output off.
 //
 // `speedMs` and `easing` are a Gesture's own words for its legs, 0 for a Body
-// Step's: a flutter step carries no speed (ADR 0049). No leg goes from here;
-// the first waits its turn and the pace in flutterOneLeg().
+// Step's: a flutter step carries no speed (ADR 0049). `runEndAtMs` is when the
+// run that fired it reaches its end step, 0 where no run bounds it: the flutter
+// is closed again by then, because the end step cuts it and commands nothing
+// (sequenceFlutterStart()). No leg goes from here; the first waits its turn and
+// the pace in flutterOneLeg().
 //
 // Out of line, like the Gesture's two functions: neither this frame nor the
 // log lines' sit on the root frame or on dispatchAction()'s.
 // -----------------------------------------------------------------------------
 static __attribute__((noinline)) bool flutterStartPart(const char* partId, uint8_t howFar,
                                                        uint16_t flutterMs, uint16_t speedMs,
-                                                       uint8_t easing, uint32_t now) {
+                                                       uint8_t easing, uint32_t now,
+                                                       uint32_t runEndAtMs) {
     flutterPlanMove(partId, howFar);
     const SeqBodyStepPlan plan = sequenceBodyStepPlan(flutterMove, rowForPart(partId, &flutterRow));
     // A Part the catalog does not hold is never driven, so past this the index
@@ -406,7 +410,8 @@ static __attribute__((noinline)) bool flutterStartPart(const char* partId, uint8
                     servoOutputDriverToString(plan.output.driver), (unsigned)plan.output.channel);
         return false;
     }
-    if (!sequenceFlutterStart(&flutterRun, (uint8_t)part, howFar, flutterMs, speedMs, easing, now)) {
+    if (!sequenceFlutterStart(&flutterRun, (uint8_t)part, howFar, flutterMs, speedMs, easing, now,
+                              runEndAtMs)) {
         PA_LOG_WARN(TAG, "body %s not fluttered - %u Parts are fluttering already", partId,
                     (unsigned)SEQ_FLUTTER_PARTS_MAX);
         return false;
@@ -502,7 +507,11 @@ static __attribute__((noinline)) void gestureStartFromAction(const SeqAction& ac
 static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     const bool moving = servoCommandedOf(gestureRun.awaitOutput).moving;
     SeqGestureNext next = {};
-    if (!sequenceGestureNext(&gestureRun, now, moving, &next)) {
+    // A flutter's Part that is out holds a Gesture's body move back: its back
+    // leg goes next, so a swing is never split and is back by the time it was
+    // fitted to (include/sequence_flutter.h).
+    if (!sequenceGestureNext(&gestureRun, now, moving, &next,
+                             /*bodyHeld=*/sequenceFlutterPartOut(flutterRun))) {
         return;
     }
     if (next.dome) {
@@ -517,7 +526,7 @@ static __attribute__((noinline)) void gestureOneItem(uint32_t now) {
     // own length, speed and easing (#453). Handing it over starts no motion.
     if (next.shape == BODY_SHAPE_FLUTTER) {
         const bool taken = flutterStartPart(droidPartIdAt(next.part), next.howFar, next.flutterMs,
-                                            next.speedMs, next.easing, now);
+                                            next.speedMs, next.easing, now, next.endAtMs);
         sequenceGestureFlutterHandedOver(&gestureRun, next, taken);
         return;
     }
@@ -741,7 +750,9 @@ static bool dispatchAction(const SeqAction& act) {
             // Any other move of a Part ends a flutter of that Part still
             // going, once the move itself has been sent.
             if (act.bodyShape == (uint8_t)BODY_SHAPE_FLUTTER) {
-                flutterStartPart(act.payload, act.bodyHowFar, act.bodyFlutterMs, 0, 0, millis());
+                // act.domeDurationMs is where the firing run ends (resolveStep()).
+                flutterStartPart(act.payload, act.bodyHowFar, act.bodyFlutterMs, 0, 0, millis(),
+                                 act.domeDurationMs);
                 return true;
             }
             if (!dispatchBodyMove(act)) {

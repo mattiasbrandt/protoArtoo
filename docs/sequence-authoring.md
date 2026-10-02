@@ -125,7 +125,9 @@ what it does in the same three words a dome panel already uses:
   Servo Output's own speed, and is back on its closed end when the time is up.
   The rest of the sequence keeps its timing while it swings. A later step that
   moves the same part ends the flutter. Two parts fluttering together take
-  turns, one move at a time, at least the Cadence Floor apart.
+  turns, one whole swing each, at least the Cadence Floor apart. A flutter is
+  over by the end step, however long it says it lasts: a swing that would not
+  be back by then does not start.
 
 Speed, acceleration and easing are **not** on the step. They live on the Servo
 Output and apply to every use of that part, so your choreography travels between

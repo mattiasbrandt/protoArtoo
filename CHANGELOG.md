@@ -63,8 +63,8 @@ the patch releases, whose notes live on their own GitHub Release.
   how far you set, for as long as the step says, and ends closed. It needs no
   close after it, on the dome or on the body. The rest of the routine keeps
   its timing while the part swings, and two parts fluttering together take
-  turns, one move at a time. A flutter across a set of body parts does the
-  same for each part.
+  turns, one swing each. A flutter is over by the end of the routine. A flutter
+  across a set of body parts does the same for each part.
 - **Set the gap between servo starts.** The droid leaves 450 ms between servos
   it starts itself: back to centre, the power-up pass, a pose, a move across a
   set, a flutter. That number is now yours to set, 50 to 5000 ms, as
