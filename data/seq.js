@@ -1487,7 +1487,8 @@
     if (!phraseSource(step.ref)) {
       return listsAnswered() && !phraseName(step).endsWith("(not on this droid)") ? "Not on this droid." : "";
     }
-    return phrases.read.get(step.ref)?.failed ? "Not read from the droid." : "";
+    // Pressing its pill again asks again (writePicked(), phraseAgain()).
+    return phrases.read.get(step.ref)?.failed ? "The droid did not send it. Press it again to ask." : "";
   };
 
   const pickedHtml = (blocks) => {
