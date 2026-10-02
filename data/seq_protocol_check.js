@@ -1299,50 +1299,51 @@
      * The beat rules on each step (src/seq_json.cpp parseStepBeats()): a beat
      * or a span needs a tempo, a step in a loop body carries no beat, a beat
      * is a whole 0..1200 and a span a whole 1..1200 on a step that has a
-     * duration to set.
+     * duration to set. `label` is the branch's key, for the field a refusal
+     * names.
      */
-    _validateBeats(steps, tempo) {
+    _validateBeats(steps, tempo, label = "steps") {
       const inLoop = loopBodyIndices(steps);
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i] || {};
         if (step.beat !== undefined) {
           if (tempo === undefined) {
-            return { ok: false, field: `steps[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
+            return { ok: false, field: `${label}[${i}].beat`, error: "Set a tempo before putting a step on a beat" };
           }
           if (inLoop.has(i)) {
             return {
               ok: false,
-              field: `steps[${i}].beat`,
+              field: `${label}[${i}].beat`,
               error: "A step inside a repeat is timed from the repeat. Put the repeat on the beat instead.",
             };
           }
           if (!isWhole(step.beat) || step.beat < 0 || step.beat > TEMPO_BEAT_MAX) {
-            return { ok: false, field: `steps[${i}].beat`, error: "Pick a beat on the grid" };
+            return { ok: false, field: `${label}[${i}].beat`, error: "Pick a beat on the grid" };
           }
         }
         for (const key of ["stepBeats", "repeatBeats", "extentBeats"]) {
           if (step[key] === undefined) continue;
           if (step.type !== "gesture") {
-            return { ok: false, field: `steps[${i}].${key}`, error: "Only a gesture keeps its pace in beats" };
+            return { ok: false, field: `${label}[${i}].${key}`, error: "Only a gesture keeps its pace in beats" };
           }
           if (tempo === undefined) {
-            return { ok: false, field: `steps[${i}].${key}`, error: "Set a tempo before timing a gesture in beats" };
+            return { ok: false, field: `${label}[${i}].${key}`, error: "Set a tempo before timing a gesture in beats" };
           }
           if (!isWhole(step[key]) || step[key] < 1 || step[key] > TEMPO_BEAT_MAX) {
-            return { ok: false, field: `steps[${i}].${key}`, error: `A gesture's beats are 1 to ${TEMPO_BEAT_MAX}` };
+            return { ok: false, field: `${label}[${i}].${key}`, error: `A gesture's beats are 1 to ${TEMPO_BEAT_MAX}` };
           }
         }
         if (step.spanBeats !== undefined) {
           if (tempo === undefined) {
-            return { ok: false, field: `steps[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: "Set a tempo before timing a step in beats" };
           }
           if (!isWhole(step.spanBeats) || step.spanBeats < 1 || step.spanBeats > TEMPO_BEAT_MAX) {
-            return { ok: false, field: `steps[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: `A span is 1 to ${TEMPO_BEAT_MAX} beats` };
           }
           const turns = step.type === "domeRotate" && Number(step.speedPct) !== 0;
           const flutters = step.type === "body" && step.shape === "flutter";
           if (!turns && !flutters) {
-            return { ok: false, field: `steps[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
+            return { ok: false, field: `${label}[${i}].spanBeats`, error: "Only a dome turn or a flutter lasts a number of beats" };
           }
         }
       }
@@ -1366,19 +1367,10 @@
         if (!tempoVal.ok) return tempoVal;
       }
       if (Array.isArray(seq.steps)) {
-        const beatVal = this._validateBeats(seq.steps, seq.tempo);
-        if (!beatVal.ok) return beatVal;
-        // A sequence is spliced in where it sits, which a loop body cannot take.
-        const inLoop = loopBodyIndices(seq.steps);
-        const looped = seq.steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
-        if (looped >= 0) {
-          return { ok: false, field: `steps[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
-        }
-        if (seq.steps.filter((step) => step && step.type === "sequence").length > 8) {
-          return { ok: false, field: "steps", error: "A sequence can hold at most 8 others" };
-        }
+        const written = this._validateWritten(seq.steps, seq.tempo, "steps");
+        if (!written.ok) return written;
       }
-      const { name, suppressMs, toggleGroup, steps } = this.resolveBeats(seq);
+      const { name, suppressMs, toggleGroup, steps, closeSteps } = this.resolveBeats(seq);
 
       // Name
       const nameVal = this.validateName(name);
@@ -1411,13 +1403,64 @@
       if (steps.length === 0) {
         return { ok: false, error: "Add at least one step to the sequence" };
       }
+      const main = this._validateBranch(steps, "steps");
+      if (!main.ok) return main;
+
+      // The close half (protocolCheck(), src/protocol_check.cpp): a sequence
+      // in an interrupt group is a toggle, which runs its steps to open and
+      // its close half to close, so it needs one; any other must not carry
+      // one. An empty list is no close half, as the wire reads it
+      // (seqJsonParseVariant(), src/seq_json.cpp). It is a branch like the
+      // steps, timed on the same tempo and held to the same rules.
+      const isToggle = toggleGroup !== "none";
+      const hasClose = Array.isArray(closeSteps) && closeSteps.length > 0;
+      if (isToggle && !hasClose) {
+        return { ok: false, field: "closeSteps", error: "A sequence in an interrupt group needs a close half: the steps that close what it opened" };
+      }
+      if (!isToggle && hasClose) {
+        return { ok: false, field: "closeSteps", error: "Only a sequence in an interrupt group has a close half" };
+      }
+      if (hasClose) {
+        const written = this._validateWritten(seq.closeSteps, seq.tempo, "closeSteps");
+        if (!written.ok) return written;
+        const close = this._validateBranch(closeSteps, "closeSteps");
+        if (!close.ok) return close;
+      }
+
+      return { ok: true };
+    },
+
+    // What the wire's parser holds one branch to as it reads it
+    // (parseBranch(), src/seq_json.cpp): the beat rules, no sequence inside a
+    // loop, and Protocol Check's cap on sequences in one branch. `steps` is
+    // the branch as written, before its beats are resolved, and `label` its
+    // key: "steps" or "closeSteps".
+    _validateWritten(steps, tempo, label) {
+      const beatVal = this._validateBeats(steps, tempo, label);
+      if (!beatVal.ok) return beatVal;
+      // A sequence is spliced in where it sits, which a loop body cannot take.
+      const inLoop = loopBodyIndices(steps);
+      const looped = steps.findIndex((step, i) => step && step.type === "sequence" && inLoop.has(i));
+      if (looped >= 0) {
+        return { ok: false, field: `${label}[${looped}].type`, error: "A sequence cannot sit inside a repeat" };
+      }
+      if (steps.filter((step) => step && step.type === "sequence").length > 8) {
+        return { ok: false, field: label, error: "A sequence can hold at most 8 others" };
+      }
+      return { ok: true };
+    },
+
+    // One branch at the milliseconds it runs at, by the rules the droid
+    // applies to the steps and to the close half alike
+    // (protocolCheckBranch(), src/protocol_check.cpp).
+    _validateBranch(steps, label) {
       if (steps.length > this.MAX_STEPS) {
         return { ok: false, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
       }
 
       // Must end with 'end' type
       const lastStep = steps[steps.length - 1];
-      if (lastStep.type !== "end") {
+      if (!lastStep || lastStep.type !== "end") {
         return { ok: false, error: "The sequence must finish with a Sequence End step" };
       }
 
@@ -1435,7 +1478,7 @@
         if (!stepVal.ok) {
           return {
             ok: false,
-            field: stepVal.field || `steps[${i}]`,
+            field: stepVal.field || `${label}[${i}]`,
             error: stepVal.error,
           };
         }
@@ -1443,7 +1486,7 @@
           if (lastOuterT >= 0 && steps[i].t < lastOuterT) {
             return {
               ok: false,
-              field: `steps[${i}].t`,
+              field: `${label}[${i}].t`,
               error: `This step must happen at or after the previous step (${lastOuterT}ms)`,
             };
           }
