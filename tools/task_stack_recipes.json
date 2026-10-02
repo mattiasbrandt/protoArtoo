@@ -483,9 +483,9 @@
             "pca9685SenderTask"
           ],
           "frames": [],
-          "chain_bytes": 2816,
+          "chain_bytes": 2784,
           "stack_bytes": 3584,
-          "note": "A failed bus write's log line: pca9685SenderTask -> sendBatch (336 B, the batch's channel frame and the error line's arguments) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. The I2C writes themselves (Wire -> i2cWrite -> i2c_master_transmit) are shallower than that log route."
+          "note": "A bus failure's log line: pca9685SenderTask (48 B; the mailbox copy is static) -> stopTrusting (320 B, the last all-off write and the error line's arguments) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf, 320 B) formats with newlib nano's vsniprintf. The idle MODE1 read down into the I2C driver (i2c_master_multi_buffer_transmit, 304 B, and its pin-reset log) walks 2560 B, shallower."
         },
         "esp32p4": {
           "env": "firebeetle2",

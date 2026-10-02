@@ -39,10 +39,13 @@
 // bit on all sixteen in one transaction.
 //
 // A BUS DROP IS REPORTED, NOT ESCALATED (ADR 0043). A write the chip does not
-// acknowledge, or one that times out, marks the expander as not answering for
-// the rest of the session: ServoTask then reports its sixteen Outputs
-// unreachable and drives nothing on them. Nothing here touches drive, the
-// estop or the failsafe gate, and nothing latches an estop (ADR 0032).
+// acknowledge, or one that times out - or, while nothing is being sent, a
+// once-a-second read of MODE1 that goes unanswered - marks the expander as not
+// answering for the rest of the session, after one best-effort ALL_LED_OFF_H
+// so a chip that can still hear lets its Outputs go: ServoTask then reports
+// its sixteen Outputs unreachable and drives nothing on them. Nothing here
+// touches drive, the estop or the failsafe gate, and nothing latches an estop
+// (ADR 0032).
 //
 // The constants and the arithmetic are pure and compile in the native build;
 // the functions at the bottom are the firmware's (src/drivers/pca9685.cpp).
@@ -69,6 +72,12 @@ constexpr uint32_t PCA9685_I2C_CLOCK_HZ = 400000;
 // the chip gives and short enough that the worst case it adds to a release
 // (one timeout, then the expander is not answering) stays a few milliseconds.
 constexpr uint16_t PCA9685_BUS_TIMEOUT_MS = 5;
+
+// How long the sender waits with nothing to send before it reads MODE1 once to
+// prove the board is still there: an expander unplugged while every Output is
+// still is reported unreachable within about this long, not at the next move.
+// One ~0.1 ms read a second is nothing to the bus.
+constexpr uint32_t PCA9685_LIVENESS_PROBE_MS = 1000;
 
 // The oscillator the prescale is computed against: 25 MHz is the datasheet's
 // TYPICAL figure, and the chip may run anywhere from about 23 to 27 MHz (spec
@@ -221,7 +230,8 @@ bool pca9685Begin(uint8_t address);
 // created, and the expander is then not answering.
 bool pca9685StartSender();
 
-// Whether the expander answered at bring-up and every write since. Lock-free:
+// Whether the expander answered at bring-up and every write and liveness read
+// since. Lock-free:
 // one byte, written by setup() and then only ever cleared by the sender.
 bool pca9685Answering();
 

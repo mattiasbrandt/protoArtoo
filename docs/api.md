@@ -891,9 +891,11 @@ The Controller Console answers the same rows as `servo.api.get-outputs`.
   `{"product":"pca9685","address":"0x40","outputs":"pca:0-pca:15","answering":true}`.
   `address` is the I2C address it was brought up at, `outputs` the span of
   Outputs it owns - one row each in `outputs` above, added at start beside the
-  board's own - and `answering` whether it answered at start and every write
-  since. `false` is for the rest of the session: its Outputs then report `limp`
-  `unreachable` and `driven` `false`, and nothing else on the droid changes.
+  board's own - and `answering` whether it answered at start, every write
+  since and, while nothing is being sent, a check about once a second.
+  `false` is for the rest of the session: the droid makes one last attempt to
+  switch every channel off, its Outputs then report `limp` `unreachable` and
+  `driven` `false`, and nothing else on the droid changes.
   The Controller Console's `servo.api.get-outputs` gives the same three facts as
   one more item, `expander:pca9685 address:0x40 outputs:pca:0-pca:15 answering:true`.
 - Errors: `500` if the answer could not be built.

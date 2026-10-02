@@ -1023,8 +1023,9 @@ static void releaseAllOutputs(ServoLimpReason reason) {
 // (SERVO_LIMP_UNREACHABLE), and from then on nothing drives it: its bit in
 // s_unreachable_mask takes it out of isOutputEnabled() and backendReady().
 //
-// Nothing is written to it - the bus is what failed, so there is nothing a
-// release could reach - and nothing here touches drive, the estop or the
+// Nothing is written to it from here - the bus is what failed, and the
+// sender has already made the one last all-off attempt a release could
+// (src/drivers/pca9685.cpp) - and nothing here touches drive, the estop or the
 // failsafe gate, or latches anything (ADR 0032). It does not log: the sender
 // said which board stopped answering and which Outputs that leaves, and a log
 // line here would put a second formatting route on this task's measured chain
