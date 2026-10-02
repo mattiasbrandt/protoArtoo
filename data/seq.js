@@ -682,7 +682,7 @@
 
   // When a sequence was last saved, as the list words it: "saved 30 Sep 19:42".
   // Nothing unless the droid gave a time. It gives none today: the `modified`
-  // GET /api/seq/list sends is a yes or no - a shared sequence edited in place
+  // GET /api/seq/list sends is a yes or no - the stored file's meta.modified
   // (src/web/api_seq.cpp) - and a yes read as a time would be 1 Jan 1970.
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const savedWords = (modified) => {
@@ -698,8 +698,9 @@
   // for stays empty rather than read 0.
   const reportedSteps = (entry) => (Number.isInteger(entry.stepCount) ? entry.stepCount : "");
 
-  // How long a run is: "6 s", "1.5 s", worded as the Rehearsal words its
-  // "runs 6 s" (data/seq_rehearsal.js). The droid sends 0 for a stored
+  // How long a run is: "6 s", "1.5 s". lengthWords() is the same formatter as
+  // seconds() in data/seq_rehearsal.js, which words the Rehearsal's "runs 6 s":
+  // the two change together. The droid sends 0 for a stored
   // sequence it could not find the end of, which is only ever an invalid one,
   // so that row's Runs stays empty.
   const lengthWords = (ms) => `${Number((ms / 1000).toFixed(2))} s`;

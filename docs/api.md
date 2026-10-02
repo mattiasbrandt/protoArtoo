@@ -1384,14 +1384,16 @@ it holds, up to ten on any board, which can be more than the board's save cap
   - `source`: where the sequence came from, the saved file's `meta.source`:
     `"user"` (also when the file names none), `"guild"`, or `"factory"` for one
     tuned from a factory sequence
-  - `modified`: boolean; true for a shared (`"guild"`) sequence edited in place.
-    Not a time: the controller keeps no save time
+  - `modified`: boolean; the saved file's `meta.modified`, `false` when the
+    file names none. The controller never sets it. Not a time: the controller
+    keeps no save time
   - `valid`: boolean indicating if the sequence is valid and runnable
   - `retrained`: boolean; true if this sequence shadows a factory sequence
   - `stepCount`: steps in the main branch, the end step included
   - `lengthMs`: how long a run is, in milliseconds: the end step's time, with
-    beats resolved against the sequence's tempo. `0` for an invalid sequence
-    with no end step
+    beats resolved against the sequence's tempo. A Servo Loop still on its
+    last pass at that time finishes it first, and that overrun is not counted.
+    `0` for an invalid sequence with no end step
   - `purpose`: the first 40 bytes of the sequence's `meta.purpose`, cut on a
     whole character; `""` when it has none. The whole purpose is in
     `GET /api/seq?name=`

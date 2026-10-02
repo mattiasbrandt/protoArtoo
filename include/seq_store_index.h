@@ -43,8 +43,10 @@ struct SeqIndexEntry {
     char           name[24];      // "DM:MYSEQ"
     SeqToggleGroup toggleGroup;   // for retrain coherence + list badges
     uint32_t       suppressMs;
-    char           source[8];     // "user" | "guild"
-    bool           modified;      // a guild file edited in place
+    char           source[8];     // the file's meta.source: "user" | "guild" |
+                                  // "factory" (one tuned from a Factory one)
+    bool           modified;      // the file's meta.modified; nothing on the
+                                  // controller sets it
     char           file[40];      // basename under /data/seq/
     bool           valid;         // false if file fails Protocol Check at boot
     char           id[17];        // stable id a phrase refers to it by (ADR 0046);
