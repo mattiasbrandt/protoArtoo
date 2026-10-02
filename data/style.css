@@ -8132,13 +8132,15 @@ body[data-page="maintenance"] .status-item .hint {
   text-align: right;
 }
 
-.outputs-acts .btn {
+.outputs-acts .btn,
+.outputs-apply-picks .btn {
   padding: 0 var(--space-sm);
   border-color: transparent;
   color: var(--text-dim);
 }
 
-.outputs-acts .btn:hover {
+.outputs-acts .btn:hover,
+.outputs-apply-picks .btn:hover {
   border-color: transparent;
   background: var(--surface-alt);
   color: var(--text);
@@ -8157,6 +8159,7 @@ body[data-page="maintenance"] .status-item .hint {
   display: flex;
   justify-content: flex-start;
   min-width: 0;
+  white-space: nowrap;
   min-height: 24px;
   margin-top: var(--space-2xs);
   padding: 0;
@@ -8272,12 +8275,15 @@ body[data-page="maintenance"] .status-item .hint {
   min-height: 28px;
 }
 
-.outputs-settings .seg {
+/* The line under the rows (#457) offers the same choices in the same bar. */
+.outputs-settings .seg,
+.outputs-apply .seg {
   display: inline-flex;
   justify-self: start;
 }
 
-.outputs-settings .seg > button {
+.outputs-settings .seg > button,
+.outputs-apply .seg > button {
   flex: 0 0 auto;
   min-height: 26px;
   padding: 0 var(--space-md);
@@ -8883,6 +8889,66 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-marks {
   margin: 0 0 var(--space-sm);
+}
+
+/* A row's tick (#457): the page's own mark of which rows the line under the
+   table sets a value on. A plain box in the interaction blue, in a cell no
+   wider than it. */
+.outputs-table .outputs-main > .outputs-pick-cell {
+  width: 1%;
+  padding-right: 0;
+}
+
+.outputs-pick {
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The line under the rows that sets one value on every ticked one (#457): the
+   two tick acts as quiet words, what to set as one joined bar, its value, and
+   the one act with the count in its label. A seam parts it from the rows, and
+   its answer sits at its foot. It moves nothing, so it is nowhere near back
+   to centre. */
+.outputs-apply {
+  margin-top: var(--space-md);
+  padding: var(--space-md) var(--space-md) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+/* Spelled with .seg so it outranks the bar's own display. */
+.outputs-apply[hidden],
+.outputs-apply [hidden],
+.outputs-apply .seg[hidden] {
+  display: none;
+}
+
+.outputs-apply-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.outputs-apply-picks {
+  display: inline-flex;
+  margin-right: var(--space-md);
+}
+
+.outputs-apply-value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.outputs-apply .feedback {
+  margin: var(--space-sm) 0 0;
 }
 
 /* ---------------------------------------------------------------------------

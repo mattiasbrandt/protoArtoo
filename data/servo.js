@@ -52,6 +52,11 @@
 // What it does at power-up sits beside them and is offered whether or not it
 // is calibrated: the two are separate decisions (ADR 0052), and calibrating
 // never changes it.
+//
+// Several Outputs take one of those Settings in one press (#318, #457): each
+// row has a tick, and the line under the rows sets one value on every ticked
+// Output that can take it. It moves nothing, so it sits apart from back to
+// centre, and who takes the value is decided before anything is sent.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -156,12 +161,15 @@
   // either is open. The <tbody> carries data-output, so every lookup below
   // finds its cells in either line. The drive cell comes before the settings
   // line on purpose: .outputs-drive-note and .outputs-drive-acts are looked up
-  // by their first match.
+  // by their first match. The row opens with its tick (#457), which is painted
+  // from the page's own set and never read back from the box.
   const outputRowHtml = (output) => {
     const label = output.name;
     return (
       `<tbody class="parts-row outputs-row" data-output="${esc(output.address)}">` +
       `<tr class="outputs-main">` +
+      `<td class="outputs-pick-cell"><input class="outputs-pick" type="checkbox" ` +
+      `aria-label="${esc(`Tick ${label}`)}"></td>` +
       `<th scope="row"><span class="parts-name outputs-parts"></span>` +
       `<span class="outputs-address">${esc(label)}</span>` +
       `<div class="hint outputs-narrowed" hidden></div></th>` +
@@ -192,7 +200,7 @@
       `aria-label="${esc(`Settings for ${label}`)}">settings` +
       `<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>` +
       `</td></tr>` +
-      `<tr class="outputs-sub" hidden><td colspan="5"><div class="outputs-settings" hidden>` +
+      `<tr class="outputs-sub" hidden><td colspan="6"><div class="outputs-settings" hidden>` +
       // How it lets go (#443): never, or a time after each move arrives,
       // offered where how it moves is. The state beside it says what the
       // Output will do, or why it is limp.
@@ -243,7 +251,8 @@
   // controller does across a reboot, not while this page is reading it (#318).
   const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
-      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Part</th>` +
+      `<table class="parts-table outputs-table"><thead><tr><th scope="col" aria-label="Ticked"></th>` +
+      `<th scope="col">Part</th>` +
       `<th scope="col" aria-label="Put another part on it"></th>` +
       `<th scope="col">Commanded position</th><th scope="col">Move it</th>` +
       `<th scope="col" aria-label="Calibrate and settings"></th>` +
@@ -254,6 +263,7 @@
     outputsRegion.querySelectorAll("[data-output]").forEach((node) => {
       outputRows.set(node.dataset.output, {
         node,
+        pick: node.querySelector(".outputs-pick"),
         parts: node.querySelector(".outputs-parts"),
         bar: node.querySelector(".outputs-bar"),
         now: node.querySelector(".outputs-now"),
@@ -340,6 +350,7 @@
     const live = OUTPUTS.live(output);
     const pulsing = live.state === "pulsing";
     row.node.classList.toggle("is-wired", output.parts.length > 0);
+    row.pick.checked = ticked.has(output.address);
     row.node.classList.toggle("partkind-light", light);
     row.bar.classList.toggle("is-off", !pulsing);
     // Whatever the droid has just answered is current, including after an
@@ -480,11 +491,221 @@
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Ticks, and one Setting set on every ticked Output (#318, #457)
+  //
+  // THE TICKS ARE THE PAGE'S OWN. They save nothing and send nothing, and they
+  // are kept here, beside the rows and not in them, so neither a repaint nor a
+  // rebuild of the table loses one. A tick whose Output has left the list goes
+  // with it, or the button would count a row nobody can see.
+  //
+  // One press sets one of the row's own Settings on every ticked Output that
+  // can take it, in one request through the row door. NOTHING HERE MOVES
+  // ANYTHING: no /api/servo, no capture, no centre, no pulse-off.
+  //
+  // WHO TAKES IT IS DECIDED BEFORE SENDING, by the rule each row offers the
+  // field on (motionOpen(), bootOpen()). The door refuses the whole request
+  // over one row it cannot take (docs/api.md, "the row door"), and
+  // data/outputs.js throws before sending on a field a row cannot save, so a
+  // row left to the droid to sort out would cost every other row its save.
+  // The answer counts who was left out and why. An Output that is not
+  // calibrated is this page's rule, as on its row, not a refusal of the
+  // droid's, and is never called one.
+  //
+  // The value goes as the row sends it. What a Setting accepts is ruled on by
+  // the droid, once: this page keeps no range.
+  // ---------------------------------------------------------------------------
+  const ticked = new Set();
+  const applyBar = outputsSection.querySelector(".outputs-apply");
+  const applyFields = applyBar.querySelector(".outputs-apply-field");
+  const applyValue = applyBar.querySelector(".outputs-apply-value");
+  const applyButton = applyBar.querySelector(".outputs-apply-set");
+  const pickAll = applyBar.querySelector(".outputs-pick-all");
+  const pickNone = applyBar.querySelector(".outputs-pick-none");
+  // The line's own answer, at its foot. Held, as centreSaid is.
+  const applySaid = applyBar.querySelector(".feedback");
+  const sayApplied = (text, level) => window.PAUtils.showFeedback(applySaid, text, level);
+
+  // What the line can set: the Settings each row carries, under the words the
+  // row uses, each with the rule its row offers it on. A field with `choices`
+  // is picked from the row's own; the other two are times, typed.
+  const BULK_FIELDS = [
+    { key: "throwMs", label: "time to full throw", open: motionOpen, motion: true },
+    { key: "accelMs", label: "time to get up to speed", open: motionOpen, motion: true },
+    { key: "ease", label: "ease", open: motionOpen, motion: true, choices: OUTPUTS.EASES, ask: "Pick an ease." },
+    {
+      key: "boot",
+      label: "at power-up",
+      open: bootOpen,
+      motion: false,
+      choices: OUTPUTS.BOOTS,
+      ask: "Pick what they do at power-up.",
+    },
+  ];
+  // The field being set, what has been typed or picked for each, and whether
+  // a press is still waiting on the droid.
+  const bulk = { field: BULK_FIELDS[0], values: {}, busy: false };
+
+  applyFields.innerHTML = BULK_FIELDS.map(
+    (field) =>
+      `<button type="button" role="radio" aria-checked="false" data-bulk-field="${esc(field.key)}">${esc(field.label)}</button>`
+  ).join("");
+  // One box for either time, and each choice field's own bar. The box sits in
+  // a plain wrapper so `hidden` can take it off the line.
+  applyValue.innerHTML =
+    `<span class="outputs-apply-ms"><label class="outputs-motion-field">` +
+    `<input class="number-cell outputs-apply-time" type="number" step="10"> ms</label></span>` +
+    BULK_FIELDS.filter((field) => field.choices)
+      .map(
+        (field) =>
+          `<div class="seg" role="radiogroup" data-bulk-choices="${esc(field.key)}" ` +
+          `aria-label="${esc(`${field.label}, for the ticked outputs`)}">` +
+          field.choices
+            .map(
+              (choice) =>
+                `<button type="button" role="radio" aria-checked="false" data-bulk-value="${esc(choice.id)}">${esc(choice.label)}</button>`
+            )
+            .join("") +
+          `</div>`
+      )
+      .join("");
+  const applyMs = applyValue.querySelector(".outputs-apply-ms");
+  const applyTime = applyValue.querySelector(".outputs-apply-time");
+  // Hold's one-sentence risk, shown while hold is the pick, as on the row.
+  const applyRisk = applyBar.querySelector(".outputs-boot-risk");
+  const applyChoices = Array.from(applyValue.querySelectorAll("[data-bulk-choices]"));
+
+  const capital = (words) => words.charAt(0).toUpperCase() + words.slice(1);
+  const lit = (button, on) => {
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-checked", on ? "true" : "false");
+  };
+
+  // Only what already exists, as the rows are painted: the line is never
+  // rebuilt under the builder's pointer, and never the box being typed in.
+  const paintApply = (outputs) => {
+    applyBar.hidden = outputs.length === 0;
+    const count = ticked.size;
+    // The count is the warning (r2d2-astromech-simulator v1.79.0,
+    // src/js/maestro/setup-hw-channels.js:637), so it rides in the label.
+    applyButton.textContent =
+      count === 0 ? "Set on ticked outputs" : count === 1 ? "Set on 1 ticked output" : `Set on all ${count} ticked outputs`;
+    window.PAApi.gateControls([applyButton], count > 0 && !bulk.busy);
+    window.PAApi.gateControls([pickAll], count < outputs.length);
+    window.PAApi.gateControls([pickNone], count > 0);
+    const field = bulk.field;
+    Array.from(applyFields.querySelectorAll("[data-bulk-field]")).forEach((button) =>
+      lit(button, button.dataset.bulkField === field.key)
+    );
+    applyMs.hidden = Boolean(field.choices);
+    if (!field.choices) {
+      applyTime.setAttribute("aria-label", `${capital(field.label)} for the ticked outputs, in milliseconds`);
+      if (document.activeElement !== applyTime) applyTime.value = bulk.values[field.key] || "";
+    }
+    applyChoices.forEach((bar) => {
+      bar.hidden = bar.dataset.bulkChoices !== field.key;
+      Array.from(bar.querySelectorAll("[data-bulk-value]")).forEach((button) =>
+        lit(button, !bar.hidden && button.dataset.bulkValue === bulk.values[field.key])
+      );
+    });
+    applyRisk.hidden = !(field.key === "boot" && bulk.values.boot === "home-hold");
+  };
+
+  const outputsCount = (count) => `${count} ${count === 1 ? "output" : "outputs"}`;
+
+  // Why a ticked Output is left out, for the answer. Only ever asked of one
+  // its row's own rule (field.open) has already turned down: this words the
+  // rule's answer and decides nothing.
+  const leftOut = (output, field) => {
+    if (isLightRow(output)) return field.motion ? "a light has no motion" : "a light has no power-up setting";
+    if (field.motion && isDriveable(output) && output.motionSettable && !output.calibrated) return "not calibrated yet";
+    return "nothing to set on it";
+  };
+
+  // "1 skipped: not calibrated yet", or each reason with its own count when
+  // there is more than one.
+  const skippedSaid = (skipped, field) => {
+    const reasons = new Map();
+    skipped.forEach((output) => {
+      const why = leftOut(output, field);
+      reasons.set(why, (reasons.get(why) || 0) + 1);
+    });
+    const said =
+      reasons.size === 1
+        ? Array.from(reasons.keys())[0]
+        : Array.from(reasons, ([why, count]) => `${count} ${why}`).join(", ");
+    return `${skipped.length} skipped: ${said}`;
+  };
+
+  const applyTicked = async () => {
+    const field = bulk.field;
+    const held = bulk.values[field.key] ?? "";
+    let value;
+    let shown;
+    if (field.choices) {
+      const choice = field.choices.find((each) => each.id === held);
+      if (!choice) {
+        sayApplied(field.ask, "warning");
+        return;
+      }
+      value = choice.id;
+      shown = choice.label;
+    } else {
+      // As the row sends a time: rounded, and no range of this page's own.
+      const ms = Math.round(Number(held));
+      if (held === "" || !Number.isFinite(ms)) {
+        sayApplied("Type a time in milliseconds.", "warning");
+        return;
+      }
+      value = ms;
+      shown = `${ms} ms`;
+    }
+    const picked = listed(OUTPUTS.list()).filter((output) => ticked.has(output.address));
+    if (picked.length === 0) return;
+    const taking = picked.filter(field.open);
+    const skipped = picked.filter((output) => !field.open(output));
+    const left = skipped.length > 0 ? skippedSaid(skipped, field) : "";
+    if (taking.length === 0) {
+      sayApplied(`Nothing sent - ${left}.`, "warning");
+      return;
+    }
+    const changes = {};
+    taking.forEach((output) => {
+      changes[output.address] = { [field.key]: value };
+    });
+    bulk.busy = true;
+    paint();
+    try {
+      await OUTPUTS.saveAll(changes);
+    } catch (error) {
+      // The door takes every row or none, and data/outputs.js has read the
+      // rows again, so they show what the droid holds. Only a refusal is
+      // known to have changed nothing: a save whose answer never came may
+      // have landed, and is not called either way.
+      const said = window.PAApi.messageFor(error);
+      sayApplied(error?.kind === "http" ? `Nothing changed: ${said}.` : `No answer from the droid: ${said}.`, "error");
+      return;
+    } finally {
+      bulk.busy = false;
+      paint();
+    }
+    sayApplied(
+      `${capital(field.label)} set to ${shown} on ${outputsCount(taking.length)}${left ? ` - ${left}` : ""}.`,
+      left ? "warning" : "success"
+    );
+  };
+
   // With no Part on any Output there is no row to draw, and one line sends
   // the builder to where Parts are put on Outputs.
   const NONE_LISTED = `No part is on an output yet. <a class="link-btn" href="#wiring">Put parts on outputs on Wiring</a>.`;
 
   const paintOutputs = (outputs, addresses) => {
+    // A tick goes with its row (above), before any row is painted from it.
+    const here = new Set(outputs.map((output) => output.address));
+    ticked.forEach((address) => {
+      if (!here.has(address)) ticked.delete(address);
+    });
+    paintApply(outputs);
     if (outputs.length === 0) {
       if (outputAddresses !== "") {
         outputsRegion.innerHTML = `<p class="hint outputs-none">${NONE_LISTED}</p>`;
@@ -544,6 +765,44 @@
     say: showFeedback,
     reload: () => loadOutputs(),
     repaint: () => paint(),
+  });
+
+  // A tick: the page's own, so it asks the droid for nothing.
+  outputsRegion.addEventListener("change", (event) => {
+    const box = event.target;
+    if (!box?.classList?.contains("outputs-pick")) return;
+    const address = box.closest?.("[data-output]")?.dataset.output;
+    if (!address) return;
+    if (box.checked) ticked.add(address);
+    else ticked.delete(address);
+    paint();
+  });
+
+  applyTime.addEventListener("input", () => {
+    bulk.values[bulk.field.key] = applyTime.value;
+  });
+
+  applyBar.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button");
+    if (!button || button.disabled) return;
+    if (button === applyButton) {
+      started(applyTicked());
+      return;
+    }
+    // Tick all is every row listed; clear ticks empties the set. Neither
+    // saves or sends anything (operator, 2026-09-30 on #457).
+    if (button === pickAll) {
+      if (answered()) listed(OUTPUTS.list()).forEach((output) => ticked.add(output.address));
+    } else if (button === pickNone) {
+      ticked.clear();
+    } else if (button.dataset.bulkField) {
+      bulk.field = BULK_FIELDS.find((field) => field.key === button.dataset.bulkField) || bulk.field;
+    } else if (button.dataset.bulkValue) {
+      bulk.values[bulk.field.key] = button.dataset.bulkValue;
+    } else {
+      return;
+    }
+    paint();
   });
 
   // A release time is typed in seconds and saved as the ms the droid counts:

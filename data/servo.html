@@ -50,6 +50,24 @@
            controller told the servo, never where it is. -->
       <p class="hint outputs-marks">The bar is where it was told to go, the tick where the move ends. Nothing reads a servo back.</p>
       <div class="parts-table-wrap" id="outputs-table"></div>
+      <!-- One Setting set on every ticked row in one press (#457). It moves
+           nothing, so it sits under the rows, apart from back to centre over
+           them (rule 17), and its answer is at its own foot (rule 18).
+           data/servo.js fills the choices from the droid's own words and
+           shows the line once there is a row to tick. -->
+      <div class="outputs-apply" hidden>
+        <div class="outputs-apply-line">
+          <span class="outputs-apply-picks">
+            <button class="btn btn-sm btn-quiet outputs-pick-all" type="button">tick all</button>
+            <button class="btn btn-sm btn-quiet outputs-pick-none" type="button" disabled aria-disabled="true">clear ticks</button>
+          </span>
+          <div class="seg outputs-apply-field" role="radiogroup" aria-label="What to set on the ticked outputs"></div>
+          <span class="outputs-apply-value"></span>
+          <button class="btn btn-sm outputs-apply-set" type="button" disabled aria-disabled="true">Set on ticked outputs</button>
+          <span class="hint outputs-boot-risk is-risk" hidden>Hold keeps the pulse on, so a blocked part grinds.</span>
+        </div>
+        <p class="feedback" role="status" aria-live="polite"></p>
+      </div>
       <!-- The calibration dial opens here, under the rows, for one Output at a time. -->
       <div id="outputs-dial"></div>
       <p class="feedback" id="outputs-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
