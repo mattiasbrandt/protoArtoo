@@ -67,6 +67,8 @@ const KeyPin kStoredKeys[] = {
     {"domeEscRndEnable", "dome_rnd_en", SettingStorage::Bool}, {"domeEscRndSpeedPct", "dome_rnd_spd", SettingStorage::U8},
     {"domeEscRndPauseMin", "dome_rnd_pmin", SettingStorage::U8}, {"domeEscRndPauseMax", "dome_rnd_pmax", SettingStorage::U8},
     {"domeEscRndMoveMs", "dome_rnd_ms", SettingStorage::U16}, {"protoR2linkWifiPeerIp", "dome_wip", SettingStorage::Text},
+    {"domeEscFullTurnMs", "dome_turn_ms", SettingStorage::U16}, {"domeEscFullTurnPct", "dome_turn_pct", SettingStorage::U8},
+    {"domeEscPositiveTurn", "dome_turn_dir", SettingStorage::U8},
     {"cadenceFloorMs", "cad_floor_ms", SettingStorage::U16},
     {"logLevel", "log_level", SettingStorage::U8},
     // The audio Settings (#431 addendum), by the key their door takes.

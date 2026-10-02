@@ -17,6 +17,7 @@
 #include "audio_rx_status.h"
 #include "board_outputs.h"  // BOARD_OUTPUT_COUNT - one lit-wire entry per Output
 #include "config.h"
+#include "dome_bearing.h"  // DomeBearingReading - what domeBearingRead() hands out
 #include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
@@ -306,12 +307,28 @@ struct ServoCommandedPosition {
 // -----------------------------------------------------------------------------
 // Dome command message (sent via domeCmdQueue)
 // -----------------------------------------------------------------------------
+// What a DomeCommand asks of DomeTask. SPEED is every command there was before
+// the Dome Bearing (#445), and it is 0, so a sender that zero-fills its command
+// and sets a speed keeps meaning exactly what it meant.
+enum DomeCommandKind : uint8_t {
+    DOME_CMD_SPEED = 0,          // speed and durationMs
+    DOME_CMD_FRONT_IS_HERE = 1,  // the builder says the dome points front now
+    DOME_CMD_TURN_TO = 2,        // turn the short way to targetTenths of Dome Bearing
+};
+
 struct DomeCommand {
     float speed;         // -1.0 (full reverse) .. +1.0 (full forward), 0 = stop
     uint32_t durationMs; // 0 = indefinite (RC/web), >0 = auto-stop after this many ms
     CommandSource source;
+    // These two sit in the padding after `source`, so the struct is the size
+    // it always was and no sender's frame grows - RC input's measured stack
+    // chain among them. The assertion below holds that.
+    DomeCommandKind kind;
+    int16_t targetTenths;  // TURN_TO: the Dome Bearing to turn to, 0..3599
     uint32_t timestampMs;
 };
+static_assert(sizeof(DomeCommand) == 16,
+              "DomeCommand grew - every domeCmdQueue sender's frame grows with it");
 
 // -----------------------------------------------------------------------------
 // RobotState  --  shared state, all access under robotStateMux
@@ -387,6 +404,13 @@ struct RobotState {
     uint32_t domeLastSeenMs;
     uint32_t domeLastSeenUartMs;
     uint32_t domeLastSeenWifiMs;
+    // The Dome Bearing (include/dome_bearing.h, ADR 0051, #445), written by
+    // DomeTask alone. A zeroed flag is UNKNOWN: `RobotState robotState = {}`
+    // is the boot path, and a boot forgets, so the zero value must never read
+    // as a number - least of all as front. Read both through domeBearingRead(),
+    // which hands out NaN for an unknown bearing.
+    bool domeBearingBelieved;
+    float domeBearingDeg;
 
     // --- Zone 5: Audio (AudioTask) ---
     bool audioActive;
@@ -496,6 +520,26 @@ inline ServoCommandedPosition servoCommandedOf(ServoOutputAddress output) {
     taskEXIT_CRITICAL(&robotStateMux);
     return commanded;
 }
+
+// -----------------------------------------------------------------------------
+// domeBearingRead()
+// The Dome Bearing, read under robotStateMux: believed with its number, or
+// unknown with NaN and no number at all. Every surface that shows the bearing
+// and every act that turns to one reads it here.
+// -----------------------------------------------------------------------------
+inline DomeBearingReading domeBearingRead() {
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool believed = robotState.domeBearingBelieved;
+    const float deg = robotState.domeBearingDeg;
+    taskEXIT_CRITICAL(&robotStateMux);
+    DomeBearingReading reading = {false, NAN};
+    if (believed) {
+        reading.believed = true;
+        reading.deg = deg;
+    }
+    return reading;
+}
+
 // -----------------------------------------------------------------------------
 // Helper function declarations (defined in main.cpp or a dedicated helpers.cpp)
 // -----------------------------------------------------------------------------

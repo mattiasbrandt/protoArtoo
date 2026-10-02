@@ -421,6 +421,14 @@
       word: "longest pause", unit: " s", path: "domeEsc.rndPauseMax", clash: "must be at least the shortest pause",
     },
     domeEscRndMoveMs: { applies: "immediate", word: "move duration", unit: MS, path: "domeEsc.rndMoveMs" },
+    domeEscFullTurnMs: { applies: "immediate", word: "full-turn time", unit: MS, path: "domeEsc.fullTurnMs" },
+    domeEscFullTurnPct: { applies: "immediate", word: "full-turn speed", unit: PCT, path: "domeEsc.fullTurnPct" },
+    domeEscPositiveTurn: {
+      applies: "immediate",
+      word: "positive turn",
+      path: "domeEsc.positiveTurn",
+      values: { unset: "not set", cw: "clockwise", ccw: "anticlockwise" },
+    },
     protoR2linkWifiPeerIp: {
       label: "Dome IP address", applies: "immediate",
       word: "dome's IP address", path: "protoR2link.wifiPeerIp",
