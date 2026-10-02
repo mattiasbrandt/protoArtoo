@@ -1866,11 +1866,20 @@
   // A logic text travels percent-encoded, so a colon in it is not read as the
   // next field: a line break is %0A, % is %25, : is %3A, and a space stays a
   // space. A text that was not stored that way is shown as it is stored.
+  //
+  // encodeLightText() answers null for the one text that cannot be encoded:
+  // one holding half of a two-part character (a lone surrogate, which is what
+  // a pictograph cut in two leaves behind). encodeURIComponent() throws a
+  // URIError on it. Writing the text raw instead would put an unencoded
+  // character into the command and say nothing, so the edit is refused and
+  // whoever asked says why (LIGHT_TEXT_REFUSED).
+  const LIGHT_TEXT_REFUSED = "That text has a broken character in it. Type it again.";
   const encodeLightText = (text) => {
     try {
       return encodeURIComponent(text).replace(/%20/g, " ");
-    } catch (e) {
-      return text;
+    } catch (error) {
+      if (error instanceof URIError) return null;
+      throw error;
     }
   };
   const decodeLightText = (encoded) => {
@@ -1903,10 +1912,11 @@
     }
   };
 
-  // The command those fields spell. The fields are positional, so a duration
-  // needs its color slot: a set duration with the color DEFAULT writes DEFAULT
-  // there, and with the color DEFAULT and no duration both are left off -
-  // stored only where it differs.
+  // The command those fields spell, or null for a logic text that cannot be
+  // encoded. The fields are positional, so a duration needs its color slot: a
+  // set duration with the color DEFAULT writes DEFAULT there, and with the
+  // color DEFAULT and no duration both are left off - stored only where it
+  // differs.
   const lightCmd = (fields) => {
     const tail = (color, number) => (number !== "" ? `:${color}:${number}` : color !== "DEFAULT" ? `:${color}` : "");
     switch (fields.kind) {
@@ -1914,8 +1924,10 @@
         return `DV:${fields.preset}`;
       case "DL":
         return `DL:${fields.target}:${fields.mode}${tail(fields.color, fields.seconds)}`;
-      case "DT":
-        return `DT:${fields.target}:${fields.color}:${fields.seconds}:${fields.speed}:${encodeLightText(fields.text)}`;
+      case "DT": {
+        const encoded = encodeLightText(fields.text);
+        return encoded === null ? null : `DT:${fields.target}:${fields.color}:${fields.seconds}:${fields.speed}:${encoded}`;
+      }
       default:
         return `DH:${fields.target}:${fields.effect}${tail(fields.color, fields.count)}`;
     }
@@ -4098,6 +4110,11 @@
         speed: speedInput ? speedInput.value : "0",
         text: textInput ? textInput.value : "",
       });
+      if (cmd === null) {
+        // The step keeps the text it had.
+        showEditorFeedback(LIGHT_TEXT_REFUSED, "error");
+        return;
+      }
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
