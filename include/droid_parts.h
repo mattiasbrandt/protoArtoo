@@ -4,7 +4,7 @@
 // Auto-generated from docs/droid-parts.yaml by tools/generate_droid_parts_catalog.py
 // DO NOT EDIT MANUALLY
 //
-// Source digest: sha256 bcb82e8813b0fd2a5b037245c1270b3f162cd3d655cb3bcc8996c13c19d428bb
+// Source digest: sha256 a46ca77dbfa184c574ce3a73026b0b034717b5a35708c6e3d43aac4f12d311df
 //
 // The Droid Parts Catalog's id vocabulary, and where each Part sits. A
 // Part is identity; an Output Address is only wiring, so nothing here
@@ -365,9 +365,9 @@ inline constexpr const char* const DROID_BUILD_DEFAULT_FITTED_IDS[DROID_BUILD_DE
 // measured. It is never 0, which is a real bearing - dead astern.
 //
 // CHECK VALUE, so a sign error is caught by reading rather than by driving:
-// panel14 (P14, the panel the Front PSI sits on) reads 1840 - 4 degrees to
+// panel14 (P14, the panel the Front PSI sits on) reads 2020 - 22 degrees to
 // the droid's right of dead ahead - and panel8 (P8, the Rear PSI's) reads
-// 240 - 156 degrees to the droid's left of dead ahead. A table with the
+// 190 - 161 degrees to the droid's left of dead ahead. A table with the
 // Front PSI's panel near 0 has the convention backwards.
 //
 // THIS IS THE PART'S FRAME, NOT THE DOME BEARING'S. A Dome Bearing is
@@ -387,38 +387,38 @@ constexpr int16_t DROID_BEARING_NONE = -1;
 constexpr int16_t DROID_BEARING_DEAD_AHEAD_TENTHS = 1800;
 
 inline constexpr int16_t DROID_PART_BEARING_TENTHS[DROID_PART_COUNT] = {
-    1500,  // pie1
-    900,  // pie2
-    300,  // pie3
-    3300,  // pie4
-    2700,  // pie5
-    2100,  // pie6
-    1425,  // panel1
-    1280,  // panel2
-    1140,  // panel3
-    940,  // panel4
-    755,  // panel5
-    625,  // panel6
-    450,  // panel7
-    240,  // panel8
-    3000,  // panel9
-    2420,  // panel10
-    2170,  // panel11
-    2040,  // panel12
-    1940,  // panel13
-    1840,  // panel14
-    2040,  // logicFront
-    3000,  // logicRear
-    755,  // magicPanel
-    1840,  // psiFront
-    240,  // psiRear
-    625,  // upperPanel
-    1650,  // hp1Pan
-    1650,  // hp1Tilt
-    3500,  // hp2Pan
-    3500,  // hp2Tilt
-    380,  // hp3Pan
-    380,  // hp3Tilt
+    1795,  // pie1
+    1195,  // pie2
+    595,  // pie3
+    3595,  // pie4
+    2995,  // pie5
+    2395,  // pie6
+    1625,  // panel1
+    1445,  // panel2
+    1265,  // panel3
+    1000,  // panel4
+    735,  // panel5
+    735,  // panel6
+    470,  // panel7
+    190,  // panel8
+    3240,  // panel9
+    2790,  // panel10
+    2510,  // panel11
+    2350,  // panel12
+    2190,  // panel13
+    2020,  // panel14
+    2350,  // logicFront
+    3240,  // logicRear
+    735,  // magicPanel
+    2020,  // psiFront
+    190,  // psiRear
+    735,  // upperPanel
+    1810,  // hp1Pan
+    1810,  // hp1Tilt
+    0,  // hp2Pan
+    0,  // hp2Tilt
+    500,  // hp3Pan
+    500,  // hp3Tilt
     80,  // domeBtn1
     200,  // domeBtn2
     DROID_BEARING_NONE,  // bodyPanel1

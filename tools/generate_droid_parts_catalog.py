@@ -253,7 +253,7 @@ OTHER_SLOT_KEYS = frozenset(("count", "id_prefix", "label_prefix", "control"))
 # (#445), in degrees as the catalog writes them. ONE source: the sentence is
 # built from this dict (check_value_lines()) and load_catalog() refuses a
 # catalog that disagrees with it.
-CHECK_VALUE_BEARINGS = {"panel14": 184, "panel8": 24}
+CHECK_VALUE_BEARINGS = {"panel14": 202, "panel8": 19}
 
 # A catalog id is an unquoted identifier, the same shape
 # servoOutputPartIdIsValid() accepts on a Servo Output row.
