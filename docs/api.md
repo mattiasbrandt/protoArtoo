@@ -1486,9 +1486,13 @@ curl -s -X POST http://artoo.local/api/seq/test \
 
 ### POST /api/seq/stop
 
-Aborts the currently running sequence (Learned or factory).
+Asks the Sequence Coordinator to stop what it is doing. The handler (`handleSeqStopPost`) calls `sequenceStopRequest()`, which raises `robotState.seqStopRequested` and clears a pose that has not been taken yet. The Coordinator lives in `src/tasks/sequence_dispatcher.cpp`.
 
-Stop is non-latching and idempotent. If no sequence is running, the request succeeds with no-op. Does not affect other subsystems (e.g., estop).
+On each tick the Coordinator receives at most one item from `sequenceQueue` before it reads the flag. When the flag is set it clears the flag, ends an active bulk centre, ends Gestures, ends a pose being reached, and aborts an active sequence engine (`seqEngineAbort`, evidence outcome `aborted`, reason `web stop`). It does not remove items still waiting in `sequenceQueue` (depth 4).
+
+A start that is still queued, and was not the one item received on this tick, is taken on a later tick. The flag has already been cleared, so that start runs. A Stop that arrives before the Coordinator has the run in the engine does not cancel a start that is only waiting in the queue. The item received on the same tick is started first; the stop on that tick can then abort it.
+
+Stop is non-latching. The handler answers `200` `{"ok":true}` whether or not anything was running. It does not latch estop and it does not change other subsystems.
 
 - Body: none
 - Success: `200` `{"ok":true}`
@@ -1542,16 +1546,34 @@ curl -s -X POST http://artoo.local/api/seq/pose \
 
 ### GET /api/seq/last-run
 
-Returns machine-readable evidence of the last sequence execution.
+Machine-readable evidence of the most recent sequence run, built by `populateSeqLastRunJson` (`src/seq_last_run_json.cpp`) from a `SeqRunEvidence` snapshot.
 
-- Success: `200` JSON with execution details:
-  - `name`: sequence name
-  - `startMs`: timestamp when sequence started
-  - `runDurationMs`: how long the sequence ran
-  - `step`: current/final step index
-  - `state`: execution state (`"idle"`, `"running"`, `"stopped"`, `"error"`, etc.)
-  - Additional fields depend on sequence engine state
-- Errors: `500` on response overflow
+When nothing has run since boot the body is only:
+
+```json
+{"valid":false,"note":"no sequence run recorded since boot"}
+```
+
+When a run has been recorded:
+
+- `valid`: `true`
+- `name`: sequence name
+- `source`: the `CommandSource` value as a number, not a name
+- `outcome`: `seqRunOutcomeName` — `running`, `completed`, `aborted`, `preempted`, `estop`, `reconnect`, or `none`
+- `running`: `true` only while `outcome` is `running`
+- `reason`: present when the evidence reason is non-empty (a web stop records `web stop`)
+- `startMs`: when the run started
+- `endMs`: present only when non-zero
+- `fxScopes`: string array, any of `panel`, `logic_psi`, `holo`, `audio`, `dome_seq`
+- `netOpenRingPanels` / `touchedRingPanels`: panel numbers still net-open, and panel numbers the run touched
+- `cleanup`: `{count, total, truncated, cmds}` — the cleanup commands kept, and how many there were in all
+- `tx`: `{total, capacity, omittedFromRecent, truncated, retained, recent}`. `capacity` is `SEQ_EVID_TX_CAP` (32 on artoo-esp32, 112 on firebeetle2). `recent` is the retained ring, oldest first
+- `warnings`: `bodyQueueFullDelta`, `dispatchRetryCount`, and `remoteDomeQueue` (`sampled`, `queueFullDelta`). The builder currently emits `sampled: false` and `queueFullDelta: null`
+
+There is no `runDurationMs`, `step`, or `state` field.
+
+- Success: `200` with the object above
+- Errors: `500` `{"ok":false,"error":"request scratch unavailable"}` or `{"ok":false,"error":"last-run response overflow"}`
 
 #### Example request
 
@@ -1562,7 +1584,7 @@ curl -s http://artoo.local/api/seq/last-run
 #### Example response (abridged)
 
 ```json
-{"name":"DM:ROCKMARCH","startMs":1234567890,"runDurationMs":5000,"step":3,"state":"running"}
+{"valid":true,"name":"DM:ROCKMARCH","source":1,"outcome":"aborted","running":false,"reason":"web stop","startMs":1234567890,"endMs":1234572890,"fxScopes":["panel"],"netOpenRingPanels":[],"touchedRingPanels":[1],"cleanup":{"count":0,"total":0,"truncated":false,"cmds":[]},"tx":{"total":3,"capacity":32,"omittedFromRecent":0,"truncated":false,"retained":3,"recent":[]},"warnings":{"bodyQueueFullDelta":0,"dispatchRetryCount":0,"remoteDomeQueue":{"sampled":false,"queueFullDelta":null}}}
 ```
 
 ### GET /api/seq

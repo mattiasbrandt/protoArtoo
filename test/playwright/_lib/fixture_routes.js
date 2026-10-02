@@ -82,12 +82,12 @@
 //     latch let go stay limp until something takes them again.
 //   - A hold under a latched estop is answered 200 and changes nothing: the
 //     route queues it and ServoTask refuses it (src/web/api_servo.cpp).
-//   - POST /api/config with `outputs` rows saves a row's ledCount and its
-//     release time (0..60000 ms, #443) and answers the config
-//     (sendConfigSnapshot()). POST /api/config with nothing but
-//     guidedSetupVisited=<step> (data/setup.js saveVisited) is taken and kept
-//     in `state.accepted`, so it is never mistaken for nothing having been
-//     written.
+//   - POST /api/config is accepted in exactly two shapes. JSON whose only key
+//     is `outputs` saves a row's ledCount and its release time (0..60000 ms,
+//     #443) and answers the config (sendConfigSnapshot()). A body that is
+//     nothing but guidedSetupVisited=<step> (data/setup.js saveVisited) is
+//     taken and kept in `state.accepted`. Any other POST /api/config,
+//     including a Part move, is refused. The fixture droid does not move Parts.
 //   - POST /api/sleep and /api/wake answer {ok, sleepMode, changed}
 //     (docs/api.md) and push a status only when the posture changed
 //     (src/web/api_system.cpp).

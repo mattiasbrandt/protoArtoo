@@ -237,7 +237,8 @@ Grammar (`tools/console_client.py`, `parse_directive_line` / `split_into_row_blo
 - Directives: `send`, `raw`, `key`, `sendlen`, `listen`, `settle`, `timeout`, `pause`.
 - Anything before the first `@row` is **preamble** and always runs - `timeout` and
   `settle` setup lives there.
-- Row **names** are the selector and must be unique.
+- Row **names** are the selector and must be unique. `python3 tools/console_client.py --check-sheet <file>` checks that, and that every directive is one the client knows, and opens no port.
+- Directives also include `http` (and `row` is the `@row` marker itself). The list this client accepts is `_DIRECTIVE_KINDS` in `tools/console_client.py`.
 - A `#` comment block above each row says what it answers and why it is shaped
   that way. What a row is *expected* to answer stays on the owning ticket, never
   as an `expect` directive - there is deliberately no such directive.

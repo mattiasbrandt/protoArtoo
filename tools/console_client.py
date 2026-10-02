@@ -1674,6 +1674,25 @@ def select_rows(blocks: list[RowBlock], rows: str | None, skip_manual: bool) -> 
     return selected
 
 
+def check_sheet(path: str) -> list[str]:
+    """Errors in a bench sheet. Empty means every @row has one unique label and
+    every directive is one this client knows. Raises ScriptUsageError for an
+    unknown directive, the same way a real run does. Opens no port."""
+    _, blocks = split_into_row_blocks(load_script_file(path))
+    errors: list[str] = []
+    seen: dict[str, int] = {}
+    for block in blocks:
+        if not block.label:
+            who = block.ticket or "(no ticket)"
+            errors.append(f"{path}: @row {who} has no label")
+            continue
+        seen[block.label] = seen.get(block.label, 0) + 1
+    for label, count in seen.items():
+        if count > 1:
+            errors.append(f"{path}: row label {label!r} appears {count} times")
+    return errors
+
+
 def flatten_rows(preamble: list[Directive], blocks: list[RowBlock]) -> list[Directive]:
     out = list(preamble)
     for b in blocks:
@@ -1965,7 +1984,25 @@ def main() -> int:
         "--skip-manual", action="store_true",
         help="Run only @row blocks that contain no pause directive (agent-runnable rows)."
     )
+    parser.add_argument(
+        "--check-sheet", default=None, metavar="FILE",
+        help="Check a bench sheet and exit: every @row has a label, labels are unique, "
+             "and every directive is one this client knows. Opens no port."
+    )
     args = parser.parse_args()
+
+    if args.check_sheet:
+        try:
+            errors = check_sheet(args.check_sheet)
+        except (OSError, ScriptUsageError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        if errors:
+            for error in errors:
+                print(f"ERROR: {error}", file=sys.stderr)
+            return 1
+        print(f"ok {args.check_sheet}")
+        return 0
 
     script_directives: list[Directive] = []
     try:

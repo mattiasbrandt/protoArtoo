@@ -85,7 +85,7 @@ the same pass - never left open for one unobtainable number.
 from the epic's coordination section rather than from memory.
 
 - **Make the branch and worktree with the tool, not by hand:**
-  `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug>`.
+  `python3 tools/epic_worktree.py <n> --base <base> --name <type>/<slug> --path ../wt-<n>`.
   It creates the linked branch, adds `../wt-<n>`, puts it on the local
   `<base>` tip, verifies that it landed there (exit 1 if not), pushes the
   branch so the issue's Development section names the real base, and prints
@@ -130,8 +130,12 @@ from the epic's coordination section rather than from memory.
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.
-- **Start every worker memory-capped:** `python3 tools/herdr_capped_agent.py
-  --pane <id> --name <agent> [-- --resume <session-id>]`, never a bare
+- **One command each, so the next session does not re-read `--help`.**
+  `herdr tab create --workspace <name> --cwd <path> --label <label> --focus`.
+  `python3 tools/herdr_capped_agent.py --pane <id> --name <agent> [-- --resume <session-id>]`.
+  `tools/gate_in_pane.sh /tmp/gate.log -- python3 tools/slice_verify.py --base <base> --json /tmp/gate.json`.
+  The JSON field is `ok`. During the pause do not pass `--mutations`. Do not pipe the gate through `tee`.
+- **Start every worker memory-capped** with the `herdr_capped_agent.py` line above, never a bare
   `herdr agent start`. It puts the pane's shell in its own systemd scope
   (MemoryMax 10G, no swap, OOMPolicy=continue) and refuses to start the agent
   if the cap is not in place. **Why:** on 2026-09-29 one worker's test grew
@@ -153,14 +157,24 @@ from the epic's coordination section rather than from memory.
   do not grant a waiver so the worker can write a test. A flat test total is
   the normal result. The gate's suite rows skip themselves.
 
+## Pins
+
+A pin quotes an excerpt you measured. Cite the symbol (`pickedHtml()`). A line number is a hint and will move. When a contract owns the rule, cite the contract (`docs/dome-visual-authoring-contract.md`, `docs/api.md`), not an implementation that nothing calls. Open the cited symbol and confirm a caller reaches it before the pin says it is the reference.
+
+A date-limited caveat names the command whose output retires it. "Comment PATCH returned 403 on 2026-10-01" stays only while `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> --input <file>` still fails. When that command succeeds, delete the caveat.
+
 ## Critic protocol (before accepting any slice - no exceptions)
 
-**Through 2026-10-31 (#464) the suite is not the acceptance.** Do not require a pasted suite block, a mutation table, a red run, or a per-wave re-run of `slice_verify` for the suites. Step 0 below is the acceptance. A worker who added tests or mutation patches the ticket did not name goes back to delete them. A missing `make test` is not a reject. The build still matters when the diff compiles. On 2026-11-01 this paragraph stops applying and the steps below return to force.
+**Through 2026-10-31 (#464) the suite is not the acceptance.** Do not require a pasted suite block, a mutation table, a red run, or a per-wave re-run of `slice_verify` for the suites. Step 0 below is the acceptance. A worker who added tests or mutation patches the ticket did not name goes back to delete them. A missing `make test` is not a reject. The build still matters when the diff compiles. On 2026-11-01 this paragraph stops, and "From 2026-11-01" below is the rule. Until then, do not follow that section.
 
 Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
 
-0. **Read the production diff first, and weight it heaviest.** The source is
+0. **Read the rule files yourself. The reviewer subagent reads the bulk diff.**
+   You open the contract, the mirror, and the header the pin names, and you
+   check the cited symbol is one a caller reaches. You do not page the whole
+   diff in parallel with that reviewer. Then read the production paths the
+   ticket touches, and weight that heaviest. The source is
    what ships; tests are scaffolding. `git diff <base>...HEAD -- <prod paths>`
    and ask: is the new code actually *wired in and called*, or added beside
    what it was meant to replace? Were the old rules **deleted**, or are there
@@ -171,6 +185,10 @@ reporting passes that never ran. In the worker's worktree, personally:
    step-core module nothing referenced, and left a hand-rolled poll in place
    through an epic that claimed to consolidate polling. Both were invisible
    to a green gate.
+
+### From 2026-11-01
+
+The suite pause has ended. Steps 1 and 2 below are the acceptance again. Until that date, skip this section: step 0, a clean tree, and a build when the diff compiles are the acceptance, and a worker does not pass `--mutations`.
 
 1. **Check the block's provenance against the branch - do not re-run the gate
    behind every slice.** Read the worker's pasted block and verify, in its
@@ -264,7 +282,7 @@ reporting passes that never ran. In the worker's worktree, personally:
    (safety, a shipped defect, harness-only) in the surface's file with one
    kill, and for the rest to be deleted, not tidied. An ugly name on a real
    invariant still passes.
-3. Read the full diff (`git diff <base>...HEAD`): scope creep,
+3. The reviewer subagent reads the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
    RobotState via portMUX/zone discipline).
@@ -496,7 +514,16 @@ against any other wing means *no such wing*, never *no prior art*.
 ## Reporting
 
 Keep one evolving status comment per epic with the frontier state (running /
-in review / rework / merged).
+in review / rework / merged). Keep it under about 20 KB. When the next edit
+would pass that, post the current body as a new history comment and reset the
+evolving one to the frontier. History comments are append-only.
+
+A worker is done when the last line of its status comment is `WORKER_DONE: ok`
+or `WORKER_DONE: blocked` (a trailing `//` signature does not count), or
+`/tmp/slice-<n>.json` is `{"ok": true}` or
+`{"ok": false}`. Wait with
+`python3 tools/wait_worker.py --issue <n> --marker '<!-- worker-status-<n>-<slug> -->'`.
+An idle pane is not that signal: the gate runs in a sibling pane.
 
 **Record first, escalate second, and escalate only the residue.** A finding is
 written onto the ticket that will act on it (critic protocol step 7) BEFORE

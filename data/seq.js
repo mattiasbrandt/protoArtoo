@@ -5,6 +5,17 @@
 // a sequence is edited in (#441, variant C) - a strip, the stage with the
 // timeline and the droid, and one drawer under it. Also the dialogs (restore,
 // memory wipe, discard) and a Factory sequence's read-only stage.
+//
+// Where things are. Look up the name; a line number is only a hint.
+//   historyBegin / historyPush / historyCommit   undo stack
+//   list, stage, drawer                          the three surfaces
+//   pickedHtml                                   inspector rows
+//   stepPreview / stepTypeDefaults               card text, and a new step's values
+//   lightKind / lightFields                      light grammar
+//   renderStepRow / renderStepFields             the card editor
+//   loadRehearsalFacts                           caches GET /api/servo/outputs
+//   validateAndUpdateStep                        commits one card field
+//   window.__seqEditorForTesting                 the test seam
 // =============================================================================
 
 (() => {

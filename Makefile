@@ -103,7 +103,7 @@ FLOCK := python3 tools/pio_lock.py
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-setting-words check-parts-drift check-wiring-cards-drift check-component-drift check-pin-drift check-surface-anatomy check-vocabulary-drift check-board-label-drift check-color-drift check-build-budgets check-protocol-mirror pw-fixture flash ota uploadfs \
         flash-monitor \
         setup setup-wifi clean monitor console bench-rows bench-auto check-deps
 
@@ -141,6 +141,12 @@ test-web: ## Run web behavioral tests (node:test)
 
 test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
 	python3 -m unittest discover -s test/test_tools -q
+
+pw-fixture: ## Run fixture Playwright scripts in DIR (make pw-fixture DIR=seq)
+	python3 tools/pw_fixture.py --dir $(DIR)
+
+check-protocol-mirror: ## Browser half of the protocol-check corpus (firmware half: --native)
+	python3 tools/check_protocol_mirror.py
 
 check: ## Static analysis with cppcheck
 	$(FLOCK) pio check -e artoo_esp32

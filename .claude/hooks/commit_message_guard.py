@@ -35,15 +35,24 @@ COMMIT_CMD_PATTERN = re.compile(
 CD_PATTERN = re.compile(r"""(?:^|[;&|(]\s*)cd\s+("[^"]*"|'[^']*'|[^\s;&|)]+)""")
 # Git global flags that change which repository the commit lands in.
 _REPO_FLAGS = ("-C", "--git-dir", "--work-tree")
-# Handles -m and --message, both = and space separators, single/double quotes.
+# -m, --message, and a short cluster whose last letter is m (-qam, -am).
+# The cluster must end in m: -q is quiet and carries no message.
 MESSAGE_ARG_PATTERN = re.compile(
-    r"""(?:^|\s)(?:-m|--message)(?:=|\s+)([\"'])(.*?)\1""",
+    r"""(?:^|\s)(?:--message(?:=|\s+)|-[A-Za-z]*m(?:=|\s+))([\"'])(.*?)\1""",
     re.DOTALL,
 )
-# Handles heredoc-style: -m "$(cat <<'EOF'\n...\nEOF\n)"
+# Handles heredoc-style: -m "$(cat <<'EOF'\n...\nEOF\n)" and -qam the same way.
 HEREDOC_MSG_PATTERN = re.compile(
-    r"""(?:^|\s)(?:-m|--message)(?:=|\s+)"?\$\(cat\s+<<'?(\w+)'?[ \t]*\n(.*?)\n[ \t]*\1[ \t]*\n[ \t]*\)""",
+    r"""(?:^|\s)(?:--message(?:=|\s+)|-[A-Za-z]*m(?:=|\s+))"?\$\(cat\s+<<'?(\w+)'?[ \t]*\n(.*?)\n[ \t]*\1[ \t]*\n[ \t]*\)""",
     re.DOTALL,
+)
+NO_EDIT_PATTERN = re.compile(r"(?:^|\s)--no-edit(?:\s|$)")
+# -F/--file is never a message this hook can read. Git accepts the argument
+# attached (-Fmessage.txt) and as the last letter of a short cluster (-qF).
+# Both stay rejected, including with --no-edit during a merge: Git would use
+# that file and the hook would only have scanned MERGE_MSG.
+FILE_ARG_PATTERN = re.compile(
+    r"(?:^|\s)(?:--file(?:\s|=|$)|-[A-Za-z]*F(?:\s|=|$|\S))"
 )
 COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
@@ -71,6 +80,68 @@ def _extract_message(cmd: str) -> str | None:
     if m:
         return m.group(2).strip()
     return None
+
+
+def _absolute_git_path(git_args: list[str], cwd: str, name: str) -> str | None:
+    """An absolute path inside the repo selected by git_args, not the session cwd."""
+    try:
+        r = subprocess.run(
+            ["git", *git_args, "rev-parse", "--path-format=absolute", "--git-path", name],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    path = r.stdout.strip()
+    if not os.path.isabs(path):
+        return None
+    return path
+
+
+def _merge_in_progress(git_args: list[str], cwd: str) -> bool:
+    """True when this worktree has MERGE_HEAD. A merge's own message is then the commit."""
+    path = _absolute_git_path(git_args, cwd, "MERGE_HEAD")
+    return path is not None and os.path.isfile(path)
+
+
+def _merge_msg_has_coauthor(git_args: list[str], cwd: str) -> bool:
+    """True when MERGE_MSG carries a co-author trailer, or cannot be read."""
+    path = _absolute_git_path(git_args, cwd, "MERGE_MSG")
+    if path is None or not os.path.isfile(path):
+        return True
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return True
+    return COAUTHOR_LINE_PATTERN.search(text) is not None
+
+
+def _git_args_and_cwd(cmd: str, commit: re.Match, session_cwd: str) -> tuple[list[str], str] | None:
+    """The commit's repo-selecting git args and the directory it runs in."""
+    cwd = session_cwd
+    for m in CD_PATTERN.finditer(cmd[: commit.start()]):
+        cwd = _expand(m.group(1).strip("\"'"), cwd)
+        if cwd is None:
+            return None
+    try:
+        flags = shlex.split(commit.group("flags"))
+    except ValueError:
+        return None
+    git_args: list[str] = []
+    for i, flag in enumerate(flags):
+        name, _, value = flag.partition("=")
+        if name not in _REPO_FLAGS:
+            continue
+        if not value:
+            if i + 1 >= len(flags):
+                return None
+            value = flags[i + 1]
+        value = os.path.expandvars(os.path.expanduser(value))
+        if "$" in value:
+            return None
+        git_args += [name, value] if name == "-C" else [f"{name}={value}"]
+    return git_args, cwd
 
 
 def _common_dir(git_args: list[str], cwd: str) -> str | None:
@@ -104,31 +175,10 @@ def _targets_other_repo(cmd: str, commit: re.Match, session_cwd: str) -> bool:
     if project is None:
         return False
 
-    cwd = session_cwd
-    for m in CD_PATTERN.finditer(cmd[: commit.start()]):
-        cwd = _expand(m.group(1).strip("\"'"), cwd)
-        if cwd is None:
-            return False
-
-    try:
-        flags = shlex.split(commit.group("flags"))
-    except ValueError:
+    located = _git_args_and_cwd(cmd, commit, session_cwd)
+    if located is None:
         return False
-    git_args: list[str] = []
-    for i, flag in enumerate(flags):
-        name, _, value = flag.partition("=")
-        if name not in _REPO_FLAGS:
-            continue
-        if not value:
-            if i + 1 >= len(flags):
-                return False
-            value = flags[i + 1]
-        # git resolves each value itself, relative to the directory it is in.
-        value = os.path.expandvars(os.path.expanduser(value))
-        if "$" in value:
-            return False
-        git_args += [name, value] if name == "-C" else [f"{name}={value}"]
-
+    git_args, cwd = located
     target = _common_dir(git_args, cwd)
     return target is not None and target != project
 
@@ -159,11 +209,36 @@ def main() -> int:
     if _targets_other_repo(cmd, commit, str(data.get("cwd") or os.getcwd())):
         return 0
 
+    if FILE_ARG_PATTERN.search(cmd):
+        _deny(
+            "Commit blocked: -F/--file is rejected. "
+            "Pass a quoted -m/--message (a short cluster ending in m, such as -qam, counts)."
+        )
+        return 0
+
+    located = _git_args_and_cwd(cmd, commit, str(data.get("cwd") or os.getcwd()))
+    merging = located is not None and _merge_in_progress(*located)
+    if NO_EDIT_PATTERN.search(cmd) and not merging:
+        _deny(
+            "Commit blocked: --no-edit is accepted only when MERGE_HEAD exists "
+            "(a merge), including when -m is also present. "
+            "Otherwise pass a quoted -m/--message, including -qam."
+        )
+        return 0
+
     message = _extract_message(cmd)
+    if message is None and NO_EDIT_PATTERN.search(cmd) and merging:
+        if _merge_msg_has_coauthor(*located):
+            _deny(
+                "Commit blocked: co-author trailers are not allowed in any commit. "
+                "Remove any 'Co-authored-by:' lines from the merge message."
+            )
+            return 0
+        return 0
     if message is None:
         _deny(
             "Commit blocked: could not parse commit message. "
-            "Use a literal quoted -m/--message argument, for example: "
+            "Use a literal quoted -m/--message argument (a short cluster ending in m, such as -qam, counts), for example: "
             'git commit -m "type(scope): summary"'
         )
         return 0

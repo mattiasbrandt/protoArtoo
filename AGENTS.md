@@ -15,12 +15,16 @@ epic issue. Material an agent needs only on some paths lives under
   `native` tests)
 - Companion dome firmware: `mattiasbrandt/AstroPixelsPlus`
 
+The shell on this bench is zsh. Quote a glob (`--include='*.cpp'`). An unquoted `$var` does not word-split. `=word` is equals-expansion, so write `echo '======'`. `git rev-parse --short` takes one revision.
+
 ## Source of Truth Files
 
 - Public planning baseline (commit/push allowed): `docs/status.md`, `docs/goal.md`.
   These two carry no agent/tool/model wording ("agent", "LLM", "model",
   "Copilot", "Claude").
-- Project language decisions: `CONTEXT.md`; architecture decisions: `docs/adr/`
+- Project language decisions: `CONTEXT.md`; architecture decisions: `docs/adr/`.
+  An operator's rejection of a word is recorded the day it is made, in
+  `CONTEXT.md` Flagged Ambiguities or in an ADR.
 - Operator intent and design source (local only, never commit/push):
   `tasks/research-r2d2-*` — the operator's own curated statement of what
   protoArtoo should become, carrying dated operator decisions, a source-verified
@@ -808,7 +812,9 @@ type(scope): summary
 
 The phase-era `type(phase:vX.Y.Z/T<NN>)` token is history (`CONTRIBUTING.md`
 "Commit scope"). Per-slice tracking lives in the issue checklist comment
-(below), never in the scope.
+(below), never in the scope. The commit hook accepts `-m`, `--message`, and a
+short cluster whose last letter is `m` (`-qam`). `git commit --no-edit` is
+accepted when `MERGE_HEAD` exists.
 
 ### Incremental slice workflow (required)
 
@@ -861,3 +867,4 @@ push to `main`. Mechanism and fallbacks: the docstring in
 - MemPalace protocol: `docs/agents/mempalace.md`
 - Wrap-up procedure: `docs/agents/wrap-up.md`
 - Worker slice gate contract and evidence rules: `docs/agents/slice-gate.md`
+- Surface-owned polling (`PASurface.poll`, `holdUnmount`): `docs/agents/surface-polling.md`
