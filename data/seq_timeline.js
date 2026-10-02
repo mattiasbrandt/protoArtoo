@@ -1112,7 +1112,7 @@
       if (!editing() || drag || event.button > 0) return;
       const target = event.target && event.target.closest ? event.target : null;
       if (!target || target.closest(".tl-ruler")) return;
-      const node = target.closest(".tl-item, .tl-end");
+      let node = target.closest(".tl-item, .tl-end");
       const isEnd = Boolean(node) && node.classList.contains("tl-end");
       const steps = seqNow().steps;
       // A press on one of the moves a Gesture becomes is a press on the
@@ -1123,9 +1123,33 @@
         if (of === undefined) return null;
         return drawn.find((each) => each.item.kind === "gesture" && each.item.steps[0] === Number(of))?.item || null;
       };
-      const item = isEnd
-        ? (model.end === -1 ? null : { kind: "tick", t0: model.endMs, t1: model.endMs, steps: [model.end] })
-        : node && node.dataset.item !== undefined ? drawn[Number(node.dataset.item)].item : within();
+      // A press on the mark of the step that opens a Part, or of the step
+      // that closes it, is a press on the Part standing open: standing is
+      // drawn under the blocks (stacked()), so those two marks lie over the
+      // ends of the block they make. Taken by itself, either would move its
+      // one step with nothing to stop it at the other, and past it the pair
+      // changes places. Handed to the standing block, the press is that
+      // block's edge or its body by where it falls, and an edge stops at the
+      // other end.
+      const opened = (pressed) => {
+        const { item: mark, lane } = drawn[pressed];
+        if (mark.kind !== "tick" || mark.steps.length !== 1) return pressed;
+        const ends = (side) => side !== undefined && side.field === "t" && side.step === mark.steps[0];
+        const over = drawn.findIndex((each) =>
+          each.lane === lane && isStanding(each.item) && (ends(each.item.l) || ends(each.item.r)));
+        return over === -1 ? pressed : over;
+      };
+      let item = null;
+      if (isEnd) {
+        item = model.end === -1 ? null : { kind: "tick", t0: model.endMs, t1: model.endMs, steps: [model.end] };
+      } else if (node && node.dataset.item !== undefined) {
+        const taken = opened(Number(node.dataset.item));
+        item = drawn[taken].item;
+        // The block's own box decides edge or body below, not the mark's.
+        node = grid.querySelector(`[data-item="${taken}"]`) || node;
+      } else {
+        item = within();
+      }
       if (!item) {
         clearSelection();
         return;
