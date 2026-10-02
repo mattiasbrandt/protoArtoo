@@ -131,16 +131,20 @@ none.
 
 ### Hardware and Tooling Reminders
 
+The shell is zsh. Quote a glob (`--include='*.cpp'`). An unquoted `$var` does not word-split. `=word` is equals-expansion (`echo '======'`). `git rev-parse --short` takes one revision.
+
 - **Run device and build work in a Herdr pane, not headless** — the mechanics for
   AGENTS.md "Flashing and Monitoring", which carries the rule and the *why*. You are
   inside Herdr when `HERDR_ENV=1`; `$HERDR_PANE_ID` is your own pane. Split a sibling
   with `herdr pane split --current --direction right --cwd "$PWD" --no-focus` (down
   from a tall pane), read the new id from `.result.pane.pane_id`, then
-  `herdr pane run <id> "<cmd> 2>&1 | tee /tmp/<name>.log; echo DONE_<NAME>"`.
-  Two things measured 2026-09-06: `herdr pane read` can return nothing while a command
-  is demonstrably running, so **always `tee` and parse the log** — the pane is for the
-  operator to watch, the log is what you verify against; and append a sentinel and poll
-  the log for it rather than guessing when a long build finished. Close panes you
+  `herdr pane run <id> "tools/gate_in_pane.sh /tmp/<name>.log -- <cmd>"`.
+  The log's last line is `GATE_EXIT=<n>`, the command's own status, and the script
+  restores `data/fw-version.json` and `data/fs-version.json`. A pipe through `tee`
+  records tee's status instead. Two things measured 2026-09-06: `herdr pane read` can return nothing while a command
+  is demonstrably running, so **parse the log** — the pane is for the
+  operator to watch, the log is what you verify against; and poll the log for
+  `GATE_EXIT=` rather than guessing when a long build finished. Close panes you
   created; never close one you did not, another session may be in a neighbouring
   workspace. Where Herdr is unavailable, say so before starting a device session.
 

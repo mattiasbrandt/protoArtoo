@@ -97,6 +97,30 @@ class CommitMessageGuard(unittest.TestCase):
     def test_non_commit_commands_pass(self):
         self.assertEqual(self.decide("git status"), "allow")
 
+    def test_short_cluster_ending_in_m_is_a_message(self):
+        self.assertEqual(self.decide(f'git commit -qam "{GOOD}"'), "allow")
+        self.assertEqual(self.decide(f'git commit -qam "{BAD}"'), "deny")
+
+    def test_no_edit_needs_a_merge_in_progress(self):
+        self.assertEqual(self.decide("git commit --no-edit"), "deny")
+        _git("config", "user.email", "t@t", cwd=self.project)
+        _git("config", "user.name", "t", cwd=self.project)
+        side = self.project / "side.txt"
+        mainf = self.project / "main.txt"
+        side.write_text("side\n")
+        _git("checkout", "-q", "-b", "side", cwd=self.project)
+        _git("add", "side.txt", cwd=self.project)
+        _git("commit", "-q", "-m", "side", cwd=self.project)
+        _git("checkout", "-q", "-", cwd=self.project)
+        mainf.write_text("main\n")
+        _git("add", "main.txt", cwd=self.project)
+        _git("commit", "-q", "-m", "main", cwd=self.project)
+        subprocess.run(
+            ["git", "merge", "--no-commit", "side"],
+            cwd=self.project, check=True, capture_output=True,
+        )
+        self.assertEqual(self.decide("git commit --no-edit"), "allow")
+
 
 if __name__ == "__main__":
     unittest.main()

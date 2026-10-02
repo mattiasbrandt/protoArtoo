@@ -35,16 +35,18 @@ COMMIT_CMD_PATTERN = re.compile(
 CD_PATTERN = re.compile(r"""(?:^|[;&|(]\s*)cd\s+("[^"]*"|'[^']*'|[^\s;&|)]+)""")
 # Git global flags that change which repository the commit lands in.
 _REPO_FLAGS = ("-C", "--git-dir", "--work-tree")
-# Handles -m and --message, both = and space separators, single/double quotes.
+# -m, --message, and a short cluster whose last letter is m (-qam, -am).
+# The cluster must end in m: -q is quiet and carries no message.
 MESSAGE_ARG_PATTERN = re.compile(
-    r"""(?:^|\s)(?:-m|--message)(?:=|\s+)([\"'])(.*?)\1""",
+    r"""(?:^|\s)(?:--message(?:=|\s+)|-[A-Za-z]*m(?:=|\s+))([\"'])(.*?)\1""",
     re.DOTALL,
 )
-# Handles heredoc-style: -m "$(cat <<'EOF'\n...\nEOF\n)"
+# Handles heredoc-style: -m "$(cat <<'EOF'\n...\nEOF\n)" and -qam the same way.
 HEREDOC_MSG_PATTERN = re.compile(
-    r"""(?:^|\s)(?:-m|--message)(?:=|\s+)"?\$\(cat\s+<<'?(\w+)'?[ \t]*\n(.*?)\n[ \t]*\1[ \t]*\n[ \t]*\)""",
+    r"""(?:^|\s)(?:--message(?:=|\s+)|-[A-Za-z]*m(?:=|\s+))"?\$\(cat\s+<<'?(\w+)'?[ \t]*\n(.*?)\n[ \t]*\1[ \t]*\n[ \t]*\)""",
     re.DOTALL,
 )
+NO_EDIT_PATTERN = re.compile(r"(?:^|\s)--no-edit(?:\s|$)")
 COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
     r"--trailer(?:=|\s+)[^\n]*co-authored-by", re.IGNORECASE
@@ -71,6 +73,50 @@ def _extract_message(cmd: str) -> str | None:
     if m:
         return m.group(2).strip()
     return None
+
+
+def _merge_in_progress(git_args: list[str], cwd: str) -> bool:
+    """True when this worktree has MERGE_HEAD. A merge's own message is then the commit."""
+    try:
+        r = subprocess.run(
+            ["git", *git_args, "rev-parse", "--git-path", "MERGE_HEAD"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if r.returncode != 0 or not r.stdout.strip():
+        return False
+    path = r.stdout.strip()
+    if not os.path.isabs(path):
+        path = os.path.join(cwd, path)
+    return os.path.isfile(path)
+
+
+def _git_args_and_cwd(cmd: str, commit: re.Match, session_cwd: str) -> tuple[list[str], str] | None:
+    """The commit's repo-selecting git args and the directory it runs in."""
+    cwd = session_cwd
+    for m in CD_PATTERN.finditer(cmd[: commit.start()]):
+        cwd = _expand(m.group(1).strip("\"'"), cwd)
+        if cwd is None:
+            return None
+    try:
+        flags = shlex.split(commit.group("flags"))
+    except ValueError:
+        return None
+    git_args: list[str] = []
+    for i, flag in enumerate(flags):
+        name, _, value = flag.partition("=")
+        if name not in _REPO_FLAGS:
+            continue
+        if not value:
+            if i + 1 >= len(flags):
+                return None
+            value = flags[i + 1]
+        value = os.path.expandvars(os.path.expanduser(value))
+        if "$" in value:
+            return None
+        git_args += [name, value] if name == "-C" else [f"{name}={value}"]
+    return git_args, cwd
 
 
 def _common_dir(git_args: list[str], cwd: str) -> str | None:
@@ -104,31 +150,10 @@ def _targets_other_repo(cmd: str, commit: re.Match, session_cwd: str) -> bool:
     if project is None:
         return False
 
-    cwd = session_cwd
-    for m in CD_PATTERN.finditer(cmd[: commit.start()]):
-        cwd = _expand(m.group(1).strip("\"'"), cwd)
-        if cwd is None:
-            return False
-
-    try:
-        flags = shlex.split(commit.group("flags"))
-    except ValueError:
+    located = _git_args_and_cwd(cmd, commit, session_cwd)
+    if located is None:
         return False
-    git_args: list[str] = []
-    for i, flag in enumerate(flags):
-        name, _, value = flag.partition("=")
-        if name not in _REPO_FLAGS:
-            continue
-        if not value:
-            if i + 1 >= len(flags):
-                return False
-            value = flags[i + 1]
-        # git resolves each value itself, relative to the directory it is in.
-        value = os.path.expandvars(os.path.expanduser(value))
-        if "$" in value:
-            return False
-        git_args += [name, value] if name == "-C" else [f"{name}={value}"]
-
+    git_args, cwd = located
     target = _common_dir(git_args, cwd)
     return target is not None and target != project
 
@@ -160,10 +185,19 @@ def main() -> int:
         return 0
 
     message = _extract_message(cmd)
+    if message is None and NO_EDIT_PATTERN.search(cmd):
+        located = _git_args_and_cwd(cmd, commit, str(data.get("cwd") or os.getcwd()))
+        if located is not None and _merge_in_progress(*located):
+            return 0
+        _deny(
+            "Commit blocked: --no-edit is accepted when MERGE_HEAD exists "
+            "(a merge). Otherwise pass a quoted -m/--message, including -qam."
+        )
+        return 0
     if message is None:
         _deny(
             "Commit blocked: could not parse commit message. "
-            "Use a literal quoted -m/--message argument, for example: "
+            "Use a literal quoted -m/--message argument (a short cluster ending in m, such as -qam, counts), for example: "
             'git commit -m "type(scope): summary"'
         )
         return 0

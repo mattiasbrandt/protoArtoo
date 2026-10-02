@@ -12,8 +12,8 @@ runtime exposes from that server — do not hardcode the namespace prefix.
 
 Local server:
 - Inside the `frontend-designer` agent, a project hook starts the local HTTP server on port 4173 (serving `data/`) before any `test/playwright/` script runs - do not start a second one there.
-- Anywhere else, if nothing answers on port 4173, start it once: `python3 -m http.server 4173 --directory data`.
-- Navigate to `http://127.0.0.1:4173/<page>.html` for local validation.
+- Anywhere else, serve the staged image (`python3 tools/stage_fsdata.py --set default --out DIR --serve PORT`) or the fixture server (`make pw-fixture DIR=<folder>`, env in `test/playwright/README.md`). `python3 -m http.server` does not expand `PA:INCLUDE`.
+- Navigate to `BASE_URL/<page>.html` for local validation. A fixture script also needs `FIXTURE=1` and `TARGET_URL`.
 
 Startup protocol (required):
 1. If the Playwright browser tools are deferred in this runtime, load them first with its tool-search tool (`ToolSearch` in Claude Code, `tool_search` in VS Code Copilot). An unloaded tool is missing, not broken, and is no reason to fall back to the CLI.
@@ -26,9 +26,9 @@ Startup protocol (required):
 
 Failure protocol (required):
 1. If Playwright MCP tools are unavailable, report the blocker. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the runtime loads that file.
-2. Use URL-first fallback (reachable running host preferred). If needed, start local server on port 4173.
+2. Use URL-first fallback (reachable running host preferred). If needed, start `tools/serve_editor_fixture.py` or `tools/stage_fsdata.py --serve`, not `python3 -m http.server`.
 3. If Bash is permitted, run existing repo scripts under `test/playwright/` against that URL to preserve audit progress.
-4. If Bash is denied for local server start, do not edit permission settings to lift it. With no reachable URL, ask the operator for one explicit action: provide a URL or allow `python3 -m http.server 4173 --directory data`.
+4. If Bash is denied for local server start, do not edit permission settings to lift it. With no reachable URL, ask the operator for one explicit action: provide a URL or allow `python3 tools/serve_editor_fixture.py`.
 5. Report what was attempted with the blocked-run format below.
 6. Escalate only after the above attempts, including exact failed step and full error text.
 
@@ -85,7 +85,7 @@ Defaults:
 Execution checklist:
 1. Navigate to the target page and collect an initial snapshot.
 2. Perform the requested interactions with realistic operator behavior.
-3. Capture screenshots for key states before and after interactions.
+3. Capture the element that changed, not the full page. A full-page PNG is about a megabyte of pixels nobody reads. `locator.screenshot()` of the control or the card is the evidence.
 4. Close the browser (Shutdown protocol above).
 5. Report findings in plain language suitable for non-developers.
 6. Include concrete selector and page-state evidence for each finding.

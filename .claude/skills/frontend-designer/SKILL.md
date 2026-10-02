@@ -32,7 +32,7 @@ Implementation guidance:
   - A token with no color of its own (`DEFAULT`) gets a neutral dot. Never invent one for it.
 
 Control scale - the mistake this project makes most:
-- `.btn` and `.field` are PAGE- and FORM-scale house classes. Dropped on a card they are always too big, and this has been caught by the operator on three separate reviews.
+- `.btn` and `.field` are PAGE- and FORM-scale house classes in `data/style.css`. `python3 tools/css_where.py .btn` prints the banner and the line. Dropped on a card they are always too big, and this has been caught by the operator on three separate reviews. The same lookup finds `.btn-sm`, `.btn-quiet`, `.link-btn`, `.field`, `.opmode-grid`, `.sleep-switch`, `.mood-grid`, `.readout`.
 - On a card: `.btn.btn-sm`, `.btn.btn-quiet` for a secondary act, `.btn.link-btn` for navigation to another surface. A page-level primary `.btn` belongs to the page, not to a card.
 - `.field input` is `width: 100%`. A numeric input holding one to three digits is constrained to its content, not stretched to the card.
 - Before you hand a surface over, walk EVERY control on it - inputs, selects, buttons, labels, sliders - and check each sits at card scale. Do not make the operator find them one at a time.
@@ -73,7 +73,7 @@ Playwright test upkeep:
 Hardware-aware verification:
 - Before any upload step, ask whether hardware is currently available.
 - If hardware is unavailable, validate using a local server + Playwright instead of attempting upload.
-- Recommended local fallback: serve data/ on port 4173 and run relevant test/playwright/<page>/ scripts against http://127.0.0.1:4173.
+- Stage the image the controller would serve: `python3 tools/stage_fsdata.py --set default --out DIR --serve PORT` (`legacy` is the artoo-esp32 set). Fixture scripts that need the droid's routes use `make pw-fixture DIR=<folder>`, which is `tools/serve_editor_fixture.py` plus the env in `test/playwright/README.md`. Do not use `python3 -m http.server`: it does not expand `PA:INCLUDE` and it does not gzip.
 - Clearly report what was locally verified and which hardware checks remain pending.
 
 When delivering a redesign:

@@ -8,10 +8,25 @@ in the ticket.
 
 You are implementing sub-issue #{ISSUE} in the worktree {WORKTREE}.
 
-READ FIRST, IN FULL: issue #{ISSUE} - body, acceptance criteria, and the
-pinned coordinator comment (attempt log, rejected approaches, verification
+READ FIRST: issue #{ISSUE} - body, acceptance criteria, and the pinned
+coordinator comment (attempt log, rejected approaches, verification
 harness). Rejected approaches are out of scope: do not attempt a variation of
-a rejected category. Then read AGENTS.md.
+a rejected category.
+
+Then these sections of AGENTS.md, not the whole file: Architecture
+Guardrails, The build lock, Suite pause, Verification Scale, Web/UI Copy
+Rules when the slice touches `data/`, Change Hygiene (Commit scope format
+and Incremental slice workflow), and the shell paragraph under Project
+Context. Safety-critical rules are the short list in `.claude/CLAUDE.md`.
+
+Stage one web image with
+`python3 tools/stage_fsdata.py --set legacy|default --out DIR [--serve PORT]`
+(`legacy` is artoo-esp32, `default` is firebeetle2). Run a folder of fixture
+Playwright scripts with `make pw-fixture DIR=<folder>`. The env, and the rule
+that a route installed after mount needs `page.reload()` because
+`loadRehearsalFacts()` caches `/api/servo/outputs`, are in
+`test/playwright/README.md` under "Run offline". A shared CSS class is
+`python3 tools/css_where.py <selector>`.
 
 SUITES PAUSED THROUGH 2026-10-31 (#464)
 This overrides every later line that tells you to run `make test`, `make test-web`, `pio test`, `node --test`, `tools/mutation_verify.py`, or to add a test or a mutation patch. Do not run them. Do not write them. `make test` and `make test-web` return immediately and that is correct. A slice is accepted when a second agent has read the production diff. One `make build` when something compiles. The existing tests stay in the tree and run in CI when a pull request into main opens. Do not set `PROTOARTOO_SUITES=1`. On 2026-11-01 the pause ends by itself.
@@ -68,10 +83,14 @@ The source code is the deliverable; tests are scaffolding that proves it.
 Spend your time on the change itself - is it wired in and called, are the
 rules it replaces actually deleted, did you miss call sites, is the result
 simpler to read than what was there. A module added beside the thing it was
-meant to replace is not the ticket, however well tested it is. Write focused
-tests, not exhaustive suites, and do not polish them; you will not be
-rejected for test naming or structure, and you will be rejected for
-production code that does not do the job.
+meant to replace is not the ticket, however well tested it is.
+
+From 2026-11-01, when the suite pause has ended: write focused tests, not
+exhaustive suites, and do not polish them. You will not be rejected for test
+naming or structure, and you will be rejected for production code that does
+not do the job. One mutation per changed rule, proved able to fail, is the
+gate's expectation again. Until that date the next paragraph is the rule,
+and this one is not.
 
 DO NOT ADD A TEST OR A MUTATION PATCH. The suite pause above is the rule
 through 2026-10-31. A test the ticket already names in one sentence may stay
@@ -252,4 +271,12 @@ VERIFICATION (software-verified cap)
 REPORT
 Final status comment: slices with SHAs, the build result when you built, and
 anything you could not prove with the reason. There is no suite block and no
-red-run block during the pause.
+red-run block during the pause. Keep the comment to the frontier, under about
+20 KB. When it would pass that, post the current text as a new history comment
+and reset the marked one.
+
+The done signal is one line in that comment, `WORKER_DONE: ok` or
+`WORKER_DONE: blocked`. The same fact may also be `/tmp/slice-<n>.json` with
+`{"ok": true}` or `{"ok": false}`. The coordinator waits with
+`python3 tools/wait_worker.py --issue {ISSUE} --marker '<!-- worker-status-{ISSUE}-<slug> -->'`.
+An idle pane is not the signal.
