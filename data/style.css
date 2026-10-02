@@ -6418,6 +6418,19 @@ body[data-page="maintenance"] .status-item .hint {
   margin-top: var(--space-sm);
 }
 
+/* A sequence with two halves is rehearsed half by half: the name over each
+   half's counts, Opens then Closes. */
+.seq-rehearsal-half {
+  display: block;
+  margin-bottom: var(--space-2xs);
+  color: var(--text-faint);
+  font-size: var(--fs-hint);
+}
+
+.seq-rehearsal-report + .seq-rehearsal-half {
+  margin-top: var(--space-md);
+}
+
 .seq-rehearsal-clear,
 .seq-rehearsal-wire {
   margin: 0 0 var(--space-sm);

@@ -71,6 +71,14 @@ the patch releases, whose notes live on their own GitHub Release.
   open puts a close back. Runs for sets how long a body flutter lasts. Save
   no longer asks for a close after a flutter, and the Rehearsal notes a
   flutter the end of the routine cuts short.
+- **Write the half that closes.** A sequence in an interrupt group opens on one
+  press and closes on the next, and the half that closes is now yours to write.
+  Pick Pies, Low or All under Sequence and the page starts it for you: one close
+  for each part the opening half leaves open, one at a time, then the end. Opens
+  and Closes over the timeline switch between the two halves, and Closes takes
+  the same drops, drags, settings and Undo. Back to None drops it; one Undo
+  brings it back. The check and the Rehearsal read both halves and say which
+  one they mean. A factory toggle's Timeline shows both halves too.
 - **The editor refuses a dome command the droid would refuse at Save.** A
   command such as `@0X1` used to look valid until you saved.
 - **Set the gap between servo starts.** The droid leaves 450 ms between servos
