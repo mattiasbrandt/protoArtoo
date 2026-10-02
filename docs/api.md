@@ -1895,8 +1895,8 @@ Updates supported config fields and persists to NVS.
   value is refused in the same words and names the form field
   (`"field":"sbusTimeoutMs"`) whichever door it came in by. A key GET carries
   that is a reading rather than a setting - `wifi`, `activeToggles`,
-  `drive.speedPreset`, `rc.activeInputMode`, a `label`, `activeMember`,
-  `guidedSetup.recorded` - is ignored, so a whole GET answer can be posted back
+  `drive.speedPreset`, `rc.activeInputMode`, `servo.cadenceFloorSource`, a
+  `label`, `activeMember`, `guidedSetup.recorded` - is ignored, so a whole GET answer can be posted back
   as it stands. A number or a boolean may arrive as JSON or as the text a form
   would carry; an object or list where one value belongs is refused. When a
   field arrives both on the form and in the body, the form's value wins.
