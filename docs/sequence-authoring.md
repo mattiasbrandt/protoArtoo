@@ -118,7 +118,8 @@ bearing may not. With the bearing unknown (after a boot, an estop or Sleep
 Mode, until **Front is here**), the dome not calibrated or the Dome ESC off, the
 step does not move the dome; the run reports `bearing-unknown`,
 `dome-not-calibrated` or `component-disabled` and carries on. It saves either
-way. A pose press (the timeline's send to this moment) does not turn the dome.
+way. A sequence's end stops the dome, so leave the end at least half the
+dome's full-turn time after a bearing step. A pose press (the timeline's send to this moment) does not turn the dome.
 
 ## Moving a body part
 

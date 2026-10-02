@@ -743,9 +743,12 @@ void seqEngineCommit(SeqEngineState& st) {
         recordGestureRingOpen(st, *st.pending.gesture);
     } else if ((st.pending.kind == SEQ_ACT_DOME_ROTATE && st.pending.domeSpeedPct != 0) ||
                st.pending.kind == SEQ_ACT_DOME_BEARING) {
-        // A bearing step may not have turned the dome at all - it reports and
-        // carries on - and the neutral cleanup sends then is a stop the dome
-        // was already at.
+        // Set whether or not the step turned the dome: an inert one only
+        // reported. The run's end then sends its neutral either way, so a turn
+        // still running at the end step is cut there - and if the step was
+        // inert and a stick is turning the dome, that stop lands on the stick's
+        // turn too, as it does after a timed turn. docs/sequence-authoring.md
+        // tells an author to leave room for the turn before the end.
         st.domeRotateActive = true;
     }
     // SEQ_ACT_BODY_MOVE records nothing here, and that absence is the decision
