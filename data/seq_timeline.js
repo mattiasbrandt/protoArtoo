@@ -1230,8 +1230,12 @@
         if (w.field === "t" || !check.spansBeats(w.step) || !Number.isInteger(w.step.beat)) return;
         const end = beatAt(w.step.t + w.step[w.field]);
         if (end === null || end <= w.step.beat) return;
+        // Resolved, the span can be a millisecond past where the edge was
+        // held: at the edge of the length's own range it stays milliseconds.
+        const ms = check.tempoSpanMs(seqNow().tempo, end - w.step.beat);
+        if (ms < w.min || ms > w.max) return;
         w.step.spanBeats = end - w.step.beat;
-        w.step[w.field] = check.tempoSpanMs(seqNow().tempo, w.step.spanBeats);
+        w.step[w.field] = ms;
       });
     };
 
