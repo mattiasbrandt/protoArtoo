@@ -1364,8 +1364,10 @@
       if (cmd === null) sayOnStage(LIGHT_TEXT_REFUSED, "error");
       else if (cmd !== undefined) {
         step.cmd = cmd;
-        // The line that refused a text goes once one is taken.
-        if (field === "text") sayOnStage("");
+        // The line that refused a text goes once one is taken - and only
+        // that line: the stage's one line also carries the droid's answer to
+        // a pose and why a drop landed nothing, which a text edit leaves be.
+        if (field === "text" && stageSays(LIGHT_TEXT_REFUSED)) sayOnStage("");
       }
     } else if (field === "howFar") {
       // Stored only where it differs: the whole throw is absence, so a
@@ -1540,6 +1542,11 @@
   };
 
   const sayOnStage = (text, level = "") => sessionTimeline?.say(text ? { text, level } : null);
+  // Whether the stage's line says exactly `text` now. Read off the line
+  // itself (data/seq_timeline.js writes it, for this page and for a pose), so
+  // it is true of whatever said it last.
+  const stageSays = (text) =>
+    document.getElementById("seq-editor-tlbar")?.querySelector(".tl-said")?.textContent === text;
 
   // The steps a drop made are in the routine: put them in time order, read
   // the routine again, and pick them, so the inspector is on the new block.
