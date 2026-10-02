@@ -72,10 +72,10 @@
     [RESTART_REQUIRED]: "Restart the droid to use it.",
   };
 
-  // The save pill's tail, after "Saved at <time>".
-  const PILL = {
-    [AT_REBOOT]: "next start",
-    [RESTART_REQUIRED]: "restart required",
+  // What a failed save adds when an earlier one still waits on the builder, so
+  // the restart owed is not lost behind the error.
+  const STILL_OWED = {
+    [RESTART_REQUIRED]: "An earlier change still waits for a restart.",
   };
 
   // A chosen card whose product is not the one running yet.
@@ -156,14 +156,11 @@
     return tail ? `Saved at ${savedAt}. ${tail}` : `Saved at ${savedAt}`;
   };
 
-  // The save pill: its words and its state (ok, or warn for a restart owed).
-  const pill = (timing, savedAt) => {
-    assertStated(timing);
-    const tail = PILL[timing];
-    return {
-      text: tail ? `Saved at ${savedAt} · ${tail}` : `Saved at ${savedAt}`,
-      state: timing === RESTART_REQUIRED ? "warn" : "ok",
-    };
+  // "Network error. An earlier change still waits for a restart." `owed` is
+  // what an earlier save left waiting; the error stands alone when nothing is.
+  const failed = (message, owed) => {
+    const tail = STILL_OWED[assertStated(owed)];
+    return tail ? `${message.replace(/\.$/, "")}. ${tail}` : message;
   };
 
   // The badge on a chosen card that is not yet the product running, or "".
@@ -180,7 +177,7 @@
     line,
     paint,
     saved,
-    pill,
+    failed,
     badge,
   };
 })();

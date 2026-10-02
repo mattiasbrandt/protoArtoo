@@ -79,7 +79,7 @@
       <p class="hint" id="setup-summary-hint"></p>
       <div id="setup-summary-body"></div>
       <div class="button-row button-row-compact">
-        <button id="setup-summary-done" class="btn" type="button">Done</button>
+        <button id="setup-summary-done" class="btn btn-sm" type="button">Done</button>
       </div>
       <div id="setup-summary-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -107,7 +107,7 @@
         <p class="note hidden apply-timing" data-apply-timing></p>
         <p class="note waiting" id="wizard-wifi-prose"></p>
         <div class="button-row button-row-compact">
-          <a class="btn" href="#wifi">Change the network in WiFi</a>
+          <a class="btn btn-sm btn-quiet" href="#wifi">Change the network in WiFi</a>
         </div>
       </div>
     </div>
@@ -119,7 +119,7 @@
          other is simply a product. The cards are the Component Picker's
          (data/component_picker.js). -->
     <div class="card">
-      <div class="sect"><h2>Body Controller</h2><span class="sub">the board doing the work</span></div>
+      <div class="sect"><h2>Body Controller</h2><span class="sub">runs the droid</span></div>
       <div data-setup-step="_board">
         <div class="component-picker" data-component-family="body_controller"></div>
       </div>
@@ -149,7 +149,6 @@
          the control, and "Not fitted" is one of them rather than a checkbox. -->
     <div class="card">
       <div class="sect"><h2>Hardware components</h2><span class="sub waiting" id="setup-enabled-summary"></span></div>
-      <p class="hint">Not fitted, the Body Controller never talks to it.</p>
       <form id="feature-form">
 
         <div data-setup-step="drive">
@@ -189,7 +188,7 @@
 
         </div>
         <div data-setup-step="domectl">
-        <div class="sect"><h3>Dome Controller</h3><span class="sub">the board in the dome, over protoR2link</span></div>
+        <div class="sect"><h3>Dome Controller</h3><span class="sub">in the dome</span></div>
         <p class="note hidden apply-timing" data-apply-timing></p>
         <div class="component-picker" data-component-family="dome_controller" data-component-toggle="enable-protor2link"
              data-component-not-fitted="The body drives, and the dome gets no light, panel or sound cues."></div>
@@ -246,7 +245,7 @@
         <div class="component-picker" data-component-family="body_servo_controller"></div>
         </div>
         <div data-setup-step="rc">
-        <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive it with</span></div>
+        <div class="sect"><h3>Radio Controller</h3><span class="sub">what you drive with</span></div>
         <p class="note hidden apply-timing" data-apply-timing></p>
         <div class="component-picker" data-component-family="radio_controller"
              data-component-receiver-channels="rc-channel-plates"
@@ -308,32 +307,35 @@
 
         </div>
       </form>
-      <div class="setup-toolbar">
-        <span id="setup-save-summary" class="status-pill">Auto-save ready</span>
-        <div id="feature-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
-      </div>
+      <div id="feature-feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
     </div>
 
     <div class="card">
       <div class="sect"><h2>Droid identity</h2><span class="sub">name and hostname</span></div>
       <div data-setup-step="name">
       <p class="note hidden apply-timing" data-apply-timing></p>
-      <div class="identity-grid">
-        <label class="field" for="droid-name-input">
-          <span>Droid name</span>
-          <input id="droid-name-input" type="text" maxlength="32" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" value="protoartoo">
+      <!-- The setting-row anatomy Foot Drive and Dome use: the name box is the
+           width of a name, the hostname tick is drawn as a switch and stays an
+           <input type="checkbox"> underneath, and Save sits at the card's foot
+           beside the line that answers it. -->
+      <div class="setting-rows">
+        <label class="setting-row">
+          <span class="setting-name">Droid name</span>
+          <input id="droid-name-input" class="number-cell text-cell" type="text" maxlength="32" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" value="protoartoo">
         </label>
-        <label class="field-checkbox identity-checkbox" for="mdns-use-name">
-          <input type="checkbox" id="mdns-use-name">
-          <span>Use as network hostname (mDNS)</span>
+        <label class="setting-row">
+          <span class="setting-name">Use as network hostname (mDNS)</span>
+          <input id="mdns-use-name" class="switch" type="checkbox">
         </label>
-        <button id="identity-save-button" class="btn identity-save-button" type="button">Save</button>
       </div>
       <p class="note hidden apply-timing" id="mdns-apply-timing"></p>
       </div>
       <div id="identity-actions"></div>
       <div id="identity-diagnosis" class="hint" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="setting-foot">
+        <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        <button id="identity-save-button" class="btn btn-sm" type="button">Save</button>
+      </div>
     </div>
 
     <!-- The run's footer. Position and escape, and nothing else: when an answer
