@@ -613,6 +613,10 @@ const BOARD_LABELS = {
       return toggleWaiting("audio") || memberWaiting;
     },
     rc: () => rcRestartPending,
+    _servos: () => {
+      const servo = lastSaved?.components?.bodyServo;
+      return Boolean(servo?.member && servo?.activeMember && servo.member !== servo.activeMember);
+    },
   };
   const isPending = (stepKey) => Boolean(WAITING[stepKey]?.());
 
@@ -627,6 +631,7 @@ const BOARD_LABELS = {
     domerot: ["enableDomeEsc"],
     domectl: ["enableProtoR2link"],
     sound: ["enableAudio", "soundMember"],
+    _servos: ["bodyServoMember"],
     get rc() {
       return ["rcMember", "rcInputMode", ...[...rcToggleKeys()].map((key) => featureToggles[key].form)];
     },

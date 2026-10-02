@@ -73,6 +73,12 @@
       param: "rcMember",
       saved: (config) => config?.rc?.member,
     },
+    // The board's GPIO alone, or a PCA9685 beside it (#444): bound once at
+    // start, like the sound module.
+    body_servo_controller: {
+      param: "bodyServoMember",
+      saved: (config) => config?.components?.bodyServo?.member,
+    },
   };
   const memberTiming = (family) =>
     MEMBER_FIELDS[family] ? window.PAApi.timingOf(MEMBER_FIELDS[family].param) : null;

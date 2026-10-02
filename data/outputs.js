@@ -103,6 +103,9 @@
     "estop": "Limp - the estop let go",
     "sleep": "Limp - sleep mode let go",
     "release": "Went limp - let go after it arrived",
+    // Its PCA9685 did not answer at start or stopped answering (#444); the
+    // droid's own refusal says the same (src/web/api_servo.cpp).
+    "unreachable": "Unreachable - the PCA9685 is not answering",
   });
 
   // The follow: one read of the table a second, while the surface that
