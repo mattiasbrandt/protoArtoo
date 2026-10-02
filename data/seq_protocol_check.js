@@ -501,7 +501,19 @@
       if (!inRange(step.repeatMs, 100, 60000)) return fail("repeatMs", "It repeats every 100 to 60000 ms");
       if (!inRange(step.extentMs, 0, 120000)) return fail("extentMs", "It repeats for at most 120000 ms");
       if (step.extentMs && !step.repeatMs) return fail("extentMs", "Set how often it repeats first");
-      if (step.flutterMs !== undefined && step.shape !== "flutter") return fail("flutterMs", "Only a flutter lasts a time");
+      // An absent duration is stored as 0, and the firmware judges the 0, as
+      // it does a Body Step's: any other shape may say 0, and a flutter that
+      // says none is accepted - one that says a time is held to a flutter's
+      // bounds.
+      const flutterMs = step.flutterMs !== undefined && step.flutterMs !== null ? step.flutterMs : 0;
+      if (step.shape !== "flutter") {
+        if (flutterMs !== 0) return fail("flutterMs", "Only a flutter lasts a time");
+      } else if (flutterMs !== 0) {
+        const [least, most] = BODY_FLUTTER_MS;
+        if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
+          return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
+        }
+      }
       // A flutter ends open and owes a close, unless the spread brings each
       // part back itself: a later close gesture over the same parts.
       const spread = step.spread || "together";
