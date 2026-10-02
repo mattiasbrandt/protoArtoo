@@ -175,7 +175,9 @@
   //   steps    the indices of the steps a drag of the body moves in time
   //   l, r     what dragging that edge changes, as {step, field}: field "t" is
   //            that step's time (a Part standing open ends at its close step),
-  //            any other field is the step's own duration
+  //            any other field is the step's own duration. `with` on `r` is a
+  //            second step whose time that edge moves too: the close a body
+  //            flutter owes
   // A Part standing open (`open`) also carries `sent`: when the command that
   // opened it was sent, which for a body Part is before it stands open.
   // An item with no `steps` is derived and is not draggable: a later pass of a
@@ -263,13 +265,20 @@
     };
     // A body flutter that opened the Part is one block with the close it
     // owes, as an open is: it has a length of its own, so it is the block a
-    // builder sees and takes hold of, and its body moves the pair. Its edges
-    // stay its own length.
+    // builder sees and takes hold of, and its body moves the pair. Its right
+    // edge takes the close with it (`r.with`), so the flutter never runs on
+    // past the close it owes, and `until` is where that close is, which its
+    // left edge may not pass: a flutter after its own close is refused.
     const closeAt = (lane, t, step) => {
       if (lane.state.open) {
         const pair = standing(lane.state.sinceStep, step);
         add(lane, { kind: "open", t0: lane.state.since, t1: t, sent: lane.state.sent, ghost: lane.state.sinceGhost, ...pair });
-        if (lane.state.flutter && pair.r) lane.state.flutter.steps = pair.steps;
+        if (lane.state.flutter && pair.r) {
+          const flutter = lane.state.flutter;
+          flutter.steps = pair.steps;
+          flutter.r = { ...flutter.r, with: pair.r.step };
+          flutter.until = t;
+        }
         lane.state.open = false;
         lane.state.flutter = null;
       }
@@ -928,9 +937,17 @@
         const writes = [write(steps, side.step, "t", 1)];
         return edge === "l" ? { writes, lo: -Infinity, hi: length } : { writes, lo: -length, hi: Infinity };
       }
-      return edge === "l"
-        ? { writes: [write(steps, side.step, "t", 1), write(steps, side.step, side.field, -1)], lo: -Infinity, hi: Infinity }
-        : { writes: [write(steps, side.step, side.field, 1)], lo: -Infinity, hi: Infinity };
+      // A body flutter tied to its close: the right edge moves that close as
+      // far as it changes the length, and the left edge stops at the close.
+      if (edge === "l") {
+        return {
+          writes: [write(steps, side.step, "t", 1), write(steps, side.step, side.field, -1)],
+          lo: -Infinity,
+          hi: item.until === undefined ? Infinity : Math.max(0, item.until - item.t0),
+        };
+      }
+      const tied = side.with === undefined ? [] : [write(steps, side.with, "t", 1)];
+      return { writes: [write(steps, side.step, side.field, 1), ...tied], lo: -Infinity, hi: Infinity };
     };
 
     // How far the plan can actually go: every write stays inside its range.
