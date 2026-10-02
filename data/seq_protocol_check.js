@@ -1456,7 +1456,13 @@
         return { ok: false, error: `A sequence can have at most ${this.MAX_STEPS} steps` };
       }
 
-      // Must end with 'end' type
+      // One Sequence End, and it is the last step: the droid stops reading a
+      // branch there, so one anywhere else is refused before anything after
+      // it is looked at.
+      const early = steps.findIndex((step, i) => step && step.type === "end" && i !== steps.length - 1);
+      if (early >= 0) {
+        return { ok: false, field: `${label}[${early}].type`, error: "Sequence End must be the last step" };
+      }
       const lastStep = steps[steps.length - 1];
       if (!lastStep || lastStep.type !== "end") {
         return { ok: false, error: "The sequence must finish with a Sequence End step" };
