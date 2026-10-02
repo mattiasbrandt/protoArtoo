@@ -10,7 +10,7 @@
 //     A styled question in place of the browser's confirm(): a call site goes
 //     from `if (!confirm(x)) return;` to
 //     `if (!(await window.PAOverlay.ask({...}))) return;` and keeps its exact
-//     behaviour on the answer that keeps things. The title is the question and
+//     behavior on the answer that keeps things. The title is the question and
 //     both buttons are verbs naming their outcome. There are NO default
 //     labels: a call that forgets one throws rather than shipping "Cancel" or
 //     "OK". `no: null` is a message with nothing to decide, and has one

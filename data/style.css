@@ -7678,11 +7678,11 @@ body[data-page="maintenance"] .status-item .hint {
    A question - the shared one and the Wiring and Servos move dialogs - is
    opened non-modally, so it is not in the top layer and has no ::backdrop: a
    modal one would put the whole page under it, the Latching Estop included
-   (ADR 0048, #359). It is fixed and centred instead, drawn inside
+   (ADR 0048, #359). It is fixed and centered instead, drawn inside
    #shell-content's stacking context like the Sequences dialogs, so it covers
    the surface and never the chrome. Its scrim is a spread shadow, which catches
    no pointer: what stops a press behind the question is the surface going
-   inert. margin: auto centres it; the reset at the top of this file zeroes
+   inert. margin: auto centers it; the reset at the top of this file zeroes
    every margin, which once pinned it top-left. Its buttons stay .btn: a
    question is page-scale, not a card.
    --------------------------------------------------------------------------- */
