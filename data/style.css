@@ -7216,7 +7216,7 @@ body[data-page="maintenance"] .status-item .hint {
 }
 
 .seq-picked-rows .setting-row {
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
   gap: var(--space-sm);
   min-height: 36px;
   padding: var(--space-2xs) 0;
