@@ -12,11 +12,12 @@
 //
 // Tier 3 asks window.DroidBuild what dome the builder says they built and
 // answers with the vendored drawing only where that drawing IS their dome. It
-// still carries no geometry of its own: the catalog records bearings whose
-// convention is unresolved (docs/droid-parts.yaml), so drawing a complement
-// without a vendored picture is not something this tier can do yet - what it
-// can do is stop claiming an MK4 dome belongs to a builder who stated
-// otherwise, and say which case they are in.
+// still carries no geometry of its own: the catalog records a bearing per Part
+// (docs/droid-parts.yaml; 0 dead astern, 180 dead ahead, decided on #445) and
+// no shape, so drawing a complement without a vendored picture is not
+// something this tier can do yet - what it can do is stop claiming an MK4
+// dome belongs to a builder who stated otherwise, and say which case they are
+// in.
 //
 // Subscribes to dome connection state changes (dome_link.state) and refetches
 // when transitioning INTO connected state. No polling.
