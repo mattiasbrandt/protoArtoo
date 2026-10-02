@@ -5617,29 +5617,6 @@ body[data-page="maintenance"] .status-item .hint {
   color: var(--text);
 }
 
-/* A dialog's close, as a word. It was a 1.5 rem cross in a 32 px box, which is
-   a glyph carrying a control with no label at all (ADR 0066). */
-.btn-close {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: var(--fs-hint);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  padding: 0 var(--space-sm);
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s;
-}
-
-.btn-close:hover {
-  color: var(--text);
-}
-
 .seq-modal-body {
   flex: 1;
   overflow-y: auto;
@@ -5662,7 +5639,7 @@ body[data-page="maintenance"] .status-item .hint {
 
 /* Import modal specifics */
 .seq-import-file-picker {
-  margin-bottom: var(--space-lg);
+  margin: var(--space-md) 0 var(--space-lg);
 }
 
 #seq-import-file-input {
