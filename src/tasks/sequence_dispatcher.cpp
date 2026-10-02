@@ -29,6 +29,7 @@
 #include "config_cache.h"
 #include "console_record.h"   // consoleReasonString() - the Availability Reason token
 #include "dome_bearing_act.h"  // domeBearingStepPlan() - what a bearing step does here
+#include "dome_turn_calibration.h"  // domeTurnCalibrationOf() - is the full turn recorded
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -187,10 +188,7 @@ static bool dispatchBodyMove(const SeqAction& act, BodyMoveOutcome* outcome = nu
 static bool __attribute__((noinline)) domeCalibratedNow() {
     DomeConfig dome = {};
     configCacheReadDome(&dome);
-    const DomeTurnCalibration cal = {dome.dome_neutral_us,   dome.dome_min_pulse_us,
-                                     dome.dome_max_pulse_us, dome.dome_full_turn_ms,
-                                     dome.dome_full_turn_pct, dome.dome_positive_turn};
-    return domeTurnCalibrated(cal);
+    return domeTurnCalibrated(domeTurnCalibrationOf(dome));
 }
 
 // Out of line on purpose: dispatchAction() sits on this task's deepest route

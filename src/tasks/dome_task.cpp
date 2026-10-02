@@ -32,8 +32,11 @@
 
 #include "config.h"
 #include "config_cache.h"
+#include "console_record.h"  // consoleReasonString() - the reason a press or a turn is refused
 #include "dome_bearing.h"
+#include "dome_bearing_act.h"  // domeBearingRefusalReason() - the one copy of those reasons
 #include "dome_math.h"
+#include "dome_turn_calibration.h"
 #include "drive_motion.h"  // driveMotionIsDriving() - Resting Behaviour waits while driving
 #include "ledc_pwm.h"
 #include "logging.h"
@@ -82,11 +85,6 @@ static struct {
     uint32_t forgotAtMs;
 } s_bearing = {0, 0, false, 0.0f, 0};
 
-static DomeTurnCalibration domeCalibrationOf(const DomeConfig& cfg) {
-    return {cfg.dome_neutral_us,   cfg.dome_min_pulse_us,  cfg.dome_max_pulse_us,
-            cfg.dome_full_turn_ms, cfg.dome_full_turn_pct, cfg.dome_positive_turn};
-}
-
 // The RobotState mirror, which every surface reads through domeBearingRead().
 static void bearingPublish() {
     taskENTER_CRITICAL(&robotStateMux);
@@ -106,7 +104,7 @@ static void __attribute__((noinline)) bearingAdvance(const DomeConfig& cfg, uint
     if (!s_bearing.believed) {
         return;
     }
-    const DomeTurnCalibration cal = domeCalibrationOf(cfg);
+    const DomeTurnCalibration cal = domeTurnCalibrationOf(cfg);
     if (!domeTurnCalibrated(cal)) {
         s_bearing.believed = false;
     } else {
@@ -135,51 +133,54 @@ static void __attribute__((noinline)) bearingTick(bool forget) {
     }
 }
 
-// "Front is here": the builder turned the dome to front and says so. Refused -
-// false - without a calibration, which no belief could be integrated from, and
-// when it was pressed at or before the last tick an estop or Sleep Mode held.
+// "Front is here": the builder turned the dome to front and says so. Returns why
+// it is refused, or CONSOLE_REASON_NONE. Refused without a calibration, which no
+// belief could be integrated from, and - blocked-by-state, the reason an estop
+// or Sleep Mode carries - when it was pressed at or before the last tick either
+// held.
 // The estop leaves this task's queue undrained, so a press the route accepted
 // just before an estop latched waits there, and taken after the clear it would
 // call a coasted dome front: the bearing would silently become a number again.
 // Every sender stamps timestampMs when it sends; the comparison is wrap-safe.
-static bool __attribute__((noinline)) bearingDeclareFront(uint32_t pressedAtMs) {
+static ConsoleReason __attribute__((noinline)) bearingDeclareFront(uint32_t pressedAtMs) {
     if (s_bearing.forgotAtMs != 0 && (int32_t)(pressedAtMs - s_bearing.forgotAtMs) <= 0) {
-        return false;
+        return CONSOLE_REASON_BLOCKED_BY_STATE;
     }
     DomeConfig cfg = {};
     configCacheReadDome(&cfg);
-    if (!domeTurnCalibrated(domeCalibrationOf(cfg))) {
-        return false;
+    if (!domeTurnCalibrated(domeTurnCalibrationOf(cfg))) {
+        return domeBearingRefusalReason(DOME_BEARING_NOT_CALIBRATED);
     }
     s_bearing.atMs = millis();
     s_bearing.believed = true;
     s_bearing.deg = 0.0f;
     bearingPublish();
-    return true;
+    return CONSOLE_REASON_NONE;
 }
 
 // A turn to a Dome Bearing, rewritten in place into the timed turn that makes
 // it (domeBearingTurnPlan()): the short way, at the speed the full turn was
 // timed at, stopped on time - which the timed-turn path below already does. A
 // plan with nothing to turn is a stop. Returns why it cannot be planned, or
-// nullptr. The caller asked the same questions before it sent this; they are
-// asked again here because the answers may have changed on the way.
-static const char* __attribute__((noinline)) bearingPlanTurn(DomeCommand* cmd) {
+// CONSOLE_REASON_NONE, in include/dome_bearing_act.h's reasons. The caller asked
+// the same questions before it sent this; they are asked again here because the
+// answers may have changed on the way.
+static ConsoleReason __attribute__((noinline)) bearingPlanTurn(DomeCommand* cmd) {
     DomeConfig cfg = {};
     configCacheReadDome(&cfg);
-    const DomeTurnCalibration cal = domeCalibrationOf(cfg);
+    const DomeTurnCalibration cal = domeTurnCalibrationOf(cfg);
     if (!domeTurnCalibrated(cal)) {
-        return "dome not calibrated";
+        return domeBearingRefusalReason(DOME_BEARING_NOT_CALIBRATED);
     }
     if (!s_bearing.believed) {
-        return "bearing unknown";
+        return domeBearingRefusalReason(DOME_BEARING_UNKNOWN);
     }
     const DomeTurnPlan plan = domeBearingTurnPlan(s_bearing.deg, (float)cmd->targetTenths / 10.0f,
                                                   cal, cfg.dome_speed_limit_pct);
     cmd->kind = DOME_CMD_SPEED;
     cmd->speed = plan.speed;
     cmd->durationMs = plan.durationMs;
-    return nullptr;
+    return CONSOLE_REASON_NONE;
 }
 
 // The one pulse write: the belief catches up on the pulse it replaces first.
@@ -334,19 +335,20 @@ void domeTask(void* pvParameters) {
         // Process any pending commands (non-blocking), skip if estop
         while (!estop && xQueueReceive(domeCmdQueue, &cmd, 0) == pdTRUE) {
             if (cmd.kind == DOME_CMD_FRONT_IS_HERE) {
-                if (bearingDeclareFront(cmd.timestampMs)) {
+                const ConsoleReason notTaken = bearingDeclareFront(cmd.timestampMs);
+                if (notTaken == CONSOLE_REASON_NONE) {
                     PA_LOG_INFO(TAG, "[%s] front is here", commandSourceToString(cmd.source));
                 } else {
-                    PA_LOG_INFO(TAG, "[%s] front not taken - pressed before a halt, or not calibrated",
-                                commandSourceToString(cmd.source));
+                    PA_LOG_INFO(TAG, "[%s] front not taken - %s", commandSourceToString(cmd.source),
+                                consoleReasonString(notTaken));
                 }
                 continue;
             }
             if (cmd.kind == DOME_CMD_TURN_TO) {
-                const char* notTurned = bearingPlanTurn(&cmd);
-                if (notTurned != nullptr) {
+                const ConsoleReason notTurned = bearingPlanTurn(&cmd);
+                if (notTurned != CONSOLE_REASON_NONE) {
                     PA_LOG_INFO(TAG, "[%s] dome not turned - %s", commandSourceToString(cmd.source),
-                                notTurned);
+                                consoleReasonString(notTurned));
                     continue;
                 }
             }

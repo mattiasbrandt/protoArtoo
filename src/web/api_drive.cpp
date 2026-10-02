@@ -38,6 +38,7 @@
 #include "config_cache.h"
 #include "config_store.h"  // saveConfigToNvs()
 #include "dome_link.h"
+#include "dome_turn_calibration.h"  // domeTurnCalibrationOf() - is the full turn recorded
 #include "drive_arbiter.h"
 #include "drive_speed_preset.h"
 #include "failsafe_gate.h"
@@ -602,16 +603,14 @@ DomeBearingActOutcome domeBearingActRequest(DomeBearingAct act, CommandSource so
     taskEXIT_CRITICAL(&robotStateMux);
     DomeConfig dome = {};
     configCacheReadDome(&dome);
-    const DomeTurnCalibration cal = {dome.dome_neutral_us,   dome.dome_min_pulse_us,
-                                     dome.dome_max_pulse_us, dome.dome_full_turn_ms,
-                                     dome.dome_full_turn_pct, dome.dome_positive_turn};
 
     // The Dome ESC as this boot runs it, not as saved: a switch saved since is
     // staged until the restart (ADR 0027), and DomeTask runs or not by the
     // boot's answer.
     DomeBearingActOutcome outcome = {
         domeBearingActRefusal(act, estopLatched, sleepMode, configCacheReadActiveDomeEnabled(),
-                              domeTurnCalibrated(cal), domeBearingRead().believed),
+                              domeTurnCalibrated(domeTurnCalibrationOf(dome)),
+                              domeBearingRead().believed),
         false};
     if (outcome.refusal != DOME_BEARING_OK) {
         return outcome;
