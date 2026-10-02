@@ -1,7 +1,5 @@
 // The Sequences list against what the droid states about itself (#378): the
 // cap on Learned Sequences it reports, and nothing the page carries of its own.
-// The card editor's panel picker, which the rest of this file drove, retired
-// with the card editor (#441).
 //
 // It drives the shipped module through window.__seqEditorForTesting, over the
 // modules data/seq.html declares, in that order.
@@ -19,8 +17,7 @@ const root = path.resolve(__dirname, "../..");
 const read = (name) => fs.readFileSync(path.join(root, "data", name), "utf8");
 
 // The script chain data/seq.html declares, minus the ones this behaviour never
-// reaches (the shell, the transport, the live renderer): tier 3 has no live
-// elements by definition, so data/dome_layout_render.js is never called.
+// reaches (the shell, the transport).
 const PAGE_MODULES = [
   "droid_parts.js",
   "droid_build.js",

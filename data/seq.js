@@ -67,8 +67,8 @@
   //                          given the copy from historyBegin(). An edit that
   //                          changed nothing records nothing, so a press that
   //                          only selects costs no entry.
-  // Both read the routine as it is when they are called, so each is called
-  // before its edit writes anything.
+  // historyPush() and historyBegin() read the routine as it is when they are
+  // called, so each is called before its edit writes anything.
   // Revert is not on the stack: it discards the whole session, history and all.
   // ---------------------------------------------------------------------------
   const HISTORY_DEPTH = 100;
@@ -879,9 +879,9 @@
   // =========================================================================
 
   // The stage's markup, for both. `ids` names the three places the timeline
-  // draws into, for the workspace, which finds them by id; `above`, `views`
-  // and `below` are what the workspace adds round the routine.
-  const stageHtml = ({ ids = false, above = "", views = "", below = "" } = {}) => `
+  // draws into, for the workspace, which finds them by id; `above` and
+  // `views` are what the workspace adds round the routine.
+  const stageHtml = ({ ids = false, above = "", views = "" } = {}) => `
       <div class="seq-stage">
         <div class="seq-stage-main">
           ${above}
@@ -890,7 +890,6 @@
             <div class="tl-bar"${ids ? ' id="seq-editor-tlbar"' : ""}></div>
           </div>
           <div class="seq-lanes"${ids ? ' id="seq-editor-timeline"' : ""}></div>
-          ${below}
         </div>
         <aside class="seq-stage-side"${ids ? ' id="seq-editor-droid"' : ""} aria-label="The droid at the marker"></aside>
       </div>`;

@@ -6025,8 +6025,8 @@ body[data-page="maintenance"] .status-item .hint {
   margin-left: auto;
 }
 
-/* It is offered only where the routine has a loop and its lanes are in
-   sight. Spelled with .seg so it outranks the bar's own display. */
+/* It is offered only where the routine has a loop. Spelled with .seg so it
+   outranks the bar's own display. */
 .seg.tl-loop-mode[hidden] {
   display: none;
 }
@@ -9407,9 +9407,9 @@ body[data-page="wiring"] .card > .outputs-find:empty {
 
 /* ---------------------------------------------------------------------------
    The dome picker, redrawn in the droid picture's line language (#372, ADR 0063
-   as amended 2026-09-19), wherever it is shown - the Dashboard's dome card and
-   the Sequences step editor. Both draw the dome as svg.dome-svg-picker: the
-   live layout through data/dome_layout_render.js, and the built-in MK4 map
+   as amended 2026-09-19), on the Dashboard's dome card. It draws the dome as
+   svg.dome-svg-picker: the live layout through data/dome_layout_render.js,
+   and the built-in MK4 map
    (data/dome_panel_model.js) when the dome has not answered. The built-in map
    still carries the vendored drawing's own <style>, which is its old palette;
    every rule here is scoped to svg.dome-svg-picker so it outranks those single
