@@ -3263,7 +3263,7 @@
             <span class="seq-row-label">Parts</span>
             <div class="seq-row-ctl">${pills("set", sets)}</div>
             <span class="seq-row-label">Move</span>
-            <div class="seq-row-ctl">${bar("shape", gestureChoices("shape"))}</div>
+            <div class="seq-row-ctl">${bar("shape", G.SHAPES.map((id) => ({ id, label: gestureShapeWords(step)[id] })))}</div>
             <span class="seq-row-label">Travels</span>
             <div class="seq-row-ctl">${pills("spread", gestureChoices("spread"))}</div>
             <span class="seq-row-label">Order</span>
