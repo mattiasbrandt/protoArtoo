@@ -291,6 +291,30 @@ inline bool reactionElapsed(uint32_t nowMs, uint32_t sinceMs, uint32_t periodMs)
     return (uint32_t)(nowMs - sinceMs) >= periodMs;
 }
 
+// A Reaction is known by its binding, not by the slot it sits in: a save that
+// removes some other binding moves it to an earlier slot, and it is the same
+// Reaction there - still inside its quiet period, with the counts it had. So
+// before a tick reads the slots, each state follows its binding to wherever
+// that now is. What is left unmatched is a Reaction that is new or was edited.
+inline void reactionReseatStates(ReactionEvaluator* ev, const RcTriggerBinding* bindings,
+                                 size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (!reactionIsReaction(bindings[i]) ||
+            reactionSameBinding(ev->slots[i].binding, bindings[i])) {
+            continue;
+        }
+        for (size_t j = 0; j < count; ++j) {
+            if (j != i && reactionSameBinding(ev->slots[j].binding, bindings[i]) &&
+                !reactionSameBinding(ev->slots[j].binding, bindings[j])) {
+                const ReactionSlotState moved = ev->slots[j];
+                ev->slots[j] = ev->slots[i];
+                ev->slots[i] = moved;
+                break;
+            }
+        }
+    }
+}
+
 inline void reactionEvaluatorInit(ReactionEvaluator* ev) {
     if (ev != nullptr) {
         *ev = {};
@@ -330,8 +354,12 @@ inline void reactionEvaluatorTick(ReactionEvaluator* ev, const RcTriggerBinding*
     ev->gateOpen = true;
 
     const bool driving = driveOutputIsDriving(in.driveSpeed, in.driveSteer);
+    if (count > REACTION_SLOT_MAX) {
+        count = REACTION_SLOT_MAX;
+    }
+    reactionReseatStates(ev, bindings, count);
 
-    for (size_t i = 0; i < count && i < REACTION_SLOT_MAX; ++i) {
+    for (size_t i = 0; i < count; ++i) {
         ReactionSlotState& slot = ev->slots[i];
         if (!reactionIsReaction(bindings[i])) {
             slot = {};

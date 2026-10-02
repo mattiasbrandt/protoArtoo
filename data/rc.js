@@ -887,9 +887,10 @@
 
     let html = '';
     if ((SOURCE_OPTIONS[mode] || []).length === 0) {
-      // A receiver the controller reads nothing from (ELRS, #369): no channel
-      // arrives, so none is offered to map.
-      html = `<p class="hint">${window.PAUtils.escapeHtml(modeLabel(mode))}: no channel arrives, so there is none to map.</p>`;
+      // A receiver the controller reads nothing from (ELRS, #369), or none
+      // fitted: no radio channel arrives, so none is offered to map. The
+      // droid's own conditions below still are.
+      html = `<p class="hint">${window.PAUtils.escapeHtml(modeLabel(mode))}: no radio channel arrives.</p>`;
     } else if (mode === 'standard_pwm') {
       html = renderGroup('PWM', 'pwm', snap?.raw?.pwm, 6);
     } else {
