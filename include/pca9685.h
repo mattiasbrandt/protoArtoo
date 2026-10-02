@@ -7,12 +7,14 @@
 // section 7, and every register value below is read from it.
 //
 // ONE BOARD, AT ONE ADDRESS, NO SCAN (#300 decision 3, "expect one board"). The
-// address is a stored Setting defaulting to 0x40, and the four addresses a
-// PCA9685 answers that are not its own identity are refused at every door
-// (pca9685AddressUsable()): a write to one of them lands on every expander on
-// the bus at once - a whole-droid simultaneous move, the brownout ADR 0043 was
-// written around. A scan is not done because it renumbers a table that has
-// names in it.
+// address is a stored Setting defaulting to 0x40, and 0x70-0x73 are refused at
+// every door (pca9685AddressUsable()). 0x70 is LED All Call, which every
+// PCA9685 on the bus answers from power-up, so a write to it lands on every
+// expander at once - a whole-droid simultaneous move, the brownout ADR 0043 was
+// written around. 0x71-0x73 are the sub-addresses, off by default; they are
+// kept clear as a margin by the operator's decision (#306, 2026-09-30), not
+// because every board answers them. A scan is not done because it renumbers a
+// table that has names in it.
 //
 // CHANNELS ARE THE SILKSCREEN, 0-BASED. `pca:3` is the header the board prints
 // 3 beside, written down once here. Three numbering conventions exist and our
@@ -138,10 +140,12 @@ constexpr uint8_t PCA9685_ADDRESS_DEFAULT = 0x40;
 constexpr uint8_t PCA9685_ADDRESS_FIRST = 0x40;
 constexpr uint8_t PCA9685_ADDRESS_LAST = 0x7F;
 
-// The addresses a PCA9685 answers that are NOT its own identity: 0x70 is LED
-// All Call, which every PCA9685 on the bus acknowledges from power-up, and
-// 0x71-0x73 are the three sub-addresses. The rule is the reference project's
-// own (r2d2-astromech-simulator v1.79.0, arduino/MaestroPCA/src/MpcaScan.h:51),
+// The addresses one board may not be strapped to: 0x70 is LED All Call, which
+// every PCA9685 on the bus acknowledges from power-up (spec sheet 7.2, 7.8),
+// and 0x71-0x73 are the three sub-addresses - off by default, so no board
+// answers them unless told to, and kept clear as a margin by the operator's
+// decision (#306, 2026-09-30). The rule is the reference project's own
+// (r2d2-astromech-simulator v1.79.0, arduino/MaestroPCA/src/MpcaScan.h:51),
 // reimplemented here from the datasheet facts it encodes.
 constexpr bool pca9685AddressReserved(uint8_t address) {
     return address == 0x70 || (address >= 0x71 && address <= 0x73);

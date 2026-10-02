@@ -239,8 +239,9 @@ struct SystemConfig {
     // note). Read once at start (ADR 0027).
     uint8_t body_servo_member;
     // The PCA9685's I2C address, one board's (include/pca9685.h): 0x40 unless
-    // its address jumpers are bridged. Never one of 0x70-0x73, which every
-    // PCA9685 on the bus answers - configApply() refuses them, and so does
+    // its address jumpers are bridged. Never one of 0x70-0x73: every PCA9685
+    // on the bus answers 0x70 (LED All Call), and the sub-addresses 0x71-0x73
+    // are kept clear by decision - configApply() refuses them, and so does
     // pca9685Begin(). Read once at start.
     uint8_t pca_address;
     // The Cadence Floor (CONTEXT.md): the least time, in ms, the Sequence

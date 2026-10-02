@@ -1816,9 +1816,11 @@ Updates supported config fields and persists to NVS.
 - `pcaAddress(64..127)` — the PCA9685's I2C address (`0x40`..`0x7F`, base
   `0x40` plus its address jumpers); default 64 (`0x40`). Takes effect at the
   next reboot. `112`..`115` (`0x70`..`0x73`) are refused, `400` with `field`
-  `pcaAddress` and `reason` `conflict`: every PCA9685 on the bus answers them
-  (LED All Call and the three sub-addresses), so a write meant for one board
-  would reach them all.
+  `pcaAddress` and `reason` `conflict`:
+  `{"ok":false,"error":"pcaAddress 0x70: 0x70 is answered by every PCA9685, and 0x71-0x73 are kept clear."}`.
+  Every PCA9685 on the bus answers `0x70` (LED All Call), so a write meant for
+  one board would reach them all; `0x71`..`0x73`, the sub-addresses, are off by
+  default and kept clear as a margin.
 - droid build (ADR 0047): `domeDesign` + `domeVariant`, and `bodyDesign` +
   `bodyVariant`. Each half is sent as a **pair** — a variant means nothing
   without the design it belongs to — and each must name a design the catalog

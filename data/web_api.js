@@ -400,7 +400,7 @@
     enableAudio: { label: "Sound", applies: "at-reboot", word: "Sound", path: "components.audio.enabled" },
     soundMember: { applies: "at-reboot", word: "sound module", path: "components.audio.member", refused: NOT_LISTED },
     bodyServoMember: { applies: "at-reboot", word: "body servo controller", path: "components.bodyServo.member", refused: NOT_LISTED },
-    pcaAddress: { applies: "at-reboot", word: "PCA9685 address", path: "components.bodyServo.pcaAddress", clash: "is answered by every PCA9685 on the bus" },
+    pcaAddress: { applies: "at-reboot", word: "PCA9685 address", path: "components.bodyServo.pcaAddress", clash: "cannot be 0x70-0x73" },
     enableProtoR2link: { label: "Dome link", applies: "at-reboot", word: "dome link", path: "components.protoR2link.enabled" },
     domeEscNeutralUs: { applies: "immediate", word: "neutral pulse", unit: US, path: "domeEsc.neutralUs", clash: PULSE_CLASH },
     domeEscMinPulseUs: {

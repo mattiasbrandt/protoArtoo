@@ -135,9 +135,9 @@ const ConfigSetting kConfigSettings[] = {
     // The body servo controller (#444): the board's GPIO alone, or a PCA9685
     // beside it. Bound once at start, as the sound module is (ADR 0042), and
     // the expander's address with it. The address's range is every address a
-    // board may be strapped to (include/pca9685.h); the four inside it that
-    // every PCA9685 answers are refused by configApply(), a rule this
-    // declaration cannot state.
+    // board may be strapped to (include/pca9685.h); 0x70-0x73 inside it are
+    // refused by configApply() - All Call, and the sub-addresses kept clear -
+    // a rule this declaration cannot state.
     PA_MEMBER("bodyServoMember", "components.bodyServo.member", "srv_member", AtReboot, System,
               SystemConfig, body_servo_member, COMPONENT_CATEGORY_BODY_SERVO_CONTROLLER,
               "is not a body servo controller this firmware can drive"),

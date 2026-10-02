@@ -853,17 +853,19 @@ void configApply(const ConfigParamSource& form, ConfigSnapshot* working,
         return;
     }
 
-    // The PCA9685's address (#444): one a board may be strapped to and not
-    // one of the four every PCA9685 on the bus answers, 0x70 (LED All Call)
-    // and 0x71-0x73 (the sub-addresses). A write meant for one board landing
-    // on every expander at once is a whole-droid simultaneous move, the
-    // brownout ADR 0043 was written around, so it is refused here - the
-    // config door - and again where the bus is brought up (pca9685Begin()).
+    // The PCA9685's address (#444): one a board may be strapped to, never
+    // 0x70-0x73. Every PCA9685 on the bus answers 0x70 (LED All Call), so a
+    // write meant for one board would land on every expander at once - a
+    // whole-droid simultaneous move, the brownout ADR 0043 was written around;
+    // 0x71-0x73, the sub-addresses, are off by default and kept clear by the
+    // operator's decision (#306). Refused here - the config door - and again
+    // where the bus is brought up (pca9685Begin()).
     if (configParamHas(params, "pcaAddress") &&
         pca9685AddressReserved(working->system.pca_address)) {
         char err[112];
         snprintf(err, sizeof(err),
-                 "pcaAddress %u: every PCA9685 on the bus answers 0x70-0x73, so no one board may",
+                 "pcaAddress 0x%02X: 0x70 is answered by every PCA9685, and 0x71-0x73 are kept "
+                 "clear.",
                  (unsigned)working->system.pca_address);
         setError(result, err, ApplyRefusalReason::Conflict, "pcaAddress");
         return;
