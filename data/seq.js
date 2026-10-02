@@ -1059,7 +1059,7 @@
 
   // What kind of step this is, as the step list names it.
   const stepKindName = (step) =>
-    (step.type === "dome" ? domeSubmodeLabel(step.cmd).name : stepTypeName[step.type] || step.type || "Step");
+    (step.type === "dome" ? domeSubmodeName(step.cmd) : stepTypeName[step.type] || step.type || "Step");
 
   // ---------------------------------------------------------------------------
   // The Picked block tab (#441): what the timeline says is picked, and for one
@@ -1700,16 +1700,8 @@
             const color = parts[2];
             const duration = parts[3];
             const speed = parts[4];
-            const encodedText = parts.slice(5).join(":");
-            // Decode percent-encoded text
-            let decodedText = "";
-            try {
-              decodedText = decodeURIComponent(encodedText);
-            } catch (e) {
-              decodedText = encodedText;
-            }
             // Render newline visibly for preview
-            const displayText = decodedText.replace(/\n/g, " / ");
+            const displayText = lightFields(cmd).text.replace(/\n/g, " / ");
             return `${lightWord("textTargets", target)} text: "${displayText}"`;
           }
           return `Logic text: ${cmd.slice(3)}`;
@@ -1847,6 +1839,88 @@
   const RANDOM_SETS = ["ring", "pie", "all", "hold"];
   const RANDOM_MODES = ["flutter", "open", "close"];
 
+  // ---------------------------------------------------------------------------
+  // The dome's four light commands. A dome step holds one as its `cmd`; the
+  // step list's cards and the Picked block tab both read it with lightFields()
+  // and write it with lightCmd(), so the grammar is spelled once (Protocol
+  // Check has the rules, data/seq_protocol_check.js):
+  //   DV:<preset>
+  //   DL:<target>:<mode>[:<color>[:<seconds>]]
+  //   DT:<target>:<color>:<seconds>:<speed>:<encodedText>
+  //   DH:<target>:<effect>[:<color>[:<secondsOrCount>]]
+  // `starts` is the command a new step of that kind holds.
+  // ---------------------------------------------------------------------------
+  const DOME_SUBMODES = {
+    DV: { name: "Visual Preset", starts: "DV:ROCKMARCH" },
+    DL: { name: "Logic / PSI Mode", starts: "DL:LOGIC:NORMAL" },
+    DT: { name: "Logic Text", starts: "DT:LOGIC:DEFAULT:5:0:" },
+    DH: { name: "Holo Effect", starts: "DH:A:FLASH" },
+  };
+
+  // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
+  const lightKind = (cmd) => {
+    const kind = /^(D[VLTH]):/.exec(String(cmd || ""))?.[1];
+    return kind && DOME_SUBMODES[kind] ? kind : null;
+  };
+
+  // A logic text travels percent-encoded, so a colon in it is not read as the
+  // next field: a line break is %0A, % is %25, : is %3A, and a space stays a
+  // space. A text that was not stored that way is shown as it is stored.
+  const encodeLightText = (text) => {
+    try {
+      return encodeURIComponent(text).replace(/%20/g, " ");
+    } catch (e) {
+      return text;
+    }
+  };
+  const decodeLightText = (encoded) => {
+    try {
+      return decodeURIComponent(encoded);
+    } catch (e) {
+      return encoded;
+    }
+  };
+
+  // A light command as its fields, every one a string, or null when `cmd` is
+  // none of the four. A field the command leaves off reads as what leaving it
+  // off means: the color DEFAULT, and "" for no duration or count. A field
+  // the grammar requires and the command lacks reads as a new step's.
+  const lightFields = (cmd) => {
+    const kind = lightKind(cmd);
+    if (!kind) return null;
+    const parts = String(cmd).split(":");
+    const starts = DOME_SUBMODES[kind].starts.split(":");
+    const at = (i) => parts[i] || starts[i];
+    switch (kind) {
+      case "DV":
+        return { kind, preset: String(cmd).slice(3) };
+      case "DL":
+        return { kind, target: at(1), mode: at(2), color: parts[3] || "DEFAULT", seconds: parts[4] ?? "" };
+      case "DT":
+        return { kind, target: at(1), color: at(2), seconds: at(3), speed: at(4), text: decodeLightText(parts.slice(5).join(":")) };
+      default:
+        return { kind, target: at(1), effect: at(2), color: parts[3] || "DEFAULT", count: parts[4] ?? "" };
+    }
+  };
+
+  // The command those fields spell. The fields are positional, so a duration
+  // needs its color slot: a set duration with the color DEFAULT writes DEFAULT
+  // there, and with the color DEFAULT and no duration both are left off -
+  // stored only where it differs.
+  const lightCmd = (fields) => {
+    const tail = (color, number) => (number !== "" ? `:${color}:${number}` : color !== "DEFAULT" ? `:${color}` : "");
+    switch (fields.kind) {
+      case "DV":
+        return `DV:${fields.preset}`;
+      case "DL":
+        return `DL:${fields.target}:${fields.mode}${tail(fields.color, fields.seconds)}`;
+      case "DT":
+        return `DT:${fields.target}:${fields.color}:${fields.seconds}:${fields.speed}:${encodeLightText(fields.text)}`;
+      default:
+        return `DH:${fields.target}:${fields.effect}${tail(fields.color, fields.count)}`;
+    }
+  };
+
   // What a loop cannot repeat: another loop, a sequence inside this one, and
   // the end.
   const NOT_REPEATED = ["loop", "sequence", "end"];
@@ -1886,14 +1960,9 @@
     end: "Sequence End",
   };
 
-  // Helper: which dome sub-mode a step's cmd is, by name, for the collapsed card
-  const domeSubmodeLabel = (cmd) => {
-    if ((cmd || "").startsWith("DV:")) return { name: "Visual Preset" };
-    if ((cmd || "").startsWith("DL:")) return { name: "Logic / PSI Mode" };
-    if ((cmd || "").startsWith("DT:")) return { name: "Logic Text" };
-    if ((cmd || "").startsWith("DH:")) return { name: "Holo Effect" };
-    return { name: "Panel Action" };
-  };
+  // What kind of dome step a command makes it, by name: one of the four light
+  // commands, or a Panel Action.
+  const domeSubmodeName = (cmd) => DOME_SUBMODES[lightKind(cmd)]?.name || stepTypeName.dome;
 
   // Step type descriptions for reference panel
   const stepTypeDescriptions = {
@@ -1937,7 +2006,7 @@
     let typeName = stepTypeName[step.type] || step.type;
     // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
     if (step.type === "dome") {
-      typeName = domeSubmodeLabel(step.cmd).name;
+      typeName = domeSubmodeName(step.cmd);
     }
     const preview = stepPreview(step);
 
@@ -2281,23 +2350,19 @@
 
         if (domeMode === "preset") {
           // Visual preset mode: dropdown of DV_PRESETS names
-          const presetName = (step.cmd || "").slice(3); // Extract from "DV:NAME"
+          const presetName = lightFields(step.cmd)?.preset ?? "";
           behaviorHtml = `
             <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
               ${lightOptions("presets", domeLights.presets, presetName)}
             </select>
-            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
+            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || DOME_SUBMODES.DV.starts)}">
             <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to advanced mode">Advanced</button>
           `;
         } else if (domeMode === "logic") {
           // Logic/PSI Mode (DL:) structured step
           // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
-          const cmd = step.cmd || "DL:LOGIC:NORMAL";
-          const parts = cmd.split(":");
-          const target = parts[1] || "LOGIC";
-          const mode = parts[2] || "NORMAL";
-          const color = parts[3] || "DEFAULT";
-          const duration = parts[4] || "";
+          const cmd = step.cmd || DOME_SUBMODES.DL.starts;
+          const { target, mode, color, seconds: duration } = lightFields(cmd);
 
           targetHtml = `
             <select class="step-field dl-target-select" data-field="target" aria-label="Target">
@@ -2324,20 +2389,8 @@
         } else if (domeMode === "text") {
           // Logic Text Mode (DT:) structured step
           // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
-          const cmd = step.cmd || "DT:LOGIC:DEFAULT:5:0:";
-          const parts = cmd.split(":");
-          const target = parts[1] || "LOGIC";
-          const color = parts[2] || "DEFAULT";
-          const duration = parts[3] || "5";
-          const speed = parts[4] || "0";
-          const encodedText = parts.slice(5).join(":") || "";
-          // Decode text for display
-          let decodedText = "";
-          try {
-            decodedText = decodeURIComponent(encodedText);
-          } catch (e) {
-            decodedText = encodedText;
-          }
+          const cmd = step.cmd || DOME_SUBMODES.DT.starts;
+          const { target, color, seconds: duration, speed, text: decodedText } = lightFields(cmd);
 
           targetHtml = `
             <select class="step-field dt-target-select" data-field="target" aria-label="Target">
@@ -2364,12 +2417,8 @@
         } else if (domeMode === "holo") {
           // Holo Effect Mode (DH:) structured step
           // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
-          const cmd = step.cmd || "DH:A:FLASH";
-          const parts = cmd.split(":");
-          const target = parts[1] || "A";
-          const effect = parts[2] || "FLASH";
-          const color = parts[3] || "DEFAULT";
-          const durationOrCount = parts[4] || "";
+          const cmd = step.cmd || DOME_SUBMODES.DH.starts;
+          const { target, effect, color, count: durationOrCount } = lightFields(cmd);
 
           targetHtml = `
             <select class="step-field dh-target-select" data-field="target" aria-label="Target">
@@ -3981,7 +4030,7 @@
           const currentCmd = hiddenInput ? hiddenInput.value : "";
           if (!currentCmd.startsWith("DV:")) {
             // Not a preset; default to ROCKMARCH
-            editorState.current.steps[stepIdx].cmd = "DV:ROCKMARCH";
+            editorState.current.steps[stepIdx].cmd = DOME_SUBMODES.DV.starts;
           }
         }
 
@@ -4009,16 +4058,13 @@
 
     const updateCmd = () => {
       if (!targetSelect || !modeSelect || !hiddenCmd) return;
-      let cmd = `DL:${targetSelect.value}:${modeSelect.value}`;
-      if (colorSelect && colorSelect.value !== "DEFAULT") {
-        cmd += `:${colorSelect.value}`;
-        if (durationInput && durationInput.value) {
-          cmd += `:${durationInput.value}`;
-        }
-      } else if (durationInput && durationInput.value) {
-        // If duration is set but color is DEFAULT, we still need to include DEFAULT
-        cmd += `:DEFAULT:${durationInput.value}`;
-      }
+      const cmd = lightCmd({
+        kind: "DL",
+        target: targetSelect.value,
+        mode: modeSelect.value,
+        color: colorSelect ? colorSelect.value : "DEFAULT",
+        seconds: durationInput ? durationInput.value : "",
+      });
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
@@ -4044,18 +4090,14 @@
 
     const updateCmd = () => {
       if (!targetSelect || !colorSelect || !hiddenCmd) return;
-      const plainText = textInput ? textInput.value : "";
-      let encodedText = "";
-      try {
-        // Percent-encode the text: newline=%0A, %=%25, :=%3A, space stays literal
-        encodedText = encodeURIComponent(plainText)
-          .replace(/%20/g, " ");  // Keep spaces literal
-      } catch (e) {
-        encodedText = plainText;
-      }
-      const duration = durationInput ? durationInput.value : "5";
-      const speed = speedInput ? speedInput.value : "0";
-      const cmd = `DT:${targetSelect.value}:${colorSelect.value}:${duration}:${speed}:${encodedText}`;
+      const cmd = lightCmd({
+        kind: "DT",
+        target: targetSelect.value,
+        color: colorSelect.value,
+        seconds: durationInput ? durationInput.value : "5",
+        speed: speedInput ? speedInput.value : "0",
+        text: textInput ? textInput.value : "",
+      });
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
@@ -4080,16 +4122,13 @@
 
     const updateCmd = () => {
       if (!targetSelect || !effectSelect || !hiddenCmd) return;
-      let cmd = `DH:${targetSelect.value}:${effectSelect.value}`;
-      if (colorSelect && colorSelect.value !== "DEFAULT") {
-        cmd += `:${colorSelect.value}`;
-        if (durationInput && durationInput.value) {
-          cmd += `:${durationInput.value}`;
-        }
-      } else if (durationInput && durationInput.value) {
-        // If durationOrCount is set but color is DEFAULT, we still need to include DEFAULT
-        cmd += `:DEFAULT:${durationInput.value}`;
-      }
+      const cmd = lightCmd({
+        kind: "DH",
+        target: targetSelect.value,
+        effect: effectSelect.value,
+        color: colorSelect ? colorSelect.value : "DEFAULT",
+        count: durationInput ? durationInput.value : "",
+      });
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
@@ -4216,13 +4255,8 @@
 
         // A dome sub-mode starts from its own command, which is what tells the
         // step's fields which mode to draw.
-        if (domeMode === "text") {
-          newDefaults = { cmd: "DT:LOGIC:DEFAULT:5:0:" };
-        } else if (domeMode === "holo") {
-          newDefaults = { cmd: "DH:A:FLASH" };
-        } else if (domeMode === "logic") {
-          newDefaults = { cmd: "DL:LOGIC:NORMAL" };
-        }
+        const submode = { logic: "DL", text: "DT", holo: "DH" }[domeMode];
+        if (submode) newDefaults = { cmd: DOME_SUBMODES[submode].starts };
 
         editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
 
