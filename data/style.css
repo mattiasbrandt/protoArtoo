@@ -8049,7 +8049,8 @@ body[data-page="maintenance"] .status-item .hint {
   font-weight: 600;
 }
 
-.outputs-row.is-held th {
+/* On the row's first cell, its tick's, so the edge is the row's own. */
+.outputs-row.is-held .outputs-pick-cell {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -8132,13 +8133,15 @@ body[data-page="maintenance"] .status-item .hint {
   text-align: right;
 }
 
-.outputs-acts .btn {
+.outputs-acts .btn,
+.outputs-apply-picks .btn {
   padding: 0 var(--space-sm);
   border-color: transparent;
   color: var(--text-dim);
 }
 
-.outputs-acts .btn:hover {
+.outputs-acts .btn:hover,
+.outputs-apply-picks .btn:hover {
   border-color: transparent;
   background: var(--surface-alt);
   color: var(--text);
@@ -8157,6 +8160,7 @@ body[data-page="maintenance"] .status-item .hint {
   display: flex;
   justify-content: flex-start;
   min-width: 0;
+  white-space: nowrap;
   min-height: 24px;
   margin-top: var(--space-2xs);
   padding: 0;
@@ -8272,19 +8276,25 @@ body[data-page="maintenance"] .status-item .hint {
   min-height: 28px;
 }
 
-.outputs-settings .seg {
+/* The apply line (#457) offers the same choices in the same bar. */
+.outputs-settings .seg,
+.outputs-apply .seg {
   display: inline-flex;
   justify-self: start;
 }
 
-.outputs-settings .seg > button {
+.outputs-settings .seg > button,
+.outputs-apply .seg > button {
   flex: 0 0 auto;
   min-height: 26px;
   padding: 0 var(--space-md);
   font-size: var(--fs-sect);
 }
 
-.outputs-boot-risk {
+/* The line beside home and hold. A hold that never lets go is a risk and is
+   amber; one that lets go after it gets home is a statement, in the hint's
+   own ink (#443, #457). */
+.outputs-boot-risk.is-risk {
   color: var(--warning);
 }
 
@@ -8840,16 +8850,14 @@ body[data-page="maintenance"] .status-item .hint {
   margin-block: var(--space-sm);
 }
 
-/* Find by Moving and back to centre, over the rows on one line (#412, #399):
-   find a Part on the left, send every Output to centre on the right with its
-   one line of answer before the button. Find by moving opens its tray of
-   Parts under the line; the run panel takes the button's place while it
-   lasts. */
+/* Back to centre, over the rows: the one act on the line, held to the right,
+   with its one line of answer before the button. .outputs-find below is
+   Wiring's Find by Moving line. */
 .outputs-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-sm) var(--space-xl);
   margin-bottom: var(--space-md);
 }
@@ -8880,6 +8888,68 @@ body[data-page="maintenance"] .status-item .hint {
 
 .outputs-marks {
   margin: 0 0 var(--space-sm);
+}
+
+/* A row's tick (#457): the page's own mark of which rows the apply line sets
+   a value on. A plain box in the interaction blue, in a cell no wider than
+   it, top-aligned as the row's name is. */
+.outputs-table .outputs-main > .outputs-pick-cell {
+  width: 1%;
+  padding-right: 0;
+  vertical-align: top;
+}
+
+/* The top margin sets the box on the middle of the name's first line. */
+.outputs-pick {
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The line that sets one value on every ticked row (#457): the two tick acts
+   as quiet words, what to set as one joined bar, its value, and the one act
+   with the count in its label. It moves nothing, so it comes after the rows,
+   the dial and their answer, across a seam, and its own answer sits at its
+   foot. */
+.outputs-apply {
+  margin-top: var(--space-md);
+  padding: var(--space-md) var(--space-md) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+
+/* Spelled with .seg so it outranks the bar's own display. */
+.outputs-apply[hidden],
+.outputs-apply [hidden],
+.outputs-apply .seg[hidden] {
+  display: none;
+}
+
+.outputs-apply-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.outputs-apply-picks {
+  display: inline-flex;
+  margin-right: var(--space-md);
+}
+
+.outputs-apply-value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.outputs-apply .feedback {
+  margin: var(--space-sm) 0 0;
 }
 
 /* ---------------------------------------------------------------------------

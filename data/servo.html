@@ -29,11 +29,11 @@
          the mapping Parts reads from the part's end (CONTEXT.md "Servos"). An
          Output with no Part is free and not listed, and with none the table
          sends the builder to Wiring (operator, 2026-09-29 on #411). Driving an
-         Output, calibrating it, Find by Moving and back to centre are all here
-         (operator, 2026-09-19 on #412); which servo it carries is picked on
-         Wiring, on the Part's row. The rows, the run and the dial are drawn by
-         data/servo.js from the firmware's answer; this page names no Output
-         of its own. -->
+         Output, calibrating it and back to centre are all here (operator,
+         2026-09-19 on #412); which servo it carries is picked on Wiring, on
+         the Part's row, where Find by Moving starts too (#411). The rows and
+         the dial are drawn by data/servo.js from the firmware's answer; this
+         page names no Output of its own. -->
     <div class="card" id="outputs-card">
       <div class="sect"><h2>Outputs</h2><span class="sub outputs-tiers" id="outputs-tiers" role="status" aria-live="polite"></span></div>
       <!-- The one act over every row: send them all back to centre, on the
@@ -53,6 +53,26 @@
       <!-- The calibration dial opens here, under the rows, for one Output at a time. -->
       <div id="outputs-dial"></div>
       <p class="feedback" id="outputs-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+      <!-- One Setting set on every ticked row in one press (#457). It moves
+           nothing, so it sits apart from the acts that do (rule 17): back to
+           centre is over the rows and the dial opens right under them, and
+           this line comes after both and after the rows' own answer. Its
+           answer is at its own foot (rule 18). data/servo.js fills the
+           choices from the droid's own words and shows the line once there
+           is a row to tick. -->
+      <div class="outputs-apply" hidden>
+        <div class="outputs-apply-line">
+          <span class="outputs-apply-picks">
+            <button class="btn btn-sm btn-quiet outputs-pick-all" type="button">tick all</button>
+            <button class="btn btn-sm btn-quiet outputs-pick-none" type="button" disabled aria-disabled="true">clear ticks</button>
+          </span>
+          <div class="seg outputs-apply-field" role="radiogroup" aria-label="What to set on the ticked outputs"></div>
+          <span class="outputs-apply-value"></span>
+          <button class="btn btn-sm outputs-apply-set" type="button" disabled aria-disabled="true">Set on ticked outputs</button>
+          <span class="hint outputs-boot-risk is-risk" hidden>Hold keeps the pulse on, so a blocked part grinds.</span>
+        </div>
+        <p class="feedback" role="status" aria-live="polite"></p>
+      </div>
     </div>
 
     <dialog class="parts-move-dialog" id="outputs-move-dialog" role="alertdialog" aria-labelledby="outputs-move-title" aria-describedby="outputs-move-body">

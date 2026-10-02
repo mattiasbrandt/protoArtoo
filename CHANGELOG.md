@@ -166,6 +166,11 @@ the patch releases, whose notes live on their own GitHub Release.
   the calibration dial keeps holding while you look. A part set to go home
   and hold at power-up lets go the same way. Nothing changes until you set a
   time.
+- **Set several servos in one press.** Tick the rows on Servos, or tick all,
+  pick a time to full throw, a time to get up to speed, an ease or what they
+  do at power-up, and one button sets it on every ticked output. Nothing
+  moves. The answer counts how many took it and how many were left out and
+  why: a servo you have not calibrated, a light.
 - **`$803` plays bank 8, sound 3.** ShadowMD's bank-and-sound numbering is read
   as that, not as track 803. A sound module with no bank 8 says so instead of
   playing the wrong file.

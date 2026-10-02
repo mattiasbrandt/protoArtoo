@@ -3,11 +3,12 @@
 //
 // Servos (CONTEXT.md "Servos"): the body's Outputs as servos. One section of
 // Outputs, one row each, named by what the board prints beside the pin and by
-// the Part(s) on it. On each row a builder picks which servo it carries, drives
-// it (open, close, stop, or a typed width sent once), records its ends with the
-// calibration dial, and takes the pulse off; how it lets go, moves and powers
-// up, and which Parts are on it, open under the row on demand. Find by Moving
-// and back to centre sit over the rows. It
+// the Part(s) on it. On each row a builder drives it (open, close, stop, or a
+// typed width sent once), records its ends with the calibration dial, and
+// takes the pulse off; how it lets go, moves and powers up, and which Parts are
+// on it, open under the row on demand. Which servo it carries is picked on
+// Wiring, on the Part's row, and Find by Moving starts there too (#411). Back
+// to centre sits over the rows. It
 // is the output-first side of the mapping Parts reads from the part's end, and
 // everything here moved from Parts on the operator's word (2026-09-19 on #412:
 // "move bascially all of the "Outputs" section pieces to the "Servos" page.
@@ -51,6 +52,12 @@
 // What it does at power-up sits beside them and is offered whether or not it
 // is calibrated: the two are separate decisions (ADR 0052), and calibrating
 // never changes it.
+//
+// Several Outputs take one of those Settings in one press (#318, #457): each
+// row has a tick, and the line under the rows and the dial sets one value on
+// every ticked Output that can take it. It moves nothing, so it sits apart
+// from back to centre and below the dial, and who takes the value is decided
+// before anything is sent.
 // =============================================================================
 (() => {
   const catalog = window.DroidParts;
@@ -155,12 +162,16 @@
   // either is open. The <tbody> carries data-output, so every lookup below
   // finds its cells in either line. The drive cell comes before the settings
   // line on purpose: .outputs-drive-note and .outputs-drive-acts are looked up
-  // by their first match.
+  // by their first match. The row opens with its tick (#457), painted from the
+  // page's own set: a press on the box changes the set, and a repaint never
+  // reads the box.
   const outputRowHtml = (output) => {
     const label = output.name;
     return (
       `<tbody class="parts-row outputs-row" data-output="${esc(output.address)}">` +
       `<tr class="outputs-main">` +
+      `<td class="outputs-pick-cell"><input class="outputs-pick" type="checkbox" ` +
+      `aria-label="${esc(`Tick ${label}`)}"></td>` +
       `<th scope="row"><span class="parts-name outputs-parts"></span>` +
       `<span class="outputs-address">${esc(label)}</span>` +
       `<div class="hint outputs-narrowed" hidden></div></th>` +
@@ -191,7 +202,7 @@
       `aria-label="${esc(`Settings for ${label}`)}">settings` +
       `<svg class="i chev" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>` +
       `</td></tr>` +
-      `<tr class="outputs-sub" hidden><td colspan="5"><div class="outputs-settings" hidden>` +
+      `<tr class="outputs-sub" hidden><td colspan="6"><div class="outputs-settings" hidden>` +
       // How it lets go (#443): never, or a time after each move arrives,
       // offered where how it moves is. The state beside it says what the
       // Output will do, or why it is limp.
@@ -226,7 +237,7 @@
       OUTPUTS.BOOTS.map((boot) =>
         `<button type="button" role="radio" aria-checked="false" data-boot="${esc(boot.id)}">${esc(boot.label)}</button>`
       ).join("") +
-      `</div><span class="hint outputs-boot-risk">Hold keeps the pulse on, so a blocked part grinds.</span></div>` +
+      `</div><span class="hint outputs-boot-risk is-risk">Hold keeps the pulse on, so a blocked part grinds.</span></div>` +
       `</div>` +
       // Putting a Part on it: a press is a request, not a state this control
       // keeps, and the row's Drives cell says what the droid answered.
@@ -242,7 +253,8 @@
   // controller does across a reboot, not while this page is reading it (#318).
   const buildOutputs = (outputs, addresses) => {
     outputsRegion.innerHTML =
-      `<table class="parts-table outputs-table"><thead><tr><th scope="col">Part</th>` +
+      `<table class="parts-table outputs-table"><thead><tr><th scope="col" aria-label="Ticked"></th>` +
+      `<th scope="col">Part</th>` +
       `<th scope="col" aria-label="Put another part on it"></th>` +
       `<th scope="col">Commanded position</th><th scope="col">Move it</th>` +
       `<th scope="col" aria-label="Calibrate and settings"></th>` +
@@ -253,6 +265,7 @@
     outputsRegion.querySelectorAll("[data-output]").forEach((node) => {
       outputRows.set(node.dataset.output, {
         node,
+        pick: node.querySelector(".outputs-pick"),
         parts: node.querySelector(".outputs-parts"),
         bar: node.querySelector(".outputs-bar"),
         now: node.querySelector(".outputs-now"),
@@ -339,6 +352,7 @@
     const live = OUTPUTS.live(output);
     const pulsing = live.state === "pulsing";
     row.node.classList.toggle("is-wired", output.parts.length > 0);
+    row.pick.checked = ticked.has(output.address);
     row.node.classList.toggle("partkind-light", light);
     row.bar.classList.toggle("is-off", !pulsing);
     // Whatever the droid has just answered is current, including after an
@@ -417,7 +431,8 @@
       row.bootRisk.hidden = output.boot !== "home-hold";
       // Home and hold with a release time lets go after it gets home, like
       // any arrival (operator, 2026-09-30 on #443): the grind risk is only
-      // true of a hold with none.
+      // true of a hold with none, and only the risk takes the warning color.
+      row.bootRisk.classList.toggle("is-risk", !letsGo(output));
       row.bootRisk.textContent = letsGo(output)
         ? `Lets go ${seconds(output.release)} s after it gets home.`
         : "Hold keeps the pulse on, so a blocked part grinds.";
@@ -478,11 +493,251 @@
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Ticks, and one Setting set on every ticked Output (#318, #457)
+  //
+  // THE TICKS ARE THE PAGE'S OWN. They save nothing and send nothing, and they
+  // are kept here, beside the rows and not in them, so neither a repaint nor a
+  // rebuild of the table loses one. A tick whose Output has left the list goes
+  // with it, or the button would count a row nobody can see.
+  //
+  // One press sets one of the row's own Settings on every ticked Output that
+  // can take it, in one request through the row door. NOTHING HERE MOVES
+  // ANYTHING: no /api/servo, no capture, no centre, no pulse-off.
+  //
+  // WHO TAKES IT IS DECIDED BEFORE SENDING, by the rule each row offers the
+  // field on (motionOpen(), bootOpen()). The door refuses the whole request
+  // over one row it cannot take (docs/api.md, "the row door"), and
+  // data/outputs.js throws before sending on a field a row cannot save, so a
+  // row left to the droid to sort out would cost every other row its save.
+  // The answer counts who was left out and which kind of row each is. An
+  // Output that is not calibrated is this page's rule, as on its row, not a
+  // refusal of the droid's, and is never called one.
+  //
+  // The value goes as the row sends it. What a Setting accepts is ruled on by
+  // the droid, once: this page keeps no range.
+  // ---------------------------------------------------------------------------
+  const ticked = new Set();
+  const applyBar = outputsSection.querySelector(".outputs-apply");
+  const applyFields = applyBar.querySelector(".outputs-apply-field");
+  const applyValue = applyBar.querySelector(".outputs-apply-value");
+  const applyButton = applyBar.querySelector(".outputs-apply-set");
+  const pickAll = applyBar.querySelector(".outputs-pick-all");
+  const pickNone = applyBar.querySelector(".outputs-pick-none");
+  // The line's own answer, at its foot. Held, as centreSaid is.
+  const applySaid = applyBar.querySelector(".feedback");
+  const sayApplied = (text, level) => window.PAUtils.showFeedback(applySaid, text, level);
+
+  const capital = (words) => words.charAt(0).toUpperCase() + words.slice(1);
+
+  // What the line can set: the Settings each row carries, under the words the
+  // row uses, each with the rule its row offers it on. A field with `choices`
+  // is picked from the row's own; the other two are times, typed. `said` is
+  // the answer's opening, for the value as it is shown: "Ease set to soft",
+  // and for power-up the choice itself, "Home and hold at power-up".
+  const setTo = (label) => (shown) => `${capital(label)} set to ${shown}`;
+  const BULK_FIELDS = [
+    { key: "throwMs", label: "time to full throw", open: motionOpen, said: setTo("time to full throw") },
+    { key: "accelMs", label: "time to get up to speed", open: motionOpen, said: setTo("time to get up to speed") },
+    { key: "ease", label: "ease", open: motionOpen, said: setTo("ease"), choices: OUTPUTS.EASES, ask: "Pick an ease." },
+    {
+      key: "boot",
+      label: "at power-up",
+      open: bootOpen,
+      said: (shown) => `${capital(shown)} at power-up`,
+      choices: OUTPUTS.BOOTS,
+      ask: "Pick what they do at power-up.",
+    },
+  ];
+  // The field being set, what has been typed or picked for each, and whether
+  // a press is still waiting on the droid.
+  const bulk = { field: BULK_FIELDS[0], values: {}, busy: false };
+
+  applyFields.innerHTML = BULK_FIELDS.map(
+    (field) =>
+      `<button type="button" role="radio" aria-checked="false" data-bulk-field="${esc(field.key)}">${esc(field.label)}</button>`
+  ).join("");
+  // One box for either time, and each choice field's own bar. The box sits in
+  // a plain wrapper so `hidden` can take it off the line.
+  applyValue.innerHTML =
+    `<span class="outputs-apply-ms"><label class="outputs-motion-field">` +
+    `<input class="number-cell outputs-apply-time" type="number" step="10"> ms</label></span>` +
+    BULK_FIELDS.filter((field) => field.choices)
+      .map(
+        (field) =>
+          `<div class="seg" role="radiogroup" data-bulk-choices="${esc(field.key)}" ` +
+          `aria-label="${esc(`${field.label}, for the ticked outputs`)}">` +
+          field.choices
+            .map(
+              (choice) =>
+                `<button type="button" role="radio" aria-checked="false" data-bulk-value="${esc(choice.id)}">${esc(choice.label)}</button>`
+            )
+            .join("") +
+          `</div>`
+      )
+      .join("");
+  const applyMs = applyValue.querySelector(".outputs-apply-ms");
+  const applyTime = applyValue.querySelector(".outputs-apply-time");
+  // Hold's one-sentence risk, as on the row (paintApply() says when).
+  const applyRisk = applyBar.querySelector(".outputs-boot-risk");
+  const applyChoices = Array.from(applyValue.querySelectorAll("[data-bulk-choices]"));
+
+  const lit = (button, on) => {
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-checked", on ? "true" : "false");
+  };
+
+  // Only what already exists, as the rows are painted: the line is never
+  // rebuilt under the builder's pointer, and never the box being typed in.
+  const paintApply = (outputs) => {
+    applyBar.hidden = outputs.length === 0;
+    const count = ticked.size;
+    // The count is the warning (r2d2-astromech-simulator v1.79.0,
+    // src/js/maestro/setup-hw-channels.js:637), so it rides in the label.
+    applyButton.textContent =
+      count === 0 ? "Set on ticked outputs" : count === 1 ? "Set on 1 ticked output" : `Set on all ${count} ticked outputs`;
+    window.PAApi.gateControls([applyButton], count > 0 && !bulk.busy);
+    window.PAApi.gateControls([pickAll], count < outputs.length);
+    window.PAApi.gateControls([pickNone], count > 0);
+    const field = bulk.field;
+    Array.from(applyFields.querySelectorAll("[data-bulk-field]")).forEach((button) =>
+      lit(button, button.dataset.bulkField === field.key)
+    );
+    applyMs.hidden = Boolean(field.choices);
+    if (!field.choices) {
+      applyTime.setAttribute("aria-label", `${capital(field.label)} for the ticked outputs, in milliseconds`);
+      if (document.activeElement !== applyTime) applyTime.value = bulk.values[field.key] || "";
+    }
+    applyChoices.forEach((bar) => {
+      bar.hidden = bar.dataset.bulkChoices !== field.key;
+      Array.from(bar.querySelectorAll("[data-bulk-value]")).forEach((button) =>
+        lit(button, !bar.hidden && button.dataset.bulkValue === bulk.values[field.key])
+      );
+    });
+    // The grind risk is only true of a hold that never lets go (paintMotion(),
+    // #443), so it shows only while hold is the pick and a ticked row that
+    // would take it has no release time.
+    applyRisk.hidden = !(
+      field.key === "boot" &&
+      bulk.values.boot === "home-hold" &&
+      outputs.some((output) => ticked.has(output.address) && bootOpen(output) && !letsGo(output))
+    );
+  };
+
+  const outputsCount = (count) => `${count} ${count === 1 ? "output" : "outputs"}`;
+
+  // Which kind of row a ticked Output is, when its row's own rule (field.open)
+  // has already turned it down: a tag that reads alone and after a count. The
+  // field is named by the answer, so the tag only says which kind of row.
+  const SKIP_TAGS = {
+    light: {
+      alone: (count) => (count === 1 ? "a light" : "lights"),
+      counted: (count) => `${count} ${count === 1 ? "light" : "lights"}`,
+    },
+    uncalibrated: { alone: () => "not calibrated yet", counted: (count) => `${count} not calibrated yet` },
+    none: { alone: () => "nothing to set", counted: (count) => `${count} with nothing to set` },
+  };
+  // This words the rule's answer and decides nothing, and IT MUST FOLLOW
+  // motionOpen() AND bootOpen(), clause by clause: a clause added to either
+  // without its tag here is counted under "nothing to set".
+  const leftOut = (output, field) => {
+    if (isLightRow(output)) return "light";
+    if (field.open === motionOpen && isDriveable(output) && output.motionSettable && !output.calibrated) return "uncalibrated";
+    return "none";
+  };
+
+  // "1 skipped — a light.", or each kind with its own count when there is
+  // more than one: "2 skipped — 1 light, 1 not calibrated yet." The form back
+  // to centre's receipt uses on this page.
+  const skippedSaid = (skipped, field) => {
+    const kinds = new Map();
+    skipped.forEach((output) => {
+      const kind = leftOut(output, field);
+      kinds.set(kind, (kinds.get(kind) || 0) + 1);
+    });
+    const said =
+      kinds.size === 1
+        ? SKIP_TAGS[Array.from(kinds.keys())[0]].alone(skipped.length)
+        : Array.from(kinds, ([kind, count]) => SKIP_TAGS[kind].counted(count)).join(", ");
+    return `${skipped.length} skipped — ${said}.`;
+  };
+
+  const applyTicked = async () => {
+    const field = bulk.field;
+    const held = bulk.values[field.key] ?? "";
+    let value;
+    let shown;
+    if (field.choices) {
+      const choice = field.choices.find((each) => each.id === held);
+      if (!choice) {
+        sayApplied(field.ask, "warning");
+        return;
+      }
+      value = choice.id;
+      shown = choice.label;
+    } else {
+      // As the row sends a time: rounded, and no range of this page's own.
+      const ms = Math.round(Number(held));
+      if (held === "" || !Number.isFinite(ms)) {
+        sayApplied("Type a time in milliseconds.", "warning");
+        return;
+      }
+      value = ms;
+      shown = `${ms} ms`;
+    }
+    const picked = listed(OUTPUTS.list()).filter((output) => ticked.has(output.address));
+    if (picked.length === 0) return;
+    const taking = picked.filter(field.open);
+    const skipped = picked.filter((output) => !field.open(output));
+    const left = skipped.length > 0 ? skippedSaid(skipped, field) : "";
+    if (taking.length === 0) {
+      sayApplied(`Nothing sent. ${left}`, "warning");
+      return;
+    }
+    const changes = {};
+    taking.forEach((output) => {
+      changes[output.address] = { [field.key]: value };
+    });
+    bulk.busy = true;
+    paint();
+    try {
+      await OUTPUTS.saveAll(changes);
+    } catch (error) {
+      // Each failure says only what is known. One data/outputs.js marks
+      // `unsent` was thrown before anything went out - rowsFor(), on an
+      // Output that changed under the press - so the droid was never asked.
+      // A refusal changed nothing: the door takes every row or none. A save
+      // whose answer never came - a timeout, the network, an answer that did
+      // not parse - may have landed, so it is called neither way; and an
+      // error of this page's after the request went out claims nothing about
+      // the droid at all. data/outputs.js has read the rows again.
+      const message = error && error.message ? error.message : error;
+      if (error?.unsent) sayApplied(`Nothing sent: ${message}.`, "error");
+      else if (error?.name !== "ApiError") sayApplied(`Not confirmed: ${message}.`, "error");
+      else if (error.kind === "http") sayApplied(`Nothing changed: ${window.PAApi.messageFor(error)}.`, "error");
+      else sayApplied("No answer from the droid; the rows show what it holds.", "error");
+      return;
+    } finally {
+      bulk.busy = false;
+      paint();
+    }
+    sayApplied(
+      `${field.said(shown)} on ${outputsCount(taking.length)}.${left ? ` ${left}` : ""}`,
+      left ? "warning" : "success"
+    );
+  };
+
   // With no Part on any Output there is no row to draw, and one line sends
   // the builder to where Parts are put on Outputs.
   const NONE_LISTED = `No part is on an output yet. <a class="link-btn" href="#wiring">Put parts on outputs on Wiring</a>.`;
 
   const paintOutputs = (outputs, addresses) => {
+    // A tick goes with its row (above), before any row is painted from it.
+    const here = new Set(outputs.map((output) => output.address));
+    ticked.forEach((address) => {
+      if (!here.has(address)) ticked.delete(address);
+    });
+    paintApply(outputs);
     if (outputs.length === 0) {
       if (outputAddresses !== "") {
         outputsRegion.innerHTML = `<p class="hint outputs-none">${NONE_LISTED}</p>`;
@@ -542,6 +797,44 @@
     say: showFeedback,
     reload: () => loadOutputs(),
     repaint: () => paint(),
+  });
+
+  // A tick: the page's own, so it asks the droid for nothing.
+  outputsRegion.addEventListener("change", (event) => {
+    const box = event.target;
+    if (!box?.classList?.contains("outputs-pick")) return;
+    const address = box.closest?.("[data-output]")?.dataset.output;
+    if (!address) return;
+    if (box.checked) ticked.add(address);
+    else ticked.delete(address);
+    paint();
+  });
+
+  applyTime.addEventListener("input", () => {
+    bulk.values[bulk.field.key] = applyTime.value;
+  });
+
+  applyBar.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button");
+    if (!button || button.disabled) return;
+    if (button === applyButton) {
+      started(applyTicked());
+      return;
+    }
+    // Tick all is every row listed; clear ticks empties the set. Neither
+    // saves or sends anything (operator, 2026-09-30 on #457).
+    if (button === pickAll) {
+      if (answered()) listed(OUTPUTS.list()).forEach((output) => ticked.add(output.address));
+    } else if (button === pickNone) {
+      ticked.clear();
+    } else if (button.dataset.bulkField) {
+      bulk.field = BULK_FIELDS.find((field) => field.key === button.dataset.bulkField) || bulk.field;
+    } else if (button.dataset.bulkValue) {
+      bulk.values[bulk.field.key] = button.dataset.bulkValue;
+    } else {
+      return;
+    }
+    paint();
   });
 
   // A release time is typed in seconds and saved as the ms the droid counts:
