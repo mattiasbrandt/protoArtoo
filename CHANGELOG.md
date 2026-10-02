@@ -65,6 +65,12 @@ the patch releases, whose notes live on their own GitHub Release.
   its timing while the part swings, and two parts fluttering together take
   turns, one swing each. A flutter is over by the end of the routine. A flutter
   across a set of body parts does the same for each part.
+- **Flutter on any block that opens.** Pick an open on the timeline and Motion
+  offers Flutter, whether or not a close follows it. Turning an open and its
+  close into a flutter takes the close with it, and turning it back into an
+  open puts a close back. Runs for sets how long a body flutter lasts. The
+  Rehearsal notes a flutter the end of the routine cuts short, and no longer
+  asks for a close after one.
 - **Set the gap between servo starts.** The droid leaves 450 ms between servos
   it starts itself: back to centre, the power-up pass, a pose, a move across a
   set, a flutter. That number is now yours to set, 50 to 5000 ms, as
