@@ -73,6 +73,14 @@ the patch releases, whose notes live on their own GitHub Release.
   under it. Split into steps writes a body set's moves out as steps you can
   edit one by one. The dome performs its own sets as one move, so those do
   not split.
+- **Put a sequence inside a sequence on the timeline.** The Parts tab has
+  Sequences: every sequence this one can hold. Drag one onto the timeline
+  and it lands as one linked block across the lanes of the parts it moves,
+  as long as it runs. It stays linked, so a later change to that sequence is
+  in this one too. Pick the block to choose another sequence. Split into
+  steps writes its steps out in its place, to edit one by one, and that copy
+  is no longer linked. A sequence that is not on this droid stays a mark on
+  the Sequence row.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring has a card for each product on the droid, opened from the product's
   own row: its supply, its draw, its logic level, where each wire goes, and
