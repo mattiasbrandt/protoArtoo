@@ -53,6 +53,12 @@ the patch releases, whose notes live on their own GitHub Release.
   pass. Pick a block and the drawer shows its settings: when it starts, how
   long it runs, how far it opens, and whether it opens or flutters. A drop,
   and each change, is one Undo.
+- **Put the dome's lights in a sequence on its timeline.** Drag a logic
+  display or a PSI onto the timeline and it lands on its own lane; Visual
+  Preset and Holo Effect drag in from More steps onto the Dome row. Pick a
+  light block and the drawer has its lights, its mode, its color as swatches
+  and how long it runs. A logic display can show a text instead, and a holo
+  offers only the colors its effect takes.
 - **Wiring says how to wire and power what you fitted.** On a FireBeetle 2,
   Wiring has a card for each product on the droid, opened from the product's
   own row: its supply, its draw, its logic level, where each wire goes, and

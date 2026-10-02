@@ -318,122 +318,19 @@
   const audioFallbackLabel = (value) =>
     (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";
 
-  // Map DV: preset names to friendly operator labels
-  const dvPresetLabel = (name) => {
-    const labels = {
-      "ROCKMARCH": "Rock March",
-      "VADER": "Vader",
-      "ALARM": "Alarm",
-      "LEIA": "Leia",
-      "HEART": "Heart",
-      "CANTINA": "Cantina",
-      "SCREAM": "Scream",
-      "OVERLOAD": "Overload",
-      "HELLO": "Hello",
-      "RESET_VISUALS": "Reset Visuals",
-    };
-    return labels[name] || name || "Unknown";
-  };
-
-  // Map DL: targets to friendly operator labels
-  const dlTargetLabel = (target) => {
-    const labels = {
-      "FLD": "Front logic",
-      "RLD": "Rear logic",
-      "LOGIC": "Both logic",
-      "FPSI": "Front PSI",
-      "RPSI": "Rear PSI",
-      "PSI": "Both PSI",
-      "ALL": "All logic + PSI",
-    };
-    return labels[target] || target || "Unknown";
-  };
-
-  // Map DL: modes to friendly operator labels
-  const dlModeLabel = (mode) => {
-    const labels = {
-      "NORMAL": "Normal",
-      "ALARM": "Alarm",
-      "FAILURE": "Failure",
-      "LEIA": "Leia",
-      "MARCH": "March",
-      "FLASHCOLOR": "Flash Color",
-      "REDALERT": "Red Alert",
-      "RAINBOW": "Rainbow",
-      "LIGHTSOUT": "Lights Out",
-    };
-    return labels[mode] || mode || "Unknown";
-  };
-
-  // Map DL: colors to friendly operator labels
-  const dlColorLabel = (color) => {
-    const labels = {
-      "DEFAULT": "Default",
-      "RED": "Red",
-      "BLUE": "Blue",
-      "GREEN": "Green",
-      "WHITE": "White",
-      "YELLOW": "Yellow",
-      "ORANGE": "Orange",
-      "PURPLE": "Purple",
-    };
-    return labels[color] || color || "Default";
-  };
-
-  // Map DT: targets to friendly operator labels
-  const dtTargetLabel = (target) => {
-    const labels = {
-      "FLD": "Front display",
-      "RLD": "Rear display",
-      "LOGIC": "Both displays",
-    };
-    return labels[target] || target || "Unknown";
-  };
-
-  // Map DH: targets to friendly operator labels
-  const dhTargetLabel = (target) => {
-    const labels = {
-      "F": "Front holo",
-      "R": "Rear holo",
-      "T": "Top holo",
-      "A": "All holos",
-    };
-    return labels[target] || target || "Unknown";
-  };
-
-  // Map DH: effects to friendly operator labels
-  const dhEffectLabel = (effect) => {
-    const labels = {
-      "OFF": "Off",
-      "ON": "On",
-      "RESET": "Reset",
-      "RANDOM": "Random",
-      "WAG": "Wag",
-      "NOD": "Nod",
-      "PULSE": "Pulse",
-      "RAINBOW": "Rainbow",
-      "FLASH": "Flash",
-      "SHORTCIRCUIT": "Short Circuit",
-      "SOLID": "Solid",
-    };
-    return labels[effect] || effect || "Unknown";
-  };
-
-  // Map DH: colors to friendly operator labels (same as DL:)
-  const dhColorLabel = (color) => {
-    const labels = {
-      "DEFAULT": "Default",
-      "RED": "Red",
-      "BLUE": "Blue",
-      "GREEN": "Green",
-      "WHITE": "White",
-      "YELLOW": "Yellow",
-      "ORANGE": "Orange",
-      "PURPLE": "Purple",
-      "RANDOM": "Random",
-    };
-    return labels[color] || color || "Default";
-  };
+  // The dome's light vocabulary and the words for it are Protocol Check's
+  // (data/seq_protocol_check.js domeLights): this page keeps no label of its
+  // own. `lightWord` is a token as a builder reads it, in one of the
+  // vocabulary's groups.
+  const domeLights = SeqProtocolCheck.domeLights;
+  const lightWord = (group, token) => domeLights.label(group, token) || "Unknown";
+  // A group's tokens as the <option>s of a step card's picker, `current`
+  // chosen. A target is shown with its token after it, as the dome spells it.
+  const lightOptions = (group, tokens, current, withToken = false) =>
+    tokens
+      .map((token) =>
+        `<option value="${token}" ${token === current ? "selected" : ""}>${window.PAUtils.escapeHtml(lightWord(group, token))}${withToken ? ` (${token})` : ""}</option>`)
+      .join("");
 
   const els = {
     // List view
@@ -1162,7 +1059,7 @@
 
   // What kind of step this is, as the step list names it.
   const stepKindName = (step) =>
-    (step.type === "dome" ? domeSubmodeLabel(step.cmd).name : stepTypeName[step.type] || step.type || "Step");
+    (step.type === "dome" ? domeSubmodeName(step.cmd) : stepTypeName[step.type] || step.type || "Step");
 
   // ---------------------------------------------------------------------------
   // The Picked block tab (#441): what the timeline says is picked, and for one
@@ -1176,16 +1073,23 @@
   // absent meaning the whole throw) and the Move Shape. None of them is a
   // speed, an acceleration or an easing: those are the Output's (ADR 0052).
   //
+  // The dome's four light commands have rows of their own (lightRows()): each
+  // is one `cmd`, read into its fields and written back whole, and only by an
+  // edit that changes it.
+  //
   // Kinds with no rows of their own yet show where they start and are edited
-  // in the step list until theirs land: the light commands, a Body Step, a
-  // Gesture and a sequence inside this one.
+  // in the step list until theirs land: a Body Step, a Gesture and a sequence
+  // inside this one.
   // ---------------------------------------------------------------------------
   const BRICK_SENTENCE = "These settings belong to this brick. The same part dropped somewhere else keeps its own.";
 
   const settingRow = (name, control, value = "") =>
     `<div class="setting-row"><span class="setting-name">${name}</span>${control}<span class="setting-value">${value}</span></div>`;
-  const numberCell = (field, value, bounds, label, unit = "ms") =>
-    `<span class="setting-number"><input class="number-cell" type="number" ${limits(bounds)} step="${unit === "ms" ? 10 : 1}" value="${value}" data-picked="${field}" aria-label="${label}"><span class="setting-unit">${unit}</span></span>`;
+  // `optional` is a number that may be left empty, where empty says something
+  // of its own: no duration. Any other number left empty goes back to the one
+  // the routine holds.
+  const numberCell = (field, value, bounds, label, unit = "ms", optional = false) =>
+    `<span class="setting-number"><input class="number-cell" type="number" ${limits(bounds)} step="${unit === "ms" ? 10 : 1}" value="${value}" data-picked="${field}"${optional ? ' data-optional placeholder="-"' : ""} aria-label="${label}">${unit ? `<span class="setting-unit">${unit}</span>` : ""}</span>`;
   // Up to five peers are a joined bar, more are pills that wrap. An option is
   // [value, words] and, for a bar, whether it cannot be pressed now.
   const segOf = (field, options, current, label) =>
@@ -1200,6 +1104,121 @@
     `<input class="fader" type="range" ${limits(bounds)} step="1" value="${value}" data-picked="${field}" aria-label="${label}">`;
   const capital = (word) => word[0].toUpperCase() + word.slice(1);
 
+  // A color is picked as the color itself, in Lights' own swatch (the
+  // .light-colors / .light-color it draws, data/lights.js swatches()): a dot
+  // takes its color from the stylesheet by the token's own name, so no color
+  // is written from here, and the picked one is named once, beside them.
+  // DEFAULT is the dome's word for the color it already uses and RANDOM, a
+  // holo's alone, for one it picks itself: neither dot carries a color.
+  const UNCOLORED = { DEFAULT: " light-color-default", RANDOM: " seq-color-random" };
+  const swatchesOf = (field, group, tokens, current, label) =>
+    `<span class="light-colors" role="radiogroup" aria-label="${label}">${tokens
+      .map((token) =>
+        `<button type="button" class="light-color${UNCOLORED[token] || ""}" role="radio" data-picked="${field}" data-value="${token}"${UNCOLORED[token] ? "" : ` data-color="${token.toLowerCase()}"`} aria-checked="${token === current}" aria-label="${window.PAUtils.escapeHtml(lightWord(group, token))}"></button>`)
+      .join("")}</span>`;
+
+  // The rows of a dome light command, from its fields (lightFields()). Every
+  // choice and its word is the dome's vocabulary (domeLights), and every
+  // bound the kind table's.
+  const lightRows = (fields) => {
+    const esc = window.PAUtils.escapeHtml;
+    const words = (group, tokens) => tokens.map((token) => [token, esc(lightWord(group, token))]);
+    const color = (group, tokens) =>
+      settingRow("Color", `<span class="seq-row-ctl">${swatchesOf("color", group, tokens, fields.color, "Color")}<span class="seq-unit">${esc(lightWord(group, fields.color))}</span></span>`);
+    // A logic display shows a mode or a text, and this turns the step from
+    // the one command into the other. A PSI has no text to show.
+    const shows = domeLights.textTargets.includes(fields.target)
+      ? settingRow("Shows", segOf("shows", [["DL", "Mode"], ["DT", "Text"]], fields.kind, "What the display shows"))
+      : "";
+    switch (fields.kind) {
+      case "DV":
+        return settingRow("Preset", pillsOf("preset", words("presets", domeLights.presets), fields.preset, "Visual preset"));
+      case "DL":
+        return shows
+          + settingRow("Lights", pillsOf("target", words("targets", domeLights.targets), fields.target, "Which lights"))
+          + settingRow("Mode", pillsOf("mode", words("modes", domeLights.modes), fields.mode, "Light mode"))
+          + color("colors", domeLights.colors)
+          + settingRow("Runs for", `<span class="seq-row-ctl">${numberCell("seconds", fields.seconds, STEP_LIMITS.lightCount, "Runs for, in seconds", "s", true)}<span class="hint">empty: until the next mode</span></span>`);
+      case "DT":
+        // The line break written straight after <textarea> is not part of
+        // the text: the HTML parser drops one there, so without it a text
+        // that starts with a line break would lose it in the box, and the
+        // next edit would store it without.
+        return shows
+          + settingRow("Lights", segOf("target", words("textTargets", domeLights.textTargets), fields.target, "Which displays"))
+          + settingRow("Text", `<textarea class="number-cell text-cell seq-light-text" rows="2" maxlength="${LIGHT_TEXT_CHARS}" data-picked="text" aria-label="Text, at most ${LIGHT_TEXT_CHARS} characters and one line break">\n${esc(fields.text)}</textarea>`)
+          + color("textColors", domeLights.textColors)
+          + settingRow("Runs for", numberCell("seconds", fields.seconds, STEP_LIMITS.lightCount, "Runs for, in seconds", "s"))
+          + settingRow("Scroll", numberCell("speed", fields.speed, STEP_LIMITS.scroll, "Scroll speed", ""));
+      default: {
+        // A holo effect takes only the colors its rule allows - the row is
+        // there when that is more than DEFAULT - and a number only where the
+        // rule says so: seconds for a flash, how many times for a wag or nod.
+        //
+        // A stored command can hold what its rule refuses: a color the effect
+        // does not take (DH:A:RAINBOW:RED), a number on an effect that takes
+        // none (DH:A:ON:BLUE:5). Protocol Check refuses the step, so the row
+        // is drawn all the same and it can be put right: the color row with
+        // the colors the effect does take, none of them picked, and the
+        // number to be emptied.
+        const rule = domeLights.holoRules[fields.effect];
+        const colors = rule ? rule.colors : domeLights.holoColors;
+        const times = rule?.counts === "times";
+        const seconds = rule?.counts === "seconds";
+        return settingRow("Holo", segOf("target", words("holoSides", domeLights.holoTargets), fields.target, "Which holo"))
+          + settingRow("Effect", pillsOf("effect", words("holoEffects", domeLights.holoEffects), fields.effect, "Holo effect"))
+          + (colors.length > 1 || !colors.includes(fields.color) ? color("holoColors", colors) : "")
+          + (rule?.duration === "range" || fields.count !== ""
+            ? settingRow(times ? "Times" : "Runs for",
+              numberCell("count", fields.count, STEP_LIMITS.lightCount, times ? "How many times" : seconds ? "Runs for, in seconds" : "Runs for", seconds ? "s" : "", true))
+            : "");
+      }
+    }
+  };
+
+  // One field of a light command, changed. Answers the command it becomes;
+  // undefined when it stays as it is - the field already says that, or the
+  // value is none it can hold - and null when the edit is refused (a text
+  // that cannot be encoded, lightCmd()).
+  //
+  // A command is rewritten only by an edit that changes it: one that spells
+  // out a default (DL:FLD:NORMAL:DEFAULT) saves back byte for byte as it was
+  // read until someone changes a field of it.
+  const lightEdited = (fields, field, raw) => {
+    if (field === "shows") {
+      // The other command's starting fields, on the display this one names.
+      if (raw === fields.kind || !DOME_SUBMODES[raw]) return undefined;
+      return lightCmd({ ...lightFields(DOME_SUBMODES[raw].starts), target: fields.target });
+    }
+    if (!(field in fields) || field === "kind") return undefined;
+    const next = { ...fields };
+    if (["seconds", "count", "speed"].includes(field)) {
+      const number = parseInt(raw, 10);
+      // Only a mode's duration and a holo's number may be left off; a logic
+      // text carries every field.
+      if (raw === "" && fields.kind !== "DT") next[field] = "";
+      else if (Number.isInteger(number)) next[field] = String(number);
+      else return undefined;
+    } else {
+      next[field] = raw;
+    }
+    if (next[field] === fields[field]) return undefined;
+    // Only a new text is encoded. An edit to any other field writes the
+    // stored text back as it was stored (lightFields()' `encoded`).
+    if (field === "text") delete next.encoded;
+    if (field === "effect") {
+      // The new effect's rule decides what the command may keep: a color it
+      // does not take goes back to DEFAULT, and its number goes unless the
+      // new effect takes one that counts the same thing - three wags are not
+      // three seconds of flash, and an effect that takes no number is refused
+      // with one.
+      const rule = domeLights.holoRules[raw];
+      if (rule && !rule.colors.includes(next.color)) next.color = "DEFAULT";
+      if (rule && rule.counts !== domeLights.holoRules[fields.effect]?.counts) next.count = "";
+    }
+    return lightCmd(next);
+  };
+
   // A panel command's halves: [":OP07", "OP", "07"], or null.
   const panelIntent = (step) => (step.type === "dome" ? /^:(OP|CL|OF)(.+)$/.exec(step.cmd || "") : null);
 
@@ -1209,7 +1228,10 @@
     switch (step.type) {
       case "dome": {
         const intent = panelIntent(step);
-        if (!intent) return "";
+        if (!intent) {
+          const light = lightFields(step.cmd);
+          return light ? lightRows(light) : "";
+        }
         if (intent[1] === "CL") return settingRow("Motion", segOf("motion", [["close", "Close"]], "close", "Motion"));
         // A panel flutter has no length the body knows and owes a later close
         // (Protocol Check), so it is offered where a close already follows:
@@ -1282,7 +1304,12 @@
       `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
       + `${beat ? `<span class="seq-unit">${esc(beat)}</span><button type="button" class="seq-act" data-picked="off-beat">Off the beat</button>` : ""}</span>`);
     const opens = panelIntent(step)?.[1] === "OP";
-    return head(block.name || block.words || stepKindName(step), `${stepKindName(step)} · step ${at + 1}`)
+    // A logic or PSI light says which lights it is: the block can be on
+    // several lanes, and then it has no one lane's name.
+    const light = step.type === "dome" ? lightFields(step.cmd) : null;
+    const lights = light?.kind === "DL" ? lightWord("targets", light.target)
+      : light?.kind === "DT" ? lightWord("textTargets", light.target) : "";
+    return head(block.name || block.words || stepKindName(step), `${stepKindName(step)}${lights ? ` · ${lights}` : ""} · step ${at + 1}`)
       + `<div class="setting-rows seq-picked-rows">${startsAt}${kindRows(step, at)}</div>`
       + (opens ? `<p class="hint seq-brick">${BRICK_SENTENCE}</p>` : "")
       + remove;
@@ -1331,7 +1358,18 @@
   const PICKED_NUMBERS = ["moveMs", "jitterMs", "periodMs", "durationMs"];
   const writePicked = (step, field, raw, way = null) => {
     const number = parseInt(raw, 10);
-    if (field === "howFar") {
+    const light = step.type === "dome" ? lightFields(step.cmd) : null;
+    if (light) {
+      const cmd = lightEdited(light, field, raw);
+      if (cmd === null) sayOnStage(LIGHT_TEXT_REFUSED, "error");
+      else if (cmd !== undefined) {
+        step.cmd = cmd;
+        // The line that refused a text goes once one is taken - and only
+        // that line: the stage's one line also carries the droid's answer to
+        // a pose and why a drop landed nothing, which a text edit leaves be.
+        if (field === "text" && stageSays(LIGHT_TEXT_REFUSED)) sayOnStage("");
+      }
+    } else if (field === "howFar") {
       // Stored only where it differs: the whole throw is absence, so a
       // sequence that never said how far saves back as it was read.
       if (!Number.isInteger(number)) return;
@@ -1453,7 +1491,12 @@
   // events, never HTML5 drag-and-drop, which cannot follow the pointer.
   // ---------------------------------------------------------------------------
   const UNLISTED_SECTIONS = ["other_slots", "dome_fixtures"];
-  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "random", "loop", "end"];
+  // The steps that are not a Part, in More steps' order: a kind of step by
+  // its type, or one of the dome's light commands by its prefix (DOME_SUBMODES)
+  // - a Visual Preset and a Holo Effect name no Part, so they are dropped from
+  // here and land on the Dome row.
+  const LIBRARY_KINDS = ["audio", "audioCat", "domeRotate", "DV", "DH", "random", "loop", "end"];
+  const libraryKindName = (id) => DOME_SUBMODES[id]?.name || stepTypeName[id];
   // The Sequence End pill: the one thing that may be dropped past the end.
   const END_PILL = "kind:end";
   // How far the pointer goes before a press on a pill is a drag.
@@ -1488,17 +1531,22 @@
     write("seq-editor-parts-sub", sub);
     write("seq-drop-sub", sub);
     write("seq-lib-parts", pills(found) || '<span class="hint">No part by that name.</span>', true);
-    write("seq-lib-kinds", LIBRARY_KINDS.map((type) => pill(`kind:${type}`, "", stepTypeName[type])).join(""), true);
+    write("seq-lib-kinds", LIBRARY_KINDS.map((id) => pill(`kind:${id}`, "", libraryKindName(id))).join(""), true);
     write("seq-drop-parts", pills(parts), true);
   };
 
   // What a pill is called: the Part's name, or the kind of step.
   const libraryName = (lib) => {
     const [group, id] = lib.split(":");
-    return group === "kind" ? stepTypeName[id] : libraryParts().find((part) => part.id === id)?.name || id;
+    return group === "kind" ? libraryKindName(id) : libraryParts().find((part) => part.id === id)?.name || id;
   };
 
   const sayOnStage = (text, level = "") => sessionTimeline?.say(text ? { text, level } : null);
+  // Whether the stage's line says exactly `text` now. Read off the line
+  // itself (data/seq_timeline.js writes it, for this page and for a pose), so
+  // it is true of whatever said it last.
+  const stageSays = (text) =>
+    document.getElementById("seq-editor-tlbar")?.querySelector(".tl-said")?.textContent === text;
 
   // The steps a drop made are in the routine: put them in time order, read
   // the routine again, and pick them, so the inspector is on the new block.
@@ -1524,20 +1572,31 @@
     if (group === "part") {
       // A dome panel the dome can be told to move lands as a Part standing
       // open: its open here and its close a second on, never past the end.
-      // A body Part and a light are listed, and are not steps this view can
-      // write yet.
+      //
+      // A dome light the dome answers for by name - a logic display or a PSI,
+      // found by its catalog alias the way Lights finds it (data/lights.js
+      // domeTarget()) - lands as a Logic / PSI Mode on its own lane: Normal,
+      // with no color and no duration, so it holds until the next mode.
+      //
+      // A body Part, and a light the dome has no word for, are listed and are
+      // not steps this view can write yet.
       const part = libraryParts().find((each) => each.id === id);
       const commands = window.DomeCommandMap;
       const open = part && commands?.resolvePanelCommand(part.shorthand, "open");
-      if (!open) {
+      const lights = !open && window.DroidPartKind?.isLight(part)
+        ? (part.aliases || []).find((alias) => domeLights.targets.includes(alias))
+        : null;
+      if (!open && !lights) {
         sayOnStage(`${libraryName(lib)} cannot go on the timeline yet.`, "error");
         return;
       }
       const last = endAt === -1 ? STEP_LIMITS.t[1] : Number(steps[endAt].t) || 0;
-      const made = [
-        { t: at, type: "dome", cmd: open },
-        { t: Math.min(at + DROPPED_OPEN_MS, last), type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
-      ];
+      const made = lights
+        ? [{ t: at, type: "dome", cmd: lightCmd({ ...lightFields(DOME_SUBMODES.DL.starts), target: lights }) }]
+        : [
+          { t: at, type: "dome", cmd: open },
+          { t: Math.min(at + DROPPED_OPEN_MS, last), type: "dome", cmd: commands.resolvePanelCommand(part.shorthand, "close") },
+        ];
       historyPush();
       steps.splice(endAt === -1 ? steps.length : endAt, 0, ...made);
       landed(made);
@@ -1592,7 +1651,9 @@
       return;
     }
 
-    const made = { t: at, type: id, ...stepTypeDefaults[id] };
+    const made = DOME_SUBMODES[id]
+      ? { t: at, type: "dome", cmd: DOME_SUBMODES[id].starts }
+      : { t: at, type: id, ...stepTypeDefaults[id] };
     historyPush();
     if (id === "end") {
       // The end closes the routine, so it lands no earlier than its last step.
@@ -1771,70 +1832,28 @@
         return `Play sound (${fieldOf(step, "cmd")})`;
       case "dome": {
         const cmd = step.cmd || "";
-        // Visual preset mode
-        if (cmd.startsWith("DV:")) {
-          const presetName = cmd.slice(3);
-          return `Visual preset: ${dvPresetLabel(presetName)}`;
+        // One of the four light commands, from its fields (lightFields()).
+        // One too short to say what it is for is shown as it is stored:
+        // lightFields() would fill what is missing from a new step's.
+        const light = lightFields(cmd);
+        const said = cmd.split(":").length;
+        if (light?.kind === "DV") return `Visual preset: ${lightWord("presets", light.preset)}`;
+        if (light?.kind === "DL") {
+          if (said < 3) return `Logic/PSI: ${cmd.slice(3)}`;
+          return `${lightWord("targets", light.target)}: ${lightWord("modes", light.mode)}`
+            + (light.color !== "DEFAULT" ? `, ${lightWord("colors", light.color)}` : "")
+            + (light.seconds ? `, ${light.seconds}s` : "");
         }
-        // Logic/PSI mode
-        if (cmd.startsWith("DL:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 3) {
-            const target = parts[1];
-            const mode = parts[2];
-            const color = parts[3] || "";
-            const duration = parts[4] || "";
-            let preview = `${dlTargetLabel(target)}: ${dlModeLabel(mode)}`;
-            if (color && color !== "DEFAULT") {
-              preview += `, ${dlColorLabel(color)}`;
-            }
-            if (duration) {
-              preview += `, ${duration}s`;
-            }
-            return preview;
-          }
-          return `Logic/PSI: ${cmd.slice(3)}`;
+        if (light?.kind === "DT") {
+          if (said < 5) return `Logic text: ${cmd.slice(3)}`;
+          // A line break is shown as a slash.
+          return `${lightWord("textTargets", light.target)} text: "${light.text.replace(/\n/g, " / ")}"`;
         }
-        // Logic Text mode
-        if (cmd.startsWith("DT:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 5) {
-            const target = parts[1];
-            const color = parts[2];
-            const duration = parts[3];
-            const speed = parts[4];
-            const encodedText = parts.slice(5).join(":");
-            // Decode percent-encoded text
-            let decodedText = "";
-            try {
-              decodedText = decodeURIComponent(encodedText);
-            } catch (e) {
-              decodedText = encodedText;
-            }
-            // Render newline visibly for preview
-            const displayText = decodedText.replace(/\n/g, " / ");
-            return `${dtTargetLabel(target)} text: "${displayText}"`;
-          }
-          return `Logic text: ${cmd.slice(3)}`;
-        }
-        // Holo Effect mode
-        if (cmd.startsWith("DH:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 3) {
-            const target = parts[1];
-            const effect = parts[2];
-            const color = parts[3] || "";
-            const durationOrCount = parts[4] || "";
-            let preview = `${dhTargetLabel(target)}: ${dhEffectLabel(effect)}`;
-            if (color && color !== "DEFAULT") {
-              preview += `, ${dhColorLabel(color)}`;
-            }
-            if (durationOrCount) {
-              preview += `, ${durationOrCount}`;
-            }
-            return preview;
-          }
-          return `Holo: ${cmd.slice(3)}`;
+        if (light?.kind === "DH") {
+          if (said < 3) return `Holo: ${cmd.slice(3)}`;
+          return `${lightWord("holoTargets", light.target)}: ${lightWord("holoEffects", light.effect)}`
+            + (light.color !== "DEFAULT" ? `, ${lightWord("holoColors", light.color)}` : "")
+            + (light.count ? `, ${light.count}` : "");
         }
         // Panel intent mode: parse action and target
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
@@ -1933,7 +1952,13 @@
     loopMs: [100, 120000],
     moveMs: [0, 5000],
     jitterMs: [0, 2000],
+    // A light mode's, a logic text's and a holo flash's seconds, and how many
+    // times a holo wags or nods: Protocol Check holds each to 0..99.
+    lightCount: [0, 99],
+    scroll: [0, 9],
   };
+  // How many characters a logic text holds, a line break among them.
+  const LIGHT_TEXT_CHARS = 32;
   const limits = ([min, max]) => `min="${min}" max="${max}"`;
   // How long a dome turn runs when a stop is first given a speed: a turn with
   // a speed and no time is refused, and a new Spin Dome is the neutral stop.
@@ -1949,6 +1974,116 @@
   // (SLOTSET_HOLD, include/sequence_engine.h) - and what it does to the pick.
   const RANDOM_SETS = ["ring", "pie", "all", "hold"];
   const RANDOM_MODES = ["flutter", "open", "close"];
+
+  // ---------------------------------------------------------------------------
+  // The dome's four light commands. A dome step holds one as its `cmd`; the
+  // step list's cards and the Picked block tab both read it with lightFields()
+  // and write it with lightCmd(), so the grammar is spelled once (Protocol
+  // Check has the rules, data/seq_protocol_check.js):
+  //   DV:<preset>
+  //   DL:<target>:<mode>[:<color>[:<seconds>]]
+  //   DT:<target>:<color>:<seconds>:<speed>:<encodedText>
+  //   DH:<target>:<effect>[:<color>[:<secondsOrCount>]]
+  // `starts` is the command a new step of that kind holds.
+  // ---------------------------------------------------------------------------
+  const DOME_SUBMODES = {
+    DV: { name: "Visual Preset", starts: "DV:ROCKMARCH" },
+    DL: { name: "Logic / PSI Mode", starts: "DL:LOGIC:NORMAL" },
+    DT: { name: "Logic Text", starts: "DT:LOGIC:DEFAULT:5:0:" },
+    DH: { name: "Holo Effect", starts: "DH:A:FLASH" },
+  };
+
+  // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
+  const lightKind = (cmd) => {
+    const kind = /^(D[VLTH]):/.exec(String(cmd || ""))?.[1];
+    return kind && DOME_SUBMODES[kind] ? kind : null;
+  };
+
+  // A logic text travels percent-encoded, so a colon in it is not read as the
+  // next field. Only what the droid needs is escaped, because the encoded
+  // text is held to 40 characters and every escape spends three of them
+  // (docs/dome-visual-authoring-contract.md, "DT"; the decoder is
+  // src/protocol_check.cpp): % is %25, : is %3A, a line break is %0A, and
+  // printable ASCII otherwise stays as typed - a space, a comma, a question
+  // mark. Anything else goes as the bytes of its UTF-8. A text that was not
+  // stored percent-encoded is shown as it is stored.
+  //
+  // encodeLightText() answers null for the one text that cannot be encoded:
+  // one holding half of a two-part character (a lone surrogate, which is what
+  // a pictograph cut in two leaves behind). encodeURIComponent() throws a
+  // URIError on it. Writing the text raw instead would put an unencoded
+  // character into the command and say nothing, so the edit is refused and
+  // whoever asked says why (LIGHT_TEXT_REFUSED).
+  const LIGHT_TEXT_REFUSED = "That text has a broken character in it. Type it again.";
+  // Read by code point (the `u` flag), so the two halves of one character are
+  // encoded together and only a half on its own throws.
+  const LIGHT_TEXT_ESCAPED = /[%:]|[^\x20-\x7E]/gu;
+  const encodeLightText = (text) => {
+    try {
+      return text.replace(LIGHT_TEXT_ESCAPED, (character) => encodeURIComponent(character));
+    } catch (error) {
+      if (error instanceof URIError) return null;
+      throw error;
+    }
+  };
+  const decodeLightText = (encoded) => {
+    try {
+      return decodeURIComponent(encoded);
+    } catch (e) {
+      return encoded;
+    }
+  };
+
+  // A light command as its fields, every one a string, or null when `cmd` is
+  // none of the four. A field the command leaves off reads as what leaving it
+  // off means: the color DEFAULT, and "" for no duration or count. A field
+  // the grammar requires and the command lacks reads as a new step's.
+  //
+  // A logic text is two fields: `text` as a builder reads it, and `encoded`,
+  // the stored slot exactly as it is. One text has many encodings - a space
+  // or %20, %3A or %3a, a comma or %2C - and they differ in length against a
+  // cap, so lightCmd() writes the stored one back and encodes afresh only
+  // when there is none: a text just typed.
+  const lightFields = (cmd) => {
+    const kind = lightKind(cmd);
+    if (!kind) return null;
+    const parts = String(cmd).split(":");
+    const starts = DOME_SUBMODES[kind].starts.split(":");
+    const at = (i) => parts[i] || starts[i];
+    switch (kind) {
+      case "DV":
+        return { kind, preset: String(cmd).slice(3) };
+      case "DL":
+        return { kind, target: at(1), mode: at(2), color: parts[3] || "DEFAULT", seconds: parts[4] ?? "" };
+      case "DT": {
+        const encoded = parts.slice(5).join(":");
+        return { kind, target: at(1), color: at(2), seconds: at(3), speed: at(4), text: decodeLightText(encoded), encoded };
+      }
+      default:
+        return { kind, target: at(1), effect: at(2), color: parts[3] || "DEFAULT", count: parts[4] ?? "" };
+    }
+  };
+
+  // The command those fields spell, or null for a logic text that cannot be
+  // encoded. The fields are positional, so a duration needs its color slot: a
+  // set duration with the color DEFAULT writes DEFAULT there, and with the
+  // color DEFAULT and no duration both are left off - stored only where it
+  // differs.
+  const lightCmd = (fields) => {
+    const tail = (color, number) => (number !== "" ? `:${color}:${number}` : color !== "DEFAULT" ? `:${color}` : "");
+    switch (fields.kind) {
+      case "DV":
+        return `DV:${fields.preset}`;
+      case "DL":
+        return `DL:${fields.target}:${fields.mode}${tail(fields.color, fields.seconds)}`;
+      case "DT": {
+        const encoded = fields.encoded ?? encodeLightText(fields.text);
+        return encoded === null ? null : `DT:${fields.target}:${fields.color}:${fields.seconds}:${fields.speed}:${encoded}`;
+      }
+      default:
+        return `DH:${fields.target}:${fields.effect}${tail(fields.color, fields.count)}`;
+    }
+  };
 
   // What a loop cannot repeat: another loop, a sequence inside this one, and
   // the end.
@@ -1989,14 +2124,9 @@
     end: "Sequence End",
   };
 
-  // Helper: which dome sub-mode a step's cmd is, by name, for the collapsed card
-  const domeSubmodeLabel = (cmd) => {
-    if ((cmd || "").startsWith("DV:")) return { name: "Visual Preset" };
-    if ((cmd || "").startsWith("DL:")) return { name: "Logic / PSI Mode" };
-    if ((cmd || "").startsWith("DT:")) return { name: "Logic Text" };
-    if ((cmd || "").startsWith("DH:")) return { name: "Holo Effect" };
-    return { name: "Panel Action" };
-  };
+  // What kind of dome step a command makes it, by name: one of the four light
+  // commands, or a Panel Action.
+  const domeSubmodeName = (cmd) => DOME_SUBMODES[lightKind(cmd)]?.name || stepTypeName.dome;
 
   // Step type descriptions for reference panel
   const stepTypeDescriptions = {
@@ -2040,7 +2170,7 @@
     let typeName = stepTypeName[step.type] || step.type;
     // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
     if (step.type === "dome") {
-      typeName = domeSubmodeLabel(step.cmd).name;
+      typeName = domeSubmodeName(step.cmd);
     }
     const preview = stepPreview(step);
 
@@ -2302,14 +2432,12 @@
         return "Plays a sound";
       case "dome": {
         const cmd = step.cmd || "";
-        if (cmd.startsWith("DL:")) {
-          const parts = cmd.split(":");
-          if (parts.length >= 3) {
-            const target = dlTargetLabel(parts[1]);
-            const mode = dlModeLabel(parts[2]);
-            return `Sets ${target} to ${mode}`;
-          }
-          return "Sets logic/PSI mood";
+        const light = lightFields(cmd);
+        if (light?.kind === "DL") {
+          // One too short to name its lights and its mode says no more than
+          // what kind it is.
+          if (cmd.split(":").length < 3) return "Sets logic/PSI mood";
+          return `Sets ${lightWord("targets", light.target)} to ${lightWord("modes", light.mode)}`;
         }
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
           return "Operates dome panels";
@@ -2384,67 +2512,37 @@
 
         if (domeMode === "preset") {
           // Visual preset mode: dropdown of DV_PRESETS names
-          const presetName = (step.cmd || "").slice(3); // Extract from "DV:NAME"
+          const presetName = lightFields(step.cmd)?.preset ?? "";
           behaviorHtml = `
             <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
-              ${["ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA", "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS"]
-                .map(
-                  (preset) =>
-                    `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${window.PAUtils.escapeHtml(dvPresetLabel(preset))}</option>`
-                )
-                .join("")}
+              ${lightOptions("presets", domeLights.presets, presetName)}
             </select>
-            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
+            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || DOME_SUBMODES.DV.starts)}">
             <button type="button" class="dome-mode-toggle seq-act" aria-label="Switch to advanced mode">Advanced</button>
           `;
         } else if (domeMode === "logic") {
           // Logic/PSI Mode (DL:) structured step
           // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
-          const cmd = step.cmd || "DL:LOGIC:NORMAL";
-          const parts = cmd.split(":");
-          const target = parts[1] || "LOGIC";
-          const mode = parts[2] || "NORMAL";
-          const color = parts[3] || "DEFAULT";
-          const duration = parts[4] || "";
+          const cmd = step.cmd || DOME_SUBMODES.DL.starts;
+          const { target, mode, color, seconds: duration } = lightFields(cmd);
 
           targetHtml = `
             <select class="step-field dl-target-select" data-field="target" aria-label="Target">
-              <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front logic (FLD)</option>
-              <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear logic (RLD)</option>
-              <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both logic (LOGIC)</option>
-              <option value="FPSI" ${target === "FPSI" ? "selected" : ""}>Front PSI (FPSI)</option>
-              <option value="RPSI" ${target === "RPSI" ? "selected" : ""}>Rear PSI (RPSI)</option>
-              <option value="PSI" ${target === "PSI" ? "selected" : ""}>Both PSI (PSI)</option>
-              <option value="ALL" ${target === "ALL" ? "selected" : ""}>All logic + PSI (ALL)</option>
+              ${lightOptions("targets", domeLights.targets, target, true)}
             </select>
           `;
 
           behaviorHtml = `
             <select class="step-field dl-mode-select" data-field="mode" aria-label="Mode">
-              <option value="NORMAL" ${mode === "NORMAL" ? "selected" : ""}>Normal</option>
-              <option value="ALARM" ${mode === "ALARM" ? "selected" : ""}>Alarm</option>
-              <option value="FAILURE" ${mode === "FAILURE" ? "selected" : ""}>Failure</option>
-              <option value="LEIA" ${mode === "LEIA" ? "selected" : ""}>Leia</option>
-              <option value="MARCH" ${mode === "MARCH" ? "selected" : ""}>March</option>
-              <option value="FLASHCOLOR" ${mode === "FLASHCOLOR" ? "selected" : ""}>Flash Color</option>
-              <option value="REDALERT" ${mode === "REDALERT" ? "selected" : ""}>Red Alert</option>
-              <option value="RAINBOW" ${mode === "RAINBOW" ? "selected" : ""}>Rainbow</option>
-              <option value="LIGHTSOUT" ${mode === "LIGHTSOUT" ? "selected" : ""}>Lights Out</option>
+              ${lightOptions("modes", domeLights.modes, mode)}
             </select>
             <select class="step-field dl-color-select" data-field="color" aria-label="Color">
-              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+              ${lightOptions("colors", domeLights.colors, color)}
             </select>
           `;
 
           timingHtml = `
-            <input class="step-field dl-duration-input" type="number" data-field="duration" value="${duration}" min="0" max="99" aria-label="Duration (seconds)" placeholder="duration (0-99s)">
+            <input class="step-field dl-duration-input" type="number" data-field="duration" value="${duration}" ${limits(STEP_LIMITS.lightCount)} aria-label="Duration (seconds)" placeholder="duration (0-99s)">
             <span class="dome-rotate-label">s</span>
           `;
 
@@ -2453,47 +2551,26 @@
         } else if (domeMode === "text") {
           // Logic Text Mode (DT:) structured step
           // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
-          const cmd = step.cmd || "DT:LOGIC:DEFAULT:5:0:";
-          const parts = cmd.split(":");
-          const target = parts[1] || "LOGIC";
-          const color = parts[2] || "DEFAULT";
-          const duration = parts[3] || "5";
-          const speed = parts[4] || "0";
-          const encodedText = parts.slice(5).join(":") || "";
-          // Decode text for display
-          let decodedText = "";
-          try {
-            decodedText = decodeURIComponent(encodedText);
-          } catch (e) {
-            decodedText = encodedText;
-          }
+          const cmd = step.cmd || DOME_SUBMODES.DT.starts;
+          const { target, color, seconds: duration, speed, text: decodedText } = lightFields(cmd);
 
           targetHtml = `
             <select class="step-field dt-target-select" data-field="target" aria-label="Target">
-              <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front display (FLD)</option>
-              <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear display (RLD)</option>
-              <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both displays (LOGIC)</option>
+              ${lightOptions("textTargets", domeLights.textTargets, target, true)}
             </select>
           `;
 
           behaviorHtml = `
             <select class="step-field dt-color-select" data-field="color" aria-label="Color">
-              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+              ${lightOptions("textColors", domeLights.textColors, color)}
             </select>
             <textarea class="step-field dt-text-input" data-field="text" placeholder="Enter text (max 32 chars, one line break allowed)" aria-label="Display text">${window.PAUtils.escapeHtml(decodedText)}</textarea>
           `;
 
           timingHtml = `
-            <input class="step-field dt-duration-input" type="number" data-field="duration" value="${duration}" min="0" max="99" aria-label="Duration (seconds)" placeholder="0-99s">
+            <input class="step-field dt-duration-input" type="number" data-field="duration" value="${duration}" ${limits(STEP_LIMITS.lightCount)} aria-label="Duration (seconds)" placeholder="0-99s">
             <span class="dome-rotate-label">s</span>
-            <input class="step-field dt-speed-input" type="number" data-field="speed" value="${speed}" min="0" max="9" aria-label="Scroll speed (0-9)" placeholder="0-9">
+            <input class="step-field dt-speed-input" type="number" data-field="speed" value="${speed}" ${limits(STEP_LIMITS.scroll)} aria-label="Scroll speed (0-9)" placeholder="0-9">
             <span class="dome-rotate-label">speed</span>
           `;
 
@@ -2502,51 +2579,26 @@
         } else if (domeMode === "holo") {
           // Holo Effect Mode (DH:) structured step
           // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
-          const cmd = step.cmd || "DH:A:FLASH";
-          const parts = cmd.split(":");
-          const target = parts[1] || "A";
-          const effect = parts[2] || "FLASH";
-          const color = parts[3] || "DEFAULT";
-          const durationOrCount = parts[4] || "";
+          const cmd = step.cmd || DOME_SUBMODES.DH.starts;
+          const { target, effect, color, count: durationOrCount } = lightFields(cmd);
 
           targetHtml = `
             <select class="step-field dh-target-select" data-field="target" aria-label="Target">
-              <option value="F" ${target === "F" ? "selected" : ""}>Front holo (F)</option>
-              <option value="R" ${target === "R" ? "selected" : ""}>Rear holo (R)</option>
-              <option value="T" ${target === "T" ? "selected" : ""}>Top holo (T)</option>
-              <option value="A" ${target === "A" ? "selected" : ""}>All holos (A)</option>
+              ${lightOptions("holoTargets", domeLights.holoTargets, target, true)}
             </select>
           `;
 
           behaviorHtml = `
             <select class="step-field dh-effect-select" data-field="effect" aria-label="Effect">
-              <option value="OFF" ${effect === "OFF" ? "selected" : ""}>Off</option>
-              <option value="ON" ${effect === "ON" ? "selected" : ""}>On</option>
-              <option value="RESET" ${effect === "RESET" ? "selected" : ""}>Reset</option>
-              <option value="RANDOM" ${effect === "RANDOM" ? "selected" : ""}>Random</option>
-              <option value="WAG" ${effect === "WAG" ? "selected" : ""}>Wag</option>
-              <option value="NOD" ${effect === "NOD" ? "selected" : ""}>Nod</option>
-              <option value="PULSE" ${effect === "PULSE" ? "selected" : ""}>Pulse</option>
-              <option value="RAINBOW" ${effect === "RAINBOW" ? "selected" : ""}>Rainbow</option>
-              <option value="FLASH" ${effect === "FLASH" ? "selected" : ""}>Flash</option>
-              <option value="SHORTCIRCUIT" ${effect === "SHORTCIRCUIT" ? "selected" : ""}>Short Circuit</option>
-              <option value="SOLID" ${effect === "SOLID" ? "selected" : ""}>Solid</option>
+              ${lightOptions("holoEffects", domeLights.holoEffects, effect)}
             </select>
             <select class="step-field dh-color-select" data-field="color" aria-label="Color">
-              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
-              <option value="RANDOM" ${color === "RANDOM" ? "selected" : ""}>Random</option>
+              ${lightOptions("holoColors", domeLights.holoColors, color)}
             </select>
           `;
 
           timingHtml = `
-            <input class="step-field dh-duration-input" type="number" data-field="durationOrCount" value="${durationOrCount}" min="0" max="99" aria-label="Duration / count (0-99)" placeholder="duration/count (0-99)">
+            <input class="step-field dh-duration-input" type="number" data-field="durationOrCount" value="${durationOrCount}" ${limits(STEP_LIMITS.lightCount)} aria-label="Duration / count (0-99)" placeholder="duration/count (0-99)">
           `;
 
           // Store hidden cmd field for serialization
@@ -3744,7 +3796,9 @@
         // the routine holds. So does a start the block could not take - it
         // is held at its limit - because inspect() draws the inspector again
         // from where the block is.
-        else if (kindOf(input) === "number" && input.value === "") repaintPicked();
+        // A number that may be left empty (numberCell()'s `optional`) is
+        // written empty: that is its "no duration".
+        else if (kindOf(input) === "number" && input.value === "" && input.dataset.optional === undefined) repaintPicked();
         else inspect(field, input.value);
       });
     }
@@ -4084,8 +4138,7 @@
       // run ends at its change, so the command has to be written before that
       // or one choice would leave two entries behind.
       const choosePreset = () => {
-        const preset = presetSelect.value;
-        const cmd = `DV:${preset}`;
+        const cmd = lightCmd({ kind: "DV", preset: presetSelect.value });
         const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
         if (hiddenInput) {
           hiddenInput.value = cmd;
@@ -4140,7 +4193,7 @@
           const currentCmd = hiddenInput ? hiddenInput.value : "";
           if (!currentCmd.startsWith("DV:")) {
             // Not a preset; default to ROCKMARCH
-            editorState.current.steps[stepIdx].cmd = "DV:ROCKMARCH";
+            editorState.current.steps[stepIdx].cmd = DOME_SUBMODES.DV.starts;
           }
         }
 
@@ -4168,16 +4221,13 @@
 
     const updateCmd = () => {
       if (!targetSelect || !modeSelect || !hiddenCmd) return;
-      let cmd = `DL:${targetSelect.value}:${modeSelect.value}`;
-      if (colorSelect && colorSelect.value !== "DEFAULT") {
-        cmd += `:${colorSelect.value}`;
-        if (durationInput && durationInput.value) {
-          cmd += `:${durationInput.value}`;
-        }
-      } else if (durationInput && durationInput.value) {
-        // If duration is set but color is DEFAULT, we still need to include DEFAULT
-        cmd += `:DEFAULT:${durationInput.value}`;
-      }
+      const cmd = lightCmd({
+        kind: "DL",
+        target: targetSelect.value,
+        mode: modeSelect.value,
+        color: colorSelect ? colorSelect.value : "DEFAULT",
+        seconds: durationInput ? durationInput.value : "",
+      });
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
@@ -4203,18 +4253,19 @@
 
     const updateCmd = () => {
       if (!targetSelect || !colorSelect || !hiddenCmd) return;
-      const plainText = textInput ? textInput.value : "";
-      let encodedText = "";
-      try {
-        // Percent-encode the text: newline=%0A, %=%25, :=%3A, space stays literal
-        encodedText = encodeURIComponent(plainText)
-          .replace(/%20/g, " ");  // Keep spaces literal
-      } catch (e) {
-        encodedText = plainText;
+      const cmd = lightCmd({
+        kind: "DT",
+        target: targetSelect.value,
+        color: colorSelect.value,
+        seconds: durationInput ? durationInput.value : "5",
+        speed: speedInput ? speedInput.value : "0",
+        text: textInput ? textInput.value : "",
+      });
+      if (cmd === null) {
+        // The step keeps the text it had.
+        showEditorFeedback(LIGHT_TEXT_REFUSED, "error");
+        return;
       }
-      const duration = durationInput ? durationInput.value : "5";
-      const speed = speedInput ? speedInput.value : "0";
-      const cmd = `DT:${targetSelect.value}:${colorSelect.value}:${duration}:${speed}:${encodedText}`;
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
@@ -4239,16 +4290,13 @@
 
     const updateCmd = () => {
       if (!targetSelect || !effectSelect || !hiddenCmd) return;
-      let cmd = `DH:${targetSelect.value}:${effectSelect.value}`;
-      if (colorSelect && colorSelect.value !== "DEFAULT") {
-        cmd += `:${colorSelect.value}`;
-        if (durationInput && durationInput.value) {
-          cmd += `:${durationInput.value}`;
-        }
-      } else if (durationInput && durationInput.value) {
-        // If durationOrCount is set but color is DEFAULT, we still need to include DEFAULT
-        cmd += `:DEFAULT:${durationInput.value}`;
-      }
+      const cmd = lightCmd({
+        kind: "DH",
+        target: targetSelect.value,
+        effect: effectSelect.value,
+        color: colorSelect ? colorSelect.value : "DEFAULT",
+        count: durationInput ? durationInput.value : "",
+      });
       hiddenCmd.value = cmd;
       picked(stepIdx, () => {
         editorState.current.steps[stepIdx].cmd = cmd;
@@ -4375,13 +4423,8 @@
 
         // A dome sub-mode starts from its own command, which is what tells the
         // step's fields which mode to draw.
-        if (domeMode === "text") {
-          newDefaults = { cmd: "DT:LOGIC:DEFAULT:5:0:" };
-        } else if (domeMode === "holo") {
-          newDefaults = { cmd: "DH:A:FLASH" };
-        } else if (domeMode === "logic") {
-          newDefaults = { cmd: "DL:LOGIC:NORMAL" };
-        }
+        const submode = { logic: "DL", text: "DT", holo: "DH" }[domeMode];
+        if (submode) newDefaults = { cmd: DOME_SUBMODES[submode].starts };
 
         editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
 
