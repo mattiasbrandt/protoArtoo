@@ -55,7 +55,7 @@
 #include "config_nvsio.h"
 #include "config_cache.h"
 #include "dome_link.h"
-#include "drive_motion.h"  // driveOutputIsDriving() - idle chatter waits while driving
+#include "drive_motion.h"  // driveMotionIsDriving() - idle chatter waits while driving
 #include "logging.h"
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
@@ -975,11 +975,18 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         uint8_t activeMood;
         bool domeSeqActive;
-        bool driving;
+        // This task's reading of "driving" (include/drive_motion.h). Static:
+        // the settle after a stop is measured across ticks.
+        static DriveMotion driveMotion = {};
+        DriveMotionReading drive;
         taskENTER_CRITICAL(&robotStateMux);
         activeMood = robotState.activeMood;
         domeSeqActive = robotState.domeSeqActive;
-        driving = driveOutputIsDriving(robotState.driveOutputSpeed, robotState.driveOutputSteer);
+        drive.driveSpeed = robotState.driveOutputSpeed;
+        drive.driveSteer = robotState.driveOutputSteer;
+        drive.feedbackValid = robotState.driveFeedbackValid;
+        drive.wheelSpeedL = robotState.driveFeedbackSpeedL;
+        drive.wheelSpeedR = robotState.driveFeedbackSpeedR;
         taskEXIT_CRITICAL(&robotStateMux);
 
         AudioStepIdleInputs idleIn{};
@@ -990,7 +997,7 @@ void audioTask(void* pvParameters) {
         idleIn.webOtaActive = webOtaActive();
         idleIn.activeMood = activeMood;
         idleIn.domeSeqActive = domeSeqActive;
-        idleIn.driving = driving;
+        idleIn.driving = driveMotionIsDriving(&driveMotion, drive, idleIn.nowMs);
         idleIn.randomValue = esp_random();
         idleIn.playback = &playback;
         idleIn.bindings = &s_audioBindings;

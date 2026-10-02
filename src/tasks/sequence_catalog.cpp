@@ -15,7 +15,6 @@
 #include "seq_store_index.h"        // runtime (Learned Sequence) name index
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
-#include "sequence_gesture.h"         // seqStepsMayOpenBodyPart()
 
 #define SEQ_STEPCOUNT(arr) ((uint8_t)(sizeof(arr) / sizeof((arr)[0])))
 
@@ -943,20 +942,6 @@ const char* sequenceBodyRoutineName(int seId) {
         return nullptr;
     }
     return kNames[seId - 30];
-}
-
-bool sequenceMayOpenBodyPart(const char* name) {
-    if (name == nullptr || name[0] == '\0') {
-        return false;
-    }
-    if (const SeqIndexEntry* learned = seqStoreIndexFind(name)) {
-        return learned->mayOpenBody;
-    }
-    if (const SequenceEntry* factory = sequenceCatalogFind(name)) {
-        return seqStepsMayOpenBodyPart(factory->steps, factory->stepCount) ||
-               seqStepsMayOpenBodyPart(factory->closeSteps, factory->closeStepCount);
-    }
-    return false;
 }
 
 SequenceLookupResult sequenceLookup(const char* name) {

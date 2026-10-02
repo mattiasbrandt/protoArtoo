@@ -29,7 +29,7 @@
 #include "config.h"
 #include "config_cache.h"
 #include "dome_math.h"
-#include "drive_motion.h"  // driveOutputIsDriving() - Resting Behaviour waits while driving
+#include "drive_motion.h"  // driveMotionIsDriving() - Resting Behaviour waits while driving
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -240,13 +240,14 @@ void domeTask(void* pvParameters) {
             static float        rndSpeed    = 0.0f;
             static bool         rndWasActive = false;
             static uint8_t      rndPauseMood = 0;  // Mood the running pause was drawn under
+            static DriveMotion  driveMotion  = {};  // this task's reading of "driving"
 
             bool     rndEnabled;
             uint8_t  rndSpeedPct, rndPauseMin, rndPauseMax;
             uint16_t rndMoveMs;
             bool     domeSeqActive;
-            bool     driving;
             uint8_t  mood;
+            DriveMotionReading drive;
             uint32_t now = millis();
             DomeConfig rndCfg = {};
             configCacheReadDome(&rndCfg);
@@ -258,14 +259,19 @@ void domeTask(void* pvParameters) {
             taskENTER_CRITICAL(&robotStateMux);
             domeSeqActive = robotState.domeSeqActive;
             mood          = robotState.activeMood;
-            driving       = driveOutputIsDriving(robotState.driveOutputSpeed,
-                                                 robotState.driveOutputSteer);
+            drive.driveSpeed    = robotState.driveOutputSpeed;
+            drive.driveSteer    = robotState.driveOutputSteer;
+            drive.feedbackValid = robotState.driveFeedbackValid;
+            drive.wheelSpeedL   = robotState.driveFeedbackSpeedL;
+            drive.wheelSpeedR   = robotState.driveFeedbackSpeedR;
             taskEXIT_CRITICAL(&robotStateMux);
 
             // Resting Behaviour is held while the droid is driving (CONTEXT.md,
-            // #450): driving goes through the same not-active branch, and the
-            // first tick at rest draws a fresh pause, so the dome does not turn
-            // on the tick the droid stops.
+            // #450) - commanded, still rolling, or just stopped
+            // (include/drive_motion.h). Driving goes through the same
+            // not-active branch, and the first tick at rest draws a fresh
+            // pause, so the dome does not turn on the tick the droid stops.
+            const bool driving = driveMotionIsDriving(&driveMotion, drive, now);
             if (rndEnabled && domeRndMoodStartsMoves(mood) && !sleepMode && !estop &&
                 !domeSeqActive && !driving) {
                 // Every pause below is drawn at the Mood the droid is in now, and

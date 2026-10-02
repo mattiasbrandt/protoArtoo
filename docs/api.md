@@ -2014,7 +2014,7 @@ Returns channel-centric map.
 | `wamps` | one wheel's reported current at or over the threshold | `1` left, `2` right | A x 100, `1..5000` |
 
 - A Reaction entry also carries `threshold` and `quietS`, the seconds it stays
-  quiet after firing (`0..3600`).
+  quiet after firing (`1..3600`).
 
 #### Example request
 
@@ -2090,12 +2090,15 @@ Returns live RC diagnostics snapshot.
 - `mappingProfile.channels` calibration values (`min`, `center`, `max`, `deadband`, `reverse`)
 - `raw` arrays (`sbus1`, `sbus2`, `pwm`) when available
 - `reactions` array, one entry per Reaction (a map entry whose `source` is a
-  droid condition): `source`, `channel`, `state` (`ready`, `waiting` or
-  `not-in-this-build`), `reason` when it is not ready (`no-feedback`,
-  `no-current`, `feedback-stale`, `no-play-state`), `fires`, and
-  `refusedWhileDriving` - the times it was held back because firing would have
-  opened a body Part while the droid was driving. Counts restart when the
-  Reaction is edited and at boot.
+  droid condition): `source`, `channel`, `state` (`ready`, `held`, `waiting`
+  or `not-in-this-build`), `reason` when it is not ready (`estop`, `sleep`,
+  `radio-lost`; `feedback-stale`, `no-play-state`; `no-feedback`,
+  `no-current`), `fires` - the firings the droid carried out, not the ones it
+  refused or could not queue - and `refusedWhileDriving`, the times it was held
+  back because firing would have opened a body Part while the droid was
+  driving. The droid is driving while the drive output is not zero, while a
+  wheel reports turning, and for 1.5 s after the output reaches zero. Counts
+  restart when the Reaction is edited and at boot.
 - Errors: `500` json build/stream alloc failures
 
 #### Example request

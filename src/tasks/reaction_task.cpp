@@ -39,7 +39,8 @@
 #include "rc_input.h"             // dispatchReactionAction()
 #include "reaction_evaluator.h"
 #include "robot_state.h"
-#include "sequence_dispatcher.h"  // sequenceMayOpenBodyPart(), sequenceBodyRoutineName()
+#include "seq_store.h"            // seqStoreMayOpenBodyPart()
+#include "sequence_dispatcher.h"  // sequenceBodyRoutineName()
 
 static const char* TAG = "Reaction";
 
@@ -55,7 +56,7 @@ static bool seRoutineOpensBodyPart(int seqId) {
     if (!marcduino_sequence_id_valid(seqId)) {
         seqId = marcduino_full_droid_body_actions(seqId).bodySeqId;
     }
-    return sequenceMayOpenBodyPart(sequenceBodyRoutineName(seqId));
+    return seqStoreMayOpenBodyPart(sequenceBodyRoutineName(seqId));
 }
 
 // A raw Marcduino line: the ones the body owns and that move a Part away from
@@ -91,7 +92,7 @@ static bool reactionOpensBodyPart(RobotActionId target, const char* payload) {
         case DOME_ACTION_MARCDUINO_CMD:
             return marcduinoLineOpensBodyPart(payload);
         case DOME_ACTION_SEQ:
-            return sequenceMayOpenBodyPart(payload);
+            return seqStoreMayOpenBodyPart(payload);
         default: {
             const int seqId = robotActionIdToDroidSeqId(target);
             return seqId > 0 && seRoutineOpensBodyPart(seqId);
@@ -118,6 +119,8 @@ static void readInputs(ReactionInputs* in) {
     taskENTER_CRITICAL(&robotStateMux);
     in->estop = robotState.estop;
     in->sleepMode = robotState.sleepMode;
+    in->radioLost = robotState.sbusSignalLost || robotState.sbusHwFailsafe;
+    in->failsafeHold = in->radioLost || robotState.webDriveExpired;
     in->driveSpeed = robotState.driveOutputSpeed;
     in->driveSteer = robotState.driveOutputSteer;
     in->feedbackValid = robotState.driveFeedbackValid;
@@ -145,11 +148,10 @@ static void publishStatus(const ReactionEvaluator& ev) {
 
 // Out of line so the log's line buffer is in a frame of its own, beside the
 // action door on this task's chain rather than under it.
-static __attribute__((noinline)) void logFiring(const RcTriggerBinding& binding, bool pressed,
-                                                RcDispatchOutcome outcome) {
-    PA_LOG_INFO(TAG, "%s %s -> %s%s", rcBindingSourceToLabel(binding.source),
-                pressed ? "fired" : "ended", robotActionIdToString(binding.target),
-                outcome == RcDispatchOutcome::kQueued ? "" : " (not carried out)");
+static __attribute__((noinline)) void logFiring(const ReactionFiring& firing, bool carriedOut) {
+    PA_LOG_INFO(TAG, "%s %s -> %s%s", rcBindingSourceToLabel(firing.source),
+                firing.pressed ? "fired" : "ended", robotActionIdToString(firing.target),
+                carriedOut ? "" : " (not carried out)");
 }
 
 void reactionTask(void* /*pvParameters*/) {
@@ -174,11 +176,18 @@ void reactionTask(void* /*pvParameters*/) {
             },
             &output);
 
+        // Each firing carries its own action: a release may be for a Reaction
+        // that has just left its slot. Only a press the door carried out
+        // counts as a firing.
         for (uint8_t i = 0; i < output.count; ++i) {
-            const RcTriggerBinding& binding = bindings[output.firings[i].slot];
-            const bool pressed = output.firings[i].pressed;
-            logFiring(binding, pressed,
-                      dispatchReactionAction(binding.target, binding.marcduinoPayload, pressed));
+            const ReactionFiring& firing = output.firings[i];
+            const bool carriedOut =
+                dispatchReactionAction(firing.target, firing.payload, firing.pressed) ==
+                RcDispatchOutcome::kQueued;
+            if (carriedOut) {
+                reactionEvaluatorFired(&evaluator, firing);
+            }
+            logFiring(firing, carriedOut);
         }
 
         publishStatus(evaluator);

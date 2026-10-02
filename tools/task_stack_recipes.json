@@ -153,9 +153,9 @@
             "domeTask"
           ],
           "frames": [],
-          "chain_bytes": 3216,
+          "chain_bytes": 3232,
           "stack_bytes": 4096,
-          "note": "setDomeSpeed's log line (384 B frame) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. domeTask's own frame is 416 B since the random-dome pause reads the Mood (#452: +16 B)."
+          "note": "setDomeSpeed's log line (384 B frame) -> paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> the UART driver, whose ESP-IDF log call the IDF log hook (paLogIdfVprintf) formats with newlib nano's vsniprintf. domeTask's own frame is 432 B: +16 B when the random-dome pause read the Mood (#452), and +16 B when Resting Behaviour began to read whether the droid is driving - the drive output and both wheels, under the lock it already took (#450)."
         },
         "esp32p4": {
           "env": "firebeetle2",
@@ -163,9 +163,9 @@
             "domeTask"
           ],
           "frames": [],
-          "chain_bytes": 4112,
+          "chain_bytes": 4128,
           "stack_bytes": 5632,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeTask -> setDomeSpeed() -> ledcPwmSetPulseWidth() -> ledc_set_duty -> esp_log -> paLogIdfVprintf() -> ...; widest frames _svfprintf_r 1152 B, domeTask 432 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. domeTask's frame grew 416 -> 432 B when the random-dome pause began reading the Mood (#452), past the rule's 5120 B step; the stack was raised to the rule's 5632 B (operator, 2026-09-30)."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: domeTask -> setDomeSpeed() -> ledcPwmSetPulseWidth() -> ledc_set_duty -> esp_log -> paLogIdfVprintf() -> ...; widest frames _svfprintf_r 1152 B, domeTask 448 B, emitFramedLineCounted() [clone .part.0] 432 B, _dtoa_r 416 B. domeTask's frame grew 416 -> 432 B when the random-dome pause began reading the Mood (#452), past the rule's 5120 B step, and the stack was raised to the rule's 5632 B (operator, 2026-09-30); it grew 432 -> 448 B when Resting Behaviour began to read whether the droid is driving (#450), inside that step."
         }
       }
     },
@@ -192,9 +192,9 @@
             "audioTask"
           ],
           "frames": [],
-          "chain_bytes": 7104,
+          "chain_bytes": 7120,
           "stack_bytes": 9216,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1504 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: audioTask -> publishCatalogObservation() -> Preferences::begin() -> nvs_flash_init_partition -> nvs::NVSPartitionManager::init_partition() -> nvs::NVSPartitionManager::init_custom() -> ...; widest frames audioTask 1520 B, _Unwind_RaiseException 1296 B, _svfprintf_r 1152 B, uw_init_context_1 432 B. The root frame grew 1504 -> 1520 B when the idle chatter began to read whether the droid is driving - the drive output and both wheels, and the settle it measures across ticks (#450)."
         }
       }
     },
@@ -465,9 +465,9 @@
             "reactionTask"
           ],
           "frames": [],
-          "chain_bytes": 5232,
+          "chain_bytes": 5216,
           "stack_bytes": 6656,
-          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: reactionTask (384 B root frame) -> dispatchReactionAction -> processTriggerAction -> rcDispatchSingleAction -> routeMarcduinoLine -> executeMarcduinoBodyCommand -> handleSequenceCommand -> sequenceStart -> domeQueueTx, whose queue-drop log line runs paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> ... -> _svfprintf_r (1152 B) -> _dtoa_r (416 B). It is RCInputTask's route below the action door, under a smaller root frame."
+          "note": "On this chip the IDF log hook formats with full newlib, so wherever this task can reach an ESP-IDF log call its chain carries the RISC-V vsnprintf float tail (the metadata note on the log hook). Deepest route: reactionTask (368 B root frame) -> dispatchReactionAction -> processTriggerAction -> rcDispatchSingleAction -> routeMarcduinoLine -> executeMarcduinoBodyCommand -> handleSequenceCommand -> sequenceStart -> domeQueueTx, whose queue-drop log line runs paLogLine -> the framed serial write (emitFramedLineCounted, 432 B) -> ... -> _svfprintf_r (1152 B) -> _dtoa_r (416 B). It is RCInputTask's route below the action door, under a smaller root frame."
         }
       }
     },

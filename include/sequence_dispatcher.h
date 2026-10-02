@@ -94,14 +94,6 @@ void sequenceStopRequest();
 // including native tests. Returns SEQ_FALLBACK for non-DM:* names.
 SequenceLookupResult sequenceLookup(const char* name);
 
-// Whether running the sequence `name` can open a body Part, answered without
-// loading it: a Learned Sequence from the flag its index row was given when it
-// was saved, a Factory Sequence from its steps, and a name the dome runs - an
-// alias, or one this controller does not know - never, because nothing the
-// dome does moves a body Part. Same precedence as sequenceLookup(). Safe from
-// any task.
-bool sequenceMayOpenBodyPart(const char* name);
-
 // Testable dispatcher mapping for body-owned dome rotation. Returns true only
 // for SEQ_ACT_DOME_ROTATE and fills the DomeCommand that production dispatch
 // sends to domeCmdQueue.

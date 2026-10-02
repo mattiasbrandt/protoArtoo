@@ -225,6 +225,28 @@ static void fillIndexEntry(SeqIndexEntry& e, const SeqDraft& d, JsonVariantConst
                     seqStepsMayOpenBodyPart(d.closeSteps, d.closeStepCount);
 }
 
+bool seqStoreMayOpenBodyPart(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+    if (s_mutex == nullptr || xSemaphoreTake(s_mutex, 0) != pdTRUE) {
+        return true;  // not ready or busy: fail closed
+    }
+    const SeqIndexEntry* learned = seqStoreIndexFind(name);
+    const bool isLearned = learned != nullptr;
+    const bool learnedMay = isLearned && learned->mayOpenBody;
+    xSemaphoreGive(s_mutex);
+    if (isLearned) {
+        return learnedMay;
+    }
+    // The Factory catalog is constant data: no lock.
+    if (const SequenceEntry* factory = sequenceCatalogFind(name)) {
+        return seqStepsMayOpenBodyPart(factory->steps, factory->stepCount) ||
+               seqStepsMayOpenBodyPart(factory->closeSteps, factory->closeStepCount);
+    }
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // Init  --  scan + index
 // -----------------------------------------------------------------------------
