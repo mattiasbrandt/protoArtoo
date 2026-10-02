@@ -1201,7 +1201,7 @@
   // holding nothing the plate tracks, it stays quiet.
   // ---------------------------------------------------------------------------
   const NOTICE_BURST_MS = 1500;
-  // How long one notice stays up. It is a receipt, not an alarm, and it comes
+  // How long one notice stays up. It is a Note, not an alarm, and it comes
   // down sooner than this the moment its cause clears.
   const NOTICE_VISIBLE_MS = 6000;
 
