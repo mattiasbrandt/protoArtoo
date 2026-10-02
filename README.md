@@ -448,6 +448,7 @@ Ideas and interaction patterns we adapted:
 - picking a part on a drawing of the droid instead of from a long list
 - saying on the surface itself what it cannot show — an incomplete map and a misleading one are different things
 - explanation written as a required field on the thing it describes, not left to review
+- one Escape that closes one layer; questions answered in two verbs; quiet receipts after an act
 
 His is a *simulator* for planning a droid; protoArtoo configures and drives a real one.
 Much of it is therefore deliberately not copied, and the differences taught us as much as

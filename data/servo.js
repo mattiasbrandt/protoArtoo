@@ -648,7 +648,7 @@
 
   // "1 skipped — a light.", or each kind with its own count when there is
   // more than one: "2 skipped — 1 light, 1 not calibrated yet." The form back
-  // to centre's receipt uses on this page.
+  // to centre's feedback line uses on this page.
   const skippedSaid = (skipped, field) => {
     const kinds = new Map();
     skipped.forEach((output) => {

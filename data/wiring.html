@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-scripts="/web_api.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_layout.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/find_by_moving.js,/parts_mapping.js,/wiring.js,/footer.js">
+<html lang="en" data-scripts="/web_api.js,/overlay.js,/status_stream.js,/live_reading.js,/health_signals.js,/shell.js,/droid_parts.js,/droid_part_kind.js,/droid_build.js,/dome_layout.js,/apply_timing.js,/product_art.js,/component_picker.js,/outputs.js,/output_settings.js,/dome_command_map.js,/find_by_moving.js,/parts_mapping.js,/wiring.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -148,13 +148,15 @@
 
     <!-- The move question (#347): a Part taken off one Output for another
          is asked first, naming the Output it leaves. Opened non-modally over
-         this surface alone, so STOP stays live (ADR 0048, #359). -->
-    <dialog class="parts-move-dialog" id="wiring-move-dialog" role="alertdialog" aria-labelledby="wiring-move-title" aria-describedby="wiring-move-body">
+         this surface alone, so STOP stays live (ADR 0048, #359). Every word
+         on it, the two verbs included, is written by data/parts_mapping.js
+         announcement() (#456). -->
+    <dialog class="question-dialog" id="wiring-move-dialog" role="alertdialog" aria-labelledby="wiring-move-title" aria-describedby="wiring-move-body">
       <h4 class="move-title" id="wiring-move-title"></h4>
       <p class="move-body" id="wiring-move-body"></p>
       <div class="button-row">
-        <button class="btn move-cancel" type="button" id="wiring-move-cancel">Cancel</button>
-        <button class="btn accent move-confirm" type="button" id="wiring-move-confirm">Move it</button>
+        <button class="btn move-cancel" type="button" id="wiring-move-cancel"></button>
+        <button class="btn accent move-confirm" type="button" id="wiring-move-confirm"></button>
       </div>
     </dialog>
 
