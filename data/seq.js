@@ -2015,8 +2015,13 @@
   };
 
   // A logic text travels percent-encoded, so a colon in it is not read as the
-  // next field: a line break is %0A, % is %25, : is %3A, and a space stays a
-  // space. A text that was not stored that way is shown as it is stored.
+  // next field. Only what the droid needs is escaped, because the encoded
+  // text is held to 40 characters and every escape spends three of them
+  // (docs/dome-visual-authoring-contract.md, "DT"; the decoder is
+  // src/protocol_check.cpp): % is %25, : is %3A, a line break is %0A, and
+  // printable ASCII otherwise stays as typed - a space, a comma, a question
+  // mark. Anything else goes as the bytes of its UTF-8. A text that was not
+  // stored percent-encoded is shown as it is stored.
   //
   // encodeLightText() answers null for the one text that cannot be encoded:
   // one holding half of a two-part character (a lone surrogate, which is what
@@ -2025,9 +2030,12 @@
   // character into the command and say nothing, so the edit is refused and
   // whoever asked says why (LIGHT_TEXT_REFUSED).
   const LIGHT_TEXT_REFUSED = "That text has a broken character in it. Type it again.";
+  // Read by code point (the `u` flag), so the two halves of one character are
+  // encoded together and only a half on its own throws.
+  const LIGHT_TEXT_ESCAPED = /[%:]|[^\x20-\x7E]/gu;
   const encodeLightText = (text) => {
     try {
-      return encodeURIComponent(text).replace(/%20/g, " ");
+      return text.replace(LIGHT_TEXT_ESCAPED, (character) => encodeURIComponent(character));
     } catch (error) {
       if (error instanceof URIError) return null;
       throw error;
