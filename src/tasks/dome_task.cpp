@@ -441,8 +441,13 @@ void domeTask(void* pvParameters) {
             // not-active branch, and the first tick at rest draws a fresh
             // pause, so the dome does not turn on the tick the droid stops.
             const bool driving = driveMotionIsDriving(&driveMotion, drive, now);
+            // A timed one-shot turn - Go home, a bearing or timed sequence turn -
+            // holds it too, as domeSeqActive holds it for a sequence: Go home
+            // from the API or the Console sets no domeSeqActive, and half a turn
+            // can outlast a redrawn pause, so a random move would start mid-turn
+            // and the turn would land short (#445).
             if (rndEnabled && domeRndMoodStartsMoves(mood) && !sleepMode && !estop &&
-                !domeSeqActive && !driving) {
+                !domeSeqActive && !driving && seqMoveUntilMs == 0) {
                 // Every pause below is drawn at the Mood the droid is in now, and
                 // records it in rndPauseMood so a later change can be noticed.
                 if (!rndWasActive) {
