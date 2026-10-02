@@ -34,6 +34,7 @@
   const listsAnswered = () => learnedAnswered && factoryAnswered;
   let currentEditingSeq = null; // The sequence being edited (or null)
   let timeline = null; // a Factory sequence's read-only timeline (data/seq_timeline.js), or null
+  let timelineContext = () => rehearsalContext(); // what that timeline is told, by the half it shows
   let sessionTimeline = null; // the timeline on the workspace's stage, over the sequence being edited, or null
   let pickedBlocks = []; // the blocks picked on that timeline, as it last said them
   let pickedShown = null; // the inspector's markup as last written
@@ -49,6 +50,7 @@
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
     expanded: new Set(), // Set of step indices that are expanded (presentation-only)
     view: "timeline", // which reading of the routine is on the stage: "timeline" or "steps"
+    half: "opens",    // which half of it is on the stage: "opens" (steps) or "closes" (closeSteps)
     tab: "block",     // which drawer tab is forward: "block", "parts", "sequence" or "rehearsal"
     saved: false,     // whether this session has saved, for the strip's state word
   };
@@ -119,6 +121,53 @@
   // A run still open is an edit not yet on the stack.
   const runChanged = () => history.run !== null && historyCapture() !== history.run;
 
+  // ---------------------------------------------------------------------------
+  // The half on the stage (#441, ADR 0062). A sequence in an interrupt group
+  // has two halves - `steps` opens, `closeSteps` closes - and the stage shows
+  // one at a time (editorState.half; the Opens / Closes switch in its bar).
+  //
+  // THIS IS THE ONE SEAM. Every tool of the timeline - a drop, a move, a
+  // resize, the inspector, Split, removal - reads and writes the half shown
+  // through these, so there is one copy of each tool and none of them knows
+  // which half it is on:
+  //   stageSteps()            the list of steps on the stage, the sequence's own
+  //   setStageSteps(list)     another list in its place
+  //   halfRoutine(seq, half)  that half as a routine of its own, which is what
+  //                           the timeline draws: the opening half is the
+  //                           sequence itself; the close half is its
+  //                           closeSteps as `steps`, with no close half
+  //   stageRun()              the stage's steps at the milliseconds they run at
+  //   halfContext(seq, half)  what the timeline is told beside the routine: a
+  //                           close half starts with what Opens left open
+  //
+  // What is NOT the stage's, and reads editorState.current whole:
+  //   - Protocol Check's verdict, Save, the history and the unsaved-edits
+  //     check, which are of the sequence, both halves;
+  //   - an edit tried on a copy (triedOnCopy()), which copies the whole
+  //     sequence and changes the half on the stage in it;
+  //   - the step list (the card editor), which reads editorState.current.steps
+  //     itself: it knows the opening half only, so it is shown only with
+  //     Opens on the stage (showSessionView()). It retires (ADR 0057).
+  //
+  // `half` is the editor's and never the sequence's: nothing of it is saved,
+  // so a toggle that is only looked at saves back as it was read.
+  // ---------------------------------------------------------------------------
+  const HALF_KEY = { opens: "steps", closes: "closeSteps" };
+  const stageKey = () => HALF_KEY[editorState.half];
+  const stageSteps = () => editorState.current[stageKey()];
+  const setStageSteps = (list) => {
+    editorState.current[stageKey()] = list;
+  };
+  // Closes is there to show when the sequence is in a group and has a list to
+  // hold it. An empty list is still one to drop into.
+  const hasCloseHalf = (seq) => Boolean(seq) && (seq.toggleGroup || "none") !== "none" && Array.isArray(seq.closeSteps);
+  const halfRoutine = (seq, half) => {
+    if (half !== "closes") return seq;
+    const { closeSteps, ...rest } = seq;
+    return { ...rest, steps: closeSteps };
+  };
+  const stageRun = () => SeqProtocolCheck.resolveBeats(halfRoutine(editorState.current, editorState.half)).steps;
+
   // How many characters a sequence's name holds after its DM:. Protocol
   // Check's name rule has the number (data/seq_protocol_check.js).
   const SEQ_NAME_CHARS = SeqProtocolCheck.NAME_CHARS_MAX;
@@ -168,6 +217,14 @@
     trackHash: droppedTrack ? droppedTrack.hash : null,
     phrase: phraseSteps,
   });
+
+  // What the opening half leaves standing open is read off the timeline's own
+  // lanes (SeqTimeline.leftOpen()), never worked out here.
+  const halfContext = (seq, half) => ({
+    ...rehearsalContext(),
+    ...(half === "closes" && window.SeqTimeline ? { open: window.SeqTimeline.leftOpen(seq, rehearsalContext()) } : {}),
+  });
+  const stageContext = () => halfContext(editorState.current, editorState.half);
 
   // =========================================================================
   // The run watch (#441, #451)
@@ -490,7 +547,7 @@
     });
     paintParts();
     updateValidationSummary();
-    sessionTimeline.refresh(rehearsalContext());
+    sessionTimeline.refresh(stageContext());
     loadPhrases();
   };
 
@@ -872,6 +929,21 @@
         <aside class="seq-stage-side"${ids ? ' id="seq-editor-droid"' : ""} aria-label="The droid at the marker"></aside>
       </div>`;
 
+  // The Opens / Closes switch in the stage's bar: which half of a sequence in
+  // an interrupt group the timeline shows. The words are the operator's.
+  const halfSwitchHtml = (attrs = "") =>
+    `<span class="seg seg-sm seq-half"${attrs} role="group" aria-label="Which half is shown">` +
+    `<button type="button" data-half="opens" aria-pressed="true">Opens</button>` +
+    `<button type="button" data-half="closes" aria-pressed="false">Closes</button></span>`;
+  const paintHalfSwitch = (host, half, offered) => {
+    host?.classList.toggle("hidden", !offered);
+    host?.querySelectorAll("[data-half]").forEach((button) =>
+      button.setAttribute("aria-pressed", String(button.dataset.half === half)));
+  };
+  // The pose is the opening half's: the droid takes a name and an instant,
+  // and reads the instant off that sequence's steps (POST /api/seq/pose).
+  const POSE_OPENS_ONLY = { text: "The droid moves to a moment of Opens only.", level: "error" };
+
   // What opens in place of the list starts at its strip, however far down
   // the list the row that opened it was.
   const showFromTheTop = () => window.scrollTo?.(0, 0);
@@ -885,6 +957,7 @@
       timeline.destroy();
       timeline = null;
     }
+    timelineContext = () => rehearsalContext();
     els.timelineView.innerHTML = "";
     els.timelineView.classList.add("hidden");
   };
@@ -929,10 +1002,23 @@
           <span class="seq-gap"></span>
           <button type="button" class="seq-act is-strong" data-stage-act="tune" title="Open to edit. Save under the same name to retrain it.">Tune</button>
         </div>
-        ${stageHtml()}
+        ${stageHtml({ views: halfSwitchHtml() })}
       </div>`;
     els.timelineView.classList.remove("hidden");
     const within = (selector) => els.timelineView.querySelector(selector);
+    // A Factory toggle's close half is read here as its opening half is: the
+    // same switch, over the sequence as the droid sent it.
+    let half = "opens";
+    timelineContext = () => halfContext(seq, half);
+    paintHalfSwitch(within(".seq-half"), half, hasCloseHalf(seq));
+    within(".seq-half").addEventListener("click", (event) => {
+      const pressed = event.target?.closest?.("[data-half]")?.dataset.half;
+      if (!pressed || pressed === half) return;
+      half = pressed;
+      paintHalfSwitch(within(".seq-half"), half, true);
+      timeline.say(null);
+      timeline.refresh(timelineContext());
+    });
     within(".seq-strip").addEventListener("click", (event) => {
       const act = event.target?.closest?.("[data-stage-act]")?.dataset.stageAct;
       if (!act) return;
@@ -942,11 +1028,11 @@
     });
     timeline = window.SeqTimeline.mount(
       { bar: within(".tl-bar"), lanes: within(".seq-lanes"), side: within(".seq-stage-side") },
-      seq,
+      () => halfRoutine(seq, half),
       {
-        context: rehearsalContext(),
+        context: timelineContext(),
         describe: stepPreview,
-        onPose: (atMs) => poseOnDroid(builtinName, atMs),
+        onPose: (atMs) => (half === "closes" ? Promise.resolve(POSE_OPENS_ONLY) : poseOnDroid(builtinName, atMs)),
       },
     );
     renderListView();
@@ -990,11 +1076,12 @@
       .flatMap((unit) => Array.from({ length: unit.size }, (_, k) => unit.at + k));
   };
   const orderSteps = () => {
-    const steps = editorState.current.steps;
+    const steps = stageSteps();
     const order = stepOrder(steps);
     if (order.every((from, to) => from === to)) return;
-    editorState.current.steps = order.map((from) => steps[from]);
-    editorState.expanded = new Set([...editorState.expanded].map((from) => order.indexOf(from)));
+    setStageSteps(order.map((from) => steps[from]));
+    // The step list's open cards are the opening half's.
+    if (editorState.half === "opens") editorState.expanded = new Set([...editorState.expanded].map((from) => order.indexOf(from)));
   };
 
   // Remove steps by index: the one removal, for the step list and the timeline
@@ -1006,7 +1093,7 @@
   // edit that is already one (historyBegin()), which then records it and
   // draws the routine again itself.
   const removeSteps = (indices, within = false) => {
-    const steps = editorState.current.steps;
+    const steps = stageSteps();
     const gone = new Set(indices);
     const shorter = [];
     stepUnits(steps).forEach((unit) => {
@@ -1025,13 +1112,16 @@
     shorter.forEach(([loop, left]) => {
       loop.body = left;
     });
-    editorState.current.steps = steps.filter((_, index) => !gone.has(index));
-    // A card still there stays open, at the place it has moved up to.
+    setStageSteps(steps.filter((_, index) => !gone.has(index)));
+    // A card still there stays open, at the place it has moved up to. The
+    // cards are the opening half's.
     const removed = [...gone];
-    editorState.expanded = new Set(
-      [...editorState.expanded]
-        .filter((index) => !gone.has(index))
-        .map((index) => index - removed.filter((at) => at < index).length));
+    if (editorState.half === "opens") {
+      editorState.expanded = new Set(
+        [...editorState.expanded]
+          .filter((index) => !gone.has(index))
+          .map((index) => index - removed.filter((at) => at < index).length));
+    }
     if (within) return;
     rerenderStepTable();
     edited();
@@ -1045,7 +1135,8 @@
   };
 
   // Put the timeline of the routine being edited on the workspace's stage. It
-  // is handed a way to read editorState.current, never a copy of it, and the
+  // is handed a way to read the half of editorState.current that is on the
+  // stage (halfRoutine()) - the sequence's own step objects, never a copy - and the
   // three things an edit there needs from the editor: the history's two
   // brackets, and removal, which changes which steps there are. It stays
   // mounted while the step list is shown in its place, because the droid
@@ -1058,10 +1149,11 @@
       lanes: document.getElementById("seq-editor-timeline"),
       side: document.getElementById("seq-editor-droid"),
     };
-    sessionTimeline = window.SeqTimeline.mount(hosts, () => editorState.current, {
-      context: rehearsalContext(),
+    sessionTimeline = window.SeqTimeline.mount(hosts, () => halfRoutine(editorState.current, editorState.half), {
+      context: stageContext(),
       describe: stepPreview,
       onPose: (atMs) => {
+        if (editorState.half === "closes") return Promise.resolve(POSE_OPENS_ONLY);
         // The droid poses what it stores, so a sequence never saved has
         // nothing to pose, and unsaved edits are not in the pose.
         const name = editorState.tuningFactory || (editorState.isNew ? null : editorState.original?.name);
@@ -1092,6 +1184,10 @@
     }
     editorState.view = shown;
     const onTimeline = shown === "timeline";
+    // The step list knows the opening half only, so Opens comes back with it
+    // and the switch is offered only over the timeline (paintHalf()).
+    if (!onTimeline) showHalf("opens");
+    else paintHalf();
     document.getElementById("seq-editor-steps")?.classList.toggle("hidden", onTimeline);
     document.getElementById("seq-editor-timeline")?.classList.toggle("hidden", !onTimeline);
     ["steps", "timeline"].forEach((name) =>
@@ -1101,6 +1197,29 @@
     // stops offering how a loop is drawn.
     document.getElementById("seq-editor-tlbar")?.classList.toggle("is-steps", !onTimeline);
     if (!onTimeline) sessionTimeline?.cancel();
+  };
+
+  // The switch as the sequence and the stage now are: offered when there is a
+  // close half and the timeline is what is shown.
+  const paintHalf = () =>
+    paintHalfSwitch(document.getElementById("seq-editor-half"), editorState.half,
+      hasCloseHalf(editorState.current) && editorState.view === "timeline");
+
+  // Put a half on the stage. Closes only where there is a close half. A block
+  // held at that moment is let go where the press found it; what was picked
+  // is the other half's and is picked no longer (the timeline drops a picked
+  // step that is not in the list it now reads); and the word the stage last
+  // said was about the other half.
+  const showHalf = (half) => {
+    const shown = half === "closes" && hasCloseHalf(editorState.current) ? "closes" : "opens";
+    if (shown !== editorState.half) {
+      sessionTimeline?.cancel();
+      editorState.half = shown;
+      sayOnStage("");
+      sessionTimeline?.refresh(stageContext());
+      updateValidationSummary();
+    }
+    paintHalf();
   };
 
   // -------------------------------------------------------------------------
@@ -1495,7 +1614,7 @@
       case "random": {
         // Same pick reuses the pick of the Random Flutter before it, so it is
         // offered only where there is one - or where the step already says it.
-        const before = editorState.current.steps.slice(0, at).some((prior) => prior?.type === "random" && prior.set !== "hold");
+        const before = stageSteps().slice(0, at).some((prior) => prior?.type === "random" && prior.set !== "hold");
         const sets = RANDOM_SETS.filter((set) => set !== "hold" || before || step.set === "hold")
           .map((set) => [set, set === "hold" ? "Same pick" : capital(set)]);
         return settingRow("Set", segOf("set", sets, fieldOf(step, "set"), "Which panels it picks from"))
@@ -1505,7 +1624,7 @@
           + settingRow("Jitter", numberCell("jitterMs", fieldOf(step, "jitterMs"), STEP_LIMITS.jitterMs, "Jitter, in milliseconds"));
       }
       case "loop":
-        return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), loopReach(editorState.current.steps, at), "Steps it repeats", "steps"))
+        return settingRow("Repeats", numberCell("body", fieldOf(step, "body"), loopReach(stageSteps(), at), "Steps it repeats", "steps"))
           + settingRow("Every", numberCell("periodMs", fieldOf(step, "periodMs"), STEP_LIMITS.periodMs, "Every, in milliseconds"))
           + settingRow("For", numberCell("durationMs", fieldOf(step, "durationMs"), STEP_LIMITS.loopMs, "For, in milliseconds"));
       case "gesture":
@@ -1554,7 +1673,7 @@
     }
     const block = blocks[0];
     const at = block.steps[0];
-    const step = editorState.current.steps[at] || {};
+    const step = stageSteps()[at] || {};
     const beat = beatWords(step);
     const startsAt = settingRow("Starts at",
       `<span class="seq-row-ctl">${numberCell("start", Math.round(block.t0), STEP_LIMITS.t, "Starts at, in milliseconds")}`
@@ -1632,7 +1751,7 @@
   // The pair an open is the start of, as the timeline draws it
   // (sessionTimeline.standing()): the step that closes the Part and how long
   // the pair runs, or null.
-  const pairOf = (step) => sessionTimeline?.standing(editorState.current.steps.indexOf(step)) || null;
+  const pairOf = (step) => sessionTimeline?.standing(stageSteps().indexOf(step)) || null;
 
   // The step that closes what `step` moves, and nothing else: a Body Step
   // that closes the same Part, or the same panel command with close for its
@@ -1651,7 +1770,7 @@
   // that is already on the history (writePicked()). A close that closes more
   // than this Part stays.
   const dropPairClose = (step, pair) => {
-    if (closesOnly(step, editorState.current.steps[pair.close])) removeSteps([pair.close], true);
+    if (closesOnly(step, stageSteps()[pair.close])) removeSteps([pair.close], true);
   };
 
   // Where `step` runs and how late what it starts may still be going: `t`,
@@ -1659,9 +1778,9 @@
   // steps a loop repeats, the last millisecond of the loop's pass. `outer` is
   // a step before the end step that no loop repeats.
   const reachOf = (step) => {
-    const steps = editorState.current.steps;
+    const steps = stageSteps();
     const at = steps.indexOf(step);
-    const run = SeqProtocolCheck.resolveBeats(editorState.current).steps;
+    const run = stageRun();
     const loop = loopRepeating(steps, at);
     const endAt = steps.findIndex((each) => each?.type === "end");
     const outer = !loop && endAt !== -1 && at < endAt;
@@ -1679,7 +1798,7 @@
   // added: a sequence saved while a flutter still owed a close has one after
   // every flutter, and the open takes it for its pair.
   const addPairClose = (step, ms) => {
-    const steps = editorState.current.steps;
+    const steps = stageSteps();
     const at = steps.indexOf(step);
     const moves = (other) => Boolean(other) && (step.type === "body"
       ? other.type === "body" && other.part === step.part
@@ -1742,7 +1861,7 @@
         step.flutterMs = Math.max(least, Math.min(most, Math.round(pair ? pair.ms : Math.min(DROPPED_OPEN_MS, last - t))));
         if (pair) dropPairClose(step, pair);
       } else if (raw === "open" && step.shape === "flutter") {
-        const lasted = Number(SeqProtocolCheck.resolveBeats(editorState.current).steps[editorState.current.steps.indexOf(step)].flutterMs);
+        const lasted = Number(stageRun()[stageSteps().indexOf(step)].flutterMs);
         delete step.shape;
         delete step.flutterMs;
         delete step.spanBeats;
@@ -1786,7 +1905,7 @@
     } else if (field === "body") {
       // Held to the steps there are to repeat, whatever was typed.
       if (!Number.isInteger(number)) return;
-      const [least, most] = loopReach(editorState.current.steps, editorState.current.steps.indexOf(step));
+      const [least, most] = loopReach(stageSteps(), stageSteps().indexOf(step));
       step.body = Math.max(least, Math.min(most, number));
     } else if (PICKED_NUMBERS.includes(field)) {
       if (!Number.isInteger(number)) return;
@@ -1804,7 +1923,7 @@
   const pickedStep = () => {
     if (pickedBlocks.length !== 1) return null;
     const at = pickedBlocks[0].steps[0];
-    const step = editorState.current?.steps[at];
+    const step = editorState.current ? stageSteps()[at] : null;
     return step ? { at, step } : null;
   };
 
@@ -1835,7 +1954,7 @@
       // The blocks a step draws change with its Move Shape: a flutter is its
       // own block, and an open is one block with the close after it.
       if (field === "motion") {
-        const now = editorState.current.steps.indexOf(step);
+        const now = stageSteps().indexOf(step);
         const pair = raw === "open" ? sessionTimeline.standing(now) : null;
         sessionTimeline.pick(pair ? [now, pair.close] : [now]);
       }
@@ -2026,10 +2145,27 @@
     orderSteps();
     rerenderStepTable();
     edited();
-    const steps = editorState.current.steps;
+    const steps = stageSteps();
     sessionTimeline.pick(made.map((step) => steps.indexOf(step)));
     sayOnStage("");
     showTab("block");
+  };
+
+  // An edit tried on a copy first: `change(list)` is made to the half on the
+  // stage in a copy of the whole sequence, the copy's steps are put in the
+  // order the routine's would be, and Protocol Check reads the copy - both
+  // halves, and the sequences it names. Answers {list, refused}: the copy's
+  // stage list, and Protocol Check's verdict where the edit would turn a
+  // sequence the droid accepts into one it refuses, else null. An edit to a
+  // sequence the droid already refuses is not held to that: it may be the one
+  // that mends it.
+  const triedOnCopy = (change) => {
+    const trial = JSON.parse(JSON.stringify(editorState.current));
+    const key = stageKey();
+    change(trial[key]);
+    trial[key] = stepOrder(trial[key]).map((from) => trial[key][from]);
+    const verdict = routineVerdict(editorState.current).ok ? routineVerdict(trial) : { ok: true };
+    return { list: trial[key], refused: verdict.ok ? null : verdict };
   };
 
   // Insert what was dragged from the library at `at` ms. Whatever lands is
@@ -2041,7 +2177,7 @@
   // nothing: no such pill is drawn.
   const dropOnTimeline = (lib, at) => {
     const [group, id] = libraryKey(lib);
-    const steps = editorState.current.steps;
+    const steps = stageSteps();
     const endAt = steps.findIndex((step) => step?.type === "end");
     const inLoop = SeqProtocolCheck.loopBodySteps(steps);
 
@@ -2105,11 +2241,8 @@
         list.splice(endAt === -1 ? list.length : endAt, 0, made);
         return made;
       };
-      const trial = JSON.parse(JSON.stringify(editorState.current));
-      place(trial.steps);
-      trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
-      const refused = routineVerdict(trial);
-      if (routineVerdict(editorState.current).ok && !refused.ok) {
+      const { refused } = triedOnCopy(place);
+      if (refused) {
         sayOnStage(refused.error, "error");
         return;
       }
@@ -2146,10 +2279,8 @@
       // into one it refuses - a loop is one more step in a routine that may
       // be full, and there are commands a loop may not repeat. What refuses
       // it is said in Protocol Check's own words.
-      const trial = JSON.parse(JSON.stringify(editorState.current));
-      wrap(trial.steps);
-      const refused = routineVerdict(trial);
-      if (routineVerdict(editorState.current).ok && !refused.ok) {
+      const { refused } = triedOnCopy(wrap);
+      if (refused) {
         sayOnStage(refused.error, "error");
         return;
       }
@@ -2203,7 +2334,7 @@
   // sequence holds; it says so on the stage.
   const splitOverfull = (made) => {
     const most = SeqProtocolCheck.MAX_STEPS;
-    const count = editorState.current.steps.length - 1 + made;
+    const count = stageSteps().length - 1 + made;
     if (count > most) sayOnStage(`That would make ${count} steps. A sequence can have at most ${most}.`, "error");
     return count > most;
   };
@@ -2214,17 +2345,14 @@
   // wrong, and on the whole routine when it was one the droid accepts. Not
   // ok, nothing lands, and the stage says Protocol Check's reason.
   const splitRefused = (write, place) => {
-    const trial = JSON.parse(JSON.stringify(editorState.current));
     const tried = write();
-    place(trial.steps, tried);
-    trial.steps = stepOrder(trial.steps).map((from) => trial.steps[from]);
+    const { list, refused: whole } = triedOnCopy((copy) => place(copy, tried));
     const refusedStep = tried
-      .map((made) => SeqProtocolCheck.validateStep(made, trial.steps.indexOf(made), trial.steps, true))
+      .map((made) => SeqProtocolCheck.validateStep(made, list.indexOf(made), list, true))
       .find((verdict) => !verdict.ok);
-    const refused = refusedStep
-      || (routineVerdict(editorState.current).ok ? routineVerdict(trial) : { ok: true });
-    if (!refused.ok) sayOnStage(refused.error, "error");
-    return !refused.ok;
+    const refused = refusedStep || whole;
+    if (refused) sayOnStage(refused.error, "error");
+    return Boolean(refused);
   };
 
   // Split into steps: the picked body Gesture is replaced by the moves it
@@ -2258,8 +2386,8 @@
     const G = window.SeqGesture;
     if (!picked || picked.step.type !== "gesture" || !G || G.onDome(picked.step) || historyBusy()) return;
     const { at, step } = picked;
-    const steps = editorState.current.steps;
-    const run = SeqProtocolCheck.resolveBeats(editorState.current).steps[at];
+    const steps = stageSteps();
+    const run = stageRun()[at];
     // A step a loop repeats is timed from the pass, where the end is not.
     const loop = loopRepeating(steps, at);
     const endAt = steps.findIndex((each) => each?.type === "end");
@@ -2339,8 +2467,8 @@
     const { at, step } = picked;
     const phrase = phraseRead(step.ref);
     if (!phrase) return;
-    const steps = editorState.current.steps;
-    const startsAt = Number(SeqProtocolCheck.resolveBeats(editorState.current).steps[at].t) || 0;
+    const steps = stageSteps();
+    const startsAt = Number(stageRun()[at].t) || 0;
     const phraseEnd = phrase.steps.findIndex((each) => each?.type === "end");
     const whole = phraseEnd === -1 ? phrase.steps : phrase.steps.slice(0, phraseEnd);
     if (whole.length === 0) {
@@ -2471,7 +2599,7 @@
     forgetPhrases();
     Object.assign(editorState, {
       original: null, current: null, isNew: false, tuningFactory: null, expanded: new Set(),
-      view: "timeline", tab: "block", saved: false,
+      view: "timeline", half: "opens", tab: "block", saved: false,
     });
     historyReset();
     renderListView();
@@ -3145,7 +3273,9 @@
     try {
       for (;;) {
         if (mine !== phrases || !editorState.current) return;
-        const ref = (editorState.current.steps || [])
+        // Either half can name one: the droid splices its phrases into both
+        // (seqStoreLoadForRun(), src/seq_store.cpp).
+        const ref = [...(editorState.current.steps || []), ...(editorState.current.closeSteps || [])]
           .map((step) => (step?.type === "sequence" ? step.ref : null))
           .find((each) => each && !mine.read.has(each) && phraseSource(each));
         if (!ref) return;
@@ -3172,7 +3302,7 @@
           // What was read counts toward the steps the routine holds once
           // spliced, so the verdict is read again with it.
           updateValidationSummary();
-          sessionTimeline?.refresh(rehearsalContext());
+          sessionTimeline?.refresh(stageContext());
         } else {
           sayOnStage(refused, "error");
           // The timeline has nothing new to draw, so nothing has told the
@@ -3244,7 +3374,7 @@
   // duration a span of `spanBeats` beats (null clears it). The time and the
   // duration are resolved from the tempo, as the droid will.
   const setStepBeat = (stepIdx, patch) => {
-    const step = { ...editorState.current.steps[stepIdx] };
+    const step = { ...stageSteps()[stepIdx] };
     if ("beat" in patch) {
       if (patch.beat === null) delete step.beat;
       else step.beat = patch.beat;
@@ -3267,7 +3397,7 @@
     // indices are picked again once it is drawn.
     const pickedSteps = [...new Set(pickedBlocks.flatMap((block) => block.steps))];
     const before = historyBegin();
-    editorState.current.steps[stepIdx] = step;
+    stageSteps()[stepIdx] = step;
     editorState.current = SeqProtocolCheck.resolveBeats(editorState.current, { written: true });
     historyCommit(before);
     rerenderStepTable();
@@ -3955,17 +4085,27 @@
 
   const edited = (receipt = "") => {
     if (history.run === null) history.base = historyCapture();
+    // The close half can go in an edit - the group set to None, or an undo of
+    // the edit that started it - and the stage is then on Opens.
+    if (!hasCloseHalf(editorState.current)) editorState.half = "opens";
+    paintHalf();
     showRetime(receipt);
     updateValidationSummary();
     paintHistory();
-    if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
+    if (sessionTimeline) sessionTimeline.refresh(stageContext());
     // An edit can name a phrase not read yet - a drop, a pick in either view,
     // an undo - so every edit asks; with nothing unread it sends nothing.
     loadPhrases();
   };
 
+  // UNDO ACROSS THE SWITCH: an undo or a redo of an edit made in one half
+  // puts that half on the stage, so what it took back is in sight. One that
+  // changed neither list or both - the group, the tempo - leaves the stage
+  // where it is; and where it leaves no close half, edited() shows Opens.
   const historyRestore = (snapshot) => {
     const kept = JSON.parse(snapshot);
+    const moved = (key) => JSON.stringify(kept[key]) !== JSON.stringify(editorState.current[key]);
+    if (moved("steps") !== moved("closeSteps")) editorState.half = moved("steps") ? "opens" : "closes";
     HISTORY_FIELDS.forEach((key) => {
       if (kept[key] === undefined) delete editorState.current[key];
       else editorState.current[key] = kept[key];
@@ -4056,6 +4196,7 @@
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
     editorState.saved = false;
+    editorState.half = "opens";
     historyReset();
     droppedTrack = null;
 
@@ -4153,7 +4294,8 @@
             <span class="seg seg-sm" role="group" aria-label="How the routine is shown">
               <button id="seq-editor-show-steps" type="button" aria-pressed="false">Steps</button>
               <button id="seq-editor-show-timeline" type="button" aria-pressed="true">Timeline</button>
-            </span>`;
+            </span>
+            ${halfSwitchHtml(' id="seq-editor-half"')}`;
     const stepList = `
           <div class="seq-editor-steps hidden" id="seq-editor-steps">
             <p class="hint">Every step starts collapsed. Press one to open it.</p>
@@ -4321,8 +4463,8 @@
     if (!summaryEl) return;
 
     // Read off the routine as it is now: its name on the strip, and how many
-    // steps it has beside the drawer's tabs.
-    const steps = editorState.current.steps || [];
+    // steps the half on the stage has beside the drawer's tabs.
+    const steps = stageSteps() || [];
     const nameEl = document.getElementById("seq-editor-sub");
     if (nameEl) nameEl.textContent = editorState.current.name || "a new sequence";
     const routineEl = document.getElementById("seq-editor-routine-sub");
@@ -4396,8 +4538,8 @@
       paintParts();
     }
     if (lastRunBadge) showRunBadge(lastRunBadge);
-    if (timeline) timeline.refresh(rehearsalContext());
-    if (sessionTimeline) sessionTimeline.refresh(rehearsalContext());
+    if (timeline) timeline.refresh(timelineContext());
+    if (sessionTimeline) sessionTimeline.refresh(stageContext());
   };
 
   const validateAndUpdateStep = (stepIdx) => {
@@ -4682,6 +4824,10 @@
       document.getElementById(`seq-editor-show-${view}`)?.addEventListener("click", () => showSessionView(view)));
     DRAWER_TABS.forEach((tab) =>
       document.getElementById(`seq-editor-tab-${tab}`)?.addEventListener("click", () => showTab(tab)));
+    document.getElementById("seq-editor-half")?.addEventListener("click", (event) => {
+      const half = event.target?.closest?.("[data-half]")?.dataset.half;
+      if (half && !historyBusy()) showHalf(half);
+    });
 
     // The inspector is written again whenever the selection changes, so its
     // controls are heard on the inspector itself: a press on an act or a

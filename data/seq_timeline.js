@@ -57,6 +57,14 @@
 // where the last step left them; a toggle's open half closes nothing, because
 // it is meant to stay open. Light modes are reset at the end. The group close
 // :CL00 is never sent.
+//
+// ONE HALF OF A TOGGLE AT A TIME (#441, ADR 0062). A sequence in an interrupt
+// group has two halves, and this view draws whichever the caller hands it as
+// the routine's `steps`: the opening half as the sequence itself, the close
+// half as a routine of its own with no close half. It never draws one beside
+// the other. What it is told about the other half is `context.open`: the
+// Parts the opening half left standing open, which a close half starts with.
+// leftOpen() is that reading of an opening half, for the caller to hand back.
 // =============================================================================
 (() => {
   "use strict";
@@ -221,6 +229,16 @@
   // commands the Part to a position (at 0 closed, 1 fully open), which is what
   // poseAt() reads. A Part the routine has not yet moved has no change before
   // that moment, so it is not in the pose.
+  //
+  // Two things in `context` are about a toggle's halves, and neither is read
+  // off the droid:
+  //   open       [{part, at}]: the Parts standing open when the routine
+  //              starts, and how far - what a close half starts with. Each is
+  //              drawn open from the start to the step that closes it, as a
+  //              block no step here wrote, and is in the pose from the start.
+  //   staysOpen  read the routine as a toggle's opening half whether or not
+  //              it has a close half yet (leftOpen()). Absent, it is one
+  //              exactly when it has both a group and a close half.
   // ---------------------------------------------------------------------------
   const build = (seq, context = {}) => {
     const rehearsal = window.SeqRehearsal;
@@ -234,9 +252,10 @@
     );
     const endMs = endIndex !== -1 ? Number(steps[endIndex].t) || 0 : events.reduce((max, e) => Math.max(max, e.t), 0);
     // Only a toggle's open half leaves its ring panels open on purpose: the
-    // engine runs the open half when the group is closed, and it is the half
-    // this view draws (ADR 0062 rejects drawing the close half beside it).
-    const toggleOpenHalf = Boolean(seq?.toggleGroup && seq.toggleGroup !== "none" &&
+    // engine runs the open half when the group is closed. A close half handed
+    // over as a routine of its own has no close half, so it is not one, and
+    // its end is the end of a run that closes (see the header).
+    const toggleOpenHalf = context.staysOpen ?? Boolean(seq?.toggleGroup && seq.toggleGroup !== "none" &&
       Array.isArray(seq.closeSteps) && seq.closeSteps.length > 0);
 
     const lanes = new Map();
@@ -252,7 +271,9 @@
           short: part && part.shorthand ? part.shorthand : "",
           items: [],
           changes: [],
-          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, sinceOf: null, fromUs: null },
+          // `before` is a Part standing open from before this routine
+          // started and not opened by it since (context.open).
+          state: { open: false, since: 0, sent: 0, sinceGhost: false, sinceStep: null, sinceOf: null, fromUs: null, before: false },
         });
       }
       return lanes.get(id);
@@ -287,6 +308,9 @@
     // dome panel, and for a body Part the start of the travel or the flutter
     // that comes first.
     const openFrom = (lane, t, ghost, step, sent = t) => {
+      // Opened by this routine, whether or not it was open already: the
+      // engine then counts it among the panels this run opened.
+      lane.state.before = false;
       if (!lane.state.open) {
         lane.state.open = true;
         lane.state.since = t;
@@ -317,6 +341,14 @@
         lane.state.open = false;
       }
     };
+
+    // What stood open before the routine started (context.open), in the
+    // order given, which is lane order.
+    (Array.isArray(context.open) ? context.open : []).forEach(({ part, at }) => {
+      const lane = partLane(part);
+      Object.assign(lane.state, { open: true, before: true });
+      lane.changes.push({ t: 0, at });
+    });
 
     // The pick a random step made, for a hold step to attach to: its set.
     let lastRandom = null;
@@ -531,9 +563,12 @@
     let cleanupEnd = endMs;
     const partLanes = [...lanes.values()].sort((a, b) =>
       (a.half === "dome" ? 0 : 1) - (b.half === "dome" ? 0 : 1) || a.index - b.index);
-    // kRingPanels order is catalog order (panel1, 2, 3, 4, 7, 11, 13).
+    // kRingPanels order is catalog order (panel1, 2, 3, 4, 7, 11, 13). The
+    // engine closes only the ring panels this run opened (st.ringOpenMask is
+    // cleared at seqEngineStart()), so one that stood open before it started
+    // is left as it is.
     partLanes.forEach((lane) => {
-      if (!lane.state.open || toggleOpenHalf || !isRingPart(lane.part)) return;
+      if (!lane.state.open || lane.state.before || toggleOpenHalf || !isRingPart(lane.part)) return;
       ringCloses += 1;
       const at = endMs + RING_CLOSE_SPACING_MS * ringCloses;
       closeAt(lane, at, null);
@@ -612,6 +647,23 @@
       .filter((item) => item.t0 <= t && t <= model.endMs)
       .pop() || null;
     return { at, lights, sound };
+  };
+
+  // ---------------------------------------------------------------------------
+  // leftOpen() -- what a routine leaves standing open when it is run as a
+  // toggle's opening half: the Parts whose lanes build() draws open to the
+  // right edge, in lane order, each with how far open the last step left it.
+  // The one reading of it: the close half a builder is started with closes
+  // these (data/seq.js), and a close half on the stage starts with them open
+  // (`context.open`). A random step's pick is not in it: nobody knows it
+  // until the droid runs.
+  // ---------------------------------------------------------------------------
+  const leftOpen = (seq, context = {}) => {
+    const model = build(seq, { ...context, open: null, staysOpen: true });
+    const pose = poseAt(model, model.windowMs);
+    return model.parts
+      .filter((lane) => lane.items.some((item) => item.kind === "left"))
+      .map((lane) => ({ part: lane.part, at: pose.at[lane.part] ?? 1 }));
   };
 
   // ---------------------------------------------------------------------------
@@ -1490,5 +1542,5 @@
     };
   };
 
-  window.SeqTimeline = Object.freeze({ build, poseAt, unwired, notWired, mount, NUDGE_MS, NUDGE_BIG_MS });
+  window.SeqTimeline = Object.freeze({ build, poseAt, leftOpen, unwired, notWired, mount, NUDGE_MS, NUDGE_BIG_MS });
 })();

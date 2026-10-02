@@ -1191,6 +1191,9 @@
     bodyMove,
     gestureFlutterMs,
     unavailableMessage,
+    // The Cadence Floor as the rules read it, for the editor to space the
+    // closes of a close half it starts by the same figure (#441).
+    cadenceFloor,
     unmeasuredOutputs,
     countsHtml,
     figuresText,
