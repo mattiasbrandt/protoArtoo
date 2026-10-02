@@ -4541,6 +4541,39 @@
     if (savedEl) savedEl.textContent = dirty ? "unsaved edits" : "as saved";
   };
 
+  // Which half a refusal is in, for a sequence that has two: "Opens",
+  // "Closes", or "" for one that is in neither - its name, its mute period,
+  // its group, its tempo. Protocol Check reads both halves and says the half
+  // only on some refusals (`closeSteps[2].beat`): one from a step's own rules
+  // names the step's field alone (`cmd`, `t`), and the step cap and a missing
+  // Sequence End name no field. For those the opening half is read again by
+  // itself: accepted alone, the refusal is in the close half.
+  const SEQUENCE_FIELDS = ["name", "suppressMs", "toggleGroup"];
+  const refusedHalf = (verdict) => {
+    const seq = editorState.current;
+    if (verdict.ok || !hasCloseHalf(seq)) return "";
+    const field = verdict.field || "";
+    if (SEQUENCE_FIELDS.includes(field) || field.startsWith("tempo")) return "";
+    if (field.startsWith("closeSteps")) return "Closes";
+    if (field.startsWith("steps")) return "Opens";
+    return routineVerdict({ ...seq, toggleGroup: "none", closeSteps: [] }).ok ? "Closes" : "Opens";
+  };
+
+  // The Rehearsal reads one run, and a toggle is two: each half is rehearsed
+  // as the routine it is (halfRoutine()). What is of the sequence and not of
+  // a run - its tempo - is said once, with Opens. `closes` is null for a
+  // sequence with no close half.
+  const rehearsedHalves = () => {
+    const rehearsal = window.SeqRehearsal;
+    const context = rehearsalContext();
+    const opens = rehearsal.rehearse(editorState.current, context);
+    if (!hasCloseHalf(editorState.current)) return { opens, closes: null };
+    const report = rehearsal.rehearse(halfRoutine(editorState.current, "closes"), context);
+    const findings = report.findings.filter((item) => !item.code.startsWith("tempo-"));
+    const count = (level) => findings.filter((item) => item.level === level).length;
+    return { opens, closes: { ...report, findings, counts: { warning: count("warning"), note: count("note") } } };
+  };
+
   const updateValidationSummary = () => {
     const validation = routineVerdict(editorState.current);
     const summaryEl = document.getElementById("seq-editor-validation-summary");
@@ -4560,10 +4593,13 @@
     // (CONTEXT.md "Status Color", ADR 0044).
     const status = validation.ok ? "valid" : "error";
     // A refusal is a sentence, so it takes a line of its own under the acts.
+    // In a sequence with two halves it says which half it is in.
+    const half = refusedHalf(validation);
+    const refusal = `${half ? `${half}: ` : ""}${validation.error || "Validation error"}`;
     summaryEl.classList.toggle("is-refused", !validation.ok);
     summaryEl.innerHTML = `
       <span class="indicator ${validation.ok ? "ok" : "fail"}" aria-hidden="true"></span>
-      <span class="seq-validation-status seq-validation-${status}">${window.PAUtils.escapeHtml(validation.ok ? "Sequence is valid" : validation.error || "Validation error")}</span>
+      <span class="seq-validation-status seq-validation-${status}">${window.PAUtils.escapeHtml(validation.ok ? "Sequence is valid" : refusal)}</span>
     `;
 
     // Disable save button if invalid
@@ -4574,16 +4610,26 @@
     // what the routine weighs. It never feeds the verdict: the save button
     // above answers to Protocol Check alone (ADR 0044). The tab itself says
     // when there is a warning to read.
+    //
+    // A sequence with two halves is read half by half, each under its name,
+    // whichever is on the stage; the tab counts the warnings of both. The
+    // figures are those of the half on the stage - a half holds its own steps
+    // and runs its own length - but for the size, which is the file's.
     const rehearsalEl = document.getElementById("seq-editor-rehearsal");
     if (rehearsalEl && window.SeqRehearsal) {
-      const report = window.SeqRehearsal.rehearse(editorState.current, rehearsalContext());
-      rehearsalEl.innerHTML = window.SeqRehearsal.countsHtml(report) + window.SeqRehearsal.listHtml(report);
+      const rehearsal = window.SeqRehearsal;
+      const { opens, closes } = rehearsedHalves();
+      const said = (report) => rehearsal.countsHtml(report) + rehearsal.listHtml(report);
+      const named = (name, report) => `<span class="seq-rehearsal-half">${name}</span>${said(report)}`;
+      rehearsalEl.innerHTML = closes ? named("Opens", opens) + named("Closes", closes) : said(opens);
+      const shown = closes && editorState.half === "closes" ? closes : opens;
       const figuresEl = document.getElementById("seq-editor-figures");
-      if (figuresEl) figuresEl.textContent = window.SeqRehearsal.figuresText(report);
+      if (figuresEl) figuresEl.textContent = rehearsal.figuresText({ figures: { ...shown.figures, bytes: opens.figures.bytes } });
+      const warnings = opens.counts.warning + (closes ? closes.counts.warning : 0);
       const tabEl = document.getElementById("seq-editor-tab-rehearsal");
       if (tabEl) {
-        tabEl.textContent = report.counts.warning > 0
-          ? `Rehearsal · ${countOf(report.counts.warning, "warning", "warnings")}`
+        tabEl.textContent = warnings > 0
+          ? `Rehearsal · ${countOf(warnings, "warning", "warnings")}`
           : "Rehearsal";
       }
     }
@@ -4598,8 +4644,11 @@
   const updatePrerun = () => {
     const prerunEl = document.getElementById("seq-editor-prerun");
     if (!prerunEl || !window.SeqRehearsal || !editorState.current) return;
+    // A toggle's run is either half, by which way its group is latched, so
+    // the Outputs of both are named.
+    const seq = editorState.current;
     const html = window.SeqRehearsal.unmeasuredHtml(
-      window.SeqRehearsal.unmeasuredOutputs(editorState.current, rehearsalContext())
+      window.SeqRehearsal.unmeasuredOutputs({ ...seq, steps: [...(seq.steps || []), ...(seq.closeSteps || [])] }, rehearsalContext())
     );
     prerunEl.innerHTML = html;
     prerunEl.classList.toggle("hidden", html === "");
