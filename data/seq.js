@@ -2635,9 +2635,9 @@
   // lightKind() nor panelIntent() reads it, so the inspector shows the box to
   // type in. Not stepTypeDefaults.dome, which is a panel move.
   const DOME_COMMAND = { name: "Dome command", starts: "@0T1" };
-  // The longest command the droid takes: PC_CMD_MAX (include/protocol_check.h).
+  // The longest command the droid takes, which is Protocol Check's to say.
   // The box holds no more, so a command is never typed past what Save accepts.
-  const DOME_COMMAND_CHARS = 63;
+  const DOME_COMMAND_CHARS = SeqProtocolCheck.CMD_CHARS_MAX;
 
   // Which of the four a command is - "DV", "DL", "DT" or "DH" - or null.
   const lightKind = (cmd) => {

@@ -125,6 +125,9 @@
     return body;
   };
   const RANDOM_MODES = ["flutter", "open", "close"];
+  // The most characters a dome command holds: PC_CMD_MAX
+  // (include/protocol_check.h), the payload's 64 bytes less its NUL.
+  const CMD_CHARS_MAX = 63;
 
   // audioCat "fallback" is a NAMED SLOT (the clip played when the chosen category
   // has no available track), not a "$" sound. Values mirror the server slot table
@@ -209,28 +212,6 @@
     SHORTCIRCUIT: { colors: new Set(["DEFAULT", "RANDOM"]),       duration: "none" },
   };
 
-  // Classify a panel intent target into its group for :OF cleanup tracking.
-  function panelGroup(target) {
-    if (target === "00") return "all";
-    if (target === "14") return "pie_group";
-    if (target === "15") return "ring_group";
-    if (["01", "02", "03", "04", "07", "11", "13"].indexOf(target) !== -1) return "ring";
-    if (["P1", "P2", "P3", "P4", "P5", "P6"].indexOf(target) !== -1) return "pie";
-    return "unknown";
-  }
-
-  // Returns true if a :CL<closeTarget> satisfies the cleanup requirement for
-  // a :OF<flutterTarget> step with the given group classification.
-  function closeSatisfiesFlutter(flutterTarget, flutterGroup, closeTarget) {
-    if (closeTarget === "00") return true;               // all-close satisfies everything
-    if (closeTarget === flutterTarget) return true;      // exact same target
-    if (flutterGroup === "ring"       && closeTarget === "15") return true;
-    if (flutterGroup === "pie"        && closeTarget === "14") return true;
-    if (flutterGroup === "pie_group"  && closeTarget === "14") return true;
-    if (flutterGroup === "ring_group" && closeTarget === "15") return true;
-    return false;
-  }
-
   // The dome controller's own light vocabulary, with the words a builder reads.
   // The tokens are the ones src/protocol_check.cpp validates, above; the labels
   // are the ones a builder reads when authoring a step. Published because
@@ -305,6 +286,9 @@
 
     // How many characters a sequence's name holds after its DM:.
     NAME_CHARS_MAX,
+
+    // How many characters a dome command holds.
+    CMD_CHARS_MAX,
 
     // How long a body flutter may last, in ms, as [least, most]: the bounds a
     // control that sets one offers, read from here rather than kept again.
@@ -435,8 +419,8 @@
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
         case "domeRotate": return this._validateDomeRotateStep(step);
-        case "body":     return this._validateBodyStep(step, stepIndex, allSteps);
-        case "gesture":  return this._validateGestureStep(step, stepIndex, allSteps);
+        case "body":     return this._validateBodyStep(step);
+        case "gesture":  return this._validateGestureStep(step);
         case "sequence":
           return typeof step.ref === "string" && SEQ_REF.test(step.ref)
             ? { ok: true }
@@ -454,7 +438,7 @@
     //
     // A key the wire reads as absent - missing, or null - is absent here. The
     // catalog is checked where the page has loaded it, as the Gesture's is.
-    _validateBodyStep(step, stepIndex, allSteps) {
+    _validateBodyStep(step) {
       const fail = (field, error) => ({ ok: false, field, error });
       const said = (value) => value !== undefined && value !== null;
       const catalog = window.DroidParts?.parts;
@@ -476,18 +460,14 @@
       if (!isWhole(flutterMs) || flutterMs < least || flutterMs > most) {
         return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
       }
-      // A flutter ends open and owes a close (ADR 0049): a later body step in
-      // the same branch that closes this Part.
-      const closes = (other) => other && other.type === "body" && other.shape === "close" && other.part === step.part;
-      if (!allSteps.slice(stepIndex + 1).some(closes)) {
-        return fail("shape", "A flutter must be closed later. Add a close of the same part.");
-      }
+      // Its length is all a flutter is checked for: it ends closed, so no
+      // later step has to close the Part (ADR 0049, amended 2026-10-02; #453).
       return { ok: true };
     },
 
     // A Gesture's form (checkGesture(), src/protocol_check.cpp). Whether the
     // dome can perform the pair is the Rehearsal's and never refuses a save.
-    _validateGestureStep(step, stepIndex, allSteps) {
+    _validateGestureStep(step) {
       const G = window.SeqGesture;
       const parts = window.DroidParts;
       const fail = (field, error) => ({ ok: false, field, error });
@@ -541,17 +521,8 @@
           return fail("flutterMs", `A flutter lasts ${least} to ${most} ms`);
         }
       }
-      // A flutter ends open and owes a close, unless the spread brings each
-      // part back itself: a later close gesture over the same parts.
-      const spread = step.spread || "together";
-      if (step.shape === "flutter" && (spread === "together" || spread === "wave")) {
-        const same = (other) =>
-          other && other.type === "gesture" && other.shape === "close" &&
-          (hasSet ? other.set === step.set : Array.isArray(other.parts) && other.parts.join(",") === step.parts.join(","));
-        if (!allSteps.slice(stepIndex + 1).some(same)) {
-          return fail("shape", "A flutter must be closed later. Add a close gesture over the same parts.");
-        }
-      }
+      // A flutter owes no close after it: it ends closed, on the dome and on
+      // the body (ADR 0049, amended 2026-10-02; #453).
       return { ok: true };
     },
 
@@ -576,7 +547,16 @@
     _validateDomeStep(step) {
       const { cmd } = step;
       if (!cmd || typeof cmd !== "string") {
-        return { ok: false, field: "cmd", error: "Choose a dome action for this step" };
+        return { ok: false, field: "cmd", error: "Type a dome command." };
+      }
+      // Every dome command, whatever it starts with, is 1 to CMD_CHARS_MAX
+      // printable ASCII characters (charsetOk(), src/protocol_check.cpp, which
+      // classifyDome() asks before anything else).
+      if (cmd.length > CMD_CHARS_MAX) {
+        return { ok: false, field: "cmd", error: `A dome command holds at most ${CMD_CHARS_MAX} characters` };
+      }
+      if (/[^\x20-\x7E]/.test(cmd)) {
+        return { ok: false, field: "cmd", error: "A dome command takes plain letters, digits and symbols only" };
       }
       // How far is said on a panel open or close (include/sequence_dome_how_far.h).
       if (step.howFar !== undefined) {
@@ -655,9 +635,20 @@
         return { ok: true };
       }
 
-      // Non-panel dome effects (Advanced mode only)
-      if (cmd.startsWith("@")) return { ok: true };  // logic / PSI commands
-      if (cmd.startsWith("*")) return { ok: true };  // holo / HP commands
+      // @... is a holo (@HP...) or a digit and T, P or M (logic, PSI, text),
+      // whatever follows; the two resets, @0T1 and @0P1, are of that second
+      // form. Any other @ is refused ("unrecognised @ command",
+      // classifyDome(), src/protocol_check.cpp).
+      if (cmd.startsWith("@")) {
+        if (/^@(HP|[0-9][TPM])/.test(cmd)) return { ok: true };
+        return {
+          ok: false,
+          field: "cmd",
+          error: "That @ command isn't recognized. Use @HP for a holo, or a digit and T, P or M, like @0T6.",
+        };
+      }
+      // *... is a holo command, whatever follows.
+      if (cmd.startsWith("*")) return { ok: true };
 
       // :SE## — legacy Marcduino sequence trigger (Advanced only, not for panel control)
       if (cmd.startsWith(":SE")) {
@@ -879,15 +870,6 @@
       const color = parts[3] || "DEFAULT";
       const durationStr = parts[4];
 
-      // Validate command length (must be <= 63)
-      if (cmd.length > 63) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Logic/PSI command is too long (must be 63 characters or less)",
-        };
-      }
-
       // Validate target
       if (!DL_TARGETS.has(target)) {
         return {
@@ -959,15 +941,6 @@
       // The text is everything after the fifth colon, so a colon typed into
       // it raw shows up as a field too many.
       const encodedText = parts.slice(5).join(":");
-
-      // Validate command length (must be <= 63)
-      if (cmd.length > 63) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Logic Text command is too long (must be 63 characters or less)",
-        };
-      }
 
       // Validate target
       if (!DT_TARGETS.has(target)) {
@@ -1093,15 +1066,6 @@
       const color = parts[3] || "DEFAULT";
       const durationOrCountStr = parts[4];
 
-      // Validate command length (must be <= 63)
-      if (cmd.length > 63) {
-        return {
-          ok: false,
-          field: "cmd",
-          error: "Holo Effect command is too long (must be 63 characters or less)",
-        };
-      }
-
       // Validate target
       if (!DH_TARGETS.has(target)) {
         return {
@@ -1172,44 +1136,6 @@
         };
       }
 
-      return { ok: true };
-    },
-
-    // Check :OF cleanup over one branch, every step of it in stored order.
-    // Every :OF<target> step must be followed by a matching :CL command in
-    // the same branch. See the panel intent contract in docs/adr/0008.
-    // `label` is the branch's key, for the field a refusal names.
-    _checkBranchOfCleanup(steps, label) {
-      const pending = []; // { target, group }
-
-      for (const step of steps) {
-        if (step.type !== "dome" || !step.cmd) continue;
-        const cmd = step.cmd;
-
-        if (cmd.startsWith(":OF")) {
-          const target = cmd.slice(3);
-          if (PANEL_INTENT_TARGETS.has(target)) {
-            pending.push({ target, group: panelGroup(target) });
-          }
-        } else if (cmd.startsWith(":CL")) {
-          const closeTarget = cmd.slice(3);
-          for (let i = pending.length - 1; i >= 0; i--) {
-            const f = pending[i];
-            if (closeSatisfiesFlutter(f.target, f.group, closeTarget)) {
-              pending.splice(i, 1);
-            }
-          }
-        }
-      }
-
-      if (pending.length > 0) {
-        const targets = pending.map((f) => `:OF${f.target}`).join(", ");
-        return {
-          ok: false,
-          field: label,
-          error: `These panels are left fluttering and never closed: ${targets}. Add a Close action for each one later in the sequence.`,
-        };
-      }
       return { ok: true };
     },
 
@@ -1608,12 +1534,10 @@
         }
       }
 
-      // :OF cleanup is one list across the whole branch, in the order the
-      // steps are stored, the steps a loop repeats among them: a flutter
-      // inside a loop is cleaned by a close after the loop, and one before a
-      // loop by a close inside it (protocolCheckBranch()'s pendingFlutter,
-      // checked once at the branch's end).
-      return this._checkBranchOfCleanup(steps, label);
+      // A panel flutter (:OF) owes nothing after it: the dome ends a flutter
+      // closed, so there is no later close to look for (ADR 0008 and
+      // ADR 0049, both amended 2026-10-02; #453).
+      return { ok: true };
     },
 
     /**
