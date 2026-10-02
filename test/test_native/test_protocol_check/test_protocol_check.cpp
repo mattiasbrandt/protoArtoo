@@ -688,39 +688,15 @@ static void test_body_step_flutter_with_close_accepts() {
     TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
 }
 
-static void test_body_step_flutter_without_close_rejected() {
+// A flutter ends closed, so it owes no later close of its Part (ADR 0049,
+// amended 2026-10-02): alone in its branch, it saves.
+static void test_body_step_flutter_without_close_accepts() {
     static SeqStep s[] = {
         SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
         SEQ_TERM(1500),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
-    TEST_ASSERT_FALSE(r.ok);
-    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
-}
-
-// A close of a DIFFERENT Part discharges nothing: a body close names one Part,
-// and there is no group close on this side of the droid.
-static void test_body_step_flutter_closed_on_another_part_rejected() {
-    static SeqStep s[] = {
-        SEQ_BODY(0, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
-        SEQ_BODY(1200, "doorFL", BODY_SHAPE_CLOSE, 0, 0),
-        SEQ_TERM(1500),
-    };
-    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
-    TEST_ASSERT_FALSE(r.ok);
-    TEST_ASSERT_EQUAL_STRING("steps[0].shape", r.field);
-}
-
-// The close has to come LATER: a close ahead of the flutter leaves it owed.
-static void test_body_step_close_before_flutter_rejected() {
-    static SeqStep s[] = {
-        SEQ_BODY(0, "doorRR", BODY_SHAPE_CLOSE, 0, 0),
-        SEQ_BODY(200, "doorRR", BODY_SHAPE_FLUTTER, 80, 1200),
-        SEQ_TERM(1500),
-    };
-    ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
-    TEST_ASSERT_FALSE(r.ok);
-    TEST_ASSERT_EQUAL_STRING("steps[1].shape", r.field);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
 }
 
 static void test_body_step_flutter_duration_below_min_rejected() {
@@ -831,9 +807,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_body_step_how_far_above_range_rejected);
     RUN_TEST(test_body_step_how_far_below_floor_accepts);
     RUN_TEST(test_body_step_flutter_with_close_accepts);
-    RUN_TEST(test_body_step_flutter_without_close_rejected);
-    RUN_TEST(test_body_step_flutter_closed_on_another_part_rejected);
-    RUN_TEST(test_body_step_close_before_flutter_rejected);
+    RUN_TEST(test_body_step_flutter_without_close_accepts);
     RUN_TEST(test_body_step_flutter_duration_below_min_rejected);
     RUN_TEST(test_body_step_flutter_duration_above_max_rejected);
     RUN_TEST(test_body_step_duration_on_open_rejected);

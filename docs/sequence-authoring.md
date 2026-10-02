@@ -133,8 +133,8 @@ re-authored.
 
 **The body undoes nothing.** A part left open when the sequence ends stays open:
 write the close as a step, exactly as you already do for pie panels. A flutter
-ends *open* and requires a later `close` of the same part in the same branch --
-the same rule `:OF` carries on the dome.
+is the exception that needs none: it ends *closed*, the same as `:OF` on the
+dome.
 
 In Factory Sequences, use the
 `SEQ_BODY(t, part, shape, howFar, flutterMs)` macro.
@@ -287,7 +287,7 @@ correct-by-construction; in Factory tables you tag the first activating step exp
 `body` step and schedules nothing for it at the end of a run: a door left open
 stays open, because the Servo Output's own release schedule already stops it
 being held and the body knows exactly where the part arrived. The close is a step
-you write. A body flutter owes one in the same branch, same as `:OF`.
+you write. A body flutter needs none: it ends closed, same as `:OF`.
 
 ## Authoring a Factory Sequence (C++)
 
@@ -366,7 +366,7 @@ the format cannot express a bypass for.
 | `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
 | `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |
-| `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape; every flutter needs a later `close` of the same part in the same branch |
+| `body` | `part` in the Droid Parts Catalog; `shape` open/close/flutter; `howFar` 1..100; a flutter's `flutterMs` 50..60000 and no duration on any other shape |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |
 | capacity | 16 files max. Per-file size and free-space floor depend on the controller board: **12 KB / 24 KB** on artoo-esp32, **24 KB / 48 KB** on the FireBeetle 2 (ESP32-P4). Only the larger board can hold a sequence that uses all 96+96 steps |

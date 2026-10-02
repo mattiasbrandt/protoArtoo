@@ -462,7 +462,7 @@ static void test_body_parse_full() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)BODY_SHAPE_CLOSE, d.steps[1].params.shape);
     TEST_ASSERT_EQUAL_UINT16(0, d.steps[1].params.flutterMs);
 
-    // The whole draft is form-legal, flutter's owed close included.
+    // The whole draft is form-legal.
     ProtocolCheckResult pc = protocolCheck(d);
     TEST_ASSERT_TRUE_MESSAGE(pc.ok, pc.message);
 }

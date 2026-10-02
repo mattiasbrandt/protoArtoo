@@ -1177,37 +1177,20 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                         return pcFailAt(label, i, "flutterMs",
                                       "flutter duration out of range (50..60000)");
                     }
-                    // A body flutter ends OPEN and owes a later close in the same
-                    // branch -- the same rule the dome flutter above carries,
-                    // because one word means one thing across the droid
-                    // (ADR 0049). Answered by looking forward from here rather
-                    // than by carrying a pending list: there is no body
-                    // counterpart to the dome's group close, so the only question
-                    // is whether a later step closes THIS Part, and a list of
-                    // ninety-six owed flutters would put 96 B on a frame that
-                    // already carries the deepest chain on the Sequence
-                    // Coordinator's task (ADR 0040).
-                    bool closedLater = false;
-                    for (uint8_t j = (uint8_t)(i + 1); j < count; ++j) {
-                        if (steps[j].type == STEP_BODY &&
-                            seqBodyShape(steps[j].params) == BODY_SHAPE_CLOSE &&
-                            strcmp(steps[j].payload, s.payload) == 0) {
-                            closedLater = true;
-                            break;
-                        }
-                    }
-                    if (!closedLater) {
-                        return pcFailAt(label, i, "shape",
-                                      "flutter needs a later close of the same Part");
-                    }
+                    // Its length is all a flutter is checked for. It ends
+                    // CLOSED, the Sequence Coordinator sees to that, so no
+                    // later step has to close the Part -- the same as the
+                    // dome flutter above, because one word means one thing
+                    // across the droid (ADR 0049, amended 2026-10-02; #453).
                 } else if (p.flutterMs != 0) {
                     return pcFailAt(label, i, "flutterMs",
                                   "only a flutter carries a duration");
                 }
                 // FX_NONE is the decision (ADR 0049): the engine undoes nothing a
                 // body step did, so there is no persistent state for terminal
-                // cleanup to reset. A Part left open stays open, and saying so is
-                // a Rehearsal Note rather than anything this gate acts on.
+                // cleanup to reset. A Part an OPEN left open stays open, and
+                // saying so is a Rehearsal Note rather than anything this gate
+                // acts on.
                 s.effectClass = FX_NONE;
                 break;
             }
