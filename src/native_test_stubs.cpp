@@ -208,6 +208,13 @@ bool servoTaskRunHolds(ServoOutputAddress output) {
     return servoTestMaskHas(g_test_servo_run_held_mask, output);
 }
 
+// No expander in the native build: the board's GPIO is the member running, so
+// every route reports `expander` null and an expander's Output as one nobody
+// chose (src/web/api_servo.cpp).
+ServoExpanderFacts servoTaskExpanderFacts() {
+    return ServoExpanderFacts{false, PCA9685_ADDRESS_DEFAULT, false};
+}
+
 // The same inputs servo_task.cpp assembles, from the masks above and the live
 // cache, through the one rule.
 bool servoTaskMayTakeForRun(ServoOutputAddress output) {

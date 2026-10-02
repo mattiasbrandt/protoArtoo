@@ -879,6 +879,27 @@ inline bool servoOutputParseAddress(const char* raw, ServoOutputDriver* driver, 
 }
 
 // -----------------------------------------------------------------------------
+// servoOutputParseExpanderAddress()
+// An expander's Output named by its address, `pca:3` - the one way such an
+// Output is named, since no board prints a word for it (servoOutputAddressName()
+// below). A board Output's address is NOT taken here: a board Output is named
+// by the word its board prints (ADR 0033 Amendment 2026-09-19), and accepting
+// `ledc:3` beside ARM3 would be a second name for one wire. POST /api/servo and
+// the Console's servo.action.* both resolve a target through this, after the
+// board's own words (#444).
+// -----------------------------------------------------------------------------
+inline bool servoOutputParseExpanderAddress(const char* raw, ServoOutputAddress* out) {
+    ServoOutputDriver driver = SERVO_DRIVER_LEDC;
+    uint8_t channel = 0;
+    if (out == nullptr || !servoOutputParseAddress(raw, &driver, &channel) ||
+        driver == SERVO_DRIVER_LEDC) {
+        return false;
+    }
+    *out = ServoOutputAddress{driver, channel};
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // servoOutputAddressName()
 // What the running board prints beside the Output at this address - ARM3 on
 // the Artoo PCB, GPIO 4 on the FireBeetle 2 - read through the one label

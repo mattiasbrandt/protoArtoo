@@ -59,6 +59,8 @@
                                // one config write lock
 #include "config_settings.h"   // every Setting's declaration - the single-field ops read and write by it
 #include "api_config_apply.h"  // configApply(), ConfigApplyResult
+#include "pca9685.h"           // PCA9685_OUTPUT_SPAN - the span servo.api.get-outputs names
+#include "servo_task.h"        // servoTaskExpanderFacts() - the expander the droid started with
 #include "api_wifi_apply.h"    // wifiWriteWindow() - the POST /api/wifi Apply Core and its
                                // ADR 0036 Commit Step under the config write lock, shared
                                // verbatim with handleWifiPost (#227 extracted the Commit Step
@@ -1323,6 +1325,14 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
                      part.included ? "true" : "false", part.gate != nullptr ? part.gate : "-");
             sink->onRecordItem(requestId, itemBuf);
         }
+
+        const ServoExpanderFacts expander = servoTaskExpanderFacts();
+        if (expander.chosen) {
+            snprintf(itemBuf, sizeof(itemBuf), "expander:pca9685 address:0x%02X outputs:%s answering:%s",
+                     (unsigned)expander.address, PCA9685_OUTPUT_SPAN,
+                     expander.answering ? "true" : "false");
+            sink->onRecordItem(requestId, itemBuf);
+        }
     }
 
     if (sink->onRecordEnd) {
@@ -1348,10 +1358,15 @@ static void consoleExecuteSystemApiGetComponents(uint32_t requestId,
 // nothing on the droid reads a servo back.
 //
 // A row (70 B) and one line on the Console task's measured chain. The longest
-// line is 164 B - an expander's address, four Parts at the longest id, the two
+// line is 165 B - an expander's address, four Parts at the longest id, the two
 // four-digit band widths, no pulse, a three-digit nudge count and
-// `limp:pulses-off`; a pulsing line carries two more widths and `limp:-`, 161 B -
-// against 192, and snprintf truncates in silence, so the margin is the guard.
+// `limp:unreachable`; a pulsing line carries two more widths and `limp:-`,
+// 161 B - against 192, and snprintf truncates in silence, so the margin is the
+// guard.
+//
+// With a PCA9685 the chosen body servo controller, one item more after the
+// rows: the expander's address, the span it owns and whether it is answering,
+// the facts GET /api/servo/outputs reports as `expander` (#444).
 static void consoleExecuteServoApiGetOutputs(uint32_t requestId, const ConsoleRecordSink* sink) {
     if (sink->onRecordItem) {
         char itemBuf[192];

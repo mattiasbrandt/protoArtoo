@@ -19,10 +19,13 @@
 // ARM1..ARM5 on the Artoo PCB, GPIO 49 / GPIO 50 / GPIO 4 / GPIO 5 / GPIO 51
 // on the FireBeetle 2 - matched without regard to case or spaces
 // (include/board_outputs.h), and it moves that Output (ADR 0033 Amendment
-// 2026-09-19); or "both", which keeps its meaning: SERVO_OUTPUT_BOTH_ARMS, the
-// first two Outputs together (the other three have no broadcast). False, with
-// `*output` untouched, for anything else, including the old protoArtoo-wide
-// words arm1..aux3 where they are not this board's label: there is no alias.
+// 2026-09-19); an expander's Output by its address, `pca:0`..`pca:15`, since
+// no board prints a word for one (servoOutputParseExpanderAddress()); or
+// "both", which keeps its meaning: SERVO_OUTPUT_BOTH_ARMS, the first two
+// Outputs together (the other three have no broadcast). False, with `*output`
+// untouched, for anything else, including the old protoArtoo-wide words
+// arm1..aux3 where they are not this board's label - there is no alias - and a
+// board Output's own address, `ledc:3`, which is not a second name for ARM3.
 // Exported (not file-local to api_servo.cpp) so the Controller Console's
 // servo.action.* executors (include/console_direct_action_servo.h, ADR 0036)
 // resolve a target the same way handleServoPost() does, rather than a second

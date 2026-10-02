@@ -54,6 +54,7 @@
 #include "servo_component_helpers.h"
 #include "aux_led.h"  // auxLedWireAtStart() - what each wire carried at start
 #include "output_wire.h"  // outputWirePinKeptForLight() - whether that was a Light Type
+#include "servo_backend.h"  // kServoBackendPca9685RegistryId - the expander's product id
 #include "servo_task.h"  // servoTaskWiredAtStart(), servoTaskDrivesOutput() - what the droid started with
 #include "web_server.h"
 
@@ -1248,7 +1249,9 @@ void handleServoOutputsGet(WebRequest& req) {
         // says whether ServoTask puts servo pulses on it this boot, which is
         // what POST /api/servo refuses on. Both are ServoTask's boot snapshot
         // (include/servo_task.h), so no page works either out from config. An
-        // expander's row has no tick and nothing drives it yet.
+        // expander's row has no tick, and reads as wired like `wired` above;
+        // `driven` is what says whether ServoTask drives it - a Part on it at
+        // start, and the expander chosen and answering (#444).
         const size_t boardIndex = board != nullptr ? (size_t)(board - BOARD_OUTPUTS) : 0;
         const ServoOutputAddress at = {row.driver, row.channel};
         output["activeWired"] = board == nullptr || servoTaskWiredAtStart(at);
@@ -1294,12 +1297,31 @@ void handleServoOutputsGet(WebRequest& req) {
     // Release time (#443), `"release":0,` to `"release":60000,`, 12-16 B a
     // row: about 10.8 KB at the most, still under it.
     //
-    // What that worst case is NOT is what this controller sends. Twenty-four
-    // rows is the expander nobody has fitted; the five LEDC outputs answer in
-    // 1948 B (1219 B before #423), and that is what the Parts page's one-second
-    // bench feed carries. A fitted expander would also be the moment to ask
+    // What that worst case is NOT is what most controllers send: the five
+    // LEDC outputs answer in 1948 B (1219 B before #423), and that is what the
+    // Parts page's one-second bench feed carries. A fitted PCA9685 (#444) makes
+    // it twenty-one rows, about 8 KB a second on that feed - the moment to ask
     // whether calibration fields belong on a feed that repeats them every
-    // second - they change only when somebody edits one (#364).
+    // second; they change only when somebody edits one (#364).
+    //
+    // The expander itself, when it is this boot's body servo controller: its
+    // address, the span of Outputs it owns and whether it is answering - the
+    // three facts the reference project's boot report gives (#444). Here, on
+    // the route that carries its Outputs, and not on GET /api/identity, whose
+    // answer is bounded with 18 B to spare (include/api_identity.h). null when
+    // the board's GPIO is the only member running.
+    const ServoExpanderFacts expander = servoTaskExpanderFacts();
+    if (expander.chosen) {
+        JsonObject facts = doc["expander"].to<JsonObject>();
+        facts["product"] = kServoBackendPca9685RegistryId;
+        char address[5] = {};  // "0x40"
+        snprintf(address, sizeof(address), "0x%02X", (unsigned)expander.address);
+        facts["address"] = address;
+        facts["outputs"] = PCA9685_OUTPUT_SPAN;
+        facts["answering"] = expander.answering;
+    } else {
+        doc["expander"] = nullptr;
+    }
     webSendJsonDocument(req, doc, 12288, TAG);
 }
 

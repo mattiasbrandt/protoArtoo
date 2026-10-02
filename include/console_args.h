@@ -30,6 +30,7 @@
 
 #include "api_param_source.h"
 #include "board_outputs.h"  // boardOutputForWord() - a board_output param's words
+#include "servo_output_row.h"  // servoOutputParseExpanderAddress() - an expander Output's name
 #include "console_catalog.h"
 
 // =============================================================================
@@ -352,12 +353,17 @@ inline bool consoleParamValueInEnum(const ConsoleParamDescriptor& param, const c
 
 // A board_output param takes the running board's word for one of its Outputs
 // (include/board_outputs.h: ARM3 on the Artoo PCB, GPIO 49 on the FireBeetle 2,
-// case and spaces set aside) or one of the extra words its enum lists - `both`.
-// The registry is one file for every board, so the labels cannot be in the
-// catalog's enum: they are read from the one label source instead.
+// case and spaces set aside), an expander's Output by its address (`pca:3`,
+// #444, since no board prints a word for one), or one of the extra words its
+// enum lists - `both`. The registry is one file for every board, so the labels
+// cannot be in the catalog's enum: they are read from the one label source
+// instead. An operation that cannot use an expander's Output - a light goes on
+// the board's own wires only - refuses it in its own executor, with the same
+// OUT_OF_RANGE this check would have given.
 inline bool consoleParamValueNamesOutput(const ConsoleParamDescriptor& param, const char* value) {
     if (param.enum_values != nullptr && consoleParamValueInEnum(param, value)) return true;
-    return boardOutputForWord(value) != nullptr;
+    ServoOutputAddress expander = {};
+    return boardOutputForWord(value) != nullptr || servoOutputParseExpanderAddress(value, &expander);
 }
 
 // Sweeps every argument the operator supplied against `params` (unknown-key
