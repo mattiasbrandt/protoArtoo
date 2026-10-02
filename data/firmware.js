@@ -164,7 +164,7 @@
     }
   };
 
-  const uploadFirmware = () => {
+  const uploadFirmware = async () => {
     const file = fileInput.files && fileInput.files[0];
     if (!file) {
       feedback.textContent = "Select a .bin file first.";
@@ -177,7 +177,14 @@
 
     const formData = new FormData();
     formData.append("firmware", file, file.name);
-    if (!confirm("Upload firmware? Keep power connected during the update.")) {
+    const upload = await window.PAOverlay.ask({
+      title: "Upload this firmware?",
+      body: "The droid restarts on it. Keep the power on until this page reloads.",
+      yes: "Upload it",
+      no: "Not now",
+      near: uploadButton,
+    });
+    if (!upload) {
       feedback.textContent = "Firmware upload canceled.";
       return;
     }
@@ -203,7 +210,7 @@
     });
   };
 
-  const uploadFilesystem = () => {
+  const uploadFilesystem = async () => {
     const target = fsFeedback || feedback;
     const file = fsFile && fsFile.files && fsFile.files[0];
     if (!file) {
@@ -217,7 +224,14 @@
 
     const formData = new FormData();
     formData.append("filesystem", file, file.name);
-    if (!confirm("Upload filesystem? Keep power connected during the update.")) {
+    const upload = await window.PAOverlay.ask({
+      title: "Upload this filesystem?",
+      body: "The web UI is replaced and the droid restarts. Keep the power on until this page reloads.",
+      yes: "Upload it",
+      no: "Not now",
+      near: uploadFsButton,
+    });
+    if (!upload) {
       target.textContent = "Filesystem upload canceled.";
       return;
     }
